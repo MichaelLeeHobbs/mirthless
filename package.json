@@ -1,0 +1,40 @@
+{
+  "name": "mirthless",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:reset": "docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d",
+    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f",
+    "dev": "pnpm run --parallel dev",
+    "dev:server": "pnpm --filter @mirthless/server dev",
+    "dev:web": "pnpm --filter @mirthless/web dev",
+    "build": "pnpm run -r build",
+    "lint": "eslint packages --max-warnings 0",
+    "lint:fix": "eslint packages --max-warnings 0 --fix",
+    "test": "pnpm run -r test",
+    "test:coverage": "pnpm run -r test:coverage",
+    "db:generate": "pnpm --filter @mirthless/server db:generate",
+    "db:migrate": "pnpm --filter @mirthless/server db:migrate",
+    "db:studio": "pnpm --filter @mirthless/server db:studio",
+    "db:seed": "pnpm --filter @mirthless/server db:seed",
+    "clean": "pnpm run -r clean"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.17.0",
+    "@typescript-eslint/eslint-plugin": "8.18.2",
+    "@typescript-eslint/parser": "8.18.2",
+    "eslint": "9.17.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "prettier": "3.4.2",
+    "typescript": "5.7.2",
+    "typescript-eslint": "8.18.2"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.1"
+}
