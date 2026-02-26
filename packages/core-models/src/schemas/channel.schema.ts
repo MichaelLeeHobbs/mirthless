@@ -12,7 +12,6 @@ export const channelPropertiesSchema = z.object({
   encryptData: z.boolean().default(false),
   removeContentOnCompletion: z.boolean().default(false),
   removeAttachmentsOnCompletion: z.boolean().default(false),
-  storeAttachments: z.boolean().default(true),
 });
 
 export const channelScriptsSchema = z.object({

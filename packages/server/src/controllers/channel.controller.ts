@@ -38,7 +38,7 @@ export class ChannelController {
       return;
     }
 
-    res.json({ success: true, data: result.value.data, pagination: result.value.pagination });
+    res.json({ success: true, data: result.value });
   }
 
   static async getById(req: Request, res: Response): Promise<void> {

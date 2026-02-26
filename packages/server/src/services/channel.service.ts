@@ -265,6 +265,8 @@ export class ChannelService {
         channelValues.initialState = input.properties.initialState;
         channelValues.messageStorageMode = input.properties.messageStorageMode;
         channelValues.encryptData = input.properties.encryptData;
+        channelValues.removeContentOnCompletion = input.properties.removeContentOnCompletion;
+        channelValues.removeAttachmentsOnCompletion = input.properties.removeAttachmentsOnCompletion;
       }
 
       // Transaction: insert channel + default scripts
@@ -327,6 +329,8 @@ export class ChannelService {
         if (input.properties.initialState !== undefined) updateValues['initialState'] = input.properties.initialState;
         if (input.properties.messageStorageMode !== undefined) updateValues['messageStorageMode'] = input.properties.messageStorageMode;
         if (input.properties.encryptData !== undefined) updateValues['encryptData'] = input.properties.encryptData;
+        if (input.properties.removeContentOnCompletion !== undefined) updateValues['removeContentOnCompletion'] = input.properties.removeContentOnCompletion;
+        if (input.properties.removeAttachmentsOnCompletion !== undefined) updateValues['removeAttachmentsOnCompletion'] = input.properties.removeAttachmentsOnCompletion;
       }
 
       // Check name uniqueness if name is changing

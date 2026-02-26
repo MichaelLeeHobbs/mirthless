@@ -146,7 +146,6 @@ export function ChannelEditorPage(): ReactNode {
               encryptData: false,
               removeContentOnCompletion: false,
               removeAttachmentsOnCompletion: false,
-              storeAttachments: true,
             },
             revision: channel!.revision,
           },
