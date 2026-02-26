@@ -10,6 +10,7 @@ import { ProtectedRoute } from './components/layout/ProtectedRoute.js';
 import { LoginPage } from './pages/LoginPage.js';
 import { DashboardPage } from './pages/DashboardPage.js';
 import { ChannelsPage } from './pages/ChannelsPage.js';
+import { ChannelEditorPage } from './pages/ChannelEditorPage.js';
 
 export function App(): ReactNode {
   const themeMode = useUiStore((state) => state.themeMode);
@@ -26,6 +27,8 @@ export function App(): ReactNode {
               <Route element={<AppLayout />}>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/channels" element={<ChannelsPage />} />
+                <Route path="/channels/new" element={<ChannelEditorPage />} />
+                <Route path="/channels/:id" element={<ChannelEditorPage />} />
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

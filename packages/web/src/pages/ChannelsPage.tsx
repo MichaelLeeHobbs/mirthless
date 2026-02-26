@@ -4,6 +4,7 @@
 // Lists all channels with pagination, search, and CRUD actions.
 
 import { useState, useMemo, type ReactNode, type ChangeEvent, type MouseEvent } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
@@ -180,7 +181,12 @@ export function ChannelsPage(): ReactNode {
                     />
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                    <Typography
+                      variant="body2"
+                      component={RouterLink}
+                      to={`/channels/${channel.id}`}
+                      sx={{ fontWeight: 500, color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                    >
                       {channel.name}
                     </Typography>
                     {channel.description ? (
