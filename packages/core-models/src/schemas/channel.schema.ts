@@ -64,3 +64,22 @@ export const createChannelSchema = z.object({
 });
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
+
+export const updateChannelSchema = createChannelSchema.partial().extend({
+  revision: z.number().int().positive(),
+});
+
+export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
+
+export const channelListQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(25),
+});
+
+export type ChannelListQuery = z.infer<typeof channelListQuerySchema>;
+
+export const patchChannelEnabledSchema = z.object({
+  enabled: z.boolean(),
+});
+
+export type PatchChannelEnabledInput = z.infer<typeof patchChannelEnabledSchema>;
