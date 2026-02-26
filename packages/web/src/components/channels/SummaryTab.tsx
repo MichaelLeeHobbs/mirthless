@@ -29,15 +29,6 @@ const SOURCE_CONNECTOR_TYPES = [
 
 const INITIAL_STATES = ['STARTED', 'STOPPED', 'PAUSED'] as const;
 
-const RESPONSE_MODES = [
-  'NONE',
-  'AUTO_BEFORE',
-  'AUTO_AFTER_TRANSFORMER',
-  'AUTO_AFTER_DESTINATIONS',
-  'POSTPROCESSOR',
-  'DESTINATION',
-] as const;
-
 interface SummaryTabProps {
   readonly control: Control<ChannelFormData>;
   readonly errors: FieldErrors<ChannelFormData>;
@@ -180,17 +171,6 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision }:
           )}
         />
 
-        <Controller
-          name="responseMode"
-          control={control}
-          render={({ field }) => (
-            <TextField {...field} label="Response Mode" select fullWidth sx={{ mb: 2 }}>
-              {RESPONSE_MODES.map((m) => (
-                <MenuItem key={m} value={m}>{m}</MenuItem>
-              ))}
-            </TextField>
-          )}
-        />
       </Grid>
     </Grid>
   );

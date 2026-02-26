@@ -3,7 +3,7 @@
 // ===========================================
 // Container for editing/creating channels with tabbed interface.
 
-import { useState, useEffect, type ReactNode, type SyntheticEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode, type SyntheticEvent } from 'react';
 import { useParams, useNavigate, useBlocker } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import Box from '@mui/material/Box';
@@ -25,6 +25,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
 import { useChannel, useCreateChannel, useUpdateChannel } from '../hooks/use-channels.js';
 import { SummaryTab } from '../components/channels/SummaryTab.js';
+import { SourceTab } from '../components/channels/SourceTab.js';
 import { PlaceholderTab } from '../components/channels/PlaceholderTab.js';
 
 // ----- Form Data Type -----
@@ -36,6 +37,7 @@ export interface ChannelFormData {
   inboundDataType: string;
   outboundDataType: string;
   sourceConnectorType: string;
+  sourceConnectorProperties: Record<string, unknown>;
   initialState: string;
   responseMode: string;
 }
@@ -47,6 +49,7 @@ const DEFAULT_VALUES: ChannelFormData = {
   inboundDataType: 'HL7V2',
   outboundDataType: 'HL7V2',
   sourceConnectorType: 'TCP_MLLP',
+  sourceConnectorProperties: {},
   initialState: 'STOPPED',
   responseMode: 'AUTO_AFTER_DESTINATIONS',
 };
@@ -87,11 +90,17 @@ export function ChannelEditorPage(): ReactNode {
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors, isDirty },
   } = useForm<ChannelFormData>({ defaultValues: DEFAULT_VALUES });
 
   const enabledValue = watch('enabled');
   const nameValue = watch('name');
+  const sourceConnectorType = watch('sourceConnectorType');
+  const sourceConnectorProperties = watch('sourceConnectorProperties');
+
+  // Track previous connector type to detect changes (not initial load)
+  const prevConnectorTypeRef = useRef(sourceConnectorType);
 
   // Load channel data into form when available
   useEffect(() => {
@@ -103,11 +112,21 @@ export function ChannelEditorPage(): ReactNode {
         inboundDataType: channel.inboundDataType,
         outboundDataType: channel.outboundDataType,
         sourceConnectorType: channel.sourceConnectorType,
+        sourceConnectorProperties: channel.sourceConnectorProperties,
         initialState: channel.initialState,
         responseMode: channel.responseMode,
       });
+      prevConnectorTypeRef.current = channel.sourceConnectorType;
     }
   }, [channel, isEditMode, reset]);
+
+  // Reset connector properties when connector type changes (user action, not initial load)
+  useEffect(() => {
+    if (sourceConnectorType !== prevConnectorTypeRef.current) {
+      prevConnectorTypeRef.current = sourceConnectorType;
+      setValue('sourceConnectorProperties', {}, { shouldDirty: true });
+    }
+  }, [sourceConnectorType, setValue]);
 
   // Navigation guard for unsaved changes
   const blocker = useBlocker(isDirty && !isSaving);
@@ -122,6 +141,10 @@ export function ChannelEditorPage(): ReactNode {
   const handleTabChange = (_event: SyntheticEvent, newValue: number): void => {
     setActiveTab(newValue);
   };
+
+  const handlePropertiesChange = useCallback((properties: Record<string, unknown>): void => {
+    setValue('sourceConnectorProperties', properties, { shouldDirty: true });
+  }, [setValue]);
 
   const onSubmit = async (data: ChannelFormData): Promise<void> => {
     setSaveError(null);
@@ -138,7 +161,7 @@ export function ChannelEditorPage(): ReactNode {
             inboundDataType: data.inboundDataType as 'HL7V2',
             outboundDataType: data.outboundDataType as 'HL7V2',
             sourceConnectorType: data.sourceConnectorType as 'TCP_MLLP',
-            sourceConnectorProperties: channel?.sourceConnectorProperties ?? {},
+            sourceConnectorProperties: data.sourceConnectorProperties,
             responseMode: data.responseMode as 'AUTO_AFTER_DESTINATIONS',
             properties: {
               initialState: data.initialState as 'STOPPED',
@@ -159,7 +182,7 @@ export function ChannelEditorPage(): ReactNode {
           inboundDataType: data.inboundDataType as 'HL7V2',
           outboundDataType: data.outboundDataType as 'HL7V2',
           sourceConnectorType: data.sourceConnectorType as 'TCP_MLLP',
-          sourceConnectorProperties: {},
+          sourceConnectorProperties: data.sourceConnectorProperties,
           responseMode: data.responseMode as 'AUTO_AFTER_DESTINATIONS',
         });
         navigate(`/channels/${created.id}`, { replace: true });
@@ -264,7 +287,13 @@ export function ChannelEditorPage(): ReactNode {
           />
         </TabPanel>
         <TabPanel value={activeTab} index={1}>
-          <PlaceholderTab label="Source" />
+          <SourceTab
+            control={control}
+            errors={errors}
+            sourceConnectorType={sourceConnectorType}
+            sourceConnectorProperties={sourceConnectorProperties}
+            onPropertiesChange={handlePropertiesChange}
+          />
         </TabPanel>
         <TabPanel value={activeTab} index={2}>
           <PlaceholderTab label="Destinations" />
