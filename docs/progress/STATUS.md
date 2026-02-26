@@ -1,17 +1,17 @@
 # Project Status
 
-> Last updated: 2026-02-25
+> Last updated: 2026-02-26
 
 ## Package Status
 
 | Package | Phase | What's Done | What's Next |
 |---------|-------|-------------|-------------|
-| `@mirthless/core-models` | Scaffold | Package structure, branded types, constants, Zod schemas | Tests, refine schemas as engine develops |
+| `@mirthless/core-models` | Scaffold | Package structure, branded types, constants, Zod schemas (incl. channel CRUD schemas) | Tests, refine schemas as engine develops |
 | `@mirthless/core-util` | Scaffold | Package structure, Result re-export, validation utils | Add utilities as needed (YAGNI) |
 | `@mirthless/engine` | Scaffold | Empty package shell | Channel runtime, message pipeline (Phase 2) |
 | `@mirthless/connectors` | Scaffold | Empty package shell, base interface | TCP/MLLP connector (Phase 3) |
-| `@mirthless/server` | Scaffold | Express app, config, middleware, DB schema, auth, seeds | Channel CRUD API, deployment API |
-| `@mirthless/web` | Scaffold | React+MUI shell, auth flow, login page, dashboard stub | Channel list page, channel editor |
+| `@mirthless/server` | API Phase 1 | Express app, config, middleware, DB schema, auth, seeds, **Channel CRUD API (6 endpoints, 18 tests)** | Channel deployment/lifecycle API |
+| `@mirthless/web` | UI Phase 1 | React+MUI shell, auth flow, login page, dashboard stub, **Channel list page + new channel dialog** | Channel editor page, dashboard stats |
 | `@mirthless/cli` | Scaffold | Empty package shell | CLI commands (Phase 5) |
 
 ## Infrastructure Status
@@ -34,7 +34,7 @@
 | `pnpm install` | PASS | 833 packages resolved |
 | `pnpm build` | PASS | All 7 packages compile (0 errors) |
 | `pnpm lint` | PASS | 0 warnings |
-| `pnpm test` | PASS | Framework runs, 0 test files (scaffolding) |
+| `pnpm test` | PASS | 18 tests passing (channel service) |
 | `docker:up` | PASS | PostgreSQL 17 running |
 | `db:generate` | PASS | 34 tables generated |
 | `db:migrate` | PASS | Migrations applied |

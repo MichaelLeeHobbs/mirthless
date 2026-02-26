@@ -139,6 +139,9 @@ export const api = {
   put: <T>(path: string, body: unknown, signal?: AbortSignal): Promise<ApiResponse<T>> =>
     apiFetch<T>(path, signal ? { method: 'PUT', body, signal } : { method: 'PUT', body }),
 
+  patch: <T>(path: string, body: unknown, signal?: AbortSignal): Promise<ApiResponse<T>> =>
+    apiFetch<T>(path, signal ? { method: 'PATCH', body, signal } : { method: 'PATCH', body }),
+
   delete: <T>(path: string, signal?: AbortSignal): Promise<ApiResponse<T>> =>
     apiFetch<T>(path, signal ? { method: 'DELETE', signal } : { method: 'DELETE' }),
 } as const;

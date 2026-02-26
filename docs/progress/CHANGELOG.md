@@ -37,3 +37,38 @@
 - Channel CRUD API endpoints
 - Channel list page in web UI
 - Engine message pipeline (Phase 2)
+
+## 2026-02-26 — Channel CRUD API + Channel List UI
+
+### What was done:
+- **Channel CRUD API** (6 endpoints):
+  - `GET /channels` — paginated list
+  - `POST /channels` — create with default scripts
+  - `GET /channels/:id` — full detail with scripts/destinations/tags
+  - `PUT /channels/:id` — update with optimistic locking (revision)
+  - `DELETE /channels/:id` — soft-delete
+  - `PATCH /channels/:id/enabled` — toggle enabled flag
+- **Server files created:**
+  - `channel.service.ts` — business logic (list, getById, create, update, delete, setEnabled)
+  - `channel.controller.ts` — HTTP adapter (error code → HTTP status mapping)
+  - `channel.routes.ts` — route definitions with auth/permission/validation middleware
+  - `channel.service.test.ts` — 18 unit tests covering all methods and error paths
+- **Server files modified:**
+  - Added `CONFLICT` error code to `service-error.ts`
+  - Added `updateChannelSchema`, `channelListQuerySchema`, `patchChannelEnabledSchema` to `channel.schema.ts`
+  - Registered `/channels` routes in `routes/index.ts`
+- **Channel List UI** (web package):
+  - `use-channels.ts` — TanStack Query hooks (useChannels, useChannel, useCreateChannel, useUpdateChannel, useDeleteChannel, useToggleChannelEnabled)
+  - `ChannelsPage.tsx` — MUI Table with pagination, search, enable/disable toggle, delete confirmation
+  - `NewChannelDialog.tsx` — modal form for creating channels (React Hook Form)
+  - Added `api.patch()` convenience method to API client
+  - Registered `/channels` route in App.tsx
+
+### Build notes:
+- Express 5 `req.params` returns `string | string[]` — cast to `string` after validation middleware
+- `CreateChannelInput` (Zod inferred type) requires `enabled` and `responseMode` even though they have Zod defaults — must be explicit in client-side calls
+
+### What's next:
+- Channel editor page (Summary + Source tabs)
+- Channel deployment/lifecycle API
+- Dashboard with channel statistics
