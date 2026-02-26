@@ -23,29 +23,29 @@
 
 ## 1. Authentication
 
-| #   | Scenario                     | Steps                                                    | Expected                                     | Result  | Notes                       |
-|-----|------------------------------|----------------------------------------------------------|----------------------------------------------|---------|-----------------------------|
-| 1.1 | Login with valid credentials | Go to `/login`, enter `admin` / `Admin123!`, click Login | Redirected to dashboard, no errors           | pass    |                             |
-| 1.2 | Login with invalid password  | Enter `admin` / `wrongpassword`, click Login             | Error message displayed, stays on login page | partial | no Error message displayed  |
-| 1.3 | Login with empty fields      | Click Login with empty username/password                 | Validation errors shown on required fields   | pass    |                             |
-| 1.4 | Session persists on refresh  | After login, refresh the browser (F5)                    | Still logged in, not redirected to login     | pass    |                             |
-| 1.5 | Protected route redirect     | While logged out, navigate to `/channels`                | Redirected to `/login`                       | pass    |                             |
+| #   | Scenario                     | Steps                                                    | Expected                                     | Result | Notes |
+|-----|------------------------------|----------------------------------------------------------|----------------------------------------------|--------|-------|
+| 1.1 | Login with valid credentials | Go to `/login`, enter `admin` / `Admin123!`, click Login | Redirected to dashboard, no errors           | pass   |       |
+| 1.2 | Login with invalid password  | Enter `admin` / `wrongpassword`, click Login             | Error message displayed, stays on login page | pass   |       |
+| 1.3 | Login with empty fields      | Click Login with empty username/password                 | Validation errors shown on required fields   | pass   |       |
+| 1.4 | Session persists on refresh  | After login, refresh the browser (F5)                    | Still logged in, not redirected to login     | pass   |       |
+| 1.5 | Protected route redirect     | While logged out, navigate to `/channels`                | Redirected to `/login`                       | pass   |       |
 
 ---
 
 ## 2. Channel List Page
 
-| #   | Scenario                    | Steps                                            | Expected                                                           | Result | Notes                            |
-|-----|-----------------------------|--------------------------------------------------|--------------------------------------------------------------------|--------|----------------------------------|
-| 2.1 | List page loads             | Navigate to `/channels`                          | Page loads without errors, table header visible                    | pass   |                                  |
-| 2.2 | Empty state                 | With no channels in DB                           | Empty state message or empty table displayed                       | pass   |                                  |
-| 2.3 | Channels displayed          | Create a channel first, then view list           | Channel appears in table with name, enabled status, connector type | pass   |                                  |
-| 2.4 | New Channel dialog opens    | Click "New Channel" button                       | Dialog appears with name field and Create button                   | pass   |                                  |
-| 2.5 | Create channel from dialog  | Enter a name in the dialog, click Create         | Dialog closes, navigated to channel editor for the new channel     | failed | channel is created - Error Log 1 |
-| 2.6 | Create channel — empty name | Open dialog, leave name empty, click Create      | Validation error prevents creation                                 | pass   |                                  |
-| 2.7 | Toggle enabled/disabled     | Click the enable/disable toggle on a channel row | Channel enabled state toggles, visual indicator updates            | pass   |                                  |
-| 2.8 | Delete channel              | Click delete on a channel, confirm in dialog     | Channel removed from list                                          | failed | channel is deleted - Error Log 2 |
-| 2.9 | Click channel row to edit   | Click on a channel name/row                      | Navigated to `/channels/:id` editor page                           | failed | Error Log 3                      |
+| #   | Scenario                    | Steps                                            | Expected                                                           | Result | Notes |
+|-----|-----------------------------|--------------------------------------------------|--------------------------------------------------------------------|--------|-------|
+| 2.1 | List page loads             | Navigate to `/channels`                          | Page loads without errors, table header visible                    | pass   |       |
+| 2.2 | Empty state                 | With no channels in DB                           | Empty state message or empty table displayed                       | pass   |       |
+| 2.3 | Channels displayed          | Create a channel first, then view list           | Channel appears in table with name, enabled status, connector type | pass   |       |
+| 2.4 | New Channel dialog opens    | Click "New Channel" button                       | Dialog appears with name field and Create button                   | pass   |       |
+| 2.5 | Create channel from dialog  | Enter a name in the dialog, click Create         | Dialog closes, navigated to channel editor for the new channel     | pass   |       |
+| 2.6 | Create channel — empty name | Open dialog, leave name empty, click Create      | Validation error prevents creation                                 | pass   |       |
+| 2.7 | Toggle enabled/disabled     | Click the enable/disable toggle on a channel row | Channel enabled state toggles, visual indicator updates            | pass   |       |
+| 2.8 | Delete channel              | Click delete on a channel, confirm in dialog     | Channel removed from list                                          | pass   |       |
+| 2.9 | Click channel row to edit   | Click on a channel name/row                      | Navigated to `/channels/:id` editor page                           | pass   |       |
 
 ---
 
@@ -53,35 +53,35 @@
 
 | #    | Scenario                        | Steps                                                            | Expected                                                             | Result | Notes |
 |------|---------------------------------|------------------------------------------------------------------|----------------------------------------------------------------------|--------|-------|
-| 3.1  | New channel editor loads        | Navigate via New Channel dialog                                  | Editor loads with "New Channel" title, empty form, Create button     |        |       |
-| 3.2  | Edit channel loads              | Click existing channel from list                                 | Editor loads with channel name as title, form populated, Save button |        |       |
-| 3.3  | Back button navigates to list   | Click back arrow in editor header                                | Navigated to `/channels` list                                        |        |       |
-| 3.4  | Save button disabled when clean | Open existing channel (no changes)                               | Save button is disabled                                              |        |       |
-| 3.5  | Save button enabled on change   | Modify any field                                                 | Save button becomes enabled                                          |        |       |
-| 3.6  | Save success message            | Edit a field and click Save                                      | Green "Channel saved successfully" alert appears, clears after 3s    |        |       |
-| 3.7  | Unsaved changes — stay          | Modify a field, click back arrow, click "Stay" in dialog         | Dialog closes, still on editor, changes preserved                    |        |       |
-| 3.8  | Unsaved changes — leave         | Modify a field, click back arrow, click "Leave" in dialog        | Navigated to list, changes discarded                                 |        |       |
-| 3.9  | Enabled/disabled badge          | Toggle enabled on Summary tab                                    | Badge in header updates (Enabled/Disabled with correct color)        |        |       |
-| 3.10 | Tab navigation                  | Click each tab: Summary, Source, Destinations, Scripts, Advanced | Correct tab content displays for each                                |        |       |
+| 3.1  | New channel editor loads        | Navigate via New Channel dialog                                  | Editor loads with "New Channel" title, empty form, Create button     | pass   |       |
+| 3.2  | Edit channel loads              | Click existing channel from list                                 | Editor loads with channel name as title, form populated, Save button | pass   |       |
+| 3.3  | Back button navigates to list   | Click back arrow in editor header                                | Navigated to `/channels` list                                        | pass   |       |
+| 3.4  | Save button disabled when clean | Open existing channel (no changes)                               | Save button is disabled                                              | pass   |       |
+| 3.5  | Save button enabled on change   | Modify any field                                                 | Save button becomes enabled                                          | pass   |       |
+| 3.6  | Save success message            | Edit a field and click Save                                      | Green "Channel saved successfully" alert appears, clears after 3s    | pass   |       |
+| 3.7  | Unsaved changes — stay          | Modify a field, click back arrow, click "Stay" in dialog         | Dialog closes, still on editor, changes preserved                    | pass   |       |
+| 3.8  | Unsaved changes — leave         | Modify a field, click back arrow, click "Leave" in dialog        | Navigated to list, changes discarded                                 | pass   |       |
+| 3.9  | Enabled/disabled badge          | Toggle enabled on Summary tab                                    | Badge in header updates (Enabled/Disabled with correct color)        | pass   |       |
+| 3.10 | Tab navigation                  | Click each tab: Summary, Source, Destinations, Scripts, Advanced | Correct tab content displays for each                                | pass   |       |
 
 ---
 
 ## 4. Channel Editor — Summary Tab
 
-| #    | Scenario                         | Steps                                                 | Expected                                                                | Result | Notes |
-|------|----------------------------------|-------------------------------------------------------|-------------------------------------------------------------------------|--------|-------|
-| 4.1  | Name field required              | Clear the name field, click Save                      | Validation error "Name is required" shown                               |        |       |
-| 4.2  | Name max length                  | Enter 256+ characters in name field                   | Validation error "Max 255 characters" shown                             |        |       |
-| 4.3  | Description field                | Enter multiline description, save, reload             | Description persists correctly                                          |        |       |
-| 4.4  | Channel ID displayed (edit mode) | Open existing channel                                 | Channel ID (UUID) shown in read-only field                              |        |       |
-| 4.5  | Copy channel ID                  | Click copy icon next to Channel ID                    | UUID copied to clipboard (paste to verify)                              |        |       |
-| 4.6  | Revision displayed (edit mode)   | Open existing channel                                 | Revision number shown in read-only field                                |        |       |
-| 4.7  | Channel ID/Revision hidden (new) | Open new channel editor                               | Channel ID and Revision fields not visible                              |        |       |
-| 4.8  | Inbound data type dropdown       | Click Inbound Data Type                               | Shows: RAW, HL7V2, HL7V3, XML, JSON, DICOM, DELIMITED, FHIR             |        |       |
-| 4.9  | Outbound data type dropdown      | Click Outbound Data Type                              | Same options as inbound                                                 |        |       |
-| 4.10 | Source connector type dropdown   | Click Source Connector Type                           | Shows: TCP_MLLP, HTTP, FILE, DATABASE, JAVASCRIPT, CHANNEL, DICOM, FHIR |        |       |
-| 4.11 | Initial state dropdown           | Click Initial State on Deploy                         | Shows: STARTED, STOPPED, PAUSED                                         |        |       |
-| 4.12 | Data types persist               | Change inbound to JSON, outbound to XML, save, reload | Both values persist correctly                                           |        |       |
+| #    | Scenario                         | Steps                                                 | Expected                                                                | Result | Notes                                                                                     |
+|------|----------------------------------|-------------------------------------------------------|-------------------------------------------------------------------------|--------|-------------------------------------------------------------------------------------------|
+| 4.1  | Name field required              | Clear the name field, click Save                      | Validation error "Name is required" shown                               | pass   |                                                                                           |
+| 4.2  | Name max length                  | Enter 256+ characters in name field                   | Validation error "Max 255 characters" shown                             | pass   | Extremely long name breaks page formatting. The issues is the name at the top of the view |
+| 4.3  | Description field                | Enter multiline description, save, reload             | Description persists correctly                                          | pass   | Extremely long breaks the Channels summary screen                                         |
+| 4.4  | Channel ID displayed (edit mode) | Open existing channel                                 | Channel ID (UUID) shown in read-only field                              | pass   |                                                                                           |
+| 4.5  | Copy channel ID                  | Click copy icon next to Channel ID                    | UUID copied to clipboard (paste to verify)                              | pass   |                                                                                           |
+| 4.6  | Revision displayed (edit mode)   | Open existing channel                                 | Revision number shown in read-only field                                | pass   |                                                                                           |
+| 4.7  | Channel ID/Revision hidden (new) | Open new channel editor                               | Channel ID and Revision fields not visible                              | pass   |                                                                                           |
+| 4.8  | Inbound data type dropdown       | Click Inbound Data Type                               | Shows: RAW, HL7V2, HL7V3, XML, JSON, DICOM, DELIMITED, FHIR             | pass   |                                                                                           |
+| 4.9  | Outbound data type dropdown      | Click Outbound Data Type                              | Same options as inbound                                                 | pass   |                                                                                           |
+| 4.10 | Source connector type dropdown   | Click Source Connector Type                           | Shows: TCP_MLLP, HTTP, FILE, DATABASE, JAVASCRIPT, CHANNEL, DICOM, FHIR | pass   |                                                                                           |
+| 4.11 | Initial state dropdown           | Click Initial State on Deploy                         | Shows: STARTED, STOPPED, PAUSED                                         | pass   |                                                                                           |
+| 4.12 | Data types persist               | Change inbound to JSON, outbound to XML, save, reload | Both values persist correctly                                           | pass   |                                                                                           |
 
 ---
 

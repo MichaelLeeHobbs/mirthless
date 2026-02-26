@@ -117,6 +117,11 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
     }
   }
 
+  // 204 No Content has no body — return a synthetic success
+  if (response.status === 204) {
+    return { success: true, data: undefined as T };
+  }
+
   try {
     const json: unknown = await response.json();
     return json as ApiResponse<T>;

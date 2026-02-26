@@ -29,28 +29,28 @@ export class AuthController {
         if (details?.['lockedNow']) {
           res.status(429).json({
             success: false,
-            error: 'Too many failed attempts. Account has been temporarily locked.',
+            error: { code: 'ACCOUNT_LOCKED', message: 'Too many failed attempts. Account has been temporarily locked.' },
           });
         } else {
           res.status(429).json({
             success: false,
-            error: `Account is locked. Try again in ${String(details?.['minutesRemaining'])} minute(s).`,
+            error: { code: 'ACCOUNT_LOCKED', message: `Account is locked. Try again in ${String(details?.['minutesRemaining'])} minute(s).` },
           });
         }
         return;
       }
 
       if (isServiceError(result.error, 'INVALID_CREDENTIALS')) {
-        res.status(401).json({ success: false, error: 'Invalid username or password' });
+        res.status(401).json({ success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Invalid username or password' } });
         return;
       }
 
       if (isServiceError(result.error, 'ACCOUNT_DEACTIVATED')) {
-        res.status(403).json({ success: false, error: 'Account is deactivated' });
+        res.status(403).json({ success: false, error: { code: 'ACCOUNT_DEACTIVATED', message: 'Account is deactivated' } });
         return;
       }
 
-      res.status(401).json({ success: false, error: 'Invalid username or password' });
+      res.status(401).json({ success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Invalid username or password' } });
       return;
     }
 
@@ -70,7 +70,7 @@ export class AuthController {
     const refreshToken = getRefreshTokenFromCookie(req.cookies as Record<string, string | undefined>);
 
     if (!refreshToken) {
-      res.status(401).json({ success: false, error: 'No refresh token provided' });
+      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'No refresh token provided' } });
       return;
     }
 
@@ -78,7 +78,7 @@ export class AuthController {
 
     if (!result.ok) {
       clearRefreshTokenCookie(res);
-      res.status(401).json({ success: false, error: 'Invalid refresh token' });
+      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid refresh token' } });
       return;
     }
 

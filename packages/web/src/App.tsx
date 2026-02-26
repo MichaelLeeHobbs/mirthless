@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { QueryProvider } from './providers/QueryProvider.js';
@@ -12,6 +12,31 @@ import { DashboardPage } from './pages/DashboardPage.js';
 import { ChannelsPage } from './pages/ChannelsPage.js';
 import { ChannelEditorPage } from './pages/ChannelEditorPage.js';
 
+const router = createBrowserRouter([
+  {
+    path: '/login',
+    element: <LoginPage />,
+  },
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        element: <AppLayout />,
+        children: [
+          { index: true, element: <DashboardPage /> },
+          { path: 'channels', element: <ChannelsPage /> },
+          { path: 'channels/new', element: <ChannelEditorPage /> },
+          { path: 'channels/:id', element: <ChannelEditorPage /> },
+        ],
+      },
+    ],
+  },
+  {
+    path: '*',
+    element: <Navigate to="/" replace />,
+  },
+]);
+
 export function App(): ReactNode {
   const themeMode = useUiStore((state) => state.themeMode);
   const theme = themeMode === 'dark' ? darkTheme : lightTheme;
@@ -20,20 +45,7 @@ export function App(): ReactNode {
     <QueryProvider>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route element={<ProtectedRoute />}>
-              <Route element={<AppLayout />}>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/channels" element={<ChannelsPage />} />
-                <Route path="/channels/new" element={<ChannelEditorPage />} />
-                <Route path="/channels/:id" element={<ChannelEditorPage />} />
-              </Route>
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
+        <RouterProvider router={router} />
       </ThemeProvider>
     </QueryProvider>
   );
