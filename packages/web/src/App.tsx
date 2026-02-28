@@ -12,6 +12,7 @@ import { DashboardPage } from './pages/DashboardPage.js';
 import { ChannelsPage } from './pages/ChannelsPage.js';
 import { ChannelEditorPage } from './pages/ChannelEditorPage.js';
 import { MessageBrowserPage } from './pages/MessageBrowserPage.js';
+import { UsersPage } from './pages/UsersPage.js';
 
 const router = createBrowserRouter([
   {
@@ -29,6 +30,7 @@ const router = createBrowserRouter([
           { path: 'channels/new', element: <ChannelEditorPage /> },
           { path: 'channels/:id', element: <ChannelEditorPage /> },
           { path: 'channels/:id/messages', element: <MessageBrowserPage /> },
+          { path: 'users', element: <UsersPage /> },
         ],
       },
     ],

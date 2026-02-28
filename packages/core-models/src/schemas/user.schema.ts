@@ -28,6 +28,15 @@ export const updateUserSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+export const changePasswordSchema = z.object({
+  newPassword: passwordSchema,
+});
+
+export const userIdParamSchema = z.object({
+  id: z.string().uuid(),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

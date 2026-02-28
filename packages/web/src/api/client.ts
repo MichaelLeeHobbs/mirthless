@@ -133,6 +133,27 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
   }
 }
 
+// ----- User API -----
+
+export interface UserSummary {
+  readonly id: string;
+  readonly username: string;
+  readonly email: string;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+  readonly role: string;
+  readonly enabled: boolean;
+  readonly lastLoginAt: string | null;
+  readonly createdAt: string;
+}
+
+export interface UserDetail extends UserSummary {
+  readonly description: string | null;
+  readonly failedLoginAttempts: number;
+  readonly lockedUntil: string | null;
+  readonly updatedAt: string;
+}
+
 /** Convenience methods for common HTTP verbs */
 export const api = {
   get: <T>(path: string, signal?: AbortSignal): Promise<ApiResponse<T>> =>
