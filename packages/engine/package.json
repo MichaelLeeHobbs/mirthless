@@ -21,9 +21,13 @@
   },
   "dependencies": {
     "@mirthless/core-models": "workspace:*",
-    "@mirthless/core-util": "workspace:*"
+    "@mirthless/core-util": "workspace:*",
+    "esbuild": "^0.27.3",
+    "isolated-vm": "^6.0.2"
   },
   "devDependencies": {
+    "@mirthless/connectors": "workspace:^",
+    "@types/node": "22.10.2",
     "@vitest/coverage-v8": "2.1.8",
     "rimraf": "6.0.1",
     "typescript": "5.7.2",

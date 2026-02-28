@@ -17,8 +17,10 @@
     "db:seed": "tsx src/db/seeds/run-seed.ts"
   },
   "dependencies": {
+    "@mirthless/connectors": "workspace:^",
     "@mirthless/core-models": "workspace:*",
     "@mirthless/core-util": "workspace:*",
+    "@mirthless/engine": "workspace:^",
     "bcryptjs": "2.4.3",
     "compression": "1.8.1",
     "cookie-parser": "1.4.7",

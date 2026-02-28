@@ -1,0 +1,118 @@
+// ===========================================
+// Sandbox Executor
+// ===========================================
+// Interface for safe JavaScript execution and a Node.js vm-based
+// implementation. The interface allows swapping to isolated-vm
+// in production without changing consuming code.
+
+import * as vm from 'node:vm';
+import type { Result } from '@mirthless/core-util';
+import { tryCatch } from '@mirthless/core-util';
+import type { SandboxContext, LogEntry } from './sandbox-context.js';
+
+// ----- Types -----
+
+/** A compiled script ready for execution. */
+export interface CompiledScript {
+  readonly code: string;
+  readonly sourceMap?: string;
+}
+
+/** Options for script execution. */
+export interface ExecutionOptions {
+  readonly timeout: number;
+  readonly memoryLimit: number;
+  readonly signal: AbortSignal;
+}
+
+/** Result of executing a script in the sandbox. */
+export interface ExecutionResult {
+  readonly returnValue: unknown;
+  readonly mapUpdates: {
+    readonly channelMap: Readonly<Record<string, unknown>>;
+    readonly connectorMap: Readonly<Record<string, unknown>>;
+  };
+  readonly logs: readonly LogEntry[];
+}
+
+/** Default execution options. */
+export const DEFAULT_EXECUTION_OPTIONS: ExecutionOptions = {
+  timeout: 30_000,
+  memoryLimit: 128 * 1024 * 1024,
+  signal: AbortSignal.timeout(30_000),
+} as const;
+
+// ----- Interface -----
+
+/** Sandbox executor interface. Implementations provide script isolation. */
+export interface SandboxExecutor {
+  /** Execute a compiled script with the given context. */
+  execute(
+    script: CompiledScript,
+    context: SandboxContext,
+    options: ExecutionOptions,
+  ): Promise<Result<ExecutionResult>>;
+
+  /** Release all resources held by this executor. */
+  dispose(): void;
+}
+
+// ----- VM Implementation -----
+
+/**
+ * Node.js vm-based sandbox executor.
+ * Uses vm.runInNewContext for script isolation.
+ * NOT suitable for untrusted code in production — use isolated-vm there.
+ * Suitable for development and testing.
+ */
+export class VmSandboxExecutor implements SandboxExecutor {
+  async execute(
+    script: CompiledScript,
+    context: SandboxContext,
+    options: ExecutionOptions,
+  ): Promise<Result<ExecutionResult>> {
+    return tryCatch(async () => {
+      if (options.signal.aborted) {
+        throw new Error('Execution aborted before start');
+      }
+
+      const logs: LogEntry[] = [];
+      const channelMap = { ...context.channelMap };
+      const connectorMap = { ...context.connectorMap };
+
+      const logger = {
+        info: (message: string): void => { logs.push({ level: 'INFO', message, timestamp: new Date() }); },
+        warn: (message: string): void => { logs.push({ level: 'WARN', message, timestamp: new Date() }); },
+        error: (message: string): void => { logs.push({ level: 'ERROR', message, timestamp: new Date() }); },
+        debug: (message: string): void => { logs.push({ level: 'DEBUG', message, timestamp: new Date() }); },
+      };
+
+      const sandbox: Record<string, unknown> = {
+        msg: context.msg,
+        tmp: context.tmp,
+        rawData: context.rawData,
+        sourceMap: { ...context.sourceMap },
+        channelMap,
+        connectorMap,
+        responseMap: { ...context.responseMap },
+        logger,
+        __result: undefined,
+      };
+
+      const wrappedCode = `__result = (function() {\n${script.code}\n})();`;
+
+      vm.createContext(sandbox);
+      vm.runInContext(wrappedCode, sandbox, { timeout: options.timeout });
+
+      return {
+        returnValue: sandbox['__result'],
+        mapUpdates: { channelMap, connectorMap },
+        logs,
+      };
+    });
+  }
+
+  dispose(): void {
+    // No resources to release for vm-based executor
+  }
+}
