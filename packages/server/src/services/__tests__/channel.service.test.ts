@@ -17,17 +17,24 @@ function resetSelectState(): void {
   selectResponses = [];
 }
 
-function pushResponse(value: unknown, opts?: { chainable?: boolean }): void {
+function pushResponse(value: unknown, opts?: { chainable?: boolean; orderable?: boolean }): void {
   const chainable = opts?.chainable ?? false;
+  const orderable = opts?.orderable ?? false;
   selectResponses.push(() => {
     if (chainable) {
-      // Return value that also supports .orderBy() chain
+      // Return value that also supports .orderBy() chain (for list pagination)
       return Object.assign(Promise.resolve(value), {
         orderBy: () => ({
           limit: () => ({
             offset: vi.fn().mockResolvedValue(value),
           }),
         }),
+      });
+    }
+    if (orderable) {
+      // Return value that supports .orderBy() chain (for destinations)
+      return Object.assign(Promise.resolve(value), {
+        orderBy: vi.fn().mockResolvedValue(value),
       });
     }
     return value;
@@ -58,11 +65,17 @@ const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
 
 const mockTransaction = vi.fn();
 
+const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
+const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
+
+const mockInsertValues = vi.fn().mockResolvedValue(undefined);
+const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
+
 const mockDb = {
   select: mockSelect,
-  insert: vi.fn(),
+  insert: mockInsert,
   update: mockUpdate,
-  delete: vi.fn(),
+  delete: mockDelete,
   transaction: mockTransaction,
 };
 
@@ -77,6 +90,7 @@ vi.mock('drizzle-orm', () => ({
   isNull: vi.fn((_col: unknown) => ({ type: 'isNull' })),
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   count: vi.fn(() => 'count_agg'),
+  asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
 }));
 
 // Must import after mocks
@@ -140,12 +154,15 @@ const CREATE_INPUT = {
 /**
  * Set up mocks for getById flow: findChannel + 4 parallel relation queries.
  */
-function setupGetByIdMocks(channel: Record<string, unknown>): void {
-  pushResponse([channel]);           // findChannel
-  pushResponse(DEFAULT_SCRIPTS);     // scripts
-  pushResponse([]);                  // destinations
-  pushResponse([]);                  // metadataColumns
-  pushResponse([]);                  // tags (via innerJoin)
+function setupGetByIdMocks(
+  channel: Record<string, unknown>,
+  relations?: { destinations?: unknown[]; metadataColumns?: unknown[] },
+): void {
+  pushResponse([channel]);                                                    // findChannel
+  pushResponse(DEFAULT_SCRIPTS);                                              // scripts
+  pushResponse(relations?.destinations ?? [], { orderable: true });           // destinations (has .orderBy)
+  pushResponse(relations?.metadataColumns ?? []);                             // metadataColumns
+  pushResponse([]);                                                           // tags (via innerJoin)
 }
 
 // ----- Tests -----
@@ -155,6 +172,10 @@ beforeEach(() => {
   resetSelectState();
   mockSet.mockReturnValue({ where: mockUpdateWhere });
   mockUpdateWhere.mockResolvedValue(undefined);
+  mockDeleteWhere.mockResolvedValue(undefined);
+  mockDelete.mockReturnValue({ where: mockDeleteWhere });
+  mockInsertValues.mockResolvedValue(undefined);
+  mockInsert.mockReturnValue({ values: mockInsertValues });
 });
 
 describe('ChannelService', () => {
@@ -260,10 +281,10 @@ describe('ChannelService', () => {
       // 1. Uniqueness check → no duplicate
       pushResponse([]);
       // After transaction, fetchChannelRelations is called directly (no findChannel)
-      pushResponse(DEFAULT_SCRIPTS);  // scripts
-      pushResponse([]);               // destinations
-      pushResponse([]);               // metadataColumns
-      pushResponse([]);               // tags
+      pushResponse(DEFAULT_SCRIPTS);                     // scripts
+      pushResponse([], { orderable: true });             // destinations (has .orderBy)
+      pushResponse([]);                                  // metadataColumns
+      pushResponse([]);                                  // tags
 
       // Transaction mock
       mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -439,6 +460,187 @@ describe('ChannelService', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+    });
+  });
+
+  // ========== DESTINATIONS SYNC ==========
+  describe('update — destinations sync', () => {
+    const DEST_ROWS = [
+      {
+        id: 'd1',
+        metaDataId: 1,
+        name: 'Dest 1',
+        enabled: true,
+        connectorType: 'TCP_MLLP',
+        properties: { host: 'lab', port: 6661 },
+        queueMode: 'NEVER',
+        retryCount: 0,
+        retryIntervalMs: 10000,
+        rotateQueue: false,
+        queueThreadCount: 1,
+        waitForPrevious: false,
+      },
+    ];
+
+    it('syncs destinations via delete-and-reinsert on update', async () => {
+      const channel = makeChannel();
+      const updatedChannel = makeChannel({ revision: 2 });
+
+      // 1. findChannel
+      pushResponse([channel]);
+      // 2. After db.update + delete + insert, findChannel + relations
+      setupGetByIdMocks(updatedChannel, { destinations: DEST_ROWS });
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        destinations: [
+          {
+            name: 'Dest 1',
+            enabled: true,
+            connectorType: 'TCP_MLLP' as const,
+            properties: { host: 'lab', port: 6661 },
+            queueMode: 'NEVER' as const,
+            retryCount: 0,
+            retryIntervalMs: 10000,
+            rotateQueue: false,
+            queueThreadCount: 1,
+            waitForPrevious: false,
+          },
+        ],
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.destinations).toHaveLength(1);
+      expect(result.value.destinations[0]!.name).toBe('Dest 1');
+      // Verify delete was called (for destination sync)
+      expect(mockDelete).toHaveBeenCalled();
+      // Verify insert was called (for new destinations)
+      expect(mockInsert).toHaveBeenCalled();
+    });
+
+    it('removes all destinations when empty array provided', async () => {
+      const channel = makeChannel();
+      const updatedChannel = makeChannel({ revision: 2 });
+
+      pushResponse([channel]);
+      setupGetByIdMocks(updatedChannel);
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        destinations: [],
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.destinations).toHaveLength(0);
+      expect(mockDelete).toHaveBeenCalled();
+    });
+  });
+
+  // ========== PRUNING FIELDS ==========
+  describe('getById — pruning fields', () => {
+    it('returns pruning fields in channel detail', async () => {
+      const channel = makeChannel({
+        pruningEnabled: true,
+        pruningMaxAgeDays: 30,
+        pruningArchiveEnabled: true,
+      });
+      setupGetByIdMocks(channel);
+
+      const result = await ChannelService.getById(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.pruningEnabled).toBe(true);
+      expect(result.value.pruningMaxAgeDays).toBe(30);
+      expect(result.value.pruningArchiveEnabled).toBe(true);
+    });
+
+    it('returns removeContent/removeAttachments fields', async () => {
+      const channel = makeChannel({
+        removeContentOnCompletion: true,
+        removeAttachmentsOnCompletion: true,
+      });
+      setupGetByIdMocks(channel);
+
+      const result = await ChannelService.getById(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.removeContentOnCompletion).toBe(true);
+      expect(result.value.removeAttachmentsOnCompletion).toBe(true);
+    });
+  });
+
+  // ========== CREATE WITH DESTINATIONS ==========
+  describe('create — with destinations', () => {
+    it('creates channel with destinations', async () => {
+      const channel = makeChannel();
+      const destRows = [
+        {
+          id: 'd1',
+          metaDataId: 1,
+          name: 'Dest 1',
+          enabled: true,
+          connectorType: 'TCP_MLLP',
+          properties: { host: 'lab', port: 6661 },
+          queueMode: 'NEVER',
+          retryCount: 0,
+          retryIntervalMs: 10000,
+          rotateQueue: false,
+          queueThreadCount: 1,
+          waitForPrevious: false,
+        },
+      ];
+
+      pushResponse([]);  // uniqueness check
+      // fetchChannelRelations after create
+      pushResponse(DEFAULT_SCRIPTS);
+      pushResponse(destRows, { orderable: true });
+      pushResponse([]);
+      pushResponse([]);
+
+      mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        let insertCallCount = 0;
+        const tx = {
+          insert: vi.fn().mockImplementation(() => {
+            insertCallCount++;
+            if (insertCallCount === 1) {
+              return {
+                values: vi.fn().mockReturnValue({
+                  returning: vi.fn().mockResolvedValue([channel]),
+                }),
+              };
+            }
+            return { values: vi.fn().mockResolvedValue(undefined) };
+          }),
+        };
+        return fn(tx);
+      });
+
+      const result = await ChannelService.create({
+        ...CREATE_INPUT,
+        destinations: [
+          {
+            name: 'Dest 1',
+            enabled: true,
+            connectorType: 'TCP_MLLP' as const,
+            properties: { host: 'lab', port: 6661 },
+            queueMode: 'NEVER' as const,
+            retryCount: 0,
+            retryIntervalMs: 10000,
+            rotateQueue: false,
+            queueThreadCount: 1,
+            waitForPrevious: false,
+          },
+        ],
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.destinations).toHaveLength(1);
+      expect(result.value.destinations[0]!.name).toBe('Dest 1');
     });
   });
 });

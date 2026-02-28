@@ -10,6 +10,8 @@ import {
   channelListQuerySchema,
   patchChannelEnabledSchema,
   channelPropertiesSchema,
+  destinationInputSchema,
+  metadataColumnInputSchema,
 } from '../channel.schema.js';
 
 describe('createChannelSchema', () => {
@@ -357,6 +359,9 @@ describe('channelPropertiesSchema', () => {
     expect(result.data.encryptData).toBe(false);
     expect(result.data.removeContentOnCompletion).toBe(false);
     expect(result.data.removeAttachmentsOnCompletion).toBe(false);
+    expect(result.data.pruningEnabled).toBe(false);
+    expect(result.data.pruningMaxAgeDays).toBeNull();
+    expect(result.data.pruningArchiveEnabled).toBe(false);
   });
 
   it('accepts all valid initial states', () => {
@@ -380,5 +385,254 @@ describe('channelPropertiesSchema', () => {
       const result = channelPropertiesSchema.safeParse({ messageStorageMode: mode });
       expect(result.success, `Expected ${mode} to be valid`).toBe(true);
     }
+  });
+
+  it('accepts pruning fields', () => {
+    const result = channelPropertiesSchema.safeParse({
+      pruningEnabled: true,
+      pruningMaxAgeDays: 30,
+      pruningArchiveEnabled: true,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.pruningEnabled).toBe(true);
+    expect(result.data.pruningMaxAgeDays).toBe(30);
+    expect(result.data.pruningArchiveEnabled).toBe(true);
+  });
+
+  it('rejects non-positive pruningMaxAgeDays', () => {
+    const result = channelPropertiesSchema.safeParse({ pruningMaxAgeDays: 0 });
+    expect(result.success).toBe(false);
+
+    const result2 = channelPropertiesSchema.safeParse({ pruningMaxAgeDays: -5 });
+    expect(result2.success).toBe(false);
+  });
+
+  it('accepts null pruningMaxAgeDays', () => {
+    const result = channelPropertiesSchema.safeParse({ pruningMaxAgeDays: null });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.pruningMaxAgeDays).toBeNull();
+  });
+});
+
+describe('destinationInputSchema', () => {
+  const VALID_DESTINATION = {
+    name: 'Send to Lab',
+    connectorType: 'TCP_MLLP',
+    properties: { host: 'lab.example.com', port: 6661 },
+  };
+
+  it('accepts valid destination with defaults', () => {
+    const result = destinationInputSchema.safeParse(VALID_DESTINATION);
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.name).toBe('Send to Lab');
+    expect(result.data.enabled).toBe(true);
+    expect(result.data.queueMode).toBe('NEVER');
+    expect(result.data.retryCount).toBe(0);
+    expect(result.data.retryIntervalMs).toBe(10000);
+    expect(result.data.rotateQueue).toBe(false);
+    expect(result.data.queueThreadCount).toBe(1);
+    expect(result.data.waitForPrevious).toBe(false);
+  });
+
+  it('accepts full destination with all fields', () => {
+    const result = destinationInputSchema.safeParse({
+      ...VALID_DESTINATION,
+      enabled: false,
+      queueMode: 'ON_FAILURE',
+      retryCount: 3,
+      retryIntervalMs: 5000,
+      rotateQueue: true,
+      queueThreadCount: 2,
+      waitForPrevious: true,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.enabled).toBe(false);
+    expect(result.data.queueMode).toBe('ON_FAILURE');
+    expect(result.data.retryCount).toBe(3);
+  });
+
+  it('rejects missing name', () => {
+    const result = destinationInputSchema.safeParse({
+      connectorType: 'TCP_MLLP',
+      properties: {},
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects empty name', () => {
+    const result = destinationInputSchema.safeParse({
+      name: '',
+      connectorType: 'TCP_MLLP',
+      properties: {},
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid connector type', () => {
+    const result = destinationInputSchema.safeParse({
+      name: 'Bad',
+      connectorType: 'INVALID',
+      properties: {},
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts all valid connector types', () => {
+    const types = ['TCP_MLLP', 'HTTP', 'FILE', 'DATABASE', 'JAVASCRIPT', 'CHANNEL', 'DICOM', 'FHIR'] as const;
+
+    for (const ct of types) {
+      const result = destinationInputSchema.safeParse({
+        name: `Dest ${ct}`,
+        connectorType: ct,
+        properties: {},
+      });
+      expect(result.success, `Expected ${ct} to be valid`).toBe(true);
+    }
+  });
+
+  it('accepts all valid queue modes', () => {
+    const modes = ['NEVER', 'ON_FAILURE', 'ALWAYS'] as const;
+
+    for (const mode of modes) {
+      const result = destinationInputSchema.safeParse({
+        ...VALID_DESTINATION,
+        queueMode: mode,
+      });
+      expect(result.success, `Expected ${mode} to be valid`).toBe(true);
+    }
+  });
+
+  it('rejects negative retryCount', () => {
+    const result = destinationInputSchema.safeParse({
+      ...VALID_DESTINATION,
+      retryCount: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects non-positive queueThreadCount', () => {
+    const result = destinationInputSchema.safeParse({
+      ...VALID_DESTINATION,
+      queueThreadCount: 0,
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('metadataColumnInputSchema', () => {
+  it('accepts valid metadata column', () => {
+    const result = metadataColumnInputSchema.safeParse({
+      name: 'PatientId',
+      dataType: 'STRING',
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.name).toBe('PatientId');
+    expect(result.data.dataType).toBe('STRING');
+    expect(result.data.mappingExpression).toBeNull();
+  });
+
+  it('accepts metadata column with mapping expression', () => {
+    const result = metadataColumnInputSchema.safeParse({
+      name: 'PatientId',
+      dataType: 'STRING',
+      mappingExpression: "msg['PID']['PID.3']['PID.3.1'].toString()",
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.mappingExpression).toBe("msg['PID']['PID.3']['PID.3.1'].toString()");
+  });
+
+  it('accepts all valid data types', () => {
+    const types = ['STRING', 'NUMBER', 'BOOLEAN', 'TIMESTAMP'] as const;
+
+    for (const dt of types) {
+      const result = metadataColumnInputSchema.safeParse({ name: 'Col', dataType: dt });
+      expect(result.success, `Expected ${dt} to be valid`).toBe(true);
+    }
+  });
+
+  it('rejects missing name', () => {
+    const result = metadataColumnInputSchema.safeParse({ dataType: 'STRING' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid data type', () => {
+    const result = metadataColumnInputSchema.safeParse({ name: 'Col', dataType: 'INVALID' });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('createChannelSchema — destinations array', () => {
+  const BASE_PAYLOAD = {
+    name: 'Channel with destinations',
+    inboundDataType: 'HL7V2' as const,
+    outboundDataType: 'HL7V2' as const,
+    sourceConnectorType: 'TCP_MLLP' as const,
+    sourceConnectorProperties: {},
+  };
+
+  it('accepts channel with destinations array', () => {
+    const result = createChannelSchema.safeParse({
+      ...BASE_PAYLOAD,
+      destinations: [
+        { name: 'Dest 1', connectorType: 'TCP_MLLP', properties: { host: 'lab', port: 6661 } },
+        { name: 'Dest 2', connectorType: 'HTTP', properties: { url: 'http://example.com' } },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.destinations).toHaveLength(2);
+  });
+
+  it('accepts channel with empty destinations array', () => {
+    const result = createChannelSchema.safeParse({
+      ...BASE_PAYLOAD,
+      destinations: [],
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.destinations).toHaveLength(0);
+  });
+
+  it('accepts channel without destinations (optional)', () => {
+    const result = createChannelSchema.safeParse(BASE_PAYLOAD);
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.destinations).toBeUndefined();
+  });
+
+  it('rejects destinations with invalid entries', () => {
+    const result = createChannelSchema.safeParse({
+      ...BASE_PAYLOAD,
+      destinations: [{ name: '', connectorType: 'INVALID', properties: {} }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts channel with metadataColumns array', () => {
+    const result = createChannelSchema.safeParse({
+      ...BASE_PAYLOAD,
+      metadataColumns: [
+        { name: 'PatientId', dataType: 'STRING' },
+        { name: 'OrderDate', dataType: 'TIMESTAMP', mappingExpression: 'msg.orderDate' },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.metadataColumns).toHaveLength(2);
   });
 });

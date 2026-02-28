@@ -1,6 +1,6 @@
 # Project Status
 
-> Last updated: 2026-02-26
+> Last updated: 2026-02-28
 
 ## Package Status
 
@@ -11,7 +11,7 @@
 | `@mirthless/engine` | Scaffold | Empty package shell | Channel runtime, message pipeline (Phase 2) |
 | `@mirthless/connectors` | Scaffold | Empty package shell, base interface | TCP/MLLP connector (Phase 3) |
 | `@mirthless/server` | API Phase 1 | Express app, config, middleware, DB schema, auth, seeds, **Channel CRUD API (6 endpoints, 18 service + 13 controller tests)** | Channel deployment/lifecycle API |
-| `@mirthless/web` | UI Phase 1 | React+MUI shell, auth flow, login page, dashboard stub, **Channel list page + new channel dialog + channel editor page (Summary tab)** | Source/Destinations/Scripts/Advanced tabs, dashboard stats |
+| `@mirthless/web` | UI Phase 1 | React+MUI shell, auth flow, login page, dashboard stub, **Channel list page + editor (Summary + Source tabs, TCP/MLLP + HTTP connector forms)** | Destinations tab, Scripts tab (Monaco), dashboard stats |
 | `@mirthless/cli` | Scaffold | Empty package shell | CLI commands (Phase 5) |
 
 ## Infrastructure Status
@@ -26,6 +26,7 @@
 | Auth (JWT+sessions) | Done | Adapted from fullstack-template |
 | RBAC | Done | 4 default roles: admin, deployer, developer, viewer |
 | Vitest | Done | Configured per package, passWithNoTests |
+| Manual test suite | Done | 8 test files, 81 scenarios, `docs/testing/` |
 
 ## Verification Checklist
 
@@ -42,3 +43,16 @@
 | `dev:server` | PASS | Express on :3000, pgboss started |
 | `dev:web` | PASS | Vite on :5173 in 435ms |
 | Login round-trip | PASS | admin/Admin123! → JWT + 31 permissions |
+| Manual test run | PASS | 81/81 scenarios passing (2026-02-28-v1) |
+
+## Recent Milestones
+
+| Date | Milestone |
+|------|-----------|
+| 2026-02-28 | Fix layout bugs (vertical scroll, text overflow), restructure manual tests, full test pass |
+| 2026-02-28 | Fix auth error format, switch to data router, handle 204 in API client |
+| 2026-02-26 | Source tab: TCP/MLLP + HTTP connector forms, dynamic form dispatch, response settings |
+| 2026-02-26 | Fix channel list API response structure, add workflow tests (schema + controller) |
+| 2026-02-25 | Channel Editor page with Summary tab (create + edit + save) |
+| 2026-02-25 | Channel List UI with TanStack Query hooks and new channel dialog |
+| 2026-02-24 | Channel CRUD API (6 endpoints, 18 tests) |

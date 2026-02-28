@@ -28,6 +28,11 @@ export interface ChannelDetail extends ChannelSummary {
   readonly initialState: string;
   readonly messageStorageMode: string;
   readonly encryptData: boolean;
+  readonly removeContentOnCompletion: boolean;
+  readonly removeAttachmentsOnCompletion: boolean;
+  readonly pruningEnabled: boolean;
+  readonly pruningMaxAgeDays: number | null;
+  readonly pruningArchiveEnabled: boolean;
   readonly sourceConnectorProperties: Record<string, unknown>;
   readonly scripts: ReadonlyArray<{
     readonly id: string;
@@ -40,6 +45,13 @@ export interface ChannelDetail extends ChannelSummary {
     readonly name: string;
     readonly enabled: boolean;
     readonly connectorType: string;
+    readonly properties: Record<string, unknown>;
+    readonly queueMode: string;
+    readonly retryCount: number;
+    readonly retryIntervalMs: number;
+    readonly rotateQueue: boolean;
+    readonly queueThreadCount: number;
+    readonly waitForPrevious: boolean;
   }>;
   readonly metadataColumns: ReadonlyArray<{
     readonly id: string;

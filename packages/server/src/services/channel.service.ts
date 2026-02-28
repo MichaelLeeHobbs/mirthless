@@ -5,7 +5,7 @@
 // All methods return Result<T> using tryCatch from stderr-lib.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, isNull, and, count } from 'drizzle-orm';
+import { eq, isNull, and, count, asc } from 'drizzle-orm';
 import type {
   CreateChannelInput,
   UpdateChannelInput,
@@ -49,6 +49,13 @@ export interface ChannelDestination {
   readonly name: string;
   readonly enabled: boolean;
   readonly connectorType: string;
+  readonly properties: Record<string, unknown>;
+  readonly queueMode: string;
+  readonly retryCount: number;
+  readonly retryIntervalMs: number;
+  readonly rotateQueue: boolean;
+  readonly queueThreadCount: number;
+  readonly waitForPrevious: boolean;
 }
 
 export interface ChannelMetadataCol {
@@ -70,6 +77,11 @@ export interface ChannelDetail extends ChannelSummary {
   readonly initialState: string;
   readonly messageStorageMode: string;
   readonly encryptData: boolean;
+  readonly removeContentOnCompletion: boolean;
+  readonly removeAttachmentsOnCompletion: boolean;
+  readonly pruningEnabled: boolean;
+  readonly pruningMaxAgeDays: number | null;
+  readonly pruningArchiveEnabled: boolean;
   readonly sourceConnectorProperties: Record<string, unknown>;
   readonly scripts: readonly ChannelScript[];
   readonly destinations: readonly ChannelDestination[];
@@ -125,9 +137,17 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
         name: channelConnectors.name,
         enabled: channelConnectors.enabled,
         connectorType: channelConnectors.connectorType,
+        properties: channelConnectors.properties,
+        queueMode: channelConnectors.queueMode,
+        retryCount: channelConnectors.retryCount,
+        retryIntervalMs: channelConnectors.retryIntervalMs,
+        rotateQueue: channelConnectors.rotateQueue,
+        queueThreadCount: channelConnectors.queueThreadCount,
+        waitForPrevious: channelConnectors.waitForPrevious,
       })
       .from(channelConnectors)
-      .where(eq(channelConnectors.channelId, id)),
+      .where(eq(channelConnectors.channelId, id))
+      .orderBy(asc(channelConnectors.metaDataId)),
     db
       .select({
         id: channelMetadataColumns.id,
@@ -165,6 +185,11 @@ function assembleDetail(
     initialState: channel.initialState,
     messageStorageMode: channel.messageStorageMode,
     encryptData: channel.encryptData,
+    removeContentOnCompletion: channel.removeContentOnCompletion,
+    removeAttachmentsOnCompletion: channel.removeAttachmentsOnCompletion,
+    pruningEnabled: channel.pruningEnabled,
+    pruningMaxAgeDays: channel.pruningMaxAgeDays,
+    pruningArchiveEnabled: channel.pruningArchiveEnabled,
     sourceConnectorProperties: channel.sourceConnectorProperties,
     scripts: relations.scripts,
     destinations: relations.destinations,
@@ -267,9 +292,12 @@ export class ChannelService {
         channelValues.encryptData = input.properties.encryptData;
         channelValues.removeContentOnCompletion = input.properties.removeContentOnCompletion;
         channelValues.removeAttachmentsOnCompletion = input.properties.removeAttachmentsOnCompletion;
+        channelValues.pruningEnabled = input.properties.pruningEnabled;
+        channelValues.pruningMaxAgeDays = input.properties.pruningMaxAgeDays;
+        channelValues.pruningArchiveEnabled = input.properties.pruningArchiveEnabled;
       }
 
-      // Transaction: insert channel + default scripts
+      // Transaction: insert channel + default scripts + destinations + metadata columns
       const [created] = await db.transaction(async (tx) => {
         const inserted = await tx.insert(channels).values(channelValues).returning();
 
@@ -286,6 +314,36 @@ export class ChannelService {
         });
 
         await tx.insert(channelScripts).values(scriptValues);
+
+        // Insert destinations if provided
+        if (input.destinations && input.destinations.length > 0) {
+          const destValues = input.destinations.map((dest, index) => ({
+            channelId,
+            metaDataId: index + 1,
+            name: dest.name,
+            enabled: dest.enabled,
+            connectorType: dest.connectorType,
+            properties: dest.properties,
+            queueMode: dest.queueMode,
+            retryCount: dest.retryCount,
+            retryIntervalMs: dest.retryIntervalMs,
+            rotateQueue: dest.rotateQueue,
+            queueThreadCount: dest.queueThreadCount,
+            waitForPrevious: dest.waitForPrevious,
+          }));
+          await tx.insert(channelConnectors).values(destValues);
+        }
+
+        // Insert metadata columns if provided
+        if (input.metadataColumns && input.metadataColumns.length > 0) {
+          const metaValues = input.metadataColumns.map((col) => ({
+            channelId,
+            name: col.name,
+            dataType: col.dataType,
+            mappingExpression: col.mappingExpression,
+          }));
+          await tx.insert(channelMetadataColumns).values(metaValues);
+        }
 
         return inserted;
       });
@@ -331,6 +389,9 @@ export class ChannelService {
         if (input.properties.encryptData !== undefined) updateValues['encryptData'] = input.properties.encryptData;
         if (input.properties.removeContentOnCompletion !== undefined) updateValues['removeContentOnCompletion'] = input.properties.removeContentOnCompletion;
         if (input.properties.removeAttachmentsOnCompletion !== undefined) updateValues['removeAttachmentsOnCompletion'] = input.properties.removeAttachmentsOnCompletion;
+        if (input.properties.pruningEnabled !== undefined) updateValues['pruningEnabled'] = input.properties.pruningEnabled;
+        if (input.properties.pruningMaxAgeDays !== undefined) updateValues['pruningMaxAgeDays'] = input.properties.pruningMaxAgeDays;
+        if (input.properties.pruningArchiveEnabled !== undefined) updateValues['pruningArchiveEnabled'] = input.properties.pruningArchiveEnabled;
       }
 
       // Check name uniqueness if name is changing
@@ -357,6 +418,44 @@ export class ChannelService {
               .set({ script: value ?? '' })
               .where(and(eq(channelScripts.channelId, id), eq(channelScripts.scriptType, scriptType)));
           }
+        }
+      }
+
+      // Sync destinations if provided (delete-and-reinsert)
+      if (input.destinations) {
+        await db.delete(channelConnectors).where(eq(channelConnectors.channelId, id));
+
+        if (input.destinations.length > 0) {
+          const destValues = input.destinations.map((dest, index) => ({
+            channelId: id,
+            metaDataId: index + 1,
+            name: dest.name,
+            enabled: dest.enabled,
+            connectorType: dest.connectorType,
+            properties: dest.properties,
+            queueMode: dest.queueMode,
+            retryCount: dest.retryCount,
+            retryIntervalMs: dest.retryIntervalMs,
+            rotateQueue: dest.rotateQueue,
+            queueThreadCount: dest.queueThreadCount,
+            waitForPrevious: dest.waitForPrevious,
+          }));
+          await db.insert(channelConnectors).values(destValues);
+        }
+      }
+
+      // Sync metadata columns if provided (delete-and-reinsert)
+      if (input.metadataColumns) {
+        await db.delete(channelMetadataColumns).where(eq(channelMetadataColumns.channelId, id));
+
+        if (input.metadataColumns.length > 0) {
+          const metaValues = input.metadataColumns.map((col) => ({
+            channelId: id,
+            name: col.name,
+            dataType: col.dataType,
+            mappingExpression: col.mappingExpression,
+          }));
+          await db.insert(channelMetadataColumns).values(metaValues);
         }
       }
 

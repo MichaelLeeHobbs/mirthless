@@ -26,7 +26,10 @@ import SaveIcon from '@mui/icons-material/Save';
 import { useChannel, useCreateChannel, useUpdateChannel } from '../hooks/use-channels.js';
 import { SummaryTab } from '../components/channels/SummaryTab.js';
 import { SourceTab } from '../components/channels/SourceTab.js';
-import { PlaceholderTab } from '../components/channels/PlaceholderTab.js';
+import { DestinationsTab } from '../components/channels/DestinationsTab.js';
+import { ScriptsTab } from '../components/channels/ScriptsTab.js';
+import { AdvancedTab, type AdvancedFormValues } from '../components/channels/AdvancedTab.js';
+import type { DestinationFormValues } from '../components/channels/destinations/types.js';
 
 // ----- Form Data Type -----
 
@@ -54,6 +57,24 @@ const DEFAULT_VALUES: ChannelFormData = {
   responseMode: 'AUTO_AFTER_DESTINATIONS',
 };
 
+const DEFAULT_SCRIPTS = {
+  deploy: '',
+  undeploy: '',
+  preprocessor: '',
+  postprocessor: '',
+};
+
+const DEFAULT_ADVANCED: AdvancedFormValues = {
+  messageStorageMode: 'DEVELOPMENT',
+  encryptData: false,
+  removeContentOnCompletion: false,
+  removeAttachmentsOnCompletion: false,
+  pruningEnabled: false,
+  pruningMaxAgeDays: null,
+  pruningArchiveEnabled: false,
+  metadataColumns: [],
+};
+
 // ----- Tab Panel -----
 
 interface TabPanelProps {
@@ -78,6 +99,14 @@ export function ChannelEditorPage(): ReactNode {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Extra form state (not managed by react-hook-form)
+  const [destinations, setDestinations] = useState<readonly DestinationFormValues[]>([]);
+  const [scripts, setScripts] = useState(DEFAULT_SCRIPTS);
+  const [advanced, setAdvanced] = useState<AdvancedFormValues>(DEFAULT_ADVANCED);
+
+  // Track manual dirty state for non-RHF fields
+  const [extraDirty, setExtraDirty] = useState(false);
+
   // API hooks
   const { data: channel, isLoading, isError, error: loadError } = useChannel(isEditMode ? id : null);
   const createChannel = useCreateChannel();
@@ -91,8 +120,10 @@ export function ChannelEditorPage(): ReactNode {
     reset,
     watch,
     setValue,
-    formState: { errors, isDirty },
+    formState: { errors, isDirty: formDirty },
   } = useForm<ChannelFormData>({ defaultValues: DEFAULT_VALUES });
+
+  const isDirty = formDirty || extraDirty;
 
   const enabledValue = watch('enabled');
   const nameValue = watch('name');
@@ -120,6 +151,48 @@ export function ChannelEditorPage(): ReactNode {
         responseMode: channel.responseMode,
       });
       prevConnectorTypeRef.current = channel.sourceConnectorType;
+
+      // Load destinations
+      setDestinations(channel.destinations.map((d) => ({
+        name: d.name,
+        enabled: d.enabled,
+        connectorType: d.connectorType,
+        properties: d.properties,
+        queueMode: d.queueMode,
+        retryCount: d.retryCount,
+        retryIntervalMs: d.retryIntervalMs,
+        rotateQueue: d.rotateQueue,
+        queueThreadCount: d.queueThreadCount,
+        waitForPrevious: d.waitForPrevious,
+      })));
+
+      // Load scripts
+      const scriptMap = { ...DEFAULT_SCRIPTS };
+      for (const s of channel.scripts) {
+        const key = s.scriptType.toLowerCase() as keyof typeof scriptMap;
+        if (key in scriptMap) {
+          scriptMap[key] = s.script;
+        }
+      }
+      setScripts(scriptMap);
+
+      // Load advanced settings
+      setAdvanced({
+        messageStorageMode: channel.messageStorageMode,
+        encryptData: channel.encryptData,
+        removeContentOnCompletion: channel.removeContentOnCompletion,
+        removeAttachmentsOnCompletion: channel.removeAttachmentsOnCompletion,
+        pruningEnabled: channel.pruningEnabled,
+        pruningMaxAgeDays: channel.pruningMaxAgeDays,
+        pruningArchiveEnabled: channel.pruningArchiveEnabled,
+        metadataColumns: channel.metadataColumns.map((c) => ({
+          name: c.name,
+          dataType: c.dataType,
+          mappingExpression: c.mappingExpression,
+        })),
+      });
+
+      setExtraDirty(false);
     }
   }, [channel, isEditMode, reset]);
 
@@ -153,6 +226,61 @@ export function ChannelEditorPage(): ReactNode {
     setValue('sourceConnectorProperties', properties, { shouldDirty: true });
   }, [setValue]);
 
+  const handleDestinationsChange = useCallback((updated: readonly DestinationFormValues[]): void => {
+    setDestinations(updated);
+    setExtraDirty(true);
+  }, []);
+
+  const handleScriptsChange = useCallback((updated: typeof DEFAULT_SCRIPTS): void => {
+    setScripts(updated);
+    setExtraDirty(true);
+  }, []);
+
+  const handleAdvancedChange = useCallback((updates: Partial<AdvancedFormValues>): void => {
+    setAdvanced((prev) => ({ ...prev, ...updates }));
+    setExtraDirty(true);
+  }, []);
+
+  const buildDestinationsPayload = (): Array<{
+    name: string;
+    enabled: boolean;
+    connectorType: 'TCP_MLLP';
+    properties: Record<string, unknown>;
+    queueMode: 'NEVER';
+    retryCount: number;
+    retryIntervalMs: number;
+    rotateQueue: boolean;
+    queueThreadCount: number;
+    waitForPrevious: boolean;
+  }> => {
+    return destinations.map((d) => ({
+      name: d.name,
+      enabled: d.enabled,
+      connectorType: d.connectorType as 'TCP_MLLP',
+      properties: d.properties,
+      queueMode: d.queueMode as 'NEVER',
+      retryCount: d.retryCount,
+      retryIntervalMs: d.retryIntervalMs,
+      rotateQueue: d.rotateQueue,
+      queueThreadCount: d.queueThreadCount,
+      waitForPrevious: d.waitForPrevious,
+    }));
+  };
+
+  const buildMetadataPayload = (): Array<{
+    name: string;
+    dataType: 'STRING';
+    mappingExpression: string | null;
+  }> => {
+    return advanced.metadataColumns
+      .filter((c) => c.name.trim() !== '')
+      .map((c) => ({
+        name: c.name,
+        dataType: c.dataType as 'STRING',
+        mappingExpression: c.mappingExpression,
+      }));
+  };
+
   const onSubmit = async (data: ChannelFormData): Promise<void> => {
     setSaveError(null);
     setSaveSuccess(false);
@@ -172,14 +300,26 @@ export function ChannelEditorPage(): ReactNode {
             responseMode: data.responseMode as 'AUTO_AFTER_DESTINATIONS',
             properties: {
               initialState: data.initialState as 'STOPPED',
-              messageStorageMode: 'DEVELOPMENT' as const,
-              encryptData: false,
-              removeContentOnCompletion: false,
-              removeAttachmentsOnCompletion: false,
+              messageStorageMode: advanced.messageStorageMode as 'DEVELOPMENT',
+              encryptData: advanced.encryptData,
+              removeContentOnCompletion: advanced.removeContentOnCompletion,
+              removeAttachmentsOnCompletion: advanced.removeAttachmentsOnCompletion,
+              pruningEnabled: advanced.pruningEnabled,
+              pruningMaxAgeDays: advanced.pruningMaxAgeDays,
+              pruningArchiveEnabled: advanced.pruningArchiveEnabled,
             },
+            scripts: {
+              deploy: scripts.deploy || null,
+              undeploy: scripts.undeploy || null,
+              preprocessor: scripts.preprocessor || null,
+              postprocessor: scripts.postprocessor || null,
+            },
+            destinations: buildDestinationsPayload(),
+            metadataColumns: buildMetadataPayload(),
             revision: channel!.revision,
           },
         });
+        setExtraDirty(false);
         setSaveSuccess(true);
       } else {
         const created = await createChannel.mutateAsync({
@@ -191,6 +331,14 @@ export function ChannelEditorPage(): ReactNode {
           sourceConnectorType: data.sourceConnectorType as 'TCP_MLLP',
           sourceConnectorProperties: data.sourceConnectorProperties,
           responseMode: data.responseMode as 'AUTO_AFTER_DESTINATIONS',
+          destinations: buildDestinationsPayload(),
+          metadataColumns: buildMetadataPayload(),
+          scripts: {
+            deploy: scripts.deploy || null,
+            undeploy: scripts.undeploy || null,
+            preprocessor: scripts.preprocessor || null,
+            postprocessor: scripts.postprocessor || null,
+          },
         });
         navigate(`/channels/${created.id}`, { replace: true });
       }
@@ -310,13 +458,16 @@ export function ChannelEditorPage(): ReactNode {
           />
         </TabPanel>
         <TabPanel value={activeTab} index={2}>
-          <PlaceholderTab label="Destinations" />
+          <DestinationsTab
+            destinations={destinations}
+            onChange={handleDestinationsChange}
+          />
         </TabPanel>
         <TabPanel value={activeTab} index={3}>
-          <PlaceholderTab label="Scripts" />
+          <ScriptsTab scripts={scripts} onChange={handleScriptsChange} />
         </TabPanel>
         <TabPanel value={activeTab} index={4}>
-          <PlaceholderTab label="Advanced" />
+          <AdvancedTab values={advanced} onChange={handleAdvancedChange} />
         </TabPanel>
       </Paper>
 
