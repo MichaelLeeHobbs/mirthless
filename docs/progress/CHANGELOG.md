@@ -72,3 +72,89 @@
 - Channel editor page (Summary + Source tabs)
 - Channel deployment/lifecycle API
 - Dashboard with channel statistics
+
+## 2026-02-28 — Channel Editor: Summary + Source Tabs
+
+### What was done:
+- **Channel Editor page** with tabbed interface (5 tabs, 2 implemented):
+  - `ChannelEditorPage.tsx` — react-hook-form, useBlocker for unsaved changes, create + edit modes
+  - `SummaryTab.tsx` — name, description, enabled, data types, initial state
+  - `SourceTab.tsx` — connector settings dispatch + response settings
+- **Source connector forms** (dynamic dispatch pattern):
+  - `ConnectorSettingsSection.tsx` — component map by connector type
+  - `TcpMllpSourceForm.tsx` — listener settings (host, port, max connections, charset, etc.)
+  - `HttpSourceForm.tsx` — listener settings (host, port, context path, methods, response content type)
+  - `UnsupportedConnectorPlaceholder.tsx` — fallback for unimplemented types
+  - `connector-defaults.ts` — default property objects per type
+  - `ResponseSettingsSection.tsx` — response mode, response connector name
+- **Bug fixes across 3 sessions:**
+  - Auth error responses: `{ code, message }` object format
+  - Switched to `createBrowserRouter` (data router) for `useBlocker` support
+  - API client: handle 204 No Content responses
+  - Layout: flex overflow with `minWidth: 0`, vertical scroll fixes
+  - React effect ordering: `isResettingRef` guard for form population
+- **Manual test suite:** 8 test files, 81 scenarios, all passing
+- **Schema + controller tests:** 29 schema + 13 controller tests added
+
+### Build notes:
+- `useBlocker` requires data router (`createBrowserRouter` + `RouterProvider`), not `BrowserRouter`
+- API 204: check `response.status === 204` before `response.json()`
+- MUI Grid: use `<Grid item xs={12} md={6}>`, not `size` prop
+- Flex overflow: add `minWidth: 0` to flex children for `textOverflow: ellipsis`
+
+### What's next:
+- Destinations tab, Scripts tab (Monaco), Advanced tab
+
+## 2026-02-28 — Complete Channel Editor: Destinations, Scripts, Advanced
+
+### What was done:
+- **Destinations tab** — two-panel layout:
+  - `DestinationsTab.tsx` — main container with list + settings panels
+  - `DestinationListPanel.tsx` — sidebar with add/remove/move-up/move-down controls
+  - `DestinationSettingsPanel.tsx` — name, enabled, connector type, connector form, queue settings
+  - `DestinationConnectorSettings.tsx` — dynamic form dispatch (same pattern as source)
+  - `TcpMllpDestinationForm.tsx` — client settings (remote host, port, send timeout, keep-alive)
+  - `HttpDestinationForm.tsx` — client settings (URL, method, headers, content type, response timeout)
+  - `QueueSettingsSection.tsx` — queue mode, retry count/interval, rotate, thread count, wait-for-previous
+  - `connector-defaults.ts` — default properties for destination connectors
+  - `types.ts` — DestinationFormValues, DestConnectorFormProps interfaces
+- **Scripts tab:**
+  - `ScriptsTab.tsx` — 4 MUI Accordions with Monaco `<Editor>` instances (deploy, undeploy, preprocessor, postprocessor)
+  - Installed `@monaco-editor/react` dependency
+- **Advanced tab:**
+  - `AdvancedTab.tsx` — message storage (radio group), encrypt/remove switches, pruning settings, custom metadata columns table
+- **Schema changes** (`core-models`):
+  - Added `destinationInputSchema` (name, connectorType, properties, queue settings)
+  - Added `metadataColumnInputSchema` (name, dataType, mappingExpression)
+  - Added pruning fields to `channelPropertiesSchema` (pruningEnabled, pruningMaxAgeDays, pruningArchiveEnabled)
+  - Extracted `connectorTypeSchema` for reuse
+  - Added `destinations` and `metadataColumns` arrays to `createChannelSchema`
+  - **22 new schema tests** (51 total)
+- **Service changes** (`server`):
+  - Expanded `ChannelDestination` interface with full fields (properties, queue settings)
+  - Expanded `ChannelDetail` with removeContent/removeAttachments/pruning fields
+  - `fetchChannelRelations` now selects all connector columns, ordered by metaDataId
+  - Destination sync in `create()` and `update()`: delete-and-reinsert with auto metaDataId
+  - Metadata column sync: same delete-and-reinsert pattern
+  - Pruning fields wired through create/update
+  - **5 new service tests** (23 total)
+- **ChannelEditorPage wiring:**
+  - Expanded form state: destinations (useState), scripts (useState), advanced (useState)
+  - Manual dirty tracking (`extraDirty`) for non-react-hook-form state
+  - `onSubmit` builds full payload including destinations, scripts, metadataColumns, expanded properties
+  - Replaced 3 `PlaceholderTab` instances with real components
+- **Expanded `ChannelDetail` type** in `use-channels.ts` (full destination fields, pruning)
+- **5 new manual test files:** destinations tab, dest TCP/MLLP, dest HTTP, scripts tab, advanced tab
+- Updated data roundtrip tests to cover all new features
+
+### Key decisions:
+- D-013: Destinations inline with channel save (no separate CRUD endpoints)
+- D-014: Delete-and-reinsert for destination sync (simplest within transaction, no external refs yet)
+- D-015: Monaco from the start (core purpose of Scripts tab is code editing)
+- D-016: Separate source vs destination connector forms (TCP/MLLP listener ≠ client)
+- D-017: Defer filters, transformers, code templates, script validation to engine phase
+
+### What's next:
+- Engine pipeline (filters, transformers, sandbox)
+- Dashboard with channel statistics
+- Channel deployment/lifecycle API

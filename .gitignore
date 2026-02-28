@@ -22,16 +22,10 @@ npm-debug.log*
 pnpm-debug.log*
 
 # IDE
-.idea/**/workspace.xml
-.idea/**/tasks.xml
-.idea/**/usage.statistics.xml
-.idea/**/dictionaries
-.idea/**/shelf
-.idea/**/dataSources/
-.idea/**/dataSources.ids
-.idea/**/dataSources.local.xml
-.idea/**/sqlDataSources.xml
-.idea/**/dynamic.xml
+.idea/
+
+# Claude Code
+.claude/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
