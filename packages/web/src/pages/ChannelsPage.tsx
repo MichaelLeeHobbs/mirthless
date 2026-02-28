@@ -185,12 +185,33 @@ export function ChannelsPage(): ReactNode {
                       variant="body2"
                       component={RouterLink}
                       to={`/channels/${channel.id}`}
-                      sx={{ fontWeight: 500, color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                      title={channel.name}
+                      sx={{
+                        fontWeight: 500,
+                        color: 'primary.main',
+                        textDecoration: 'none',
+                        '&:hover': { textDecoration: 'underline' },
+                        display: 'block',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: 300,
+                      }}
                     >
                       {channel.name}
                     </Typography>
                     {channel.description ? (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                          maxWidth: 400,
+                        }}
+                      >
                         {channel.description}
                       </Typography>
                     ) : null}

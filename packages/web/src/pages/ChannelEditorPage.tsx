@@ -99,12 +99,15 @@ export function ChannelEditorPage(): ReactNode {
   const sourceConnectorType = watch('sourceConnectorType');
   const sourceConnectorProperties = watch('sourceConnectorProperties');
 
-  // Track previous connector type to detect changes (not initial load)
+  // Track previous connector type to detect user-initiated changes
   const prevConnectorTypeRef = useRef(sourceConnectorType);
+  // Guard: skip type-change reset when form is being populated from server data
+  const isResettingRef = useRef(false);
 
   // Load channel data into form when available
   useEffect(() => {
     if (channel && isEditMode) {
+      isResettingRef.current = true;
       reset({
         name: channel.name,
         description: channel.description ?? '',
@@ -120,8 +123,12 @@ export function ChannelEditorPage(): ReactNode {
     }
   }, [channel, isEditMode, reset]);
 
-  // Reset connector properties when connector type changes (user action, not initial load)
+  // Reset connector properties when connector type changes (user action only)
   useEffect(() => {
+    if (isResettingRef.current) {
+      isResettingRef.current = false;
+      return;
+    }
     if (sourceConnectorType !== prevConnectorTypeRef.current) {
       prevConnectorTypeRef.current = sourceConnectorType;
       setValue('sourceConnectorProperties', {}, { shouldDirty: true });
@@ -221,11 +228,16 @@ export function ChannelEditorPage(): ReactNode {
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-        <IconButton onClick={() => { navigate('/channels'); }} aria-label="back to channels">
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, overflow: 'hidden' }}>
+        <IconButton onClick={() => { navigate('/channels'); }} aria-label="back to channels" sx={{ flexShrink: 0 }}>
           <ArrowBackIcon />
         </IconButton>
-        <Typography variant="h5" component="h1" sx={{ fontWeight: 600, flexGrow: 1 }}>
+        <Typography
+          variant="h5"
+          component="h1"
+          title={pageTitle}
+          sx={{ fontWeight: 600, flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}
+        >
           {pageTitle}
         </Typography>
         {isEditMode ? (
@@ -235,6 +247,7 @@ export function ChannelEditorPage(): ReactNode {
               px: 1.5,
               py: 0.5,
               borderRadius: 1,
+              flexShrink: 0,
               bgcolor: enabledValue ? 'success.dark' : 'action.disabledBackground',
               color: enabledValue ? 'success.contrastText' : 'text.secondary',
             }}
@@ -247,6 +260,7 @@ export function ChannelEditorPage(): ReactNode {
           startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
           disabled={isSaving || (!isDirty && isEditMode)}
           onClick={handleSubmit(onSubmit)}
+          sx={{ flexShrink: 0 }}
         >
           {isEditMode ? 'Save' : 'Create'}
         </Button>

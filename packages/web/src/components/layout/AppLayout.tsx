@@ -190,9 +190,9 @@ export function AppLayout(): ReactNode {
         component="main"
         sx={{
           flexGrow: 1,
+          minWidth: 0,
           p: 3,
           mt: 8,
-          minHeight: '100vh',
           backgroundColor: 'background.default',
         }}
       >
