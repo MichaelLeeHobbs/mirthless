@@ -39,6 +39,7 @@ function makeStore(): MessageStore {
     storeContent: vi.fn().mockResolvedValue(ok(undefined)),
     markProcessed: vi.fn().mockResolvedValue(ok(undefined)),
     enqueue: vi.fn().mockResolvedValue(ok(undefined)),
+    loadContent: vi.fn().mockResolvedValue(ok('test content')),
     incrementStats: vi.fn().mockResolvedValue(ok(undefined)),
     dequeue: vi.fn().mockResolvedValue(ok([])),
     release: vi.fn().mockResolvedValue(ok(undefined)),
@@ -141,6 +142,71 @@ describe('QueueConsumer', () => {
       );
       expect(store.incrementStats).toHaveBeenCalledWith(
         '00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored',
+      );
+    });
+
+    it('calls loadContent before sending', async () => {
+      const store = makeStore();
+      const sendFn = makeSendFn();
+      const queuedMsg = {
+        channelId: '00000000-0000-0000-0000-000000000001',
+        messageId: 10,
+        metaDataId: 1,
+        sendAttempts: 0,
+      };
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queuedMsg]));
+
+      consumer = new QueueConsumer(makeConfig(), store, sendFn);
+      await consumer.poll();
+
+      expect(store.loadContent).toHaveBeenCalledWith(
+        '00000000-0000-0000-0000-000000000001', 10, 1, 5,
+      );
+      expect(sendFn).toHaveBeenCalledWith(1, 'test content', expect.any(AbortSignal));
+    });
+
+    it('releases as ERROR when loadContent fails', async () => {
+      const store = makeStore();
+      const sendFn = makeSendFn();
+      const queuedMsg = {
+        channelId: '00000000-0000-0000-0000-000000000001',
+        messageId: 10,
+        metaDataId: 1,
+        sendAttempts: 0,
+      };
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queuedMsg]));
+      (store.loadContent as ReturnType<typeof vi.fn>).mockResolvedValue(fail('DB error'));
+
+      consumer = new QueueConsumer(makeConfig(), store, sendFn);
+      await consumer.poll();
+
+      expect(sendFn).not.toHaveBeenCalled();
+      expect(store.release).toHaveBeenCalledWith(
+        '00000000-0000-0000-0000-000000000001', 10, 1, 'ERROR',
+      );
+      expect(store.incrementStats).toHaveBeenCalledWith(
+        '00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored',
+      );
+    });
+
+    it('releases as ERROR when loadContent returns null', async () => {
+      const store = makeStore();
+      const sendFn = makeSendFn();
+      const queuedMsg = {
+        channelId: '00000000-0000-0000-0000-000000000001',
+        messageId: 10,
+        metaDataId: 1,
+        sendAttempts: 0,
+      };
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queuedMsg]));
+      (store.loadContent as ReturnType<typeof vi.fn>).mockResolvedValue(ok(null));
+
+      consumer = new QueueConsumer(makeConfig(), store, sendFn);
+      await consumer.poll();
+
+      expect(sendFn).not.toHaveBeenCalled();
+      expect(store.release).toHaveBeenCalledWith(
+        '00000000-0000-0000-0000-000000000001', 10, 1, 'ERROR',
       );
     });
 

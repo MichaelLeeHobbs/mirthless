@@ -230,6 +230,30 @@ export class MessageService {
     });
   }
 
+  /** Load stored content for a specific message and content type. */
+  static async loadContent(
+    channelId: string,
+    messageId: number,
+    metaDataId: number,
+    contentType: ContentType,
+  ): Promise<Result<string | null>> {
+    return tryCatch(async () => {
+      const [row] = await db
+        .select({ content: messageContent.content })
+        .from(messageContent)
+        .where(
+          and(
+            eq(messageContent.channelId, channelId),
+            eq(messageContent.messageId, messageId),
+            eq(messageContent.metaDataId, metaDataId),
+            eq(messageContent.contentType, contentType),
+          ),
+        );
+
+      return row?.content ?? null;
+    });
+  }
+
   /** Get statistics for all connectors of a channel. */
   static async getStats(
     channelId: string,

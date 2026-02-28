@@ -110,6 +110,13 @@ function createInMemoryStore(): MessageStore & {
       return ok(undefined);
     },
     enqueue: async () => ok(undefined),
+    loadContent: async (channelId, messageId, metaDataId, contentType) => {
+      const entry = contents.find(
+        (c) => c.channelId === channelId && c.messageId === messageId
+          && c.metaDataId === metaDataId && c.contentType === contentType,
+      );
+      return ok(entry?.content ?? null);
+    },
     incrementStats: async (channelId, metaDataId, serverId, field) => {
       let stat = stats.find(
         (s) => s.channelId === channelId && s.metaDataId === metaDataId && s.serverId === serverId,

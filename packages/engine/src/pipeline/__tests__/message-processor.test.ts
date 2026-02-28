@@ -28,6 +28,7 @@ function makeStore(): MessageStore {
     storeContent: vi.fn().mockResolvedValue(ok(undefined)),
     markProcessed: vi.fn().mockResolvedValue(ok(undefined)),
     enqueue: vi.fn().mockResolvedValue(ok(undefined)),
+    loadContent: vi.fn().mockResolvedValue(ok(null)),
     incrementStats: vi.fn().mockResolvedValue(ok(undefined)),
     dequeue: vi.fn().mockResolvedValue(ok([])),
     release: vi.fn().mockResolvedValue(ok(undefined)),

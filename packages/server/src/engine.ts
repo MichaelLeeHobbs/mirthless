@@ -53,6 +53,8 @@ function createMessageStoreAdapter(): MessageStore {
       MessageService.markProcessed(channelId, messageId),
     enqueue: (channelId, messageId, metaDataId) =>
       MessageService.enqueue(channelId, messageId, metaDataId),
+    loadContent: (channelId, messageId, metaDataId, contentType) =>
+      MessageService.loadContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.loadContent>[3]),
     incrementStats: (channelId, metaDataId, serverId, field) =>
       MessageService.incrementStats(channelId, metaDataId, serverId, field),
     dequeue: (channelId, metaDataId, batchSize) =>

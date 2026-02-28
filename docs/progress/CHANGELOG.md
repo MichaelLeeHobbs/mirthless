@@ -320,3 +320,66 @@
 - Alert system (configurable notifications on channel events/errors)
 - File connector, Database connector
 - Persistent message store (Drizzle-backed, replacing in-memory)
+
+## 2026-02-28 — Production Readiness: Queue Fix, Code Templates, Global Scripts, E2E Tests
+
+### What was done:
+
+**Deliverable 1 — Fix Queue Consumer Content Loading** (`engine`, `server`):
+- Added `loadContent` method to `MessageStore` interface in `message-processor.ts`
+- Queue consumer now loads SENT content (type 5) from DB before dispatching
+- Gracefully handles missing/failed content by releasing message as ERROR and incrementing errored stats
+- Added `MessageService.loadContent` static method (Drizzle query on `message_content` table)
+- Wired `loadContent` into engine adapter in `engine.ts`
+- Updated all mock stores (e2e-pipeline, queue-consumer, message-processor tests)
+- **3 new engine tests** (loadContent before send, loadContent failure → ERROR, loadContent null → ERROR)
+
+**Deliverable 2 — Code Templates API + UI** (`core-models`, `server`, `web`):
+- **Zod schemas** (`code-template.schema.ts`): 15 context values, 2 template types (FUNCTION/CODE_BLOCK), library + template CRUD schemas with optimistic locking
+- **Service** (`code-template.service.ts`): 8 static methods — listLibraries, createLibrary, updateLibrary, deleteLibrary, listTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate
+- **Controller + Routes**: 8 endpoints behind `authenticate` + `requirePermission('code-templates:read'|'code-templates:write')`
+- **UI**: Two-panel CodeTemplatePage with LibraryTree (collapsible library list) + TemplateEditor (name, type, contexts checkboxes, Monaco code editor)
+- **TanStack Query hooks**: 8 hooks with query key hierarchy for cache invalidation
+- **21 schema tests + 20 service tests**
+
+**Deliverable 3 — Global Scripts Page** (`core-models`, `server`, `web`):
+- **Zod schema** (`global-script.schema.ts`): `updateGlobalScriptsSchema` with 4 optional string fields
+- **Service** (`global-script.service.ts`): `getAll()` returns 4 scripts with empty string defaults, `update()` upserts provided fields
+- **Controller + Routes**: GET + PUT behind `authenticate` + `requirePermission('config:read'|'config:write')`
+- **UI**: GlobalScriptsPage with 4-tab Monaco editors (Deploy, Undeploy, Preprocessor, Postprocessor), dirty tracking + `useBlocker` navigation warning
+- **7 service tests** with thenable mock for dual select patterns
+
+**Deliverable 4 — Playwright E2E Tests** (root):
+- **Setup**: `playwright.config.ts`, `e2e/fixtures/auth.ts`, `e2e/fixtures/test-data.ts`
+- **7 test suites** (~36 tests):
+  - `auth.spec.ts` (5) — login, wrong password, empty fields, session persistence, protected routes
+  - `channel-crud.spec.ts` (8) — list, create, validation, edit, toggle, delete, search, pagination
+  - `channel-deploy.spec.ts` (5) — deploy, start, stop, pause/resume, undeploy
+  - `message-flow.spec.ts` (3) — create TCP/MLLP channel, message browser, detail panel
+  - `user-management.spec.ts` (5) — navigate, create, edit role, disable, unlock
+  - `code-templates.spec.ts` (6) — navigate, create library, create template, edit, delete template, delete library
+  - `global-scripts.spec.ts` (4) — navigate, enter deploy script, persist on refresh, preprocessor tab
+- Config: single worker, chromium only, `reuseExistingServer` for local dev, ports 18661/18662 for E2E message flow
+
+### Key decisions:
+- D-035: Playwright at monorepo root (E2E spans server + web + DB)
+- D-036: `reuseExistingServer` for local dev (avoids port conflicts)
+- D-037: TCP/MLLP E2E uses ports 18661/18662 (avoids conflict with engine E2E on 17661/17662)
+- D-038: Single Playwright worker, sequential tests (healthcare data integrity)
+- D-039: Optimistic locking for code templates (same revision pattern as channels)
+
+### Build notes:
+- Drizzle dual select mock: when service uses both `db.select().from(table)` (no `.where()`) and `db.select().from(table).where()`, mock must use thenable pattern with call index counter
+- Removed unused `SCRIPT_KEYS` constant (ESLint max-warnings 0)
+
+### Verification:
+- `pnpm build` — 0 errors across all packages
+- `pnpm lint` — 0 warnings
+- `pnpm test` — **420 tests passing** (72 schema + 68 HL7 + 71 engine + 49 connectors + 160 server)
+
+### What's next:
+- Alert system (configurable notifications on channel events/errors)
+- File connector, Database connector
+- DICOM connector, FHIR connector
+- Filters/transformers in pipeline
+- HL7 parser integration into sandbox context

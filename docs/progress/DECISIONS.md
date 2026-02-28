@@ -71,3 +71,13 @@ D-032: 1-based indexing for HL7 paths — Matches HL7 spec. Developers expect `P
 D-033: Soft-delete users (enabled: false) — Preserve audit trail. User IDs may be referenced in logs, messages, events. Hard delete would break referential integrity. — 2026-02-28
 
 D-034: Admin-only user management — Matches Mirth Connect pattern. Deployers/developers/viewers cannot manage users. Self-protection: cannot disable own account or change own role. — 2026-02-28
+
+D-035: Playwright at monorepo root, not in `packages/web/` — E2E tests span server + web + DB. Root placement matches monorepo convention. — 2026-02-28
+
+D-036: `reuseExistingServer` for Playwright local dev — Avoids port conflicts when dev server is already running. CI starts fresh. — 2026-02-28
+
+D-037: TCP/MLLP E2E uses ports 18661/18662 — Avoids conflict with engine E2E tests using 17661/17662. — 2026-02-28
+
+D-038: Single Playwright worker, sequential tests — Healthcare data integrity — avoid state conflicts between parallel tests. — 2026-02-28
+
+D-039: Optimistic locking for code templates — Same revision-based pattern used by channels. Prevents lost updates in multi-user environments. — 2026-02-28

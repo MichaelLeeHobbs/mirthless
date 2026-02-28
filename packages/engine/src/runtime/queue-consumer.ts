@@ -88,12 +88,22 @@ export class QueueConsumer {
   private async processQueuedMessage(msg: QueuedMessage): Promise<void> {
     const signal = AbortSignal.timeout(30_000);
 
-    // Load content for this message (we need to send it)
-    // In a full implementation, we'd load from message_content table
-    // For now, pass the messageId to the send function
+    // Load stored SENT content from DB (content type 5 = SENT)
+    const contentResult = await this.store.loadContent(
+      msg.channelId, msg.messageId, msg.metaDataId, 5,
+    );
+
+    if (!contentResult.ok || contentResult.value === null) {
+      await this.store.release(this.config.channelId, msg.messageId, msg.metaDataId, 'ERROR');
+      await this.store.incrementStats(
+        this.config.channelId, msg.metaDataId, this.config.serverId, 'errored',
+      );
+      return;
+    }
+
     const sendResult: Result<DestinationResponse> = await this.sendFn(
       msg.metaDataId,
-      '', // Content would be loaded from DB in full implementation
+      contentResult.value,
       signal,
     );
 

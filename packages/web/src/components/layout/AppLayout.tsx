@@ -21,6 +21,7 @@ import CodeIcon from '@mui/icons-material/Code';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import EventIcon from '@mui/icons-material/Event';
 import PeopleIcon from '@mui/icons-material/People';
+import JavascriptIcon from '@mui/icons-material/Javascript';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -41,6 +42,7 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: 'Channels', path: '/channels', icon: <SyncAltIcon /> },
   { label: 'Messages', path: '/messages', icon: <MessageIcon /> },
   { label: 'Code Templates', path: '/code-templates', icon: <CodeIcon /> },
+  { label: 'Global Scripts', path: '/global-scripts', icon: <JavascriptIcon /> },
   { label: 'Alerts', path: '/alerts', icon: <NotificationsIcon /> },
   { label: 'Events', path: '/events', icon: <EventIcon /> },
   { label: 'Users', path: '/users', icon: <PeopleIcon /> },

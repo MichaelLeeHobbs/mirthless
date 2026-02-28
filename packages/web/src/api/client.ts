@@ -154,6 +154,40 @@ export interface UserDetail extends UserSummary {
   readonly updatedAt: string;
 }
 
+// ----- Code Template Types -----
+
+export interface CodeTemplateLibrary {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly revision: number;
+  readonly templateCount: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface CodeTemplateDetail {
+  readonly id: string;
+  readonly libraryId: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly type: string;
+  readonly code: string;
+  readonly contexts: ReadonlyArray<string>;
+  readonly revision: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+// ----- Global Scripts Types -----
+
+export interface GlobalScriptsData {
+  readonly deploy: string;
+  readonly undeploy: string;
+  readonly preprocessor: string;
+  readonly postprocessor: string;
+}
+
 /** Convenience methods for common HTTP verbs */
 export const api = {
   get: <T>(path: string, signal?: AbortSignal): Promise<ApiResponse<T>> =>
