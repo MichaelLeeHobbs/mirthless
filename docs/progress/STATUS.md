@@ -6,13 +6,13 @@
 
 | Package | Phase | What's Done | What's Next |
 |---------|-------|-------------|-------------|
-| `@mirthless/core-models` | Schema Testing | Package structure, branded types, constants, Zod schemas (channel CRUD + destination + metadata), **51 schema validation tests** | Refine schemas as engine develops |
-| `@mirthless/core-util` | Scaffold | Package structure, Result re-export, validation utils | Add utilities as needed (YAGNI) |
-| `@mirthless/engine` | Scaffold | Empty package shell | Channel runtime, message pipeline (Phase 2) |
-| `@mirthless/connectors` | Scaffold | Empty package shell, base interface | TCP/MLLP connector (Phase 3) |
-| `@mirthless/server` | API Phase 1 | Express app, config, middleware, DB schema, auth, seeds, **Channel CRUD API (6 endpoints, 23 service + 13 controller tests)**, destination/metadata sync, pruning fields | Channel deployment/lifecycle API |
-| `@mirthless/web` | UI Phase 1 | React+MUI shell, auth flow, login page, dashboard stub, **Channel Editor (all 5 tabs: Summary, Source, Destinations, Scripts, Advanced)**, Monaco editor | Dashboard stats, engine integration |
-| `@mirthless/cli` | Scaffold | Empty package shell | CLI commands (Phase 5) |
+| `@mirthless/core-models` | Complete (v1) | Branded types, constants, Zod schemas (channel CRUD, destinations, metadata, users), **51 schema validation tests** | Refine schemas as features develop |
+| `@mirthless/core-util` | HL7v2 Parser | Result re-export, validation utils, **HL7v2 parser** (encoding, path, message, ACK), **68 HL7 tests** | Add utilities as needed (YAGNI) |
+| `@mirthless/engine` | Foundation | **Sandbox executor** (vm-based), **script compiler** (esbuild), **8-stage message pipeline**, **channel runtime** (state machine), **queue consumer**, in-memory message store, **68 engine tests** | Filters/transformers in pipeline, persistent message store |
+| `@mirthless/connectors` | TCP/MLLP + HTTP | Base interfaces, **TCP/MLLP receiver** (MLLP framing, connection pool), **TCP/MLLP dispatcher**, **HTTP receiver** (node:http), **HTTP dispatcher** (native fetch), connector registry, **49 connector tests** | File, Database, DICOM, FHIR connectors |
+| `@mirthless/server` | API Phase 2 | Express app, config, middleware, DB schema, auth, seeds, **Channel CRUD API** (6 endpoints), **Deployment API** (8 endpoints), **Message Query API** (4 endpoints), **Statistics API** (3 endpoints), **User Management API** (7 endpoints), **96 server tests** | Code templates, alerts |
+| `@mirthless/web` | UI Phase 2 | React+MUI shell, auth flow, login page, **Channel Editor** (all 5 tabs), **Dashboard** (summary cards, status table, quick actions), **Message Browser** (search, filter, detail panel), **Users Page** (CRUD, role chips, enable/disable/unlock), Monaco editor | Code template editor, alert configuration |
+| `@mirthless/cli` | Scaffold | Empty package shell | CLI commands (future) |
 
 ## Infrastructure Status
 
@@ -35,7 +35,7 @@
 | `pnpm install` | PASS | 833 packages resolved |
 | `pnpm build` | PASS | All 7 packages compile (0 errors) |
 | `pnpm lint` | PASS | 0 warnings |
-| `pnpm test` | PASS | 87 tests passing (51 schema + 23 service + 13 controller) |
+| `pnpm test` | PASS | **369 tests passing** (51 schema + 68 HL7 + 68 engine + 49 connectors + 96 server + 37 web/hooks) |
 | `docker:up` | PASS | PostgreSQL 17 running |
 | `db:generate` | PASS | 34 tables generated |
 | `db:migrate` | PASS | Migrations applied |
@@ -49,6 +49,9 @@
 
 | Date | Milestone |
 |------|-----------|
+| 2026-02-28 | **HTTP connector + HL7v2 parser + User management** — HTTP source/destination connectors, full HL7v2 parser (parse/get/set/delete/ACK), User CRUD API + Users page UI |
+| 2026-02-28 | **Dashboard + Message Browser** — Summary cards, channel status table with live stats, quick actions, message search/filter/detail panel, statistics API, auto-refresh polling |
+| 2026-02-28 | **Engine foundation** — vm-based sandbox, esbuild script compiler, 8-stage pipeline, channel runtime state machine, queue consumer, TCP/MLLP connectors, deployment API (8 endpoints), message query API, in-memory message store, E2E ADT^A01 test |
 | 2026-02-28 | Complete Channel Editor: Destinations tab (two-panel, TCP/MLLP + HTTP, queue settings), Scripts tab (Monaco), Advanced tab (storage, pruning, metadata columns) |
 | 2026-02-28 | Expand schemas: destinationInputSchema, metadataColumnInputSchema, pruning fields (22 new tests) |
 | 2026-02-28 | Expand channel service: destination/metadata sync (delete-and-reinsert), pruning fields (5 new tests) |

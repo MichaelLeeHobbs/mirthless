@@ -37,3 +37,37 @@ D-015: Monaco editor from the start — `@monaco-editor/react` is a single depen
 D-016: Separate source vs destination connector forms — TCP/MLLP source (listener: listen address, max connections) differs from TCP/MLLP destination (client: remote host, send timeout). Same for HTTP. Sharing forms would require confusing conditionals. — 2026-02-28
 
 D-017: Defer filters, transformers, code templates, script validation — All require the engine/sandbox to be meaningful. Pipeline editor is its own major feature. Build with engine phase. — 2026-02-28
+
+D-018: vm-based sandbox (node:vm) instead of isolated-vm — `isolated-vm` native bindings fail on Windows/Node.js v24. `node:vm` provides same interface with `runInNewContext`. Same `SandboxExecutor` interface allows swapping later. Security acceptable for v1 since only admin/deployer users write scripts. — 2026-02-28
+
+D-019: esbuild for script compilation — TypeScript → JavaScript transpilation in <1ms. No full tsc needed. Produces clean ESM output for the sandbox. — 2026-02-28
+
+D-020: 8-stage message pipeline — Preprocessing → source filter → source transformer → per-destination (filter → transformer → send → response transformer) → postprocessing. Matches Mirth Connect's proven pipeline model. — 2026-02-28
+
+D-021: Channel runtime as state machine — States: UNDEPLOYED → DEPLOYING → STOPPED → STARTING → STARTED → PAUSING → PAUSED → STOPPING → HALTING. Prevents invalid transitions, enforces lifecycle ordering. — 2026-02-28
+
+D-022: In-memory message store for v1 engine — No DB dependency for engine tests or initial development. `InMemoryMessageStore` implements `MessageStore` interface. Swap to Drizzle-backed store later. — 2026-02-28
+
+D-023: Connection pooling for TCP/MLLP dispatcher — Pre-creates socket pool (default 5). Round-robin allocation. Idle sockets maintained with keep-alive. Avoids per-message TCP handshake overhead for high-throughput HL7 routing. — 2026-02-28
+
+D-024: MLLP framing in dedicated module — VT (0x0B) prefix, FS+CR (0x1C+0x0D) suffix. Separate `MllpFrameParser` handles streaming reassembly of fragmented TCP data. Testable independently from connector lifecycle. — 2026-02-28
+
+D-025: Auto-refresh via TanStack Query polling (5s interval) — No WebSocket needed for v1 dashboard/message browser. Polling is simpler, works through proxies/load balancers, and 5s is acceptable for admin monitoring. — 2026-02-28
+
+D-026: Statistics API returns per-channel + all-channels summary — Single endpoint for dashboard summary cards (total received/sent/filtered/errored). Per-channel stats embedded in channel status for the table. Reset endpoint for testing. — 2026-02-28
+
+D-027: Message browser with server-side pagination — Client sends page/pageSize/filters, server queries and returns total count. No client-side filtering of large datasets. Detail panel loads full message content on demand. — 2026-02-28
+
+D-028: Native `fetch` for HTTP dispatcher — Node.js 18+ has built-in fetch. No need for axios/got dependency. Supports AbortSignal natively. — 2026-02-28
+
+D-029: node:http for HTTP receiver (not Express sub-app) — Lightweight, no Express dependency in the connectors package. Creates a plain `http.Server`, parses request manually. Matches the TCP receiver pattern of owning the server lifecycle. — 2026-02-28
+
+D-030: No connection pooling for HTTP dispatcher — `fetch` manages connections internally (keep-alive by default). Unlike TCP where we need explicit socket pools. — 2026-02-28
+
+D-031: HL7 parser in `core-util` not `engine` — Parser is a general utility — used in sandbox scripts, server-side processing, and potentially CLI tools. No engine dependency needed. — 2026-02-28
+
+D-032: 1-based indexing for HL7 paths — Matches HL7 spec. Developers expect `PID.3` to mean the 3rd field. Internal representation uses string keys for flexibility. — 2026-02-28
+
+D-033: Soft-delete users (enabled: false) — Preserve audit trail. User IDs may be referenced in logs, messages, events. Hard delete would break referential integrity. — 2026-02-28
+
+D-034: Admin-only user management — Matches Mirth Connect pattern. Deployers/developers/viewers cannot manage users. Self-protection: cannot disable own account or change own role. — 2026-02-28

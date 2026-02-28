@@ -158,3 +158,165 @@
 - Engine pipeline (filters, transformers, sandbox)
 - Dashboard with channel statistics
 - Channel deployment/lifecycle API
+
+## 2026-02-28 — Engine Foundation: Sandbox, Pipeline, Connectors, Deployment
+
+### What was done:
+- **Sandbox** (`engine`):
+  - `VmSandboxExecutor` — vm-based script execution with `runInNewContext`, timeout enforcement
+  - `ScriptCompiler` — esbuild TypeScript → JavaScript transpilation
+  - `SandboxContext` — channel/connector maps, logger, message helpers exposed to user scripts
+- **8-stage message pipeline** (`engine`):
+  - `MessageProcessor` — preprocessing → source filter → source transformer → per-destination (filter → transformer → send → response transformer) → postprocessing
+  - Each stage produces `MessageStatus` (TRANSFORMED, FILTERED, SENT, ERROR, QUEUED)
+- **Channel runtime** (`engine`):
+  - `ChannelRuntime` — state machine (UNDEPLOYED → DEPLOYING → STOPPED → STARTING → STARTED → PAUSING → PAUSED → STOPPING → HALTING)
+  - `QueueConsumer` — pulls messages from queue, dispatches through pipeline
+  - `InMemoryMessageStore` — implements `MessageStore` interface for tests
+- **TCP/MLLP connectors** (`connectors`):
+  - `TcpMllpReceiver` — TCP server with MLLP framing, connection tracking, graceful shutdown
+  - `TcpMllpDispatcher` — TCP client pool with round-robin allocation, MLLP framing, response timeout
+  - `MllpFrameParser` — streaming MLLP frame reassembly (VT prefix, FS+CR suffix)
+  - `SourceConnectorRuntime` / `DestinationConnectorRuntime` interfaces in `base.ts`
+  - Connector registry with factory pattern
+- **Deployment API** (`server`, 8 endpoints):
+  - `POST /deploy/:id` — deploy channel (compile scripts, create connectors, wire pipeline)
+  - `POST /undeploy/:id` — undeploy channel
+  - `POST /start/:id`, `/stop/:id`, `/halt/:id`, `/pause/:id`, `/resume/:id` — lifecycle control
+  - `GET /status/:id` — channel runtime status with statistics
+  - `DeploymentService`, `DeploymentController`, deployment routes
+  - Engine manager singleton bridges server → engine
+- **Message Query API** (`server`, 4 endpoints):
+  - `GET /channels/:id/messages` — search/filter with server-side pagination
+  - `GET /channels/:id/messages/:messageId` — full message detail with content
+  - `DELETE /channels/:id/messages/:messageId` — delete message
+  - `DELETE /channels/:id/messages` — bulk delete with filters
+  - `MessageQueryService`, `MessageController`, message routes
+- **Statistics API** (`server`, 3 endpoints):
+  - `GET /statistics` — all-channels summary
+  - `GET /statistics/:id` — per-channel statistics
+  - `POST /statistics/:id/reset` — reset channel statistics
+  - `StatisticsService`, `StatisticsController`, statistics routes
+- **E2E test:** ADT^A01 message flows TCP (port 17661) → pipeline → TCP (port 17662) with in-memory store
+- **Tests:** 68 engine + 26 connector + 13 deployment + 19 message-query + 9 statistics = **135 new tests**
+
+### Key decisions:
+- D-018: vm-based sandbox (node:vm) — isolated-vm fails on Windows/Node.js v24
+- D-019: esbuild for script compilation — <1ms TypeScript transpilation
+- D-020: 8-stage pipeline — matches Mirth Connect's proven model
+- D-021: Channel runtime as state machine — prevents invalid transitions
+- D-022: In-memory message store for v1 — no DB dependency for engine tests
+- D-023: Connection pooling for TCP/MLLP dispatcher — round-robin socket pool
+- D-024: MLLP framing in dedicated module — testable independently
+
+### Build notes:
+- `isolated-vm` native bindings fail on Windows/Node.js v24 — use node:vm fallback
+- `db.execute()` returns `QueryResult<T>` with `.rows`, not raw array
+- TCP connect to non-listening port hangs on Windows — use abort signals instead
+- MLLP framing: VT=0x0B prefix, FS+CR=0x1C+0x0D suffix
+
+### What's next:
+- Dashboard with channel statistics
+- Message browser UI
+- HTTP connector, HL7 parser
+
+## 2026-02-28 — Dashboard, Message Browser, and Supporting API
+
+### What was done:
+- **Dashboard page** (`web`):
+  - `DashboardPage.tsx` — summary cards (total channels, received, sent, errored) + channel status table
+  - `SummaryCards.tsx` — 4 stat cards with MUI Paper
+  - `ChannelStatusTable.tsx` — channel name, state chip, received/sent/filtered/errored counts, quick actions
+  - Quick actions: deploy/undeploy, start/stop/pause/resume per channel
+  - Auto-refresh via TanStack Query polling (5s `refetchInterval`)
+- **Message Browser page** (`web`):
+  - `MessageBrowserPage.tsx` — search bar + paginated table + detail panel
+  - `MessageSearchBar.tsx` — status filter, date range, text search
+  - `MessageTable.tsx` — message ID, status chip, received date, connector name, content preview
+  - `MessageDetailPanel.tsx` — full message content with Raw/Encoded/Transformed tabs, copy-to-clipboard
+  - Server-side pagination, filter by status/date/text
+- **Supporting hooks** (`web`):
+  - `use-deployment.ts` — TanStack Query mutations for deploy/undeploy/start/stop/pause/resume
+  - `use-statistics.ts` — useAllStatistics, useChannelStatistics queries
+  - `use-messages.ts` — useMessages (paginated), useMessageDetail, useDeleteMessage queries
+- **API client additions** (`web`):
+  - Deployment methods: deploy, undeploy, start, stop, halt, pause, resume, getStatus
+  - Statistics methods: getAllStatistics, getChannelStatistics, resetStatistics
+  - Message methods: getMessages, getMessageDetail, deleteMessage, bulkDeleteMessages
+- **App routing:** Added `/channels/:id/messages` route for message browser
+- **Layout:** Added navigation links for Dashboard and Messages in AppLayout sidebar
+
+### Key decisions:
+- D-025: Auto-refresh via TanStack Query polling (5s) — no WebSocket for v1
+- D-026: Statistics API returns per-channel + all-channels summary
+- D-027: Message browser with server-side pagination
+
+### What's next:
+- HTTP connector (second protocol)
+- HL7v2 parser for user scripts
+- User management UI
+
+## 2026-02-28 — HTTP Connector, HL7v2 Parser, User Management
+
+### What was done:
+
+**Phase 1 — HTTP Connector** (`connectors`):
+- `HttpReceiver` — HTTP source connector using `node:http`. Implements `SourceConnectorRuntime`. Validates method/path, reads body, builds `sourceMap` with HTTP metadata (remoteAddress, method, path, headers, queryString, contentType).
+- `HttpDispatcher` — HTTP destination connector using native `fetch`. Uses `AbortSignal.any()` for combined timeout+abort. Returns `ConnectorResponse` with SENT/ERROR status.
+- Registry updated with HTTP factories for both source and destination
+- Re-exported from `connectors/index.ts`
+- **23 tests** (12 receiver + 11 dispatcher)
+
+**Phase 2 — HL7v2 Parser** (`core-util`):
+- `hl7-encoding.ts` — Delimiter detection from MSH segment, escape/unescape with all standard sequences (`\F\`, `\S\`, `\T\`, `\R\`, `\E\`, `\Xnn\` hex)
+- `hl7-path.ts` — Path parsing (`PID.3.1` → structured `Hl7Path`), auto-resolve of missing indices
+- `hl7-message.ts` — Core parser class: `parse()`, `get()`, `set()`, `delete()`, `toString()`, `getSegmentString()`, `getSegmentCount()`. Nested numeric-indexed internal representation. MSH special handling. Round-trip preserving.
+- `hl7-ack.ts` — ACK/NAK message generation (AA/AE/AR), sender/receiver swap, MSA + optional ERR segment
+- `hl7/index.ts` — Public re-exports
+- Re-exported from `core-util/index.ts`
+- **68 tests** (19 encoding + 10 path + 32 message + 7 ACK)
+
+**Phase 3 — User Management** (`server` + `web`):
+- **API** (7 endpoints):
+  - `GET /users` — list all users (admin only)
+  - `POST /users` — create user (admin only)
+  - `GET /users/:id` — get user detail
+  - `PUT /users/:id` — update user (admin only)
+  - `DELETE /users/:id` — soft-delete via enabled=false (admin only)
+  - `POST /users/:id/password` — change password (admin or self)
+  - `POST /users/:id/unlock` — unlock locked account (admin only)
+- `UserService` — 7 static methods with self-protection (cannot disable own account, cannot change own role, cannot delete last admin), bcryptjs password hashing
+- `UserController` — HTTP adapter with error code → status mapping
+- Schema additions: `changePasswordSchema`, `userIdParamSchema`
+- **20 server tests** (user service)
+- **Users page** (`web`):
+  - `UsersPage.tsx` — Table with username, email, full name, role chip, enabled status, last login, actions (edit/disable/unlock)
+  - `UserDialog.tsx` — Create/edit dialog with username, email, password, first/last name, role select
+  - `use-users.ts` — TanStack Query hooks (useUsers, useUser, useCreateUser, useUpdateUser, useDeleteUser, useChangePassword, useUnlockUser)
+  - API client: added `UserSummary`, `UserDetail` interfaces and 7 API methods
+  - App.tsx: added `/users` route
+
+### Key decisions:
+- D-028: Native `fetch` for HTTP dispatcher — Node.js 18+ built-in, no extra dependency
+- D-029: node:http for HTTP receiver — lightweight, no Express dependency in connectors package
+- D-030: No connection pooling for HTTP dispatcher — fetch manages connections internally
+- D-031: HL7 parser in `core-util` not `engine` — general utility, used in sandbox scripts + server
+- D-032: 1-based indexing for HL7 paths — matches HL7 spec
+- D-033: Soft-delete users (enabled: false) — preserve audit trail, referential integrity
+- D-034: Admin-only user management — matches Mirth Connect pattern, self-protection rules
+
+### Build notes:
+- Registry Map type inference: `exactOptionalPropertyTypes` required explicit `new Map<string, Factory>()` and return type annotations on lambdas
+- `let` → `const` in hl7-path.ts (field never reassigned)
+- Removed unused eslint-disable directives in hl7-message.ts
+
+### Verification:
+- `pnpm build` — 0 errors
+- `pnpm lint` — 0 warnings
+- `pnpm test` — **369 tests passing** (258 existing + 111 new)
+
+### What's next:
+- Code templates (reusable JavaScript functions shared across channels)
+- Alert system (configurable notifications on channel events/errors)
+- File connector, Database connector
+- Persistent message store (Drizzle-backed, replacing in-memory)
