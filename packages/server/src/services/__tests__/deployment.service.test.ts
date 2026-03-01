@@ -121,6 +121,64 @@ describe('DeploymentService', () => {
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'CONFLICT');
     });
+
+    it('returns INVALID_INPUT when source connector properties are invalid', async () => {
+      const badChannel = {
+        ...CHANNEL_DETAIL,
+        sourceConnectorType: 'TCP_MLLP',
+        sourceConnectorProperties: {},  // missing required port
+      };
+      mockChannelService.getById.mockResolvedValue(ok(badChannel));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+      expect(result.error.message).toContain('source');
+      expect(result.error.message).toContain('TCP_MLLP');
+      expect(mockEngine.deploy).not.toHaveBeenCalled();
+    });
+
+    it('returns INVALID_INPUT when destination connector properties are invalid', async () => {
+      const badChannel = {
+        ...CHANNEL_DETAIL,
+        destinations: [{
+          id: 'dest-1', metaDataId: 1, name: 'Dest 1', enabled: true,
+          connectorType: 'SMTP', properties: { host: 'smtp.test.com', port: 587 },  // missing 'to'
+          queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 10000,
+          rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+        }],
+      };
+      mockChannelService.getById.mockResolvedValue(ok(badChannel));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+      expect(result.error.message).toContain('destination');
+      expect(result.error.message).toContain('SMTP');
+      expect(mockEngine.deploy).not.toHaveBeenCalled();
+    });
+
+    it('deploys successfully with valid destination properties', async () => {
+      const goodChannel = {
+        ...CHANNEL_DETAIL,
+        destinations: [{
+          id: 'dest-1', metaDataId: 1, name: 'Dest 1', enabled: true,
+          connectorType: 'HTTP', properties: { url: 'http://example.com/api' },
+          queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 10000,
+          rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+        }],
+      };
+      mockChannelService.getById.mockResolvedValue(ok(goodChannel));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      expect(mockEngine.deploy).toHaveBeenCalledOnce();
+    });
   });
 
   describe('start', () => {

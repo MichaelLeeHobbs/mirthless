@@ -10,6 +10,7 @@ import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
+  if (isServiceError(error, 'INVALID_INPUT')) return 400;
   if (isServiceError(error, 'CONFLICT')) return 409;
   return 500;
 }

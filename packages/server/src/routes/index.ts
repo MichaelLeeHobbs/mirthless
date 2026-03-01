@@ -14,6 +14,7 @@ import deploymentRoutes from './deployment.routes.js';
 import eventRoutes from './event.routes.js';
 import globalScriptRoutes from './global-script.routes.js';
 import messageRoutes from './message.routes.js';
+import scriptValidationRoutes from './script-validation.routes.js';
 import settingsRoutes from './settings.routes.js';
 import statisticsRoutes from './statistics.routes.js';
 import userRoutes from './user.routes.js';
@@ -40,6 +41,7 @@ router.use('/admin/prune', dataPrunerRoutes);
 router.use('/code-templates', codeTemplateRoutes);
 router.use('/events', eventRoutes);
 router.use('/global-scripts', globalScriptRoutes);
+router.use('/scripts', scriptValidationRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/users', userRoutes);
 

@@ -137,3 +137,17 @@ D-065: CLI uses `~/.mirthless/config.json` for persistent config — Token store
 D-066: Channel clone starts disabled — Safety measure. Prevents accidental duplicate message routing when cloning an active channel. User must explicitly enable the clone after reviewing its configuration. — 2026-03-01
 
 D-067: CLI communicates via HTTP API (same as web UI) — No special admin socket, IPC, or direct DB access. Any endpoint available to the web UI is available to the CLI with the same auth and RBAC. Simplest correct approach. — 2026-03-01
+
+D-068: Email service reads SMTP config from settings table per-send — No cached transport. Creates and closes nodemailer transport on each send. Simpler lifecycle, automatically picks up settings changes. Acceptable for alert volume (not bulk email). — 2026-03-01
+
+D-069: Connector property validation at deploy time — Zod schemas validate required fields before engine.deploy(). Prevents runtime failures from missing port, empty directory, etc. Unknown connector types pass validation (forward compatibility). — 2026-03-01
+
+D-070: Three health endpoints (live/ready/full) — `/health/live` always 200 (k8s liveness). `/health/ready` checks DB (k8s readiness). `/health` returns full status with engine stats and memory usage. Industry standard Kubernetes health probe pattern. — 2026-03-01
+
+D-071: Health check logic extracted to health.service.ts — Testable without supertest. Service functions unit-tested with mocked DB and engine. Express endpoints are thin wrappers. — 2026-03-01
+
+D-072: Script validation returns syntax errors as successful result — `{ ok: true, value: { valid: false, errors } }` — the service call succeeded, the script is invalid. Only infrastructure failures (esbuild crash) would return `ok: false`. Follows Result<T> pattern correctly. — 2026-03-01
+
+D-073: Script validation uses esbuild transform (not full compile) — Same approach as engine's script-compiler. In-process, <1ms, no filesystem. Catches syntax errors without executing code. — 2026-03-01
+
+D-074: Rate limiting on /refresh endpoint — Same `authRateLimiter` as /login. Refresh tokens can be abused for session hijacking attempts. Consistent security posture across all auth endpoints. — 2026-03-01

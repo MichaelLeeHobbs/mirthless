@@ -19,8 +19,8 @@ const router: IRouter = Router();
 // Public routes (with rate limiting)
 router.post('/login', authRateLimiter, validate({ body: loginSchema }), AuthController.login);
 
-// Refresh uses cookie — no body validation needed
-router.post('/refresh', AuthController.refresh);
+// Refresh uses cookie — no body validation needed (rate limited like login)
+router.post('/refresh', authRateLimiter, AuthController.refresh);
 
 // Logout requires authentication
 router.post('/logout', authenticate, AuthController.logout);

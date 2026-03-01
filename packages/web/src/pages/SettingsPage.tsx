@@ -19,7 +19,10 @@ import SaveIcon from '@mui/icons-material/Save';
 import { useSettings, useBulkUpsertSettings } from '../hooks/use-settings.js';
 import type { SettingDetail } from '../api/client.js';
 
-const CATEGORIES = ['all', 'general', 'security', 'features'] as const;
+const CATEGORIES = ['all', 'general', 'security', 'features', 'smtp'] as const;
+
+/** Setting keys that should render as password fields. */
+const PASSWORD_KEYS = new Set(['smtp.auth_pass']);
 
 interface EditableValue {
   readonly value: string;
@@ -133,11 +136,12 @@ export function SettingsPage(): ReactNode {
       );
     }
 
-    // Default: string
+    // Default: string (password masking for sensitive keys)
     return (
       <TextField
         size="small"
         fullWidth
+        type={PASSWORD_KEYS.has(setting.key) ? 'password' : 'text'}
         value={currentValue}
         onChange={(e) => { handleValueChange(setting.key, e.target.value); }}
       />

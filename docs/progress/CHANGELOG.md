@@ -2,6 +2,49 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-01 — Production Readiness (Phase 15)
+
+### What was done:
+- **Email Service + AlertManager Wiring (Unit 1):**
+  - `email.service.ts` — Reads SMTP settings from DB, sends mail via nodemailer, Result<T> pattern
+  - Wired `emailSender` callback into `AlertManager` constructor in `engine.ts` — EMAIL alert actions now functional
+  - 13 tests (getSmtpConfig + sendMail success/failure paths)
+- **SMTP Settings Seed Data (Unit 2):**
+  - 6 new settings: `smtp.host`, `smtp.port`, `smtp.secure`, `smtp.from`, `smtp.auth_user`, `smtp.auth_pass`
+- **SMTP Settings UI (Unit 3):**
+  - Added 'smtp' category tab to Settings page
+  - Password masking for `smtp.auth_pass` field
+- **Connector Property Validation (Unit 4):**
+  - `connector-validation.service.ts` — Zod schemas for 6 source + 8 destination connector types
+  - Wired into `deployment.service.ts` — validates before `engine.deploy()`
+  - `INVALID_INPUT` → HTTP 400 in deployment controller
+  - 35 validation tests + 3 deployment integration tests
+- **Enhanced Health Check (Unit 5):**
+  - `health.service.ts` — DB connectivity, engine stats, memory usage
+  - `GET /health` — full health info (backwards compatible), 200 or 503
+  - `GET /health/live` — Kubernetes liveness probe (always 200)
+  - `GET /health/ready` — Kubernetes readiness probe (DB check)
+  - 17 health service tests
+- **Auth Rate Limiting (Unit 6):**
+  - Added `authRateLimiter` to `POST /refresh` endpoint (was unprotected)
+  - 3 route middleware tests
+- **Script Syntax Validation (Unit 7):**
+  - `POST /api/v1/scripts/validate` — esbuild-based JS/TS syntax checking
+  - Service + Controller + Route (3 new files)
+  - 11 validation tests
+
+### Test counts:
+- core-models: 184, core-util: 68, engine: 189, connectors: 282, server: 392, cli: 22
+- **Total: 1,137 tests** (was 1,055 → +82)
+
+### Key decisions:
+- See DECISIONS.md D-068 through D-074
+
+### What's next:
+- DICOM connector (dedicated phase)
+- Persistent message store
+- WebSocket-based real-time updates
+
 ## 2026-02-25 — Initial Scaffolding
 
 ### What was done:

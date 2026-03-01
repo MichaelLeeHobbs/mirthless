@@ -8,6 +8,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { ChannelService } from './channel.service.js';
+import { validateConnectorProperties } from './connector-validation.service.js';
 import { getEngine } from '../engine.js';
 
 // ----- Types -----
@@ -28,13 +29,33 @@ export class DeploymentService {
         throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
       }
 
+      const channel = channelResult.value;
+
       const engine = getEngine();
       const existing = engine.getRuntime(channelId);
       if (existing) {
         throw new ServiceError('CONFLICT', `Channel ${channelId} is already deployed`);
       }
 
-      await engine.deploy(channelResult.value);
+      // Validate source connector properties
+      const srcValidation = validateConnectorProperties(
+        channel.sourceConnectorType, 'source', channel.sourceConnectorProperties,
+      );
+      if (!srcValidation.ok) {
+        throw new ServiceError('INVALID_INPUT', srcValidation.error.message);
+      }
+
+      // Validate each destination's connector properties
+      for (const dest of channel.destinations) {
+        const destValidation = validateConnectorProperties(
+          dest.connectorType, 'destination', dest.properties,
+        );
+        if (!destValidation.ok) {
+          throw new ServiceError('INVALID_INPUT', destValidation.error.message);
+        }
+      }
+
+      await engine.deploy(channel);
 
       emitEvent({
         level: 'INFO', name: 'CHANNEL_DEPLOYED', outcome: 'SUCCESS',

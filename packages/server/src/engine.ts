@@ -41,6 +41,7 @@ import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
 import { CodeTemplateService } from './services/code-template.service.js';
 import { AlertService } from './services/alert.service.js';
+import { EmailService } from './services/email.service.js';
 import { db } from './lib/db.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import logger from './lib/logger.js';
@@ -154,8 +155,16 @@ export class EngineManager {
       channel, templates, filterTransformerData,
     );
 
+    // Create email sender callback for alert actions
+    const emailSender = async (to: readonly string[], subject: string, body: string): Promise<void> => {
+      const result = await EmailService.sendMail(to, subject, body);
+      if (!result.ok) {
+        logger.error({ error: result.error }, 'Failed to send alert email');
+      }
+    };
+
     // Create alert manager and load alerts for this channel
-    const alertManager = new AlertManager({ logger });
+    const alertManager = new AlertManager({ logger, emailSender });
     alertManager.loadAlerts(loadedAlerts);
 
     // Build pipeline config

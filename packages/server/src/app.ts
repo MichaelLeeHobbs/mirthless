@@ -15,6 +15,7 @@ import routes from './routes/index.js';
 import { requestId } from './middleware/request-id.middleware.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import { apiRateLimiter } from './middleware/rate-limit.middleware.js';
+import { checkDatabase, getHealthStatus } from './services/health.service.js';
 
 // Use createRequire for proper ESM/CJS interop with CJS packages
 const require = createRequire(import.meta.url);
@@ -54,18 +55,29 @@ app.use(
     logger,
     customProps: (req) => ({ requestId: (req as Request).id }),
     autoLogging: {
-      ignore: (req) => (req as Request).url === '/health',
+      ignore: (req) => {
+        const url = (req as Request).url;
+        return url === '/health' || url === '/health/live' || url === '/health/ready';
+      },
     },
   })
 );
 
-// Health check endpoint
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-  });
+// Health check endpoints (liveness, readiness, full)
+app.get('/health/live', (_req: Request, res: Response) => {
+  res.json({ status: 'ok' });
+});
+
+app.get('/health/ready', async (_req: Request, res: Response) => {
+  const dbOk = await checkDatabase();
+  const status = dbOk ? 200 : 503;
+  res.status(status).json({ status: dbOk ? 'ok' : 'unavailable', database: { connected: dbOk } });
+});
+
+app.get('/health', async (_req: Request, res: Response) => {
+  const health = await getHealthStatus();
+  const status = health.status === 'ok' ? 200 : 503;
+  res.status(status).json(health);
 });
 
 // Global API rate limiter (100 req/min per IP)
