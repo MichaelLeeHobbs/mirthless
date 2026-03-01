@@ -14,7 +14,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isProduction ? 5 : 100, // strict in production, relaxed in dev/test
+  max: isProduction ? 5 : 1000, // strict in production, relaxed in dev/test (E2E runs ~60 logins)
   message: {
     success: false,
     error: 'Too many login attempts. Please try again in 15 minutes.',
@@ -30,7 +30,7 @@ export const authRateLimiter = rateLimit({
 
 export const apiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 100, // 100 requests per minute
+  max: isProduction ? 100 : 1000, // strict in production, relaxed in dev/test
   message: {
     success: false,
     error: 'Too many requests. Please slow down.',
