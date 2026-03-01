@@ -113,7 +113,7 @@ describe('DeploymentService', () => {
 
     it('returns CONFLICT if channel already deployed', async () => {
       mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
 
       const result = await DeploymentService.deploy(CHANNEL_ID);
 
@@ -183,7 +183,7 @@ describe('DeploymentService', () => {
 
   describe('start', () => {
     it('starts deployed channel and returns STARTED state', async () => {
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
       mockRuntime.getState.mockReturnValue('STARTED');
 
       const result = await DeploymentService.start(CHANNEL_ID);
@@ -205,7 +205,7 @@ describe('DeploymentService', () => {
 
   describe('stop', () => {
     it('stops running channel', async () => {
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
       mockRuntime.getState.mockReturnValue('STOPPED');
 
       const result = await DeploymentService.stop(CHANNEL_ID);
@@ -218,7 +218,7 @@ describe('DeploymentService', () => {
 
   describe('undeploy', () => {
     it('undeploys stopped channel', async () => {
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
 
       const result = await DeploymentService.undeploy(CHANNEL_ID);
 
@@ -237,7 +237,7 @@ describe('DeploymentService', () => {
 
     it('returns CONFLICT if channel is still running', async () => {
       mockRuntime.getState.mockReturnValue('STARTED');
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
 
       const result = await DeploymentService.undeploy(CHANNEL_ID);
 
@@ -250,7 +250,7 @@ describe('DeploymentService', () => {
   describe('getStatus', () => {
     it('returns current state of deployed channel', async () => {
       mockRuntime.getState.mockReturnValue('STARTED');
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
 
       const result = await DeploymentService.getStatus(CHANNEL_ID);
 
@@ -270,7 +270,7 @@ describe('DeploymentService', () => {
   describe('getAllStatuses', () => {
     it('returns status of all deployed channels', async () => {
       mockRuntime.getState.mockReturnValue('STARTED');
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
 
       const result = await DeploymentService.getAllStatuses();
 

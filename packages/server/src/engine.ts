@@ -10,6 +10,7 @@ import {
   MessageProcessor,
   DEFAULT_EXECUTION_OPTIONS,
   GlobalChannelMap,
+  QueueConsumer,
   compileScript,
   compileFilterRulesToScript,
   compileTransformerStepsToScript,
@@ -25,6 +26,7 @@ import {
   type SendToDestination,
   type CompiledScript,
   type CodeTemplateData,
+  type QueueConsumerConfig,
   type LoadedAlert,
 } from '@mirthless/engine';
 import { tryCatch } from 'stderr-lib';
@@ -55,6 +57,7 @@ export interface DeployedChannel {
   readonly config: ChannelDetail;
   readonly globalChannelMap: GlobalChannelMap;
   readonly alertManager: AlertManager;
+  readonly queueConsumers: readonly QueueConsumer[];
 }
 
 // ----- Message Store Adapter -----
@@ -187,6 +190,22 @@ export class EngineManager {
       return connector.send({ channelId: channel.id, messageId: 0, metaDataId, content, dataType: channel.inboundDataType }, signal);
     };
 
+    // Create queue consumers for queued destinations
+    const queueConsumers: QueueConsumer[] = [];
+    for (const dest of channel.destinations) {
+      if (dest.queueMode === 'NEVER') continue;
+      const queueConfig: QueueConsumerConfig = {
+        channelId: channel.id,
+        metaDataId: dest.metaDataId,
+        serverId: this.serverId,
+        retryCount: dest.retryCount ?? 3,
+        retryIntervalMs: dest.retryIntervalMs ?? 10_000,
+        batchSize: 10,
+        pollIntervalMs: 1_000,
+      };
+      queueConsumers.push(new QueueConsumer(queueConfig, this.store, sendFn));
+    }
+
     // Create message processor
     const processor = new MessageProcessor(
       this.sandbox, this.store, sendFn, pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
@@ -208,7 +227,7 @@ export class EngineManager {
       throw new Error('Failed to deploy channel runtime');
     }
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, alertManager });
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, alertManager, queueConsumers });
   }
 
   /** Get a deployed channel runtime. */
@@ -227,6 +246,9 @@ export class EngineManager {
     if (!deployed) {
       throw new Error(`Channel ${channelId} is not deployed`);
     }
+
+    // Stop all queue consumers before cleanup
+    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
 
     deployed.globalChannelMap.clear();
     deployed.alertManager.clearThrottleState();
