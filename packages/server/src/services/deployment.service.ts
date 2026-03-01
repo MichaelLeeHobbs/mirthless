@@ -10,6 +10,7 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { ChannelService } from './channel.service.js';
 import { validateConnectorProperties } from './connector-validation.service.js';
 import { getEngine } from '../engine.js';
+import type { DeployedChannel } from '../engine.js';
 
 // ----- Types -----
 
@@ -102,6 +103,9 @@ export class DeploymentService {
         throw new ServiceError('CONFLICT', 'Failed to start channel');
       }
 
+      // Start queue consumers after runtime starts
+      deployed.queueConsumers.forEach((c) => c.start());
+
       emitEvent({
         level: 'INFO', name: 'CHANNEL_STARTED', outcome: 'SUCCESS',
         userId: context?.userId ?? null, channelId,
@@ -116,6 +120,10 @@ export class DeploymentService {
   static async stop(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
+
+      // Stop queue consumers before stopping runtime
+      await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
+
       const result = await deployed.runtime.stop();
       if (!result.ok) {
         throw new ServiceError('CONFLICT', 'Failed to stop channel');
@@ -135,6 +143,10 @@ export class DeploymentService {
   static async halt(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
+
+      // Stop queue consumers before halting runtime
+      await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
+
       const result = await deployed.runtime.halt();
       if (!result.ok) {
         throw new ServiceError('CONFLICT', 'Failed to halt channel');
@@ -211,7 +223,7 @@ export class DeploymentService {
 
 // ----- Helper -----
 
-function getDeployed(channelId: string): { runtime: { getState(): string; start(): Promise<Result<void>>; stop(): Promise<Result<void>>; halt(): Promise<Result<void>>; pause(): Promise<Result<void>>; resume(): Promise<Result<void>> } } {
+function getDeployed(channelId: string): DeployedChannel {
   const engine = getEngine();
   const deployed = engine.getRuntime(channelId);
   if (!deployed) {
