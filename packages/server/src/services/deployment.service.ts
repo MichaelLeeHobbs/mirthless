@@ -7,6 +7,7 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import { emitToAll } from '../lib/socket.js';
 import { ChannelService } from './channel.service.js';
 import { validateConnectorProperties } from './connector-validation.service.js';
 import { getEngine } from '../engine.js';
@@ -63,6 +64,8 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
       });
 
+      emitToAll('channel:state', { channelId, state: 'STOPPED' });
+
       return { channelId, state: 'STOPPED' };
     });
   }
@@ -89,6 +92,8 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
       });
 
+      emitToAll('channel:state', { channelId, state: 'UNDEPLOYED' });
+
       return { channelId, state: 'UNDEPLOYED' };
     });
   }
@@ -108,7 +113,10 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
       });
 
-      return { channelId, state: deployed.runtime.getState() };
+      const state = deployed.runtime.getState();
+      emitToAll('channel:state', { channelId, state });
+
+      return { channelId, state };
     });
   }
 
@@ -127,7 +135,10 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
       });
 
-      return { channelId, state: deployed.runtime.getState() };
+      const state = deployed.runtime.getState();
+      emitToAll('channel:state', { channelId, state });
+
+      return { channelId, state };
     });
   }
 
@@ -146,7 +157,10 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: { method: 'halt' },
       });
 
-      return { channelId, state: deployed.runtime.getState() };
+      const state = deployed.runtime.getState();
+      emitToAll('channel:state', { channelId, state });
+
+      return { channelId, state };
     });
   }
 
@@ -165,7 +179,10 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
       });
 
-      return { channelId, state: deployed.runtime.getState() };
+      const state = deployed.runtime.getState();
+      emitToAll('channel:state', { channelId, state });
+
+      return { channelId, state };
     });
   }
 
@@ -184,7 +201,10 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: { method: 'resume' },
       });
 
-      return { channelId, state: deployed.runtime.getState() };
+      const state = deployed.runtime.getState();
+      emitToAll('channel:state', { channelId, state });
+
+      return { channelId, state };
     });
   }
 

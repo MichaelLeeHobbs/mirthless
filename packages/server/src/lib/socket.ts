@@ -29,6 +29,18 @@ export function getIO(): SocketIOServer | null {
   return io;
 }
 
+/** Emit an event to all clients in a specific room. */
+export function emitToRoom(room: string, event: string, data: unknown): void {
+  const currentIO = getIO();
+  if (currentIO) { currentIO.to(room).emit(event, data); }
+}
+
+/** Emit an event to all connected clients. */
+export function emitToAll(event: string, data: unknown): void {
+  const currentIO = getIO();
+  if (currentIO) { currentIO.emit(event, data); }
+}
+
 export async function shutdownSocketIO(): Promise<void> {
   if (io) {
     await new Promise<void>((resolve) => {
