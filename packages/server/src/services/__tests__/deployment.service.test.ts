@@ -43,6 +43,10 @@ vi.mock('../channel.service.js', () => ({
   ChannelService: mockChannelService,
 }));
 
+vi.mock('../../lib/event-emitter.js', () => ({
+  emitEvent: vi.fn(),
+}));
+
 // Must import after mocks
 const { DeploymentService } = await import('../deployment.service.js');
 

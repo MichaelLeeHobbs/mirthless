@@ -99,6 +99,10 @@ vi.mock('drizzle-orm', () => ({
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
 }));
 
+vi.mock('../../lib/event-emitter.js', () => ({
+  emitEvent: vi.fn(),
+}));
+
 // Must import after mocks
 const { ChannelService } = await import('../channel.service.js');
 

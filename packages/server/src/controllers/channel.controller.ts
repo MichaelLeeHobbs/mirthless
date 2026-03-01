@@ -56,7 +56,8 @@ export class ChannelController {
 
   static async create(req: Request, res: Response): Promise<void> {
     const input = req.body as CreateChannelInput;
-    const result = await ChannelService.create(input);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await ChannelService.create(input, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -72,7 +73,8 @@ export class ChannelController {
   static async update(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const input = req.body as UpdateChannelInput;
-    const result = await ChannelService.update(id, input);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await ChannelService.update(id, input, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -87,7 +89,8 @@ export class ChannelController {
 
   static async delete(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await ChannelService.delete(id);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await ChannelService.delete(id, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);

@@ -9,8 +9,10 @@ import authRoutes from './auth.routes.js';
 import channelRoutes from './channel.routes.js';
 import codeTemplateRoutes from './code-template.routes.js';
 import deploymentRoutes from './deployment.routes.js';
+import eventRoutes from './event.routes.js';
 import globalScriptRoutes from './global-script.routes.js';
 import messageRoutes from './message.routes.js';
+import settingsRoutes from './settings.routes.js';
 import statisticsRoutes from './statistics.routes.js';
 import userRoutes from './user.routes.js';
 
@@ -24,7 +26,9 @@ router.use('/channels', deploymentRoutes);
 router.use('/channels', messageRoutes);
 router.use('/channels', statisticsRoutes);
 router.use('/code-templates', codeTemplateRoutes);
+router.use('/events', eventRoutes);
 router.use('/global-scripts', globalScriptRoutes);
+router.use('/settings', settingsRoutes);
 router.use('/users', userRoutes);
 
 export default router;

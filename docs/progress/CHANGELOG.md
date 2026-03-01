@@ -480,3 +480,121 @@
 - Alert system (API + UI)
 - File connector, Database connector
 - Persistent message store (Drizzle-backed, replacing in-memory)
+
+## 2026-03-01 — Alerts System (Phase 8)
+
+### What was done:
+
+**Alert Zod Schemas** (`core-models`):
+- `alert.schema.ts` — TRIGGER/ACTION const objects, trigger types (ERROR/STATUS_CHANGE/QUEUE_THRESHOLD), action types (EMAIL/LOG/CHANNEL/WEBHOOK), CRUD schemas (createAlertSchema, updateAlertSchema, alertIdParamSchema, alertListQuerySchema, patchAlertEnabledSchema)
+- **37 schema tests**
+
+**Alert Service** (`server`):
+- `AlertService` — 6 static methods: `list` (with enabled/channelId filters), `getById`, `create`, `update` (optimistic locking), `delete`, `setEnabled`
+- Returns `Result<T>` pattern, validates NOT_FOUND/ALREADY_EXISTS/CONFLICT errors
+- **21 service tests**
+
+**Alert Controller + Routes** (`server`):
+- `AlertController` — 6 static methods mapping service results to HTTP responses
+- Routes: GET `/`, GET `/:id`, POST `/`, PUT `/:id`, DELETE `/:id`, PATCH `/:id/enabled`
+- Permissions: `alerts:read` for GET, `alerts:write` for mutations
+
+**Alert UI** (`web`):
+- `AlertsPage.tsx` — Table with name, enabled toggle, trigger type, action count, channel count, edit/delete
+- `AlertEditorPage.tsx` — Tabbed editor: General + Trigger + Channels + Actions + Templates sections
+- `use-alerts.ts` — TanStack Query hooks with query key hierarchy
+- API client: AlertSummary, AlertDetail interfaces + 6 API methods
+
+### Key decisions:
+- Alerts CRUD follows same pattern as channels (optimistic locking, setEnabled toggle)
+- Trigger/action configs stored as JSON objects in the DB
+- No alert evaluation engine yet — alerts are data-only for now
+
+### Verification:
+- `pnpm build` — 0 errors
+- `pnpm lint` — 0 warnings
+- `pnpm test` — **586 tests passing** (134 schema + 68 HL7 + 142 engine + 49 connectors + 193 server)
+
+### What's next:
+- Events system (HIPAA audit log)
+- Settings system (server configuration)
+- Event emission from services
+
+## 2026-03-01 — Events & Settings Systems (Phase 9)
+
+### What was done:
+
+**Deliverable 0 — Event Zod Schemas** (`core-models`):
+- `event.schema.ts` — EVENT_NAME const object (17 event types), `eventListQuerySchema` (paginated + filtered), `eventIdParamSchema`, `createEventInputSchema`, `purgeEventsSchema`
+- **32 schema tests**
+
+**Deliverable 1 — Event Service** (`server`):
+- `EventService` — 4 static methods: `list` (paginated + filtered by level/name/outcome/userId/channelId/date range), `getById`, `create`, `purge` (delete older than N days)
+- Dynamic WHERE via `and()` + `inArray()` for comma-separated filters
+- `buildWhereConditions()` helper splits comma-separated level/name filters
+- **18 service tests**
+
+**Deliverable 2 — Event Controller + Routes** (`server`):
+- `EventController` — 3 static methods: list, getById, purge
+- Routes: GET `/events` (events:read), GET `/events/:id` (events:read), DELETE `/events` (settings:write)
+- No POST endpoint — events are created internally via `emitEvent()` only
+
+**Deliverable 3 — Events Page UI** (`web`):
+- `EventsPage.tsx` — Filter bar + paginated MUI table + expandable detail rows + purge dialog
+- `EventFilterBar.tsx` — Level dropdown, event name selector, outcome toggle, date range, channel filter
+- `EventDetailPanel.tsx` — Attributes JSON viewer in Collapse panel
+- Level/Outcome colored chips, date formatting, truncated UUIDs
+- `use-events.ts` — useEvents(params), useEvent(id), usePurgeEvents() hooks
+
+**Deliverable 4 — Settings Zod Schemas** (`core-models`):
+- `setting.schema.ts` — SETTING_TYPE const object, `upsertSettingSchema`, `bulkUpsertSettingsSchema`, `settingsListQuerySchema`, `settingKeyParamSchema`
+- **18 schema tests**
+
+**Deliverable 5 — Settings Service** (`server`):
+- `SettingsService` — 5 static methods: `list` (optional category filter), `getByKey`, `upsert` (Drizzle onConflictDoUpdate), `bulkUpsert` (transaction), `delete`
+- **11 service tests**
+
+**Deliverable 6 — Settings Controller + Routes** (`server`):
+- `SettingsController` — 5 static methods: list, getByKey, upsert, bulkUpsert, delete
+- Routes: GET `/settings` (settings:read), GET `/settings/:key` (settings:read), PUT `/settings/bulk` (settings:write), PUT `/settings/:key` (settings:write), DELETE `/settings/:key` (settings:write)
+- `/bulk` route placed before `/:key` to avoid route conflict
+
+**Deliverable 7 — Settings Page UI** (`web`):
+- `SettingsPage.tsx` — Category tabs (All/General/Security/Features), type-aware inputs (text/number/Switch/JSON multiline), dirty tracking + bulk save
+- `use-settings.ts` — useSettings(category?), useSetting(key), useUpsertSetting(), useBulkUpsertSettings(), useDeleteSetting() hooks
+
+**Deliverable 8 — Event Emission from Existing Services** (`server`):
+- `event-emitter.ts` — `emitEvent()` fire-and-forget helper + `AuditContext` interface
+- 8 services modified to emit audit events after successful write operations:
+  - `auth.service.ts` → USER_LOGIN, USER_LOGIN_FAILED
+  - `channel.service.ts` → CHANNEL_CREATED, CHANNEL_UPDATED, CHANNEL_DELETED
+  - `deployment.service.ts` → CHANNEL_DEPLOYED, CHANNEL_UNDEPLOYED, CHANNEL_STARTED, CHANNEL_STOPPED, CHANNEL_PAUSED
+  - `user.service.ts` → USER_CREATED, USER_UPDATED, USER_DELETED
+  - `settings.service.ts` → SETTINGS_CHANGED
+  - `code-template.service.ts` → CODE_TEMPLATE_UPDATED
+  - `global-script.service.ts` → GLOBAL_SCRIPT_UPDATED
+  - `alert.service.ts` → ALERT_UPDATED
+- 7 controllers updated to pass AuditContext (`{ userId, ipAddress }`) from `req.user`/`req.ip`
+- All service test files mock `event-emitter.js` to isolate event emission
+
+### Key decisions:
+- D-043: Events are server-generated, not user-created. No `POST /events` endpoint. Prevents fake audit entries.
+- D-044: Fire-and-forget event emission. Non-blocking — original operations never fail due to event recording.
+- D-045: Event purge via `DELETE /events?olderThanDays=N`. Admin-only (settings:write permission).
+- D-046: Settings use upsert by key (onConflictDoUpdate). No separate create/update endpoints.
+- D-047: AuditContext passed as explicit parameter to services — not AsyncLocalStorage. Testable, KISS.
+
+### Build notes:
+- `exactOptionalPropertyTypes` in settings controller: conditionally construct `{ category }` argument
+- EVENT_LEVEL/EVENT_OUTCOME already in constants.ts — only EVENT_NAME + schemas in event.schema.ts
+- `vi.mock('../../lib/event-emitter.js')` required in all 7 affected service test files
+
+### Verification:
+- `pnpm build` — 0 errors across all packages
+- `pnpm lint` — 0 warnings
+- `pnpm test` — **665 tests passing** (184 schema + 68 HL7 + 142 engine + 49 connectors + 222 server)
+
+### What's next:
+- File connector, Database connector
+- DICOM connector, FHIR connector
+- Persistent message store (Drizzle-backed, replacing in-memory)

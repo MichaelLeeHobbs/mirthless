@@ -69,6 +69,10 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
 }));
 
+vi.mock('../../lib/event-emitter.js', () => ({
+  emitEvent: vi.fn(),
+}));
+
 const { GlobalScriptService } = await import('../global-script.service.js');
 
 // ----- Fixtures -----

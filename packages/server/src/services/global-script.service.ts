@@ -8,6 +8,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq } from 'drizzle-orm';
 import type { UpdateGlobalScriptsInput } from '@mirthless/core-models';
 import { GLOBAL_SCRIPT_TYPE } from '@mirthless/core-models';
+import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { globalScripts } from '../db/schema/index.js';
 
@@ -44,6 +45,7 @@ export class GlobalScriptService {
   /** Update global scripts (upserts only provided fields). */
   static async update(
     input: UpdateGlobalScriptsInput,
+    context?: AuditContext,
   ): Promise<Result<GlobalScriptsData>> {
     return tryCatch(async () => {
       const entries: ReadonlyArray<{ key: string; field: keyof UpdateGlobalScriptsInput }> = [
@@ -80,6 +82,13 @@ export class GlobalScriptService {
         .from(globalScripts);
 
       const scriptMap = new Map(rows.map((r) => [r.scriptType, r.script]));
+
+      emitEvent({
+        level: 'INFO', name: 'GLOBAL_SCRIPT_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { updatedScripts: Object.keys(input).filter((k) => input[k as keyof UpdateGlobalScriptsInput] !== undefined) },
+      });
 
       return {
         deploy: scriptMap.get(GLOBAL_SCRIPT_TYPE.DEPLOY) ?? '',

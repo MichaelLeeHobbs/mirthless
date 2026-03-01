@@ -6,12 +6,12 @@
 
 | Package | Phase | What's Done | What's Next |
 |---------|-------|-------------|-------------|
-| `@mirthless/core-models` | Complete (v1) | Branded types, constants, Zod schemas (channel CRUD, destinations, metadata, users, **code templates**, **global scripts**, **filters**, **transformers**), **97 schema validation tests** | Refine schemas as features develop |
+| `@mirthless/core-models` | Complete (v1) | Branded types, constants, Zod schemas (channel CRUD, destinations, metadata, users, **code templates**, **global scripts**, **filters**, **transformers**, **alerts**, **events**, **settings**), **184 schema validation tests** | Refine schemas as features develop |
 | `@mirthless/core-util` | HL7v2 Parser | Result re-export, validation utils, **HL7v2 parser** (encoding, path, message, ACK), **68 HL7 tests** | Add utilities as needed (YAGNI) |
 | `@mirthless/engine` | Pipeline Complete | **Sandbox executor** (vm-based), **script compiler** (esbuild), **8-stage message pipeline**, **channel runtime** (state machine), **queue consumer** (with DB content loading), in-memory message store, **filter/transformer compilation**, **code template injection**, **global scripts**, **HL7 bridge functions**, **globalChannelMap**, **destinationSet**, **142 engine tests** | Persistent message store, polling scheduler |
 | `@mirthless/connectors` | TCP/MLLP + HTTP | Base interfaces, **TCP/MLLP receiver** (MLLP framing, connection pool), **TCP/MLLP dispatcher**, **HTTP receiver** (node:http), **HTTP dispatcher** (native fetch), connector registry, **49 connector tests** | File, Database, DICOM, FHIR connectors |
-| `@mirthless/server` | API Phase 4 | Express app, config, middleware, DB schema, auth, seeds, **Channel CRUD API** (6 endpoints), **Deployment API** (8 endpoints), **Message Query API** (4 endpoints), **Statistics API** (3 endpoints), **User Management API** (7 endpoints), **Code Templates API** (8 endpoints), **Global Scripts API** (2 endpoints), **filter/transformer CRUD** (inline with channel), **172 server tests** | Alerts API |
-| `@mirthless/web` | UI Phase 4 | React+MUI shell, auth flow, login page, **Channel Editor** (all 5 tabs + **source/destination filter & transformer UI**), **Dashboard** (summary cards, status table, quick actions), **Message Browser** (search, filter, detail panel), **Users Page** (CRUD, role chips, enable/disable/unlock), **Code Templates Page** (library tree, template editor), **Global Scripts Page** (4-tab Monaco editors), Monaco editor | Alert configuration |
+| `@mirthless/server` | API Phase 6 | Express app, config, middleware, DB schema, auth, seeds, **Channel CRUD API** (6 endpoints), **Deployment API** (8 endpoints), **Message Query API** (4 endpoints), **Statistics API** (3 endpoints), **User Management API** (7 endpoints), **Code Templates API** (8 endpoints), **Global Scripts API** (2 endpoints), **Alerts API** (6 endpoints), **Events API** (3 endpoints), **Settings API** (5 endpoints), **event emission** from all services, filter/transformer CRUD (inline with channel), **222 server tests** | File/Database connectors |
+| `@mirthless/web` | UI Phase 6 | React+MUI shell, auth flow, login page, **Channel Editor** (all 5 tabs + **source/destination filter & transformer UI**), **Dashboard** (summary cards, status table, quick actions), **Message Browser** (search, filter, detail panel), **Users Page** (CRUD, role chips, enable/disable/unlock), **Code Templates Page** (library tree, template editor), **Global Scripts Page** (4-tab Monaco editors), **Alerts Page** (list + toggle + editor), **Events Page** (paginated table, filters, detail panel, purge), **Settings Page** (category tabs, type-aware inputs, bulk save), Monaco editor | File/Database connectors |
 | `@mirthless/cli` | Scaffold | Empty package shell | CLI commands (future) |
 
 ## Infrastructure Status
@@ -35,7 +35,7 @@
 | `pnpm install` | PASS | 833 packages resolved |
 | `pnpm build` | PASS | All 7 packages compile (0 errors) |
 | `pnpm lint` | PASS | 0 warnings |
-| `pnpm test` | PASS | **528 tests passing** (97 schema + 68 HL7 + 142 engine + 49 connectors + 172 server) |
+| `pnpm test` | PASS | **665 tests passing** (184 schema + 68 HL7 + 142 engine + 49 connectors + 222 server) |
 | `docker:up` | PASS | PostgreSQL 17 running |
 | `db:generate` | PASS | 34 tables generated |
 | `db:migrate` | PASS | Migrations applied |
@@ -49,6 +49,8 @@
 
 | Date | Milestone |
 |------|-----------|
+| 2026-03-01 | **Events & Settings Systems (Phase 9)** — Event Zod schemas, Event service (paginated+filtered list, create, purge), Event API (3 endpoints), Events page UI (filter bar, paginated table, detail panel, purge dialog). Settings Zod schemas, Settings service (list, getByKey, upsert, bulkUpsert, delete), Settings API (5 endpoints), Settings page UI (category tabs, type-aware inputs, bulk save). Fire-and-forget event emission from all 8 services (auth, channel, deployment, user, settings, code-template, global-script, alert). AuditContext passed from controllers. (+79 tests, 665 total) |
+| 2026-03-01 | **Alerts System (Phase 8)** — Alert Zod schemas (trigger, action, CRUD), Alert service (CRUD + setEnabled + optimistic locking), Alert API (6 endpoints), AlertsPage (list + toggle + delete), AlertEditorPage (General + Trigger + Channels + Actions + Templates sections) (+58 tests) |
 | 2026-03-01 | **Filter/Transformer CRUD + UI** — Zod schemas (filter rules, transformer steps), channel service CRUD (load + save with delete-and-reinsert), source filter/transformer accordion UI, destination filter/transformer accordion UI, shared FilterRuleEditor + TransformerStepEditor components, metaDataId-based connectorId resolution (+37 tests) |
 | 2026-02-28 | **Engine pipeline completion** — Filter/transformer compilation, code template injection, global scripts, HL7 bridge functions (parseHL7/createACK), globalChannelMap, destinationSet (+71 engine tests) |
 | 2026-02-28 | **Production readiness** — Fixed queue consumer content loading, Code Templates API (8 endpoints) + UI (library tree, template editor), Global Scripts API (2 endpoints) + UI (4-tab Monaco editors), Playwright E2E test setup (7 suites, ~36 tests) |

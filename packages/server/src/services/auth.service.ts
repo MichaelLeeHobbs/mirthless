@@ -12,6 +12,7 @@ import { db } from '../lib/db.js';
 import { users, sessions, userPermissions } from '../db/schema/index.js';
 import { eq } from 'drizzle-orm';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../lib/jwt.js';
+import { emitEvent } from '../lib/event-emitter.js';
 
 const REFRESH_TOKEN_DAYS = 7;
 const MAX_FAILED_ATTEMPTS = 5;
@@ -108,6 +109,13 @@ export class AuthService {
           );
         }
 
+        emitEvent({
+          level: 'WARN', name: 'USER_LOGIN_FAILED', outcome: 'FAILURE',
+          userId: user.id, channelId: null, serverId: null,
+          ipAddress: metadata?.ipAddress ?? null,
+          attributes: { username, reason: 'invalid_password' },
+        });
+
         throw new ServiceError('INVALID_CREDENTIALS', 'Invalid credentials');
       }
 
@@ -127,6 +135,13 @@ export class AuthService {
 
       // Load permissions
       const permissions = await loadPermissions(user.id);
+
+      emitEvent({
+        level: 'INFO', name: 'USER_LOGIN', outcome: 'SUCCESS',
+        userId: user.id, channelId: null, serverId: null,
+        ipAddress: metadata?.ipAddress ?? null,
+        attributes: { username: user.username },
+      });
 
       return {
         user: {

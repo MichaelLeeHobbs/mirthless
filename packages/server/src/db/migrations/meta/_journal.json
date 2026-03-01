@@ -8,6 +8,13 @@
       "when": 1772132334891,
       "tag": "0000_military_nightmare",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1772368919116,
+      "tag": "0001_lumpy_catseye",
+      "breakpoints": true
     }
   ]
 }

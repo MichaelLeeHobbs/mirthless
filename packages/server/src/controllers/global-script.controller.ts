@@ -23,7 +23,8 @@ export class GlobalScriptController {
 
   static async update(req: Request, res: Response): Promise<void> {
     const input = req.body as UpdateGlobalScriptsInput;
-    const result = await GlobalScriptService.update(input);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await GlobalScriptService.update(input, context);
 
     if (!result.ok) {
       logger.error({ error: result.error }, 'Failed to update global scripts');

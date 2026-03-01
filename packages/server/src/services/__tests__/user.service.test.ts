@@ -75,6 +75,10 @@ vi.mock('bcryptjs', () => ({
   },
 }));
 
+vi.mock('../../lib/event-emitter.js', () => ({
+  emitEvent: vi.fn(),
+}));
+
 // Must import after mocks
 const { UserService } = await import('../user.service.js');
 

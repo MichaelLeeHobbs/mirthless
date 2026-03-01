@@ -9,6 +9,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc } from 'drizzle-orm';
 import type { CreateUserInput, UpdateUserInput } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { users } from '../db/schema/index.js';
 
@@ -91,7 +92,7 @@ export class UserService {
   }
 
   /** Create a new user. Hashes the password. */
-  static async createUser(input: CreateUserInput): Promise<Result<UserDetail>> {
+  static async createUser(input: CreateUserInput, context?: AuditContext): Promise<Result<UserDetail>> {
     return tryCatch(async () => {
       // Check username uniqueness
       const [existingUsername] = await db
@@ -141,12 +142,19 @@ export class UserService {
           updatedAt: users.updatedAt,
         });
 
+      emitEvent({
+        level: 'INFO', name: 'USER_CREATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { createdUserId: (created as UserDetail).id, username: input.username },
+      });
+
       return created as UserDetail;
     });
   }
 
   /** Update user fields. Admin-only. Cannot change own role. */
-  static async updateUser(id: string, input: UpdateUserInput, actorId: string): Promise<Result<UserDetail>> {
+  static async updateUser(id: string, input: UpdateUserInput, actorId: string, context?: AuditContext): Promise<Result<UserDetail>> {
     return tryCatch(async () => {
       // Fetch existing
       const [existing] = await db
@@ -179,12 +187,20 @@ export class UserService {
       // Fetch and return updated user
       const result = await this.getUser(id);
       if (!result.ok) throw result.error;
+
+      emitEvent({
+        level: 'INFO', name: 'USER_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { updatedUserId: id },
+      });
+
       return result.value;
     });
   }
 
   /** Soft-delete: disable user. Cannot delete self or last admin. */
-  static async deleteUser(id: string, actorId: string): Promise<Result<void>> {
+  static async deleteUser(id: string, actorId: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       if (id === actorId) {
         throw new ServiceError('SELF_ACTION', 'Cannot delete your own account');
@@ -215,6 +231,13 @@ export class UserService {
         .update(users)
         .set({ enabled: false, updatedAt: new Date() })
         .where(eq(users.id, id));
+
+      emitEvent({
+        level: 'INFO', name: 'USER_DELETED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { deletedUserId: id },
+      });
     });
   }
 

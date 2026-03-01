@@ -6,6 +6,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { ServiceError } from '../lib/service-error.js';
+import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { ChannelService } from './channel.service.js';
 import { getEngine } from '../engine.js';
 
@@ -20,7 +21,7 @@ export interface ChannelStatus {
 
 export class DeploymentService {
   /** Deploy a channel (loads config and initializes connectors). */
-  static async deploy(channelId: string): Promise<Result<ChannelStatus>> {
+  static async deploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const channelResult = await ChannelService.getById(channelId);
       if (!channelResult.ok) {
@@ -35,12 +36,18 @@ export class DeploymentService {
 
       await engine.deploy(channelResult.value);
 
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_DEPLOYED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId,
+        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
+      });
+
       return { channelId, state: 'STOPPED' };
     });
   }
 
   /** Undeploy a channel (shuts down and removes runtime). */
-  static async undeploy(channelId: string): Promise<Result<ChannelStatus>> {
+  static async undeploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const engine = getEngine();
       const deployed = engine.getRuntime(channelId);
@@ -54,66 +61,108 @@ export class DeploymentService {
       }
 
       await engine.undeploy(channelId);
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_UNDEPLOYED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId,
+        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
+      });
+
       return { channelId, state: 'UNDEPLOYED' };
     });
   }
 
   /** Start a deployed channel. */
-  static async start(channelId: string): Promise<Result<ChannelStatus>> {
+  static async start(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
       const result = await deployed.runtime.start();
       if (!result.ok) {
         throw new ServiceError('CONFLICT', 'Failed to start channel');
       }
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_STARTED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId,
+        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
+      });
+
       return { channelId, state: deployed.runtime.getState() };
     });
   }
 
   /** Stop a running channel gracefully. */
-  static async stop(channelId: string): Promise<Result<ChannelStatus>> {
+  static async stop(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
       const result = await deployed.runtime.stop();
       if (!result.ok) {
         throw new ServiceError('CONFLICT', 'Failed to stop channel');
       }
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_STOPPED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId,
+        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
+      });
+
       return { channelId, state: deployed.runtime.getState() };
     });
   }
 
   /** Force-stop a running channel. */
-  static async halt(channelId: string): Promise<Result<ChannelStatus>> {
+  static async halt(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
       const result = await deployed.runtime.halt();
       if (!result.ok) {
         throw new ServiceError('CONFLICT', 'Failed to halt channel');
       }
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_STOPPED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId,
+        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: { method: 'halt' },
+      });
+
       return { channelId, state: deployed.runtime.getState() };
     });
   }
 
   /** Pause a running channel (stop source only). */
-  static async pause(channelId: string): Promise<Result<ChannelStatus>> {
+  static async pause(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
       const result = await deployed.runtime.pause();
       if (!result.ok) {
         throw new ServiceError('CONFLICT', 'Failed to pause channel');
       }
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_PAUSED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId,
+        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
+      });
+
       return { channelId, state: deployed.runtime.getState() };
     });
   }
 
   /** Resume a paused channel. */
-  static async resume(channelId: string): Promise<Result<ChannelStatus>> {
+  static async resume(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const deployed = getDeployed(channelId);
       const result = await deployed.runtime.resume();
       if (!result.ok) {
         throw new ServiceError('CONFLICT', 'Failed to resume channel');
       }
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_STARTED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId,
+        serverId: null, ipAddress: context?.ipAddress ?? null, attributes: { method: 'resume' },
+      });
+
       return { channelId, state: deployed.runtime.getState() };
     });
   }

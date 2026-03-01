@@ -8,6 +8,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, count, asc } from 'drizzle-orm';
 import type { CreateAlertInput, UpdateAlertInput } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { alerts, alertChannels, alertActions } from '../db/schema/index.js';
 
@@ -185,7 +186,7 @@ export class AlertService {
   }
 
   /** Create a new alert. */
-  static async create(input: CreateAlertInput): Promise<Result<AlertDetail>> {
+  static async create(input: CreateAlertInput, context?: AuditContext): Promise<Result<AlertDetail>> {
     return tryCatch(async () => {
       // Check unique name
       const [existing] = await db
@@ -246,7 +247,16 @@ export class AlertService {
         return inserted;
       });
 
-      return fetchAlertDetail(row!.id);
+      const detail = await fetchAlertDetail(row!.id);
+
+      emitEvent({
+        level: 'INFO', name: 'ALERT_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { action: 'create', alertId: row!.id, alertName: input.name },
+      });
+
+      return detail;
     });
   }
 
@@ -254,6 +264,7 @@ export class AlertService {
   static async update(
     id: string,
     input: UpdateAlertInput,
+    context?: AuditContext,
   ): Promise<Result<AlertDetail>> {
     return tryCatch(async () => {
       const [existing] = await db
@@ -338,12 +349,21 @@ export class AlertService {
         }
       });
 
-      return fetchAlertDetail(id);
+      const detail = await fetchAlertDetail(id);
+
+      emitEvent({
+        level: 'INFO', name: 'ALERT_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { action: 'update', alertId: id },
+      });
+
+      return detail;
     });
   }
 
   /** Delete an alert. */
-  static async delete(id: string): Promise<Result<void>> {
+  static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db
         .select({ id: alerts.id })
@@ -355,6 +375,13 @@ export class AlertService {
       }
 
       await db.delete(alerts).where(eq(alerts.id, id));
+
+      emitEvent({
+        level: 'INFO', name: 'ALERT_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { action: 'delete', alertId: id },
+      });
     });
   }
 

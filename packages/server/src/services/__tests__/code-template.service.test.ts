@@ -75,6 +75,10 @@ vi.mock('drizzle-orm', () => ({
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
 }));
 
+vi.mock('../../lib/event-emitter.js', () => ({
+  emitEvent: vi.fn(),
+}));
+
 const { CodeTemplateService } = await import('../code-template.service.js');
 
 // ----- Fixtures -----

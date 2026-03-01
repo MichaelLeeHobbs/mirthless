@@ -87,3 +87,13 @@ D-040: MetaDataId-based connectorId resolution for filters/transformers — UI s
 D-041: Destination filter/transformer embedded in DestinationFormValues — All destination state (connector settings, queue, filter, transformer) lives in one object. Simpler than separate Maps. State stays co-located with the destination it belongs to. — 2026-03-01
 
 D-042: Shared filter/transformer editor components — FilterRuleEditor and TransformerStepEditor used by both source and destination sections. DRY without premature abstraction — same props interface, same behavior. — 2026-03-01
+
+D-043: Events are server-generated, not user-created — No `POST /events` endpoint. Events created internally via `emitEvent()`. Prevents users from injecting fake audit entries into the HIPAA audit log. — 2026-03-01
+
+D-044: Fire-and-forget event emission — Non-blocking: if event write fails, original operation still succeeds. Prevents audit system from becoming a point of failure. Failures logged at WARN level. — 2026-03-01
+
+D-045: Event purge via `DELETE /events?olderThanDays=N` — Admin-only (`settings:write` permission). Simple query param, no request body on DELETE. — 2026-03-01
+
+D-046: Settings use upsert by key (not separate create/update) — Drizzle `onConflictDoUpdate` on unique `key` constraint. Simpler for the Settings page which just submits current form state. — 2026-03-01
+
+D-047: AuditContext passed as explicit parameter to services — `{ userId, ipAddress }` passed from controllers, not via AsyncLocalStorage. Testable, explicit, follows KISS. — 2026-03-01

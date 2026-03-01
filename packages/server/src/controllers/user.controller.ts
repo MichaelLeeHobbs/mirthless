@@ -56,7 +56,8 @@ export class UserController {
 
   static async create(req: Request, res: Response): Promise<void> {
     const input = req.body as CreateUserInput;
-    const result = await UserService.createUser(input);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await UserService.createUser(input, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -73,7 +74,8 @@ export class UserController {
     const id = req.params['id'] as string;
     const input = req.body as UpdateUserInput;
     const actorId = req.user!.id;
-    const result = await UserService.updateUser(id, input, actorId);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await UserService.updateUser(id, input, actorId, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -89,7 +91,8 @@ export class UserController {
   static async delete(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const actorId = req.user!.id;
-    const result = await UserService.deleteUser(id, actorId);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await UserService.deleteUser(id, actorId, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);

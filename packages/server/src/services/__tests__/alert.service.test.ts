@@ -100,6 +100,10 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn(),
 }));
 
+vi.mock('../../lib/event-emitter.js', () => ({
+  emitEvent: vi.fn(),
+}));
+
 const { AlertService } = await import('../alert.service.js');
 
 // ----- Fixtures -----

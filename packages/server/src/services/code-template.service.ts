@@ -13,6 +13,7 @@ import type {
   UpdateCodeTemplateInput,
 } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { codeTemplateLibraries, codeTemplates } from '../db/schema/index.js';
 
@@ -80,6 +81,7 @@ export class CodeTemplateService {
   /** Create a new library. */
   static async createLibrary(
     input: CreateCodeTemplateLibraryInput,
+    context?: AuditContext,
   ): Promise<Result<LibrarySummary>> {
     return tryCatch(async () => {
       // Check for duplicate name
@@ -100,6 +102,13 @@ export class CodeTemplateService {
         })
         .returning();
 
+      emitEvent({
+        level: 'INFO', name: 'CODE_TEMPLATE_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { action: 'createLibrary', libraryName: input.name },
+      });
+
       return {
         id: row!.id,
         name: row!.name,
@@ -116,6 +125,7 @@ export class CodeTemplateService {
   static async updateLibrary(
     id: string,
     input: UpdateCodeTemplateLibraryInput,
+    context?: AuditContext,
   ): Promise<Result<LibrarySummary>> {
     return tryCatch(async () => {
       const [existing] = await db
@@ -161,6 +171,13 @@ export class CodeTemplateService {
         .from(codeTemplates)
         .where(eq(codeTemplates.libraryId, id));
 
+      emitEvent({
+        level: 'INFO', name: 'CODE_TEMPLATE_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { action: 'updateLibrary', libraryId: id },
+      });
+
       return {
         id: row!.id,
         name: row!.name,
@@ -174,7 +191,7 @@ export class CodeTemplateService {
   }
 
   /** Delete a library (cascades to templates). */
-  static async deleteLibrary(id: string): Promise<Result<void>> {
+  static async deleteLibrary(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db
         .select({ id: codeTemplateLibraries.id })
@@ -188,6 +205,13 @@ export class CodeTemplateService {
       await db
         .delete(codeTemplateLibraries)
         .where(eq(codeTemplateLibraries.id, id));
+
+      emitEvent({
+        level: 'INFO', name: 'CODE_TEMPLATE_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { action: 'deleteLibrary', libraryId: id },
+      });
     });
   }
 
@@ -254,6 +278,7 @@ export class CodeTemplateService {
   /** Create a new template. */
   static async createTemplate(
     input: CreateCodeTemplateInput,
+    context?: AuditContext,
   ): Promise<Result<TemplateDetail>> {
     return tryCatch(async () => {
       // Verify library exists
@@ -278,6 +303,13 @@ export class CodeTemplateService {
         })
         .returning();
 
+      emitEvent({
+        level: 'INFO', name: 'CODE_TEMPLATE_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { action: 'createTemplate', templateName: input.name },
+      });
+
       return {
         id: row!.id,
         libraryId: row!.libraryId,
@@ -297,6 +329,7 @@ export class CodeTemplateService {
   static async updateTemplate(
     id: string,
     input: UpdateCodeTemplateInput,
+    context?: AuditContext,
   ): Promise<Result<TemplateDetail>> {
     return tryCatch(async () => {
       const [existing] = await db
@@ -328,6 +361,13 @@ export class CodeTemplateService {
         .where(eq(codeTemplates.id, id))
         .returning();
 
+      emitEvent({
+        level: 'INFO', name: 'CODE_TEMPLATE_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { action: 'updateTemplate', templateId: id },
+      });
+
       return {
         id: row!.id,
         libraryId: row!.libraryId,
@@ -344,7 +384,7 @@ export class CodeTemplateService {
   }
 
   /** Delete a template. */
-  static async deleteTemplate(id: string): Promise<Result<void>> {
+  static async deleteTemplate(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db
         .select({ id: codeTemplates.id })
@@ -358,6 +398,13 @@ export class CodeTemplateService {
       await db
         .delete(codeTemplates)
         .where(eq(codeTemplates.id, id));
+
+      emitEvent({
+        level: 'INFO', name: 'CODE_TEMPLATE_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { action: 'deleteTemplate', templateId: id },
+      });
     });
   }
 }

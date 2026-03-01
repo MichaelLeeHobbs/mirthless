@@ -27,7 +27,8 @@ function errorMessage(error: unknown): string {
 export class DeploymentController {
   static async deploy(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await DeploymentService.deploy(id);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await DeploymentService.deploy(id, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -42,7 +43,8 @@ export class DeploymentController {
 
   static async undeploy(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await DeploymentService.undeploy(id);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await DeploymentService.undeploy(id, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -56,7 +58,8 @@ export class DeploymentController {
 
   static async start(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await DeploymentService.start(id);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await DeploymentService.start(id, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -70,7 +73,8 @@ export class DeploymentController {
 
   static async stop(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await DeploymentService.stop(id);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await DeploymentService.stop(id, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -84,7 +88,8 @@ export class DeploymentController {
 
   static async halt(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await DeploymentService.halt(id);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await DeploymentService.halt(id, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -98,7 +103,8 @@ export class DeploymentController {
 
   static async pause(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await DeploymentService.pause(id);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await DeploymentService.pause(id, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -112,7 +118,8 @@ export class DeploymentController {
 
   static async resume(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await DeploymentService.resume(id);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await DeploymentService.resume(id, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);

@@ -16,6 +16,8 @@ import { CodeTemplatePage } from './pages/CodeTemplatePage.js';
 import { GlobalScriptsPage } from './pages/GlobalScriptsPage.js';
 import { AlertsPage } from './pages/AlertsPage.js';
 import { AlertEditorPage } from './pages/AlertEditorPage.js';
+import { EventsPage } from './pages/EventsPage.js';
+import { SettingsPage } from './pages/SettingsPage.js';
 import { UsersPage } from './pages/UsersPage.js';
 
 const router = createBrowserRouter([
@@ -38,7 +40,9 @@ const router = createBrowserRouter([
           { path: 'alerts/new', element: <AlertEditorPage /> },
           { path: 'alerts/:id', element: <AlertEditorPage /> },
           { path: 'code-templates', element: <CodeTemplatePage /> },
+          { path: 'events', element: <EventsPage /> },
           { path: 'global-scripts', element: <GlobalScriptsPage /> },
+          { path: 'settings', element: <SettingsPage /> },
           { path: 'users', element: <UsersPage /> },
         ],
       },

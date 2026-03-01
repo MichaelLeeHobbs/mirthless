@@ -44,7 +44,8 @@ export class CodeTemplateController {
 
   static async createLibrary(req: Request, res: Response): Promise<void> {
     const input = req.body as CreateCodeTemplateLibraryInput;
-    const result = await CodeTemplateService.createLibrary(input);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await CodeTemplateService.createLibrary(input, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -60,7 +61,8 @@ export class CodeTemplateController {
   static async updateLibrary(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const input = req.body as UpdateCodeTemplateLibraryInput;
-    const result = await CodeTemplateService.updateLibrary(id, input);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await CodeTemplateService.updateLibrary(id, input, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -75,7 +77,8 @@ export class CodeTemplateController {
 
   static async deleteLibrary(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await CodeTemplateService.deleteLibrary(id);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await CodeTemplateService.deleteLibrary(id, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -105,7 +108,8 @@ export class CodeTemplateController {
 
   static async createTemplate(req: Request, res: Response): Promise<void> {
     const input = req.body as CreateCodeTemplateInput;
-    const result = await CodeTemplateService.createTemplate(input);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await CodeTemplateService.createTemplate(input, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -121,7 +125,8 @@ export class CodeTemplateController {
   static async updateTemplate(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const input = req.body as UpdateCodeTemplateInput;
-    const result = await CodeTemplateService.updateTemplate(id, input);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await CodeTemplateService.updateTemplate(id, input, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -136,7 +141,8 @@ export class CodeTemplateController {
 
   static async deleteTemplate(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await CodeTemplateService.deleteTemplate(id);
+    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await CodeTemplateService.deleteTemplate(id, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);

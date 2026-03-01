@@ -225,6 +225,47 @@ export interface AlertListResult {
   };
 }
 
+// ----- Event Types -----
+
+export interface EventSummary {
+  readonly id: number;
+  readonly level: string;
+  readonly name: string;
+  readonly outcome: string;
+  readonly userId: string | null;
+  readonly channelId: string | null;
+  readonly ipAddress: string | null;
+  readonly createdAt: string;
+}
+
+export interface EventDetail extends EventSummary {
+  readonly serverId: string | null;
+  readonly attributes: Record<string, unknown> | null;
+}
+
+export interface EventListResult {
+  readonly data: readonly EventSummary[];
+  readonly pagination: {
+    readonly page: number;
+    readonly pageSize: number;
+    readonly total: number;
+    readonly totalPages: number;
+  };
+}
+
+// ----- Setting Types -----
+
+export interface SettingDetail {
+  readonly id: string;
+  readonly key: string;
+  readonly value: string | null;
+  readonly type: string;
+  readonly description: string | null;
+  readonly category: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 // ----- Global Scripts Types -----
 
 export interface GlobalScriptsData {

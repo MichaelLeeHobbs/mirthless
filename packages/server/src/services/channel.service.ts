@@ -12,6 +12,7 @@ import type {
   ChannelListQuery,
 } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import {
   channels,
@@ -425,7 +426,7 @@ export class ChannelService {
   }
 
   /** Create a new channel with default scripts. */
-  static async create(input: CreateChannelInput): Promise<Result<ChannelDetail>> {
+  static async create(input: CreateChannelInput, context?: AuditContext): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       // Check name uniqueness among non-deleted channels
       const [existing] = await db
@@ -519,12 +520,21 @@ export class ChannelService {
       // Return full detail
       const channel = created!;
       const relations = await fetchChannelRelations(channel.id);
-      return assembleDetail(channel, relations);
+      const detail = assembleDetail(channel, relations);
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_CREATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: channel.id,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { channelName: input.name },
+      });
+
+      return detail;
     });
   }
 
   /** Update a channel with optimistic locking via revision. */
-  static async update(id: string, input: UpdateChannelInput): Promise<Result<ChannelDetail>> {
+  static async update(id: string, input: UpdateChannelInput, context?: AuditContext): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       const existing = await findChannel(id);
 
@@ -715,15 +725,31 @@ export class ChannelService {
 
       const channel = await findChannel(id);
       const relations = await fetchChannelRelations(id);
-      return assembleDetail(channel, relations);
+      const detail = assembleDetail(channel, relations);
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: id,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { channelName: channel.name },
+      });
+
+      return detail;
     });
   }
 
   /** Soft-delete a channel by setting deletedAt. */
-  static async delete(id: string): Promise<Result<void>> {
+  static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
-      await findChannel(id);
+      const channel = await findChannel(id);
       await db.update(channels).set({ deletedAt: new Date() }).where(eq(channels.id, id));
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_DELETED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: id,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { channelName: channel.name },
+      });
     });
   }
 
