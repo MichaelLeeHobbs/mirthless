@@ -3,6 +3,8 @@
 // ===========================================
 
 import { z } from 'zod/v4';
+import { filterInputSchema } from './filter.schema.js';
+import { transformerInputSchema } from './transformer.schema.js';
 
 // ----- Shared Enums -----
 
@@ -100,6 +102,8 @@ export const createChannelSchema = z.object({
   scripts: channelScriptsSchema.optional(),
   destinations: z.array(destinationInputSchema).optional(),
   metadataColumns: z.array(metadataColumnInputSchema).optional(),
+  filters: z.array(filterInputSchema).optional(),
+  transformers: z.array(transformerInputSchema).optional(),
 });
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;

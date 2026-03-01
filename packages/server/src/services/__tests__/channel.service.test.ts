@@ -68,7 +68,13 @@ const mockTransaction = vi.fn();
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
 
-const mockInsertValues = vi.fn().mockResolvedValue(undefined);
+const mockInsertReturning = vi.fn().mockResolvedValue([]);
+const mockInsertValues = vi.fn().mockImplementation(() => {
+  // Support both .returning() chain and direct resolution
+  return Object.assign(Promise.resolve(undefined), {
+    returning: mockInsertReturning,
+  });
+});
 const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 
 const mockDb = {
@@ -152,17 +158,28 @@ const CREATE_INPUT = {
 // ----- Helpers -----
 
 /**
- * Set up mocks for getById flow: findChannel + 4 parallel relation queries.
+ * Set up mocks for getById flow: findChannel + 8 parallel relation queries.
  */
 function setupGetByIdMocks(
   channel: Record<string, unknown>,
-  relations?: { destinations?: unknown[]; metadataColumns?: unknown[] },
+  relations?: {
+    destinations?: unknown[];
+    metadataColumns?: unknown[];
+    filters?: unknown[];
+    filterRulesData?: unknown[];
+    transformers?: unknown[];
+    transformerStepsData?: unknown[];
+  },
 ): void {
   pushResponse([channel]);                                                    // findChannel
   pushResponse(DEFAULT_SCRIPTS);                                              // scripts
   pushResponse(relations?.destinations ?? [], { orderable: true });           // destinations (has .orderBy)
   pushResponse(relations?.metadataColumns ?? []);                             // metadataColumns
   pushResponse([]);                                                           // tags (via innerJoin)
+  pushResponse(relations?.filters ?? []);                                     // filters
+  pushResponse(relations?.filterRulesData ?? []);                             // filter rules (via innerJoin)
+  pushResponse(relations?.transformers ?? []);                                // transformers
+  pushResponse(relations?.transformerStepsData ?? []);                        // transformer steps (via innerJoin)
 }
 
 // ----- Tests -----
@@ -174,7 +191,12 @@ beforeEach(() => {
   mockUpdateWhere.mockResolvedValue(undefined);
   mockDeleteWhere.mockResolvedValue(undefined);
   mockDelete.mockReturnValue({ where: mockDeleteWhere });
-  mockInsertValues.mockResolvedValue(undefined);
+  mockInsertReturning.mockResolvedValue([]);
+  mockInsertValues.mockImplementation(() => {
+    return Object.assign(Promise.resolve(undefined), {
+      returning: mockInsertReturning,
+    });
+  });
   mockInsert.mockReturnValue({ values: mockInsertValues });
 });
 
@@ -285,6 +307,10 @@ describe('ChannelService', () => {
       pushResponse([], { orderable: true });             // destinations (has .orderBy)
       pushResponse([]);                                  // metadataColumns
       pushResponse([]);                                  // tags
+      pushResponse([]);                                  // filters
+      pushResponse([]);                                  // filter rules
+      pushResponse([]);                                  // transformers
+      pushResponse([]);                                  // transformer steps
 
       // Transaction mock
       mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -600,6 +626,10 @@ describe('ChannelService', () => {
       pushResponse(destRows, { orderable: true });
       pushResponse([]);
       pushResponse([]);
+      pushResponse([]);  // filters
+      pushResponse([]);  // filter rules
+      pushResponse([]);  // transformers
+      pushResponse([]);  // transformer steps
 
       mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         let insertCallCount = 0;
@@ -641,6 +671,384 @@ describe('ChannelService', () => {
       if (!result.ok) return;
       expect(result.value.destinations).toHaveLength(1);
       expect(result.value.destinations[0]!.name).toBe('Dest 1');
+    });
+  });
+
+  // ========== FILTER/TRANSFORMER IN GETBYID ==========
+  describe('getById — filters and transformers', () => {
+    it('returns source filter with rules', async () => {
+      const channel = makeChannel();
+      setupGetByIdMocks(channel, {
+        filters: [{ id: 'f1', connectorId: null }],
+        filterRulesData: [
+          {
+            id: 'r1',
+            filterId: 'f1',
+            sequenceNumber: 0,
+            enabled: true,
+            name: 'Check ADT',
+            operator: 'AND',
+            type: 'JAVASCRIPT',
+            script: 'return true;',
+            field: null,
+            condition: null,
+            values: null,
+          },
+        ],
+      });
+
+      const result = await ChannelService.getById(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.filters).toHaveLength(1);
+      expect(result.value.filters[0]!.connectorId).toBeNull();
+      expect(result.value.filters[0]!.rules).toHaveLength(1);
+      expect(result.value.filters[0]!.rules[0]!.name).toBe('Check ADT');
+    });
+
+    it('returns destination filter with connector ID', async () => {
+      const channel = makeChannel();
+      setupGetByIdMocks(channel, {
+        destinations: [
+          {
+            id: 'd1', metaDataId: 1, name: 'Dest 1', enabled: true,
+            connectorType: 'TCP_MLLP', properties: {}, queueMode: 'NEVER',
+            retryCount: 0, retryIntervalMs: 10000, rotateQueue: false,
+            queueThreadCount: 1, waitForPrevious: false,
+          },
+        ],
+        filters: [{ id: 'f1', connectorId: 'd1' }],
+        filterRulesData: [
+          {
+            id: 'r1', filterId: 'f1', sequenceNumber: 0, enabled: true,
+            name: null, operator: 'OR', type: 'RULE_BUILDER',
+            script: null, field: 'MSH.9', condition: 'EQUALS', values: ['ADT'],
+          },
+        ],
+      });
+
+      const result = await ChannelService.getById(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.filters).toHaveLength(1);
+      expect(result.value.filters[0]!.connectorId).toBe('d1');
+      expect(result.value.filters[0]!.rules[0]!.type).toBe('RULE_BUILDER');
+      expect(result.value.filters[0]!.rules[0]!.values).toEqual(['ADT']);
+    });
+
+    it('returns source transformer with steps', async () => {
+      const channel = makeChannel();
+      setupGetByIdMocks(channel, {
+        transformers: [{
+          id: 't1', connectorId: null,
+          inboundDataType: 'HL7V2', outboundDataType: 'JSON',
+          inboundProperties: {}, outboundProperties: {},
+          inboundTemplate: null, outboundTemplate: null,
+        }],
+        transformerStepsData: [
+          {
+            id: 'ts1', transformerId: 't1', sequenceNumber: 0,
+            enabled: true, name: 'Convert to JSON', type: 'JAVASCRIPT',
+            script: 'return JSON.stringify(msg);',
+            sourceField: null, targetField: null, defaultValue: null, mapping: null,
+          },
+        ],
+      });
+
+      const result = await ChannelService.getById(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.transformers).toHaveLength(1);
+      expect(result.value.transformers[0]!.connectorId).toBeNull();
+      expect(result.value.transformers[0]!.inboundDataType).toBe('HL7V2');
+      expect(result.value.transformers[0]!.outboundDataType).toBe('JSON');
+      expect(result.value.transformers[0]!.steps).toHaveLength(1);
+      expect(result.value.transformers[0]!.steps[0]!.name).toBe('Convert to JSON');
+    });
+
+    it('returns empty arrays when no filters or transformers exist', async () => {
+      const channel = makeChannel();
+      setupGetByIdMocks(channel);
+
+      const result = await ChannelService.getById(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.filters).toEqual([]);
+      expect(result.value.transformers).toEqual([]);
+    });
+
+    it('sorts rules by sequence number', async () => {
+      const channel = makeChannel();
+      setupGetByIdMocks(channel, {
+        filters: [{ id: 'f1', connectorId: null }],
+        filterRulesData: [
+          {
+            id: 'r2', filterId: 'f1', sequenceNumber: 1, enabled: true,
+            name: 'Second', operator: 'AND', type: 'JAVASCRIPT',
+            script: null, field: null, condition: null, values: null,
+          },
+          {
+            id: 'r1', filterId: 'f1', sequenceNumber: 0, enabled: true,
+            name: 'First', operator: 'AND', type: 'JAVASCRIPT',
+            script: null, field: null, condition: null, values: null,
+          },
+        ],
+      });
+
+      const result = await ChannelService.getById(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.filters[0]!.rules[0]!.name).toBe('First');
+      expect(result.value.filters[0]!.rules[1]!.name).toBe('Second');
+    });
+
+    it('sorts transformer steps by sequence number', async () => {
+      const channel = makeChannel();
+      setupGetByIdMocks(channel, {
+        transformers: [{
+          id: 't1', connectorId: null,
+          inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
+          inboundProperties: {}, outboundProperties: {},
+          inboundTemplate: null, outboundTemplate: null,
+        }],
+        transformerStepsData: [
+          {
+            id: 'ts2', transformerId: 't1', sequenceNumber: 1, enabled: true,
+            name: 'Step B', type: 'JAVASCRIPT', script: null,
+            sourceField: null, targetField: null, defaultValue: null, mapping: null,
+          },
+          {
+            id: 'ts1', transformerId: 't1', sequenceNumber: 0, enabled: true,
+            name: 'Step A', type: 'MAPPER', script: null,
+            sourceField: 'PID.3', targetField: 'id', defaultValue: '', mapping: 'COPY',
+          },
+        ],
+      });
+
+      const result = await ChannelService.getById(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.transformers[0]!.steps[0]!.name).toBe('Step A');
+      expect(result.value.transformers[0]!.steps[1]!.name).toBe('Step B');
+    });
+  });
+
+  // ========== FILTER/TRANSFORMER SYNC ON UPDATE ==========
+  describe('update — filter/transformer sync', () => {
+    it('persists source filter rules on update', async () => {
+      const channel = makeChannel();
+      const updatedChannel = makeChannel({ revision: 2 });
+
+      // findChannel
+      pushResponse([channel]);
+      // After update + sync, findChannel + fetchChannelRelations
+      setupGetByIdMocks(updatedChannel, {
+        filters: [{ id: 'f1', connectorId: null }],
+        filterRulesData: [
+          {
+            id: 'r1', filterId: 'f1', sequenceNumber: 0, enabled: true,
+            name: 'JS Filter', operator: 'AND', type: 'JAVASCRIPT',
+            script: 'return true;', field: null, condition: null, values: null,
+          },
+        ],
+      });
+
+      // Mock insert().values().returning() for filter insert
+      mockInsert.mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 'f1' }]),
+        }),
+      });
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        filters: [{
+          connectorId: null,
+          rules: [{
+            enabled: true,
+            operator: 'AND',
+            type: 'JAVASCRIPT',
+            script: 'return true;',
+            field: null,
+            condition: null,
+            values: null,
+          }],
+        }],
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.filters).toHaveLength(1);
+      expect(result.value.filters[0]!.rules).toHaveLength(1);
+      expect(mockDelete).toHaveBeenCalled();
+      expect(mockInsert).toHaveBeenCalled();
+    });
+
+    it('persists source transformer steps on update', async () => {
+      const channel = makeChannel();
+      const updatedChannel = makeChannel({ revision: 2 });
+
+      pushResponse([channel]);
+      setupGetByIdMocks(updatedChannel, {
+        transformers: [{
+          id: 't1', connectorId: null,
+          inboundDataType: 'HL7V2', outboundDataType: 'JSON',
+          inboundProperties: {}, outboundProperties: {},
+          inboundTemplate: null, outboundTemplate: null,
+        }],
+        transformerStepsData: [
+          {
+            id: 'ts1', transformerId: 't1', sequenceNumber: 0, enabled: true,
+            name: 'Map PID', type: 'MAPPER', script: null,
+            sourceField: 'PID.3', targetField: 'id', defaultValue: '', mapping: 'COPY',
+          },
+        ],
+      });
+
+      mockInsert.mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 't1' }]),
+        }),
+      });
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        transformers: [{
+          connectorId: null,
+          inboundDataType: 'HL7V2',
+          outboundDataType: 'JSON',
+          inboundProperties: {},
+          outboundProperties: {},
+          inboundTemplate: null,
+          outboundTemplate: null,
+          steps: [{
+            enabled: true,
+            type: 'MAPPER',
+            script: null,
+            sourceField: 'PID.3',
+            targetField: 'id',
+            defaultValue: '',
+            mapping: 'COPY',
+          }],
+        }],
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.transformers).toHaveLength(1);
+      expect(result.value.transformers[0]!.steps).toHaveLength(1);
+      expect(mockDelete).toHaveBeenCalled();
+      expect(mockInsert).toHaveBeenCalled();
+    });
+
+    it('clears filters when empty array provided', async () => {
+      const channel = makeChannel();
+      const updatedChannel = makeChannel({ revision: 2 });
+
+      pushResponse([channel]);
+      setupGetByIdMocks(updatedChannel);
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        filters: [],
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.filters).toEqual([]);
+      expect(mockDelete).toHaveBeenCalled();
+    });
+
+    it('clears transformers when empty array provided', async () => {
+      const channel = makeChannel();
+      const updatedChannel = makeChannel({ revision: 2 });
+
+      pushResponse([channel]);
+      setupGetByIdMocks(updatedChannel);
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        transformers: [],
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.transformers).toEqual([]);
+      expect(mockDelete).toHaveBeenCalled();
+    });
+
+    it('handles filter with empty rules', async () => {
+      const channel = makeChannel();
+      const updatedChannel = makeChannel({ revision: 2 });
+
+      pushResponse([channel]);
+      setupGetByIdMocks(updatedChannel, {
+        filters: [{ id: 'f1', connectorId: null }],
+        filterRulesData: [],
+      });
+
+      mockInsert.mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 'f1' }]),
+        }),
+      });
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        filters: [{ connectorId: null, rules: [] }],
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.filters).toHaveLength(1);
+      expect(result.value.filters[0]!.rules).toHaveLength(0);
+    });
+
+    it('handles transformer with empty steps', async () => {
+      const channel = makeChannel();
+      const updatedChannel = makeChannel({ revision: 2 });
+
+      pushResponse([channel]);
+      setupGetByIdMocks(updatedChannel, {
+        transformers: [{
+          id: 't1', connectorId: null,
+          inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
+          inboundProperties: {}, outboundProperties: {},
+          inboundTemplate: null, outboundTemplate: null,
+        }],
+        transformerStepsData: [],
+      });
+
+      mockInsert.mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 't1' }]),
+        }),
+      });
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        transformers: [{
+          connectorId: null,
+          inboundDataType: 'HL7V2',
+          outboundDataType: 'HL7V2',
+          inboundProperties: {},
+          outboundProperties: {},
+          inboundTemplate: null,
+          outboundTemplate: null,
+          steps: [],
+        }],
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.transformers).toHaveLength(1);
+      expect(result.value.transformers[0]!.steps).toHaveLength(0);
     });
   });
 });

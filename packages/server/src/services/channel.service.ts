@@ -20,6 +20,10 @@ import {
   channelMetadataColumns,
   channelTagAssignments,
   channelTags,
+  channelFilters,
+  filterRules,
+  channelTransformers,
+  transformerSteps,
 } from '../db/schema/index.js';
 
 // ----- Response Types -----
@@ -71,6 +75,50 @@ export interface ChannelTagInfo {
   readonly color: string | null;
 }
 
+export interface ChannelFilterRuleDetail {
+  readonly id: string;
+  readonly sequenceNumber: number;
+  readonly enabled: boolean;
+  readonly name: string | null;
+  readonly operator: string;
+  readonly type: string;
+  readonly script: string | null;
+  readonly field: string | null;
+  readonly condition: string | null;
+  readonly values: readonly string[] | null;
+}
+
+export interface ChannelFilterDetail {
+  readonly id: string;
+  readonly connectorId: string | null;
+  readonly rules: readonly ChannelFilterRuleDetail[];
+}
+
+export interface ChannelTransformerStepDetail {
+  readonly id: string;
+  readonly sequenceNumber: number;
+  readonly enabled: boolean;
+  readonly name: string | null;
+  readonly type: string;
+  readonly script: string | null;
+  readonly sourceField: string | null;
+  readonly targetField: string | null;
+  readonly defaultValue: string | null;
+  readonly mapping: string | null;
+}
+
+export interface ChannelTransformerDetail {
+  readonly id: string;
+  readonly connectorId: string | null;
+  readonly inboundDataType: string;
+  readonly outboundDataType: string;
+  readonly inboundProperties: Record<string, unknown>;
+  readonly outboundProperties: Record<string, unknown>;
+  readonly inboundTemplate: string | null;
+  readonly outboundTemplate: string | null;
+  readonly steps: readonly ChannelTransformerStepDetail[];
+}
+
 export interface ChannelDetail extends ChannelSummary {
   readonly responseMode: string;
   readonly responseConnectorName: string | null;
@@ -87,6 +135,8 @@ export interface ChannelDetail extends ChannelSummary {
   readonly destinations: readonly ChannelDestination[];
   readonly metadataColumns: readonly ChannelMetadataCol[];
   readonly tags: readonly ChannelTagInfo[];
+  readonly filters: readonly ChannelFilterDetail[];
+  readonly transformers: readonly ChannelTransformerDetail[];
 }
 
 export interface ChannelListResult {
@@ -122,10 +172,12 @@ interface ChannelRelations {
   readonly destinations: readonly ChannelDestination[];
   readonly metadataColumns: readonly ChannelMetadataCol[];
   readonly tags: readonly ChannelTagInfo[];
+  readonly filters: readonly ChannelFilterDetail[];
+  readonly transformers: readonly ChannelTransformerDetail[];
 }
 
 async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
-  const [scriptRows, destinationRows, metadataRows, tagRows] = await Promise.all([
+  const [scriptRows, destinationRows, metadataRows, tagRows, filterRows, ruleRows, transformerRows, stepRows] = await Promise.all([
     db
       .select({ id: channelScripts.id, scriptType: channelScripts.scriptType, script: channelScripts.script })
       .from(channelScripts)
@@ -162,9 +214,123 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
       .from(channelTagAssignments)
       .innerJoin(channelTags, eq(channelTagAssignments.tagId, channelTags.id))
       .where(eq(channelTagAssignments.channelId, id)),
+    db
+      .select({ id: channelFilters.id, connectorId: channelFilters.connectorId })
+      .from(channelFilters)
+      .where(eq(channelFilters.channelId, id)),
+    db
+      .select({
+        id: filterRules.id,
+        filterId: filterRules.filterId,
+        sequenceNumber: filterRules.sequenceNumber,
+        enabled: filterRules.enabled,
+        name: filterRules.name,
+        operator: filterRules.operator,
+        type: filterRules.type,
+        script: filterRules.script,
+        field: filterRules.field,
+        condition: filterRules.condition,
+        values: filterRules.values,
+      })
+      .from(filterRules)
+      .innerJoin(channelFilters, eq(filterRules.filterId, channelFilters.id))
+      .where(eq(channelFilters.channelId, id)),
+    db
+      .select({
+        id: channelTransformers.id,
+        connectorId: channelTransformers.connectorId,
+        inboundDataType: channelTransformers.inboundDataType,
+        outboundDataType: channelTransformers.outboundDataType,
+        inboundProperties: channelTransformers.inboundProperties,
+        outboundProperties: channelTransformers.outboundProperties,
+        inboundTemplate: channelTransformers.inboundTemplate,
+        outboundTemplate: channelTransformers.outboundTemplate,
+      })
+      .from(channelTransformers)
+      .where(eq(channelTransformers.channelId, id)),
+    db
+      .select({
+        id: transformerSteps.id,
+        transformerId: transformerSteps.transformerId,
+        sequenceNumber: transformerSteps.sequenceNumber,
+        enabled: transformerSteps.enabled,
+        name: transformerSteps.name,
+        type: transformerSteps.type,
+        script: transformerSteps.script,
+        sourceField: transformerSteps.sourceField,
+        targetField: transformerSteps.targetField,
+        defaultValue: transformerSteps.defaultValue,
+        mapping: transformerSteps.mapping,
+      })
+      .from(transformerSteps)
+      .innerJoin(channelTransformers, eq(transformerSteps.transformerId, channelTransformers.id))
+      .where(eq(channelTransformers.channelId, id)),
   ]);
 
-  return { scripts: scriptRows, destinations: destinationRows, metadataColumns: metadataRows, tags: tagRows };
+  // Group filter rules by filterId
+  const rulesByFilterId = new Map<string, ChannelFilterRuleDetail[]>();
+  for (const r of ruleRows) {
+    const arr = rulesByFilterId.get(r.filterId) ?? [];
+    arr.push({
+      id: r.id,
+      sequenceNumber: r.sequenceNumber,
+      enabled: r.enabled,
+      name: r.name,
+      operator: r.operator,
+      type: r.type,
+      script: r.script,
+      field: r.field,
+      condition: r.condition,
+      values: r.values ?? null,
+    });
+    rulesByFilterId.set(r.filterId, arr);
+  }
+
+  const filters: ChannelFilterDetail[] = filterRows.map((f) => ({
+    id: f.id,
+    connectorId: f.connectorId,
+    rules: (rulesByFilterId.get(f.id) ?? []).sort((a, b) => a.sequenceNumber - b.sequenceNumber),
+  }));
+
+  // Group transformer steps by transformerId
+  const stepsByTransformerId = new Map<string, ChannelTransformerStepDetail[]>();
+  for (const s of stepRows) {
+    const arr = stepsByTransformerId.get(s.transformerId) ?? [];
+    arr.push({
+      id: s.id,
+      sequenceNumber: s.sequenceNumber,
+      enabled: s.enabled,
+      name: s.name,
+      type: s.type,
+      script: s.script,
+      sourceField: s.sourceField,
+      targetField: s.targetField,
+      defaultValue: s.defaultValue,
+      mapping: s.mapping,
+    });
+    stepsByTransformerId.set(s.transformerId, arr);
+  }
+
+  const transformers: ChannelTransformerDetail[] = transformerRows.map((t) => ({
+    id: t.id,
+    connectorId: t.connectorId,
+    inboundDataType: t.inboundDataType,
+    outboundDataType: t.outboundDataType,
+    inboundProperties: t.inboundProperties,
+    outboundProperties: t.outboundProperties,
+    inboundTemplate: t.inboundTemplate,
+    outboundTemplate: t.outboundTemplate,
+    steps: (stepsByTransformerId.get(t.id) ?? []).sort((a, b) => a.sequenceNumber - b.sequenceNumber),
+  }));
+
+  return {
+    scripts: scriptRows,
+    destinations: destinationRows,
+    metadataColumns: metadataRows,
+    tags: tagRows,
+    filters,
+    transformers,
+  };
 }
 
 function assembleDetail(
@@ -195,6 +361,8 @@ function assembleDetail(
     destinations: relations.destinations,
     metadataColumns: relations.metadataColumns,
     tags: relations.tags,
+    filters: relations.filters,
+    transformers: relations.transformers,
     createdAt: channel.createdAt,
     updatedAt: channel.updatedAt,
   };
@@ -422,6 +590,9 @@ export class ChannelService {
       }
 
       // Sync destinations if provided (delete-and-reinsert)
+      // Track new destination IDs by metaDataId for filter/transformer mapping
+      const destIdByMetaDataId = new Map<number, string>();
+
       if (input.destinations) {
         await db.delete(channelConnectors).where(eq(channelConnectors.channelId, id));
 
@@ -440,7 +611,13 @@ export class ChannelService {
             queueThreadCount: dest.queueThreadCount,
             waitForPrevious: dest.waitForPrevious,
           }));
-          await db.insert(channelConnectors).values(destValues);
+          const insertedDests = await db.insert(channelConnectors).values(destValues).returning({
+            id: channelConnectors.id,
+            metaDataId: channelConnectors.metaDataId,
+          });
+          for (const d of insertedDests) {
+            destIdByMetaDataId.set(d.metaDataId, d.id);
+          }
         }
       }
 
@@ -456,6 +633,83 @@ export class ChannelService {
             mappingExpression: col.mappingExpression,
           }));
           await db.insert(channelMetadataColumns).values(metaValues);
+        }
+      }
+
+      // Sync filters if provided (delete-and-reinsert, cascade deletes rules)
+      if (input.filters) {
+        await db.delete(channelFilters).where(eq(channelFilters.channelId, id));
+
+        for (const filter of input.filters) {
+          // Resolve connectorId: use metaDataId to look up newly-inserted destination ID
+          let resolvedConnectorId: string | null = filter.connectorId ?? null;
+          if (resolvedConnectorId === null && filter.metaDataId !== undefined && filter.metaDataId !== null) {
+            resolvedConnectorId = destIdByMetaDataId.get(filter.metaDataId) ?? null;
+          }
+
+          const [inserted] = await db
+            .insert(channelFilters)
+            .values({ channelId: id, connectorId: resolvedConnectorId })
+            .returning({ id: channelFilters.id });
+
+          if (inserted && filter.rules.length > 0) {
+            const ruleValues = filter.rules.map((rule, idx) => ({
+              filterId: inserted.id,
+              sequenceNumber: idx,
+              enabled: rule.enabled,
+              name: rule.name ?? null,
+              operator: rule.operator,
+              type: rule.type,
+              script: rule.script ?? null,
+              field: rule.field ?? null,
+              condition: rule.condition ?? null,
+              values: rule.values ?? null,
+            }));
+            await db.insert(filterRules).values(ruleValues);
+          }
+        }
+      }
+
+      // Sync transformers if provided (delete-and-reinsert, cascade deletes steps)
+      if (input.transformers) {
+        await db.delete(channelTransformers).where(eq(channelTransformers.channelId, id));
+
+        for (const transformer of input.transformers) {
+          // Resolve connectorId: use metaDataId to look up newly-inserted destination ID
+          let resolvedConnectorId: string | null = transformer.connectorId ?? null;
+          if (resolvedConnectorId === null && transformer.metaDataId !== undefined && transformer.metaDataId !== null) {
+            resolvedConnectorId = destIdByMetaDataId.get(transformer.metaDataId) ?? null;
+          }
+
+          const [inserted] = await db
+            .insert(channelTransformers)
+            .values({
+              channelId: id,
+              connectorId: resolvedConnectorId,
+              inboundDataType: transformer.inboundDataType,
+              outboundDataType: transformer.outboundDataType,
+              inboundProperties: transformer.inboundProperties,
+              outboundProperties: transformer.outboundProperties,
+              inboundTemplate: transformer.inboundTemplate ?? null,
+              outboundTemplate: transformer.outboundTemplate ?? null,
+            })
+            .returning({ id: channelTransformers.id });
+
+          if (inserted && transformer.steps.length > 0) {
+            const stepValues = transformer.steps.map((step, idx) => ({
+              transformerId: inserted.id,
+              sequenceNumber: idx,
+              enabled: step.enabled,
+              name: step.name ?? null,
+              type: step.type,
+              script: step.script ?? null,
+              sourceField: step.sourceField ?? null,
+              targetField: step.targetField ?? null,
+              defaultValue: step.defaultValue ?? null,
+              mapping: step.mapping ?? null,
+            }));
+            await db.insert(transformerSteps).values(stepValues);
+          }
         }
       }
 

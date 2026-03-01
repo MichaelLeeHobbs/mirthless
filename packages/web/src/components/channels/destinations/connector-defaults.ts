@@ -3,6 +3,7 @@
 // ===========================================
 
 import type { DestinationFormValues } from './types.js';
+import { createDefaultFilter, createDefaultTransformer } from '../source/types.js';
 
 export const TCP_MLLP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: 'localhost',
@@ -46,5 +47,7 @@ export function createDefaultDestination(index: number): DestinationFormValues {
     rotateQueue: false,
     queueThreadCount: 1,
     waitForPrevious: false,
+    filter: createDefaultFilter(),
+    transformer: createDefaultTransformer(),
   };
 }

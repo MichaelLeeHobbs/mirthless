@@ -23,6 +23,7 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
+import type { CreateChannelInput, UpdateChannelInput } from '@mirthless/core-models';
 import { useChannel, useCreateChannel, useUpdateChannel } from '../hooks/use-channels.js';
 import { SummaryTab } from '../components/channels/SummaryTab.js';
 import { SourceTab } from '../components/channels/SourceTab.js';
@@ -30,6 +31,8 @@ import { DestinationsTab } from '../components/channels/DestinationsTab.js';
 import { ScriptsTab } from '../components/channels/ScriptsTab.js';
 import { AdvancedTab, type AdvancedFormValues } from '../components/channels/AdvancedTab.js';
 import type { DestinationFormValues } from '../components/channels/destinations/types.js';
+import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, TransformerStepFormValues } from '../components/channels/source/types.js';
+import { createDefaultFilter, createDefaultTransformer } from '../components/channels/source/types.js';
 
 // ----- Form Data Type -----
 
@@ -103,6 +106,9 @@ export function ChannelEditorPage(): ReactNode {
   const [destinations, setDestinations] = useState<readonly DestinationFormValues[]>([]);
   const [scripts, setScripts] = useState(DEFAULT_SCRIPTS);
   const [advanced, setAdvanced] = useState<AdvancedFormValues>(DEFAULT_ADVANCED);
+  const [sourceFilter, setSourceFilter] = useState<FilterFormValues>(createDefaultFilter());
+  const [sourceTransformer, setSourceTransformer] = useState<TransformerFormValues>(createDefaultTransformer());
+  // destFilters/destTransformers are now embedded in DestinationFormValues
 
   // Track manual dirty state for non-RHF fields
   const [extraDirty, setExtraDirty] = useState(false);
@@ -152,19 +158,54 @@ export function ChannelEditorPage(): ReactNode {
       });
       prevConnectorTypeRef.current = channel.sourceConnectorType;
 
-      // Load destinations
-      setDestinations(channel.destinations.map((d) => ({
-        name: d.name,
-        enabled: d.enabled,
-        connectorType: d.connectorType,
-        properties: d.properties,
-        queueMode: d.queueMode,
-        retryCount: d.retryCount,
-        retryIntervalMs: d.retryIntervalMs,
-        rotateQueue: d.rotateQueue,
-        queueThreadCount: d.queueThreadCount,
-        waitForPrevious: d.waitForPrevious,
-      })));
+      // Load destinations (with embedded filter/transformer)
+      setDestinations(channel.destinations.map((d) => {
+        const dFilter = channel.filters.find((f) => f.connectorId === d.id);
+        const dTransformer = channel.transformers.find((t) => t.connectorId === d.id);
+
+        return {
+          name: d.name,
+          enabled: d.enabled,
+          connectorType: d.connectorType,
+          properties: d.properties,
+          queueMode: d.queueMode,
+          retryCount: d.retryCount,
+          retryIntervalMs: d.retryIntervalMs,
+          rotateQueue: d.rotateQueue,
+          queueThreadCount: d.queueThreadCount,
+          waitForPrevious: d.waitForPrevious,
+          filter: dFilter
+            ? {
+                rules: dFilter.rules.map((r) => ({
+                  enabled: r.enabled,
+                  name: r.name ?? '',
+                  operator: (r.operator as 'AND' | 'OR') ?? 'AND',
+                  type: (r.type as 'JAVASCRIPT' | 'RULE_BUILDER') ?? 'JAVASCRIPT',
+                  script: r.script ?? '',
+                  field: r.field ?? '',
+                  condition: r.condition ?? '',
+                  values: r.values ? [...r.values] : [],
+                })),
+              }
+            : createDefaultFilter(),
+          transformer: dTransformer
+            ? {
+                inboundDataType: dTransformer.inboundDataType,
+                outboundDataType: dTransformer.outboundDataType,
+                steps: dTransformer.steps.map((s) => ({
+                  enabled: s.enabled,
+                  name: s.name ?? '',
+                  type: (s.type as 'JAVASCRIPT' | 'MAPPER' | 'MESSAGE_BUILDER') ?? 'JAVASCRIPT',
+                  script: s.script ?? '',
+                  sourceField: s.sourceField ?? '',
+                  targetField: s.targetField ?? '',
+                  defaultValue: s.defaultValue ?? '',
+                  mapping: s.mapping ?? '',
+                })),
+              }
+            : createDefaultTransformer(),
+        };
+      }));
 
       // Load scripts
       const scriptMap = { ...DEFAULT_SCRIPTS };
@@ -191,6 +232,46 @@ export function ChannelEditorPage(): ReactNode {
           mappingExpression: c.mappingExpression,
         })),
       });
+
+      // Load source filter (connectorId === null)
+      const srcFilter = channel.filters.find((f) => f.connectorId === null);
+      if (srcFilter) {
+        setSourceFilter({
+          rules: srcFilter.rules.map((r) => ({
+            enabled: r.enabled,
+            name: r.name ?? '',
+            operator: (r.operator as 'AND' | 'OR') ?? 'AND',
+            type: (r.type as 'JAVASCRIPT' | 'RULE_BUILDER') ?? 'JAVASCRIPT',
+            script: r.script ?? '',
+            field: r.field ?? '',
+            condition: r.condition ?? '',
+            values: r.values ? [...r.values] : [],
+          })),
+        });
+      } else {
+        setSourceFilter(createDefaultFilter());
+      }
+
+      // Load source transformer (connectorId === null)
+      const srcTransformer = channel.transformers.find((t) => t.connectorId === null);
+      if (srcTransformer) {
+        setSourceTransformer({
+          inboundDataType: srcTransformer.inboundDataType,
+          outboundDataType: srcTransformer.outboundDataType,
+          steps: srcTransformer.steps.map((s) => ({
+            enabled: s.enabled,
+            name: s.name ?? '',
+            type: (s.type as 'JAVASCRIPT' | 'MAPPER' | 'MESSAGE_BUILDER') ?? 'JAVASCRIPT',
+            script: s.script ?? '',
+            sourceField: s.sourceField ?? '',
+            targetField: s.targetField ?? '',
+            defaultValue: s.defaultValue ?? '',
+            mapping: s.mapping ?? '',
+          })),
+        });
+      } else {
+        setSourceTransformer(createDefaultTransformer());
+      }
 
       setExtraDirty(false);
     }
@@ -241,6 +322,16 @@ export function ChannelEditorPage(): ReactNode {
     setExtraDirty(true);
   }, []);
 
+  const handleSourceFilterChange = useCallback((filter: FilterFormValues): void => {
+    setSourceFilter(filter);
+    setExtraDirty(true);
+  }, []);
+
+  const handleSourceTransformerChange = useCallback((transformer: TransformerFormValues): void => {
+    setSourceTransformer(transformer);
+    setExtraDirty(true);
+  }, []);
+
   const buildDestinationsPayload = (): Array<{
     name: string;
     enabled: boolean;
@@ -281,6 +372,117 @@ export function ChannelEditorPage(): ReactNode {
       }));
   };
 
+  const mapRulesToPayload = (rules: readonly FilterRuleFormValues[]): Array<{
+    enabled: boolean;
+    name: string | undefined;
+    operator: 'AND';
+    type: 'JAVASCRIPT';
+    script: string | null;
+    field: string | null;
+    condition: string | null;
+    values: string[] | null;
+  }> => {
+    return rules.map((r) => ({
+      enabled: r.enabled,
+      name: r.name || undefined,
+      operator: r.operator as 'AND',
+      type: r.type as 'JAVASCRIPT',
+      script: r.script || null,
+      field: r.field || null,
+      condition: r.condition || null,
+      values: r.values.length > 0 ? [...r.values] : null,
+    }));
+  };
+
+  const mapStepsToPayload = (steps: readonly TransformerStepFormValues[]): Array<{
+    enabled: boolean;
+    name: string | undefined;
+    type: 'JAVASCRIPT';
+    script: string | null;
+    sourceField: string | null;
+    targetField: string | null;
+    defaultValue: string | null;
+    mapping: string | null;
+  }> => {
+    return steps.map((s) => ({
+      enabled: s.enabled,
+      name: s.name || undefined,
+      type: s.type as 'JAVASCRIPT',
+      script: s.script || null,
+      sourceField: s.sourceField || null,
+      targetField: s.targetField || null,
+      defaultValue: s.defaultValue || null,
+      mapping: s.mapping || null,
+    }));
+  };
+
+  const buildFiltersPayload = (): unknown[] => {
+    const result: unknown[] = [];
+
+    // Source filter
+    if (sourceFilter.rules.length > 0) {
+      result.push({
+        connectorId: null,
+        metaDataId: null,
+        rules: mapRulesToPayload(sourceFilter.rules),
+      });
+    }
+
+    // Destination filters
+    for (let i = 0; i < destinations.length; i++) {
+      const dest = destinations[i]!;
+      if (dest.filter.rules.length > 0) {
+        result.push({
+          connectorId: null,
+          metaDataId: i + 1,
+          rules: mapRulesToPayload(dest.filter.rules),
+        });
+      }
+    }
+
+    return result;
+  };
+
+  const buildTransformersPayload = (): unknown[] => {
+    const result: unknown[] = [];
+
+    // Source transformer
+    if (sourceTransformer.steps.length > 0 || sourceTransformer.inboundDataType !== 'HL7V2' || sourceTransformer.outboundDataType !== 'HL7V2') {
+      result.push({
+        connectorId: null,
+        metaDataId: null,
+        inboundDataType: sourceTransformer.inboundDataType,
+        outboundDataType: sourceTransformer.outboundDataType,
+        inboundProperties: {},
+        outboundProperties: {},
+        inboundTemplate: null,
+        outboundTemplate: null,
+        steps: mapStepsToPayload(sourceTransformer.steps),
+      });
+    }
+
+    // Destination transformers
+    for (let i = 0; i < destinations.length; i++) {
+      const dest = destinations[i]!;
+      const t = dest.transformer;
+      if (t.steps.length > 0 || t.inboundDataType !== 'HL7V2' || t.outboundDataType !== 'HL7V2') {
+        result.push({
+          connectorId: null,
+          metaDataId: i + 1,
+          inboundDataType: t.inboundDataType,
+          outboundDataType: t.outboundDataType,
+          inboundProperties: {},
+          outboundProperties: {},
+          inboundTemplate: null,
+          outboundTemplate: null,
+          steps: mapStepsToPayload(t.steps),
+        });
+      }
+    }
+
+    return result;
+  };
+
   const onSubmit = async (data: ChannelFormData): Promise<void> => {
     setSaveError(null);
     setSaveSuccess(false);
@@ -316,6 +518,8 @@ export function ChannelEditorPage(): ReactNode {
             },
             destinations: buildDestinationsPayload(),
             metadataColumns: buildMetadataPayload(),
+            filters: buildFiltersPayload() as UpdateChannelInput['filters'],
+            transformers: buildTransformersPayload() as UpdateChannelInput['transformers'],
             revision: channel!.revision,
           },
         });
@@ -333,6 +537,8 @@ export function ChannelEditorPage(): ReactNode {
           responseMode: data.responseMode as 'AUTO_AFTER_DESTINATIONS',
           destinations: buildDestinationsPayload(),
           metadataColumns: buildMetadataPayload(),
+          filters: buildFiltersPayload() as CreateChannelInput['filters'],
+          transformers: buildTransformersPayload() as CreateChannelInput['transformers'],
           scripts: {
             deploy: scripts.deploy || null,
             undeploy: scripts.undeploy || null,
@@ -455,6 +661,10 @@ export function ChannelEditorPage(): ReactNode {
             sourceConnectorType={sourceConnectorType}
             sourceConnectorProperties={sourceConnectorProperties}
             onPropertiesChange={handlePropertiesChange}
+            sourceFilter={sourceFilter}
+            onSourceFilterChange={handleSourceFilterChange}
+            sourceTransformer={sourceTransformer}
+            onSourceTransformerChange={handleSourceTransformerChange}
           />
         </TabPanel>
         <TabPanel value={activeTab} index={2}>

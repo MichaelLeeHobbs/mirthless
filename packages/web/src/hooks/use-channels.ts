@@ -64,6 +64,44 @@ export interface ChannelDetail extends ChannelSummary {
     readonly name: string;
     readonly color: string | null;
   }>;
+  readonly filters: ReadonlyArray<{
+    readonly id: string;
+    readonly connectorId: string | null;
+    readonly rules: ReadonlyArray<{
+      readonly id: string;
+      readonly sequenceNumber: number;
+      readonly enabled: boolean;
+      readonly name: string | null;
+      readonly operator: string;
+      readonly type: string;
+      readonly script: string | null;
+      readonly field: string | null;
+      readonly condition: string | null;
+      readonly values: ReadonlyArray<string> | null;
+    }>;
+  }>;
+  readonly transformers: ReadonlyArray<{
+    readonly id: string;
+    readonly connectorId: string | null;
+    readonly inboundDataType: string;
+    readonly outboundDataType: string;
+    readonly inboundProperties: Record<string, unknown>;
+    readonly outboundProperties: Record<string, unknown>;
+    readonly inboundTemplate: string | null;
+    readonly outboundTemplate: string | null;
+    readonly steps: ReadonlyArray<{
+      readonly id: string;
+      readonly sequenceNumber: number;
+      readonly enabled: boolean;
+      readonly name: string | null;
+      readonly type: string;
+      readonly script: string | null;
+      readonly sourceField: string | null;
+      readonly targetField: string | null;
+      readonly defaultValue: string | null;
+      readonly mapping: string | null;
+    }>;
+  }>;
 }
 
 interface ChannelListResponse {

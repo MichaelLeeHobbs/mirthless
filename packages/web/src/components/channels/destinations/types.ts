@@ -2,6 +2,8 @@
 // Destination Connector Form Types
 // ===========================================
 
+import type { FilterFormValues, TransformerFormValues } from '../source/types.js';
+
 /** A single destination in the form state. */
 export interface DestinationFormValues {
   name: string;
@@ -14,6 +16,8 @@ export interface DestinationFormValues {
   rotateQueue: boolean;
   queueThreadCount: number;
   waitForPrevious: boolean;
+  filter: FilterFormValues;
+  transformer: TransformerFormValues;
 }
 
 /** Props for destination connector-specific settings forms. */

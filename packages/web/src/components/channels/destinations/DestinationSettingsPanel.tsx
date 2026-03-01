@@ -15,6 +15,8 @@ import type { DestinationFormValues } from './types.js';
 import { getDestDefaultProperties } from './connector-defaults.js';
 import { DestinationConnectorSettings } from './DestinationConnectorSettings.js';
 import { QueueSettingsSection } from './QueueSettingsSection.js';
+import { DestinationFilterSection } from './DestinationFilterSection.js';
+import { DestinationTransformerSection } from './DestinationTransformerSection.js';
 
 const CONNECTOR_TYPES = [
   { value: 'TCP_MLLP', label: 'TCP / MLLP' },
@@ -89,6 +91,22 @@ export function DestinationSettingsPanel({ destination, onChange }: DestinationS
         connectorType={destination.connectorType}
         properties={destination.properties}
         onChange={(properties) => { onChange({ properties }); }}
+      />
+
+      <Divider sx={{ my: 3 }} />
+
+      {/* Filter settings */}
+      <DestinationFilterSection
+        filter={destination.filter}
+        onChange={(filter) => { onChange({ filter }); }}
+      />
+
+      <Divider sx={{ my: 3 }} />
+
+      {/* Transformer settings */}
+      <DestinationTransformerSection
+        transformer={destination.transformer}
+        onChange={(transformer) => { onChange({ transformer }); }}
       />
 
       <Divider sx={{ my: 3 }} />
