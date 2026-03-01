@@ -6,7 +6,10 @@
 
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from '../sandbox/sandbox-executor.js';
+import type { SandboxContext } from '../sandbox/sandbox-context.js';
 import { createSandboxContext } from '../sandbox/sandbox-context.js';
+import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
+import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
 
 // ----- Types -----
 
@@ -16,6 +19,8 @@ export interface ChannelScripts {
   readonly postprocessor?: CompiledScript;
   readonly sourceFilter?: CompiledScript;
   readonly sourceTransformer?: CompiledScript;
+  readonly globalPreprocessor?: CompiledScript;
+  readonly globalPostprocessor?: CompiledScript;
 }
 
 /** Compiled scripts for a destination. */
@@ -89,6 +94,7 @@ export interface PipelineConfig {
   readonly dataType: string;
   readonly scripts: ChannelScripts;
   readonly destinations: readonly DestinationConfig[];
+  readonly globalChannelMap?: GlobalChannelMap | undefined;
 }
 
 // ----- Content Type Constants (duplicated to avoid cross-package import) -----
@@ -141,7 +147,17 @@ export class MessageProcessor {
 
       let content = input.rawContent;
 
-      // Stage 2: Preprocessor
+      // Stage 2a: Global preprocessor
+      if (this.config.scripts.globalPreprocessor) {
+        const gpreResult = await this.runScript(
+          this.config.scripts.globalPreprocessor, content, input, signal,
+        );
+        if (gpreResult.ok && typeof gpreResult.value.returnValue === 'string') {
+          content = gpreResult.value.returnValue;
+        }
+      }
+
+      // Stage 2b: Channel preprocessor
       if (this.config.scripts.preprocessor) {
         const preResult = await this.runScript(
           this.config.scripts.preprocessor, content, input, signal,
@@ -151,10 +167,17 @@ export class MessageProcessor {
         }
       }
 
+      // Create destination set for source filter/transformer to control routing
+      const enabledDests = this.config.destinations.filter((d) => d.enabled);
+      const destSet = new DestinationSet(
+        enabledDests.map((d) => ({ name: d.name, metaDataId: d.metaDataId })),
+      );
+      const destSetExtras = { destinationSet: createDestinationSetProxy(destSet) };
+
       // Stage 3: Source filter
       if (this.config.scripts.sourceFilter) {
         const filterResult = await this.runScript(
-          this.config.scripts.sourceFilter, content, input, signal,
+          this.config.scripts.sourceFilter, content, input, signal, destSetExtras,
         );
         if (filterResult.ok && filterResult.value.returnValue === false) {
           await this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'FILTERED');
@@ -167,7 +190,7 @@ export class MessageProcessor {
       // Stage 4: Source transformer
       if (this.config.scripts.sourceTransformer) {
         const txResult = await this.runScript(
-          this.config.scripts.sourceTransformer, content, input, signal,
+          this.config.scripts.sourceTransformer, content, input, signal, destSetExtras,
         );
         if (txResult.ok && typeof txResult.value.returnValue === 'string') {
           content = txResult.value.returnValue;
@@ -177,15 +200,23 @@ export class MessageProcessor {
 
       await this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'TRANSFORMED');
 
-      // Stage 5+6: Route to destinations
+      // Stage 5+6: Route to destinations (filtered by destinationSet)
+      const activeIds = destSet.getActiveMetaDataIds();
       const destResults = await this.routeToDestinations(
-        messageId, content, input, signal,
+        messageId, content, input, signal, activeIds,
       );
 
-      // Stage 7: Postprocessor
+      // Stage 7a: Channel postprocessor
       if (this.config.scripts.postprocessor) {
         await this.runScript(
           this.config.scripts.postprocessor, content, input, signal,
+        );
+      }
+
+      // Stage 7b: Global postprocessor
+      if (this.config.scripts.globalPostprocessor) {
+        await this.runScript(
+          this.config.scripts.globalPostprocessor, content, input, signal,
         );
       }
 
@@ -208,19 +239,20 @@ export class MessageProcessor {
     });
   }
 
-  /** Route message to all enabled destinations. */
+  /** Route message to active destinations. */
   private async routeToDestinations(
     messageId: number,
     content: string,
     input: PipelineInput,
     signal: AbortSignal,
+    activeDestinations?: ReadonlySet<number> | undefined,
   ): Promise<readonly DestinationResult[]> {
     const { channelId, serverId, dataType } = this.config;
     const results: DestinationResult[] = [];
 
-    // Process destinations in parallel
+    // Process destinations in parallel, filtered by active set
     const promises = this.config.destinations
-      .filter((d) => d.enabled)
+      .filter((d) => d.enabled && (!activeDestinations || activeDestinations.has(d.metaDataId)))
       .map(async (dest): Promise<DestinationResult> => {
         await this.store.createConnectorMessage(
           channelId, messageId, dest.metaDataId, dest.name, 'RECEIVED',
@@ -308,8 +340,19 @@ export class MessageProcessor {
     content: string,
     input: PipelineInput,
     signal: AbortSignal,
+    extras?: Readonly<Record<string, unknown>> | undefined,
   ): Promise<Result<ExecutionResult>> {
-    const context = createSandboxContext(content, input.rawContent, content);
-    return this.sandbox.execute(script, context, { ...this.execOptions, signal });
+    const base = createSandboxContext(content, input.rawContent, content);
+    const gcm = this.config.globalChannelMap;
+    const context: SandboxContext = {
+      ...base,
+      ...(gcm ? { globalChannelMap: gcm.toRecord() } : {}),
+      ...(extras ? { extras } : {}),
+    };
+    const result = await this.sandbox.execute(script, context, { ...this.execOptions, signal });
+    if (result.ok && gcm) {
+      gcm.applyUpdates(result.value.mapUpdates.globalChannelMap);
+    }
+    return result;
   }
 }

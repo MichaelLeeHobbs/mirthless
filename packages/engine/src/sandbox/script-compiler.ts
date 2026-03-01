@@ -61,3 +61,58 @@ export async function compileScript(
 export function clearScriptCache(): void {
   scriptCache.clear();
 }
+
+// ----- Filter/Transformer Compilation -----
+
+/** A single filter rule for compilation. */
+export interface FilterRuleInput {
+  readonly enabled: boolean;
+  readonly operator: string;
+  readonly type: string;
+  readonly script: string | null;
+}
+
+/** Compile filter rules into a single boolean-returning script. */
+export function compileFilterRulesToScript(
+  rules: ReadonlyArray<FilterRuleInput>,
+): string | null {
+  const jsRules = rules.filter((r) => r.enabled && r.type === 'JAVASCRIPT' && r.script);
+  if (jsRules.length === 0) return null;
+
+  if (jsRules.length === 1) {
+    return `return (function() { ${jsRules[0]!.script!} })();`;
+  }
+
+  // Combine rules with their operators (first rule's operator is ignored, subsequent rules define connector)
+  const parts: string[] = [];
+  for (let i = 0; i < jsRules.length; i++) {
+    const rule = jsRules[i]!;
+    const wrapped = `(function() { ${rule.script!} })()`;
+    if (i === 0) {
+      parts.push(wrapped);
+    } else {
+      const op = rule.operator === 'OR' ? '||' : '&&';
+      parts.push(` ${op} ${wrapped}`);
+    }
+  }
+
+  return `return ${parts.join('')};`;
+}
+
+/** A single transformer step for compilation. */
+export interface TransformerStepInput {
+  readonly enabled: boolean;
+  readonly type: string;
+  readonly script: string | null;
+}
+
+/** Compile transformer steps into a sequential execution script. */
+export function compileTransformerStepsToScript(
+  steps: ReadonlyArray<TransformerStepInput>,
+): string | null {
+  const jsSteps = steps.filter((s) => s.enabled && s.type === 'JAVASCRIPT' && s.script);
+  if (jsSteps.length === 0) return null;
+
+  const lines = jsSteps.map((s) => s.script!);
+  return `${lines.join('\n')}\nreturn tmp;`;
+}

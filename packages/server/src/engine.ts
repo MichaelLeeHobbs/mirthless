@@ -9,14 +9,21 @@ import {
   VmSandboxExecutor,
   MessageProcessor,
   DEFAULT_EXECUTION_OPTIONS,
+  GlobalChannelMap,
   compileScript,
+  compileFilterRulesToScript,
+  compileTransformerStepsToScript,
+  prependTemplates,
   type ChannelRuntimeConfig,
   type PipelineConfig,
   type ChannelScripts,
   type DestinationConfig,
+  type DestinationScripts,
   type SandboxExecutor,
   type MessageStore,
   type SendToDestination,
+  type CompiledScript,
+  type CodeTemplateData,
 } from '@mirthless/engine';
 import { tryCatch } from 'stderr-lib';
 import {
@@ -25,7 +32,12 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@mirthless/connectors';
+import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
+import { GlobalScriptService } from './services/global-script.service.js';
+import { CodeTemplateService } from './services/code-template.service.js';
+import { db } from './lib/db.js';
+import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import type { ChannelDetail } from './services/channel.service.js';
 
 // ----- Types -----
@@ -34,6 +46,7 @@ export interface DeployedChannel {
   readonly channelId: string;
   readonly runtime: ChannelRuntime;
   readonly config: ChannelDetail;
+  readonly globalChannelMap: GlobalChannelMap;
 }
 
 // ----- Message Store Adapter -----
@@ -85,6 +98,7 @@ export class EngineManager {
     }
 
     const runtime = new ChannelRuntime();
+    const gcm = new GlobalChannelMap();
 
     // Create source connector
     const source = createSourceConnector(
@@ -102,17 +116,26 @@ export class EngineManager {
       destinations.set(dest.metaDataId, connector);
     }
 
-    // Compile channel scripts
-    const scripts = await this.compileChannelScripts(channel);
+    // Load code templates and global scripts in parallel
+    const [templatesResult, globalScriptsResult, filterTransformerData] = await Promise.all([
+      CodeTemplateService.listTemplates(),
+      GlobalScriptService.getAll(),
+      this.loadFilterTransformerData(channel.id),
+    ]);
 
-    // Build destination configs
-    const destConfigs: DestinationConfig[] = channel.destinations.map((d) => ({
-      metaDataId: d.metaDataId,
-      name: d.name,
-      enabled: d.enabled,
-      scripts: {},
-      queueEnabled: d.queueMode !== 'NEVER',
-    }));
+    const templates: ReadonlyArray<CodeTemplateData> = templatesResult.ok
+      ? templatesResult.value.map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }))
+      : [];
+
+    // Compile all channel scripts (source + destinations + global)
+    const scripts = await this.compileChannelScripts(
+      channel, templates, globalScriptsResult, filterTransformerData,
+    );
+
+    // Build destination configs with compiled scripts
+    const destConfigs: DestinationConfig[] = await this.buildDestinationConfigs(
+      channel, templates, filterTransformerData,
+    );
 
     // Build pipeline config
     const pipelineConfig: PipelineConfig = {
@@ -121,6 +144,7 @@ export class EngineManager {
       dataType: channel.inboundDataType,
       scripts,
       destinations: destConfigs,
+      globalChannelMap: gcm,
     };
 
     // Build send function
@@ -153,7 +177,7 @@ export class EngineManager {
       throw new Error('Failed to deploy channel runtime');
     }
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel });
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm });
   }
 
   /** Get a deployed channel runtime. */
@@ -173,6 +197,8 @@ export class EngineManager {
       throw new Error(`Channel ${channelId} is not deployed`);
     }
 
+    deployed.globalChannelMap.clear();
+
     const result = await deployed.runtime.undeploy();
     if (!result.ok) {
       throw new Error('Failed to undeploy channel runtime');
@@ -181,31 +207,235 @@ export class EngineManager {
     this.runtimes.delete(channelId);
   }
 
-  /** Compile channel scripts from the stored configuration. */
-  private async compileChannelScripts(channel: ChannelDetail): Promise<ChannelScripts> {
-    const scripts: Record<string, unknown> = {};
+  /** Compile a script with optional template prepending. */
+  private async compileWithTemplates(
+    source: string,
+    context: string,
+    templates: ReadonlyArray<CodeTemplateData>,
+    sourcefile: string,
+  ): Promise<CompiledScript | undefined> {
+    const withTemplates = prependTemplates(source, templates, context);
+    const result = await compileScript(withTemplates, { sourcefile });
+    return result.ok ? result.value : undefined;
+  }
 
+  /** Compile channel scripts from stored configuration + DB filter/transformer data + global scripts. */
+  private async compileChannelScripts(
+    channel: ChannelDetail,
+    templates: ReadonlyArray<CodeTemplateData>,
+    globalScriptsResult: Awaited<ReturnType<typeof GlobalScriptService.getAll>>,
+    ftData: FilterTransformerData,
+  ): Promise<ChannelScripts> {
+    const scripts: Record<string, CompiledScript | undefined> = {};
+
+    // Channel preprocessor/postprocessor from channel_scripts table
     for (const script of channel.scripts) {
       if (!script.script) continue;
-
-      const result = await compileScript(script.script, {
-        sourcefile: `${channel.name}/${script.scriptType.toLowerCase()}.ts`,
-      });
-
-      if (result.ok) {
-        const key = script.scriptType.toLowerCase();
-        if (key === 'preprocessor') scripts['preprocessor'] = result.value;
-        if (key === 'postprocessor') scripts['postprocessor'] = result.value;
+      const key = script.scriptType.toLowerCase();
+      if (key === 'preprocessor' || key === 'postprocessor') {
+        scripts[key] = await this.compileWithTemplates(
+          script.script, key, templates, `${channel.name}/${key}.ts`,
+        );
       }
     }
 
-    return scripts as ChannelScripts;
+    // Source filter from filter rules (connectorId IS NULL)
+    const sourceFilterScript = compileFilterRulesToScript(ftData.sourceFilterRules);
+    if (sourceFilterScript) {
+      scripts['sourceFilter'] = await this.compileWithTemplates(
+        sourceFilterScript, 'sourceFilter', templates, `${channel.name}/sourceFilter.ts`,
+      );
+    }
+
+    // Source transformer from transformer steps (connectorId IS NULL)
+    const sourceTransformerScript = compileTransformerStepsToScript(ftData.sourceTransformerSteps);
+    if (sourceTransformerScript) {
+      scripts['sourceTransformer'] = await this.compileWithTemplates(
+        sourceTransformerScript, 'sourceTransformer', templates, `${channel.name}/sourceTransformer.ts`,
+      );
+    }
+
+    // Global preprocessor/postprocessor
+    if (globalScriptsResult.ok) {
+      const gs = globalScriptsResult.value;
+      if (gs.preprocessor) {
+        scripts['globalPreprocessor'] = await this.compileWithTemplates(
+          gs.preprocessor, 'globalPreprocessor', templates, 'global/preprocessor.ts',
+        );
+      }
+      if (gs.postprocessor) {
+        scripts['globalPostprocessor'] = await this.compileWithTemplates(
+          gs.postprocessor, 'globalPostprocessor', templates, 'global/postprocessor.ts',
+        );
+      }
+    }
+
+    // Remove undefined entries
+    const result: Record<string, CompiledScript> = {};
+    for (const [key, value] of Object.entries(scripts)) {
+      if (value) result[key] = value;
+    }
+    return result as ChannelScripts;
+  }
+
+  /** Build destination configs with compiled filter/transformer scripts. */
+  private async buildDestinationConfigs(
+    channel: ChannelDetail,
+    templates: ReadonlyArray<CodeTemplateData>,
+    ftData: FilterTransformerData,
+  ): Promise<DestinationConfig[]> {
+    const configs: DestinationConfig[] = [];
+
+    for (const d of channel.destinations) {
+      const destScripts: Record<string, CompiledScript | undefined> = {};
+
+      // Destination filter
+      const destFilterRules = ftData.destinationFilterRules.get(d.id);
+      if (destFilterRules) {
+        const filterScript = compileFilterRulesToScript(destFilterRules);
+        if (filterScript) {
+          destScripts['filter'] = await this.compileWithTemplates(
+            filterScript, 'destinationFilter', templates, `${channel.name}/${d.name}/filter.ts`,
+          );
+        }
+      }
+
+      // Destination transformer
+      const destTransformerSteps = ftData.destinationTransformerSteps.get(d.id);
+      if (destTransformerSteps) {
+        const txScript = compileTransformerStepsToScript(destTransformerSteps);
+        if (txScript) {
+          destScripts['transformer'] = await this.compileWithTemplates(
+            txScript, 'destinationTransformer', templates, `${channel.name}/${d.name}/transformer.ts`,
+          );
+        }
+      }
+
+      // Remove undefined entries
+      const cleanScripts: Record<string, CompiledScript> = {};
+      for (const [key, value] of Object.entries(destScripts)) {
+        if (value) cleanScripts[key] = value;
+      }
+
+      configs.push({
+        metaDataId: d.metaDataId,
+        name: d.name,
+        enabled: d.enabled,
+        scripts: cleanScripts as DestinationScripts,
+        queueEnabled: d.queueMode !== 'NEVER',
+      });
+    }
+
+    return configs;
+  }
+
+  /** Load filter rules and transformer steps for a channel, grouped by connector. */
+  private async loadFilterTransformerData(channelId: string): Promise<FilterTransformerData> {
+    const [filterRows, transformerRows] = await Promise.all([
+      db
+        .select({
+          filterId: channelFilters.id,
+          connectorId: channelFilters.connectorId,
+          ruleId: filterRules.id,
+          sequenceNumber: filterRules.sequenceNumber,
+          enabled: filterRules.enabled,
+          operator: filterRules.operator,
+          type: filterRules.type,
+          script: filterRules.script,
+        })
+        .from(channelFilters)
+        .leftJoin(filterRules, eq(filterRules.filterId, channelFilters.id))
+        .where(eq(channelFilters.channelId, channelId))
+        .orderBy(asc(filterRules.sequenceNumber)),
+      db
+        .select({
+          transformerId: channelTransformers.id,
+          connectorId: channelTransformers.connectorId,
+          stepId: transformerSteps.id,
+          sequenceNumber: transformerSteps.sequenceNumber,
+          enabled: transformerSteps.enabled,
+          type: transformerSteps.type,
+          script: transformerSteps.script,
+        })
+        .from(channelTransformers)
+        .leftJoin(transformerSteps, eq(transformerSteps.transformerId, channelTransformers.id))
+        .where(eq(channelTransformers.channelId, channelId))
+        .orderBy(asc(transformerSteps.sequenceNumber)),
+    ]);
+
+    const sourceFilterRules: FilterRuleRow[] = [];
+    const destinationFilterRules = new Map<string, FilterRuleRow[]>();
+    const sourceTransformerSteps: TransformerStepRow[] = [];
+    const destinationTransformerSteps = new Map<string, TransformerStepRow[]>();
+
+    for (const row of filterRows) {
+      if (!row.ruleId) continue; // LEFT JOIN produced no rules
+      const rule: FilterRuleRow = {
+        enabled: row.enabled ?? true,
+        operator: row.operator ?? 'AND',
+        type: row.type ?? 'JAVASCRIPT',
+        script: row.script ?? null,
+      };
+      if (row.connectorId === null) {
+        sourceFilterRules.push(rule);
+      } else {
+        const existing = destinationFilterRules.get(row.connectorId);
+        if (existing) {
+          existing.push(rule);
+        } else {
+          destinationFilterRules.set(row.connectorId, [rule]);
+        }
+      }
+    }
+
+    for (const row of transformerRows) {
+      if (!row.stepId) continue; // LEFT JOIN produced no steps
+      const step: TransformerStepRow = {
+        enabled: row.enabled ?? true,
+        type: row.type ?? 'JAVASCRIPT',
+        script: row.script ?? null,
+      };
+      if (row.connectorId === null) {
+        sourceTransformerSteps.push(step);
+      } else {
+        const existing = destinationTransformerSteps.get(row.connectorId);
+        if (existing) {
+          existing.push(step);
+        } else {
+          destinationTransformerSteps.set(row.connectorId, [step]);
+        }
+      }
+    }
+
+    return { sourceFilterRules, destinationFilterRules, sourceTransformerSteps, destinationTransformerSteps };
   }
 
   /** Dispose all resources. */
   dispose(): void {
     this.sandbox.dispose();
   }
+}
+
+// ----- Internal Types -----
+
+interface FilterRuleRow {
+  readonly enabled: boolean;
+  readonly operator: string;
+  readonly type: string;
+  readonly script: string | null;
+}
+
+interface TransformerStepRow {
+  readonly enabled: boolean;
+  readonly type: string;
+  readonly script: string | null;
+}
+
+interface FilterTransformerData {
+  readonly sourceFilterRules: ReadonlyArray<FilterRuleRow>;
+  readonly destinationFilterRules: ReadonlyMap<string, ReadonlyArray<FilterRuleRow>>;
+  readonly sourceTransformerSteps: ReadonlyArray<TransformerStepRow>;
+  readonly destinationTransformerSteps: ReadonlyMap<string, ReadonlyArray<TransformerStepRow>>;
 }
 
 // ----- Singleton -----

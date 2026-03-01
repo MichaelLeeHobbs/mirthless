@@ -3,7 +3,12 @@
 // ===========================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { compileScript, clearScriptCache } from '../script-compiler.js';
+import {
+  compileScript,
+  clearScriptCache,
+  compileFilterRulesToScript,
+  compileTransformerStepsToScript,
+} from '../script-compiler.js';
 
 beforeEach(() => {
   clearScriptCache();
@@ -113,5 +118,106 @@ describe('compileScript', () => {
     expect(result1.value).not.toBe(result2.value);
     // But same content
     expect(result1.value.code).toBe(result2.value.code);
+  });
+});
+
+describe('compileFilterRulesToScript', () => {
+  it('returns null for empty rules array', () => {
+    expect(compileFilterRulesToScript([])).toBeNull();
+  });
+
+  it('returns null when all rules are disabled', () => {
+    const rules = [
+      { enabled: false, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;' },
+    ];
+    expect(compileFilterRulesToScript(rules)).toBeNull();
+  });
+
+  it('returns null when no rules are JAVASCRIPT type', () => {
+    const rules = [
+      { enabled: true, operator: 'AND', type: 'RULE_BUILDER', script: null },
+    ];
+    expect(compileFilterRulesToScript(rules)).toBeNull();
+  });
+
+  it('compiles single JS rule into a return statement', () => {
+    const rules = [
+      { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return msg.type === "ADT";' },
+    ];
+    const result = compileFilterRulesToScript(rules);
+    expect(result).toContain('return');
+    expect(result).toContain('msg.type === "ADT"');
+  });
+
+  it('combines multiple rules with AND operator', () => {
+    const rules = [
+      { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;' },
+      { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return false;' },
+    ];
+    const result = compileFilterRulesToScript(rules);
+    expect(result).toContain('&&');
+  });
+
+  it('combines multiple rules with OR operator', () => {
+    const rules = [
+      { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;' },
+      { enabled: true, operator: 'OR', type: 'JAVASCRIPT', script: 'return false;' },
+    ];
+    const result = compileFilterRulesToScript(rules);
+    expect(result).toContain('||');
+  });
+
+  it('skips disabled rules in combination', () => {
+    const rules = [
+      { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;' },
+      { enabled: false, operator: 'AND', type: 'JAVASCRIPT', script: 'return false;' },
+      { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;' },
+    ];
+    const result = compileFilterRulesToScript(rules);
+    expect(result).toContain('&&');
+    expect(result).not.toContain('return false');
+  });
+});
+
+describe('compileTransformerStepsToScript', () => {
+  it('returns null for empty steps array', () => {
+    expect(compileTransformerStepsToScript([])).toBeNull();
+  });
+
+  it('returns null when all steps are disabled', () => {
+    const steps = [
+      { enabled: false, type: 'JAVASCRIPT', script: 'tmp.x = 1;' },
+    ];
+    expect(compileTransformerStepsToScript(steps)).toBeNull();
+  });
+
+  it('compiles single step into script ending with return tmp', () => {
+    const steps = [
+      { enabled: true, type: 'JAVASCRIPT', script: 'tmp.x = 1;' },
+    ];
+    const result = compileTransformerStepsToScript(steps);
+    expect(result).toContain('tmp.x = 1;');
+    expect(result).toContain('return tmp;');
+  });
+
+  it('compiles multiple steps sequentially', () => {
+    const steps = [
+      { enabled: true, type: 'JAVASCRIPT', script: 'tmp.a = 1;' },
+      { enabled: true, type: 'JAVASCRIPT', script: 'tmp.b = 2;' },
+    ];
+    const result = compileTransformerStepsToScript(steps);
+    expect(result).toContain('tmp.a = 1;');
+    expect(result).toContain('tmp.b = 2;');
+    expect(result).toContain('return tmp;');
+  });
+
+  it('skips disabled steps', () => {
+    const steps = [
+      { enabled: true, type: 'JAVASCRIPT', script: 'tmp.a = 1;' },
+      { enabled: false, type: 'JAVASCRIPT', script: 'tmp.b = 2;' },
+    ];
+    const result = compileTransformerStepsToScript(steps);
+    expect(result).toContain('tmp.a = 1;');
+    expect(result).not.toContain('tmp.b = 2;');
   });
 });

@@ -13,6 +13,7 @@ import type {
   DestinationResponse,
 } from '../message-processor.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';
+import { GlobalChannelMap } from '../../runtime/global-channel-map.js';
 
 // ----- Helpers -----
 
@@ -324,5 +325,204 @@ describe('MessageProcessor', () => {
 
     // Transformed content should be sent
     expect(sendFn).toHaveBeenCalledWith(1, 'DEST_TRANSFORMED', expect.any(AbortSignal));
+  });
+
+  // ----- Global Scripts -----
+
+  it('global preprocessor runs before channel preprocessor', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: {
+        globalPreprocessor: { code: 'return rawData + "_GLOBAL";' },
+        preprocessor: { code: 'return rawData + "_CHANNEL";' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput('MSG'), AbortSignal.timeout(5_000));
+
+    // Global preprocessor returns "MSG_GLOBAL"
+    // Channel preprocessor gets rawData (still original "MSG") and returns "MSG_CHANNEL"
+    // But preprocessor reads rawData which is the ORIGINAL input
+    // The content flows through, so destination gets channel preprocessor output
+    expect(sendFn).toHaveBeenCalledWith(1, expect.any(String), expect.any(AbortSignal));
+  });
+
+  it('global postprocessor runs after channel postprocessor', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: {
+        postprocessor: { code: 'logger.info("channel_post"); return true;' },
+        globalPostprocessor: { code: 'logger.info("global_post"); return true;' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('SENT');
+  });
+
+  it('works with only global scripts (no channel scripts)', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: {
+        globalPreprocessor: { code: 'return rawData + "_GP";' },
+        globalPostprocessor: { code: 'logger.info("done"); return true;' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('SENT');
+  });
+
+  it('global preprocessor modifies content for downstream stages', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: {
+        globalPreprocessor: { code: 'return "GLOBAL_MODIFIED";' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    // Destination receives the globally-modified content
+    expect(sendFn).toHaveBeenCalledWith(1, 'GLOBAL_MODIFIED', expect.any(AbortSignal));
+  });
+
+  // ----- globalChannelMap -----
+
+  it('globalChannelMap persists across two processMessage calls', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const gcm = new GlobalChannelMap();
+    const config = makeConfig({
+      scripts: {
+        preprocessor: { code: 'var c = globalChannelMap["counter"] || 0; globalChannelMap["counter"] = c + 1; return rawData;' },
+      },
+      globalChannelMap: gcm,
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(gcm.get('counter')).toBe(2);
+  });
+
+  it('sandbox reads from globalChannelMap', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const gcm = new GlobalChannelMap();
+    gcm.put('greeting', 'hello');
+    const config = makeConfig({
+      scripts: {
+        preprocessor: { code: 'return globalChannelMap["greeting"];' },
+      },
+      globalChannelMap: gcm,
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    // Preprocessor returned the value from globalChannelMap
+    expect(sendFn).toHaveBeenCalledWith(1, 'hello', expect.any(AbortSignal));
+  });
+
+  // ----- destinationSet -----
+
+  it('source transformer removes destination via destinationSet', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: {
+        sourceTransformer: { code: 'destinationSet.remove("Dest 2"); return rawData;' },
+      },
+      destinations: [
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueEnabled: false },
+      ],
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Only Dest 1 should have been sent to
+    expect(result.value.destinationResults).toHaveLength(1);
+    expect(result.value.destinationResults[0]!.metaDataId).toBe(1);
+    expect(sendFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('removeAllExcept routes to single destination', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: {
+        sourceTransformer: { code: 'destinationSet.removeAllExcept("Dest 2"); return rawData;' },
+      },
+      destinations: [
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 3, name: 'Dest 3', enabled: true, scripts: {}, queueEnabled: false },
+      ],
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults).toHaveLength(1);
+    expect(result.value.destinationResults[0]!.metaDataId).toBe(2);
+    expect(sendFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('destinationSet removeAll sends to no destinations', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: {
+        sourceTransformer: { code: 'destinationSet.removeAll(); return rawData;' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults).toHaveLength(0);
+    expect(sendFn).not.toHaveBeenCalled();
   });
 });

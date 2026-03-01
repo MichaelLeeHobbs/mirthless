@@ -25,3 +25,5 @@ export type {
 } from './runtime/channel-runtime.js';
 export { QueueConsumer } from './runtime/queue-consumer.js';
 export type { QueueConsumerConfig } from './runtime/queue-consumer.js';
+export { GlobalChannelMap } from './runtime/global-channel-map.js';
+export { DestinationSet, createDestinationSetProxy } from './pipeline/destination-set.js';

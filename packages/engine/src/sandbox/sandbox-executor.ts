@@ -9,6 +9,7 @@ import * as vm from 'node:vm';
 import type { Result } from '@mirthless/core-util';
 import { tryCatch } from '@mirthless/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
+import { createBridgeFunctions } from './bridge-functions.js';
 
 // ----- Types -----
 
@@ -31,6 +32,7 @@ export interface ExecutionResult {
   readonly mapUpdates: {
     readonly channelMap: Readonly<Record<string, unknown>>;
     readonly connectorMap: Readonly<Record<string, unknown>>;
+    readonly globalChannelMap: Readonly<Record<string, unknown>>;
   };
   readonly logs: readonly LogEntry[];
 }
@@ -79,6 +81,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
       const logs: LogEntry[] = [];
       const channelMap = { ...context.channelMap };
       const connectorMap = { ...context.connectorMap };
+      const globalChannelMap = { ...(context.globalChannelMap ?? {}) };
 
       const logger = {
         info: (message: string): void => { logs.push({ level: 'INFO', message, timestamp: new Date() }); },
@@ -87,6 +90,8 @@ export class VmSandboxExecutor implements SandboxExecutor {
         debug: (message: string): void => { logs.push({ level: 'DEBUG', message, timestamp: new Date() }); },
       };
 
+      const bridges = createBridgeFunctions();
+
       const sandbox: Record<string, unknown> = {
         msg: context.msg,
         tmp: context.tmp,
@@ -94,8 +99,12 @@ export class VmSandboxExecutor implements SandboxExecutor {
         sourceMap: { ...context.sourceMap },
         channelMap,
         connectorMap,
+        globalChannelMap,
         responseMap: { ...context.responseMap },
         logger,
+        parseHL7: bridges.parseHL7,
+        createACK: bridges.createACK,
+        ...(context.extras ?? {}),
         __result: undefined,
       };
 
@@ -106,7 +115,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
 
       return {
         returnValue: sandbox['__result'],
-        mapUpdates: { channelMap, connectorMap },
+        mapUpdates: { channelMap, connectorMap, globalChannelMap },
         logs,
       };
     });

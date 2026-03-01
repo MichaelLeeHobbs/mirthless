@@ -39,6 +39,10 @@ export interface SandboxContext {
   readonly connectorMap: Record<string, unknown>;
   /** Response key-value store, available in postprocessor. */
   readonly responseMap: Record<string, unknown>;
+  /** Per-channel map that persists across messages within a deployment. */
+  readonly globalChannelMap?: Readonly<Record<string, unknown>> | undefined;
+  /** Extra objects to inject into the sandbox (e.g. destinationSet). */
+  readonly extras?: Readonly<Record<string, unknown>> | undefined;
 }
 
 /** Create a fresh sandbox context with default empty maps. */
