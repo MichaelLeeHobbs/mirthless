@@ -16,13 +16,13 @@ router.use(authenticate);
 
 router.get(
   '/',
-  requirePermission('config:read'),
+  requirePermission('global_scripts:read'),
   GlobalScriptController.getAll,
 );
 
 router.put(
   '/',
-  requirePermission('config:write'),
+  requirePermission('global_scripts:write'),
   validate({ body: updateGlobalScriptsSchema }),
   GlobalScriptController.update,
 );

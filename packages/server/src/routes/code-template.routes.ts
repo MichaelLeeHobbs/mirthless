@@ -25,27 +25,27 @@ router.use(authenticate);
 
 router.get(
   '/libraries',
-  requirePermission('code-templates:read'),
+  requirePermission('code_templates:read'),
   CodeTemplateController.listLibraries,
 );
 
 router.post(
   '/libraries',
-  requirePermission('code-templates:write'),
+  requirePermission('code_templates:write'),
   validate({ body: createCodeTemplateLibrarySchema }),
   CodeTemplateController.createLibrary,
 );
 
 router.put(
   '/libraries/:id',
-  requirePermission('code-templates:write'),
+  requirePermission('code_templates:write'),
   validate({ params: codeTemplateUuidParamSchema, body: updateCodeTemplateLibrarySchema }),
   CodeTemplateController.updateLibrary,
 );
 
 router.delete(
   '/libraries/:id',
-  requirePermission('code-templates:write'),
+  requirePermission('code_templates:write'),
   validate({ params: codeTemplateUuidParamSchema }),
   CodeTemplateController.deleteLibrary,
 );
@@ -54,28 +54,28 @@ router.delete(
 
 router.get(
   '/',
-  requirePermission('code-templates:read'),
+  requirePermission('code_templates:read'),
   validate({ query: codeTemplateListQuerySchema }),
   CodeTemplateController.listTemplates,
 );
 
 router.post(
   '/',
-  requirePermission('code-templates:write'),
+  requirePermission('code_templates:write'),
   validate({ body: createCodeTemplateSchema }),
   CodeTemplateController.createTemplate,
 );
 
 router.put(
   '/:id',
-  requirePermission('code-templates:write'),
+  requirePermission('code_templates:write'),
   validate({ params: codeTemplateUuidParamSchema, body: updateCodeTemplateSchema }),
   CodeTemplateController.updateTemplate,
 );
 
 router.delete(
   '/:id',
-  requirePermission('code-templates:write'),
+  requirePermission('code_templates:write'),
   validate({ params: codeTemplateUuidParamSchema }),
   CodeTemplateController.deleteTemplate,
 );

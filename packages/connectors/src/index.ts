@@ -46,4 +46,46 @@ export {
   type UpdateMode,
   type RowFormat,
 } from './database/index.js';
+export {
+  JavaScriptReceiver,
+  JavaScriptDispatcher,
+  normalizeScriptResult,
+  type JavaScriptReceiverConfig,
+  type JavaScriptDispatcherConfig,
+  type ScriptRunner,
+  type DestScriptRunner,
+} from './javascript/index.js';
+export {
+  SmtpDispatcher,
+  substituteTemplate,
+  type SmtpDispatcherConfig,
+  type SmtpAuth,
+  type SmtpTransport,
+  type SmtpMailOptions,
+  type SmtpSendResult,
+  type SmtpAttachment,
+  type TransportFactory,
+} from './smtp/index.js';
+export {
+  ChannelReceiver,
+  ChannelDispatcher,
+  registerChannel,
+  unregisterChannel,
+  getChannelDispatcher,
+  hasChannel,
+  getRegisteredChannelIds,
+  clearChannelRegistry,
+  type ChannelReceiverConfig,
+  type ChannelDispatcherConfig,
+  type ChannelDispatchCallback,
+} from './channel/index.js';
+export {
+  FhirDispatcher,
+  buildFhirUrl,
+  buildHeaders,
+  FHIR_AUTH_TYPE,
+  type FhirDispatcherConfig,
+  type FhirAuthConfig,
+  type FhirAuthType,
+} from './fhir/index.js';
 export { createSourceConnector, createDestinationConnector } from './registry.js';

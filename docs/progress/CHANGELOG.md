@@ -585,6 +585,85 @@
 - Alert evaluation engine (trigger evaluation, action dispatch)
 - Channel import/export
 
+## 2026-03-01 — P2 Connectors + Channel Operations (Phase 13)
+
+### What was done:
+
+**Unit 1 — JavaScript Connector (Source + Destination)** (`connectors`):
+- `JavaScriptReceiver` — Poll-based source. Executes user script via `ScriptRunner` callback on interval. Script returns string or array of strings, each dispatched as a `RawMessage`. Re-entrance protection via `polling` flag.
+- `JavaScriptDispatcher` — Destination. Executes user script with `msg` (content) and `connectorMessage` in scope via `DestScriptRunner` callback. Script return value becomes response content.
+- UI forms: `JavaScriptSourceForm.tsx` (script textarea + polling interval), `JavaScriptDestinationForm.tsx` (script textarea)
+- **32 tests** (16 receiver + 16 dispatcher)
+
+**Unit 2 — SMTP Connector (Destination Only)** (`connectors`):
+- `SmtpDispatcher` — Email delivery destination with `SmtpTransport` abstraction for testability. Template variable substitution (`${msg}`, `${messageId}`, `${channelId}`, `${metaDataId}`) in subject/body. `createNodemailerTransport()` factory for production use.
+- UI form: `SmtpDestinationForm.tsx` (2-column: SMTP server settings + email composition)
+- Added `nodemailer` + `@types/nodemailer` dependencies
+- **25 tests**
+
+**Unit 3 — Channel Connector (Source + Destination)** (`connectors`):
+- `ChannelReceiver` — Registers in static channel registry on start, unregisters on stop/halt/undeploy.
+- `ChannelDispatcher` — Looks up target channel in registry, dispatches message with source metadata in `sourceMap`. `waitForResponse` config controls response vs messageId return.
+- `channel-registry.ts` — Static `Map<string, ChannelDispatchCallback>` for zero-network-overhead inter-channel routing.
+- UI forms: `ChannelSourceForm.tsx` (info alert, no config needed), `ChannelDestinationForm.tsx` (target channel ID + wait toggle)
+- **25 tests** (9 receiver + 16 dispatcher)
+
+**Unit 4 — FHIR R4 Connector (Destination Only)** (`connectors`):
+- `FhirDispatcher` — FHIR REST API client using native `fetch`. Auth types: NONE, BASIC, BEARER, API_KEY. URL construction (`${baseUrl}/${resourceType}`), format-aware headers (application/fhir+json or +xml).
+- Exported helpers: `buildFhirUrl()`, `buildHeaders()` for testability.
+- UI form: `FhirDestinationForm.tsx` (2-column: FHIR server + auth settings)
+- **~20 tests**
+
+**Unit 5 — Channel Import/Export** (`core-models`, `server`, `web`):
+- `channel-export.schema.ts` — Zod schemas: `channelExportSchema` (version, exportedAt, channels array with full detail), `channelImportSchema` (+ collision mode: SKIP | OVERWRITE | CREATE_NEW)
+- `ChannelExportService` — `exportChannel(id)`, `exportAll()` with `channelToExportEntry()` mapper
+- `ChannelImportService` — `importChannels(entries, collisionMode, context)` with SKIP/OVERWRITE/CREATE_NEW handling, relation insert (scripts, destinations, metadata columns, filters, transformers)
+- Controller + routes: GET `/channels/export`, GET `/channels/:id/export`, POST `/channels/import`
+- UI: `ExportButton.tsx` (blob download), `ImportDialog.tsx` (file picker, collision mode, preview)
+- Updated `ChannelsPage.tsx` with Export/Import buttons
+- **14 tests** (9 export + 5 import)
+
+**Unit 6 — Alert Evaluation Engine** (`engine`):
+- `alert-evaluator.ts` — `evaluateAlerts(event, alerts)` matches channel errors against triggers (channel scope, error type, regex pattern). Returns matched alerts.
+- `action-dispatcher.ts` — `dispatchActions(alert, event, deps)` executes LOG and CHANNEL actions. `substituteAlertTemplate()` for variable replacement. EMAIL action deferred (logged as warning).
+- `alert-manager.ts` — `AlertManager` class: `loadAlerts()`, `handleEvent()`, `resetAlert()`. Internal throttle state (reAlertIntervalMs, maxAlerts tracking).
+- Added `PipelineConfig.onError` callback + `AlertEventHandler` type to `message-processor.ts` for pipeline integration.
+- **~37 tests** (15 evaluator + 10 dispatcher + 12 manager)
+
+**Shared file updates (Units 1-4):**
+- `registry.ts` — Added JAVASCRIPT, SMTP, CHANNEL, FHIR factories to source/destination Maps
+- `connectors/src/index.ts` — Added re-exports for all 4 new connector modules
+- Source `connector-defaults.ts` — Added JAVASCRIPT_SOURCE_DEFAULTS, CHANNEL_SOURCE_DEFAULTS
+- Dest `connector-defaults.ts` — Added JAVASCRIPT_DEST_DEFAULTS, SMTP_DEST_DEFAULTS, CHANNEL_DEST_DEFAULTS, FHIR_DEST_DEFAULTS
+- `ConnectorSettingsSection.tsx` — Added JAVASCRIPT, CHANNEL form mappings
+- `DestinationConnectorSettings.tsx` — Added JAVASCRIPT, SMTP, CHANNEL, FHIR form mappings
+
+### Key decisions:
+- D-055: JavaScript connector uses callback injection (ScriptRunner/DestScriptRunner) — testable without vm sandbox dependency
+- D-056: SMTP connector uses SmtpTransport abstraction — dependency injection for testability, `createNodemailerTransport()` for production
+- D-057: Channel connector uses static registry for in-memory routing — zero network overhead for inter-channel pipelines
+- D-058: FHIR connector destination-only for v1 — FHIR subscription source deferred
+- D-059: Channel import collision modes: SKIP, OVERWRITE, CREATE_NEW — covers all migration workflows
+- D-060: Alert evaluation with throttle/max-alerts — prevents alert storms from noisy channels
+- D-061: DICOM connector deferred — requires dcmtk.js native bindings and DIMSE protocol, too complex for this batch
+
+### Build notes:
+- `exactOptionalPropertyTypes`: FhirAuthConfig optional properties need `| undefined` suffix
+- nodemailer: added as runtime dependency + @types/nodemailer as dev dependency
+- channel-export.service.ts: `readonly string[] | null` → `string[] | null` via spread `[...r.values]`
+- Express route mount ordering: `/channels/export` routes mounted BEFORE greedy `/:id` channel routes
+
+### Verification:
+- `pnpm build` — 0 errors across all packages
+- `pnpm lint` — 0 warnings
+- `pnpm test` — **995 tests passing** (184 schema + 68 HL7 + 182 engine + 282 connectors + 279 server)
+
+### What's next:
+- DICOM connector (dedicated phase — requires dcmtk.js native bindings)
+- Persistent message store (Drizzle-backed, replacing in-memory)
+- Wire alert manager into engine manager for runtime alert evaluation
+- FHIR subscription source connector
+
 ## 2026-03-01 — Test Coverage Backfill
 
 ### What was done:

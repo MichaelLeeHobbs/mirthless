@@ -50,11 +50,22 @@ export const DATABASE_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   rowFormat: 'JSON',
 };
 
+export const JAVASCRIPT_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  script: '',
+  pollingIntervalMs: 5000,
+};
+
+export const CHANNEL_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  channelId: '',
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_SOURCE_DEFAULTS,
   HTTP: HTTP_SOURCE_DEFAULTS,
   FILE: FILE_SOURCE_DEFAULTS,
   DATABASE: DATABASE_SOURCE_DEFAULTS,
+  JAVASCRIPT: JAVASCRIPT_SOURCE_DEFAULTS,
+  CHANNEL: CHANNEL_SOURCE_DEFAULTS,
 };
 
 /** Get default properties for a connector type. Returns empty object for unknown types. */

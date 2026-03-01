@@ -11,12 +11,20 @@ import { TcpMllpDestinationForm } from './TcpMllpDestinationForm.js';
 import { HttpDestinationForm } from './HttpDestinationForm.js';
 import { FileDestinationForm } from './FileDestinationForm.js';
 import { DatabaseDestinationForm } from './DatabaseDestinationForm.js';
+import { JavaScriptDestinationForm } from './JavaScriptDestinationForm.js';
+import { SmtpDestinationForm } from './SmtpDestinationForm.js';
+import { ChannelDestinationForm } from './ChannelDestinationForm.js';
+import { FhirDestinationForm } from './FhirDestinationForm.js';
 
 const DEST_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<DestConnectorFormProps> | undefined>> = {
   TCP_MLLP: TcpMllpDestinationForm,
   HTTP: HttpDestinationForm,
   FILE: FileDestinationForm,
   DATABASE: DatabaseDestinationForm,
+  JAVASCRIPT: JavaScriptDestinationForm,
+  SMTP: SmtpDestinationForm,
+  CHANNEL: ChannelDestinationForm,
+  FHIR: FhirDestinationForm,
 };
 
 interface DestinationConnectorSettingsProps {

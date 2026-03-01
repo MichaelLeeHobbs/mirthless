@@ -18,6 +18,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CodeIcon from '@mui/icons-material/Code';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import type { CodeTemplateLibrary, CodeTemplateDetail } from '../../api/client.js';
@@ -27,6 +28,7 @@ interface LibraryTreeProps {
   readonly templates: ReadonlyArray<CodeTemplateDetail>;
   readonly selectedTemplateId: string | null;
   readonly onSelectTemplate: (template: CodeTemplateDetail) => void;
+  readonly onCreateTemplate: (libraryId: string) => void;
   readonly onEditLibrary: (library: CodeTemplateLibrary) => void;
   readonly onDeleteLibrary: (library: CodeTemplateLibrary) => void;
 }
@@ -36,6 +38,7 @@ export function LibraryTree({
   templates,
   selectedTemplateId,
   onSelectTemplate,
+  onCreateTemplate,
   onEditLibrary,
   onDeleteLibrary,
 }: LibraryTreeProps): ReactNode {
@@ -87,6 +90,15 @@ export function LibraryTree({
                   sx: { fontWeight: 600 },
                 }}
               />
+              <Tooltip title="Add template">
+                <IconButton
+                  size="small"
+                  onClick={(e) => { e.stopPropagation(); onCreateTemplate(lib.id); }}
+                  aria-label="Add template"
+                >
+                  <AddIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
               <Tooltip title="Edit library">
                 <IconButton
                   size="small"

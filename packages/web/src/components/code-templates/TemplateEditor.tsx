@@ -16,6 +16,8 @@ import Checkbox from '@mui/material/Checkbox';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
+import IconButton from '@mui/material/IconButton';
+import CloseIcon from '@mui/icons-material/Close';
 import Editor from '@monaco-editor/react';
 import { CODE_TEMPLATE_CONTEXTS } from '@mirthless/core-models';
 import type { CodeTemplateDetail } from '../../api/client.js';
@@ -49,10 +51,11 @@ interface TemplateEditorProps {
     revision: number;
   }) => void;
   readonly onDelete: (id: string) => void;
+  readonly onClose: () => void;
   readonly saving: boolean;
 }
 
-export function TemplateEditor({ template, onSave, onDelete, saving }: TemplateEditorProps): ReactNode {
+export function TemplateEditor({ template, onSave, onDelete, onClose, saving }: TemplateEditorProps): ReactNode {
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? '');
   const [type, setType] = useState(template.type);
@@ -93,9 +96,14 @@ export function TemplateEditor({ template, onSave, onDelete, saving }: TemplateE
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 2 }}>
-      <Typography variant="h6" sx={{ fontWeight: 600 }}>
-        {template.name}
-      </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+          {template.name}
+        </Typography>
+        <IconButton size="small" onClick={onClose} aria-label="Close editor">
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </Stack>
 
       <Stack direction="row" spacing={2}>
         <TextField

@@ -32,8 +32,11 @@ import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SearchIcon from '@mui/icons-material/Search';
+import UploadIcon from '@mui/icons-material/Upload';
 import { useChannels, useDeleteChannel, useToggleChannelEnabled, type ChannelSummary } from '../hooks/use-channels.js';
 import { NewChannelDialog } from '../components/channels/NewChannelDialog.js';
+import { ExportButton } from '../components/channels/ExportButton.js';
+import { ImportDialog } from '../components/channels/ImportDialog.js';
 
 const CONNECTOR_TYPE_LABELS: Readonly<Record<string, string>> = {
   TCP_MLLP: 'TCP/MLLP',
@@ -59,6 +62,7 @@ export function ChannelsPage(): ReactNode {
   const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState('');
   const [newDialogOpen, setNewDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ChannelSummary | null>(null);
 
   // API page is 1-indexed, MUI TablePagination is 0-indexed
@@ -103,13 +107,23 @@ export function ChannelsPage(): ReactNode {
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Channels
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => { setNewDialogOpen(true); }}
-        >
-          New Channel
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <ExportButton />
+          <Button
+            variant="outlined"
+            startIcon={<UploadIcon />}
+            onClick={() => { setImportDialogOpen(true); }}
+          >
+            Import
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => { setNewDialogOpen(true); }}
+          >
+            New Channel
+          </Button>
+        </Box>
       </Box>
 
       {/* Search */}
@@ -263,6 +277,13 @@ export function ChannelsPage(): ReactNode {
 
       {/* New Channel Dialog */}
       <NewChannelDialog open={newDialogOpen} onClose={() => { setNewDialogOpen(false); }} />
+
+      {/* Import Dialog */}
+      <ImportDialog
+        open={importDialogOpen}
+        onClose={() => { setImportDialogOpen(false); }}
+        onSuccess={() => { /* TanStack Query will auto-refetch */ }}
+      />
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteTarget !== null} onClose={() => { setDeleteTarget(null); }}>

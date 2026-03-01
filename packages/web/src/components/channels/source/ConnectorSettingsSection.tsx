@@ -10,6 +10,8 @@ import { TcpMllpSourceForm } from './TcpMllpSourceForm.js';
 import { HttpSourceForm } from './HttpSourceForm.js';
 import { FileSourceForm } from './FileSourceForm.js';
 import { DatabaseSourceForm } from './DatabaseSourceForm.js';
+import { JavaScriptSourceForm } from './JavaScriptSourceForm.js';
+import { ChannelSourceForm } from './ChannelSourceForm.js';
 import { UnsupportedConnectorPlaceholder } from './UnsupportedConnectorPlaceholder.js';
 
 const SOURCE_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<SourceConnectorFormProps> | undefined>> = {
@@ -17,6 +19,8 @@ const SOURCE_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<SourceConnec
   HTTP: HttpSourceForm,
   FILE: FileSourceForm,
   DATABASE: DatabaseSourceForm,
+  JAVASCRIPT: JavaScriptSourceForm,
+  CHANNEL: ChannelSourceForm,
 };
 
 interface ConnectorSettingsSectionProps {

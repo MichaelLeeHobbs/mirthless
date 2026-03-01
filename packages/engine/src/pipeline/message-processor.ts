@@ -87,6 +87,14 @@ export interface DestinationResult {
   readonly response?: string;
 }
 
+/** Callback to notify the alert system of pipeline errors. */
+export type AlertEventHandler = (event: {
+  readonly channelId: string;
+  readonly errorType: string;
+  readonly errorMessage: string;
+  readonly timestamp: number;
+}) => Promise<void>;
+
 /** Pipeline configuration. */
 export interface PipelineConfig {
   readonly channelId: string;
@@ -95,6 +103,7 @@ export interface PipelineConfig {
   readonly scripts: ChannelScripts;
   readonly destinations: readonly DestinationConfig[];
   readonly globalChannelMap?: GlobalChannelMap | undefined;
+  readonly onError?: AlertEventHandler | undefined;
 }
 
 // ----- Content Type Constants (duplicated to avoid cross-package import) -----
@@ -226,6 +235,17 @@ export class MessageProcessor {
       await this.store.markProcessed(channelId, messageId);
 
       const hasError = destResults.some((r) => r.status === 'ERROR');
+
+      // Notify alert system of errors
+      if (hasError && this.config.onError) {
+        await this.config.onError({
+          channelId,
+          errorType: 'DESTINATION_CONNECTOR',
+          errorMessage: `Destination error in message ${String(messageId)}`,
+          timestamp: Date.now(),
+        });
+      }
+
       const firstResponse = destResults.find((r) => r.response)?.response;
       const result: ProcessedMessage = {
         messageId,

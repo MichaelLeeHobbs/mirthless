@@ -81,13 +81,15 @@ test.describe('Code Templates', () => {
     await page.goto('/code-templates');
 
     // Wait for library to load
-    await expect(page.getByText(TEST_LIBRARY.name)).toBeVisible({ timeout: 10_000 });
+    const libRow = page.getByText(TEST_LIBRARY.name);
+    await expect(libRow).toBeVisible({ timeout: 10_000 });
 
-    // Click Template button
-    await page.getByRole('button', { name: /template/i }).click();
+    // Click the per-library "Add template" button on the TEST_LIBRARY row
+    const libItem = page.locator('li, div').filter({ hasText: TEST_LIBRARY.name });
+    await libItem.getByRole('button', { name: 'Add template' }).first().click();
 
-    // New template should appear
-    await expect(page.getByText('New Template')).toBeVisible({ timeout: 10_000 });
+    // New template should appear (use .first() to handle duplicates from prior runs)
+    await expect(page.getByText('New Template').first()).toBeVisible({ timeout: 10_000 });
   });
 
   test('edit template code and contexts', async ({ page }) => {
@@ -96,8 +98,8 @@ test.describe('Code Templates', () => {
     // Wait for templates to load
     await page.waitForTimeout(2_000);
 
-    // Click on a template in the tree
-    const templateItem = page.getByText('New Template');
+    // Click on a template in the tree (use .first() to handle duplicates)
+    const templateItem = page.getByText('New Template').first();
     if (await templateItem.isVisible()) {
       await templateItem.click();
 

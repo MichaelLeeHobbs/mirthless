@@ -3,7 +3,7 @@
 // ===========================================
 // Two-panel page: library tree (left) + template editor (right).
 
-import { useState, type ReactNode } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -52,6 +52,10 @@ export function CodeTemplatePage(): ReactNode {
   const [dialogDescription, setDialogDescription] = useState('');
   const [snackbar, setSnackbar] = useState<string | null>(null);
 
+  const handleDeselectTemplate = useCallback((): void => {
+    setSelectedTemplate(null);
+  }, []);
+
   const handleCreateLibrary = async (): Promise<void> => {
     try {
       await createLibrary.mutateAsync({ name: dialogName, description: dialogDescription });
@@ -92,16 +96,10 @@ export function CodeTemplatePage(): ReactNode {
     }
   };
 
-  const handleCreateTemplate = async (): Promise<void> => {
-    const targetLib = libraries[0];
-    if (!targetLib) {
-      setSnackbar('Create a library first');
-      return;
-    }
-
+  const handleCreateTemplate = async (libraryId: string): Promise<void> => {
     try {
       const result = await createTemplate.mutateAsync({
-        libraryId: targetLib.id,
+        libraryId,
         name: 'New Template',
         description: '',
         type: 'FUNCTION',
@@ -188,7 +186,11 @@ export function CodeTemplatePage(): ReactNode {
           <Button
             variant="contained"
             startIcon={<AddIcon />}
-            onClick={handleCreateTemplate}
+            onClick={() => {
+              const targetId = selectedTemplate?.libraryId ?? libraries[0]?.id;
+              if (targetId) { void handleCreateTemplate(targetId); }
+              else { setSnackbar('Create a library first'); }
+            }}
             disabled={libraries.length === 0}
             size="small"
           >
@@ -216,6 +218,7 @@ export function CodeTemplatePage(): ReactNode {
               templates={templates}
               selectedTemplateId={selectedTemplate?.id ?? null}
               onSelectTemplate={setSelectedTemplate}
+              onCreateTemplate={(id) => { void handleCreateTemplate(id); }}
               onEditLibrary={openEditLibraryDialog}
               onDeleteLibrary={handleDeleteLibrary}
             />
@@ -237,6 +240,7 @@ export function CodeTemplatePage(): ReactNode {
               template={selectedTemplate}
               onSave={handleSaveTemplate}
               onDelete={handleDeleteTemplate}
+              onClose={handleDeselectTemplate}
               saving={updateTemplate.isPending}
             />
           ) : (

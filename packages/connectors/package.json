@@ -24,10 +24,12 @@
     "@mirthless/core-util": "workspace:*",
     "@mirthless/engine": "workspace:*",
     "generic-pool": "^3.9.0",
+    "nodemailer": "^8.0.1",
     "pg": "^8.13.0"
   },
   "devDependencies": {
     "@types/generic-pool": "^3.8.3",
+    "@types/nodemailer": "^7.0.11",
     "@types/pg": "^8.11.0",
     "@vitest/coverage-v8": "2.1.8",
     "rimraf": "6.0.1",

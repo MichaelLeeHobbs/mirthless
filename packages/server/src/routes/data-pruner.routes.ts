@@ -24,21 +24,21 @@ router.use(authenticate);
 // Statistics must come before /:channelId to avoid route conflict
 router.get(
   '/statistics',
-  requirePermission('admin:read'),
+  requirePermission('settings:read'),
   DataPrunerController.getStatistics,
 );
 
 // Prune all channels
 router.post(
   '/',
-  requirePermission('admin:write'),
+  requirePermission('settings:write'),
   DataPrunerController.pruneAll,
 );
 
 // Prune a specific channel
 router.post(
   '/:channelId',
-  requirePermission('admin:write'),
+  requirePermission('settings:write'),
   validate({ params: channelIdParamsSchema, body: pruneChannelBodySchema }),
   DataPrunerController.pruneChannel,
 );

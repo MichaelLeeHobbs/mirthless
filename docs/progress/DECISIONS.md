@@ -111,3 +111,17 @@ D-052: Partition-per-channel for message tables — `CREATE TABLE IF NOT EXISTS 
 D-053: Data pruner as admin API (not cron) — `POST /api/v1/admin/prune` endpoint for v1. Cron/scheduled pruning is future work. Keeps implementation simple. — 2026-03-01
 
 D-054: Queue manager uses FOR UPDATE SKIP LOCKED — Enables concurrent queue consumers without lock contention. Messages claimed atomically, failed messages released back for retry. — 2026-03-01
+
+D-055: JavaScript connector uses callback injection (ScriptRunner/DestScriptRunner) — Connector receives a callback at runtime, not a direct vm dependency. Testable with simple mock functions. Engine wires the actual sandbox executor at deploy time. — 2026-03-01
+
+D-056: SMTP connector uses SmtpTransport abstraction — Constructor accepts optional `TransportFactory` for dependency injection. Tests pass mock transport. Production uses `createNodemailerTransport()`. Avoids mocking nodemailer internals. — 2026-03-01
+
+D-057: Channel connector uses static in-memory registry — `Map<string, ChannelDispatchCallback>` for zero-network-overhead inter-channel routing. Source registers on start, destination looks up target on send. No serialization, no protocol overhead. — 2026-03-01
+
+D-058: FHIR connector destination-only for v1 — FHIR subscription source (R4 SubscriptionTopic) deferred. Requires WebSocket/webhook handling complexity. Destination covers the primary use case (sending resources to FHIR servers). — 2026-03-01
+
+D-059: Channel import collision modes: SKIP, OVERWRITE, CREATE_NEW — SKIP ignores duplicates, OVERWRITE replaces existing (delete-and-reinsert relations), CREATE_NEW assigns new UUID. Covers dev→staging→prod promotion, backup restore, and merge workflows. — 2026-03-01
+
+D-060: Alert evaluation with throttle and max-alerts — `reAlertIntervalMs` prevents re-triggering within cooldown window. `maxAlerts` caps total alerts per trigger. Prevents alert storms from noisy channels while ensuring critical errors are surfaced. — 2026-03-01
+
+D-061: DICOM connector deferred to dedicated phase — Requires dcmtk.js native bindings and DIMSE protocol (C-STORE, C-FIND, C-MOVE). Too complex to batch with other connectors. Will be its own focused implementation phase. — 2026-03-01

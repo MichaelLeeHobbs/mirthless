@@ -12,6 +12,12 @@ import { FileReceiver, FILE_SORT_BY, FILE_POST_ACTION, type FileSortBy, type Fil
 import { FileDispatcher } from './file/file-dispatcher.js';
 import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, type UpdateMode, type RowFormat } from './database/database-receiver.js';
 import { DatabaseDispatcher } from './database/database-dispatcher.js';
+import { JavaScriptReceiver } from './javascript/javascript-receiver.js';
+import { JavaScriptDispatcher } from './javascript/javascript-dispatcher.js';
+import { SmtpDispatcher } from './smtp/smtp-dispatcher.js';
+import { ChannelReceiver } from './channel/channel-receiver.js';
+import { ChannelDispatcher } from './channel/channel-dispatcher.js';
+import { FhirDispatcher, FHIR_AUTH_TYPE } from './fhir/fhir-dispatcher.js';
 
 // ----- Source Factories -----
 
@@ -55,6 +61,13 @@ const sourceFactories = new Map<string, SourceFactory>([
     pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 5_000,
     rowFormat: (props['rowFormat'] as RowFormat | undefined) ?? ROW_FORMAT.JSON,
   })],
+  ['JAVASCRIPT', (props): SourceConnectorRuntime => new JavaScriptReceiver({
+    script: (props['script'] as string | undefined) ?? '',
+    pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 5_000,
+  })],
+  ['CHANNEL', (props): SourceConnectorRuntime => new ChannelReceiver({
+    channelId: props['channelId'] as string,
+  })],
 ]);
 
 // ----- Destination Factories -----
@@ -92,6 +105,46 @@ const destinationFactories = new Map<string, DestinationFactory>([
     query: props['query'] as string,
     useTransaction: (props['useTransaction'] as boolean | undefined) ?? false,
     returnGeneratedKeys: (props['returnGeneratedKeys'] as boolean | undefined) ?? false,
+  })],
+  ['JAVASCRIPT', (props): DestinationConnectorRuntime => new JavaScriptDispatcher({
+    script: (props['script'] as string | undefined) ?? '',
+  })],
+  ['SMTP', (props): DestinationConnectorRuntime => new SmtpDispatcher({
+    host: (props['host'] as string | undefined) ?? '',
+    port: (props['port'] as number | undefined) ?? 587,
+    secure: (props['secure'] as boolean | undefined) ?? false,
+    auth: {
+      user: (props['authUser'] as string | undefined) ?? '',
+      pass: (props['authPass'] as string | undefined) ?? '',
+    },
+    from: (props['from'] as string | undefined) ?? '',
+    to: (props['to'] as string | undefined) ?? '',
+    cc: (props['cc'] as string | undefined) ?? '',
+    bcc: (props['bcc'] as string | undefined) ?? '',
+    subject: (props['subject'] as string | undefined) ?? '',
+    bodyTemplate: (props['bodyTemplate'] as string | undefined) ?? '${msg}',
+    contentType: (props['contentType'] as 'text/plain' | 'text/html' | undefined) ?? 'text/plain',
+    attachContent: (props['attachContent'] as boolean | undefined) ?? false,
+  })],
+  ['CHANNEL', (props): DestinationConnectorRuntime => new ChannelDispatcher({
+    targetChannelId: (props['targetChannelId'] as string | undefined) ?? '',
+    waitForResponse: (props['waitForResponse'] as boolean | undefined) ?? false,
+  })],
+  ['FHIR', (props): DestinationConnectorRuntime => new FhirDispatcher({
+    baseUrl: (props['baseUrl'] as string | undefined) ?? '',
+    resourceType: (props['resourceType'] as string | undefined) ?? 'Patient',
+    method: (props['method'] as 'POST' | 'PUT' | undefined) ?? 'POST',
+    authType: (props['authType'] as 'NONE' | 'BASIC' | 'BEARER' | 'API_KEY' | undefined) ?? FHIR_AUTH_TYPE.NONE,
+    authConfig: {
+      username: (props['authUsername'] as string | undefined),
+      password: (props['authPassword'] as string | undefined),
+      token: (props['authToken'] as string | undefined),
+      headerName: (props['authHeaderName'] as string | undefined),
+      apiKey: (props['authApiKey'] as string | undefined),
+    },
+    format: (props['format'] as 'json' | 'xml' | undefined) ?? 'json',
+    timeout: (props['timeout'] as number | undefined) ?? 30_000,
+    headers: (props['headers'] as Record<string, string> | undefined) ?? {},
   })],
 ]);
 

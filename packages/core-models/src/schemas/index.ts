@@ -1,4 +1,5 @@
 export * from './alert.schema.js';
+export * from './channel-export.schema.js';
 export * from './channel.schema.js';
 export * from './event.schema.js';
 export * from './code-template.schema.js';

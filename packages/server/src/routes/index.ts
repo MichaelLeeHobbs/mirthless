@@ -6,6 +6,7 @@
 import { Router, type IRouter } from 'express';
 import alertRoutes from './alert.routes.js';
 import authRoutes from './auth.routes.js';
+import channelExportRoutes from './channel-export.routes.js';
 import dataPrunerRoutes from './data-pruner.routes.js';
 import channelRoutes from './channel.routes.js';
 import codeTemplateRoutes from './code-template.routes.js';
@@ -30,6 +31,7 @@ router.use('/auth', authRoutes);
 // Mount specific /channels sub-routes BEFORE channelRoutes — channelRoutes
 // defines GET /:id which greedily matches any single-segment path like
 // /statistics or /status, causing UUID validation failures.
+router.use('/channels', channelExportRoutes);
 router.use('/channels', deploymentRoutes);
 router.use('/channels', messageRoutes);
 router.use('/channels', statisticsRoutes);

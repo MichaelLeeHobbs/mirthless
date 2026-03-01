@@ -44,11 +44,55 @@ export const DATABASE_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   returnGeneratedKeys: false,
 };
 
+export const JAVASCRIPT_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  script: '',
+};
+
+export const SMTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  host: '',
+  port: 587,
+  secure: false,
+  authUser: '',
+  authPass: '',
+  from: '',
+  to: '',
+  cc: '',
+  bcc: '',
+  subject: '',
+  bodyTemplate: '${msg}',
+  contentType: 'text/plain',
+  attachContent: false,
+};
+
+export const CHANNEL_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  targetChannelId: '',
+  waitForResponse: false,
+};
+
+export const FHIR_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  baseUrl: '',
+  resourceType: 'Patient',
+  method: 'POST',
+  authType: 'NONE',
+  authUsername: '',
+  authPassword: '',
+  authToken: '',
+  authHeaderName: '',
+  authApiKey: '',
+  format: 'json',
+  timeout: 30000,
+  headers: '',
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_DEST_DEFAULTS,
   HTTP: HTTP_DEST_DEFAULTS,
   FILE: FILE_DEST_DEFAULTS,
   DATABASE: DATABASE_DEST_DEFAULTS,
+  JAVASCRIPT: JAVASCRIPT_DEST_DEFAULTS,
+  SMTP: SMTP_DEST_DEFAULTS,
+  CHANNEL: CHANNEL_DEST_DEFAULTS,
+  FHIR: FHIR_DEST_DEFAULTS,
 };
 
 /** Get default properties for a destination connector type. */
