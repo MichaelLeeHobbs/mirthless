@@ -151,3 +151,13 @@ D-072: Script validation returns syntax errors as successful result — `{ ok: t
 D-073: Script validation uses esbuild transform (not full compile) — Same approach as engine's script-compiler. In-process, <1ms, no filesystem. Catches syntax errors without executing code. — 2026-03-01
 
 D-074: Rate limiting on /refresh endpoint — Same `authRateLimiter` as /login. Refresh tokens can be abused for session hijacking attempts. Consistent security posture across all auth endpoints. — 2026-03-01
+
+D-075: QueueConsumer per queued destination, lifecycle tied to channel start/stop — Each queued destination gets its own QueueConsumer instance created during `deploy()`. Consumers start with `start()` and stop with `stop()`/`halt()`/`undeploy()`. Config uses per-destination retryCount and retryIntervalMs. Keeps queue processing co-located with channel lifecycle. — 2026-03-01
+
+D-076: Socket.IO JWT auth via handshake `auth.token` parameter — Client passes JWT in the `auth` object during Socket.IO handshake (not cookies, not query params). Middleware validates token before connection is established. Same JWT validation as REST API. Prevents unauthenticated WebSocket connections. — 2026-03-01
+
+D-077: Channel-based rooms for scoped message push — Socket.IO rooms (`channel:{id}`, `dashboard`) scope event emission. Dashboard room receives channel state changes and statistics updates. Channel rooms receive new message notifications. Avoids broadcasting everything to all clients. — 2026-03-01
+
+D-078: Keep polling as fallback alongside WebSocket (graceful degradation) — Dashboard and Message Browser retain `refetchInterval` polling even with WebSocket enabled. If WebSocket disconnects, polling provides continued updates. Eliminates single point of failure for real-time updates. — 2026-03-01
+
+D-079: Socket reconnect re-joins rooms and invalidates all queries — On WebSocket reconnection, client re-joins previously subscribed rooms and invalidates all TanStack Query caches. Ensures no stale data after a connectivity gap. Token refresh triggers socket reconnection with updated auth. — 2026-03-01

@@ -1,6 +1,6 @@
 # Project Status
 
-> Last updated: 2026-03-01 (Phase 15)
+> Last updated: 2026-03-01 (Phase 16)
 
 ## Package Status
 
@@ -10,8 +10,8 @@
 | `@mirthless/core-util` | HL7v2 Parser | Result re-export, validation utils, **HL7v2 parser** (encoding, path, message, ACK), **68 HL7 tests** | Add utilities as needed (YAGNI) |
 | `@mirthless/engine` | Pipeline + Alerts | **Sandbox executor** (vm-based), **script compiler** (esbuild), **8-stage message pipeline**, **channel runtime** (state machine), **queue consumer** (with DB content loading), in-memory message store, **filter/transformer compilation**, **code template injection**, **global scripts**, **HL7 bridge functions**, **globalChannelMap**, **destinationSet**, **alert evaluator** (trigger matching), **action dispatcher** (EMAIL/LOG/CHANNEL actions with EmailSender callback), **alert manager** (throttle/max-alerts), **189 engine tests** | Persistent message store |
 | `@mirthless/connectors` | 8 Connector Types | Base interfaces, **TCP/MLLP receiver/dispatcher**, **HTTP receiver/dispatcher**, **File receiver/dispatcher**, **Database receiver/dispatcher**, **JavaScript receiver/dispatcher** (script callback), **SMTP dispatcher** (nodemailer, template substitution), **Channel receiver/dispatcher** (in-memory registry routing), **FHIR dispatcher** (REST API, auth types), **query builder**, **connection pool**, connector registry, **282 connector tests** | DICOM connector |
-| `@mirthless/server` | API Phase 15 | Express app, config, middleware, DB schema, auth, seeds, **Channel CRUD API** (6 endpoints + **clone**), **Deployment API** (8 endpoints + **connector validation**), **Message Query API** (4 endpoints), **Statistics API** (3 endpoints), **User Management API** (7 endpoints), **Code Templates API** (8 endpoints), **Global Scripts API** (2 endpoints), **Alerts API** (6 endpoints), **Events API** (3 endpoints), **Settings API** (5 endpoints), **Data Pruner API** (3 endpoints), **Channel Export/Import API** (3 endpoints), **Script Validation API** (1 endpoint), **event emission** from all services, filter/transformer CRUD (inline with channel), **partition manager**, **data pruner**, **queue manager**, **AlertManager wired with emailSender**, **JS connector wiring**, **email service**, **health service** (live/ready/full), **connector validation service**, **392 server tests** | DICOM connector API |
-| `@mirthless/web` | UI Phase 15 | React+MUI shell, auth flow, login page, **Channel Editor** (all 5 tabs + filter/transformer UI + **8 connector type forms**: TCP/MLLP, HTTP, File, Database, JavaScript, SMTP, Channel, FHIR), **Dashboard**, **Message Browser**, **Users Page**, **Code Templates Page**, **Global Scripts Page**, **Alerts Page**, **Events Page**, **Settings Page** (+ **SMTP tab**, password masking), **Channel Export/Import** (ExportButton + ImportDialog), **Channel Clone** (dialog + button), Monaco editor | DICOM connector UI |
+| `@mirthless/server` | API Phase 16 | Express app, config, middleware, DB schema, auth, seeds, **Channel CRUD API** (6 endpoints + **clone**), **Deployment API** (8 endpoints + **connector validation**), **Message Query API** (4 endpoints), **Statistics API** (3 endpoints), **User Management API** (7 endpoints), **Code Templates API** (8 endpoints), **Global Scripts API** (2 endpoints), **Alerts API** (6 endpoints), **Events API** (3 endpoints), **Settings API** (5 endpoints), **Data Pruner API** (3 endpoints), **Channel Export/Import API** (3 endpoints), **Script Validation API** (1 endpoint), **event emission** from all services, filter/transformer CRUD (inline with channel), **partition manager**, **data pruner**, **queue manager**, **AlertManager wired with emailSender**, **JS connector wiring**, **email service**, **health service** (live/ready/full), **connector validation service**, **QueueConsumer wiring** (per-destination lifecycle), **Socket.IO server** (JWT auth, rooms, emission), **423 server tests** | DICOM connector API |
+| `@mirthless/web` | UI Phase 16 | React+MUI shell, auth flow, login page, **Channel Editor** (all 5 tabs + filter/transformer UI + **8 connector type forms**: TCP/MLLP, HTTP, File, Database, JavaScript, SMTP, Channel, FHIR), **Dashboard** (+ **WebSocket real-time updates**), **Message Browser** (+ **WebSocket real-time updates**), **Users Page**, **Code Templates Page**, **Global Scripts Page**, **Alerts Page**, **Events Page**, **Settings Page** (+ **SMTP tab**, password masking), **Channel Export/Import** (ExportButton + ImportDialog), **Channel Clone** (dialog + button), Monaco editor, **Socket.IO client** (auto-reconnect, room management) | DICOM connector UI |
 | `@mirthless/cli` | Foundation | **Commander-based CLI** with `channels`, `deploy`, `export/import`, `users`, `login` commands, **ApiClient** (HTTP), **output formatters** (table/JSON), **config persistence** (`~/.mirthless/`), **22 tests** | More commands, interactive mode |
 
 ## Infrastructure Status
@@ -26,7 +26,7 @@
 | Auth (JWT+sessions) | Done | Adapted from fullstack-template |
 | RBAC | Done | 4 default roles: admin, deployer, developer, viewer |
 | Vitest | Done | Configured per package, passWithNoTests |
-| Manual test suite | Done | 33 test files, ~655 scenarios, `docs/testing/` |
+| Manual test suite | Done | 35 test files, ~680 scenarios, `docs/testing/` |
 | Playwright E2E | Done | 11 spec files, ~57 tests, `e2e/` (4 fixed) |
 
 ## Verification Checklist
@@ -36,7 +36,7 @@
 | `pnpm install` | PASS | 833 packages resolved |
 | `pnpm build` | PASS | All 7 packages compile (0 errors) |
 | `pnpm lint` | PASS | 0 warnings |
-| `pnpm test` | PASS | **1,137 tests passing** (184 schema + 68 HL7 + 189 engine + 282 connectors + 392 server + 22 CLI) |
+| `pnpm test` | PASS | **1,168 tests passing** (184 schema + 68 HL7 + 189 engine + 282 connectors + 423 server + 22 CLI) |
 | `docker:up` | PASS | PostgreSQL 17 running |
 | `db:generate` | PASS | 34 tables generated |
 | `db:migrate` | PASS | Migrations applied |
@@ -50,6 +50,7 @@
 
 | Date | Milestone |
 |------|-----------|
+| 2026-03-01 | **QueueConsumer Wiring + WebSocket Real-Time (Phase 16)** — QueueConsumer per queued destination (lifecycle tied to channel start/stop), Socket.IO server with JWT auth and channel-based rooms, server-side emission for channel state changes and statistics, WebSocket client singleton with auto-reconnect and token refresh, Dashboard and Message Browser real-time updates with polling fallback. 2 new manual test docs (25 scenarios). (+31 tests, 1,168 total) |
 | 2026-03-01 | **Production Readiness (Phase 15)** — Email service + AlertManager emailSender wiring (EMAIL alerts now functional), connector property validation at deploy time (Zod schemas for 14 connector type/mode combinations), enhanced health check (live/ready/full endpoints), auth rate limiting on /refresh, script syntax validation API (esbuild), SMTP settings seed data + UI tab. (+82 tests, 1,137 total) |
 | 2026-03-01 | **Production Integration & CLI Foundation (Phase 14)** — AlertManager wired into engine deploy, JavaScript connectors wired to sandbox, EMAIL alert action implemented (EmailSender callback), LOG alert action added, commander-based CLI (16 commands, config persistence), channel clone API + UI, 6 new manual test docs (181 scenarios). (+60 tests, 1,055 total) |
 | 2026-03-01 | **P2 Connectors + Channel Operations (Phase 13)** — JavaScript connector (source + destination, script callback), SMTP connector (nodemailer, template substitution), Channel connector (in-memory registry routing), FHIR R4 connector (REST API, auth types), Channel import/export (SKIP/OVERWRITE/CREATE_NEW collision modes), Alert evaluation engine (trigger matching, throttle, action dispatch). 8 connector types total. (+170 tests, 995 total) |

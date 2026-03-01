@@ -2,6 +2,46 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-01 — QueueConsumer Wiring + WebSocket Real-Time Updates (Phase 16)
+
+### What was done:
+- **QueueConsumer Wiring (Unit 1):**
+  - `engine.ts` — QueueConsumer instances created for each queued destination during `deploy()`
+  - Config uses per-destination `retryCount`, `retryIntervalMs`, `batchSize: 10`, `pollIntervalMs: 1000`
+  - Consumers stored in `DeployedChannel` interface, started/stopped with channel lifecycle
+  - `deployment.service.ts` — `start()` starts queue consumers, `stop()`/`halt()` stops them, `undeploy()` stops before cleanup
+  - 10 new tests in `queue-consumer-wiring.test.ts`
+- **Socket.IO Server Auth + Room Management (Unit 2):**
+  - `packages/server/src/lib/socket.ts` — JWT auth middleware validating `auth.token` handshake parameter
+  - Channel-based rooms (`join:channel`, `leave:channel`, `join:dashboard`, `leave:dashboard`)
+  - `emitToRoom`/`emitToAll` helpers, `_resetIO` for testing
+  - 12 new tests in `socket.test.ts`
+- **Server-Side Socket.IO Emission (Unit 3):**
+  - `deployment.service.ts` — `emitToAll('channel:state', { channelId, state })` after every state change
+  - `message.service.ts` — `emitToRoom('dashboard', 'stats:update', ...)` after `incrementStats()`, `emitToRoom('channel:${channelId}', 'message:new', ...)` after `createConnectorMessage()`
+  - 9 new tests in `socket-emission.test.ts`
+- **WebSocket Client (Unit 4):**
+  - `packages/web/src/lib/socket.ts` — socket.io-client singleton with JWT auth, auto-reconnect, token refresh via Zustand subscribe
+  - `packages/web/src/hooks/use-socket.ts` — `useSocketConnection()` (connects on auth, disconnects on logout, invalidates queries on reconnect), `useSocketEvent()` (subscribe/unsubscribe to events)
+  - `AppLayout.tsx` — `useSocketConnection()` added
+  - `QueryProvider.tsx` — `queryClient` exported
+- **Dashboard + Message Browser Real-Time (Unit 5):**
+  - `DashboardPage.tsx` — joins dashboard room, `useSocketEvent` for `channel:state` and `stats:update` cache invalidation, keeps `refetchInterval` as fallback
+  - `MessageBrowserPage.tsx` — joins channel room, `useSocketEvent` for `message:new` cache invalidation
+  - `use-deployment.ts` — exported `DEPLOYMENT_KEYS`
+  - `use-statistics.ts` — exported `STATS_KEYS`
+
+### Test counts:
+- core-models: 184, core-util: 68, engine: 189, connectors: 282, server: 423, cli: 22
+- **Total: 1,168 tests** (was 1,137 → +31)
+
+### Key decisions:
+- See DECISIONS.md D-075 through D-079
+
+### What's next:
+- DICOM connector (dedicated phase)
+- Persistent message store
+
 ## 2026-03-01 — Production Readiness (Phase 15)
 
 ### What was done:
