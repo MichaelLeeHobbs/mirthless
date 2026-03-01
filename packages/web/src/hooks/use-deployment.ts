@@ -15,7 +15,7 @@ export interface ChannelStatus {
 
 // ----- Query Keys -----
 
-const DEPLOYMENT_KEYS = {
+export const DEPLOYMENT_KEYS = {
   all: ['deployment'] as const,
   statuses: () => [...DEPLOYMENT_KEYS.all, 'statuses'] as const,
   status: (id: string) => [...DEPLOYMENT_KEYS.all, 'status', id] as const,

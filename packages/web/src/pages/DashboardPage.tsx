@@ -2,15 +2,19 @@
 // Dashboard Page
 // ===========================================
 // Live overview: summary cards, channel status table, quick actions.
-// Auto-refreshes via TanStack Query polling (5s interval).
+// Auto-refreshes via TanStack Query polling (5s interval) with
+// WebSocket events for instant cache invalidation.
 
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useEffect, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
-import { useAllChannelStatistics, type ChannelStatisticsSummary } from '../hooks/use-statistics.js';
-import { useAllDeploymentStatuses, type ChannelStatus } from '../hooks/use-deployment.js';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAllChannelStatistics, STATS_KEYS, type ChannelStatisticsSummary } from '../hooks/use-statistics.js';
+import { useAllDeploymentStatuses, DEPLOYMENT_KEYS, type ChannelStatus } from '../hooks/use-deployment.js';
+import { useSocketEvent } from '../hooks/use-socket.js';
+import { getSocket } from '../lib/socket.js';
 import { SummaryCards } from '../components/dashboard/SummaryCards.js';
 import { ChannelStatusTable } from '../components/dashboard/ChannelStatusTable.js';
 
@@ -18,12 +22,36 @@ const EMPTY_STATS: readonly ChannelStatisticsSummary[] = [];
 const EMPTY_STATUSES: readonly ChannelStatus[] = [];
 
 export function DashboardPage(): ReactNode {
+  const queryClient = useQueryClient();
   const statsQuery = useAllChannelStatistics();
   const deployQuery = useAllDeploymentStatuses();
 
   const statistics = statsQuery.data ?? EMPTY_STATS;
   const deploymentStatuses = deployQuery.data ?? EMPTY_STATUSES;
 
+  // --- WebSocket: join/leave dashboard room ---
+  useEffect(() => {
+    const s = getSocket();
+    if (!s) return;
+    s.emit('join:dashboard');
+    return () => { s.emit('leave:dashboard'); };
+  }, []);
+
+  // --- WebSocket: invalidate deployment cache on channel state changes ---
+  const handleChannelState = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: DEPLOYMENT_KEYS.all });
+  }, [queryClient]);
+
+  useSocketEvent('channel:state', handleChannelState);
+
+  // --- WebSocket: invalidate stats cache on stats updates ---
+  const handleStatsUpdate = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: STATS_KEYS.all });
+  }, [queryClient]);
+
+  useSocketEvent('stats:update', handleStatsUpdate);
+
+  // --- Derived counts ---
   const { deployedCount, stoppedCount, erroredCount } = useMemo(() => {
     const deployMap = new Map<string, string>();
     for (const s of deploymentStatuses) {

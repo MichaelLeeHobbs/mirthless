@@ -39,7 +39,7 @@ export interface ChannelStatistics {
 
 // ----- Query Keys -----
 
-const STATS_KEYS = {
+export const STATS_KEYS = {
   all: ['statistics'] as const,
   allChannels: () => [...STATS_KEYS.all, 'all-channels'] as const,
   channel: (id: string) => [...STATS_KEYS.all, 'channel', id] as const,
