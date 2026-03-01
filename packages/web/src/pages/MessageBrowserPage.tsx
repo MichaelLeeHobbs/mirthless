@@ -3,6 +3,7 @@
 // ===========================================
 // Search, filter, and inspect messages for a channel.
 // Master-detail: paginated table top, detail panel bottom.
+// WebSocket events refresh the message list in real time.
 
 import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -12,8 +13,11 @@ import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { useQueryClient } from '@tanstack/react-query';
 import { useChannel } from '../hooks/use-channels.js';
 import { useMessageSearch, type MessageSearchParams } from '../hooks/use-messages.js';
+import { useSocketEvent } from '../hooks/use-socket.js';
+import { getSocket } from '../lib/socket.js';
 import { MessageSearchBar } from '../components/messages/MessageSearchBar.js';
 import { MessageTable } from '../components/messages/MessageTable.js';
 import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
@@ -21,6 +25,7 @@ import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
 export function MessageBrowserPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const channelId = id ?? '';
 
   const { data: channel } = useChannel(channelId.length > 0 ? channelId : null);
@@ -44,6 +49,21 @@ export function MessageBrowserPage(): ReactNode {
     }, 500);
     return () => clearTimeout(debounceRef.current);
   }, [contentSearch]);
+
+  // --- WebSocket: join/leave channel room ---
+  useEffect(() => {
+    const s = getSocket();
+    if (!s || channelId.length === 0) return;
+    s.emit('join:channel', channelId);
+    return () => { s.emit('leave:channel', channelId); };
+  }, [channelId]);
+
+  // --- WebSocket: invalidate messages on new message events ---
+  const handleNewMessage = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['messages'] });
+  }, [queryClient]);
+
+  useSocketEvent('message:new', handleNewMessage);
 
   // Build search params
   const searchParams: MessageSearchParams = {
