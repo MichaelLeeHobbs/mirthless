@@ -27,6 +27,7 @@ import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuthStore } from '../../stores/auth.store.js';
 import { useUiStore } from '../../stores/ui.store.js';
+import { useSocketConnection } from '../../hooks/use-socket.js';
 
 const DRAWER_WIDTH = 240;
 const COLLAPSED_DRAWER_WIDTH = 64;
@@ -50,6 +51,8 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
 ];
 
 export function AppLayout(): ReactNode {
+  useSocketConnection();
+
   const navigate = useNavigate();
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
