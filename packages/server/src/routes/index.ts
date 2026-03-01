@@ -4,6 +4,7 @@
 // Combines all route modules under /api/v1 prefix.
 
 import { Router, type IRouter } from 'express';
+import alertRoutes from './alert.routes.js';
 import authRoutes from './auth.routes.js';
 import channelRoutes from './channel.routes.js';
 import codeTemplateRoutes from './code-template.routes.js';
@@ -16,6 +17,7 @@ import userRoutes from './user.routes.js';
 const router: IRouter = Router();
 
 // API v1 routes
+router.use('/alerts', alertRoutes);
 router.use('/auth', authRoutes);
 router.use('/channels', channelRoutes);
 router.use('/channels', deploymentRoutes);

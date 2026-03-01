@@ -383,3 +383,100 @@
 - DICOM connector, FHIR connector
 - Filters/transformers in pipeline
 - HL7 parser integration into sandbox context
+
+## 2026-02-28 — Engine Pipeline Completion
+
+### What was done:
+- **Filter/Transformer compilation** (`engine`):
+  - `compileFilterRulesToScript()` — compiles filter rules into JavaScript boolean expression
+  - `compileTransformerStepsToScript()` — sequences transformer steps into executable script
+  - Filter/transformer data loaded from DB at deploy time (`loadFilterTransformerData()`)
+  - Source + destination filter/transformer execution in pipeline stages 2a/2b/7a/7b
+- **Code template injection** (`engine`):
+  - `prependTemplates()` in `template-injector.ts` — FUNCTION templates prepended by context
+  - Templates injected into filter/transformer scripts before compilation
+- **Global scripts** (`engine`):
+  - Global deploy/undeploy/preprocessor/postprocessor scripts executed at appropriate lifecycle points
+- **HL7 bridge functions** (`engine`):
+  - `parseHL7()` and `createACK()` injected into sandbox context as closure-based proxies
+  - Available to user scripts in filters, transformers, and all script contexts
+- **globalChannelMap** (`engine`):
+  - Per-channel persistent `Map<string, unknown>` available across all scripts
+  - Map updates tracked in `ExecutionResult.mapUpdates` and applied back after each script
+- **destinationSet** (`engine`):
+  - Controls which destinations receive a message
+  - Proxy-based implementation for cross-realm vm compatibility
+  - Available in source transformer scripts
+- **71 new engine tests** (71 → 142 total)
+
+### Key decisions:
+- VM cross-realm: closure-based proxy objects instead of class instances with private fields
+- HL7 `get('MSH.9')` auto-resolves to first subcomponent — use `get('MSH.9.2')` for trigger event
+- Only `FUNCTION` type templates are prepended (not `CODE_BLOCK`)
+
+### Verification:
+- `pnpm build` — 0 errors
+- `pnpm lint` — 0 warnings
+- `pnpm test` — **491 tests passing** (72 schema + 68 HL7 + 142 engine + 49 connectors + 160 server)
+
+### What's next:
+- Filter/transformer CRUD API + UI
+- Alerts, file/database connectors
+
+## 2026-03-01 — Filter/Transformer CRUD + UI (Phase 7)
+
+### What was done:
+
+**Deliverable 1 — Zod Schemas** (`core-models`):
+- `filter.schema.ts` — `filterRuleInputSchema` (type: JAVASCRIPT/RULE_BUILDER, operator: AND/OR, script, field/condition/values for rule builder), `filterInputSchema` (connectorId, metaDataId, rules array)
+- `transformer.schema.ts` — `transformerStepInputSchema` (type: JAVASCRIPT/MAPPER/MESSAGE_BUILDER, script, sourceField/targetField/defaultValue/mapping), `transformerInputSchema` (connectorId, metaDataId, data types, properties, templates, steps)
+- Extended `createChannelSchema` and `updateChannelSchema` with optional `filters` and `transformers` arrays
+- Updated `schemas/index.ts` exports
+- **25 new schema tests** (12 filter + 13 transformer)
+
+**Deliverable 2 — Channel Service CRUD** (`server`):
+- New interfaces: `ChannelFilterDetail`, `ChannelFilterRuleDetail`, `ChannelTransformerDetail`, `ChannelTransformerStepDetail`
+- Extended `ChannelDetail` with `filters` and `transformers` readonly arrays
+- Extended `fetchChannelRelations()` from 4 to 8 parallel queries (+ filters, filterRules, transformers, transformerSteps)
+- Grouping logic using `Map<string, T[]>` for assembling rules by filterId and steps by transformerId
+- Filter/transformer sync in `updateChannel()`: delete-and-reinsert pattern with metaDataId-based connectorId resolution
+- Destination insert now uses `.returning()` to capture new IDs for `destIdByMetaDataId` Map
+- **12 new service tests**
+
+**Deliverable 3 — Source Filter/Transformer UI** (`web`):
+- `FilterRuleEditor.tsx` — shared component: accordion with name, type dropdown, operator, enabled toggle, Monaco editor (JS) or field/condition/values (Rule Builder)
+- `TransformerStepEditor.tsx` — shared component: accordion with name, type dropdown, enabled toggle, Monaco editor (JS/Message Builder) or mapper fields (Mapper)
+- `SourceFilterSection.tsx` — accordion section with rule list, add/remove/reorder
+- `SourceTransformerSection.tsx` — accordion section with inbound/outbound data type dropdowns, step list
+- Updated `SourceTab.tsx` with filter/transformer sections between connector and response settings
+- Updated `source/types.ts` with `FilterRuleFormValues`, `TransformerStepFormValues`, `FilterFormValues`, `TransformerFormValues` + factory functions
+- Updated `ChannelEditorPage.tsx` with filter/transformer state, loading, change handlers
+
+**Deliverable 4 — Destination Filter/Transformer UI** (`web`):
+- `DestinationFilterSection.tsx` — reuses `FilterRuleEditor`, scoped to destination
+- `DestinationTransformerSection.tsx` — reuses `TransformerStepEditor`, scoped to destination
+- Updated `DestinationSettingsPanel.tsx` with filter/transformer accordion sections
+- Updated `destinations/types.ts` — added filter/transformer to `DestinationFormValues`
+- Updated `connector-defaults.ts` — default empty filter/transformer
+- Updated `ChannelEditorPage.tsx` — destination filter/transformer embedded in `DestinationFormValues`, `buildFiltersPayload()` and `buildTransformersPayload()` with metaDataId mapping
+- Updated `use-channels.ts` — extended `ChannelDetail` interface with filters/transformers
+
+### Key decisions:
+- D-040: MetaDataId-based connectorId resolution — UI sends destination array index + 1 as metaDataId, server resolves to actual connector UUID after destination reinsert via `.returning()` + `destIdByMetaDataId` Map
+- D-041: Destination filter/transformer embedded in `DestinationFormValues` — simpler than separate Maps, all destination state in one place
+- D-042: Shared filter/transformer editor components — `FilterRuleEditor` and `TransformerStepEditor` reused by both source and destination sections
+
+### Build notes:
+- Mock `.returning()` chain: `Object.assign(Promise.resolve(undefined), { returning: mockFn })`
+- Web `ChannelDetail` in `use-channels.ts` must be updated separately from server type (mirrors server)
+- Type assertions needed for `buildFiltersPayload()`/`buildTransformersPayload()` return types
+
+### Verification:
+- `pnpm build` — 0 errors across all packages
+- `pnpm lint` — 0 warnings
+- `pnpm test` — **528 tests passing** (97 schema + 68 HL7 + 142 engine + 49 connectors + 172 server)
+
+### What's next:
+- Alert system (API + UI)
+- File connector, Database connector
+- Persistent message store (Drizzle-backed, replacing in-memory)

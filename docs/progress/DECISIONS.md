@@ -81,3 +81,9 @@ D-037: TCP/MLLP E2E uses ports 18661/18662 — Avoids conflict with engine E2E t
 D-038: Single Playwright worker, sequential tests — Healthcare data integrity — avoid state conflicts between parallel tests. — 2026-02-28
 
 D-039: Optimistic locking for code templates — Same revision-based pattern used by channels. Prevents lost updates in multi-user environments. — 2026-02-28
+
+D-040: MetaDataId-based connectorId resolution for filters/transformers — UI sends destination array index + 1 as metaDataId. Server resolves to actual connector UUID after destination reinsert using `.returning()` + `destIdByMetaDataId` Map. Avoids circular dependency between destination IDs and filter/transformer insert. — 2026-03-01
+
+D-041: Destination filter/transformer embedded in DestinationFormValues — All destination state (connector settings, queue, filter, transformer) lives in one object. Simpler than separate Maps. State stays co-located with the destination it belongs to. — 2026-03-01
+
+D-042: Shared filter/transformer editor components — FilterRuleEditor and TransformerStepEditor used by both source and destination sections. DRY without premature abstraction — same props interface, same behavior. — 2026-03-01

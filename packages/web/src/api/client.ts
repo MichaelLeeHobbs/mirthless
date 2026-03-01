@@ -179,6 +179,52 @@ export interface CodeTemplateDetail {
   readonly updatedAt: string;
 }
 
+// ----- Alert Types -----
+
+export interface AlertActionDetail {
+  readonly id: string;
+  readonly actionType: string;
+  readonly recipients: ReadonlyArray<string>;
+  readonly properties: Record<string, unknown> | null;
+}
+
+export interface AlertSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly enabled: boolean;
+  readonly triggerType: string;
+  readonly revision: number;
+  readonly channelCount: number;
+  readonly actionCount: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface AlertDetail extends AlertSummary {
+  readonly trigger: {
+    readonly type: string;
+    readonly errorTypes: ReadonlyArray<string>;
+    readonly regex: string | null;
+  };
+  readonly channelIds: ReadonlyArray<string>;
+  readonly actions: ReadonlyArray<AlertActionDetail>;
+  readonly subjectTemplate: string | null;
+  readonly bodyTemplate: string | null;
+  readonly reAlertIntervalMs: number | null;
+  readonly maxAlerts: number | null;
+}
+
+export interface AlertListResult {
+  readonly data: readonly AlertSummary[];
+  readonly pagination: {
+    readonly page: number;
+    readonly pageSize: number;
+    readonly total: number;
+    readonly totalPages: number;
+  };
+}
+
 // ----- Global Scripts Types -----
 
 export interface GlobalScriptsData {

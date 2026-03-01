@@ -1,3 +1,4 @@
+export * from './alert.schema.js';
 export * from './channel.schema.js';
 export * from './code-template.schema.js';
 export * from './connector.schema.js';

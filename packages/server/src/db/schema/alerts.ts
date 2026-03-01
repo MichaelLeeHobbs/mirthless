@@ -10,6 +10,7 @@ export const alerts = pgTable('alerts', {
   name: varchar('name', { length: 255 }).notNull().unique(),
   description: text('description').default(''),
   enabled: boolean('enabled').notNull().default(true),
+  revision: integer('revision').notNull().default(1),
   triggerType: varchar('trigger_type', { length: 30 }).notNull(),
   triggerScript: text('trigger_script'),
   subjectTemplate: text('subject_template'),
