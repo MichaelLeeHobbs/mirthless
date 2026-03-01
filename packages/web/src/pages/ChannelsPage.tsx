@@ -30,10 +30,11 @@ import DialogActions from '@mui/material/DialogActions';
 import Skeleton from '@mui/material/Skeleton';
 import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SearchIcon from '@mui/icons-material/Search';
 import UploadIcon from '@mui/icons-material/Upload';
-import { useChannels, useDeleteChannel, useToggleChannelEnabled, type ChannelSummary } from '../hooks/use-channels.js';
+import { useChannels, useDeleteChannel, useToggleChannelEnabled, useCloneChannel, type ChannelSummary } from '../hooks/use-channels.js';
 import { NewChannelDialog } from '../components/channels/NewChannelDialog.js';
 import { ExportButton } from '../components/channels/ExportButton.js';
 import { ImportDialog } from '../components/channels/ImportDialog.js';
@@ -64,11 +65,14 @@ export function ChannelsPage(): ReactNode {
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ChannelSummary | null>(null);
+  const [cloneTarget, setCloneTarget] = useState<ChannelSummary | null>(null);
+  const [cloneName, setCloneName] = useState('');
 
   // API page is 1-indexed, MUI TablePagination is 0-indexed
   const { data, isLoading, isError, error } = useChannels(page + 1, pageSize);
   const deleteChannel = useDeleteChannel();
   const toggleEnabled = useToggleChannelEnabled();
+  const cloneChannel = useCloneChannel();
 
   // Client-side search filter on the current page of results
   const filteredChannels = useMemo(() => {
@@ -99,6 +103,18 @@ export function ChannelsPage(): ReactNode {
     if (!deleteTarget) return;
     await deleteChannel.mutateAsync(deleteTarget.id);
     setDeleteTarget(null);
+  };
+
+  const handleCloneOpen = (channel: ChannelSummary): void => {
+    setCloneTarget(channel);
+    setCloneName(`Copy of ${channel.name}`);
+  };
+
+  const handleCloneConfirm = async (): Promise<void> => {
+    if (!cloneTarget || !cloneName.trim()) return;
+    await cloneChannel.mutateAsync({ id: cloneTarget.id, name: cloneName.trim() });
+    setCloneTarget(null);
+    setCloneName('');
   };
 
   return (
@@ -247,6 +263,14 @@ export function ChannelsPage(): ReactNode {
                     <Typography variant="caption">{formatDate(channel.updatedAt)}</Typography>
                   </TableCell>
                   <TableCell align="right">
+                    <Tooltip title="Clone">
+                      <IconButton
+                        size="small"
+                        onClick={() => { handleCloneOpen(channel); }}
+                      >
+                        <ContentCopyIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="Delete">
                       <IconButton
                         size="small"
@@ -302,6 +326,34 @@ export function ChannelsPage(): ReactNode {
             disabled={deleteChannel.isPending}
           >
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Clone Channel Dialog */}
+      <Dialog open={cloneTarget !== null} onClose={() => { setCloneTarget(null); }}>
+        <DialogTitle>Clone Channel</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Create a copy of <strong>{cloneTarget?.name}</strong> with a new name. The cloned channel will be disabled by default.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            fullWidth
+            label="New Channel Name"
+            value={cloneName}
+            onChange={(e) => { setCloneName(e.target.value); }}
+            slotProps={{ htmlInput: { maxLength: 255 } }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setCloneTarget(null); }}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleCloneConfirm}
+            disabled={cloneChannel.isPending || !cloneName.trim()}
+          >
+            Clone
           </Button>
         </DialogActions>
       </Dialog>

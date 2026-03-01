@@ -371,6 +371,63 @@ function assembleDetail(
   };
 }
 
+// ----- Clone Helpers -----
+
+function buildCloneScripts(source: ChannelDetail): CreateChannelInput['scripts'] {
+  return {
+    deploy: source.scripts.find((s) => s.scriptType === 'DEPLOY')?.script ?? null,
+    undeploy: source.scripts.find((s) => s.scriptType === 'UNDEPLOY')?.script ?? null,
+    preprocessor: source.scripts.find((s) => s.scriptType === 'PREPROCESSOR')?.script ?? null,
+    postprocessor: source.scripts.find((s) => s.scriptType === 'POSTPROCESSOR')?.script ?? null,
+  };
+}
+
+function buildCloneDestinations(source: ChannelDetail): CreateChannelInput['destinations'] {
+  return source.destinations.map((d) => ({
+    name: d.name,
+    enabled: d.enabled,
+    connectorType: d.connectorType as CreateChannelInput['sourceConnectorType'],
+    properties: d.properties,
+    queueMode: d.queueMode as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
+    retryCount: d.retryCount,
+    retryIntervalMs: d.retryIntervalMs,
+    rotateQueue: d.rotateQueue,
+    queueThreadCount: d.queueThreadCount,
+    waitForPrevious: d.waitForPrevious,
+  }));
+}
+
+function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelInput {
+  return {
+    name: newName,
+    description: source.description ?? '',
+    enabled: false,
+    inboundDataType: source.inboundDataType as CreateChannelInput['inboundDataType'],
+    outboundDataType: source.outboundDataType as CreateChannelInput['outboundDataType'],
+    sourceConnectorType: source.sourceConnectorType as CreateChannelInput['sourceConnectorType'],
+    sourceConnectorProperties: source.sourceConnectorProperties,
+    responseMode: source.responseMode as CreateChannelInput['responseMode'],
+    responseConnectorName: source.responseConnectorName,
+    properties: {
+      initialState: source.initialState as 'UNDEPLOYED' | 'STARTED' | 'PAUSED' | 'STOPPED',
+      messageStorageMode: source.messageStorageMode as 'DEVELOPMENT' | 'PRODUCTION' | 'RAW' | 'METADATA' | 'DISABLED',
+      encryptData: source.encryptData,
+      removeContentOnCompletion: source.removeContentOnCompletion,
+      removeAttachmentsOnCompletion: source.removeAttachmentsOnCompletion,
+      pruningEnabled: source.pruningEnabled,
+      pruningMaxAgeDays: source.pruningMaxAgeDays,
+      pruningArchiveEnabled: source.pruningArchiveEnabled,
+    },
+    scripts: buildCloneScripts(source),
+    destinations: buildCloneDestinations(source),
+    metadataColumns: source.metadataColumns.map((c) => ({
+      name: c.name,
+      dataType: c.dataType as 'STRING' | 'NUMBER' | 'BOOLEAN' | 'TIMESTAMP',
+      mappingExpression: c.mappingExpression,
+    })),
+  };
+}
+
 // ----- Service -----
 
 export class ChannelService {
@@ -765,6 +822,28 @@ export class ChannelService {
         serverId: null, ipAddress: context?.ipAddress ?? null,
         attributes: { channelName: channel.name },
       });
+    });
+  }
+
+  /** Clone an existing channel with a new name. */
+  static async clone(id: string, newName: string, context?: AuditContext): Promise<Result<ChannelDetail>> {
+    return tryCatch(async () => {
+      const sourceResult = await ChannelService.getById(id);
+      if (!sourceResult.ok) throw sourceResult.error;
+      const source = sourceResult.value;
+
+      const input = buildCloneInput(source, newName);
+      const createResult = await ChannelService.create(input, context);
+      if (!createResult.ok) throw createResult.error;
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_CREATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: createResult.value.id,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { channelName: newName, clonedFrom: id },
+      });
+
+      return createResult.value;
     });
   }
 

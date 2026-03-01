@@ -217,6 +217,24 @@ export function useDeleteChannel(): ReturnType<typeof useMutation<void, Error, s
   });
 }
 
+/** Clone a channel with a new name. */
+export function useCloneChannel(): ReturnType<typeof useMutation<ChannelDetail, Error, { id: string; name: string }>> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const result = await api.post<ChannelDetail>(`/channels/${id}/clone`, { name });
+      if (!result.success) {
+        throw new Error(result.error.message);
+      }
+      return result.data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: CHANNEL_KEYS.lists() });
+    },
+  });
+}
+
 /** Toggle channel enabled flag. */
 export function useToggleChannelEnabled(): ReturnType<typeof useMutation<ChannelDetail, Error, { id: string; enabled: boolean }>> {
   const queryClient = useQueryClient();

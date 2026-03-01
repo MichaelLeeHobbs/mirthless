@@ -31,5 +31,5 @@ export { DestinationSet, createDestinationSetProxy } from './pipeline/destinatio
 export { evaluateAlerts } from './alerts/alert-evaluator.js';
 export type { ChannelErrorEvent, LoadedAlert, AlertTrigger, AlertAction } from './alerts/alert-evaluator.js';
 export { dispatchActions, substituteAlertTemplate } from './alerts/action-dispatcher.js';
-export type { AlertLogger, ChannelSender, ActionDispatcherDeps } from './alerts/action-dispatcher.js';
+export type { AlertLogger, ChannelSender, EmailSender, ActionDispatcherDeps } from './alerts/action-dispatcher.js';
 export { AlertManager } from './alerts/alert-manager.js';

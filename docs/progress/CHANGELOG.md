@@ -775,3 +775,70 @@
 - File connector, Database connector
 - DICOM connector, FHIR connector
 - Persistent message store (Drizzle-backed, replacing in-memory)
+
+## 2026-03-01 — Phase 14: Production Integration & CLI Foundation
+
+### What was done:
+
+**Unit 1 — Engine Manager Integration: Alerts + JavaScript Connector Wiring** (`server`):
+- Wired `AlertManager` into `EngineManager.deploy()` — loads enabled alerts from DB, filters by channel scope, creates AlertManager instance, passes `onError` callback to `PipelineConfig`
+- Wired JavaScript source/destination connectors to sandbox executor via `ScriptRunner`/`DestScriptRunner` callbacks — compiles scripts with esbuild, executes in vm sandbox
+- Added `alertManager` to `DeployedChannel` interface
+- `undeploy()` now clears alert throttle state
+- Three new private methods: `wireJavaScriptSource()`, `wireJavaScriptDestinations()`, `loadAlertsForChannel()`
+- **20 integration tests** covering alert loading, JS wiring, undeploy cleanup
+
+**Unit 2 — Wire Email Alert Action to SMTP** (`engine`):
+- Added `EmailSender` callback type to `ActionDispatcherDeps` (dependency injection pattern)
+- Replaced EMAIL action stub with actual email sending — builds subject from template or default, calls `emailSender` callback, logs warning on failure/missing sender
+- Added `LOG` action type to `AlertAction.actionType` union (`'EMAIL' | 'CHANNEL' | 'LOG'`)
+- Implemented `LOG` case — writes structured warning with alertId, alertName, channelId
+- Exported `EmailSender` type from `@mirthless/engine`
+- **8 new tests** (email send, template substitution, no recipients, no sender, sender failure, LOG action)
+
+**Unit 3 — CLI Foundation** (`cli`):
+- Full commander-based CLI: `mirthless` with global `--url` and `--token` options
+- `ApiClient` class — HTTP client with Bearer auth, JSON serialization, 204 handling
+- Output formatters — `formatTable` (ASCII column-aligned), `formatJson`, `printError`, `printSuccess`
+- Commands: `channels list|get`, `deploy|undeploy|start|stop|halt|pause|resume|status`, `export|import`, `users list`, `login`
+- Config persistence at `~/.mirthless/config.json`
+- Added `commander` dependency, `vitest` devDependency, `bin` field in package.json
+- **22 tests** (11 output + 11 API client)
+
+**Unit 4 — Channel Clone API + UI** (`server` + `web`):
+- `ChannelService.clone(id, newName, context)` — loads source channel, builds `CreateChannelInput` (copies all fields: properties, scripts, destinations, metadata columns), delegates to `create()`, emits clone event with `clonedFrom` attribute. Cloned channels start disabled.
+- `ChannelController.clone()` — HTTP adapter returning 201
+- `POST /:id/clone` route with `channels:write` permission, validates `{ name: z.string().min(1).max(255) }`
+- `useCloneChannel()` TanStack Query mutation hook
+- Clone button (ContentCopy icon) in channels table, clone dialog with name field pre-filled "Copy of {name}"
+- **11 tests** (clone success, properties/scripts/destinations/metadata copied, not found, duplicate name, disabled by default)
+
+**Unit 5 — Manual Test Documentation** (`docs/testing`):
+- 6 new manual test checklist files:
+  - `20-javascript-connector.md` — 28 scenarios
+  - `21-smtp-connector.md` — 30 scenarios
+  - `22-channel-connector.md` — 26 scenarios
+  - `23-fhir-connector.md` — 37 scenarios
+  - `24-channel-export-import.md` — 27 scenarios
+  - `25-alert-evaluation.md` — 33 scenarios
+- **181 total new scenarios** (620 cumulative)
+
+### Key decisions:
+- D-062: AlertManager created per channel deployment — each channel gets scoped alerts, simpler lifecycle
+- D-063: JavaScript connector wiring via closure-based ScriptRunner — engine compiles/executes on demand
+- D-064: EmailSender as dependency injection callback — same pattern as ChannelSender, transport-agnostic
+- D-065: CLI uses `~/.mirthless/config.json` for persistent config
+- D-066: Channel clone starts disabled — prevents accidental duplicate routing
+- D-067: CLI communicates via HTTP API — same endpoints as web UI
+
+### Verification:
+- `pnpm build` — 0 errors across all 7 packages
+- `pnpm lint` — 0 warnings
+- `pnpm test` — **1,055 tests passing** (184 schema + 68 HL7 + 189 engine + 282 connectors + 310 server + 22 CLI)
+- `node packages/cli/dist/index.js --help` — CLI help displays all commands correctly
+
+### What's next:
+- DICOM connector (dedicated phase — requires dcmtk.js native bindings)
+- Persistent message store (Drizzle-backed, replacing in-memory)
+- Wire emailSender callback in server startup (nodemailer transport → AlertManager deps)
+- E2E tests for clone and CLI (requires running server + DB)

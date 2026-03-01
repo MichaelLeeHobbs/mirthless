@@ -83,8 +83,77 @@ describe('substituteAlertTemplate', () => {
 // ----- dispatchActions -----
 
 describe('dispatchActions', () => {
-  it('logs EMAIL action as warning (deferred)', async () => {
-    const deps = makeDeps();
+  // ----- EMAIL action -----
+
+  it('sends email when emailSender is configured', async () => {
+    const emailSender = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps({ emailSender });
+    const alert = makeAlert({
+      actions: [{ id: 'a1', actionType: 'EMAIL', recipients: ['admin@test.com'], properties: null }],
+    });
+
+    await dispatchActions(alert, makeEvent(), deps);
+
+    expect(emailSender).toHaveBeenCalledTimes(1);
+    expect(emailSender).toHaveBeenCalledWith(
+      ['admin@test.com'],
+      'Alert: Test Alert',
+      expect.any(String),
+    );
+  });
+
+  it('uses subjectTemplate for email subject', async () => {
+    const emailSender = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps({ emailSender });
+    const alert = makeAlert({
+      subjectTemplate: 'Error in ${channelId}',
+      actions: [{ id: 'a1', actionType: 'EMAIL', recipients: ['admin@test.com'], properties: null }],
+    });
+
+    await dispatchActions(alert, makeEvent({ channelId: 'ch-abc' }), deps);
+
+    expect(emailSender).toHaveBeenCalledWith(
+      ['admin@test.com'],
+      'Error in ch-abc',
+      expect.any(String),
+    );
+  });
+
+  it('uses default subject when no subjectTemplate', async () => {
+    const emailSender = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps({ emailSender });
+    const alert = makeAlert({
+      name: 'My Alert',
+      subjectTemplate: null,
+      actions: [{ id: 'a1', actionType: 'EMAIL', recipients: ['admin@test.com'], properties: null }],
+    });
+
+    await dispatchActions(alert, makeEvent(), deps);
+
+    expect(emailSender).toHaveBeenCalledWith(
+      ['admin@test.com'],
+      'Alert: My Alert',
+      expect.any(String),
+    );
+  });
+
+  it('logs warning when EMAIL action has no recipients', async () => {
+    const emailSender = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps({ emailSender });
+    const alert = makeAlert({
+      actions: [{ id: 'a1', actionType: 'EMAIL', recipients: [], properties: null }],
+    });
+
+    await dispatchActions(alert, makeEvent(), deps);
+
+    expect(emailSender).not.toHaveBeenCalled();
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+    const [, message] = (deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>, string];
+    expect(message).toContain('no recipients');
+  });
+
+  it('logs warning when emailSender is not configured', async () => {
+    const deps = makeDeps(); // No emailSender
     const alert = makeAlert({
       actions: [{ id: 'a1', actionType: 'EMAIL', recipients: ['admin@test.com'], properties: null }],
     });
@@ -93,8 +162,25 @@ describe('dispatchActions', () => {
 
     expect(deps.logger.warn).toHaveBeenCalledTimes(1);
     const [, message] = (deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>, string];
-    expect(message).toContain('EMAIL action deferred');
+    expect(message).toContain('no email sender configured');
   });
+
+  it('logs warning when emailSender throws', async () => {
+    const emailSender = vi.fn().mockRejectedValue(new Error('SMTP down'));
+    const deps = makeDeps({ emailSender });
+    const alert = makeAlert({
+      actions: [{ id: 'a1', actionType: 'EMAIL', recipients: ['admin@test.com'], properties: null }],
+    });
+
+    await dispatchActions(alert, makeEvent(), deps);
+
+    expect(emailSender).toHaveBeenCalledTimes(1);
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+    const [, message] = (deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>, string];
+    expect(message).toContain('Failed to send alert email');
+  });
+
+  // ----- CHANNEL action -----
 
   it('dispatches CHANNEL action to channelSender', async () => {
     const channelSender = vi.fn().mockResolvedValue(undefined);
@@ -151,7 +237,8 @@ describe('dispatchActions', () => {
 
   it('dispatches multiple actions', async () => {
     const channelSender = vi.fn().mockResolvedValue(undefined);
-    const deps = makeDeps({ channelSender });
+    const emailSender = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps({ channelSender, emailSender });
     const alert = makeAlert({
       actions: [
         { id: 'a1', actionType: 'EMAIL', recipients: ['admin@test.com'], properties: null },
@@ -161,7 +248,7 @@ describe('dispatchActions', () => {
 
     await dispatchActions(alert, makeEvent(), deps);
 
-    expect(deps.logger.warn).toHaveBeenCalledTimes(1); // EMAIL action
+    expect(emailSender).toHaveBeenCalledTimes(1); // EMAIL action
     expect(channelSender).toHaveBeenCalledTimes(1); // CHANNEL action
   });
 
@@ -202,5 +289,38 @@ describe('dispatchActions', () => {
     expect(content).toContain('Alert: Test Alert');
     expect(content).toContain('Channel: ch-001');
     expect(content).toContain('Error: Connection refused');
+  });
+
+  // ----- LOG action -----
+
+  it('handles LOG action by logging warning', async () => {
+    const deps = makeDeps();
+    const alert = makeAlert({
+      actions: [{ id: 'a1', actionType: 'LOG', recipients: [], properties: null }],
+    });
+
+    await dispatchActions(alert, makeEvent({ errorMessage: 'disk full' }), deps);
+
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+    const [, message] = (deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>, string];
+    expect(message).toContain('Test Alert');
+    expect(message).toContain('disk full');
+  });
+
+  it('handles LOG action with correct metadata', async () => {
+    const deps = makeDeps();
+    const alert = makeAlert({
+      id: 'alert-999',
+      name: 'Critical Alert',
+      actions: [{ id: 'a1', actionType: 'LOG', recipients: [], properties: null }],
+    });
+
+    await dispatchActions(alert, makeEvent({ channelId: 'ch-xyz' }), deps);
+
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+    const [obj] = (deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>];
+    expect(obj['alertId']).toBe('alert-999');
+    expect(obj['alertName']).toBe('Critical Alert');
+    expect(obj['channelId']).toBe('ch-xyz');
   });
 });

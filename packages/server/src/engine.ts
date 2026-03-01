@@ -14,6 +14,7 @@ import {
   compileFilterRulesToScript,
   compileTransformerStepsToScript,
   prependTemplates,
+  AlertManager,
   type ChannelRuntimeConfig,
   type PipelineConfig,
   type ChannelScripts,
@@ -24,11 +25,14 @@ import {
   type SendToDestination,
   type CompiledScript,
   type CodeTemplateData,
+  type LoadedAlert,
 } from '@mirthless/engine';
 import { tryCatch } from 'stderr-lib';
 import {
   createSourceConnector,
   createDestinationConnector,
+  JavaScriptReceiver,
+  JavaScriptDispatcher,
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@mirthless/connectors';
@@ -36,8 +40,10 @@ import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
 import { CodeTemplateService } from './services/code-template.service.js';
+import { AlertService } from './services/alert.service.js';
 import { db } from './lib/db.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
+import logger from './lib/logger.js';
 import type { ChannelDetail } from './services/channel.service.js';
 
 // ----- Types -----
@@ -47,6 +53,7 @@ export interface DeployedChannel {
   readonly runtime: ChannelRuntime;
   readonly config: ChannelDetail;
   readonly globalChannelMap: GlobalChannelMap;
+  readonly alertManager: AlertManager;
 }
 
 // ----- Message Store Adapter -----
@@ -119,11 +126,18 @@ export class EngineManager {
       destinations.set(dest.metaDataId, connector);
     }
 
-    // Load code templates and global scripts in parallel
-    const [templatesResult, globalScriptsResult, filterTransformerData] = await Promise.all([
+    // Wire JavaScript source script runner
+    this.wireJavaScriptSource(channel, source);
+
+    // Wire JavaScript destination script runners
+    this.wireJavaScriptDestinations(channel, destinations);
+
+    // Load code templates, global scripts, alerts, and filter/transformer data in parallel
+    const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts] = await Promise.all([
       CodeTemplateService.listTemplates(),
       GlobalScriptService.getAll(),
       this.loadFilterTransformerData(channel.id),
+      this.loadAlertsForChannel(channel.id),
     ]);
 
     const templates: ReadonlyArray<CodeTemplateData> = templatesResult.ok
@@ -140,6 +154,10 @@ export class EngineManager {
       channel, templates, filterTransformerData,
     );
 
+    // Create alert manager and load alerts for this channel
+    const alertManager = new AlertManager({ logger });
+    alertManager.loadAlerts(loadedAlerts);
+
     // Build pipeline config
     const pipelineConfig: PipelineConfig = {
       channelId: channel.id,
@@ -148,6 +166,7 @@ export class EngineManager {
       scripts,
       destinations: destConfigs,
       globalChannelMap: gcm,
+      onError: async (event) => alertManager.handleEvent(event),
     };
 
     // Build send function
@@ -180,7 +199,7 @@ export class EngineManager {
       throw new Error('Failed to deploy channel runtime');
     }
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm });
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, alertManager });
   }
 
   /** Get a deployed channel runtime. */
@@ -201,6 +220,7 @@ export class EngineManager {
     }
 
     deployed.globalChannelMap.clear();
+    deployed.alertManager.clearThrottleState();
 
     const result = await deployed.runtime.undeploy();
     if (!result.ok) {
@@ -330,6 +350,82 @@ export class EngineManager {
     }
 
     return configs;
+  }
+
+  /** Wire JavaScript source connector ScriptRunner if applicable. */
+  private wireJavaScriptSource(
+    channel: ChannelDetail,
+    source: SourceConnectorRuntime,
+  ): void {
+    if (channel.sourceConnectorType !== 'JAVASCRIPT') return;
+    const jsReceiver = source as JavaScriptReceiver;
+    jsReceiver.setScriptRunner(async (script) => {
+      const compiled = await compileScript(script, { sourcefile: `${channel.name}/js-source.js` });
+      if (!compiled.ok) return compiled;
+      const ctx = { msg: '', tmp: '', rawData: '', sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {} };
+      const execResult = await this.sandbox.execute(compiled.value, ctx, DEFAULT_EXECUTION_OPTIONS);
+      if (!execResult.ok) return execResult;
+      return { ok: true as const, value: execResult.value.returnValue, error: null };
+    });
+  }
+
+  /** Wire JavaScript destination connector ScriptRunners if applicable. */
+  private wireJavaScriptDestinations(
+    channel: ChannelDetail,
+    destinations: Map<number, DestinationConnectorRuntime>,
+  ): void {
+    for (const dest of channel.destinations) {
+      if (dest.connectorType !== 'JAVASCRIPT') continue;
+      const connector = destinations.get(dest.metaDataId);
+      if (!connector) continue;
+      const jsDispatcher = connector as JavaScriptDispatcher;
+      jsDispatcher.setScriptRunner(async (script, content, connectorMessage) => {
+        const compiled = await compileScript(script, { sourcefile: `${channel.name}/js-dest-${String(dest.metaDataId)}.js` });
+        if (!compiled.ok) return compiled;
+        const ctx = { msg: content, tmp: content, rawData: content, sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {}, extras: { connectorMessage } };
+        const execResult = await this.sandbox.execute(compiled.value, ctx, DEFAULT_EXECUTION_OPTIONS);
+        if (!execResult.ok) return execResult;
+        return { ok: true as const, value: execResult.value.returnValue, error: null };
+      });
+    }
+  }
+
+  /** Load alerts applicable to a channel from the database. */
+  private async loadAlertsForChannel(channelId: string): Promise<readonly LoadedAlert[]> {
+    const listResult = await AlertService.list({ page: 1, pageSize: 1000 });
+    if (!listResult.ok) return [];
+
+    const enabledAlerts = listResult.value.data.filter((a) => a.enabled);
+    const loaded: LoadedAlert[] = [];
+
+    for (const summary of enabledAlerts) {
+      const detailResult = await AlertService.getById(summary.id);
+      if (!detailResult.ok) continue;
+
+      const detail = detailResult.value;
+      // Skip alerts scoped to other channels
+      if (detail.channelIds.length > 0 && !detail.channelIds.includes(channelId)) continue;
+
+      loaded.push({
+        id: detail.id,
+        name: detail.name,
+        enabled: detail.enabled,
+        trigger: detail.trigger,
+        channelIds: detail.channelIds as readonly string[],
+        actions: detail.actions.map((a) => ({
+          id: a.id,
+          actionType: a.actionType as 'EMAIL' | 'CHANNEL',
+          recipients: a.recipients,
+          properties: a.properties,
+        })),
+        subjectTemplate: detail.subjectTemplate,
+        bodyTemplate: detail.bodyTemplate,
+        reAlertIntervalMs: detail.reAlertIntervalMs,
+        maxAlerts: detail.maxAlerts,
+      });
+    }
+
+    return loaded;
   }
 
   /** Load filter rules and transformer steps for a channel, grouped by connector. */

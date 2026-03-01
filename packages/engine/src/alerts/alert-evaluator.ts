@@ -24,7 +24,7 @@ export interface AlertTrigger {
 /** Alert action configuration (from DB). */
 export interface AlertAction {
   readonly id: string;
-  readonly actionType: 'EMAIL' | 'CHANNEL';
+  readonly actionType: 'EMAIL' | 'CHANNEL' | 'LOG';
   readonly recipients: readonly string[];
   readonly properties: Readonly<Record<string, unknown>> | null;
 }

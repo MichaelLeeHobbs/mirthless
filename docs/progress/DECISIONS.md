@@ -125,3 +125,15 @@ D-059: Channel import collision modes: SKIP, OVERWRITE, CREATE_NEW — SKIP igno
 D-060: Alert evaluation with throttle and max-alerts — `reAlertIntervalMs` prevents re-triggering within cooldown window. `maxAlerts` caps total alerts per trigger. Prevents alert storms from noisy channels while ensuring critical errors are surfaced. — 2026-03-01
 
 D-061: DICOM connector deferred to dedicated phase — Requires dcmtk.js native bindings and DIMSE protocol (C-STORE, C-FIND, C-MOVE). Too complex to batch with other connectors. Will be its own focused implementation phase. — 2026-03-01
+
+D-062: AlertManager created per channel deployment, not globally — Each channel gets its own AlertManager with channel-scoped alerts loaded at deploy time. Simpler lifecycle: clear throttle state on undeploy, reload alerts on redeploy. No cross-channel alert state leaks. — 2026-03-01
+
+D-063: JavaScript connector wiring via closure-based ScriptRunner — Engine creates a closure that captures the sandbox executor, compiles user scripts with esbuild, and executes them in the vm sandbox. Avoids direct vm dependency in the connectors package. Testable with simple mock functions. — 2026-03-01
+
+D-064: EmailSender as dependency injection callback — Same pattern as ChannelSender. Server layer provides the actual nodemailer transport at startup. Engine package stays transport-agnostic. Testable by injecting a mock function. — 2026-03-01
+
+D-065: CLI uses `~/.mirthless/config.json` for persistent config — Token stored after `login` command. Follows convention of tools like Docker, AWS CLI, GitHub CLI. Simple JSON format. — 2026-03-01
+
+D-066: Channel clone starts disabled — Safety measure. Prevents accidental duplicate message routing when cloning an active channel. User must explicitly enable the clone after reviewing its configuration. — 2026-03-01
+
+D-067: CLI communicates via HTTP API (same as web UI) — No special admin socket, IPC, or direct DB access. Any endpoint available to the web UI is available to the CLI with the same auth and RBAC. Simplest correct approach. — 2026-03-01

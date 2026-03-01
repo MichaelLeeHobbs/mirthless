@@ -103,6 +103,23 @@ export class ChannelController {
     res.status(204).send();
   }
 
+  static async clone(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const { name } = req.body as { name: string };
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await ChannelService.clone(id, name, context);
+
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      logger.warn({ error: result.error, channelId: id }, 'Failed to clone channel');
+      res.status(status).json({ success: false, error: { code: isServiceError(result.error) ? result.error.code : 'INTERNAL', message: errorMessage(result.error) } });
+      return;
+    }
+
+    logger.info({ channelId: result.value.id, clonedFrom: id }, 'Channel cloned');
+    res.status(201).json({ success: true, data: result.value });
+  }
+
   static async setEnabled(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const { enabled } = req.body as PatchChannelEnabledInput;

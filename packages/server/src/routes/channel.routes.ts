@@ -66,4 +66,14 @@ router.patch(
   ChannelController.setEnabled
 );
 
+router.post(
+  '/:id/clone',
+  requirePermission('channels:write'),
+  validate({
+    params: uuidParamsSchema,
+    body: z.object({ name: z.string().min(1).max(255) }),
+  }),
+  ChannelController.clone
+);
+
 export default router;

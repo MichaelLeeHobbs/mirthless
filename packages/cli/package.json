@@ -3,18 +3,24 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "bin": {
+    "mirthless": "./dist/index.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
     "dev": "tsc --watch",
     "build": "tsc",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@mirthless/core-models": "workspace:*"
+    "@mirthless/core-models": "workspace:*",
+    "commander": "^14.0.3"
   },
   "devDependencies": {
     "rimraf": "6.0.1",
-    "typescript": "5.7.2"
+    "typescript": "5.7.2",
+    "vitest": "2.1.8"
   }
 }
