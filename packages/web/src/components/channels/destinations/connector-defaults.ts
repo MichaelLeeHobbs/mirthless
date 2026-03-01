@@ -24,9 +24,31 @@ export const HTTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   responseTimeout: 30000,
 };
 
+export const FILE_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  directory: '',
+  outputPattern: '${messageId}.txt',
+  charset: 'UTF-8',
+  binary: false,
+  tempFileEnabled: true,
+  appendMode: false,
+};
+
+export const DATABASE_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  host: 'localhost',
+  port: 5432,
+  database: '',
+  username: '',
+  password: '',
+  query: '',
+  useTransaction: false,
+  returnGeneratedKeys: false,
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_DEST_DEFAULTS,
   HTTP: HTTP_DEST_DEFAULTS,
+  FILE: FILE_DEST_DEFAULTS,
+  DATABASE: DATABASE_DEST_DEFAULTS,
 };
 
 /** Get default properties for a destination connector type. */

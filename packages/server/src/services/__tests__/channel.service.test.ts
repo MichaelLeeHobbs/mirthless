@@ -103,6 +103,23 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
+vi.mock('../partition-manager.service.js', () => ({
+  PartitionManagerService: {
+    createPartitions: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    dropPartitions: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    partitionExists: vi.fn().mockResolvedValue({ ok: true, value: false, error: null }),
+  },
+}));
+
+vi.mock('../../lib/logger.js', () => ({
+  default: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 // Must import after mocks
 const { ChannelService } = await import('../channel.service.js');
 

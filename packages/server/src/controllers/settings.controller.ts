@@ -59,7 +59,7 @@ export class SettingsController {
     const body = req.body as UpsertSettingInput;
     const input: UpsertSettingInput = { ...body, key };
 
-    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await SettingsService.upsert(input, context);
 
     if (!result.ok) {
@@ -75,7 +75,7 @@ export class SettingsController {
 
   static async bulkUpsert(req: Request, res: Response): Promise<void> {
     const { settings } = req.body as BulkUpsertSettingsInput;
-    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await SettingsService.bulkUpsert(settings, context);
 
     if (!result.ok) {
@@ -90,7 +90,7 @@ export class SettingsController {
 
   static async delete(req: Request, res: Response): Promise<void> {
     const { key } = req.params as unknown as SettingKeyParam;
-    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await SettingsService.delete(key, context);
 
     if (!result.ok) {

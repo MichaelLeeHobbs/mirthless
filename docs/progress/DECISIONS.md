@@ -97,3 +97,17 @@ D-045: Event purge via `DELETE /events?olderThanDays=N` — Admin-only (`setting
 D-046: Settings use upsert by key (not separate create/update) — Drizzle `onConflictDoUpdate` on unique `key` constraint. Simpler for the Settings page which just submits current form state. — 2026-03-01
 
 D-047: AuditContext passed as explicit parameter to services — `{ userId, ipAddress }` passed from controllers, not via AsyncLocalStorage. Testable, explicit, follows KISS. — 2026-03-01
+
+D-048: File connector uses `node:fs/promises` only — No SFTP/S3/SMB support in v1. Local filesystem only. YAGNI — add remote protocols when there's a real use case. — 2026-03-01
+
+D-049: Simple glob matching for file connector — Use basic wildcard pattern matching (*, ?) rather than a full glob library dependency. Sufficient for file connectors. — 2026-03-01
+
+D-050: PostgreSQL only for database connector — Consistent with D-005. No multi-DB driver abstraction. Uses `pg` directly. Other databases can be added as separate connector types later. — 2026-03-01
+
+D-051: QueryBuilder parameterized binding — Database connector replaces `${variable}` with positional `$1, $2, ...` params. Values never interpolated into SQL strings. Security-first design for healthcare data. — 2026-03-01
+
+D-052: Partition-per-channel for message tables — `CREATE TABLE IF NOT EXISTS messages_p_{id} PARTITION OF messages FOR VALUES IN ('{id}')`. Created on channel create, dropped on channel delete. Enables efficient per-channel queries and independent cleanup. — 2026-03-01
+
+D-053: Data pruner as admin API (not cron) — `POST /api/v1/admin/prune` endpoint for v1. Cron/scheduled pruning is future work. Keeps implementation simple. — 2026-03-01
+
+D-054: Queue manager uses FOR UPDATE SKIP LOCKED — Enables concurrent queue consumers without lock contention. Messages claimed atomically, failed messages released back for retry. — 2026-03-01

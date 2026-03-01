@@ -3,7 +3,7 @@
 // ===========================================
 // Create/edit alert configuration with trigger, channels, actions, and templates.
 
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useParams, useNavigate, useBlocker } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import Box from '@mui/material/Box';
@@ -66,6 +66,7 @@ export function AlertEditorPage(): ReactNode {
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const formInitializedRef = useRef(false);
 
   // Extra form state (not managed by react-hook-form)
   const [trigger, setTrigger] = useState<TriggerFormValues>(DEFAULT_TRIGGER);
@@ -92,9 +93,16 @@ export function AlertEditorPage(): ReactNode {
   const isDirty = formDirty || extraDirty;
   const nameValue = watch('name');
 
-  // Load alert data into form
+  // Reset initialization guard when navigating to a different alert
   useEffect(() => {
-    if (alert && isEditMode) {
+    formInitializedRef.current = false;
+  }, [id]);
+
+  // Load alert data into form (only on initial load, not on refetch)
+  useEffect(() => {
+    if (alert && isEditMode && !formInitializedRef.current) {
+      formInitializedRef.current = true;
+
       reset({
         name: alert.name,
         description: alert.description ?? '',

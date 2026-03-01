@@ -24,9 +24,37 @@ export const HTTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   charset: 'UTF-8',
 };
 
+export const FILE_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  directory: '',
+  fileFilter: '*',
+  pollingIntervalMs: 5000,
+  sortBy: 'NAME',
+  charset: 'UTF-8',
+  binary: false,
+  checkFileAge: true,
+  fileAgeMs: 1000,
+  postAction: 'DELETE',
+  moveToDirectory: '',
+};
+
+export const DATABASE_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  host: 'localhost',
+  port: 5432,
+  database: '',
+  username: '',
+  password: '',
+  selectQuery: '',
+  updateQuery: '',
+  updateMode: 'NEVER',
+  pollingIntervalMs: 5000,
+  rowFormat: 'JSON',
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_SOURCE_DEFAULTS,
   HTTP: HTTP_SOURCE_DEFAULTS,
+  FILE: FILE_SOURCE_DEFAULTS,
+  DATABASE: DATABASE_SOURCE_DEFAULTS,
 };
 
 /** Get default properties for a connector type. Returns empty object for unknown types. */

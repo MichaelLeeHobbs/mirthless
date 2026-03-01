@@ -8,11 +8,15 @@ import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { TcpMllpSourceForm } from './TcpMllpSourceForm.js';
 import { HttpSourceForm } from './HttpSourceForm.js';
+import { FileSourceForm } from './FileSourceForm.js';
+import { DatabaseSourceForm } from './DatabaseSourceForm.js';
 import { UnsupportedConnectorPlaceholder } from './UnsupportedConnectorPlaceholder.js';
 
 const SOURCE_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<SourceConnectorFormProps> | undefined>> = {
   TCP_MLLP: TcpMllpSourceForm,
   HTTP: HttpSourceForm,
+  FILE: FileSourceForm,
+  DATABASE: DatabaseSourceForm,
 };
 
 interface ConnectorSettingsSectionProps {

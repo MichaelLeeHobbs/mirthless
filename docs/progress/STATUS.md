@@ -9,9 +9,9 @@
 | `@mirthless/core-models` | Complete (v1) | Branded types, constants, Zod schemas (channel CRUD, destinations, metadata, users, **code templates**, **global scripts**, **filters**, **transformers**, **alerts**, **events**, **settings**), **184 schema validation tests** | Refine schemas as features develop |
 | `@mirthless/core-util` | HL7v2 Parser | Result re-export, validation utils, **HL7v2 parser** (encoding, path, message, ACK), **68 HL7 tests** | Add utilities as needed (YAGNI) |
 | `@mirthless/engine` | Pipeline Complete | **Sandbox executor** (vm-based), **script compiler** (esbuild), **8-stage message pipeline**, **channel runtime** (state machine), **queue consumer** (with DB content loading), in-memory message store, **filter/transformer compilation**, **code template injection**, **global scripts**, **HL7 bridge functions**, **globalChannelMap**, **destinationSet**, **142 engine tests** | Persistent message store, polling scheduler |
-| `@mirthless/connectors` | TCP/MLLP + HTTP | Base interfaces, **TCP/MLLP receiver** (MLLP framing, connection pool), **TCP/MLLP dispatcher**, **HTTP receiver** (node:http), **HTTP dispatcher** (native fetch), connector registry, **49 connector tests** | File, Database, DICOM, FHIR connectors |
-| `@mirthless/server` | API Phase 6 | Express app, config, middleware, DB schema, auth, seeds, **Channel CRUD API** (6 endpoints), **Deployment API** (8 endpoints), **Message Query API** (4 endpoints), **Statistics API** (3 endpoints), **User Management API** (7 endpoints), **Code Templates API** (8 endpoints), **Global Scripts API** (2 endpoints), **Alerts API** (6 endpoints), **Events API** (3 endpoints), **Settings API** (5 endpoints), **event emission** from all services, filter/transformer CRUD (inline with channel), **222 server tests** | File/Database connectors |
-| `@mirthless/web` | UI Phase 6 | React+MUI shell, auth flow, login page, **Channel Editor** (all 5 tabs + **source/destination filter & transformer UI**), **Dashboard** (summary cards, status table, quick actions), **Message Browser** (search, filter, detail panel), **Users Page** (CRUD, role chips, enable/disable/unlock), **Code Templates Page** (library tree, template editor), **Global Scripts Page** (4-tab Monaco editors), **Alerts Page** (list + toggle + editor), **Events Page** (paginated table, filters, detail panel, purge), **Settings Page** (category tabs, type-aware inputs, bulk save), Monaco editor | File/Database connectors |
+| `@mirthless/connectors` | TCP/MLLP + HTTP + File + Database | Base interfaces, **TCP/MLLP receiver** (MLLP framing, connection pool), **TCP/MLLP dispatcher**, **HTTP receiver** (node:http), **HTTP dispatcher** (native fetch), **File receiver** (polling, glob, post-processing), **File dispatcher** (pattern substitution, temp-file rename), **Database receiver** (polling, parameterized queries, update modes), **Database dispatcher** (parameterized queries, transactions), **query builder** (SQL injection safe), **connection pool** (pg), connector registry, **166 connector tests** | DICOM, FHIR connectors |
+| `@mirthless/server` | API Phase 9 + Message Store | Express app, config, middleware, DB schema, auth, seeds, **Channel CRUD API** (6 endpoints), **Deployment API** (8 endpoints), **Message Query API** (4 endpoints), **Statistics API** (3 endpoints), **User Management API** (7 endpoints), **Code Templates API** (8 endpoints), **Global Scripts API** (2 endpoints), **Alerts API** (6 endpoints), **Events API** (3 endpoints), **Settings API** (5 endpoints), **Data Pruner API** (3 endpoints), **event emission** from all services, filter/transformer CRUD (inline with channel), **partition manager** (create/drop per-channel partitions), **data pruner** (age-based message cleanup), **queue manager** (FOR UPDATE SKIP LOCKED), **265 server tests** | DICOM, FHIR connectors |
+| `@mirthless/web` | UI Phase 9 + Connectors | React+MUI shell, auth flow, login page, **Channel Editor** (all 5 tabs + **source/destination filter & transformer UI** + **File/Database source & destination forms**), **Dashboard** (summary cards, status table, quick actions), **Message Browser** (search, filter, detail panel), **Users Page** (CRUD, role chips, enable/disable/unlock), **Code Templates Page** (library tree, template editor), **Global Scripts Page** (4-tab Monaco editors), **Alerts Page** (list + toggle + editor), **Events Page** (paginated table, filters, detail panel, purge), **Settings Page** (category tabs, type-aware inputs, bulk save), Monaco editor | DICOM, FHIR connectors |
 | `@mirthless/cli` | Scaffold | Empty package shell | CLI commands (future) |
 
 ## Infrastructure Status
@@ -26,8 +26,8 @@
 | Auth (JWT+sessions) | Done | Adapted from fullstack-template |
 | RBAC | Done | 4 default roles: admin, deployer, developer, viewer |
 | Vitest | Done | Configured per package, passWithNoTests |
-| Manual test suite | Done | 22 test files, ~355 scenarios, `docs/testing/` |
-| Playwright E2E | Done | 11 spec files, ~57 tests, `e2e/` |
+| Manual test suite | Done | 24 test files, ~439 scenarios, `docs/testing/` |
+| Playwright E2E | Done | 11 spec files, ~57 tests, `e2e/` (4 fixed) |
 
 ## Verification Checklist
 
@@ -36,7 +36,7 @@
 | `pnpm install` | PASS | 833 packages resolved |
 | `pnpm build` | PASS | All 7 packages compile (0 errors) |
 | `pnpm lint` | PASS | 0 warnings |
-| `pnpm test` | PASS | **665 tests passing** (184 schema + 68 HL7 + 142 engine + 49 connectors + 222 server) |
+| `pnpm test` | PASS | **825 tests passing** (184 schema + 68 HL7 + 142 engine + 166 connectors + 265 server) |
 | `docker:up` | PASS | PostgreSQL 17 running |
 | `db:generate` | PASS | 34 tables generated |
 | `db:migrate` | PASS | Migrations applied |
@@ -50,6 +50,7 @@
 
 | Date | Milestone |
 |------|-----------|
+| 2026-03-01 | **File/Database Connectors + Message Store (Phases 10-12)** — File receiver/dispatcher, Database receiver/dispatcher with parameterized QueryBuilder, partition manager (per-channel table partitions), data pruner (age-based cleanup API), queue manager (FOR UPDATE SKIP LOCKED), File/Database UI forms, E2E test fixes. (+160 tests, 825 total) |
 | 2026-03-01 | **Test Coverage Backfill** — 9 new manual test docs (dashboard, message browser, users, code templates, global scripts, filter/transformer, alerts, events, settings), 4 new Playwright E2E specs (alerts, events, settings, dashboard). Total: 22 manual test docs (~355 scenarios), 11 E2E specs (~57 tests). |
 | 2026-03-01 | **Events & Settings Systems (Phase 9)** — Event Zod schemas, Event service (paginated+filtered list, create, purge), Event API (3 endpoints), Events page UI (filter bar, paginated table, detail panel, purge dialog). Settings Zod schemas, Settings service (list, getByKey, upsert, bulkUpsert, delete), Settings API (5 endpoints), Settings page UI (category tabs, type-aware inputs, bulk save). Fire-and-forget event emission from all 8 services (auth, channel, deployment, user, settings, code-template, global-script, alert). AuditContext passed from controllers. (+79 tests, 665 total) |
 | 2026-03-01 | **Alerts System (Phase 8)** — Alert Zod schemas (trigger, action, CRUD), Alert service (CRUD + setEnabled + optimistic locking), Alert API (6 endpoints), AlertsPage (list + toggle + delete), AlertEditorPage (General + Trigger + Channels + Actions + Templates sections) (+58 tests) |

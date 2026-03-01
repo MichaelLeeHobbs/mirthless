@@ -8,6 +8,10 @@ import { TcpMllpReceiver } from './tcp-mllp/tcp-mllp-receiver.js';
 import { TcpMllpDispatcher } from './tcp-mllp/tcp-mllp-dispatcher.js';
 import { HttpReceiver } from './http/http-receiver.js';
 import { HttpDispatcher } from './http/http-dispatcher.js';
+import { FileReceiver, FILE_SORT_BY, FILE_POST_ACTION, type FileSortBy, type FilePostAction } from './file/file-receiver.js';
+import { FileDispatcher } from './file/file-dispatcher.js';
+import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, type UpdateMode, type RowFormat } from './database/database-receiver.js';
+import { DatabaseDispatcher } from './database/database-dispatcher.js';
 
 // ----- Source Factories -----
 
@@ -26,6 +30,30 @@ const sourceFactories = new Map<string, SourceFactory>([
     method: (props['method'] as string | undefined) ?? 'POST',
     responseContentType: (props['responseContentType'] as string | undefined) ?? 'text/plain',
     responseStatusCode: (props['responseStatusCode'] as number | undefined) ?? 200,
+  })],
+  ['FILE', (props): SourceConnectorRuntime => new FileReceiver({
+    directory: props['directory'] as string,
+    fileFilter: (props['fileFilter'] as string | undefined) ?? '*',
+    pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 5_000,
+    sortBy: (props['sortBy'] as FileSortBy | undefined) ?? FILE_SORT_BY.NAME,
+    charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
+    binary: (props['binary'] as boolean | undefined) ?? false,
+    checkFileAge: (props['checkFileAge'] as boolean | undefined) ?? true,
+    fileAgeMs: (props['fileAgeMs'] as number | undefined) ?? 1_000,
+    postAction: (props['postAction'] as FilePostAction | undefined) ?? FILE_POST_ACTION.DELETE,
+    moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
+  })],
+  ['DATABASE', (props): SourceConnectorRuntime => new DatabaseReceiver({
+    host: props['host'] as string,
+    port: (props['port'] as number | undefined) ?? 5432,
+    database: props['database'] as string,
+    username: props['username'] as string,
+    password: props['password'] as string,
+    selectQuery: props['selectQuery'] as string,
+    updateQuery: (props['updateQuery'] as string | undefined) ?? '',
+    updateMode: (props['updateMode'] as UpdateMode | undefined) ?? UPDATE_MODE.NEVER,
+    pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 5_000,
+    rowFormat: (props['rowFormat'] as RowFormat | undefined) ?? ROW_FORMAT.JSON,
   })],
 ]);
 
@@ -46,6 +74,24 @@ const destinationFactories = new Map<string, DestinationFactory>([
     headers: (props['headers'] as Record<string, string> | undefined) ?? {},
     contentType: (props['contentType'] as string | undefined) ?? 'text/plain',
     responseTimeout: (props['responseTimeout'] as number | undefined) ?? 30_000,
+  })],
+  ['FILE', (props): DestinationConnectorRuntime => new FileDispatcher({
+    directory: props['directory'] as string,
+    outputPattern: (props['outputPattern'] as string | undefined) ?? '${messageId}.txt',
+    charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
+    binary: (props['binary'] as boolean | undefined) ?? false,
+    tempFileEnabled: (props['tempFileEnabled'] as boolean | undefined) ?? true,
+    appendMode: (props['appendMode'] as boolean | undefined) ?? false,
+  })],
+  ['DATABASE', (props): DestinationConnectorRuntime => new DatabaseDispatcher({
+    host: props['host'] as string,
+    port: (props['port'] as number | undefined) ?? 5432,
+    database: props['database'] as string,
+    username: props['username'] as string,
+    password: props['password'] as string,
+    query: props['query'] as string,
+    useTransaction: (props['useTransaction'] as boolean | undefined) ?? false,
+    returnGeneratedKeys: (props['returnGeneratedKeys'] as boolean | undefined) ?? false,
   })],
 ]);
 

@@ -2,11 +2,38 @@
 // Code Templates E2E Tests
 // ===========================================
 
-import { test, expect } from '@playwright/test';
+import { test, expect, request } from '@playwright/test';
 import { login } from './fixtures/auth.js';
-import { TEST_LIBRARY, TEST_TEMPLATE } from './fixtures/test-data.js';
+import { ADMIN_USER, TEST_LIBRARY, TEST_TEMPLATE } from './fixtures/test-data.js';
+
+const API_BASE = 'http://localhost:3000/api/v1';
 
 test.describe('Code Templates', () => {
+  // Clean up stale test data from previous runs
+  test.beforeAll(async () => {
+    const ctx = await request.newContext({ baseURL: API_BASE });
+    const loginRes = await ctx.post('/auth/login', {
+      data: { username: ADMIN_USER.username, password: ADMIN_USER.password },
+    });
+    const loginBody = await loginRes.json() as { success: boolean; data: { accessToken: string } };
+    const token = loginBody.data.accessToken;
+
+    const libRes = await ctx.get('/code-templates/libraries', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (libRes.ok()) {
+      const libBody = await libRes.json() as { success: boolean; data: Array<{ id: string; name: string }> };
+      for (const lib of libBody.data) {
+        if (lib.name === TEST_LIBRARY.name) {
+          await ctx.delete(`/code-templates/libraries/${lib.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }
+      }
+    }
+    await ctx.dispose();
+  });
+
   test.beforeEach(async ({ page }) => {
     await login(page);
   });

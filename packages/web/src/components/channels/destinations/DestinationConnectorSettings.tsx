@@ -9,10 +9,14 @@ import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { TcpMllpDestinationForm } from './TcpMllpDestinationForm.js';
 import { HttpDestinationForm } from './HttpDestinationForm.js';
+import { FileDestinationForm } from './FileDestinationForm.js';
+import { DatabaseDestinationForm } from './DatabaseDestinationForm.js';
 
 const DEST_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<DestConnectorFormProps> | undefined>> = {
   TCP_MLLP: TcpMllpDestinationForm,
   HTTP: HttpDestinationForm,
+  FILE: FileDestinationForm,
+  DATABASE: DatabaseDestinationForm,
 };
 
 interface DestinationConnectorSettingsProps {

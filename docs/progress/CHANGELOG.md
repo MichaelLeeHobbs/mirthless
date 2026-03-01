@@ -520,6 +520,71 @@
 - Settings system (server configuration)
 - Event emission from services
 
+## 2026-03-01 — File/Database Connectors + Message Store (Phases 10-12)
+
+### What was done:
+
+**E2E Test Fixes:**
+- `channel-crud.spec.ts`: Click `<a>` link in table row instead of row element
+- `code-templates.spec.ts`: Added `test.beforeAll` API cleanup of stale `'E2E Test Library'` data
+- `alerts.spec.ts`: Added `test.beforeAll` API cleanup, replaced `.catch()` with `toBeEnabled` assertion
+- `AlertEditorPage.tsx`: Added `useRef` guard to prevent form reset on TanStack Query refetch
+
+**File Connector (Phase 10)** (`connectors`):
+- `FileReceiver` — Poll-based source: directory listing, glob matching (*, ?), file age filtering, sort (NAME/DATE/SIZE), post-processing (DELETE/MOVE/NONE), charset + binary mode
+- `FileDispatcher` — Destination: output filename pattern substitution (`${messageId}`, `${timestamp}`, `${originalFilename}`), temp-file-then-rename, append mode, directory auto-creation
+- `FileSourceForm.tsx` + `FileDestinationForm.tsx` — MUI configuration forms
+- Registered in connector registry + defaults maps
+- **50 connector tests** (29 receiver + 21 dispatcher)
+
+**Database Connector (Phase 11)** (`connectors`):
+- `DatabaseReceiver` — Poll-based source: parameterized SELECT query via pg pool, row-to-JSON message conversion, update modes (NEVER/ALWAYS/ON_SUCCESS)
+- `DatabaseDispatcher` — Destination: parameterized query execution via QueryBuilder, transaction support (BEGIN/COMMIT/ROLLBACK), return generated keys
+- `QueryBuilder.prepare(template, context)` — Converts `${variable}` to positional `$1, $2, ...` params. **No string interpolation of values into SQL — SQL injection safe.**
+- `ConnectionPool` — pg.Pool wrapper with create/query/acquireClient/destroy, connectivity verification
+- `DatabaseSourceForm.tsx` + `DatabaseDestinationForm.tsx` — MUI configuration forms
+- Added `pg` + `@types/pg` dependencies
+- Registered in connector registry + defaults maps
+- **67 connector tests** (13 query-builder + 12 pool + 22 receiver + 20 dispatcher)
+
+**Partition Manager (Phase 12)** (`server`):
+- `PartitionManagerService` — Create/drop/check table partitions per channel (messages, connector_messages, message_content, message_statistics, message_attachments, message_custom_metadata)
+- Wired into `ChannelService.create()` and `ChannelService.delete()` (non-fatal warnings on failure)
+- **11 service tests**
+
+**Data Pruner (Phase 12)** (`server`):
+- `DataPrunerService` — `pruneChannel(id, maxAgeDays)`, `pruneAll()` (iterates pruning-enabled channels), `getStatistics()` (prunable counts per channel)
+- `DataPrunerController` + routes at `POST /api/v1/admin/prune` (admin only)
+- Dependency-order deletion: attachments → custom_metadata → content → connector_messages → messages
+- **17 service tests**
+
+**Queue Manager (Phase 12)** (`server`):
+- `QueueManagerService` — `dequeue(channelId, metaDataId, batchSize)` with `FOR UPDATE SKIP LOCKED`, `release(channelId, messageId, metaDataId, newStatus)`, `requeueFailed(channelId, maxRetries)`, `getQueueDepth(channelId, metaDataId)`
+- Atomic claiming for concurrent consumers
+- **15 service tests**
+
+**Lint Fixes:**
+- Fixed 26 pre-existing `no-explicit-any` errors: replaced `(req as any).user?.id` with `req.user?.id` (Express Request already augmented)
+
+### Key decisions:
+- D-048: File connector uses `node:fs/promises` only (no SFTP/S3/SMB in v1)
+- D-049: Simple glob matching for file connector (*, ? wildcards)
+- D-050: PostgreSQL only for database connector (consistent with D-005)
+- D-051: QueryBuilder parameterized binding (security-first)
+- D-052: Partition-per-channel for message tables
+- D-053: Data pruner as admin API (not cron) for v1
+- D-054: Queue manager uses FOR UPDATE SKIP LOCKED
+
+### Verification:
+- `pnpm build` — 0 errors across all packages
+- `pnpm lint` — 0 errors, 0 warnings
+- `pnpm test` — **825 tests passing** (184 schema + 68 HL7 + 142 engine + 166 connectors + 265 server)
+
+### What's next:
+- DICOM connector, FHIR connector
+- Alert evaluation engine (trigger evaluation, action dispatch)
+- Channel import/export
+
 ## 2026-03-01 — Test Coverage Backfill
 
 ### What was done:

@@ -51,7 +51,10 @@ export interface DeployedChannel {
 
 // ----- Message Store Adapter -----
 
-/** Adapts MessageService (static methods) to the MessageStore interface. */
+/**
+ * Adapts MessageService (static methods) to the MessageStore interface.
+ * For advanced queue management (requeueFailed, getQueueDepth), use QueueManagerService directly.
+ */
 function createMessageStoreAdapter(): MessageStore {
   return {
     createMessage: (channelId, serverId) =>

@@ -141,7 +141,10 @@ export class MessageService {
     });
   }
 
-  /** Enqueue a connector message for async delivery. */
+  /**
+   * Enqueue a connector message for async delivery.
+   * @see QueueManagerService for advanced queue operations (requeueFailed, getQueueDepth).
+   */
   static async enqueue(
     channelId: string,
     messageId: number,
@@ -164,6 +167,7 @@ export class MessageService {
   /**
    * Dequeue messages for processing. Uses FOR UPDATE SKIP LOCKED
    * to allow concurrent consumers without conflicts.
+   * @see QueueManagerService for advanced queue operations (requeueFailed, getQueueDepth).
    */
   static async dequeue(
     channelId: string,
@@ -185,7 +189,10 @@ export class MessageService {
     });
   }
 
-  /** Release a dequeued message with a new status (SENT or ERROR). */
+  /**
+   * Release a dequeued message with a new status (SENT or ERROR).
+   * @see QueueManagerService for advanced queue operations (requeueFailed, getQueueDepth).
+   */
   static async release(
     channelId: string,
     messageId: number,

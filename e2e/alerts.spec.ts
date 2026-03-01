@@ -2,11 +2,41 @@
 // Alerts E2E Tests
 // ===========================================
 
-import { test, expect } from '@playwright/test';
+import { test, expect, request } from '@playwright/test';
 import { login } from './fixtures/auth.js';
-import { TEST_ALERT } from './fixtures/test-data.js';
+import { ADMIN_USER, TEST_ALERT } from './fixtures/test-data.js';
+
+const API_BASE = 'http://localhost:3000/api/v1';
 
 test.describe('Alerts', () => {
+  // Clean up stale test data from previous runs
+  test.beforeAll(async () => {
+    const ctx = await request.newContext({ baseURL: API_BASE });
+    const loginRes = await ctx.post('/auth/login', {
+      data: { username: ADMIN_USER.username, password: ADMIN_USER.password },
+    });
+    const loginBody = await loginRes.json() as { success: boolean; data: { accessToken: string } };
+    const token = loginBody.data.accessToken;
+
+    const alertRes = await ctx.get('/alerts', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (alertRes.ok()) {
+      const alertBody = await alertRes.json() as {
+        success: boolean;
+        data: { data: Array<{ id: string; name: string }>; pagination: unknown };
+      };
+      for (const alert of alertBody.data.data) {
+        if (alert.name.startsWith(TEST_ALERT.name)) {
+          await ctx.delete(`/alerts/${alert.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }
+      }
+    }
+    await ctx.dispose();
+  });
+
   test.beforeEach(async ({ page }) => {
     await login(page);
   });
@@ -57,11 +87,10 @@ test.describe('Alerts', () => {
         await nameField.fill(TEST_ALERT.name + ' Updated');
       }
 
-      // Wait for save button to become enabled
+      // Wait for save button to become enabled then click
       const saveBtn = page.getByRole('button', { name: /save/i });
-      await saveBtn.click({ timeout: 5_000 }).catch(() => {
-        // Save button may remain disabled if form doesn't detect changes
-      });
+      await expect(saveBtn).toBeEnabled({ timeout: 5_000 });
+      await saveBtn.click();
       await page.waitForTimeout(1_000);
     }
   });

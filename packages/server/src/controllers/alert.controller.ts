@@ -56,7 +56,7 @@ export class AlertController {
 
   static async create(req: Request, res: Response): Promise<void> {
     const input = req.body as CreateAlertInput;
-    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await AlertService.create(input, context);
 
     if (!result.ok) {
@@ -73,7 +73,7 @@ export class AlertController {
   static async update(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const input = req.body as UpdateAlertInput;
-    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await AlertService.update(id, input, context);
 
     if (!result.ok) {
@@ -89,7 +89,7 @@ export class AlertController {
 
   static async delete(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const context = { userId: (req as any).user?.id ?? null, ipAddress: req.ip ?? null };
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await AlertService.delete(id, context);
 
     if (!result.ok) {

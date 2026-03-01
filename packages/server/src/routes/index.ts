@@ -6,6 +6,7 @@
 import { Router, type IRouter } from 'express';
 import alertRoutes from './alert.routes.js';
 import authRoutes from './auth.routes.js';
+import dataPrunerRoutes from './data-pruner.routes.js';
 import channelRoutes from './channel.routes.js';
 import codeTemplateRoutes from './code-template.routes.js';
 import deploymentRoutes from './deployment.routes.js';
@@ -33,6 +34,7 @@ router.use('/channels', deploymentRoutes);
 router.use('/channels', messageRoutes);
 router.use('/channels', statisticsRoutes);
 router.use('/channels', channelRoutes);
+router.use('/admin/prune', dataPrunerRoutes);
 router.use('/code-templates', codeTemplateRoutes);
 router.use('/events', eventRoutes);
 router.use('/global-scripts', globalScriptRoutes);

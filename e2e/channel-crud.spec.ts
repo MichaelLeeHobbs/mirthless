@@ -46,9 +46,9 @@ test.describe('Channel CRUD', () => {
   test('navigate to editor and modify summary', async ({ page }) => {
     await page.goto('/channels');
 
-    // Click on a channel row to navigate to editor
+    // Click on the channel name link to navigate to editor
     const firstChannel = page.locator('table tbody tr').first();
-    await firstChannel.click();
+    await firstChannel.locator('a').first().click();
 
     // Should be on editor page
     await expect(page).toHaveURL(/\/channels\//);

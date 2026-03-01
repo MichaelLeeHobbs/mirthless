@@ -19,4 +19,31 @@ export { TcpMllpReceiver, type TcpMllpReceiverConfig } from './tcp-mllp/tcp-mllp
 export { TcpMllpDispatcher, type TcpMllpDispatcherConfig } from './tcp-mllp/tcp-mllp-dispatcher.js';
 export { HttpReceiver, type HttpReceiverConfig } from './http/http-receiver.js';
 export { HttpDispatcher, type HttpDispatcherConfig } from './http/http-dispatcher.js';
+export {
+  FileReceiver,
+  FileDispatcher,
+  matchGlob,
+  resolveOutputFilename,
+  FILE_SORT_BY,
+  FILE_POST_ACTION,
+  type FileReceiverConfig,
+  type FileDispatcherConfig,
+  type FileSortBy,
+  type FilePostAction,
+} from './file/index.js';
+export {
+  prepare,
+  ConnectionPool,
+  DatabaseReceiver,
+  DatabaseDispatcher,
+  UPDATE_MODE,
+  ROW_FORMAT,
+  type PreparedQuery,
+  type PoolConfig,
+  type QueryResult,
+  type DatabaseReceiverConfig,
+  type DatabaseDispatcherConfig,
+  type UpdateMode,
+  type RowFormat,
+} from './database/index.js';
 export { createSourceConnector, createDestinationConnector } from './registry.js';

@@ -14,6 +14,8 @@ import type {
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
+import { PartitionManagerService } from './partition-manager.service.js';
+import logger from '../lib/logger.js';
 import {
   channels,
   channelScripts,
@@ -519,6 +521,13 @@ export class ChannelService {
 
       // Return full detail
       const channel = created!;
+
+      // Create message partitions for the new channel (non-blocking — log warning on failure)
+      const partitionResult = await PartitionManagerService.createPartitions(channel.id);
+      if (!partitionResult.ok) {
+        logger.warn({ channelId: channel.id, error: partitionResult.error }, 'Failed to create partitions for channel');
+      }
+
       const relations = await fetchChannelRelations(channel.id);
       const detail = assembleDetail(channel, relations);
 
@@ -743,6 +752,12 @@ export class ChannelService {
     return tryCatch(async () => {
       const channel = await findChannel(id);
       await db.update(channels).set({ deletedAt: new Date() }).where(eq(channels.id, id));
+
+      // Drop message partitions for the deleted channel (non-blocking — log warning on failure)
+      const partitionResult = await PartitionManagerService.dropPartitions(id);
+      if (!partitionResult.ok) {
+        logger.warn({ channelId: id, error: partitionResult.error }, 'Failed to drop partitions for channel');
+      }
 
       emitEvent({
         level: 'INFO', name: 'CHANNEL_DELETED', outcome: 'SUCCESS',
