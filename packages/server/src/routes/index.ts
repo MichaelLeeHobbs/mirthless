@@ -18,13 +18,21 @@ import userRoutes from './user.routes.js';
 
 const router: IRouter = Router();
 
+// Health check (unauthenticated, used by Playwright + load balancers)
+router.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
 // API v1 routes
 router.use('/alerts', alertRoutes);
 router.use('/auth', authRoutes);
-router.use('/channels', channelRoutes);
+// Mount specific /channels sub-routes BEFORE channelRoutes — channelRoutes
+// defines GET /:id which greedily matches any single-segment path like
+// /statistics or /status, causing UUID validation failures.
 router.use('/channels', deploymentRoutes);
 router.use('/channels', messageRoutes);
 router.use('/channels', statisticsRoutes);
+router.use('/channels', channelRoutes);
 router.use('/code-templates', codeTemplateRoutes);
 router.use('/events', eventRoutes);
 router.use('/global-scripts', globalScriptRoutes);

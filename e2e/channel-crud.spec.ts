@@ -12,7 +12,7 @@ test.describe('Channel CRUD', () => {
 
   test('channel list loads', async ({ page }) => {
     await page.goto('/channels');
-    await expect(page.getByText('Channels')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Channels' })).toBeVisible();
   });
 
   test('create channel via dialog', async ({ page }) => {
@@ -120,6 +120,6 @@ test.describe('Channel CRUD', () => {
     const pagination = page.locator('[aria-label="pagination"],.MuiTablePagination-root');
     // Pagination may or may not be visible depending on number of channels
     // Just verify the page loads without error
-    await expect(page.getByText('Channels')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Channels' })).toBeVisible();
   });
 });

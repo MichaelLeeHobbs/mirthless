@@ -5,7 +5,7 @@
 /** Default admin credentials seeded by db:seed */
 export const ADMIN_USER = {
   username: 'admin',
-  password: 'admin123!',
+  password: 'Admin123!',
 } as const;
 
 /** Test channel constants */
@@ -34,4 +34,10 @@ export const TEST_LIBRARY = {
 export const TEST_TEMPLATE = {
   name: 'e2eHelper',
   code: 'function e2eHelper() { return true; }',
+} as const;
+
+/** Test alert constants */
+export const TEST_ALERT = {
+  name: 'E2E Test Alert',
+  description: 'Alert created by E2E test',
 } as const;

@@ -520,6 +520,39 @@
 - Settings system (server configuration)
 - Event emission from services
 
+## 2026-03-01 — Test Coverage Backfill
+
+### What was done:
+
+**Manual Test Documentation (9 new docs, +183 scenarios):**
+- `09-dashboard.md` (18 scenarios) — Summary cards, channel status table, quick actions, auto-refresh, empty/error states
+- `10-message-browser.md` (20 scenarios) — Navigation, message table, search/filter, pagination, detail panel, empty/error states
+- `11-users.md` (21 scenarios) — User list, create/edit/enable/disable/unlock, change password, validation
+- `12-code-templates.md` (19 scenarios) — Page layout, library CRUD, template CRUD, template editor, validation
+- `13-global-scripts.md` (12 scenarios) — Page layout, script editing, persistence, dirty tracking, tab switching
+- `14-filter-transformer.md` (29 scenarios) — Source filter/transformer, destination filter/transformer, persistence
+- `15-alerts.md` (27 scenarios) — Alert list, create/edit/enable/disable/delete, editor sections, unsaved changes
+- `16-events.md` (18 scenarios) — Events table, filters, detail panel, purge, empty/error states
+- `17-settings.md` (19 scenarios) — Category tabs, setting display, type-aware inputs, edit/save, dirty tracking
+
+**Playwright E2E Specs (4 new specs, +21 tests):**
+- `dashboard.spec.ts` (4 tests) — Navigate, default page, summary cards, channel status table
+- `alerts.spec.ts` (7 tests) — Navigate, create, edit, toggle enabled, delete, empty state, validation
+- `events.spec.ts` (5 tests) — Navigate, login events appear, expand detail, filter by level, purge dialog
+- `settings.spec.ts` (5 tests) — Navigate, default settings visible, switch tabs, edit/save, boolean toggle
+
+**Test data fixture updated:**
+- Added `TEST_ALERT` constant to `e2e/fixtures/test-data.ts`
+
+### Totals after backfill:
+- Manual test docs: 13 → 22 files, ~172 → ~355 scenarios
+- Playwright E2E: 7 → 11 specs, ~36 → ~57 tests
+
+### What's next:
+- File connector, Database connector
+- DICOM connector, FHIR connector
+- Persistent message store (Drizzle-backed, replacing in-memory)
+
 ## 2026-03-01 — Events & Settings Systems (Phase 9)
 
 ### What was done:

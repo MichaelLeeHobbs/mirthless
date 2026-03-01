@@ -13,7 +13,7 @@ test.describe('User Management', () => {
 
   test('navigate to Users page', async ({ page }) => {
     await page.goto('/users');
-    await expect(page.getByText('Users')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible();
   });
 
   test('create new user', async ({ page }) => {

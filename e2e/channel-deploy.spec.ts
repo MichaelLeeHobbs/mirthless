@@ -12,7 +12,7 @@ test.describe('Channel Deployment', () => {
 
   test('dashboard shows channel status table', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Dashboard')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 
     // Should show some kind of channel status display
     const statusTable = page.locator('table');

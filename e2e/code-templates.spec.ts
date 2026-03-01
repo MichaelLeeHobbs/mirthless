@@ -13,7 +13,7 @@ test.describe('Code Templates', () => {
 
   test('navigate to Code Templates page', async ({ page }) => {
     await page.goto('/code-templates');
-    await expect(page.getByText('Code Templates')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Code Templates' })).toBeVisible();
   });
 
   test('create library', async ({ page }) => {

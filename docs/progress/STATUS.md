@@ -26,7 +26,8 @@
 | Auth (JWT+sessions) | Done | Adapted from fullstack-template |
 | RBAC | Done | 4 default roles: admin, deployer, developer, viewer |
 | Vitest | Done | Configured per package, passWithNoTests |
-| Manual test suite | Done | 13 test files, ~160 scenarios, `docs/testing/` |
+| Manual test suite | Done | 22 test files, ~355 scenarios, `docs/testing/` |
+| Playwright E2E | Done | 11 spec files, ~57 tests, `e2e/` |
 
 ## Verification Checklist
 
@@ -49,6 +50,7 @@
 
 | Date | Milestone |
 |------|-----------|
+| 2026-03-01 | **Test Coverage Backfill** — 9 new manual test docs (dashboard, message browser, users, code templates, global scripts, filter/transformer, alerts, events, settings), 4 new Playwright E2E specs (alerts, events, settings, dashboard). Total: 22 manual test docs (~355 scenarios), 11 E2E specs (~57 tests). |
 | 2026-03-01 | **Events & Settings Systems (Phase 9)** — Event Zod schemas, Event service (paginated+filtered list, create, purge), Event API (3 endpoints), Events page UI (filter bar, paginated table, detail panel, purge dialog). Settings Zod schemas, Settings service (list, getByKey, upsert, bulkUpsert, delete), Settings API (5 endpoints), Settings page UI (category tabs, type-aware inputs, bulk save). Fire-and-forget event emission from all 8 services (auth, channel, deployment, user, settings, code-template, global-script, alert). AuditContext passed from controllers. (+79 tests, 665 total) |
 | 2026-03-01 | **Alerts System (Phase 8)** — Alert Zod schemas (trigger, action, CRUD), Alert service (CRUD + setEnabled + optimistic locking), Alert API (6 endpoints), AlertsPage (list + toggle + delete), AlertEditorPage (General + Trigger + Channels + Actions + Templates sections) (+58 tests) |
 | 2026-03-01 | **Filter/Transformer CRUD + UI** — Zod schemas (filter rules, transformer steps), channel service CRUD (load + save with delete-and-reinsert), source filter/transformer accordion UI, destination filter/transformer accordion UI, shared FilterRuleEditor + TransformerStepEditor components, metaDataId-based connectorId resolution (+37 tests) |

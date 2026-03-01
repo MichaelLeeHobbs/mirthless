@@ -10,9 +10,11 @@ import rateLimit from 'express-rate-limit';
 // ===========================================
 // Strict limit for login attempts
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per window
+  max: isProduction ? 5 : 100, // strict in production, relaxed in dev/test
   message: {
     success: false,
     error: 'Too many login attempts. Please try again in 15 minutes.',

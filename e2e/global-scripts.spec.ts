@@ -12,9 +12,9 @@ test.describe('Global Scripts', () => {
 
   test('navigate to Global Scripts page', async ({ page }) => {
     await page.goto('/global-scripts');
-    await expect(page.getByText('Global Scripts')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Global Scripts' })).toBeVisible();
     // Should show 4 tabs
-    await expect(page.getByRole('tab', { name: 'Deploy' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Deploy', exact: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Undeploy' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Preprocessor' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Postprocessor' })).toBeVisible();
@@ -24,7 +24,7 @@ test.describe('Global Scripts', () => {
     await page.goto('/global-scripts');
 
     // Deploy tab should be active by default
-    await expect(page.getByRole('tab', { name: 'Deploy', selected: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Deploy', exact: true, selected: true })).toBeVisible();
 
     // Type into Monaco editor
     const editor = page.locator('.monaco-editor').first();
