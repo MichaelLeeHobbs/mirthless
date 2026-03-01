@@ -51,18 +51,27 @@ test.describe('Code Templates', () => {
 
   test('create library', async ({ page }) => {
     await page.goto('/code-templates');
+    await expect(page.getByRole('heading', { name: 'Code Templates' })).toBeVisible();
 
-    // Click Library button
+    // Click Library button to open the create dialog
     await page.getByRole('button', { name: /library/i }).click();
 
-    // Fill in library details
-    await page.getByLabel('Name').fill(TEST_LIBRARY.name);
-    const descField = page.getByLabel('Description');
+    // Wait for dialog to open and scope all interactions to the dialog
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    // Fill in library details within the dialog
+    await dialog.getByLabel('Name').fill(TEST_LIBRARY.name);
+    const descField = dialog.getByLabel('Description');
     if (await descField.isVisible()) {
       await descField.fill(TEST_LIBRARY.description);
     }
 
-    await page.getByRole('button', { name: /create/i }).click();
+    // Click the Create button within the dialog
+    await dialog.getByRole('button', { name: /create/i }).click();
+
+    // Wait for dialog to close (indicates API call completed)
+    await expect(dialog).toBeHidden({ timeout: 10_000 });
 
     // Library should appear in tree
     await expect(page.getByText(TEST_LIBRARY.name)).toBeVisible({ timeout: 10_000 });
