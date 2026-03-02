@@ -5,6 +5,7 @@
 // All methods return Result<T> via tryCatch.
 
 import { tryCatch, type Result } from 'stderr-lib';
+import { CHANNEL_STATE, SOCKET_EVENT, type ChannelState } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { emitToAll } from '../lib/socket.js';
@@ -17,7 +18,14 @@ import type { DeployedChannel } from '../engine.js';
 
 export interface ChannelStatus {
   readonly channelId: string;
-  readonly state: string;
+  readonly state: ChannelState;
+}
+
+// ----- Helpers -----
+
+/** Emit a channel state change event to all connected sockets. */
+function emitStateChange(channelId: string, state: ChannelState): void {
+  emitToAll(SOCKET_EVENT.CHANNEL_STATE, { channelId, state });
 }
 
 // ----- Service -----
@@ -65,9 +73,9 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
       });
 
-      emitToAll('channel:state', { channelId, state: 'STOPPED' });
+      emitStateChange(channelId, CHANNEL_STATE.STOPPED);
 
-      return { channelId, state: 'STOPPED' };
+      return { channelId, state: CHANNEL_STATE.STOPPED };
     });
   }
 
@@ -93,9 +101,9 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
       });
 
-      emitToAll('channel:state', { channelId, state: 'UNDEPLOYED' });
+      emitStateChange(channelId, CHANNEL_STATE.UNDEPLOYED);
 
-      return { channelId, state: 'UNDEPLOYED' };
+      return { channelId, state: CHANNEL_STATE.UNDEPLOYED };
     });
   }
 
@@ -118,7 +126,7 @@ export class DeploymentService {
       });
 
       const state = deployed.runtime.getState();
-      emitToAll('channel:state', { channelId, state });
+      emitStateChange(channelId, state);
 
       return { channelId, state };
     });
@@ -144,7 +152,7 @@ export class DeploymentService {
       });
 
       const state = deployed.runtime.getState();
-      emitToAll('channel:state', { channelId, state });
+      emitStateChange(channelId, state);
 
       return { channelId, state };
     });
@@ -170,7 +178,7 @@ export class DeploymentService {
       });
 
       const state = deployed.runtime.getState();
-      emitToAll('channel:state', { channelId, state });
+      emitStateChange(channelId, state);
 
       return { channelId, state };
     });
@@ -192,7 +200,7 @@ export class DeploymentService {
       });
 
       const state = deployed.runtime.getState();
-      emitToAll('channel:state', { channelId, state });
+      emitStateChange(channelId, state);
 
       return { channelId, state };
     });
@@ -214,7 +222,7 @@ export class DeploymentService {
       });
 
       const state = deployed.runtime.getState();
-      emitToAll('channel:state', { channelId, state });
+      emitStateChange(channelId, state);
 
       return { channelId, state };
     });
