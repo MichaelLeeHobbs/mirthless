@@ -7,7 +7,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, sql } from 'drizzle-orm';
-import type { ContentType, MessageStatus } from '@mirthless/core-models';
+import { SOCKET_EVENT, type ContentType, type MessageStatus } from '@mirthless/core-models';
 import { db } from '../lib/db.js';
 import { emitToRoom } from '../lib/socket.js';
 import {
@@ -70,7 +70,7 @@ export class MessageService {
         status,
       });
 
-      emitToRoom(`channel:${channelId}`, 'message:new', { channelId, messageId, metaDataId });
+      emitToRoom(`channel:${channelId}`, SOCKET_EVENT.MESSAGE_NEW, { channelId, messageId, metaDataId });
     });
   }
 
@@ -238,7 +238,7 @@ export class MessageService {
           ${sql.raw(lifetimeField)} = message_statistics.${sql.raw(lifetimeField)} + 1
       `);
 
-      emitToRoom('dashboard', 'stats:update', { channelId, metaDataId, serverId, field });
+      emitToRoom('dashboard', SOCKET_EVENT.STATS_UPDATE, { channelId, metaDataId, serverId, field });
     });
   }
 

@@ -233,3 +233,12 @@ export const GLOBAL_SCRIPT_TYPE = {
   POSTPROCESSOR: 'POSTPROCESSOR',
 } as const;
 export type GlobalScriptType = (typeof GLOBAL_SCRIPT_TYPE)[keyof typeof GLOBAL_SCRIPT_TYPE];
+
+// --- Socket Events ---
+
+export const SOCKET_EVENT = {
+  CHANNEL_STATE: 'channel:state',
+  STATS_UPDATE: 'stats:update',
+  MESSAGE_NEW: 'message:new',
+} as const;
+export type SocketEvent = (typeof SOCKET_EVENT)[keyof typeof SOCKET_EVENT];

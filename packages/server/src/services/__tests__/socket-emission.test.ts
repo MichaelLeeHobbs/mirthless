@@ -6,6 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from 'stderr-lib';
+import { SOCKET_EVENT } from '@mirthless/core-models';
 
 // ----- Mock Socket -----
 
@@ -133,7 +134,7 @@ describe('Socket emission on deployment state changes', () => {
     const result = await DeploymentService.deploy(CHANNEL_ID);
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToAll).toHaveBeenCalledWith('channel:state', {
+    expect(mockEmitToAll).toHaveBeenCalledWith(SOCKET_EVENT.CHANNEL_STATE, {
       channelId: CHANNEL_ID,
       state: 'STOPPED',
     });
@@ -146,7 +147,7 @@ describe('Socket emission on deployment state changes', () => {
     const result = await DeploymentService.start(CHANNEL_ID);
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToAll).toHaveBeenCalledWith('channel:state', {
+    expect(mockEmitToAll).toHaveBeenCalledWith(SOCKET_EVENT.CHANNEL_STATE, {
       channelId: CHANNEL_ID,
       state: 'STARTED',
     });
@@ -159,7 +160,7 @@ describe('Socket emission on deployment state changes', () => {
     const result = await DeploymentService.stop(CHANNEL_ID);
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToAll).toHaveBeenCalledWith('channel:state', {
+    expect(mockEmitToAll).toHaveBeenCalledWith(SOCKET_EVENT.CHANNEL_STATE, {
       channelId: CHANNEL_ID,
       state: 'STOPPED',
     });
@@ -171,7 +172,7 @@ describe('Socket emission on deployment state changes', () => {
     const result = await DeploymentService.undeploy(CHANNEL_ID);
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToAll).toHaveBeenCalledWith('channel:state', {
+    expect(mockEmitToAll).toHaveBeenCalledWith(SOCKET_EVENT.CHANNEL_STATE, {
       channelId: CHANNEL_ID,
       state: 'UNDEPLOYED',
     });
@@ -193,7 +194,7 @@ describe('Socket emission on message operations', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToRoom).toHaveBeenCalledWith('dashboard', 'stats:update', {
+    expect(mockEmitToRoom).toHaveBeenCalledWith('dashboard', SOCKET_EVENT.STATS_UPDATE, {
       channelId: CHANNEL_ID,
       metaDataId: 0,
       serverId: SERVER_ID,
@@ -209,7 +210,7 @@ describe('Socket emission on message operations', () => {
     expect(result.ok).toBe(true);
     expect(mockEmitToRoom).toHaveBeenCalledWith(
       `channel:${CHANNEL_ID}`,
-      'message:new',
+      SOCKET_EVENT.MESSAGE_NEW,
       { channelId: CHANNEL_ID, messageId: MESSAGE_ID, metaDataId: 0 },
     );
   });
