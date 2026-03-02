@@ -128,6 +128,7 @@ vi.mock('../alert.service.js', () => ({
       error: null,
     }),
     getById: vi.fn(),
+    getByIds: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
   },
 }));
 

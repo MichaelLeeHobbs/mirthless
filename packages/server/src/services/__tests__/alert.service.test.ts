@@ -97,6 +97,7 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
   count: vi.fn(() => 'count_agg'),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
+  inArray: vi.fn((_col: unknown, vals: unknown) => ({ type: 'inArray', vals })),
   sql: vi.fn(),
 }));
 
@@ -547,6 +548,74 @@ describe('AlertService', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('message', expect.stringContaining('not found'));
+    });
+  });
+
+  // ===== getByIds =====
+
+  describe('getByIds', () => {
+    it('returns empty array for empty input', async () => {
+      const result = await AlertService.getByIds([]);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toEqual([]);
+    });
+
+    it('returns full detail for multiple alerts in one batch', async () => {
+      const ALERT_ID_2 = 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380d44';
+      // Alerts rows
+      pushResponse([makeAlertRow(), makeAlertRow({ id: ALERT_ID_2, name: 'Second Alert' })]);
+      // Channel rows (batch)
+      pushResponse([makeChannelRow()]);
+      // Action rows (batch)
+      pushResponse([makeActionRow(), makeActionRow({ id: 'action-2', alertId: ALERT_ID_2 })]);
+
+      const result = await AlertService.getByIds([ALERT_ID, ALERT_ID_2]);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(2);
+      expect(result.value[0]!.id).toBe(ALERT_ID);
+      expect(result.value[0]!.channelIds).toEqual([CHANNEL_ID]);
+      expect(result.value[0]!.actions).toHaveLength(1);
+      expect(result.value[1]!.id).toBe(ALERT_ID_2);
+      expect(result.value[1]!.name).toBe('Second Alert');
+    });
+
+    it('returns empty array when no alerts found for given IDs', async () => {
+      pushResponse([]);
+
+      const result = await AlertService.getByIds(['nonexistent-id']);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toEqual([]);
+    });
+
+    it('groups channels and actions by alertId correctly', async () => {
+      const ALERT_ID_2 = 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380d44';
+      const CHANNEL_ID_2 = 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380e55';
+      // Alert rows
+      pushResponse([makeAlertRow(), makeAlertRow({ id: ALERT_ID_2, name: 'Second Alert' })]);
+      // Channel rows — first alert has 2 channels, second has 0
+      pushResponse([
+        makeChannelRow(),
+        makeChannelRow({ channelId: CHANNEL_ID_2 }),
+      ]);
+      // Action rows — first alert has 0 actions, second has 1
+      pushResponse([
+        makeActionRow({ alertId: ALERT_ID_2, id: 'action-2' }),
+      ]);
+
+      const result = await AlertService.getByIds([ALERT_ID, ALERT_ID_2]);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value[0]!.channelIds).toEqual([CHANNEL_ID, CHANNEL_ID_2]);
+      expect(result.value[0]!.actions).toEqual([]);
+      expect(result.value[1]!.channelIds).toEqual([]);
+      expect(result.value[1]!.actions).toHaveLength(1);
     });
   });
 });

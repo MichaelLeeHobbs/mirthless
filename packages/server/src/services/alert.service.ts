@@ -5,7 +5,7 @@
 // All methods return Result<T> using tryCatch from stderr-lib.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, count, asc } from 'drizzle-orm';
+import { eq, count, asc, inArray } from 'drizzle-orm';
 import type { CreateAlertInput, UpdateAlertInput } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -119,6 +119,75 @@ async function fetchAlertDetail(alertId: string): Promise<AlertDetail> {
   };
 }
 
+/** Fetch full detail for multiple alerts in batch (3 queries total). */
+async function fetchAlertDetailsBatch(ids: readonly string[]): Promise<AlertDetail[]> {
+  const rows = await db
+    .select()
+    .from(alerts)
+    .where(inArray(alerts.id, ids as string[]));
+
+  if (rows.length === 0) return [];
+
+  const alertIds = rows.map((r) => r.id);
+
+  const [channelRows, actionRows] = await Promise.all([
+    db.select().from(alertChannels).where(inArray(alertChannels.alertId, alertIds)),
+    db.select().from(alertActions).where(inArray(alertActions.alertId, alertIds)),
+  ]);
+
+  // Group channels and actions by alertId
+  const channelsByAlert = new Map<string, string[]>();
+  for (const c of channelRows) {
+    const existing = channelsByAlert.get(c.alertId);
+    if (existing) {
+      existing.push(c.channelId);
+    } else {
+      channelsByAlert.set(c.alertId, [c.channelId]);
+    }
+  }
+
+  const actionsByAlert = new Map<string, AlertActionDetail[]>();
+  for (const a of actionRows) {
+    const detail: AlertActionDetail = {
+      id: a.id,
+      actionType: a.actionType,
+      recipients: a.recipients as ReadonlyArray<string>,
+      properties: a.properties,
+    };
+    const existing = actionsByAlert.get(a.alertId);
+    if (existing) {
+      existing.push(detail);
+    } else {
+      actionsByAlert.set(a.alertId, [detail]);
+    }
+  }
+
+  return rows.map((row) => {
+    const chIds = channelsByAlert.get(row.id) ?? [];
+    const acts = actionsByAlert.get(row.id) ?? [];
+    const trigger = parseTrigger(row.triggerType, row.triggerScript);
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      enabled: row.enabled,
+      triggerType: row.triggerType,
+      revision: row.revision,
+      channelCount: chIds.length,
+      actionCount: acts.length,
+      trigger,
+      channelIds: chIds,
+      actions: acts,
+      subjectTemplate: row.subjectTemplate,
+      bodyTemplate: row.bodyTemplate,
+      reAlertIntervalMs: row.reAlertIntervalMs,
+      maxAlerts: row.maxAlerts,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  });
+}
+
 // ----- Service -----
 
 export class AlertService {
@@ -182,6 +251,14 @@ export class AlertService {
   static async getById(id: string): Promise<Result<AlertDetail>> {
     return tryCatch(async () => {
       return fetchAlertDetail(id);
+    });
+  }
+
+  /** Get multiple alerts by IDs in a single batch query. */
+  static async getByIds(ids: readonly string[]): Promise<Result<AlertDetail[]>> {
+    return tryCatch(async () => {
+      if (ids.length === 0) return [];
+      return fetchAlertDetailsBatch(ids);
     });
   }
 
