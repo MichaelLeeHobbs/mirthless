@@ -59,6 +59,18 @@ export const CHANNEL_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   channelId: '',
 };
 
+export const DICOM_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  port: 4242,
+  storageDir: '',
+  aeTitle: 'MIRTHLESS',
+  minPoolSize: 2,
+  maxPoolSize: 10,
+  connectionTimeoutMs: 10000,
+  dispatchMode: 'PER_FILE',
+  postAction: 'DELETE',
+  moveToDirectory: '',
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_SOURCE_DEFAULTS,
   HTTP: HTTP_SOURCE_DEFAULTS,
@@ -66,6 +78,7 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   DATABASE: DATABASE_SOURCE_DEFAULTS,
   JAVASCRIPT: JAVASCRIPT_SOURCE_DEFAULTS,
   CHANNEL: CHANNEL_SOURCE_DEFAULTS,
+  DICOM: DICOM_SOURCE_DEFAULTS,
 };
 
 /** Get default properties for a connector type. Returns empty object for unknown types. */

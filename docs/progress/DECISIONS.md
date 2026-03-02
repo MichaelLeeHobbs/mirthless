@@ -171,3 +171,11 @@ D-082: SOCKET_EVENT const object for centralized event names — `SOCKET_EVENT.C
 D-083: Typed ChannelStatus.state as ChannelState — Was `string`, now `ChannelState` (from core-models). Catches invalid state assignments at compile time. Combined with `emitStateChange()` helper that wraps `emitToAll()` with typed parameters. — 2026-03-02
 
 D-084: useSocketRoom hook for room join/leave/reconnect — Extracted duplicated 10-11 line `useEffect` patterns from DashboardPage and MessageBrowserPage into a reusable hook. Handles join on mount, re-join on reconnect, leave on unmount. Skips join/leave if any string arg is empty (guards channel-specific rooms). — 2026-03-02
+
+D-085: DICOM content = file path — `RawMessage.content` contains the absolute file path to the received DICOM file, not the file contents. DICOM files can be 100MB+; base64 encoding is impractical. DICOM metadata (patientName, studyInstanceUID, etc.) goes into `sourceMap`. Transformers read metadata from channel map and work with file paths. — 2026-03-02
+
+D-086: Factory injection for DICOM testability — Both DicomReceiver and DicomDispatcher accept optional factory functions (ReceiverFactory, SenderFactory) that create the @ubercode/dcmtk objects. Tests inject mocks; production uses defaults. Mirrors the SmtpTransport/TransportFactory pattern from smtp-dispatcher.ts. No DCMTK binaries needed in CI. — 2026-03-02
+
+D-087: DICOM dispatch mode: PER_FILE vs PER_ASSOCIATION — Source connector supports PER_FILE (default, each file = one message) and PER_ASSOCIATION (all files from one association = one message with JSON array content). PER_FILE gives transformers per-file granularity for routing by modality/patient. PER_ASSOCIATION batches files from a single sender session. — 2026-03-02
+
+D-088: C-STORE only scope for Phase 17 — DICOM connector supports C-STORE send/receive only. C-FIND, C-MOVE, C-GET, and PacsClient are deferred to a future phase. C-STORE covers the primary medical imaging workflow (receiving images from modalities, forwarding to PACS). — 2026-03-02

@@ -84,6 +84,18 @@ export const FHIR_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   headers: '',
 };
 
+export const DICOM_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  host: 'localhost',
+  port: 104,
+  calledAETitle: 'PACS',
+  callingAETitle: 'MIRTHLESS',
+  mode: 'multiple',
+  maxAssociations: 4,
+  maxRetries: 3,
+  retryDelayMs: 1000,
+  timeoutMs: 30000,
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_DEST_DEFAULTS,
   HTTP: HTTP_DEST_DEFAULTS,
@@ -93,6 +105,7 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   SMTP: SMTP_DEST_DEFAULTS,
   CHANNEL: CHANNEL_DEST_DEFAULTS,
   FHIR: FHIR_DEST_DEFAULTS,
+  DICOM: DICOM_DEST_DEFAULTS,
 };
 
 /** Get default properties for a destination connector type. */

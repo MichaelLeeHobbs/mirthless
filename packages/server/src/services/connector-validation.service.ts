@@ -27,6 +27,7 @@ const databaseSourceSchema = z.object({
 }).passthrough();
 const javascriptSourceSchema = z.object({ script: nonEmptyString }).passthrough();
 const channelSourceSchema = z.object({ channelId: nonEmptyString }).passthrough();
+const dicomSourceSchema = z.object({ port: portSchema, storageDir: nonEmptyString }).passthrough();
 
 // ----- Destination Connector Schemas -----
 
@@ -43,6 +44,7 @@ const javascriptDestSchema = z.object({ script: nonEmptyString }).passthrough();
 const smtpDestSchema = z.object({ host: nonEmptyString, port: z.number(), to: nonEmptyString }).passthrough();
 const channelDestSchema = z.object({ targetChannelId: nonEmptyString }).passthrough();
 const fhirDestSchema = z.object({ baseUrl: nonEmptyString }).passthrough();
+const dicomDestSchema = z.object({ host: nonEmptyString, port: portSchema }).passthrough();
 
 // ----- Schema Registries -----
 
@@ -53,6 +55,7 @@ const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   DATABASE: databaseSourceSchema,
   JAVASCRIPT: javascriptSourceSchema,
   CHANNEL: channelSourceSchema,
+  DICOM: dicomSourceSchema,
 };
 
 const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
@@ -64,6 +67,7 @@ const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   SMTP: smtpDestSchema,
   CHANNEL: channelDestSchema,
   FHIR: fhirDestSchema,
+  DICOM: dicomDestSchema,
 };
 
 // ----- Helpers -----

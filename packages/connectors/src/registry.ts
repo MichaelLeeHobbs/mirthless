@@ -18,6 +18,8 @@ import { SmtpDispatcher } from './smtp/smtp-dispatcher.js';
 import { ChannelReceiver } from './channel/channel-receiver.js';
 import { ChannelDispatcher } from './channel/channel-dispatcher.js';
 import { FhirDispatcher, FHIR_AUTH_TYPE } from './fhir/fhir-dispatcher.js';
+import { DicomReceiver } from './dicom/dicom-receiver.js';
+import { DicomDispatcher } from './dicom/dicom-dispatcher.js';
 
 // ----- Source Factories -----
 
@@ -67,6 +69,17 @@ const sourceFactories = new Map<string, SourceFactory>([
   })],
   ['CHANNEL', (props): SourceConnectorRuntime => new ChannelReceiver({
     channelId: props['channelId'] as string,
+  })],
+  ['DICOM', (props): SourceConnectorRuntime => new DicomReceiver({
+    port: props['port'] as number,
+    storageDir: props['storageDir'] as string,
+    aeTitle: (props['aeTitle'] as string | undefined) ?? 'MIRTHLESS',
+    minPoolSize: (props['minPoolSize'] as number | undefined) ?? 2,
+    maxPoolSize: (props['maxPoolSize'] as number | undefined) ?? 10,
+    connectionTimeoutMs: (props['connectionTimeoutMs'] as number | undefined) ?? 10_000,
+    dispatchMode: (props['dispatchMode'] as 'PER_FILE' | 'PER_ASSOCIATION' | undefined) ?? 'PER_FILE',
+    postAction: (props['postAction'] as 'DELETE' | 'MOVE' | 'NONE' | undefined) ?? 'DELETE',
+    moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
   })],
 ]);
 
@@ -145,6 +158,17 @@ const destinationFactories = new Map<string, DestinationFactory>([
     format: (props['format'] as 'json' | 'xml' | undefined) ?? 'json',
     timeout: (props['timeout'] as number | undefined) ?? 30_000,
     headers: (props['headers'] as Record<string, string> | undefined) ?? {},
+  })],
+  ['DICOM', (props): DestinationConnectorRuntime => new DicomDispatcher({
+    host: props['host'] as string,
+    port: props['port'] as number,
+    calledAETitle: (props['calledAETitle'] as string | undefined) ?? 'PACS',
+    callingAETitle: (props['callingAETitle'] as string | undefined) ?? 'MIRTHLESS',
+    mode: (props['mode'] as 'single' | 'multiple' | undefined) ?? 'multiple',
+    maxAssociations: (props['maxAssociations'] as number | undefined) ?? 4,
+    maxRetries: (props['maxRetries'] as number | undefined) ?? 3,
+    retryDelayMs: (props['retryDelayMs'] as number | undefined) ?? 1_000,
+    timeoutMs: (props['timeoutMs'] as number | undefined) ?? 30_000,
   })],
 ]);
 

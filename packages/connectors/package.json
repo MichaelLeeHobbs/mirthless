@@ -23,6 +23,7 @@
     "@mirthless/core-models": "workspace:*",
     "@mirthless/core-util": "workspace:*",
     "@mirthless/engine": "workspace:*",
+    "@ubercode/dcmtk": "^0.3.0",
     "generic-pool": "^3.9.0",
     "nodemailer": "^8.0.1",
     "pg": "^8.13.0"

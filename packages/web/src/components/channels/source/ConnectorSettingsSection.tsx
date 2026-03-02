@@ -12,6 +12,7 @@ import { FileSourceForm } from './FileSourceForm.js';
 import { DatabaseSourceForm } from './DatabaseSourceForm.js';
 import { JavaScriptSourceForm } from './JavaScriptSourceForm.js';
 import { ChannelSourceForm } from './ChannelSourceForm.js';
+import { DicomSourceForm } from './DicomSourceForm.js';
 import { UnsupportedConnectorPlaceholder } from './UnsupportedConnectorPlaceholder.js';
 
 const SOURCE_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<SourceConnectorFormProps> | undefined>> = {
@@ -21,6 +22,7 @@ const SOURCE_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<SourceConnec
   DATABASE: DatabaseSourceForm,
   JAVASCRIPT: JavaScriptSourceForm,
   CHANNEL: ChannelSourceForm,
+  DICOM: DicomSourceForm,
 };
 
 interface ConnectorSettingsSectionProps {

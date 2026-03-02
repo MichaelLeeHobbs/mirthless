@@ -93,6 +93,25 @@ describe('validateConnectorProperties', () => {
       expect(result.error.message).toContain('channelId');
     });
 
+    it('accepts valid DICOM source properties', () => {
+      const result = validateConnectorProperties('DICOM', 'source', {
+        port: 4242, storageDir: '/data/dicom',
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it('rejects DICOM source with missing storageDir', () => {
+      const result = validateConnectorProperties('DICOM', 'source', { port: 4242 });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('storageDir');
+    });
+
+    it('rejects DICOM source with invalid port', () => {
+      const result = validateConnectorProperties('DICOM', 'source', { port: 0, storageDir: '/data' });
+      expect(result.ok).toBe(false);
+    });
+
     it('allows extra properties via passthrough', () => {
       const result = validateConnectorProperties('TCP_MLLP', 'source', {
         port: 6661, bufferSize: 65536, charset: 'UTF-8',
@@ -210,6 +229,25 @@ describe('validateConnectorProperties', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.message).toContain('baseUrl');
+    });
+
+    it('accepts valid DICOM destination properties', () => {
+      const result = validateConnectorProperties('DICOM', 'destination', {
+        host: '192.168.1.100', port: 104,
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it('rejects DICOM destination with missing host', () => {
+      const result = validateConnectorProperties('DICOM', 'destination', { port: 104 });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('host');
+    });
+
+    it('rejects DICOM destination with invalid port', () => {
+      const result = validateConnectorProperties('DICOM', 'destination', { host: 'pacs.local', port: 0 });
+      expect(result.ok).toBe(false);
     });
   });
 

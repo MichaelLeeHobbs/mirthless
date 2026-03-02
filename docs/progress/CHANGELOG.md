@@ -2,6 +2,42 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-02 — Phase 17: DICOM Connector
+
+### What was done:
+- **DICOM Receiver** (`packages/connectors/src/dicom/dicom-receiver.ts`) — Source connector wrapping `@ubercode/dcmtk` DicomReceiver for C-STORE SCP. Factory injection pattern for testability (ReceiverFactory). Supports PER_FILE and PER_ASSOCIATION dispatch modes. Post-action: DELETE, MOVE, or NONE. Content = file path, metadata in sourceMap.
+- **DICOM Dispatcher** (`packages/connectors/src/dicom/dicom-dispatcher.ts`) — Destination connector wrapping `@ubercode/dcmtk` DicomSender for C-STORE SCU. Factory injection (SenderFactory). Single/multiple association modes with configurable retries and timeouts.
+- **Registry** — Added DICOM source + destination factory entries to connector registry.
+- **Server Validation** — Added `dicomSourceSchema` (port + storageDir) and `dicomDestSchema` (host + port) to connector-validation.service.ts.
+- **Source UI Form** (`DicomSourceForm.tsx`) — 2-column layout: DICOM Listener (port, AE title, storage dir) + Processing (pool sizes, timeout, dispatch mode, post action with conditional move-to directory).
+- **Destination UI Form** (`DicomDestinationForm.tsx`) — 2-column layout: Remote SCP (host, port, called/calling AE titles) + Sending (mode with conditional max associations, timeout, retries, retry delay).
+- **Defaults** — DICOM_SOURCE_DEFAULTS and DICOM_DEST_DEFAULTS added to both source and destination connector-defaults.ts.
+- **Manual test checklist** — `docs/testing/31-dicom-connector.md` (45 scenarios).
+
+### Test results:
+- 1,218 tests passing (184 schema + 68 HL7 + 189 engine + 321 connectors + 434 server + 22 CLI)
+- Build: 0 errors, Lint: 0 warnings
+
+### Files changed (16):
+- `packages/connectors/package.json` (added @ubercode/dcmtk dependency)
+- `packages/connectors/src/dicom/dicom-receiver.ts` (new)
+- `packages/connectors/src/dicom/dicom-dispatcher.ts` (new)
+- `packages/connectors/src/dicom/index.ts` (new)
+- `packages/connectors/src/dicom/__tests__/dicom-receiver.test.ts` (new, 18 tests)
+- `packages/connectors/src/dicom/__tests__/dicom-dispatcher.test.ts` (new, 21 tests)
+- `packages/connectors/src/registry.ts` (added DICOM entries)
+- `packages/connectors/src/index.ts` (added DICOM exports)
+- `packages/server/src/services/connector-validation.service.ts` (added DICOM schemas)
+- `packages/server/src/services/__tests__/connector-validation.service.test.ts` (added 6 tests)
+- `packages/web/src/components/channels/source/DicomSourceForm.tsx` (new)
+- `packages/web/src/components/channels/source/connector-defaults.ts` (added DICOM defaults)
+- `packages/web/src/components/channels/source/ConnectorSettingsSection.tsx` (added DICOM form)
+- `packages/web/src/components/channels/destinations/DicomDestinationForm.tsx` (new)
+- `packages/web/src/components/channels/destinations/connector-defaults.ts` (added DICOM defaults)
+- `packages/web/src/components/channels/destinations/DestinationConnectorSettings.tsx` (added DICOM form)
+
+---
+
 ## 2026-03-02 — Phase 16 Simplify Fixes (Batch)
 
 ### What was done:

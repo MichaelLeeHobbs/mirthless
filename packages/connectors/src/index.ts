@@ -88,4 +88,21 @@ export {
   type FhirAuthConfig,
   type FhirAuthType,
 } from './fhir/index.js';
+export {
+  DicomReceiver,
+  DicomDispatcher,
+  DICOM_POST_ACTION,
+  DICOM_DISPATCH_MODE,
+  type DicomReceiverConfig,
+  type DicomDispatcherConfig,
+  type DicomPostAction,
+  type DicomDispatchMode,
+  type DcmtkReceiver,
+  type DcmtkSender,
+  type DcmtkSendResult,
+  type DcmtkFileData,
+  type DcmtkAssociationData,
+  type ReceiverFactory,
+  type SenderFactory,
+} from './dicom/index.js';
 export { createSourceConnector, createDestinationConnector } from './registry.js';
