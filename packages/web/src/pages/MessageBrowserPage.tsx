@@ -16,8 +16,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChannel } from '../hooks/use-channels.js';
 import { useMessageSearch, type MessageSearchParams } from '../hooks/use-messages.js';
-import { useSocketEvent } from '../hooks/use-socket.js';
-import { getSocket } from '../lib/socket.js';
+import { useSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
 import { MessageSearchBar } from '../components/messages/MessageSearchBar.js';
 import { MessageTable } from '../components/messages/MessageTable.js';
 import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
@@ -51,17 +50,7 @@ export function MessageBrowserPage(): ReactNode {
   }, [contentSearch]);
 
   // --- WebSocket: join/leave channel room (re-joins on reconnect) ---
-  useEffect(() => {
-    const s = getSocket();
-    if (!s || channelId.length === 0) return;
-    s.emit('join:channel', channelId);
-    const handleReconnect = (): void => { s.emit('join:channel', channelId); };
-    s.on('connect', handleReconnect);
-    return () => {
-      s.off('connect', handleReconnect);
-      s.emit('leave:channel', channelId);
-    };
-  }, [channelId]);
+  useSocketRoom('join:channel', 'leave:channel', channelId);
 
   // --- WebSocket: invalidate messages on new message events ---
   const handleNewMessage = useCallback(() => {

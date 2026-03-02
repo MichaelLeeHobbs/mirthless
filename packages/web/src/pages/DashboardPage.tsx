@@ -5,7 +5,7 @@
 // Auto-refreshes via TanStack Query polling (5s interval) with
 // WebSocket events for instant cache invalidation.
 
-import { useMemo, useEffect, useCallback, type ReactNode } from 'react';
+import { useMemo, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -13,8 +13,7 @@ import Alert from '@mui/material/Alert';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAllChannelStatistics, STATS_KEYS, type ChannelStatisticsSummary } from '../hooks/use-statistics.js';
 import { useAllDeploymentStatuses, DEPLOYMENT_KEYS, type ChannelStatus } from '../hooks/use-deployment.js';
-import { useSocketEvent } from '../hooks/use-socket.js';
-import { getSocket } from '../lib/socket.js';
+import { useSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
 import { SummaryCards } from '../components/dashboard/SummaryCards.js';
 import { ChannelStatusTable } from '../components/dashboard/ChannelStatusTable.js';
 
@@ -30,17 +29,7 @@ export function DashboardPage(): ReactNode {
   const deploymentStatuses = deployQuery.data ?? EMPTY_STATUSES;
 
   // --- WebSocket: join/leave dashboard room (re-joins on reconnect) ---
-  useEffect(() => {
-    const s = getSocket();
-    if (!s) return;
-    s.emit('join:dashboard');
-    const handleReconnect = (): void => { s.emit('join:dashboard'); };
-    s.on('connect', handleReconnect);
-    return () => {
-      s.off('connect', handleReconnect);
-      s.emit('leave:dashboard');
-    };
-  }, []);
+  useSocketRoom('join:dashboard', 'leave:dashboard');
 
   // --- WebSocket: invalidate deployment cache on channel state changes ---
   const handleChannelState = useCallback(() => {
