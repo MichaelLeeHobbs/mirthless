@@ -161,3 +161,13 @@ D-077: Channel-based rooms for scoped message push — Socket.IO rooms (`channel
 D-078: Keep polling as fallback alongside WebSocket (graceful degradation) — Dashboard and Message Browser retain `refetchInterval` polling even with WebSocket enabled. If WebSocket disconnects, polling provides continued updates. Eliminates single point of failure for real-time updates. — 2026-03-01
 
 D-079: Socket reconnect re-joins rooms and invalidates all queries — On WebSocket reconnection, client re-joins previously subscribed rooms and invalidates all TanStack Query caches. Ensures no stale data after a connectivity gap. Token refresh triggers socket reconnection with updated auth. — 2026-03-01
+
+D-080: JS connector scripts compiled once at deploy, not per-message — `compileScript()` called during `deploy()` and result captured in closure. `setScriptRunner` callback reuses pre-compiled script. Eliminates redundant esbuild transpilation on every message. Compile failures surface at deploy time, not at first message. — 2026-03-02
+
+D-081: AlertService.getByIds() batch query to fix N+1 — `loadAlertsForChannel()` was calling `list()` + N × `getById()`. New `getByIds(ids)` fetches all alerts, channels, and actions in 3 queries using `inArray()`. Groups results by alertId using Maps. — 2026-03-02
+
+D-082: SOCKET_EVENT const object for centralized event names — `SOCKET_EVENT.CHANNEL_STATE`, `STATS_UPDATE`, `MESSAGE_NEW` replace 9 hardcoded string literals across deployment and message services. Type-safe, grep-friendly, single source of truth. — 2026-03-02
+
+D-083: Typed ChannelStatus.state as ChannelState — Was `string`, now `ChannelState` (from core-models). Catches invalid state assignments at compile time. Combined with `emitStateChange()` helper that wraps `emitToAll()` with typed parameters. — 2026-03-02
+
+D-084: useSocketRoom hook for room join/leave/reconnect — Extracted duplicated 10-11 line `useEffect` patterns from DashboardPage and MessageBrowserPage into a reusable hook. Handles join on mount, re-join on reconnect, leave on unmount. Skips join/leave if any string arg is empty (guards channel-specific rooms). — 2026-03-02

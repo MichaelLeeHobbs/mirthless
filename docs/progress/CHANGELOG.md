@@ -2,6 +2,45 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-02 — Phase 16 Simplify Fixes (Batch)
+
+### What was done:
+- **Unit 1 — Engine Performance & Cleanup (PR #8):**
+  - `engine.ts` — JS connector scripts compiled once at deploy time, not per-message. `wireJavaScriptSource()` and `wireJavaScriptDestinations()` now async, pre-compile script and capture in closure
+  - `engine.ts` — `dispose()` changed from `void` to `async Promise<void>` for proper async cleanup
+  - `engine.ts` — N+1 alert loading fixed: replaced `AlertService.list()` + N × `getById()` with single `AlertService.getByIds()` batch query
+  - `alert.service.ts` — New `getByIds(ids)` method using `inArray()` for batch alert fetching (3 queries instead of 1+2N)
+  - 4 new alert service tests, updated engine integration and queue consumer wiring tests
+- **Unit 2 — Socket & Deployment Type Safety (PR #7):**
+  - `core-models/constants.ts` — New `SOCKET_EVENT` const object (`CHANNEL_STATE`, `STATS_UPDATE`, `MESSAGE_NEW`)
+  - `deployment.service.ts` — `ChannelStatus.state` typed as `ChannelState` instead of `string`, extracted `emitStateChange()` helper replacing 7 hardcoded `emitToAll()` calls
+  - `message.service.ts` — Replaced hardcoded event strings with `SOCKET_EVENT` constants
+  - Updated socket emission tests to use constants
+- **Unit 3 — Web Socket Hooks (PR #6):**
+  - `use-socket.ts` — Generic `useSocketEvent<T>` typing, new `useSocketRoom` hook extracting room join/leave/reconnect pattern
+  - `DashboardPage.tsx` — Replaced 10-line useEffect with `useSocketRoom('join:dashboard', 'leave:dashboard')`
+  - `MessageBrowserPage.tsx` — Replaced 11-line useEffect with `useSocketRoom('join:channel', 'leave:channel', channelId)`
+
+### Test results:
+- 1,173 tests passing (184 schema + 68 HL7 + 189 engine + 282 connectors + 428 server + 22 CLI)
+- Build: 0 errors, Lint: 0 warnings
+
+### Files changed (12):
+- `packages/core-models/src/constants.ts`
+- `packages/server/src/engine.ts`
+- `packages/server/src/services/alert.service.ts`
+- `packages/server/src/services/deployment.service.ts`
+- `packages/server/src/services/message.service.ts`
+- `packages/server/src/services/__tests__/alert.service.test.ts`
+- `packages/server/src/services/__tests__/engine-integration.test.ts`
+- `packages/server/src/services/__tests__/queue-consumer-wiring.test.ts`
+- `packages/server/src/services/__tests__/socket-emission.test.ts`
+- `packages/web/src/hooks/use-socket.ts`
+- `packages/web/src/pages/DashboardPage.tsx`
+- `packages/web/src/pages/MessageBrowserPage.tsx`
+
+---
+
 ## 2026-03-01 — QueueConsumer Wiring + WebSocket Real-Time Updates (Phase 16)
 
 ### What was done:
