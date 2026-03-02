@@ -29,12 +29,17 @@ export function DashboardPage(): ReactNode {
   const statistics = statsQuery.data ?? EMPTY_STATS;
   const deploymentStatuses = deployQuery.data ?? EMPTY_STATUSES;
 
-  // --- WebSocket: join/leave dashboard room ---
+  // --- WebSocket: join/leave dashboard room (re-joins on reconnect) ---
   useEffect(() => {
     const s = getSocket();
     if (!s) return;
     s.emit('join:dashboard');
-    return () => { s.emit('leave:dashboard'); };
+    const handleReconnect = (): void => { s.emit('join:dashboard'); };
+    s.on('connect', handleReconnect);
+    return () => {
+      s.off('connect', handleReconnect);
+      s.emit('leave:dashboard');
+    };
   }, []);
 
   // --- WebSocket: invalidate deployment cache on channel state changes ---

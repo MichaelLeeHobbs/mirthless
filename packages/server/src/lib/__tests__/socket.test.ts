@@ -114,6 +114,23 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(err.message).toBe('Authentication required');
     });
 
+    it('rejects connection when token is a refresh token', () => {
+      const refreshToken = jwt.sign(
+        { userId: 'user-1', type: 'refresh' },
+        mockConfig.JWT_SECRET,
+        { expiresIn: '7d' },
+      );
+      const socket = createMockSocket(refreshToken);
+      const next = vi.fn();
+
+      authMiddleware(socket, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      const err = next.mock.calls[0]![0] as Error;
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toBe('Authentication required');
+    });
+
     it('accepts connection with valid JWT', () => {
       const token = createValidToken({ userId: 'user-1', type: 'access' });
       const socket = createMockSocket(token);

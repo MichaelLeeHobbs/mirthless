@@ -6,10 +6,9 @@
 
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
-import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
 import logger from './logger.js';
-import type { JwtPayload } from './jwt.js';
+import { verifyAccessToken } from './jwt.js';
 
 /** User data stored on authenticated sockets. */
 export interface SocketUserData {
@@ -35,7 +34,7 @@ export function authMiddleware(
   }
 
   try {
-    const decoded = jwt.verify(token, config.JWT_SECRET) as JwtPayload;
+    const decoded = verifyAccessToken(token);
     const userData: SocketUserData = {
       userId: decoded.userId,
       sessionId: decoded.sessionId,

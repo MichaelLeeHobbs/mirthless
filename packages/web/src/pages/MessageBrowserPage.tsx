@@ -50,12 +50,17 @@ export function MessageBrowserPage(): ReactNode {
     return () => clearTimeout(debounceRef.current);
   }, [contentSearch]);
 
-  // --- WebSocket: join/leave channel room ---
+  // --- WebSocket: join/leave channel room (re-joins on reconnect) ---
   useEffect(() => {
     const s = getSocket();
     if (!s || channelId.length === 0) return;
     s.emit('join:channel', channelId);
-    return () => { s.emit('leave:channel', channelId); };
+    const handleReconnect = (): void => { s.emit('join:channel', channelId); };
+    s.on('connect', handleReconnect);
+    return () => {
+      s.off('connect', handleReconnect);
+      s.emit('leave:channel', channelId);
+    };
   }, [channelId]);
 
   // --- WebSocket: invalidate messages on new message events ---
