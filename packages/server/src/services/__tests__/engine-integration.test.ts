@@ -164,11 +164,13 @@ vi.mock('../global-script.service.js', () => ({
 // Mock AlertService
 const mockAlertServiceList = vi.fn();
 const mockAlertServiceGetById = vi.fn();
+const mockAlertServiceGetByIds = vi.fn();
 
 vi.mock('../alert.service.js', () => ({
   AlertService: {
     list: mockAlertServiceList,
     getById: mockAlertServiceGetById,
+    getByIds: mockAlertServiceGetByIds,
   },
 }));
 
@@ -283,6 +285,9 @@ beforeEach(() => {
     value: { data: [], pagination: { page: 1, pageSize: 1000, total: 0, totalPages: 0 } },
     error: null,
   });
+  mockAlertServiceGetByIds.mockResolvedValue({
+    ok: true, value: [], error: null,
+  });
 });
 
 // ----- Tests -----
@@ -313,18 +318,18 @@ describe('EngineManager', () => {
         },
         error: null,
       });
-      mockAlertServiceGetById.mockResolvedValue({
+      mockAlertServiceGetByIds.mockResolvedValue({
         ok: true,
-        value: makeAlertDetail(ALERT_ID, []),
+        value: [makeAlertDetail(ALERT_ID, [])],
         error: null,
       });
 
       const engine = new EngineManager('test-server');
       await engine.deploy(makeChannel() as never);
 
-      // Should only fetch detail for the enabled alert
-      expect(mockAlertServiceGetById).toHaveBeenCalledOnce();
-      expect(mockAlertServiceGetById).toHaveBeenCalledWith(ALERT_ID);
+      // Should batch-fetch only the enabled alert IDs
+      expect(mockAlertServiceGetByIds).toHaveBeenCalledOnce();
+      expect(mockAlertServiceGetByIds).toHaveBeenCalledWith([ALERT_ID]);
 
       // Should load 1 alert (enabled, empty channelIds = all channels)
       expect(mockAlertManager.loadAlerts).toHaveBeenCalledOnce();
@@ -346,12 +351,14 @@ describe('EngineManager', () => {
         },
         error: null,
       });
-      // First alert scoped to a different channel
-      mockAlertServiceGetById.mockImplementation(async (id: string) => {
-        if (id === ALERT_ID) {
-          return { ok: true, value: makeAlertDetail(ALERT_ID, [otherChannelId]), error: null };
-        }
-        return { ok: true, value: makeAlertDetail(ALERT_ID_2, []), error: null };
+      // First alert scoped to a different channel, second to all
+      mockAlertServiceGetByIds.mockResolvedValue({
+        ok: true,
+        value: [
+          makeAlertDetail(ALERT_ID, [otherChannelId]),
+          makeAlertDetail(ALERT_ID_2, []),
+        ],
+        error: null,
       });
 
       const engine = new EngineManager('test-server');
@@ -372,9 +379,9 @@ describe('EngineManager', () => {
         },
         error: null,
       });
-      mockAlertServiceGetById.mockResolvedValue({
+      mockAlertServiceGetByIds.mockResolvedValue({
         ok: true,
-        value: makeAlertDetail(ALERT_ID, [CHANNEL_ID]),
+        value: [makeAlertDetail(ALERT_ID, [CHANNEL_ID])],
         error: null,
       });
 
@@ -400,7 +407,7 @@ describe('EngineManager', () => {
       expect(mockAlertManager.loadAlerts).toHaveBeenCalledWith([]);
     });
 
-    it('skips alerts whose detail fetch fails', async () => {
+    it('returns empty alerts when getByIds fails', async () => {
       mockAlertServiceList.mockResolvedValue({
         ok: true,
         value: {
@@ -412,19 +419,15 @@ describe('EngineManager', () => {
         },
         error: null,
       });
-      mockAlertServiceGetById.mockImplementation(async (id: string) => {
-        if (id === ALERT_ID) {
-          return { ok: false, value: null, error: { code: 'INTERNAL', message: 'DB error' } };
-        }
-        return { ok: true, value: makeAlertDetail(ALERT_ID_2, []), error: null };
+      mockAlertServiceGetByIds.mockResolvedValue({
+        ok: false, value: null, error: { code: 'INTERNAL', message: 'DB error' },
       });
 
       const engine = new EngineManager('test-server');
       await engine.deploy(makeChannel() as never);
 
-      const loadedAlerts = mockAlertManager.loadAlerts.mock.calls[0]![0] as readonly unknown[];
-      expect(loadedAlerts).toHaveLength(1);
-      expect((loadedAlerts[0] as { id: string }).id).toBe(ALERT_ID_2);
+      // Should fall back to empty alerts
+      expect(mockAlertManager.loadAlerts).toHaveBeenCalledWith([]);
     });
 
     it('passes onError callback to PipelineConfig', async () => {
@@ -531,7 +534,7 @@ describe('EngineManager', () => {
       expect(mockSetDestScriptRunner).toHaveBeenCalledTimes(2);
     });
 
-    it('JavaScript source ScriptRunner compiles and executes scripts', async () => {
+    it('compiles source script once at deploy and reuses in ScriptRunner', async () => {
       const channel = makeChannel({
         sourceConnectorType: 'JAVASCRIPT',
         sourceConnectorProperties: { script: 'return "hello";', pollingIntervalMs: 1000 },
@@ -540,16 +543,21 @@ describe('EngineManager', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(channel as never);
 
+      // compileScript called once at deploy, not per-message
+      expect(mockCompileScript).toHaveBeenCalledWith('return "hello";', { sourcefile: 'Test Channel/js-source.js' });
+      const compileCallCountAtDeploy = mockCompileScript.mock.calls.length;
+
       const scriptRunner = mockSetScriptRunner.mock.calls[0]![0] as (script: string) => Promise<{ ok: boolean; value: unknown }>;
       const result = await scriptRunner('return "hello";');
 
-      expect(mockCompileScript).toHaveBeenCalledWith('return "hello";', { sourcefile: 'Test Channel/js-source.js' });
+      // No additional compile call — pre-compiled script is reused
+      expect(mockCompileScript.mock.calls.length).toBe(compileCallCountAtDeploy);
       expect(mockSandboxExecute).toHaveBeenCalledOnce();
       expect(result.ok).toBe(true);
       expect(result.value).toBe('test-result');
     });
 
-    it('JavaScript source ScriptRunner returns error on compile failure', async () => {
+    it('does not wire ScriptRunner when source script compile fails', async () => {
       mockCompileScript.mockResolvedValueOnce({
         ok: false, value: null, error: { code: 'COMPILE_ERROR', message: 'Syntax error' },
       });
@@ -562,13 +570,11 @@ describe('EngineManager', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(channel as never);
 
-      const scriptRunner = mockSetScriptRunner.mock.calls[0]![0] as (script: string) => Promise<{ ok: boolean; error: unknown }>;
-      const result = await scriptRunner('bad code');
-
-      expect(result.ok).toBe(false);
+      // ScriptRunner not set because compile failed at deploy time
+      expect(mockSetScriptRunner).not.toHaveBeenCalled();
     });
 
-    it('JavaScript destination ScriptRunner compiles and executes with message context', async () => {
+    it('compiles dest script once at deploy and reuses in ScriptRunner', async () => {
       const channel = makeChannel({
         destinations: [
           {
@@ -584,6 +590,10 @@ describe('EngineManager', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(channel as never);
 
+      // compileScript called once at deploy with the dest script
+      expect(mockCompileScript).toHaveBeenCalledWith('return msg;', { sourcefile: 'Test Channel/js-dest-1.js' });
+      const compileCallCountAtDeploy = mockCompileScript.mock.calls.length;
+
       const destRunner = mockSetDestScriptRunner.mock.calls[0]![0] as (
         script: string, content: string, msg: unknown,
       ) => Promise<{ ok: boolean; value: unknown }>;
@@ -591,7 +601,8 @@ describe('EngineManager', () => {
       const connectorMessage = { channelId: CHANNEL_ID, messageId: 1, metaDataId: 1, content: 'test-content', dataType: 'HL7V2' };
       const result = await destRunner('return msg;', 'test-content', connectorMessage);
 
-      expect(mockCompileScript).toHaveBeenCalledWith('return msg;', { sourcefile: 'Test Channel/js-dest-1.js' });
+      // No additional compile call — pre-compiled script is reused
+      expect(mockCompileScript.mock.calls.length).toBe(compileCallCountAtDeploy);
       expect(mockSandboxExecute).toHaveBeenCalledOnce();
       // The context should include the content as msg
       const sandboxCtx = mockSandboxExecute.mock.calls[0]![1] as Record<string, unknown>;

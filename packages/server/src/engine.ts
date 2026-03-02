@@ -130,11 +130,11 @@ export class EngineManager {
       destinations.set(dest.metaDataId, connector);
     }
 
-    // Wire JavaScript source script runner
-    this.wireJavaScriptSource(channel, source);
+    // Wire JavaScript source script runner (compile once at deploy)
+    await this.wireJavaScriptSource(channel, source);
 
-    // Wire JavaScript destination script runners
-    this.wireJavaScriptDestinations(channel, destinations);
+    // Wire JavaScript destination script runners (compile once at deploy)
+    await this.wireJavaScriptDestinations(channel, destinations);
 
     // Load code templates, global scripts, alerts, and filter/transformer data in parallel
     const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts] = await Promise.all([
@@ -383,38 +383,48 @@ export class EngineManager {
     return configs;
   }
 
-  /** Wire JavaScript source connector ScriptRunner if applicable. */
-  private wireJavaScriptSource(
+  /** Wire JavaScript source connector ScriptRunner if applicable. Compiles script once at deploy time. */
+  private async wireJavaScriptSource(
     channel: ChannelDetail,
     source: SourceConnectorRuntime,
-  ): void {
+  ): Promise<void> {
     if (channel.sourceConnectorType !== 'JAVASCRIPT') return;
     const jsReceiver = source as JavaScriptReceiver;
-    jsReceiver.setScriptRunner(async (script) => {
-      const compiled = await compileScript(script, { sourcefile: `${channel.name}/js-source.js` });
-      if (!compiled.ok) return compiled;
+    const sourceScript = (channel.sourceConnectorProperties as { script: string }).script;
+    const compiled = await compileScript(sourceScript, { sourcefile: `${channel.name}/js-source.js` });
+    if (!compiled.ok) {
+      logger.error({ error: compiled.error }, 'Failed to compile JS source script');
+      return;
+    }
+    const cachedScript = compiled.value;
+    jsReceiver.setScriptRunner(async (_script) => {
       const ctx = { msg: '', tmp: '', rawData: '', sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {} };
-      const execResult = await this.sandbox.execute(compiled.value, ctx, DEFAULT_EXECUTION_OPTIONS);
+      const execResult = await this.sandbox.execute(cachedScript, ctx, DEFAULT_EXECUTION_OPTIONS);
       if (!execResult.ok) return execResult;
       return { ok: true as const, value: execResult.value.returnValue, error: null };
     });
   }
 
-  /** Wire JavaScript destination connector ScriptRunners if applicable. */
-  private wireJavaScriptDestinations(
+  /** Wire JavaScript destination connector ScriptRunners if applicable. Compiles scripts once at deploy time. */
+  private async wireJavaScriptDestinations(
     channel: ChannelDetail,
     destinations: Map<number, DestinationConnectorRuntime>,
-  ): void {
+  ): Promise<void> {
     for (const dest of channel.destinations) {
       if (dest.connectorType !== 'JAVASCRIPT') continue;
       const connector = destinations.get(dest.metaDataId);
       if (!connector) continue;
       const jsDispatcher = connector as JavaScriptDispatcher;
-      jsDispatcher.setScriptRunner(async (script, content, connectorMessage) => {
-        const compiled = await compileScript(script, { sourcefile: `${channel.name}/js-dest-${String(dest.metaDataId)}.js` });
-        if (!compiled.ok) return compiled;
+      const destScript = (dest.properties as { script: string }).script;
+      const compiled = await compileScript(destScript, { sourcefile: `${channel.name}/js-dest-${String(dest.metaDataId)}.js` });
+      if (!compiled.ok) {
+        logger.error({ error: compiled.error, metaDataId: dest.metaDataId }, 'Failed to compile JS dest script');
+        continue;
+      }
+      const cachedScript = compiled.value;
+      jsDispatcher.setScriptRunner(async (_script, content, connectorMessage) => {
         const ctx = { msg: content, tmp: content, rawData: content, sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {}, extras: { connectorMessage } };
-        const execResult = await this.sandbox.execute(compiled.value, ctx, DEFAULT_EXECUTION_OPTIONS);
+        const execResult = await this.sandbox.execute(cachedScript, ctx, DEFAULT_EXECUTION_OPTIONS);
         if (!execResult.ok) return execResult;
         return { ok: true as const, value: execResult.value.returnValue, error: null };
       });
@@ -427,16 +437,24 @@ export class EngineManager {
     if (!listResult.ok) return [];
 
     const enabledAlerts = listResult.value.data.filter((a) => a.enabled);
+    if (enabledAlerts.length === 0) return [];
+
+    // Batch fetch all enabled alert details in a single query
+    const ids = enabledAlerts.map((a) => a.id);
+    const detailsResult = await AlertService.getByIds(ids);
+    if (!detailsResult.ok) return [];
+
+    return this.filterAlertsForChannel(detailsResult.value, channelId);
+  }
+
+  /** Filter alert details to those applicable to a specific channel. */
+  private filterAlertsForChannel(
+    details: readonly import('./services/alert.service.js').AlertDetail[],
+    channelId: string,
+  ): readonly LoadedAlert[] {
     const loaded: LoadedAlert[] = [];
-
-    for (const summary of enabledAlerts) {
-      const detailResult = await AlertService.getById(summary.id);
-      if (!detailResult.ok) continue;
-
-      const detail = detailResult.value;
-      // Skip alerts scoped to other channels
+    for (const detail of details) {
       if (detail.channelIds.length > 0 && !detail.channelIds.includes(channelId)) continue;
-
       loaded.push({
         id: detail.id,
         name: detail.name,
@@ -455,7 +473,6 @@ export class EngineManager {
         maxAlerts: detail.maxAlerts,
       });
     }
-
     return loaded;
   }
 
@@ -541,7 +558,7 @@ export class EngineManager {
   }
 
   /** Dispose all resources. */
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.sandbox.dispose();
   }
 }
