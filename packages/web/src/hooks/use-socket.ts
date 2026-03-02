@@ -69,7 +69,7 @@ export function useSocketConnection(): void {
  * @param event - The socket event name to listen for
  * @param handler - Callback invoked with the event payload
  */
-export function useSocketEvent(event: string, handler: (data: unknown) => void): void {
+export function useSocketEvent<T = unknown>(event: string, handler: (data: T) => void): void {
   // Store handler in a ref to avoid re-subscribing on every render
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
@@ -80,7 +80,7 @@ export function useSocketEvent(event: string, handler: (data: unknown) => void):
       return;
     }
 
-    const wrappedHandler = (data: unknown): void => {
+    const wrappedHandler = (data: T): void => {
       handlerRef.current(data);
     };
 
@@ -90,4 +90,30 @@ export function useSocketEvent(event: string, handler: (data: unknown) => void):
       socket.off(event, wrappedHandler);
     };
   }, [event]);
+}
+
+/**
+ * Join a socket.io room on mount, leave on unmount.
+ * Automatically re-joins the room on reconnection.
+ * Skips join/leave if the socket is not connected or any string arg is empty.
+ *
+ * @param joinEvent - The event to emit when joining the room
+ * @param leaveEvent - The event to emit when leaving the room
+ * @param args - Additional arguments to pass with the join/leave events
+ */
+export function useSocketRoom(joinEvent: string, leaveEvent: string, ...args: readonly unknown[]): void {
+  useEffect(() => {
+    const s = getSocket();
+    if (!s) return;
+    // Skip if any string argument is empty (e.g. missing channelId)
+    if (args.some((a) => typeof a === 'string' && a.length === 0)) return;
+    s.emit(joinEvent, ...args);
+    const handleReconnect = (): void => { s.emit(joinEvent, ...args); };
+    s.on('connect', handleReconnect);
+    return () => {
+      s.off('connect', handleReconnect);
+      s.emit(leaveEvent, ...args);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joinEvent, leaveEvent, ...args]);
 }
