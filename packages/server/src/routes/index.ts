@@ -6,6 +6,7 @@
 import { Router, type IRouter } from 'express';
 import alertRoutes from './alert.routes.js';
 import authRoutes from './auth.routes.js';
+import attachmentRoutes from './attachment.routes.js';
 import channelDependencyRoutes from './channel-dependency.routes.js';
 import channelExportRoutes from './channel-export.routes.js';
 import channelGroupRoutes from './channel-group.routes.js';
@@ -32,6 +33,7 @@ import settingsRoutes from './settings.routes.js';
 import statisticsRoutes from './statistics.routes.js';
 import systemInfoRoutes from './system-info.routes.js';
 import tagRoutes from './tag.routes.js';
+import userPreferenceRoutes from './user-preference.routes.js';
 import userRoutes from './user.routes.js';
 
 const router: IRouter = Router();
@@ -47,6 +49,7 @@ router.use('/auth', authRoutes);
 // Mount specific /channels sub-routes BEFORE channelRoutes — channelRoutes
 // defines GET /:id which greedily matches any single-segment path like
 // /statistics or /status, causing UUID validation failures.
+router.use('/channels', attachmentRoutes);
 router.use('/channels', channelExportRoutes);
 router.use('/channels', channelRevisionRoutes);
 router.use('/channels', channelDependencyRoutes);
@@ -73,6 +76,7 @@ router.use('/system/logs', logRoutes);
 router.use('/system', systemInfoRoutes);
 router.use('/tags', tagRoutes);
 router.use('/tools/messages', messageGeneratorRoutes);
+router.use('/users/me/preferences', userPreferenceRoutes);
 router.use('/users', userRoutes);
 
 export default router;
