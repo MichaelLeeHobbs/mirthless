@@ -226,6 +226,9 @@ importers:
       express-rate-limit:
         specifier: 8.2.1
         version: 8.2.1(express@4.21.2)
+      fast-xml-parser:
+        specifier: ^5.4.2
+        version: 5.4.2
       helmet:
         specifier: 8.0.0
         version: 8.0.0
@@ -2732,6 +2735,10 @@ packages:
 
   fast-xml-parser@5.4.1:
     resolution: {integrity: sha512-BQ30U1mKkvXQXXkAGcuyUA/GA26oEB7NzOtsxCDtyu62sjGw5QraKFhx2Em3WQNjPw9PG6MQ9yuIIgkSDfGu5A==}
+    hasBin: true
+
+  fast-xml-parser@5.4.2:
+    resolution: {integrity: sha512-pw/6pIl4k0CSpElPEJhDppLzaixDEuWui2CUQQBH/ECDf7+y6YwA4Gf7Tyb0Rfe4DIMuZipYj4AEL0nACKglvQ==}
     hasBin: true
 
   fastq@1.20.1:
@@ -6608,6 +6615,11 @@ snapshots:
   fast-xml-builder@1.0.0: {}
 
   fast-xml-parser@5.4.1:
+    dependencies:
+      fast-xml-builder: 1.0.0
+      strnum: 2.2.0
+
+  fast-xml-parser@5.4.2:
     dependencies:
       fast-xml-builder: 1.0.0
       strnum: 2.2.0
