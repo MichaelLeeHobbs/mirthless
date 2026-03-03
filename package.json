@@ -18,6 +18,7 @@
     "db:generate": "pnpm --filter @mirthless/server db:generate",
     "db:migrate": "pnpm --filter @mirthless/server db:migrate",
     "db:studio": "pnpm --filter @mirthless/server db:studio",
+    "db:check": "pnpm --filter @mirthless/server db:check",
     "db:seed": "pnpm --filter @mirthless/server db:seed",
     "clean": "pnpm run -r clean",
     "test:e2e": "playwright test",

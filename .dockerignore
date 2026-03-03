@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Claude
+.claude/
+
+# Reference source (large, not needed in builds)
+reference/
+
+# Test & coverage artifacts
+coverage/
+**/*.test.ts
+**/*.spec.ts
+
+# Documentation
+docs/
+
+# GitHub
+.github/
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# Editor & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Build artifacts (rebuilt in Docker)
+packages/*/dist/
+
+# E2E tests
+e2e/
+playwright.config.ts
+playwright-report/
+test-results/
