@@ -16,6 +16,8 @@ import { requestId } from './middleware/request-id.middleware.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import { apiRateLimiter } from './middleware/rate-limit.middleware.js';
 import { checkDatabase, getHealthStatus } from './services/health.service.js';
+import { registry } from './lib/metrics.js';
+import { metricsMiddleware } from './middleware/metrics.middleware.js';
 
 // Use createRequire for proper ESM/CJS interop with CJS packages
 const require = createRequire(import.meta.url);
@@ -57,7 +59,7 @@ app.use(
     autoLogging: {
       ignore: (req) => {
         const url = (req as Request).url;
-        return url === '/health' || url === '/health/live' || url === '/health/ready';
+        return url === '/health' || url === '/health/live' || url === '/health/ready' || url === '/metrics';
       },
     },
   })
@@ -79,6 +81,15 @@ app.get('/health', async (_req: Request, res: Response) => {
   const status = health.status === 'ok' ? 200 : 503;
   res.status(status).json(health);
 });
+
+// Prometheus metrics endpoint (no auth required)
+app.get('/metrics', async (_req: Request, res: Response) => {
+  res.set('Content-Type', registry.contentType);
+  res.send(await registry.metrics());
+});
+
+// Metrics collection middleware (after /metrics route to skip self-recording)
+app.use(metricsMiddleware);
 
 // Global API rate limiter (100 req/min per IP)
 app.use('/api/v1', apiRateLimiter);
