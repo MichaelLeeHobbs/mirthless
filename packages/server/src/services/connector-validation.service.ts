@@ -28,6 +28,7 @@ const databaseSourceSchema = z.object({
 const javascriptSourceSchema = z.object({ script: nonEmptyString }).passthrough();
 const channelSourceSchema = z.object({ channelId: nonEmptyString }).passthrough();
 const dicomSourceSchema = z.object({ port: portSchema, storageDir: nonEmptyString }).passthrough();
+const emailSourceSchema = z.object({ host: nonEmptyString, port: portSchema, username: nonEmptyString, password: nonEmptyString }).passthrough();
 
 // ----- Destination Connector Schemas -----
 
@@ -56,6 +57,7 @@ const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   JAVASCRIPT: javascriptSourceSchema,
   CHANNEL: channelSourceSchema,
   DICOM: dicomSourceSchema,
+  EMAIL: emailSourceSchema,
 };
 
 const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {

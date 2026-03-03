@@ -27,10 +27,16 @@ import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import MenuItem from '@mui/material/MenuItem';
+import Select, { type SelectChangeEvent } from '@mui/material/Select';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import DownloadIcon from '@mui/icons-material/Download';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import { useEvents, usePurgeEvents } from '../hooks/use-events.js';
+import { useEventExport } from '../hooks/use-event-export.js';
 import { EventFilterBar, type EventFilters } from '../components/events/EventFilterBar.js';
 import { EventDetailPanel } from '../components/events/EventDetailPanel.js';
 import type { EventSummary } from '../api/client.js';
@@ -53,6 +59,8 @@ export function EventsPage(): ReactNode {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [purgeDialogOpen, setPurgeDialogOpen] = useState(false);
   const [purgeDays, setPurgeDays] = useState('90');
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
 
   const queryParams = {
     page: page + 1,
@@ -64,9 +72,20 @@ export function EventsPage(): ReactNode {
 
   const { data, isLoading, error, isFetching } = useEvents(queryParams);
   const purgeEvents = usePurgeEvents();
+  const { isExporting, error: exportError, exportEvents } = useEventExport();
 
   const handleToggleExpand = (event: EventSummary): void => {
     setExpandedId(expandedId === event.id ? null : event.id);
+  };
+
+  const handleExport = (): void => {
+    void exportEvents({
+      format: exportFormat,
+      ...(filters.level !== '' ? { level: filters.level } : {}),
+      ...(filters.name !== '' ? { name: filters.name } : {}),
+      ...(filters.outcome !== '' ? { outcome: filters.outcome } : {}),
+    });
+    setExportDialogOpen(false);
   };
 
   const handlePurge = (): void => {
@@ -89,23 +108,36 @@ export function EventsPage(): ReactNode {
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Events</Typography>
           {isFetching && !isLoading && <CircularProgress size={20} />}
         </Box>
-        <Tooltip title="Purge old events">
-          <Button
-            variant="outlined"
-            color="error"
-            startIcon={<DeleteSweepIcon />}
-            onClick={() => { setPurgeDialogOpen(true); }}
-          >
-            Purge
-          </Button>
-        </Tooltip>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Tooltip title="Export events">
+            <Button
+              variant="outlined"
+              startIcon={<DownloadIcon />}
+              onClick={() => { setExportDialogOpen(true); }}
+              disabled={isExporting}
+            >
+              {isExporting ? 'Exporting...' : 'Export'}
+            </Button>
+          </Tooltip>
+          <Tooltip title="Purge old events">
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<DeleteSweepIcon />}
+              onClick={() => { setPurgeDialogOpen(true); }}
+            >
+              Purge
+            </Button>
+          </Tooltip>
+        </Box>
       </Box>
 
       {/* Filters */}
       <EventFilterBar filters={filters} onFilterChange={setFilters} />
 
-      {/* Error */}
+      {/* Errors */}
       {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load events: {error.message}</Alert>}
+      {exportError && <Alert severity="error" sx={{ mb: 2 }}>{exportError}</Alert>}
 
       {/* Loading */}
       {isLoading ? (
@@ -210,6 +242,33 @@ export function EventsPage(): ReactNode {
           ) : null}
         </TableContainer>
       )}
+
+      {/* Export Dialog */}
+      <Dialog open={exportDialogOpen} onClose={() => { setExportDialogOpen(false); }}>
+        <DialogTitle>Export Events</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Export audit events to a file. Current filters will be applied to the export.
+          </DialogContentText>
+          <FormControl fullWidth size="small">
+            <InputLabel>Format</InputLabel>
+            <Select
+              value={exportFormat}
+              label="Format"
+              onChange={(e: SelectChangeEvent) => { setExportFormat(e.target.value as 'csv' | 'json'); }}
+            >
+              <MenuItem value="csv">CSV</MenuItem>
+              <MenuItem value="json">JSON</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setExportDialogOpen(false); }}>Cancel</Button>
+          <Button onClick={handleExport} disabled={isExporting}>
+            {isExporting ? 'Exporting...' : 'Export'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Purge Dialog */}
       <Dialog open={purgeDialogOpen} onClose={() => { setPurgeDialogOpen(false); }}>

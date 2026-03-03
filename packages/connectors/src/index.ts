@@ -105,4 +105,15 @@ export {
   type ReceiverFactory,
   type SenderFactory,
 } from './dicom/index.js';
+export {
+  EmailReceiver,
+  EMAIL_PROTOCOL,
+  EMAIL_POST_ACTION,
+  type EmailReceiverConfig,
+  type EmailProtocol,
+  type EmailPostAction,
+  type EmailMessage,
+  type ImapClient,
+  type ImapClientFactory,
+} from './email/index.js';
 export { createSourceConnector, createDestinationConnector } from './registry.js';

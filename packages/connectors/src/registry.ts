@@ -20,6 +20,7 @@ import { ChannelDispatcher } from './channel/channel-dispatcher.js';
 import { FhirDispatcher, FHIR_AUTH_TYPE } from './fhir/fhir-dispatcher.js';
 import { DicomReceiver } from './dicom/dicom-receiver.js';
 import { DicomDispatcher } from './dicom/dicom-dispatcher.js';
+import { EmailReceiver, EMAIL_POST_ACTION, type EmailPostAction, type EmailProtocol } from './email/email-receiver.js';
 
 // ----- Source Factories -----
 
@@ -80,6 +81,20 @@ const sourceFactories = new Map<string, SourceFactory>([
     dispatchMode: (props['dispatchMode'] as 'PER_FILE' | 'PER_ASSOCIATION' | undefined) ?? 'PER_FILE',
     postAction: (props['postAction'] as 'DELETE' | 'MOVE' | 'NONE' | undefined) ?? 'DELETE',
     moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
+  })],
+  ['EMAIL', (props): SourceConnectorRuntime => new EmailReceiver({
+    host: props['host'] as string,
+    port: (props['port'] as number | undefined) ?? 993,
+    secure: (props['secure'] as boolean | undefined) ?? true,
+    username: (props['username'] as string | undefined) ?? '',
+    password: (props['password'] as string | undefined) ?? '',
+    protocol: (props['protocol'] as EmailProtocol | undefined) ?? 'IMAP',
+    folder: (props['folder'] as string | undefined) ?? 'INBOX',
+    pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 60_000,
+    postAction: (props['postAction'] as EmailPostAction | undefined) ?? EMAIL_POST_ACTION.MARK_READ,
+    moveToFolder: (props['moveToFolder'] as string | undefined) ?? '',
+    subjectFilter: (props['subjectFilter'] as string | undefined) ?? '',
+    includeAttachments: (props['includeAttachments'] as boolean | undefined) ?? false,
   })],
 ]);
 
