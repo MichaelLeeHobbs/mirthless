@@ -12,6 +12,7 @@ export const resources = pgTable('resources', {
   description: text('description').default(''),
   mimeType: varchar('mime_type', { length: 100 }),
   sizeBytes: integer('size_bytes').notNull(),
+  content: text('content'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

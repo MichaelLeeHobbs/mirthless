@@ -14,6 +14,7 @@ import {
   messages,
   connectorMessages,
   messageContent,
+  messageAttachments,
   messageStatistics,
   type ConnectorMessage,
   type Message,
@@ -315,6 +316,40 @@ export class MessageService {
           ),
         );
       return rows;
+    });
+  }
+
+  /** Delete all stored content for a message. */
+  static async deleteContent(
+    channelId: string,
+    messageId: number,
+  ): Promise<Result<void>> {
+    return tryCatch(async () => {
+      await db
+        .delete(messageContent)
+        .where(
+          and(
+            eq(messageContent.channelId, channelId),
+            eq(messageContent.messageId, messageId),
+          ),
+        );
+    });
+  }
+
+  /** Delete all attachments for a message. */
+  static async deleteAttachments(
+    channelId: string,
+    messageId: number,
+  ): Promise<Result<void>> {
+    return tryCatch(async () => {
+      await db
+        .delete(messageAttachments)
+        .where(
+          and(
+            eq(messageAttachments.channelId, channelId),
+            eq(messageAttachments.messageId, messageId),
+          ),
+        );
     });
   }
 }

@@ -29,7 +29,7 @@ import {
   type QueueConsumerConfig,
   type LoadedAlert,
 } from '@mirthless/engine';
-import { tryCatch } from 'stderr-lib';
+import { tryCatch, type Result } from 'stderr-lib';
 import {
   createSourceConnector,
   createDestinationConnector,
@@ -38,6 +38,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@mirthless/connectors';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode } from '@mirthless/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
@@ -60,13 +61,38 @@ export interface DeployedChannel {
   readonly queueConsumers: readonly QueueConsumer[];
 }
 
+// ----- Storage Policy -----
+
+/** Per-channel storage configuration captured from channel settings. */
+export interface StorageConfig {
+  readonly messageStorageMode: MessageStorageMode;
+  readonly removeContentOnCompletion: boolean;
+  readonly removeAttachmentsOnCompletion: boolean;
+}
+
+const OK_VOID = { ok: true as const, value: undefined, error: null } as Result<void>;
+
+/**
+ * Determines whether a given content type should be stored based on the storage mode.
+ * Error content types (11-13) are stored in DEVELOPMENT, PRODUCTION, and RAW modes.
+ */
+export function shouldStoreContent(mode: MessageStorageMode, contentType: number): boolean {
+  if (mode === MESSAGE_STORAGE_MODE.DEVELOPMENT) return true;
+  if (mode === MESSAGE_STORAGE_MODE.PRODUCTION) return contentType >= CONTENT_TYPE.ERROR;
+  if (mode === MESSAGE_STORAGE_MODE.RAW) return contentType === CONTENT_TYPE.RAW || contentType >= CONTENT_TYPE.ERROR;
+  // METADATA, DISABLED: no content stored
+  return false;
+}
+
 // ----- Message Store Adapter -----
 
 /**
  * Adapts MessageService (static methods) to the MessageStore interface.
- * For advanced queue management (requeueFailed, getQueueDepth), use QueueManagerService directly.
+ * When a StorageConfig is provided, filters storeContent calls by storage mode
+ * and handles content/attachment cleanup on completion.
  */
-function createMessageStoreAdapter(): MessageStore {
+function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
+  const mode = config?.messageStorageMode ?? MESSAGE_STORAGE_MODE.DEVELOPMENT;
   return {
     createMessage: (channelId, serverId) =>
       MessageService.createMessage(channelId, serverId),
@@ -74,10 +100,26 @@ function createMessageStoreAdapter(): MessageStore {
       MessageService.createConnectorMessage(channelId, messageId, metaDataId, name, status as Parameters<typeof MessageService.createConnectorMessage>[4]),
     updateConnectorMessageStatus: (channelId, messageId, metaDataId, status, errorCode) =>
       MessageService.updateConnectorMessageStatus(channelId, messageId, metaDataId, status as Parameters<typeof MessageService.updateConnectorMessageStatus>[3], errorCode),
-    storeContent: (channelId, messageId, metaDataId, contentType, content, dataType) =>
-      MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], content, dataType),
-    markProcessed: (channelId, messageId) =>
-      MessageService.markProcessed(channelId, messageId),
+    storeContent: (channelId, messageId, metaDataId, contentType, content, dataType) => {
+      if (!shouldStoreContent(mode, contentType)) {
+        return Promise.resolve(OK_VOID);
+      }
+      return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], content, dataType);
+    },
+    markProcessed: async (channelId, messageId) => {
+      const result = await MessageService.markProcessed(channelId, messageId);
+      if (result.ok && (config?.removeContentOnCompletion || config?.removeAttachmentsOnCompletion)) {
+        const deletes: Promise<Result<void>>[] = [];
+        if (config?.removeContentOnCompletion) {
+          deletes.push(MessageService.deleteContent(channelId, messageId));
+        }
+        if (config?.removeAttachmentsOnCompletion) {
+          deletes.push(MessageService.deleteAttachments(channelId, messageId));
+        }
+        await Promise.all(deletes);
+      }
+      return result;
+    },
     enqueue: (channelId, messageId, metaDataId) =>
       MessageService.enqueue(channelId, messageId, metaDataId),
     loadContent: (channelId, messageId, metaDataId, contentType) =>
@@ -96,12 +138,10 @@ function createMessageStoreAdapter(): MessageStore {
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
   private readonly sandbox: SandboxExecutor;
-  private readonly store: MessageStore;
   private readonly serverId: string;
 
   constructor(serverId?: string) {
     this.sandbox = new VmSandboxExecutor();
-    this.store = createMessageStoreAdapter();
     this.serverId = serverId ?? 'server-01';
   }
 
@@ -113,6 +153,13 @@ export class EngineManager {
 
     const runtime = new ChannelRuntime();
     const gcm = new GlobalChannelMap();
+
+    // Create per-channel message store adapter with storage policy
+    const store = createMessageStoreAdapter({
+      messageStorageMode: channel.messageStorageMode as MessageStorageMode,
+      removeContentOnCompletion: channel.removeContentOnCompletion,
+      removeAttachmentsOnCompletion: channel.removeAttachmentsOnCompletion,
+    });
 
     // Create source connector
     const source = createSourceConnector(
@@ -203,12 +250,12 @@ export class EngineManager {
         batchSize: 10,
         pollIntervalMs: 1_000,
       };
-      queueConsumers.push(new QueueConsumer(queueConfig, this.store, sendFn));
+      queueConsumers.push(new QueueConsumer(queueConfig, store, sendFn));
     }
 
     // Create message processor
     const processor = new MessageProcessor(
-      this.sandbox, this.store, sendFn, pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
+      this.sandbox, store, sendFn, pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
     );
 
     // Build runtime config

@@ -19,6 +19,12 @@ import { AlertEditorPage } from './pages/AlertEditorPage.js';
 import { EventsPage } from './pages/EventsPage.js';
 import { SettingsPage } from './pages/SettingsPage.js';
 import { UsersPage } from './pages/UsersPage.js';
+import { ChannelGroupsPage } from './pages/ChannelGroupsPage.js';
+import { TagsPage } from './pages/TagsPage.js';
+import { ResourcesPage } from './pages/ResourcesPage.js';
+import { GlobalMapPage } from './pages/GlobalMapPage.js';
+import { ConfigMapPage } from './pages/ConfigMapPage.js';
+import { SystemInfoPage } from './pages/SystemInfoPage.js';
 
 const router = createBrowserRouter([
   {
@@ -36,13 +42,19 @@ const router = createBrowserRouter([
           { path: 'channels/new', element: <ChannelEditorPage /> },
           { path: 'channels/:id', element: <ChannelEditorPage /> },
           { path: 'channels/:id/messages', element: <MessageBrowserPage /> },
+          { path: 'channel-groups', element: <ChannelGroupsPage /> },
           { path: 'alerts', element: <AlertsPage /> },
           { path: 'alerts/new', element: <AlertEditorPage /> },
           { path: 'alerts/:id', element: <AlertEditorPage /> },
           { path: 'code-templates', element: <CodeTemplatePage /> },
           { path: 'events', element: <EventsPage /> },
           { path: 'global-scripts', element: <GlobalScriptsPage /> },
+          { path: 'resources', element: <ResourcesPage /> },
           { path: 'settings', element: <SettingsPage /> },
+          { path: 'tags', element: <TagsPage /> },
+          { path: 'global-map', element: <GlobalMapPage /> },
+          { path: 'config-map', element: <ConfigMapPage /> },
+          { path: 'system', element: <SystemInfoPage /> },
           { path: 'users', element: <UsersPage /> },
         ],
       },

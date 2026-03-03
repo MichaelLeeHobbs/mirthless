@@ -44,7 +44,7 @@ interface ChannelRow {
   readonly queued: number;
 }
 
-function getStateColor(state: string): 'success' | 'warning' | 'error' | 'default' {
+export function getStateColor(state: string): 'success' | 'warning' | 'error' | 'default' {
   switch (state) {
     case 'STARTED': return 'success';
     case 'PAUSED': return 'warning';
@@ -53,7 +53,7 @@ function getStateColor(state: string): 'success' | 'warning' | 'error' | 'defaul
   }
 }
 
-function getStatusDotColor(state: string): string {
+export function getStatusDotColor(state: string): string {
   switch (state) {
     case 'STARTED': return 'success.main';
     case 'PAUSED': return 'warning.main';

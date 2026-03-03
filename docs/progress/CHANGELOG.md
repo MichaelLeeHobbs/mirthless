@@ -2,6 +2,146 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-02 — Phase 20: Config Management, System Info & Dashboard Enhancements
+
+### What was done:
+- **Global Map** (full stack) — Zod schemas, service (list/get/upsert/delete/clear with onConflictDoUpdate), controller, routes (`/global-map`, 5 endpoints), 11 service tests, TanStack Query hooks, GlobalMapPage UI (key-value table + create/edit dialog + "Clear All" with confirmation)
+- **Configuration Map** (full stack) — Zod schemas (composite key params, category filter, bulk upsert), service (list/get/upsert/bulkUpsert/delete), controller, routes (`/config-map`, 5 endpoints), 10 service tests, TanStack Query hooks, ConfigMapPage UI (table with category tabs + create/edit dialog)
+- **System Info** (full stack) — Service aggregating health.service.ts functions (DB, memory, engine stats) + version/Node.js/OS/uptime/PID, controller, routes (`/system`, 1 endpoint), 6 service tests, TanStack Query hook (10s polling), SystemInfoPage UI (info cards + memory bars + DB status chip)
+- **Dashboard Tag Filtering** — TagFilter component (MUI Autocomplete with colored Chips), client-side filtering via tag assignments, `useTagAssignments()` hook, `GET /tags/assignments` API endpoint
+- **Dashboard Grouped View** — GroupedChannelTable component (collapsible group sections with aggregate stats + "Ungrouped" section), flat/grouped view toggle, `useGroupMemberships()` hook, `GET /channel-groups/memberships` API endpoint
+- **Tag service** — Added `listAssignments()` method + controller handler + route
+- **Channel group service** — Added `listMemberships()` method + controller handler + route
+- **Event name constants** — Added `GLOBAL_MAP_UPDATED` and `CONFIG_MAP_UPDATED` to `EVENT_NAME` const
+- **Code reuse** — Exported `getStateColor`/`getStatusDotColor` from ChannelStatusTable, imported in GroupedChannelTable (eliminated duplication)
+- **Manual test docs** — 4 new checklists (37-global-map, 38-config-map, 39-system-info, 40-dashboard-filtering)
+
+### Test results:
+- 1,320 tests passing (184 schema + 68 HL7 + 196 engine + 321 connectors + 529 server + 22 CLI)
+- Build: 0 errors, Lint: 0 warnings
+- 31 new tests: 11 global-map + 10 config-map + 6 system-info + 2 tag-assignments + 2 group-memberships
+
+### Files changed (40+):
+- `packages/core-models/src/schemas/global-map.schema.ts` (new)
+- `packages/core-models/src/schemas/config-map.schema.ts` (new)
+- `packages/core-models/src/schemas/event.schema.ts` (added 2 EVENT_NAME entries)
+- `packages/core-models/src/schemas/index.ts` (2 new exports)
+- `packages/server/src/services/global-map.service.ts` (new)
+- `packages/server/src/services/config-map.service.ts` (new)
+- `packages/server/src/services/system-info.service.ts` (new)
+- `packages/server/src/services/tag.service.ts` (added listAssignments)
+- `packages/server/src/services/channel-group.service.ts` (added listMemberships)
+- `packages/server/src/controllers/global-map.controller.ts` (new)
+- `packages/server/src/controllers/config-map.controller.ts` (new)
+- `packages/server/src/controllers/system-info.controller.ts` (new)
+- `packages/server/src/controllers/tag.controller.ts` (added listAssignments)
+- `packages/server/src/controllers/channel-group.controller.ts` (added listMemberships)
+- `packages/server/src/routes/global-map.routes.ts` (new)
+- `packages/server/src/routes/config-map.routes.ts` (new)
+- `packages/server/src/routes/system-info.routes.ts` (new)
+- `packages/server/src/routes/tag.routes.ts` (added GET /assignments)
+- `packages/server/src/routes/channel-group.routes.ts` (added GET /memberships)
+- `packages/server/src/routes/index.ts` (3 new route mounts)
+- `packages/server/src/services/__tests__/global-map.service.test.ts` (new, 11 tests)
+- `packages/server/src/services/__tests__/config-map.service.test.ts` (new, 10 tests)
+- `packages/server/src/services/__tests__/system-info.service.test.ts` (new, 6 tests)
+- `packages/server/src/services/__tests__/tag.service.test.ts` (added 2 tests)
+- `packages/server/src/services/__tests__/channel-group.service.test.ts` (added 2 tests)
+- `packages/web/src/hooks/use-global-map.ts` (new)
+- `packages/web/src/hooks/use-config-map.ts` (new)
+- `packages/web/src/hooks/use-system-info.ts` (new)
+- `packages/web/src/hooks/use-tags.ts` (added useTagAssignments)
+- `packages/web/src/hooks/use-channel-groups.ts` (added useGroupMemberships)
+- `packages/web/src/pages/GlobalMapPage.tsx` (new)
+- `packages/web/src/pages/ConfigMapPage.tsx` (new)
+- `packages/web/src/pages/SystemInfoPage.tsx` (new)
+- `packages/web/src/pages/DashboardPage.tsx` (tag filter + grouped view)
+- `packages/web/src/components/dashboard/TagFilter.tsx` (new)
+- `packages/web/src/components/dashboard/GroupedChannelTable.tsx` (new)
+- `packages/web/src/components/dashboard/ChannelStatusTable.tsx` (exported getStateColor/getStatusDotColor)
+- `packages/web/src/App.tsx` (3 new routes)
+- `packages/web/src/components/layout/AppLayout.tsx` (3 new nav items)
+- `docs/testing/37-global-map.md`, `38-config-map.md`, `39-system-info.md`, `40-dashboard-filtering.md` (new)
+
+---
+
+## 2026-03-02 — Phase 19: Channel Groups, Tags, Dependencies & Resources
+
+### What was done:
+- **Channel Groups** (full stack) — Zod schemas, service (CRUD + member management with optimistic locking), controller, routes (`/channel-groups`), 16 service tests, TanStack Query hooks, ChannelGroupsPage UI (table + create/edit dialog)
+- **Channel Tags** (full stack) — Zod schemas (with hex color validation), service (CRUD + assignment), controller, routes (`/tags`), 12 service tests, TanStack Query hooks, TagsPage UI (table with colored chips + create/edit dialog with native color picker)
+- **Channel Dependencies** (API only) — Zod schemas, service (get/set dependencies + DAG validation via iterative DFS), routes (`/channels/:id/dependencies|dependents`), 15 service tests including cycle detection (direct, transitive, valid DAG)
+- **Resources** (full stack) — Zod schemas, service (CRUD with auto-computed sizeBytes), controller, routes (`/resources`), 12 service tests, TanStack Query hooks, ResourcesPage UI (table + create/edit dialog with monospace content editor)
+- **DB schema** — Added `content text` column to resources table
+- **Route wiring** — 4 new route modules mounted in route aggregator (channel-groups, tags, channel-dependencies before greedy /:id, resources)
+- **UI wiring** — 3 new pages in App.tsx router, 3 new nav items in AppLayout sidebar (Channel Groups, Resources, Tags)
+- **Zod schema barrel** — 4 new exports in core-models schemas index
+
+### Test results:
+- 1,289 tests passing (184 schema + 68 HL7 + 196 engine + 321 connectors + 498 server + 22 CLI)
+- Build: 0 errors, Lint: 0 warnings
+- 55 new tests: 16 channel-group + 12 tag + 15 channel-dependency + 12 resource
+
+### Files changed (31):
+- `packages/core-models/src/schemas/channel-group.schema.ts` (new)
+- `packages/core-models/src/schemas/tag.schema.ts` (new)
+- `packages/core-models/src/schemas/channel-dependency.schema.ts` (new)
+- `packages/core-models/src/schemas/resource.schema.ts` (new)
+- `packages/core-models/src/schemas/index.ts` (4 new exports)
+- `packages/server/src/db/schema/resources.ts` (added content column)
+- `packages/server/src/services/channel-group.service.ts` (new)
+- `packages/server/src/services/tag.service.ts` (new)
+- `packages/server/src/services/channel-dependency.service.ts` (new)
+- `packages/server/src/services/resource.service.ts` (new)
+- `packages/server/src/controllers/channel-group.controller.ts` (new)
+- `packages/server/src/controllers/tag.controller.ts` (new)
+- `packages/server/src/controllers/resource.controller.ts` (new)
+- `packages/server/src/routes/channel-group.routes.ts` (new)
+- `packages/server/src/routes/tag.routes.ts` (new)
+- `packages/server/src/routes/channel-dependency.routes.ts` (new)
+- `packages/server/src/routes/resource.routes.ts` (new)
+- `packages/server/src/routes/index.ts` (4 new route mounts)
+- `packages/server/src/services/__tests__/channel-group.service.test.ts` (new, 16 tests)
+- `packages/server/src/services/__tests__/tag.service.test.ts` (new, 12 tests)
+- `packages/server/src/services/__tests__/channel-dependency.service.test.ts` (new, 15 tests)
+- `packages/server/src/services/__tests__/resource.service.test.ts` (new, 12 tests)
+- `packages/web/src/hooks/use-channel-groups.ts` (new)
+- `packages/web/src/hooks/use-tags.ts` (new)
+- `packages/web/src/hooks/use-resources.ts` (new)
+- `packages/web/src/pages/ChannelGroupsPage.tsx` (new)
+- `packages/web/src/pages/TagsPage.tsx` (new)
+- `packages/web/src/pages/ResourcesPage.tsx` (new)
+- `packages/web/src/App.tsx` (3 new routes)
+- `packages/web/src/components/layout/AppLayout.tsx` (3 new nav items)
+- `docs/testing/33-channel-groups.md`, `34-channel-tags.md`, `35-channel-dependencies.md`, `36-resources.md` (new)
+
+---
+
+## 2026-03-02 — Phase 18: Message Storage Policies
+
+### What was done:
+- **sourceMap persistence** (`packages/engine/src/pipeline/message-processor.ts`) — Pipeline now stores `input.sourceMap` as JSON string with contentType=9 (CT_SOURCE_MAP) and dataType='JSON' after raw content storage. Stored before filter stage, so filtered messages also have sourceMap. Maps automatically appear in message browser UI (MessageQueryService already maps contentType 9→sourceMap).
+- **Per-channel storage policy adapter** (`packages/server/src/engine.ts`) — `createMessageStoreAdapter()` now accepts optional `StorageConfig` with `messageStorageMode`, `removeContentOnCompletion`, `removeAttachmentsOnCompletion`. `shouldStoreContent()` enforces content rules per storage mode (DEVELOPMENT=all, PRODUCTION=errors only, RAW=raw+errors, METADATA/DISABLED=nothing). Adapter silently returns OK for filtered content types.
+- **Content/attachment cleanup on completion** — When `removeContentOnCompletion=true`, the adapter's `markProcessed()` calls `MessageService.deleteContent()` after marking processed. Same for `removeAttachmentsOnCompletion` with `deleteAttachments()`.
+- **Per-channel adapter in deploy()** — EngineManager no longer has a shared `this.store`. Each channel gets its own adapter created during `deploy()` with the channel's storage settings. QueueConsumer and MessageProcessor use the per-channel store.
+- **MessageService.deleteContent/deleteAttachments** (`packages/server/src/services/message.service.ts`) — Two new static methods that delete all message_content or message_attachments rows for a given channelId+messageId.
+
+### Test results:
+- 1,234 tests passing (184 schema + 68 HL7 + 196 engine + 321 connectors + 443 server + 22 CLI)
+- Build: 0 errors, Lint: 0 warnings
+
+### Files changed (6):
+- `packages/engine/src/pipeline/message-processor.ts` (added CT_SOURCE_MAP constant, sourceMap storage)
+- `packages/engine/src/pipeline/__tests__/message-processor.test.ts` (+7 tests for sourceMap persistence)
+- `packages/server/src/engine.ts` (StorageConfig, shouldStoreContent, per-channel adapter, removed this.store)
+- `packages/server/src/services/message.service.ts` (added deleteContent, deleteAttachments methods)
+- `packages/server/src/services/__tests__/message.service.test.ts` (+4 tests for delete methods)
+- `packages/server/src/services/__tests__/engine-storage.test.ts` (new, +5 tests for shouldStoreContent)
+- `packages/server/src/services/__tests__/engine-integration.test.ts` (updated mock)
+- `packages/server/src/services/__tests__/queue-consumer-wiring.test.ts` (updated mock)
+
+---
+
 ## 2026-03-02 — Phase 17: DICOM Connector
 
 ### What was done:

@@ -144,6 +144,8 @@ vi.mock('../message.service.js', () => ({
     incrementStats: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     dequeue: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
     release: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    deleteContent: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    deleteAttachments: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
   },
 }));
 

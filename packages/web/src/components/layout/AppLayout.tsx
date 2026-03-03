@@ -23,6 +23,12 @@ import EventIcon from '@mui/icons-material/Event';
 import PeopleIcon from '@mui/icons-material/People';
 import JavascriptIcon from '@mui/icons-material/Javascript';
 import SettingsIcon from '@mui/icons-material/Settings';
+import FolderIcon from '@mui/icons-material/Folder';
+import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
+import LocalOfferIcon from '@mui/icons-material/LocalOffer';
+import StorageIcon from '@mui/icons-material/Storage';
+import TuneIcon from '@mui/icons-material/Tune';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuthStore } from '../../stores/auth.store.js';
@@ -41,13 +47,19 @@ interface NavItem {
 const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
   { label: 'Channels', path: '/channels', icon: <SyncAltIcon /> },
+  { label: 'Channel Groups', path: '/channel-groups', icon: <FolderSpecialIcon /> },
   { label: 'Messages', path: '/messages', icon: <MessageIcon /> },
   { label: 'Code Templates', path: '/code-templates', icon: <CodeIcon /> },
   { label: 'Global Scripts', path: '/global-scripts', icon: <JavascriptIcon /> },
+  { label: 'Resources', path: '/resources', icon: <FolderIcon /> },
   { label: 'Alerts', path: '/alerts', icon: <NotificationsIcon /> },
   { label: 'Events', path: '/events', icon: <EventIcon /> },
   { label: 'Users', path: '/users', icon: <PeopleIcon /> },
   { label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
+  { label: 'Tags', path: '/tags', icon: <LocalOfferIcon /> },
+  { label: 'Global Map', path: '/global-map', icon: <StorageIcon /> },
+  { label: 'Config Map', path: '/config-map', icon: <TuneIcon /> },
+  { label: 'System Info', path: '/system', icon: <InfoOutlinedIcon /> },
 ];
 
 export function AppLayout(): ReactNode {

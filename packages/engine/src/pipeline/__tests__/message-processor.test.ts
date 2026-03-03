@@ -525,4 +525,134 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults).toHaveLength(0);
     expect(sendFn).not.toHaveBeenCalled();
   });
+
+  // ----- sourceMap persistence -----
+
+  it('stores sourceMap as JSON string after raw content', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    // First storeContent call = raw (CT_RAW=1), second = sourceMap (CT_SOURCE_MAP=9)
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 0, 9, expect.any(String), 'JSON',
+    );
+  });
+
+  it('stores sourceMap with contentType=9', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
+    const sourceMapCall = calls.find((c) => c[3] === 9);
+    expect(sourceMapCall).toBeDefined();
+    expect(sourceMapCall![3]).toBe(9);
+  });
+
+  it('stores sourceMap with dataType=JSON', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
+    const sourceMapCall = calls.find((c) => c[3] === 9);
+    expect(sourceMapCall).toBeDefined();
+    expect(sourceMapCall![5]).toBe('JSON');
+  });
+
+  it('stores empty sourceMap {} as JSON', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const input: PipelineInput = { rawContent: 'MSH|^~\\&|TEST', sourceMap: {} };
+    await processor.processMessage(input, AbortSignal.timeout(5_000));
+
+    const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
+    const sourceMapCall = calls.find((c) => c[3] === 9);
+    expect(sourceMapCall).toBeDefined();
+    expect(sourceMapCall![4]).toBe('{}');
+  });
+
+  it('serializes complex nested sourceMap correctly', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const input: PipelineInput = {
+      rawContent: 'MSH|^~\\&|TEST',
+      sourceMap: { remoteAddress: '10.0.0.1', headers: { 'content-type': 'text/plain' }, port: 6661 },
+    };
+    await processor.processMessage(input, AbortSignal.timeout(5_000));
+
+    const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
+    const sourceMapCall = calls.find((c) => c[3] === 9);
+    expect(sourceMapCall).toBeDefined();
+    const parsed = JSON.parse(sourceMapCall![4] as string) as Record<string, unknown>;
+    expect(parsed).toEqual({ remoteAddress: '10.0.0.1', headers: { 'content-type': 'text/plain' }, port: 6661 });
+  });
+
+  it('sourceMap storeContent failure does not crash pipeline', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    let callCount = 0;
+    (store.storeContent as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      callCount++;
+      // Fail the second storeContent call (sourceMap)
+      if (callCount === 2) {
+        return Promise.reject(new Error('sourceMap write failed'));
+      }
+      return Promise.resolve(ok(undefined));
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    // tryCatch wraps the entire pipeline, so a storeContent failure results in a failed Result
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    // The error is caught by tryCatch — pipeline returns error result
+    expect(result.ok).toBe(false);
+  });
+
+  it('filtered messages still have sourceMap stored (before filter stage)', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: {
+        sourceFilter: { code: 'return false;' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('FILTERED');
+
+    // sourceMap should still have been stored (happens before filter stage)
+    const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
+    const sourceMapCall = calls.find((c) => c[3] === 9);
+    expect(sourceMapCall).toBeDefined();
+  });
 });

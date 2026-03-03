@@ -179,3 +179,31 @@ D-086: Factory injection for DICOM testability — Both DicomReceiver and DicomD
 D-087: DICOM dispatch mode: PER_FILE vs PER_ASSOCIATION — Source connector supports PER_FILE (default, each file = one message) and PER_ASSOCIATION (all files from one association = one message with JSON array content). PER_FILE gives transformers per-file granularity for routing by modality/patient. PER_ASSOCIATION batches files from a single sender session. — 2026-03-02
 
 D-088: C-STORE only scope for Phase 17 — DICOM connector supports C-STORE send/receive only. C-FIND, C-MOVE, C-GET, and PacsClient are deferred to a future phase. C-STORE covers the primary medical imaging workflow (receiving images from modalities, forwarding to PACS). — 2026-03-02
+
+D-089: Storage policy enforced in adapter, not pipeline — `createMessageStoreAdapter()` wraps `MessageService` and silently drops `storeContent()` calls for content types excluded by the channel's `messageStorageMode`. Pipeline code always calls `storeContent()`, adapter decides whether to persist. Same pattern as a no-op logger. — 2026-03-02
+
+D-090: Content cleanup handled in adapter's markProcessed — When `removeContentOnCompletion=true`, the adapter's `markProcessed()` calls `MessageService.deleteContent()` after marking processed. Same for `removeAttachmentsOnCompletion`. Pipeline code unchanged. — 2026-03-02
+
+D-091: Per-channel message store adapter — `createMessageStoreAdapter()` changed from shared singleton to per-channel factory that captures the channel's storage settings in a closure. Created in `EngineManager.deploy()` for each channel. Enables different channels to have different storage modes. — 2026-03-02
+
+D-092: Storage mode content rules — DEVELOPMENT stores all content types. PRODUCTION stores only errors (11-13). RAW stores raw (1) + errors. METADATA and DISABLED store nothing. Message records and connector_message records are ALWAYS created (needed for statistics and status tracking). Only `message_content` storage is conditional. — 2026-03-02
+
+D-093: sourceMap stored as JSON — `sourceMap` is `Record<string, unknown>` stored via `JSON.stringify()` with contentType=9 (CT_SOURCE_MAP) and dataType='JSON'. Stored before filter stage so filtered messages also have their sourceMap for debugging. Empty sourceMap `{}` still stored. — 2026-03-02
+
+D-094: Channel groups use channels:write permission — Groups are organizational, not security-sensitive. Creating/editing groups is a channel management action. No dedicated group permissions needed. — 2026-03-02
+
+D-095: Tags use settings:write permission — Tags are system-wide configuration. Creating/editing tags uses `settings:write`; reading tags uses `settings:read`. Consistent with other system-wide config. — 2026-03-02
+
+D-096: Dependencies use channels:deploy permission + DAG validation — Setting dependencies affects deployment order. Service validates no circular dependencies exist using iterative DFS cycle detection. Dependencies sub-route mounted under `/channels` prefix before greedy `/:id`. — 2026-03-02
+
+D-097: Resources store text content in DB — Resources table gets a `content text` column. Text storage sufficient for PEM certificates, XSLT files, CSV lookup tables, and JSON configs. Binary file support deferred (YAGNI). `sizeBytes` auto-computed from content. — 2026-03-02
+
+D-098: Global Map DELETE / route before DELETE /:key — Following the settings `/bulk` before `/:key` pattern, `DELETE /` (clear all) must be mounted before `DELETE /:key` to prevent Express treating empty path as key param. — 2026-03-02
+
+D-099: Config Map uses composite key in URL path — The `configuration` table uses `(category, name)` composite PK. API endpoints use two-segment params: `/config-map/:category/:name`. Bulk endpoint at `/config-map/bulk` mounted first. — 2026-03-02
+
+D-100: Client-side tag filtering (not SQL join) — The statistics query is performance-critical raw SQL. Rather than adding a tag JOIN, we load tag assignments in a separate lightweight query and filter client-side. Keeps stats query fast. — 2026-03-02
+
+D-101: System Info reuses health.service.ts functions — `SystemInfoService` calls existing `checkDatabase()`, `getMemoryStats()`, `getEngineStats()` from health.service.ts. Adds version, Node.js version, OS info, PID. — 2026-03-02
+
+D-102: Dashboard grouped view is a toggle — Users switch between flat view (existing ChannelStatusTable) and grouped view (GroupedChannelTable with collapsible group sections). Preserves existing behavior as default. — 2026-03-02
