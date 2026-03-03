@@ -207,3 +207,21 @@ D-100: Client-side tag filtering (not SQL join) — The statistics query is perf
 D-101: System Info reuses health.service.ts functions — `SystemInfoService` calls existing `checkDatabase()`, `getMemoryStats()`, `getEngineStats()` from health.service.ts. Adds version, Node.js version, OS info, PID. — 2026-03-02
 
 D-102: Dashboard grouped view is a toggle — Users switch between flat view (existing ChannelStatusTable) and grouped view (GroupedChannelTable with collapsible group sections). Preserves existing behavior as default. — 2026-03-02
+
+D-103: Backup JSON format with named sections — Backup payload: `{ version: 1, exportedAt, channels, codeTemplateLibraries, codeTemplates, alerts, globalScripts, users, settings, resources, channelGroups, tags, channelDependencies, configMap, globalMap, groupMemberships, tagAssignments }`. Each section is an array. Users omit passwordHash. Channels reuse ChannelExportEntry. — 2026-03-02
+
+D-104: Backup excludes message data — Messages, statistics, events are transient operational data. Backup captures configuration only. Avoids HIPAA complications of backing up PHI. — 2026-03-02
+
+D-105: Restore uses per-section sequential processing — Each entity type section restored individually. If one section fails, remaining sections continue. Returns detailed per-section report. Channel restore reuses existing ChannelImportService. — 2026-03-02
+
+D-106: Data pruner scheduling via pg-boss — pg-boss is already a dependency. `boss.schedule()` supports cron natively. No `node-cron` needed. The pruner job calls `DataPrunerService.pruneAll()`. — 2026-03-02
+
+D-107: Pruner settings as system settings — `pruner.enabled`, `pruner.cron_expression` stored in existing `system_settings` table. Editable via Settings API. Scheduler reads on startup and when rescheduled. — 2026-03-02
+
+D-108: Monaco sandbox types as static string constant — `.d.ts` definitions authored as a string constant in `packages/web/src/lib/sandbox-types.ts`. Hand-written to match sandbox executor API. ~80 lines. — 2026-03-02
+
+D-109: ScriptEditor wrapper component — Shared `ScriptEditor` wraps Monaco Editor with sandbox type defs via `beforeMount`. All 5 Monaco usages switch to this wrapper. Types registered once (singleton guard). — 2026-03-02
+
+D-110: Server logs via in-memory ring buffer — Log entries captured via Pino tee stream into fixed-size ring buffer (10,000 entries). No DB storage. For persistent logs, users use external log aggregation. — 2026-03-02
+
+D-111: Log streaming via Socket.IO rooms — Clients join `logs` room for `server:log` events. Follows existing room pattern. Permission: `system:info`. — 2026-03-02

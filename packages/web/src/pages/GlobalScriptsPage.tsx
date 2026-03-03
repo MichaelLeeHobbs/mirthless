@@ -13,7 +13,7 @@ import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import Snackbar from '@mui/material/Snackbar';
 import CircularProgress from '@mui/material/CircularProgress';
-import Editor from '@monaco-editor/react';
+import { ScriptEditor } from '../components/editors/ScriptEditor.js';
 import { useBlocker } from 'react-router-dom';
 import { useGlobalScripts, useUpdateGlobalScripts } from '../hooks/use-global-scripts.js';
 
@@ -128,20 +128,10 @@ export function GlobalScriptsPage(): ReactNode {
 
       {/* Editor */}
       <Box sx={{ flexGrow: 1, mt: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-        <Editor
+        <ScriptEditor
           height="100%"
-          language="javascript"
-          theme="vs-dark"
           value={scripts[activeKey]}
           onChange={(value) => { handleScriptChange(activeKey, value); }}
-          options={{
-            minimap: { enabled: false },
-            lineNumbers: 'on',
-            scrollBeyondLastLine: false,
-            fontSize: 13,
-            tabSize: 2,
-            wordWrap: 'on',
-          }}
         />
       </Box>
 

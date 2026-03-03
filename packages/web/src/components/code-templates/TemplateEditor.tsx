@@ -18,7 +18,7 @@ import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
 import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
-import Editor from '@monaco-editor/react';
+import { ScriptEditor } from '../editors/ScriptEditor.js';
 import { CODE_TEMPLATE_CONTEXTS } from '@mirthless/core-models';
 import type { CodeTemplateDetail } from '../../api/client.js';
 
@@ -156,20 +156,10 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving }: 
       </Box>
 
       <Box sx={{ flexGrow: 1, minHeight: 300, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-        <Editor
+        <ScriptEditor
           height="100%"
-          language="javascript"
-          theme="vs-dark"
           value={code}
           onChange={(value) => { setCode(value ?? ''); }}
-          options={{
-            minimap: { enabled: false },
-            lineNumbers: 'on',
-            scrollBeyondLastLine: false,
-            fontSize: 13,
-            tabSize: 2,
-            wordWrap: 'on',
-          }}
         />
       </Box>
 

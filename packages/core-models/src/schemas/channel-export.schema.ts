@@ -70,7 +70,7 @@ const channelExportMetadataColumnSchema = z.object({
   mappingExpression: z.string().nullable(),
 });
 
-const channelExportEntrySchema = z.object({
+export const channelExportEntrySchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   description: z.string().nullable(),

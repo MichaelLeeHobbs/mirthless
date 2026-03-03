@@ -9,7 +9,7 @@ import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import Editor from '@monaco-editor/react';
+import { ScriptEditor } from '../editors/ScriptEditor.js';
 
 const SCRIPT_SECTIONS = [
   { key: 'deploy', label: 'Deploy Script', description: 'Runs when the channel is deployed' },
@@ -46,20 +46,10 @@ export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
             </Typography>
           </AccordionSummary>
           <AccordionDetails sx={{ p: 0 }}>
-            <Editor
+            <ScriptEditor
               height="250px"
-              language="javascript"
-              theme="vs-dark"
               value={scripts[section.key]}
               onChange={(value) => { handleScriptChange(section.key, value); }}
-              options={{
-                minimap: { enabled: false },
-                lineNumbers: 'on',
-                scrollBeyondLastLine: false,
-                fontSize: 13,
-                tabSize: 2,
-                wordWrap: 'on',
-              }}
             />
           </AccordionDetails>
         </Accordion>

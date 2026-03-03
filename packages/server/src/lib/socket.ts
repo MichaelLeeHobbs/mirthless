@@ -82,6 +82,16 @@ function registerConnectionHandlers(server: SocketIOServer): void {
       logger.debug({ socketId: socket.id, room: 'dashboard' }, 'Left room');
     });
 
+    socket.on('join:logs', () => {
+      void socket.join('logs');
+      logger.debug({ socketId: socket.id, room: 'logs' }, 'Joined room');
+    });
+
+    socket.on('leave:logs', () => {
+      void socket.leave('logs');
+      logger.debug({ socketId: socket.id, room: 'logs' }, 'Left room');
+    });
+
     socket.on('disconnect', () => {
       logger.debug({ socketId: socket.id }, 'Socket disconnected');
     });

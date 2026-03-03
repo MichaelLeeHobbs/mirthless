@@ -70,4 +70,19 @@ export const defaultSettings: readonly NewSystemSetting[] = [
     category: 'smtp',
     description: 'SMTP authentication password',
   },
+  // Data Pruner settings
+  {
+    key: 'pruner.enabled',
+    value: 'false',
+    type: 'boolean',
+    category: 'pruner',
+    description: 'Enable automatic data pruning on schedule',
+  },
+  {
+    key: 'pruner.cron_expression',
+    value: '0 3 * * *',
+    type: 'string',
+    category: 'pruner',
+    description: 'Cron expression for data pruner schedule (default: 3 AM daily)',
+  },
 ];
