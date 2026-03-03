@@ -14,6 +14,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { useChannelStatistics, useResetStatistics } from '../hooks/use-statistics.js';
 import { StatsSummaryCards } from '../components/statistics/StatsSummaryCards.js';
 import { ConnectorStatsTable } from '../components/statistics/ConnectorStatsTable.js';
+import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 
 export function ChannelStatisticsPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -30,6 +31,10 @@ export function ChannelStatisticsPage(): ReactNode {
 
   return (
     <Box sx={{ p: 3 }}>
+      <PageBreadcrumbs items={[
+        { label: 'Dashboard', href: '/' },
+        { label: 'Channel Statistics' },
+      ]} />
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
         <Button
           startIcon={<ArrowBackIcon />}

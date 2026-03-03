@@ -2,6 +2,26 @@ import { create } from 'zustand';
 
 type ThemeMode = 'dark' | 'light';
 
+const THEME_STORAGE_KEY = 'mirthless_theme';
+
+function loadThemeMode(): ThemeMode {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === 'light' || stored === 'dark') return stored;
+  } catch {
+    // localStorage may be unavailable
+  }
+  return 'dark';
+}
+
+function persistThemeMode(mode: ThemeMode): void {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, mode);
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
 interface UiState {
   readonly themeMode: ThemeMode;
   readonly sidebarOpen: boolean;
@@ -16,13 +36,15 @@ interface UiActions {
 type UiStore = UiState & UiActions;
 
 export const useUiStore = create<UiStore>((set) => ({
-  themeMode: 'dark',
+  themeMode: loadThemeMode(),
   sidebarOpen: true,
 
   toggleThemeMode: (): void => {
-    set((state) => ({
-      themeMode: state.themeMode === 'dark' ? 'light' : 'dark',
-    }));
+    set((state) => {
+      const next = state.themeMode === 'dark' ? 'light' : 'dark';
+      persistThemeMode(next);
+      return { themeMode: next };
+    });
   },
 
   toggleSidebar: (): void => {

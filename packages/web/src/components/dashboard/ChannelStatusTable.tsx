@@ -26,10 +26,17 @@ import IconButton from '@mui/material/IconButton';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
 import type { ChannelStatus } from '../../hooks/use-deployment.js';
 import { ChannelActions } from './ChannelActions.js';
+import Checkbox from '@mui/material/Checkbox';
+import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
+import { useContextMenu } from '../../hooks/use-context-menu.js';
 
 interface ChannelStatusTableProps {
   readonly statistics: readonly ChannelStatisticsSummary[];
   readonly deploymentStatuses: readonly ChannelStatus[];
+  readonly selectedIds?: ReadonlySet<string>;
+  readonly onToggleSelect?: (id: string) => void;
+  readonly onSelectAll?: (ids: readonly string[]) => void;
+  readonly isAllSelected?: boolean;
 }
 
 type SortField = 'channelName' | 'state' | 'received' | 'filtered' | 'sent' | 'errored' | 'queued';
@@ -65,11 +72,13 @@ export function getStatusDotColor(state: string): string {
   }
 }
 
-export function ChannelStatusTable({ statistics, deploymentStatuses }: ChannelStatusTableProps): ReactNode {
+export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds, onToggleSelect, onSelectAll, isAllSelected }: ChannelStatusTableProps): ReactNode {
+  const showCheckboxes = Boolean(onToggleSelect);
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('channelName');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const { menuState, menuTarget, handleContextMenu, handleClose } = useContextMenu<ChannelRow>();
 
   // Merge statistics and deployment statuses
   const deploymentMap = useMemo(() => {
@@ -144,6 +153,19 @@ export function ChannelStatusTable({ statistics, deploymentStatuses }: ChannelSt
         <Table size="small">
           <TableHead>
             <TableRow>
+              {showCheckboxes ? (
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    size="small"
+                    checked={isAllSelected ?? false}
+                    indeterminate={!isAllSelected && (selectedIds?.size ?? 0) > 0}
+                    onChange={() => {
+                      if (isAllSelected) onSelectAll?.([]);
+                      else onSelectAll?.(filteredRows.map((r) => r.channelId));
+                    }}
+                  />
+                </TableCell>
+              ) : null}
               <TableCell width={40} />
               <TableCell>
                 <TableSortLabel
@@ -214,13 +236,22 @@ export function ChannelStatusTable({ statistics, deploymentStatuses }: ChannelSt
           <TableBody>
             {filteredRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                <TableCell colSpan={showCheckboxes ? 10 : 9} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                   {search.length > 0 ? 'No channels match your search.' : 'No channels configured.'}
                 </TableCell>
               </TableRow>
             ) : (
               filteredRows.map((row) => (
-                <TableRow key={row.channelId} hover>
+                <TableRow key={row.channelId} hover onContextMenu={(e) => handleContextMenu(e, row)}>
+                  {showCheckboxes ? (
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        size="small"
+                        checked={selectedIds?.has(row.channelId) ?? false}
+                        onChange={() => onToggleSelect?.(row.channelId)}
+                      />
+                    </TableCell>
+                  ) : null}
                   <TableCell>
                     <CircleIcon sx={{ fontSize: 12, color: getStatusDotColor(row.state) }} />
                   </TableCell>
@@ -268,6 +299,13 @@ export function ChannelStatusTable({ statistics, deploymentStatuses }: ChannelSt
           </TableBody>
         </Table>
       </TableContainer>
+      <ChannelContextMenu
+        menuState={menuState}
+        channelId={menuTarget?.channelId ?? null}
+        channelName={menuTarget?.channelName ?? null}
+        state={menuTarget === null ? null : (menuTarget.state === 'UNDEPLOYED' ? null : menuTarget.state)}
+        onClose={handleClose}
+      />
     </Paper>
   );
 }

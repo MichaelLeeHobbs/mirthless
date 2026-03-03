@@ -24,6 +24,7 @@ import { MessageSearchBar } from '../components/messages/MessageSearchBar.js';
 import { MessageTable } from '../components/messages/MessageTable.js';
 import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
 import { useReprocessMessage, useBulkDeleteMessages } from '../hooks/use-message-actions.js';
+import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 
 export function MessageBrowserPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -104,6 +105,11 @@ export function MessageBrowserPage(): ReactNode {
 
   return (
     <Box>
+      <PageBreadcrumbs items={[
+        { label: 'Channels', href: '/channels' },
+        { label: channel?.name ?? 'Channel', href: `/channels/${channelId}` },
+        { label: 'Messages' },
+      ]} />
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
         <Button
           startIcon={<ArrowBackIcon />}

@@ -36,6 +36,7 @@ import type { DestinationFormValues } from '../components/channels/destinations/
 import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, TransformerStepFormValues } from '../components/channels/source/types.js';
 import { createDefaultFilter, createDefaultTransformer } from '../components/channels/source/types.js';
 import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
+import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 
 // ----- Form Data Type -----
 
@@ -585,6 +586,10 @@ export function ChannelEditorPage(): ReactNode {
 
   return (
     <Box>
+      <PageBreadcrumbs items={[
+        { label: 'Channels', href: '/channels' },
+        { label: isEditMode ? (nameValue || 'Edit Channel') : 'New Channel' },
+      ]} />
       {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, overflow: 'hidden' }}>
         <IconButton onClick={() => { navigate('/channels'); }} aria-label="back to channels" sx={{ flexShrink: 0 }}>

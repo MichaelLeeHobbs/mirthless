@@ -21,11 +21,12 @@ interface MetricCardProps {
   readonly label: string;
   readonly value: number | string;
   readonly color?: string;
+  readonly borderColor?: string;
 }
 
-function MetricCard({ label, value, color }: MetricCardProps): ReactNode {
+function MetricCard({ label, value, color, borderColor }: MetricCardProps): ReactNode {
   return (
-    <Card sx={{ flex: 1, minWidth: 120 }}>
+    <Card sx={{ flex: 1, minWidth: 120, ...(borderColor ? { borderTop: 3, borderColor } : {}) }}>
       <CardContent sx={{ textAlign: 'center', py: 2, '&:last-child': { pb: 2 } }}>
         <Typography
           variant="h4"
@@ -45,14 +46,16 @@ function MetricCard({ label, value, color }: MetricCardProps): ReactNode {
 export function SummaryCards({ statistics, deployedCount, stoppedCount, erroredCount }: SummaryCardsProps): ReactNode {
   const totalChannels = statistics.length;
   const totalReceived = statistics.reduce((sum, s) => sum + s.received, 0);
+  const totalQueued = statistics.reduce((sum, s) => sum + s.queued, 0);
 
   return (
     <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
       <MetricCard label="Total Channels" value={totalChannels} />
-      <MetricCard label="Running" value={deployedCount} color="success.main" />
-      <MetricCard label="Stopped" value={stoppedCount} color="text.secondary" />
-      <MetricCard label="Errored" value={erroredCount} color="error.main" />
-      <MetricCard label="Received" value={totalReceived.toLocaleString()} color="info.main" />
+      <MetricCard label="Running" value={deployedCount} color="success.main" borderColor="success.main" />
+      <MetricCard label="Stopped" value={stoppedCount} borderColor="text.secondary" />
+      <MetricCard label="Errored" value={erroredCount} color="error.main" borderColor="error.main" />
+      <MetricCard label="Queued" value={totalQueued} color="warning.main" borderColor="warning.main" />
+      <MetricCard label="Received" value={totalReceived.toLocaleString()} color="info.main" borderColor="info.main" />
     </Box>
   );
 }

@@ -2,6 +2,50 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-03 — Phase 27: Polish & Testing
+
+### What was done:
+- **Dashboard Redesign** — Default to grouped-by-default view (Mirth Connect style). Added search/filter toolbar to GroupedChannelTable. Added inline deploy/start/stop/pause icon buttons on channel rows (alongside three-dot menu). Added "Queued" summary card with colored top border on all cards.
+- **Right-Click Context Menus** — Reusable `useContextMenu<T>` hook + `ChannelContextMenu` component. Dashboard table rows and channels list rows support right-click with state-aware deployment actions (Edit, Messages, Statistics, Deploy/Start/Stop/Pause, Clone, Delete).
+- **Sidebar Grouping** — 18 flat nav items reorganized into 5 labeled sections (Overview, Channels, Configuration, Administration, System) with MUI `ListSubheader` headings. Tooltips on collapsed icon-only mode.
+- **Mobile Responsive Drawer** — Sidebar converts from permanent to temporary drawer on mobile breakpoint (`md`). Closes on nav click. `useMediaQuery` for breakpoint detection.
+- **Dark/Light Theme Toggle** — IconButton in AppBar toggles theme. Persisted to localStorage via `THEME_STORAGE_KEY`. Initial theme loaded from storage on app start.
+- **Breadcrumbs** — Generic `PageBreadcrumbs` component (MUI Breadcrumbs + RouterLink). Added to ChannelEditorPage, MessageBrowserPage, ChannelStatisticsPage, AlertEditorPage.
+- **Keyboard Shortcuts** — `useKeyboardShortcuts` hook with `?` for help dialog, `g d` dashboard, `g c` channels, `g s` settings, `g a` alerts, `g u` users. Ignores input/textarea focus. `KeyboardShortcutHelp` dialog component.
+- **Bulk Operations Toolbar** — `useChannelSelection` hook (Set-based), checkbox column on ChannelStatusTable (optional props), floating `BulkActionsToolbar` (Deploy All, Start All, Stop All, Undeploy All) with selection count.
+- **E2E Test Expansion** — 9 new Playwright specs: channel-groups (6 tests), tags (6), resources (6), global-map (5), config-map (5), system-info (3), statistics (5), cross-channel-search (5), message-flow rewrite (5 tests that actually send MLLP messages). Total: ~100+ E2E tests across 20 spec files.
+
+### Files changed:
+- `packages/web/src/pages/DashboardPage.tsx` (grouped default, bulk selection props)
+- `packages/web/src/components/dashboard/GroupedChannelTable.tsx` (search toolbar, inline actions)
+- `packages/web/src/components/dashboard/SummaryCards.tsx` (queued card, colored borders)
+- `packages/web/src/components/dashboard/ChannelStatusTable.tsx` (context menu, checkbox column)
+- `packages/web/src/components/dashboard/BulkActionsToolbar.tsx` (new)
+- `packages/web/src/components/layout/AppLayout.tsx` (grouped sidebar, mobile responsive, theme toggle, keyboard shortcuts)
+- `packages/web/src/components/common/ChannelContextMenu.tsx` (new)
+- `packages/web/src/components/common/PageBreadcrumbs.tsx` (new)
+- `packages/web/src/components/common/KeyboardShortcutHelp.tsx` (new)
+- `packages/web/src/hooks/use-context-menu.ts` (new)
+- `packages/web/src/hooks/use-keyboard-shortcuts.ts` (new)
+- `packages/web/src/hooks/use-channel-selection.ts` (new)
+- `packages/web/src/stores/ui.store.ts` (localStorage theme persistence)
+- `packages/web/src/pages/ChannelsPage.tsx` (context menu)
+- `packages/web/src/pages/ChannelEditorPage.tsx` (breadcrumbs)
+- `packages/web/src/pages/MessageBrowserPage.tsx` (breadcrumbs)
+- `packages/web/src/pages/ChannelStatisticsPage.tsx` (breadcrumbs)
+- `packages/web/src/pages/AlertEditorPage.tsx` (breadcrumbs)
+- `e2e/channel-groups.spec.ts` (new)
+- `e2e/tags.spec.ts` (new)
+- `e2e/resources.spec.ts` (new)
+- `e2e/global-map.spec.ts` (new)
+- `e2e/config-map.spec.ts` (new)
+- `e2e/system-info.spec.ts` (new)
+- `e2e/statistics.spec.ts` (new)
+- `e2e/cross-channel-search.spec.ts` (new)
+- `e2e/message-flow.spec.ts` (rewritten)
+
+---
+
 ## 2026-03-03 — Phase 24: Sandbox Completeness & Pipeline Context
 
 ### What was done:
