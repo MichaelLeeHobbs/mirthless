@@ -19,7 +19,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import Editor from '@monaco-editor/react';
+import { ScriptEditor } from '../../editors/ScriptEditor.js';
 import type { TransformerStepFormValues } from './types.js';
 
 interface TransformerStepEditorProps {
@@ -98,20 +98,10 @@ export function TransformerStepEditor({
         </Box>
 
         {step.type === 'JAVASCRIPT' || step.type === 'MESSAGE_BUILDER' ? (
-          <Editor
+          <ScriptEditor
             height="200px"
-            language="javascript"
-            theme="vs-dark"
             value={step.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
-            options={{
-              minimap: { enabled: false },
-              lineNumbers: 'on',
-              scrollBeyondLastLine: false,
-              fontSize: 13,
-              tabSize: 2,
-              wordWrap: 'on',
-            }}
           />
         ) : (
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>

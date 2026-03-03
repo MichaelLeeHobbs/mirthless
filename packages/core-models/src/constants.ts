@@ -240,5 +240,6 @@ export const SOCKET_EVENT = {
   CHANNEL_STATE: 'channel:state',
   STATS_UPDATE: 'stats:update',
   MESSAGE_NEW: 'message:new',
+  SERVER_LOG: 'server:log',
 } as const;
 export type SocketEvent = (typeof SOCKET_EVENT)[keyof typeof SOCKET_EVENT];

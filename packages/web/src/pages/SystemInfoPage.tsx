@@ -13,6 +13,9 @@ import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import { useSystemInfo } from '../hooks/use-system-info.js';
+import { BackupRestoreSection } from '../components/system/BackupRestoreSection.js';
+import { PrunerSection } from '../components/system/PrunerSection.js';
+import { LogViewer } from '../components/system/LogViewer.js';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -188,6 +191,21 @@ export function SystemInfoPage(): ReactNode {
           </Grid>
         </Grid>
       )}
+
+      {/* Data Pruner */}
+      <Box sx={{ mt: 3 }}>
+        <PrunerSection />
+      </Box>
+
+      {/* Server Logs */}
+      <Box sx={{ mt: 3 }}>
+        <LogViewer />
+      </Box>
+
+      {/* Backup & Restore */}
+      <Box sx={{ mt: 3 }}>
+        <BackupRestoreSection />
+      </Box>
     </Box>
   );
 }

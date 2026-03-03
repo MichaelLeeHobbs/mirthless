@@ -2,6 +2,56 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-02 — Phase 21: Server Backup/Restore, Pruner Scheduling, Monaco DX, Server Logs
+
+### What was done:
+- **Server Backup/Restore** (full stack) — Zod schemas for backup payload (version, exportedAt, 16 entity sections) + restore input (collisionMode: SKIP/OVERWRITE), ServerBackupService (exportBackup + restoreBackup with per-section processing), controller, routes (`/system/backup`, 2 endpoints), ~20 service tests, TanStack Query hooks (download blob + upload restore), BackupRestoreSection UI (download button, file upload dialog, collision mode selector, per-section result table)
+- **Data Pruner Scheduling** (full stack) — PrunerSchedulerService using pg-boss `schedule()`/`work()`, controller, routes (`/admin/prune/schedule`, 2 endpoints), ~10 service tests, pruner settings seeded (pruner.enabled, pruner.cron_expression), TanStack Query hooks (status polling, update schedule, run now), PrunerSection UI (enable toggle, cron input, run now button, last run info), server.ts init on startup
+- **Monaco Sandbox TypeScript Definitions** — `SANDBOX_TYPE_DEFS` string constant with `.d.ts` for all sandbox globals (msg, tmp, rawData, sourceMap, channelMap, connectorMap, responseMap, globalChannelMap, logger, parseHL7, createACK, Hl7MessageProxy, SandboxLogger), ScriptEditor wrapper with `beforeMount` configuration, all 5 Monaco usages replaced (ScriptsTab, FilterRuleEditor, TransformerStepEditor, TemplateEditor, GlobalScriptsPage), 4 tests
+- **Server Logs Backend** — LogStreamService with in-memory ring buffer (10,000 entries), Pino tee stream integration (JSON line parsing), Socket.IO `logs` room handlers (join:logs/leave:logs), query endpoint with level/search/pagination filters, controller, routes (`/system/logs`, 1 endpoint), ~10 service tests, Pino logger refactored for log capture (setLogCaptureStream)
+- **Server Logs UI** — useHistoricalLogs hook (initial load), useLogStream hook (Socket.IO subscription with pause/resume/buffer), LogViewer component (monospace log list, color-coded levels, ToggleButtonGroup level filter, debounced search, pause/resume, download as .log, clear)
+- **SystemInfoPage enhancements** — Added PrunerSection, LogViewer, and BackupRestoreSection sections below existing cards
+- **Manual test docs** — 4 new checklists (41-server-backup, 42-pruner-scheduling, 43-monaco-sandbox-types, 44-server-logs)
+- **Design decisions** — D-103 through D-111
+
+### Files changed (30+):
+- `packages/core-models/src/schemas/server-backup.schema.ts` (new)
+- `packages/core-models/src/schemas/index.ts` (1 new export)
+- `packages/server/src/services/server-backup.service.ts` (new)
+- `packages/server/src/services/pruner-scheduler.service.ts` (new)
+- `packages/server/src/services/log-stream.service.ts` (new)
+- `packages/server/src/controllers/server-backup.controller.ts` (new)
+- `packages/server/src/controllers/pruner-scheduler.controller.ts` (new)
+- `packages/server/src/controllers/log.controller.ts` (new)
+- `packages/server/src/routes/server-backup.routes.ts` (new)
+- `packages/server/src/routes/pruner-scheduler.routes.ts` (new)
+- `packages/server/src/routes/log.routes.ts` (new)
+- `packages/server/src/routes/index.ts` (4 new route mounts)
+- `packages/server/src/lib/logger.ts` (refactored for log capture stream)
+- `packages/server/src/lib/socket.ts` (added join:logs/leave:logs handlers)
+- `packages/server/src/server.ts` (pruner scheduler init + log capture init)
+- `packages/server/src/db/seeds/settings.ts` (2 new pruner settings)
+- `packages/server/src/services/__tests__/server-backup.service.test.ts` (new)
+- `packages/server/src/services/__tests__/pruner-scheduler.service.test.ts` (new)
+- `packages/server/src/services/__tests__/log-stream.service.test.ts` (new)
+- `packages/web/src/lib/sandbox-types.ts` (new)
+- `packages/web/src/components/editors/ScriptEditor.tsx` (new)
+- `packages/web/src/components/editors/__tests__/sandbox-types.test.ts` (new)
+- `packages/web/src/components/system/BackupRestoreSection.tsx` (new)
+- `packages/web/src/components/system/PrunerSection.tsx` (new)
+- `packages/web/src/components/system/LogViewer.tsx` (new)
+- `packages/web/src/hooks/use-backup.ts` (new)
+- `packages/web/src/hooks/use-pruner.ts` (new)
+- `packages/web/src/hooks/use-logs.ts` (new)
+- `packages/web/src/pages/SystemInfoPage.tsx` (3 new sections)
+- `packages/web/src/pages/GlobalScriptsPage.tsx` (replaced Editor with ScriptEditor)
+- `packages/web/src/components/channels/ScriptsTab.tsx` (replaced Editor with ScriptEditor)
+- `packages/web/src/components/channels/source/FilterRuleEditor.tsx` (replaced Editor with ScriptEditor)
+- `packages/web/src/components/channels/source/TransformerStepEditor.tsx` (replaced Editor with ScriptEditor)
+- `packages/web/src/components/code-templates/TemplateEditor.tsx` (replaced Editor with ScriptEditor)
+
+---
+
 ## 2026-03-02 — Phase 20: Config Management, System Info & Dashboard Enhancements
 
 ### What was done:
