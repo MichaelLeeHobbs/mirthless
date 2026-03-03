@@ -10,6 +10,7 @@ import {
   MessageProcessor,
   DEFAULT_EXECUTION_OPTIONS,
   GlobalChannelMap,
+  GlobalMapProxy,
   QueueConsumer,
   compileScript,
   compileFilterRulesToScript,
@@ -42,6 +43,8 @@ import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode } from '@mi
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
+import { GlobalMapService } from './services/global-map.service.js';
+import { ConfigMapService } from './services/config-map.service.js';
 import { CodeTemplateService } from './services/code-template.service.js';
 import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
@@ -57,8 +60,10 @@ export interface DeployedChannel {
   readonly runtime: ChannelRuntime;
   readonly config: ChannelDetail;
   readonly globalChannelMap: GlobalChannelMap;
+  readonly globalMapProxy: GlobalMapProxy;
   readonly alertManager: AlertManager;
   readonly queueConsumers: readonly QueueConsumer[];
+  readonly scripts: ChannelScripts;
 }
 
 // ----- Storage Policy -----
@@ -130,6 +135,8 @@ function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
       MessageService.dequeue(channelId, metaDataId, batchSize),
     release: (channelId, messageId, metaDataId, newStatus) =>
       MessageService.release(channelId, messageId, metaDataId, newStatus as Parameters<typeof MessageService.release>[3]),
+    storeAttachment: (channelId, messageId, attachmentId, mimeType, content, size) =>
+      MessageService.storeAttachment(channelId, messageId, attachmentId, mimeType, content, size),
   };
 }
 
@@ -183,12 +190,14 @@ export class EngineManager {
     // Wire JavaScript destination script runners (compile once at deploy)
     await this.wireJavaScriptDestinations(channel, destinations);
 
-    // Load code templates, global scripts, alerts, and filter/transformer data in parallel
-    const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts] = await Promise.all([
+    // Load code templates, global scripts, alerts, filter/transformer data, configMap, and globalMap in parallel
+    const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts, configMapResult, globalMapResult] = await Promise.all([
       CodeTemplateService.listTemplates(),
       GlobalScriptService.getAll(),
       this.loadFilterTransformerData(channel.id),
       this.loadAlertsForChannel(channel.id),
+      ConfigMapService.list(),
+      GlobalMapService.list(),
     ]);
 
     const templates: ReadonlyArray<CodeTemplateData> = templatesResult.ok
@@ -217,6 +226,33 @@ export class EngineManager {
     const alertManager = new AlertManager({ logger, emailSender });
     alertManager.loadAlerts(loadedAlerts);
 
+    // Execute global deploy script (before channel deploy)
+    if (scripts.globalDeploy) {
+      await this.runDeployScript(scripts.globalDeploy, channel, gcm);
+    }
+
+    // Execute channel deploy script
+    if (scripts.deploy) {
+      await this.runDeployScript(scripts.deploy, channel, gcm);
+    }
+
+    // Build configMap record (key format: "category.name")
+    const configMapRecord: Record<string, unknown> = {};
+    if (configMapResult.ok) {
+      for (const entry of configMapResult.value) {
+        configMapRecord[`${entry.category}.${entry.name}`] = entry.value;
+      }
+    }
+
+    // Build globalMap proxy with flush-to-DB callback
+    const globalMapProxyInstance = new GlobalMapProxy(async (key, value) => {
+      await GlobalMapService.upsert(key, value);
+    });
+    if (globalMapResult.ok) {
+      globalMapProxyInstance.load(globalMapResult.value);
+    }
+    globalMapProxyInstance.start();
+
     // Build pipeline config
     const pipelineConfig: PipelineConfig = {
       channelId: channel.id,
@@ -225,6 +261,8 @@ export class EngineManager {
       scripts,
       destinations: destConfigs,
       globalChannelMap: gcm,
+      globalMapProxy: globalMapProxyInstance,
+      configMap: Object.freeze(configMapRecord),
       onError: async (event) => alertManager.handleEvent(event),
     };
 
@@ -274,7 +312,7 @@ export class EngineManager {
       throw new Error('Failed to deploy channel runtime');
     }
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, alertManager, queueConsumers });
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts });
   }
 
   /** Get a deployed channel runtime. */
@@ -297,8 +335,19 @@ export class EngineManager {
     // Stop all queue consumers before cleanup
     await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
 
+    // Execute channel undeploy script (before cleanup)
+    if (deployed.scripts.undeploy) {
+      await this.runDeployScript(deployed.scripts.undeploy, deployed.config, deployed.globalChannelMap);
+    }
+
+    // Execute global undeploy script
+    if (deployed.scripts.globalUndeploy) {
+      await this.runDeployScript(deployed.scripts.globalUndeploy, deployed.config, deployed.globalChannelMap);
+    }
+
     deployed.globalChannelMap.clear();
     deployed.alertManager.clearThrottleState();
+    await deployed.globalMapProxy.dispose();
 
     const result = await deployed.runtime.undeploy();
     if (!result.ok) {
@@ -329,11 +378,11 @@ export class EngineManager {
   ): Promise<ChannelScripts> {
     const scripts: Record<string, CompiledScript | undefined> = {};
 
-    // Channel preprocessor/postprocessor from channel_scripts table
+    // Channel preprocessor/postprocessor/deploy/undeploy from channel_scripts table
     for (const script of channel.scripts) {
       if (!script.script) continue;
       const key = script.scriptType.toLowerCase();
-      if (key === 'preprocessor' || key === 'postprocessor') {
+      if (key === 'preprocessor' || key === 'postprocessor' || key === 'deploy' || key === 'undeploy') {
         scripts[key] = await this.compileWithTemplates(
           script.script, key, templates, `${channel.name}/${key}.ts`,
         );
@@ -356,7 +405,7 @@ export class EngineManager {
       );
     }
 
-    // Global preprocessor/postprocessor
+    // Global preprocessor/postprocessor/deploy/undeploy
     if (globalScriptsResult.ok) {
       const gs = globalScriptsResult.value;
       if (gs.preprocessor) {
@@ -367,6 +416,16 @@ export class EngineManager {
       if (gs.postprocessor) {
         scripts['globalPostprocessor'] = await this.compileWithTemplates(
           gs.postprocessor, 'globalPostprocessor', templates, 'global/postprocessor.ts',
+        );
+      }
+      if (gs.deploy) {
+        scripts['globalDeploy'] = await this.compileWithTemplates(
+          gs.deploy, 'globalDeploy', templates, 'global/deploy.ts',
+        );
+      }
+      if (gs.undeploy) {
+        scripts['globalUndeploy'] = await this.compileWithTemplates(
+          gs.undeploy, 'globalUndeploy', templates, 'global/undeploy.ts',
         );
       }
     }
@@ -475,6 +534,34 @@ export class EngineManager {
         if (!execResult.ok) return execResult;
         return { ok: true as const, value: execResult.value.returnValue, error: null };
       });
+    }
+  }
+
+  /** Run a deploy/undeploy script in the sandbox with channel context. */
+  private async runDeployScript(
+    script: CompiledScript,
+    channel: ChannelDetail,
+    gcm: GlobalChannelMap,
+  ): Promise<void> {
+    const context = {
+      msg: '',
+      tmp: '',
+      rawData: '',
+      sourceMap: {},
+      channelMap: {},
+      connectorMap: {},
+      responseMap: {},
+      globalChannelMap: gcm.toRecord(),
+      extras: {
+        channelId: channel.id,
+        channelName: channel.name,
+      },
+    };
+    const result = await this.sandbox.execute(script, context, DEFAULT_EXECUTION_OPTIONS);
+    if (result.ok) {
+      gcm.applyUpdates(result.value.mapUpdates.globalChannelMap);
+    } else {
+      logger.error({ error: result.error, channelId: channel.id }, 'Deploy/undeploy script execution failed');
     }
   }
 

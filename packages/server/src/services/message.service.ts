@@ -336,6 +336,29 @@ export class MessageService {
     });
   }
 
+  /** Store a single attachment for a message. */
+  static async storeAttachment(
+    channelId: string,
+    messageId: number,
+    attachmentId: string,
+    mimeType: string,
+    content: string,
+    size: number,
+  ): Promise<Result<void>> {
+    return tryCatch(async () => {
+      await db
+        .insert(messageAttachments)
+        .values({
+          id: attachmentId,
+          channelId,
+          messageId,
+          mimeType,
+          content,
+          attachmentSize: size,
+        });
+    });
+  }
+
   /** Delete all attachments for a message. */
   static async deleteAttachments(
     channelId: string,

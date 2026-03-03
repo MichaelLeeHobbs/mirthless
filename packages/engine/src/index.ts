@@ -29,6 +29,8 @@ export type {
 export { QueueConsumer } from './runtime/queue-consumer.js';
 export type { QueueConsumerConfig } from './runtime/queue-consumer.js';
 export { GlobalChannelMap } from './runtime/global-channel-map.js';
+export { GlobalMapProxy } from './runtime/global-map-proxy.js';
+export type { FlushCallback } from './runtime/global-map-proxy.js';
 export { RecoveryManager } from './runtime/recovery-manager.js';
 export type { RecoveryStore, RecoveryResult, UnprocessedMessage, ConnectorMessageRecord, ReprocessSourceFn, RedispatchDestinationFn } from './runtime/recovery-manager.js';
 export { DestinationSet, createDestinationSetProxy } from './pipeline/destination-set.js';
@@ -37,3 +39,5 @@ export type { ChannelErrorEvent, LoadedAlert, AlertTrigger, AlertAction } from '
 export { dispatchActions, substituteAlertTemplate } from './alerts/action-dispatcher.js';
 export type { AlertLogger, ChannelSender, EmailSender, ActionDispatcherDeps } from './alerts/action-dispatcher.js';
 export { AlertManager } from './alerts/alert-manager.js';
+export { AttachmentHandler, ATTACHMENT_MODE } from './pipeline/attachment-handler.js';
+export type { AttachmentConfig, AttachmentMode, ExtractedAttachment, AttachmentResult } from './pipeline/attachment-handler.js';

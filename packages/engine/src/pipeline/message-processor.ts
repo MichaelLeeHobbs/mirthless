@@ -9,6 +9,8 @@ import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult
 import type { SandboxContext } from '../sandbox/sandbox-context.js';
 import { createSandboxContext } from '../sandbox/sandbox-context.js';
 import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
+import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
+import type { AttachmentConfig } from './attachment-handler.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
 
 // ----- Types -----
@@ -21,6 +23,10 @@ export interface ChannelScripts {
   readonly sourceTransformer?: CompiledScript;
   readonly globalPreprocessor?: CompiledScript;
   readonly globalPostprocessor?: CompiledScript;
+  readonly deploy?: CompiledScript;
+  readonly undeploy?: CompiledScript;
+  readonly globalDeploy?: CompiledScript;
+  readonly globalUndeploy?: CompiledScript;
 }
 
 /** Compiled scripts for a destination. */
@@ -65,6 +71,7 @@ export interface MessageStore {
   dequeue(channelId: string, metaDataId: number, batchSize: number): Promise<Result<readonly unknown[]>>;
   release(channelId: string, messageId: number, metaDataId: number, newStatus: string): Promise<Result<void>>;
   incrementStats(channelId: string, metaDataId: number, serverId: string, field: 'received' | 'filtered' | 'sent' | 'errored'): Promise<Result<void>>;
+  storeAttachment?(channelId: string, messageId: number, attachmentId: string, mimeType: string, content: string, size: number): Promise<Result<void>>;
 }
 
 /** Input to the pipeline. */
@@ -104,7 +111,16 @@ export interface PipelineConfig {
   readonly scripts: ChannelScripts;
   readonly destinations: readonly DestinationConfig[];
   readonly globalChannelMap?: GlobalChannelMap | undefined;
+  readonly globalMapProxy?: GlobalMapProxy | undefined;
+  readonly configMap?: Readonly<Record<string, unknown>> | undefined;
   readonly onError?: AlertEventHandler | undefined;
+  readonly attachmentConfig?: AttachmentConfig | undefined;
+}
+
+/** Mutable map state carried across pipeline stages. */
+interface PipelineMapState {
+  channelMap: Record<string, unknown>;
+  responseMap: Record<string, unknown>;
 }
 
 // ----- Content Type Constants (duplicated to avoid cross-package import) -----
@@ -147,6 +163,12 @@ export class MessageProcessor {
     return tryCatch(async () => {
       const { channelId, serverId, dataType } = this.config;
 
+      // Initialize map state that persists across pipeline stages
+      const mapState: PipelineMapState = {
+        channelMap: {},
+        responseMap: {},
+      };
+
       // Stage 1: Create message in DB
       const createResult = await this.store.createMessage(channelId, serverId);
       if (!createResult.ok) throw new Error('Failed to create message');
@@ -163,7 +185,7 @@ export class MessageProcessor {
       // Stage 2a: Global preprocessor
       if (this.config.scripts.globalPreprocessor) {
         const gpreResult = await this.runScript(
-          this.config.scripts.globalPreprocessor, content, input, signal,
+          this.config.scripts.globalPreprocessor, content, input, signal, mapState,
         );
         if (gpreResult.ok && typeof gpreResult.value.returnValue === 'string') {
           content = gpreResult.value.returnValue;
@@ -173,7 +195,7 @@ export class MessageProcessor {
       // Stage 2b: Channel preprocessor
       if (this.config.scripts.preprocessor) {
         const preResult = await this.runScript(
-          this.config.scripts.preprocessor, content, input, signal,
+          this.config.scripts.preprocessor, content, input, signal, mapState,
         );
         if (preResult.ok && typeof preResult.value.returnValue === 'string') {
           content = preResult.value.returnValue;
@@ -190,7 +212,7 @@ export class MessageProcessor {
       // Stage 3: Source filter
       if (this.config.scripts.sourceFilter) {
         const filterResult = await this.runScript(
-          this.config.scripts.sourceFilter, content, input, signal, destSetExtras,
+          this.config.scripts.sourceFilter, content, input, signal, mapState, destSetExtras,
         );
         if (filterResult.ok && filterResult.value.returnValue === false) {
           await this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'FILTERED');
@@ -203,7 +225,7 @@ export class MessageProcessor {
       // Stage 4: Source transformer
       if (this.config.scripts.sourceTransformer) {
         const txResult = await this.runScript(
-          this.config.scripts.sourceTransformer, content, input, signal, destSetExtras,
+          this.config.scripts.sourceTransformer, content, input, signal, mapState, destSetExtras,
         );
         if (txResult.ok && typeof txResult.value.returnValue === 'string') {
           content = txResult.value.returnValue;
@@ -216,20 +238,20 @@ export class MessageProcessor {
       // Stage 5+6: Route to destinations (filtered by destinationSet)
       const activeIds = destSet.getActiveMetaDataIds();
       const destResults = await this.routeToDestinations(
-        messageId, content, input, signal, activeIds,
+        messageId, content, input, signal, mapState, activeIds,
       );
 
-      // Stage 7a: Channel postprocessor
+      // Stage 7a: Channel postprocessor (receives responseMap populated with dest responses)
       if (this.config.scripts.postprocessor) {
         await this.runScript(
-          this.config.scripts.postprocessor, content, input, signal,
+          this.config.scripts.postprocessor, content, input, signal, mapState,
         );
       }
 
       // Stage 7b: Global postprocessor
       if (this.config.scripts.globalPostprocessor) {
         await this.runScript(
-          this.config.scripts.globalPostprocessor, content, input, signal,
+          this.config.scripts.globalPostprocessor, content, input, signal, mapState,
         );
       }
 
@@ -269,6 +291,7 @@ export class MessageProcessor {
     content: string,
     input: PipelineInput,
     signal: AbortSignal,
+    mapState: PipelineMapState,
     activeDestinations?: ReadonlySet<number> | undefined,
   ): Promise<readonly DestinationResult[]> {
     const { channelId, serverId, dataType } = this.config;
@@ -284,10 +307,10 @@ export class MessageProcessor {
 
         let destContent = content;
 
-        // Destination filter
+        // Destination filter — fresh connectorMap per destination
         if (dest.scripts.filter) {
           const filterResult = await this.runScript(
-            dest.scripts.filter, destContent, input, signal,
+            dest.scripts.filter, destContent, input, signal, mapState,
           );
           if (filterResult.ok && filterResult.value.returnValue === false) {
             await this.store.updateConnectorMessageStatus(
@@ -301,7 +324,7 @@ export class MessageProcessor {
         // Destination transformer
         if (dest.scripts.transformer) {
           const txResult = await this.runScript(
-            dest.scripts.transformer, destContent, input, signal,
+            dest.scripts.transformer, destContent, input, signal, mapState,
           );
           if (txResult.ok && typeof txResult.value.returnValue === 'string') {
             destContent = txResult.value.returnValue;
@@ -336,11 +359,14 @@ export class MessageProcessor {
             channelId, messageId, dest.metaDataId, CT_RESPONSE, response.content, dataType,
           );
 
+          // Populate responseMap with destination response
+          mapState.responseMap[dest.name] = { status: response.status, content: response.content };
+
           // Response transformer (if configured)
           let responseContent = response.content;
           if (dest.scripts.responseTransformer) {
             const rtResult = await this.runScript(
-              dest.scripts.responseTransformer, response.content, input, signal,
+              dest.scripts.responseTransformer, response.content, input, signal, mapState,
             );
             if (rtResult.ok && typeof rtResult.value.returnValue === 'string') {
               responseContent = rtResult.value.returnValue;
@@ -373,24 +399,38 @@ export class MessageProcessor {
     return results;
   }
 
-  /** Run a script in the sandbox with the current message context. */
+  /** Run a script in the sandbox with the current message context and map state. */
   private async runScript(
     script: CompiledScript,
     content: string,
     input: PipelineInput,
     signal: AbortSignal,
+    mapState: PipelineMapState,
     extras?: Readonly<Record<string, unknown>> | undefined,
   ): Promise<Result<ExecutionResult>> {
     const base = createSandboxContext(content, input.rawContent, content);
     const gcm = this.config.globalChannelMap;
+    const globalMapProxy = this.config.globalMapProxy;
     const context: SandboxContext = {
       ...base,
+      channelMap: { ...mapState.channelMap },
+      responseMap: { ...mapState.responseMap },
+      sourceMap: input.sourceMap,
       ...(gcm ? { globalChannelMap: gcm.toRecord() } : {}),
+      ...(globalMapProxy ? { globalMap: globalMapProxy.toRecord() } : {}),
+      ...(this.config.configMap ? { configMap: this.config.configMap } : {}),
       ...(extras ? { extras } : {}),
     };
     const result = await this.sandbox.execute(script, context, { ...this.execOptions, signal });
-    if (result.ok && gcm) {
-      gcm.applyUpdates(result.value.mapUpdates.globalChannelMap);
+    if (result.ok) {
+      // Merge map updates back into pipeline state
+      Object.assign(mapState.channelMap, result.value.mapUpdates.channelMap);
+      if (gcm) {
+        gcm.applyUpdates(result.value.mapUpdates.globalChannelMap);
+      }
+      if (globalMapProxy) {
+        globalMapProxy.applyUpdates(result.value.mapUpdates.globalMap);
+      }
     }
     return result;
   }
