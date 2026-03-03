@@ -31,6 +31,7 @@ import TuneIcon from '@mui/icons-material/Tune';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import BuildIcon from '@mui/icons-material/Build';
 import ExtensionIcon from '@mui/icons-material/Extension';
+import SecurityIcon from '@mui/icons-material/Security';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuthStore } from '../../stores/auth.store.js';
@@ -54,6 +55,7 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: 'Code Templates', path: '/code-templates', icon: <CodeIcon /> },
   { label: 'Global Scripts', path: '/global-scripts', icon: <JavascriptIcon /> },
   { label: 'Resources', path: '/resources', icon: <FolderIcon /> },
+  { label: 'Certificates', path: '/certificates', icon: <SecurityIcon /> },
   { label: 'Alerts', path: '/alerts', icon: <NotificationsIcon /> },
   { label: 'Events', path: '/events', icon: <EventIcon /> },
   { label: 'Users', path: '/users', icon: <PeopleIcon /> },
