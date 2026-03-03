@@ -12,6 +12,7 @@ import { initializeSocketIO, shutdownSocketIO } from './lib/socket.js';
 import { setLogCaptureStream } from './lib/logger.js';
 import { LogStreamService } from './services/log-stream.service.js';
 import { PrunerSchedulerService } from './services/pruner-scheduler.service.js';
+import { createShutdownHandler } from './lib/shutdown.js';
 
 const PORT = config.PORT;
 
@@ -36,17 +37,27 @@ startQueue()
     logger.error({ error: message }, 'Failed to start pgboss or pruner scheduler');
   });
 
-// Graceful shutdown
-function shutdown(signal: string): void {
-  logger.info({ signal }, 'Received signal, shutting down gracefully');
-  server.close(async () => {
-    await shutdownSocketIO();
-    await stopQueue();
-    await pool.end();
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 10_000).unref();
-}
+// Graceful shutdown — ordered cleanup with engine disposal before DB pool close
+const shutdown = createShutdownHandler({
+  logger,
+  stopAccepting: () => new Promise<void>((resolve, reject) => {
+    server.close((err) => (err ? reject(err) : resolve()));
+  }),
+  stopEngine: async () => {
+    const { getEngine } = await import('./engine.js');
+    const engine = getEngine();
+    // Undeploy all channels (flushes global maps, runs undeploy scripts)
+    const channelIds = [...engine.getAll().keys()];
+    for (const id of channelIds) {
+      await engine.undeploy(id);
+    }
+    await engine.dispose();
+  },
+  stopSocketIO: shutdownSocketIO,
+  stopPrunerScheduler: async () => { await PrunerSchedulerService.stop(); },
+  stopQueue,
+  closePool: () => pool.end(),
+});
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
