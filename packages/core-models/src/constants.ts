@@ -41,6 +41,7 @@ export const CONNECTOR_TYPE = {
   DICOM: 'DICOM',
   SMTP: 'SMTP',
   FHIR: 'FHIR',
+  EMAIL: 'EMAIL',
 } as const;
 export type ConnectorType = (typeof CONNECTOR_TYPE)[keyof typeof CONNECTOR_TYPE];
 

@@ -71,6 +71,21 @@ export const DICOM_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   moveToDirectory: '',
 };
 
+export const EMAIL_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  host: '',
+  port: 993,
+  secure: true,
+  username: '',
+  password: '',
+  protocol: 'IMAP',
+  folder: 'INBOX',
+  pollingIntervalMs: 60000,
+  postAction: 'MARK_READ',
+  moveToFolder: '',
+  subjectFilter: '',
+  includeAttachments: false,
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_SOURCE_DEFAULTS,
   HTTP: HTTP_SOURCE_DEFAULTS,
@@ -79,6 +94,7 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   JAVASCRIPT: JAVASCRIPT_SOURCE_DEFAULTS,
   CHANNEL: CHANNEL_SOURCE_DEFAULTS,
   DICOM: DICOM_SOURCE_DEFAULTS,
+  EMAIL: EMAIL_SOURCE_DEFAULTS,
 };
 
 /** Get default properties for a connector type. Returns empty object for unknown types. */
