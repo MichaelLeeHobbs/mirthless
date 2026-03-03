@@ -29,6 +29,7 @@ import { MessageGeneratorPage } from './pages/MessageGeneratorPage.js';
 import { ExtensionsPage } from './pages/ExtensionsPage.js';
 import { CrossChannelSearchPage } from './pages/CrossChannelSearchPage.js';
 import { ChannelStatisticsPage } from './pages/ChannelStatisticsPage.js';
+import { CertificatesPage } from './pages/CertificatesPage.js';
 
 const router = createBrowserRouter([
   {
@@ -56,6 +57,7 @@ const router = createBrowserRouter([
           { path: 'events', element: <EventsPage /> },
           { path: 'global-scripts', element: <GlobalScriptsPage /> },
           { path: 'resources', element: <ResourcesPage /> },
+          { path: 'certificates', element: <CertificatesPage /> },
           { path: 'settings', element: <SettingsPage /> },
           { path: 'tags', element: <TagsPage /> },
           { path: 'global-map', element: <GlobalMapPage /> },

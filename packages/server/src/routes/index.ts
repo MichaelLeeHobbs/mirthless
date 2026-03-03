@@ -34,6 +34,7 @@ import statisticsRoutes from './statistics.routes.js';
 import systemInfoRoutes from './system-info.routes.js';
 import tagRoutes from './tag.routes.js';
 import userPreferenceRoutes from './user-preference.routes.js';
+import certificateRoutes from './certificate.routes.js';
 import userRoutes from './user.routes.js';
 
 const router: IRouter = Router();
@@ -61,6 +62,7 @@ router.use('/channels', channelRoutes);
 router.use('/admin/prune', prunerSchedulerRoutes);
 router.use('/admin/prune', dataPrunerRoutes);
 router.use('/channel-groups', channelGroupRoutes);
+router.use('/certificates', certificateRoutes);
 router.use('/code-templates', codeTemplateRoutes);
 router.use('/config-map', configMapRoutes);
 router.use('/events', eventRoutes);

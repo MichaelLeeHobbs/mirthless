@@ -24,3 +24,4 @@ export * from './message-reprocess.schema.js';
 export * from './cross-channel-search.schema.js';
 export * from './user-preference.schema.js';
 export * from './message-attachment.schema.js';
+export * from './certificate.schema.js';
