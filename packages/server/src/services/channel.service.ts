@@ -15,6 +15,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
+import { ChannelRevisionService } from './channel-revision.service.js';
 import logger from '../lib/logger.js';
 import {
   channels,
@@ -798,6 +799,18 @@ export class ChannelService {
         userId: context?.userId ?? null, channelId: id,
         serverId: null, ipAddress: context?.ipAddress ?? null,
         attributes: { channelName: channel.name },
+      });
+
+      // Save revision snapshot (fire-and-forget — don't block the update response)
+      void ChannelRevisionService.saveRevision(
+        id,
+        channel.revision,
+        detail as unknown as Record<string, unknown>,
+        context?.userId,
+      ).then((result) => {
+        if (!result.ok) {
+          logger.error({ error: result.error, channelId: id }, 'Failed to save channel revision');
+        }
       });
 
       return detail;

@@ -13,6 +13,7 @@ import {
   channels,
   messages,
 } from '../db/schema/index.js';
+import { deleteMessagesByIds } from './message-delete-helper.js';
 
 // ----- Constants -----
 
@@ -67,36 +68,8 @@ async function deleteOldMessages(
 
   const messageIds = staleMessages.map((m) => m.id);
 
-  // Delete in dependency order using raw SQL with ANY(array) for efficiency
-  await db.execute(sql`
-    DELETE FROM message_attachments
-    WHERE channel_id = ${channelId}
-      AND message_id = ANY(${messageIds})
-  `);
-
-  await db.execute(sql`
-    DELETE FROM message_custom_metadata
-    WHERE channel_id = ${channelId}
-      AND message_id = ANY(${messageIds})
-  `);
-
-  await db.execute(sql`
-    DELETE FROM message_content
-    WHERE channel_id = ${channelId}
-      AND message_id = ANY(${messageIds})
-  `);
-
-  await db.execute(sql`
-    DELETE FROM connector_messages
-    WHERE channel_id = ${channelId}
-      AND message_id = ANY(${messageIds})
-  `);
-
-  await db.execute(sql`
-    DELETE FROM messages
-    WHERE channel_id = ${channelId}
-      AND id = ANY(${messageIds})
-  `);
+  // Delete in dependency order (transactional)
+  await deleteMessagesByIds(channelId, messageIds);
 
   return messageIds.length;
 }

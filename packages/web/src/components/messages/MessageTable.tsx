@@ -26,7 +26,7 @@ interface MessageTableProps {
   readonly onLimitChange: (limit: number) => void;
 }
 
-function getStatusColor(status: string): 'success' | 'error' | 'warning' | 'info' | 'default' {
+export function getStatusColor(status: string): 'success' | 'error' | 'warning' | 'info' | 'default' {
   switch (status) {
     case 'SENT': return 'success';
     case 'ERROR': return 'error';

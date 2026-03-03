@@ -13,3 +13,11 @@ export { Hl7Message } from './hl7-message.js';
 
 export type { AckOptions } from './hl7-ack.js';
 export { createAck } from './hl7-ack.js';
+
+export { formatTimestamp } from './hl7-timestamp.js';
+
+export type { HL7MessageType } from './hl7-code-tables.js';
+export { MESSAGE_TYPES } from './hl7-code-tables.js';
+
+export type { GenerateOptions } from './hl7-generator.js';
+export { generateHL7Messages } from './hl7-generator.js';
