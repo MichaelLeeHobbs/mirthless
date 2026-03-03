@@ -10,3 +10,7 @@ export * from './message.schema.js';
 export * from './setting.schema.js';
 export * from './transformer.schema.js';
 export * from './user.schema.js';
+export * from './channel-group.schema.js';
+export * from './tag.schema.js';
+export * from './channel-dependency.schema.js';
+export * from './resource.schema.js';

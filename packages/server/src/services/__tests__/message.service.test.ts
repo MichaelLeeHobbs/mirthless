@@ -40,11 +40,15 @@ const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
 
 const mockExecute = vi.fn();
 
+const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
+const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
+
 const mockDb = {
   insert: mockInsert,
   update: mockUpdate,
   select: mockSelect,
   execute: mockExecute,
+  delete: mockDelete,
 };
 
 vi.mock('../../lib/db.js', () => ({
@@ -82,6 +86,8 @@ beforeEach(() => {
   mockSet.mockReturnValue({ where: mockUpdateWhere });
   mockUpdateWhere.mockResolvedValue(undefined);
   mockExecute.mockResolvedValue([]);
+  mockDelete.mockReturnValue({ where: mockDeleteWhere });
+  mockDeleteWhere.mockResolvedValue(undefined);
 });
 
 // ----- Tests -----
@@ -499,6 +505,42 @@ describe('MessageService', () => {
       });
 
       const result = await MessageService.getQueuedMessages(CHANNEL_ID, 1);
+
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  // ========== DELETE CONTENT ==========
+  describe('deleteContent', () => {
+    it('deletes all content for a message', async () => {
+      const result = await MessageService.deleteContent(CHANNEL_ID, MESSAGE_ID);
+
+      expect(result.ok).toBe(true);
+      expect(mockDelete).toHaveBeenCalled();
+    });
+
+    it('returns error on DB failure', async () => {
+      mockDeleteWhere.mockRejectedValue(new Error('DB error'));
+
+      const result = await MessageService.deleteContent(CHANNEL_ID, MESSAGE_ID);
+
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  // ========== DELETE ATTACHMENTS ==========
+  describe('deleteAttachments', () => {
+    it('deletes all attachments for a message', async () => {
+      const result = await MessageService.deleteAttachments(CHANNEL_ID, MESSAGE_ID);
+
+      expect(result.ok).toBe(true);
+      expect(mockDelete).toHaveBeenCalled();
+    });
+
+    it('returns error on DB failure', async () => {
+      mockDeleteWhere.mockRejectedValue(new Error('DB error'));
+
+      const result = await MessageService.deleteAttachments(CHANNEL_ID, MESSAGE_ID);
 
       expect(result.ok).toBe(false);
     });

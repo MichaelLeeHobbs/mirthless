@@ -112,6 +112,7 @@ const CT_RAW = 1;
 const CT_TRANSFORMED = 3;
 const CT_SENT = 5;
 const CT_RESPONSE = 6;
+const CT_SOURCE_MAP = 9;
 
 // ----- Pipeline -----
 
@@ -152,6 +153,7 @@ export class MessageProcessor {
       // Create source connector message (metaDataId=0)
       await this.store.createConnectorMessage(channelId, messageId, 0, 'Source', 'RECEIVED');
       await this.store.storeContent(channelId, messageId, 0, CT_RAW, input.rawContent, dataType);
+      await this.store.storeContent(channelId, messageId, 0, CT_SOURCE_MAP, JSON.stringify(input.sourceMap), 'JSON');
       await this.store.incrementStats(channelId, 0, serverId, 'received');
 
       let content = input.rawContent;
