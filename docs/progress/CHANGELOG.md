@@ -2,6 +2,55 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-03 — Phase 28: Deep Polish
+
+### What was done:
+- **ScriptEditor Language Toggle** — Added `language` prop (javascript/typescript) and `showLanguageToggle` prop. JS/TS toggle via ToggleButtonGroup toolbar. Separate `registerJsDefaults()` and `registerTsDefaults()` for Monaco IntelliSense. Theme syncs with app dark/light mode via `useUiStore().themeMode`. Added bracket pair colorization, auto-closing brackets, format on paste.
+- **ScriptEditor Type Definitions** — Added IO bridge function types (`httpFetch`, `dbQuery`, `routeMessage`, `getResource`), map shortcut types (`$c`, `$r`, `$g`, `$gc`), `globalMap`/`configMap` globals, `HttpFetchResponse`/`DbQueryResult` interfaces to sandbox-types.ts.
+- **Language Prop Threading** — `showLanguageToggle` passed to ScriptEditor in ScriptsTab, FilterRuleEditor, TransformerStepEditor, GlobalScriptsPage.
+- **Per-Channel Script Timeout** — `scriptTimeoutSeconds` (1-300s, default 30) added to Zod channel properties schema, Drizzle channels table (migration 0003), channel service create/update/clone, `PipelineConfig` interface, `MessageProcessor` constructor. UI: numeric input in AdvancedTab.
+- **Default Channel Group** — Seed script creates "Default" group idempotently. Channel service `create()` auto-assigns new channels to "Default" group (non-blocking try-catch). Channel group service `delete()` protects "Default" group from deletion.
+- **Reusable ConfirmDialog** — Generic MUI Dialog component with severity-colored confirm button, isPending support.
+- **Replace window.confirm** — CodeTemplatePage (2 confirms), ChannelStatisticsPage (1 confirm), GlobalScriptsPage (blocker confirm) all migrated to ConfirmDialog.
+- **Centralized Notification Store** — Zustand store with auto-dismiss (4s), `useNotification()` hook, `NotificationSnackbar` component wired into App.tsx.
+- **Migrate Snackbars** — CodeTemplatePage, GlobalScriptsPage, MessageBrowserPage migrated from per-page Snackbar state to centralized `notify()`.
+- **ErrorBoundary** — Class component wrapping RouterProvider in App.tsx. Catches render errors with MUI-styled error card and "Reload Page" button.
+- **Channel Group Membership UI** — ChannelGroupsPage: "Manage Members" dialog with checkbox list, real-time add/remove member mutations, delete confirmation via ConfirmDialog.
+- **Channel Editor Group Assignment** — ChannelGroupChips component: shows group chips with remove, add menu for available groups.
+- **CertificatesPage Refactor** — Replaced inline DeleteConfirmDialog with shared ConfirmDialog component.
+
+### Files changed:
+- `packages/web/src/components/editors/ScriptEditor.tsx` (language toggle, theme sync, enhanced options)
+- `packages/web/src/lib/sandbox-types.ts` (IO bridge + map types)
+- `packages/web/src/components/channels/ScriptsTab.tsx` (showLanguageToggle)
+- `packages/web/src/components/channels/source/FilterRuleEditor.tsx` (showLanguageToggle)
+- `packages/web/src/components/channels/source/TransformerStepEditor.tsx` (showLanguageToggle)
+- `packages/web/src/components/channels/AdvancedTab.tsx` (script timeout input)
+- `packages/web/src/components/channels/ChannelGroupChips.tsx` (new)
+- `packages/web/src/components/common/ConfirmDialog.tsx` (new)
+- `packages/web/src/components/common/NotificationSnackbar.tsx` (new)
+- `packages/web/src/components/common/ErrorBoundary.tsx` (new)
+- `packages/web/src/stores/notification.store.ts` (new)
+- `packages/web/src/App.tsx` (ErrorBoundary + NotificationSnackbar)
+- `packages/web/src/pages/CodeTemplatePage.tsx` (ConfirmDialog + notify)
+- `packages/web/src/pages/ChannelStatisticsPage.tsx` (ConfirmDialog)
+- `packages/web/src/pages/GlobalScriptsPage.tsx` (ConfirmDialog + notify + language toggle)
+- `packages/web/src/pages/MessageBrowserPage.tsx` (notify migration)
+- `packages/web/src/pages/CertificatesPage.tsx` (shared ConfirmDialog)
+- `packages/web/src/pages/ChannelGroupsPage.tsx` (member management + delete confirm)
+- `packages/web/src/pages/ChannelEditorPage.tsx` (timeout + group chips)
+- `packages/core-models/src/schemas/channel.schema.ts` (scriptTimeoutSeconds)
+- `packages/server/src/db/schema/channels.ts` (scriptTimeoutSeconds column)
+- `packages/server/src/db/migrations/0003_add_script_timeout.sql` (new)
+- `packages/server/src/services/channel.service.ts` (timeout + auto-assign)
+- `packages/server/src/services/channel-group.service.ts` (delete protection)
+- `packages/server/src/db/seeds/run-seed.ts` (Default group seed)
+- `packages/engine/src/pipeline/message-processor.ts` (scriptTimeoutMs config)
+- `packages/server/src/services/__tests__/channel.service.test.ts` (fixture update)
+- `packages/server/src/services/__tests__/channel-clone.service.test.ts` (fixture update)
+
+---
+
 ## 2026-03-03 — Phase 27: Polish & Testing
 
 ### What was done:

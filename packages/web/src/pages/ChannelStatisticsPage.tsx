@@ -3,7 +3,7 @@
 // ===========================================
 // Per-channel statistics detail page with connector breakdown.
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -15,6 +15,7 @@ import { useChannelStatistics, useResetStatistics } from '../hooks/use-statistic
 import { StatsSummaryCards } from '../components/statistics/StatsSummaryCards.js';
 import { ConnectorStatsTable } from '../components/statistics/ConnectorStatsTable.js';
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 
 export function ChannelStatisticsPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -22,11 +23,15 @@ export function ChannelStatisticsPage(): ReactNode {
   const channelId = id ?? '';
   const { data: stats, isLoading, error } = useChannelStatistics(channelId.length > 0 ? channelId : null);
   const resetMutation = useResetStatistics();
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const handleReset = (): void => {
-    if (window.confirm('Reset all statistics for this channel? This cannot be undone.')) {
-      resetMutation.mutate(channelId);
-    }
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmReset = (): void => {
+    setConfirmOpen(false);
+    resetMutation.mutate(channelId);
   };
 
   return (
@@ -75,6 +80,17 @@ export function ChannelStatisticsPage(): ReactNode {
           <ConnectorStatsTable connectors={stats.connectors} />
         </Box>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Reset Statistics"
+        message="Reset all statistics for this channel? This cannot be undone."
+        confirmLabel="Reset"
+        severity="error"
+        isPending={resetMutation.isPending}
+        onConfirm={handleConfirmReset}
+        onCancel={() => { setConfirmOpen(false); }}
+      />
     </Box>
   );
 }

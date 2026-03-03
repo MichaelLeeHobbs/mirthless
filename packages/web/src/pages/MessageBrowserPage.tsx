@@ -12,7 +12,6 @@ import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
-import Snackbar from '@mui/material/Snackbar';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -25,6 +24,7 @@ import { MessageTable } from '../components/messages/MessageTable.js';
 import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
 import { useReprocessMessage, useBulkDeleteMessages } from '../hooks/use-message-actions.js';
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
+import { useNotification } from '../stores/notification.store.js';
 
 export function MessageBrowserPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -44,7 +44,7 @@ export function MessageBrowserPage(): ReactNode {
   const [limit, setLimit] = useState(25);
   const [offset, setOffset] = useState(0);
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
-  const [snackbar, setSnackbar] = useState<string | null>(null);
+  const { notify } = useNotification();
   const reprocessMutation = useReprocessMessage();
   const bulkDeleteMutation = useBulkDeleteMessages();
 
@@ -131,8 +131,8 @@ export function MessageBrowserPage(): ReactNode {
                 reprocessMutation.mutate(
                   { channelId, messageId: selectedMessageId },
                   {
-                    onSuccess: () => { setSnackbar('Raw content retrieved for reprocessing'); },
-                    onError: (err) => { setSnackbar(`Reprocess failed: ${err.message}`); },
+                    onSuccess: () => { notify('Raw content retrieved for reprocessing', 'success'); },
+                    onError: (err) => { notify(`Reprocess failed: ${err.message}`, 'error'); },
                   },
                 );
               }}
@@ -149,10 +149,10 @@ export function MessageBrowserPage(): ReactNode {
                   { channelId, messageIds: [selectedMessageId] },
                   {
                     onSuccess: (data) => {
-                      setSnackbar(`Deleted ${String(data.deletedCount)} message(s)`);
+                      notify(`Deleted ${String(data.deletedCount)} message(s)`, 'success');
                       setSelectedMessageId(null);
                     },
-                    onError: (err) => { setSnackbar(`Delete failed: ${err.message}`); },
+                    onError: (err) => { notify(`Delete failed: ${err.message}`, 'error'); },
                   },
                 );
               }}
@@ -203,12 +203,6 @@ export function MessageBrowserPage(): ReactNode {
         <MessageDetailPanel channelId={channelId} messageId={selectedMessageId} />
       )}
 
-      <Snackbar
-        open={snackbar !== null}
-        autoHideDuration={4000}
-        onClose={() => { setSnackbar(null); }}
-        message={snackbar}
-      />
     </Box>
   );
 }

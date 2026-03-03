@@ -34,6 +34,7 @@ export const channelPropertiesSchema = z.object({
   pruningEnabled: z.boolean().default(false),
   pruningMaxAgeDays: z.number().int().positive().nullable().default(null),
   pruningArchiveEnabled: z.boolean().default(false),
+  scriptTimeoutSeconds: z.number().int().min(1).max(300).default(30),
 });
 
 // ----- Destination Input -----

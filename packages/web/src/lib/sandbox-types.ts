@@ -36,6 +36,20 @@ interface SandboxLogger {
   debug(message: string): void;
 }
 
+/** Response from an HTTP fetch operation. */
+interface HttpFetchResponse {
+  readonly status: number;
+  readonly statusText: string;
+  readonly headers: Record<string, string>;
+  readonly body: string;
+}
+
+/** Result from a database query. */
+interface DbQueryResult {
+  readonly rows: readonly Record<string, unknown>[];
+  readonly rowCount: number;
+}
+
 // ----- Global Variables -----
 
 /** Current message being processed. Type depends on inbound data type. */
@@ -62,8 +76,25 @@ declare var responseMap: Record<string, unknown>;
 /** Global map shared across all channels. */
 declare var globalChannelMap: Record<string, unknown>;
 
+/** Global map (persistent, shared across all channels). */
+declare var globalMap: Record<string, unknown>;
+
+/** Configuration map (read-only, frozen). Access via "category.key" format. */
+declare var configMap: Readonly<Record<string, unknown>>;
+
 /** Logger for sandbox scripts. */
 declare var logger: SandboxLogger;
+
+// ----- Map Shortcut Aliases -----
+
+/** Alias for channelMap. */
+declare var $c: Record<string, unknown>;
+/** Alias for responseMap. */
+declare var $r: Record<string, unknown>;
+/** Alias for globalChannelMap. */
+declare var $g: Record<string, unknown>;
+/** Alias for globalMap. */
+declare var $gc: Record<string, unknown>;
 
 // ----- Global Functions -----
 
@@ -82,4 +113,43 @@ declare function parseHL7(raw: string): Hl7MessageProxy;
  * @returns ACK message string.
  */
 declare function createACK(originalRaw: string, ackCode: string, textMessage?: string): string;
+
+// ----- IO Bridge Functions -----
+
+/**
+ * Perform an HTTP request from within the sandbox.
+ * @param url - The URL to fetch.
+ * @param options - Optional request options.
+ * @returns Response object with status, headers, and body.
+ */
+declare function httpFetch(url: string, options?: {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  timeout?: number;
+}): Promise<HttpFetchResponse>;
+
+/**
+ * Execute a database query.
+ * @param resourceId - The resource ID for the database connection.
+ * @param sql - SQL query string.
+ * @param params - Query parameters.
+ * @returns Query result with rows and row count.
+ */
+declare function dbQuery(resourceId: string, sql: string, params?: readonly unknown[]): Promise<DbQueryResult>;
+
+/**
+ * Route a message to another channel by name.
+ * @param channelName - The target channel name.
+ * @param content - The message content to send.
+ * @returns The response from the target channel.
+ */
+declare function routeMessage(channelName: string, content: string): Promise<string>;
+
+/**
+ * Get a resource value by ID.
+ * @param resourceId - The resource ID.
+ * @returns The resource content string.
+ */
+declare function getResource(resourceId: string): Promise<string>;
 `;

@@ -12,6 +12,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 
+import { DEFAULT_GROUP_NAME } from '@mirthless/core-models';
 import * as schema from '../schema/index.js';
 import { defaultSettings } from './settings.js';
 import { defaultPermissions } from './permissions.js';
@@ -118,6 +119,25 @@ async function seed(): Promise<void> {
         });
         // eslint-disable-next-line no-console
         console.log(`  + ${permDef.name}`);
+      }
+
+      // eslint-disable-next-line no-console
+      console.log('\nSeeding default channel group...');
+      const [existingGroup] = await tx
+        .select()
+        .from(schema.channelGroups)
+        .where(eq(schema.channelGroups.name, DEFAULT_GROUP_NAME));
+
+      if (!existingGroup) {
+        await tx.insert(schema.channelGroups).values({
+          name: DEFAULT_GROUP_NAME,
+          description: 'Default group for new channels',
+        });
+        // eslint-disable-next-line no-console
+        console.log(`  + Created "${DEFAULT_GROUP_NAME}" channel group`);
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(`  = "${DEFAULT_GROUP_NAME}" channel group exists`);
       }
 
       // eslint-disable-next-line no-console

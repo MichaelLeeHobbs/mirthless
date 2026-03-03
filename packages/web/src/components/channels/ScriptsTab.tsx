@@ -50,6 +50,7 @@ export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
               height="250px"
               value={scripts[section.key]}
               onChange={(value) => { handleScriptChange(section.key, value); }}
+              showLanguageToggle
             />
           </AccordionDetails>
         </Accordion>

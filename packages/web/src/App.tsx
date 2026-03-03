@@ -5,6 +5,8 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { QueryProvider } from './providers/QueryProvider.js';
 import { darkTheme, lightTheme } from './styles/theme.js';
 import { useUiStore } from './stores/ui.store.js';
+import { ErrorBoundary } from './components/common/ErrorBoundary.js';
+import { NotificationSnackbar } from './components/common/NotificationSnackbar.js';
 import { AppLayout } from './components/layout/AppLayout.js';
 import { ProtectedRoute } from './components/layout/ProtectedRoute.js';
 import { LoginPage } from './pages/LoginPage.js';
@@ -84,7 +86,10 @@ export function App(): ReactNode {
     <QueryProvider>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <RouterProvider router={router} />
+        <ErrorBoundary>
+          <RouterProvider router={router} />
+        </ErrorBoundary>
+        <NotificationSnackbar />
       </ThemeProvider>
     </QueryProvider>
   );
