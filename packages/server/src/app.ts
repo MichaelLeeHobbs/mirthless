@@ -12,6 +12,7 @@ import cookieParser from 'cookie-parser';
 import { config } from './config/index.js';
 import logger from './lib/logger.js';
 import routes from './routes/index.js';
+import apiDocsRoutes from './routes/api-docs.routes.js';
 import { requestId } from './middleware/request-id.middleware.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import { apiRateLimiter } from './middleware/rate-limit.middleware.js';
@@ -79,6 +80,9 @@ app.get('/health', async (_req: Request, res: Response) => {
   const status = health.status === 'ok' ? 200 : 503;
   res.status(status).json(health);
 });
+
+// API documentation (no auth required)
+app.use('/api-docs', apiDocsRoutes);
 
 // Global API rate limiter (100 req/min per IP)
 app.use('/api/v1', apiRateLimiter);
