@@ -25,6 +25,10 @@ const CONTEXT_MAP: Readonly<Record<string, string>> = {
   destinationTransformer: 'DESTINATION_FILTER_TRANSFORMER',
   globalPreprocessor: 'GLOBAL_PREPROCESSOR',
   globalPostprocessor: 'GLOBAL_POSTPROCESSOR',
+  deploy: 'CHANNEL_DEPLOY',
+  undeploy: 'CHANNEL_UNDEPLOY',
+  globalDeploy: 'GLOBAL_DEPLOY',
+  globalUndeploy: 'GLOBAL_UNDEPLOY',
 } as const;
 
 // ----- Implementation -----

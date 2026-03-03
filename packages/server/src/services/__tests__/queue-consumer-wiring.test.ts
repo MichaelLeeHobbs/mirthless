@@ -63,6 +63,7 @@ vi.mock('@mirthless/engine', () => ({
   })),
   DEFAULT_EXECUTION_OPTIONS: { timeout: 30000, memoryLimit: 134217728, signal: AbortSignal.timeout(30000) },
   GlobalChannelMap: MockGlobalChannelMap,
+  GlobalMapProxy: vi.fn().mockImplementation(() => ({ load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) })),
   QueueConsumer: MockQueueConsumerCtor,
   compileScript: vi.fn().mockResolvedValue({ ok: true, value: { code: 'compiled' }, error: null }),
   compileFilterRulesToScript: vi.fn().mockReturnValue(null),

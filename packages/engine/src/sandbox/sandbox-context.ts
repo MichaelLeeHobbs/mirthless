@@ -41,6 +41,10 @@ export interface SandboxContext {
   readonly responseMap: Record<string, unknown>;
   /** Per-channel map that persists across messages within a deployment. */
   readonly globalChannelMap?: Readonly<Record<string, unknown>> | undefined;
+  /** Global map that persists across all channels (read-write, flushed to DB). */
+  readonly globalMap?: Record<string, unknown> | undefined;
+  /** Configuration map (read-only, loaded from DB at deploy). */
+  readonly configMap?: Readonly<Record<string, unknown>> | undefined;
   /** Extra objects to inject into the sandbox (e.g. destinationSet). */
   readonly extras?: Readonly<Record<string, unknown>> | undefined;
 }

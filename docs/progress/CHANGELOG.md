@@ -2,6 +2,57 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-03 — Phase 24: Sandbox Completeness & Pipeline Context
+
+### What was done:
+- **Deploy/Undeploy Script Execution** — Channel and global deploy/undeploy scripts now execute during channel lifecycle. `compileChannelScripts()` compiles DEPLOY/UNDEPLOY script types. Global deploy runs before channel deploy; channel undeploy runs before global undeploy. Scripts are stored in `DeployedChannel` for undeploy access. Failures are logged but do not block deployment.
+- **Sandbox Bridge Functions** — 4 new IO bridge functions via dependency injection: `httpFetch` (with SSRF private IP blocking), `dbQuery` (parameterized only), `routeMessage` (channel name lookup), `getResource` (resource content by name). `BridgeDependencies` interface, `createBridgeFunctions(deps?)` backward compatible. Sandbox executor accepts deps in constructor.
+- **Map Shortcuts** — `$()` cascading lookup (responseMap → connectorMap → channelMap → globalChannelMap → globalMap → configMap → sourceMap), `$r()` responseMap get/set, `$g()` globalMap get/set, `$gc()` configMap read-only. All injected into sandbox object.
+- **globalMap/configMap in Sandbox** — `globalMap` (read-write) and `configMap` (Object.freeze, read-only) added to SandboxContext and sandbox object. globalMap mutations captured in `mapUpdates.globalMap`.
+- **Pipeline Map Continuity** — `PipelineMapState` tracks `channelMap` and `responseMap` across all pipeline stages. `runScript()` receives map state, merges updates after execution. responseMap populated with `{ status, content }` per destination after send. configMap/globalMap/globalMapProxy wired from PipelineConfig into sandbox context.
+- **GlobalMapProxy** — In-memory cache with dirty tracking. `load()`, `toRecord()`, `applyUpdates()`, `flush()`, `dispose()`. Debounced periodic flush to DB via `FlushCallback`. Created per-channel at deploy, disposed at undeploy.
+- **configMap/globalMap Loading** — `deploy()` loads ConfigMapService.list() and GlobalMapService.list() in parallel with existing loads. ConfigMap built as `category.name` keyed frozen record. GlobalMapProxy created with upsert callback.
+- **Attachment Handler** — `AttachmentHandler` class with REGEX (pattern extraction + `${ATTACH:id}` placeholder replacement), JAVASCRIPT (sandbox script returning `{ content, attachments }`), and NONE modes. `ExtractedAttachment` with UUID ID, mimeType, content, size. `MessageService.storeAttachment()` added.
+- **Async IIFE Support** — When IO bridge deps are present, sandbox wraps code in `async function()` IIFE and awaits the Promise result.
+- **Template Injector** — Added deploy/undeploy/globalDeploy/globalUndeploy to CONTEXT_MAP.
+
+### Files changed (15+):
+- `packages/engine/src/sandbox/bridge-functions.ts` (added BridgeDependencies, HttpFetchOptions, HttpFetchResult, RouteMessageResult, SSRF blocking, 4 new bridge functions)
+- `packages/engine/src/sandbox/sandbox-executor.ts` (BridgeDependencies in constructor, async IIFE, globalMap/configMap/$/$r/$g/$gc injection, mapUpdates.globalMap)
+- `packages/engine/src/sandbox/sandbox-context.ts` (added globalMap, configMap to SandboxContext)
+- `packages/engine/src/sandbox/template-injector.ts` (4 new CONTEXT_MAP entries)
+- `packages/engine/src/sandbox/index.ts` (new type exports)
+- `packages/engine/src/pipeline/message-processor.ts` (PipelineMapState, refactored runScript, responseMap population, configMap/globalMap/globalMapProxy in PipelineConfig, AttachmentConfig, storeAttachment on MessageStore)
+- `packages/engine/src/pipeline/attachment-handler.ts` (new)
+- `packages/engine/src/runtime/global-map-proxy.ts` (new)
+- `packages/engine/src/index.ts` (new exports: GlobalMapProxy, AttachmentHandler, ATTACHMENT_MODE, AttachmentConfig)
+- `packages/server/src/engine.ts` (deploy/undeploy script execution, GlobalMapProxy creation, configMap/globalMap loading, storeAttachment adapter)
+- `packages/server/src/services/message.service.ts` (storeAttachment method)
+- `packages/server/src/services/__tests__/engine-deploy-scripts.test.ts` (new, ~12 tests)
+- `packages/engine/src/sandbox/__tests__/bridge-io-functions.test.ts` (new, ~20 tests)
+- `packages/engine/src/sandbox/__tests__/map-shortcuts.test.ts` (new, ~16 tests)
+- `packages/engine/src/pipeline/__tests__/map-continuity.test.ts` (new, ~8 tests)
+- `packages/engine/src/pipeline/__tests__/attachment-handler.test.ts` (new, ~15 tests)
+- `packages/engine/src/runtime/__tests__/global-map-proxy.test.ts` (new, ~12 tests)
+
+---
+
+## 2026-03-03 — Phase 23: Preferences, Attachments, Stats, Batch, Recovery, Response Transformers
+
+### What was done:
+- User preferences API (5 endpoints), attachments API (2 endpoints), channel statistics page, batch processor (delimiter/regex/JS), recovery manager, response transformer (CT_RESPONSE_TRANSFORMED=7)
+- See PR #13 for full details
+
+---
+
+## 2026-03-03 — Phase 22: History, Generator, Extensions, Reprocessing, Search
+
+### What was done:
+- Channel history, message generator, extensions, reprocessing, cross-channel search
+- See PR #12 for full details
+
+---
+
 ## 2026-03-02 — Phase 21: Server Backup/Restore, Pruner Scheduling, Monaco DX, Server Logs
 
 ### What was done:
