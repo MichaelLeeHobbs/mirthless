@@ -25,6 +25,9 @@ import { ResourcesPage } from './pages/ResourcesPage.js';
 import { GlobalMapPage } from './pages/GlobalMapPage.js';
 import { ConfigMapPage } from './pages/ConfigMapPage.js';
 import { SystemInfoPage } from './pages/SystemInfoPage.js';
+import { MessageGeneratorPage } from './pages/MessageGeneratorPage.js';
+import { ExtensionsPage } from './pages/ExtensionsPage.js';
+import { CrossChannelSearchPage } from './pages/CrossChannelSearchPage.js';
 
 const router = createBrowserRouter([
   {
@@ -42,6 +45,7 @@ const router = createBrowserRouter([
           { path: 'channels/new', element: <ChannelEditorPage /> },
           { path: 'channels/:id', element: <ChannelEditorPage /> },
           { path: 'channels/:id/messages', element: <MessageBrowserPage /> },
+          { path: 'messages', element: <CrossChannelSearchPage /> },
           { path: 'channel-groups', element: <ChannelGroupsPage /> },
           { path: 'alerts', element: <AlertsPage /> },
           { path: 'alerts/new', element: <AlertEditorPage /> },
@@ -55,6 +59,8 @@ const router = createBrowserRouter([
           { path: 'global-map', element: <GlobalMapPage /> },
           { path: 'config-map', element: <ConfigMapPage /> },
           { path: 'system', element: <SystemInfoPage /> },
+          { path: 'tools/message-generator', element: <MessageGeneratorPage /> },
+          { path: 'extensions', element: <ExtensionsPage /> },
           { path: 'users', element: <UsersPage /> },
         ],
       },

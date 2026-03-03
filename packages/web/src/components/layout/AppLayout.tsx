@@ -29,6 +29,8 @@ import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import StorageIcon from '@mui/icons-material/Storage';
 import TuneIcon from '@mui/icons-material/Tune';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import BuildIcon from '@mui/icons-material/Build';
+import ExtensionIcon from '@mui/icons-material/Extension';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuthStore } from '../../stores/auth.store.js';
@@ -60,6 +62,8 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: 'Global Map', path: '/global-map', icon: <StorageIcon /> },
   { label: 'Config Map', path: '/config-map', icon: <TuneIcon /> },
   { label: 'System Info', path: '/system', icon: <InfoOutlinedIcon /> },
+  { label: 'Tools', path: '/tools/message-generator', icon: <BuildIcon /> },
+  { label: 'Extensions', path: '/extensions', icon: <ExtensionIcon /> },
 ];
 
 export function AppLayout(): ReactNode {

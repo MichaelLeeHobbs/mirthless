@@ -17,3 +17,8 @@ export * from './resource.schema.js';
 export * from './global-map.schema.js';
 export * from './config-map.schema.js';
 export * from './server-backup.schema.js';
+export * from './channel-revision.schema.js';
+export * from './message-generator.schema.js';
+export * from './extension.schema.js';
+export * from './message-reprocess.schema.js';
+export * from './cross-channel-search.schema.js';

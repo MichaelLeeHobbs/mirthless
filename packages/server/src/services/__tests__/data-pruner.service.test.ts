@@ -47,6 +47,9 @@ const mockDb = {
   select: mockSelect,
   delete: mockDelete,
   execute: mockExecute,
+  transaction: vi.fn(async (fn: (tx: { execute: typeof mockExecute }) => Promise<void>) => {
+    await fn({ execute: mockExecute });
+  }),
 };
 
 vi.mock('../../lib/db.js', () => ({

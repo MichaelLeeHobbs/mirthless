@@ -12,7 +12,10 @@ import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
+import Snackbar from '@mui/material/Snackbar';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ReplayIcon from '@mui/icons-material/Replay';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChannel } from '../hooks/use-channels.js';
 import { useMessageSearch, type MessageSearchParams } from '../hooks/use-messages.js';
@@ -20,6 +23,7 @@ import { useSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
 import { MessageSearchBar } from '../components/messages/MessageSearchBar.js';
 import { MessageTable } from '../components/messages/MessageTable.js';
 import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
+import { useReprocessMessage, useBulkDeleteMessages } from '../hooks/use-message-actions.js';
 
 export function MessageBrowserPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -39,6 +43,9 @@ export function MessageBrowserPage(): ReactNode {
   const [limit, setLimit] = useState(25);
   const [offset, setOffset] = useState(0);
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
+  const [snackbar, setSnackbar] = useState<string | null>(null);
+  const reprocessMutation = useReprocessMessage();
+  const bulkDeleteMutation = useBulkDeleteMessages();
 
   // Debounce content search
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -105,9 +112,49 @@ export function MessageBrowserPage(): ReactNode {
         >
           Back to Channel
         </Button>
-        <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
+        <Typography variant="h5" component="h1" sx={{ fontWeight: 600, flexGrow: 1 }}>
           Messages: {channel?.name ?? 'Loading...'}
         </Typography>
+        {selectedMessageId !== null ? (
+          <>
+            <Button
+              size="small"
+              startIcon={<ReplayIcon />}
+              disabled={reprocessMutation.isPending}
+              onClick={() => {
+                reprocessMutation.mutate(
+                  { channelId, messageId: selectedMessageId },
+                  {
+                    onSuccess: () => { setSnackbar('Raw content retrieved for reprocessing'); },
+                    onError: (err) => { setSnackbar(`Reprocess failed: ${err.message}`); },
+                  },
+                );
+              }}
+            >
+              Reprocess
+            </Button>
+            <Button
+              size="small"
+              color="error"
+              startIcon={<DeleteIcon />}
+              disabled={bulkDeleteMutation.isPending}
+              onClick={() => {
+                bulkDeleteMutation.mutate(
+                  { channelId, messageIds: [selectedMessageId] },
+                  {
+                    onSuccess: (data) => {
+                      setSnackbar(`Deleted ${String(data.deletedCount)} message(s)`);
+                      setSelectedMessageId(null);
+                    },
+                    onError: (err) => { setSnackbar(`Delete failed: ${err.message}`); },
+                  },
+                );
+              }}
+            >
+              Delete
+            </Button>
+          </>
+        ) : null}
       </Box>
 
       <MessageSearchBar
@@ -149,6 +196,13 @@ export function MessageBrowserPage(): ReactNode {
       {selectedMessageId !== null && (
         <MessageDetailPanel channelId={channelId} messageId={selectedMessageId} />
       )}
+
+      <Snackbar
+        open={snackbar !== null}
+        autoHideDuration={4000}
+        onClose={() => { setSnackbar(null); }}
+        message={snackbar}
+      />
     </Box>
   );
 }

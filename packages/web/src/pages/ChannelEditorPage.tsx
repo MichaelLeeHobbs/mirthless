@@ -21,8 +21,10 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
+import Tooltip from '@mui/material/Tooltip';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
+import HistoryIcon from '@mui/icons-material/History';
 import type { CreateChannelInput, UpdateChannelInput } from '@mirthless/core-models';
 import { useChannel, useCreateChannel, useUpdateChannel } from '../hooks/use-channels.js';
 import { SummaryTab } from '../components/channels/SummaryTab.js';
@@ -33,6 +35,7 @@ import { AdvancedTab, type AdvancedFormValues } from '../components/channels/Adv
 import type { DestinationFormValues } from '../components/channels/destinations/types.js';
 import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, TransformerStepFormValues } from '../components/channels/source/types.js';
 import { createDefaultFilter, createDefaultTransformer } from '../components/channels/source/types.js';
+import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
 
 // ----- Form Data Type -----
 
@@ -100,6 +103,7 @@ export function ChannelEditorPage(): ReactNode {
 
   const [activeTab, setActiveTab] = useState(0);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Extra form state (not managed by react-hook-form)
@@ -609,6 +613,13 @@ export function ChannelEditorPage(): ReactNode {
             {enabledValue ? 'Enabled' : 'Disabled'}
           </Typography>
         ) : null}
+        {isEditMode ? (
+          <Tooltip title="Revision History">
+            <IconButton onClick={() => { setHistoryOpen(true); }} aria-label="revision history" sx={{ flexShrink: 0 }}>
+              <HistoryIcon />
+            </IconButton>
+          </Tooltip>
+        ) : null}
         <Button
           variant="contained"
           startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
@@ -694,6 +705,15 @@ export function ChannelEditorPage(): ReactNode {
           <Button color="error" onClick={() => { blocker.proceed?.(); }}>Leave</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Revision History */}
+      {isEditMode && id ? (
+        <RevisionHistoryDialog
+          channelId={id}
+          open={historyOpen}
+          onClose={() => { setHistoryOpen(false); }}
+        />
+      ) : null}
     </Box>
   );
 }
