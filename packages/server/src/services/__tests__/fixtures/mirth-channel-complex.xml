@@ -1,0 +1,140 @@
+<channel version="4.5.0">
+  <id>b2c3d4e5-f6a7-8901-bcde-f12345678901</id>
+  <name>Multi-Destination Router</name>
+  <description>Routes HL7 to multiple destinations with filters and transformers</description>
+  <enabled>true</enabled>
+  <sourceConnector version="4.5.0">
+    <name>sourceConnector</name>
+    <transportName>TCP Listener</transportName>
+    <enabled>true</enabled>
+    <properties class="com.mirth.connect.connectors.tcp.TcpReceiverProperties" version="4.5.0">
+      <listenerConnectorProperties version="4.5.0">
+        <host>0.0.0.0</host>
+        <port>7771</port>
+      </listenerConnectorProperties>
+    </properties>
+    <transformer version="4.5.0">
+      <inboundDataType>HL7V2</inboundDataType>
+      <outboundDataType>HL7V2</outboundDataType>
+      <filter>
+        <rules>
+          <rule>
+            <name>Accept ADT only</name>
+            <enabled>true</enabled>
+            <operator>AND</operator>
+            <type>JavaScript</type>
+            <script>return msg['MSH']['MSH.9']['MSH.9.1'].toString() === 'ADT';</script>
+          </rule>
+        </rules>
+      </filter>
+      <steps>
+        <step>
+          <name>Set patient name</name>
+          <enabled>true</enabled>
+          <type>Mapper</type>
+          <script>var patientName = msg['PID']['PID.5']['PID.5.1'].toString();</script>
+          <field>PID.5.1</field>
+          <variable>patientName</variable>
+        </step>
+        <step>
+          <name>Add timestamp</name>
+          <enabled>true</enabled>
+          <type>JavaScript</type>
+          <script>channelMap.put('processedAt', new Date().toISOString());</script>
+        </step>
+      </steps>
+    </transformer>
+  </sourceConnector>
+  <destinationConnectors>
+    <connector version="4.5.0">
+      <name>File Archive</name>
+      <transportName>File Writer</transportName>
+      <enabled>true</enabled>
+      <properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0">
+        <host>/opt/archive/hl7</host>
+        <fileFilter>*.hl7</fileFilter>
+      </properties>
+      <transformer version="4.5.0">
+        <inboundDataType>HL7V2</inboundDataType>
+        <outboundDataType>HL7V2</outboundDataType>
+      </transformer>
+      <waitForPrevious>false</waitForPrevious>
+    </connector>
+    <connector version="4.5.0">
+      <name>Database Logger</name>
+      <transportName>Database Writer</transportName>
+      <enabled>true</enabled>
+      <properties class="com.mirth.connect.connectors.jdbc.DatabaseDispatcherProperties" version="4.5.0">
+        <url>jdbc:postgresql://localhost:5432/hl7db</url>
+        <driver>org.postgresql.Driver</driver>
+        <username>hl7user</username>
+        <query>INSERT INTO messages (content) VALUES (?)</query>
+      </properties>
+      <transformer version="4.5.0">
+        <inboundDataType>HL7V2</inboundDataType>
+        <outboundDataType>HL7V2</outboundDataType>
+        <filter>
+          <rules>
+            <rule>
+              <name>Only A01 events</name>
+              <enabled>true</enabled>
+              <operator>AND</operator>
+              <type>JavaScript</type>
+              <script>return msg['MSH']['MSH.9']['MSH.9.2'].toString() === 'A01';</script>
+            </rule>
+          </rules>
+        </filter>
+        <steps>
+          <step>
+            <name>Log message type</name>
+            <enabled>true</enabled>
+            <type>JavaScript</type>
+            <script>logger.info('Processing ADT A01');</script>
+          </step>
+        </steps>
+      </transformer>
+      <waitForPrevious>true</waitForPrevious>
+      <queueConnectorProperties>
+        <queueEnabled>true</queueEnabled>
+        <retryCount>3</retryCount>
+        <retryIntervalMs>5000</retryIntervalMs>
+        <rotate>true</rotate>
+        <threadCount>2</threadCount>
+      </queueConnectorProperties>
+    </connector>
+    <connector version="4.5.0">
+      <name>SMTP Alert</name>
+      <transportName>SMTP Sender</transportName>
+      <enabled>false</enabled>
+      <properties class="com.mirth.connect.connectors.smtp.SmtpDispatcherProperties" version="4.5.0">
+        <smtpHost>smtp.example.com</smtpHost>
+        <smtpPort>587</smtpPort>
+        <to>admin@example.com</to>
+        <from>mirthless@example.com</from>
+      </properties>
+      <transformer version="4.5.0">
+        <inboundDataType>HL7V2</inboundDataType>
+        <outboundDataType>HL7V2</outboundDataType>
+      </transformer>
+      <waitForPrevious>false</waitForPrevious>
+    </connector>
+  </destinationConnectors>
+  <deployScript>logger.info('Multi-dest channel deployed');</deployScript>
+  <undeployScript>logger.info('Multi-dest channel undeployed');</undeployScript>
+  <preprocessingScript>return message;</preprocessingScript>
+  <postprocessingScript>return;</postprocessingScript>
+  <properties>
+    <initialState>STARTED</initialState>
+    <messageStorageMode>PRODUCTION</messageStorageMode>
+    <encryptData>false</encryptData>
+    <removeContentOnCompletion>true</removeContentOnCompletion>
+    <removeAttachmentsOnCompletion>true</removeAttachmentsOnCompletion>
+    <metaDataColumns>
+      <metaDataColumn>
+        <name>PatientId</name>
+        <type>STRING</type>
+        <mappingName>PID.3.1</mappingName>
+      </metaDataColumn>
+    </metaDataColumns>
+  </properties>
+</channel>

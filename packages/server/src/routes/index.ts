@@ -10,6 +10,7 @@ import attachmentRoutes from './attachment.routes.js';
 import channelDependencyRoutes from './channel-dependency.routes.js';
 import channelExportRoutes from './channel-export.routes.js';
 import channelGroupRoutes from './channel-group.routes.js';
+import mirthImportRoutes from './mirth-import.routes.js';
 import channelRevisionRoutes from './channel-revision.routes.js';
 import configMapRoutes from './config-map.routes.js';
 import crossChannelSearchRoutes from './cross-channel-search.routes.js';
@@ -51,6 +52,7 @@ router.use('/auth', authRoutes);
 // /statistics or /status, causing UUID validation failures.
 router.use('/channels', attachmentRoutes);
 router.use('/channels', channelExportRoutes);
+router.use('/channels/import/mirth', mirthImportRoutes);
 router.use('/channels', channelRevisionRoutes);
 router.use('/channels', channelDependencyRoutes);
 router.use('/channels', deploymentRoutes);
