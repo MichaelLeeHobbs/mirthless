@@ -25,6 +25,13 @@ router.get(
   ChannelGroupController.listGroups,
 );
 
+// Static route before /:id
+router.get(
+  '/memberships',
+  requirePermission('channels:read'),
+  ChannelGroupController.listMemberships,
+);
+
 router.get(
   '/:id',
   requirePermission('channels:read'),

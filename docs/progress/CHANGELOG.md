@@ -2,6 +2,69 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-02 — Phase 20: Config Management, System Info & Dashboard Enhancements
+
+### What was done:
+- **Global Map** (full stack) — Zod schemas, service (list/get/upsert/delete/clear with onConflictDoUpdate), controller, routes (`/global-map`, 5 endpoints), 11 service tests, TanStack Query hooks, GlobalMapPage UI (key-value table + create/edit dialog + "Clear All" with confirmation)
+- **Configuration Map** (full stack) — Zod schemas (composite key params, category filter, bulk upsert), service (list/get/upsert/bulkUpsert/delete), controller, routes (`/config-map`, 5 endpoints), 10 service tests, TanStack Query hooks, ConfigMapPage UI (table with category tabs + create/edit dialog)
+- **System Info** (full stack) — Service aggregating health.service.ts functions (DB, memory, engine stats) + version/Node.js/OS/uptime/PID, controller, routes (`/system`, 1 endpoint), 6 service tests, TanStack Query hook (10s polling), SystemInfoPage UI (info cards + memory bars + DB status chip)
+- **Dashboard Tag Filtering** — TagFilter component (MUI Autocomplete with colored Chips), client-side filtering via tag assignments, `useTagAssignments()` hook, `GET /tags/assignments` API endpoint
+- **Dashboard Grouped View** — GroupedChannelTable component (collapsible group sections with aggregate stats + "Ungrouped" section), flat/grouped view toggle, `useGroupMemberships()` hook, `GET /channel-groups/memberships` API endpoint
+- **Tag service** — Added `listAssignments()` method + controller handler + route
+- **Channel group service** — Added `listMemberships()` method + controller handler + route
+- **Event name constants** — Added `GLOBAL_MAP_UPDATED` and `CONFIG_MAP_UPDATED` to `EVENT_NAME` const
+- **Code reuse** — Exported `getStateColor`/`getStatusDotColor` from ChannelStatusTable, imported in GroupedChannelTable (eliminated duplication)
+- **Manual test docs** — 4 new checklists (37-global-map, 38-config-map, 39-system-info, 40-dashboard-filtering)
+
+### Test results:
+- 1,320 tests passing (184 schema + 68 HL7 + 196 engine + 321 connectors + 529 server + 22 CLI)
+- Build: 0 errors, Lint: 0 warnings
+- 31 new tests: 11 global-map + 10 config-map + 6 system-info + 2 tag-assignments + 2 group-memberships
+
+### Files changed (40+):
+- `packages/core-models/src/schemas/global-map.schema.ts` (new)
+- `packages/core-models/src/schemas/config-map.schema.ts` (new)
+- `packages/core-models/src/schemas/event.schema.ts` (added 2 EVENT_NAME entries)
+- `packages/core-models/src/schemas/index.ts` (2 new exports)
+- `packages/server/src/services/global-map.service.ts` (new)
+- `packages/server/src/services/config-map.service.ts` (new)
+- `packages/server/src/services/system-info.service.ts` (new)
+- `packages/server/src/services/tag.service.ts` (added listAssignments)
+- `packages/server/src/services/channel-group.service.ts` (added listMemberships)
+- `packages/server/src/controllers/global-map.controller.ts` (new)
+- `packages/server/src/controllers/config-map.controller.ts` (new)
+- `packages/server/src/controllers/system-info.controller.ts` (new)
+- `packages/server/src/controllers/tag.controller.ts` (added listAssignments)
+- `packages/server/src/controllers/channel-group.controller.ts` (added listMemberships)
+- `packages/server/src/routes/global-map.routes.ts` (new)
+- `packages/server/src/routes/config-map.routes.ts` (new)
+- `packages/server/src/routes/system-info.routes.ts` (new)
+- `packages/server/src/routes/tag.routes.ts` (added GET /assignments)
+- `packages/server/src/routes/channel-group.routes.ts` (added GET /memberships)
+- `packages/server/src/routes/index.ts` (3 new route mounts)
+- `packages/server/src/services/__tests__/global-map.service.test.ts` (new, 11 tests)
+- `packages/server/src/services/__tests__/config-map.service.test.ts` (new, 10 tests)
+- `packages/server/src/services/__tests__/system-info.service.test.ts` (new, 6 tests)
+- `packages/server/src/services/__tests__/tag.service.test.ts` (added 2 tests)
+- `packages/server/src/services/__tests__/channel-group.service.test.ts` (added 2 tests)
+- `packages/web/src/hooks/use-global-map.ts` (new)
+- `packages/web/src/hooks/use-config-map.ts` (new)
+- `packages/web/src/hooks/use-system-info.ts` (new)
+- `packages/web/src/hooks/use-tags.ts` (added useTagAssignments)
+- `packages/web/src/hooks/use-channel-groups.ts` (added useGroupMemberships)
+- `packages/web/src/pages/GlobalMapPage.tsx` (new)
+- `packages/web/src/pages/ConfigMapPage.tsx` (new)
+- `packages/web/src/pages/SystemInfoPage.tsx` (new)
+- `packages/web/src/pages/DashboardPage.tsx` (tag filter + grouped view)
+- `packages/web/src/components/dashboard/TagFilter.tsx` (new)
+- `packages/web/src/components/dashboard/GroupedChannelTable.tsx` (new)
+- `packages/web/src/components/dashboard/ChannelStatusTable.tsx` (exported getStateColor/getStatusDotColor)
+- `packages/web/src/App.tsx` (3 new routes)
+- `packages/web/src/components/layout/AppLayout.tsx` (3 new nav items)
+- `docs/testing/37-global-map.md`, `38-config-map.md`, `39-system-info.md`, `40-dashboard-filtering.md` (new)
+
+---
+
 ## 2026-03-02 — Phase 19: Channel Groups, Tags, Dependencies & Resources
 
 ### What was done:

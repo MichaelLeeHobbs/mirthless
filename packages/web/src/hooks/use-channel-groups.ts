@@ -56,6 +56,24 @@ export function useChannelGroup(id: string): ReturnType<typeof useQuery<ChannelG
   });
 }
 
+// ----- Group Membership Types -----
+
+export interface GroupMembership {
+  readonly channelGroupId: string;
+  readonly channelId: string;
+}
+
+export function useGroupMemberships(): ReturnType<typeof useQuery<readonly GroupMembership[]>> {
+  return useQuery({
+    queryKey: [...GROUP_KEYS.all, 'memberships'] as const,
+    queryFn: async () => {
+      const result = await api.get<readonly GroupMembership[]>('/channel-groups/memberships');
+      if (!result.success) throw new Error(result.error.message);
+      return result.data;
+    },
+  });
+}
+
 export function useCreateChannelGroup(): ReturnType<typeof useMutation<ChannelGroupSummary, Error, CreateChannelGroupInput>> {
   const queryClient = useQueryClient();
 

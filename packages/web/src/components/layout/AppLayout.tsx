@@ -26,6 +26,9 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import FolderIcon from '@mui/icons-material/Folder';
 import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
+import StorageIcon from '@mui/icons-material/Storage';
+import TuneIcon from '@mui/icons-material/Tune';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuthStore } from '../../stores/auth.store.js';
@@ -54,6 +57,9 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: 'Users', path: '/users', icon: <PeopleIcon /> },
   { label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
   { label: 'Tags', path: '/tags', icon: <LocalOfferIcon /> },
+  { label: 'Global Map', path: '/global-map', icon: <StorageIcon /> },
+  { label: 'Config Map', path: '/config-map', icon: <TuneIcon /> },
+  { label: 'System Info', path: '/system', icon: <InfoOutlinedIcon /> },
 ];
 
 export function AppLayout(): ReactNode {

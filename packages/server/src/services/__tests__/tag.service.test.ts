@@ -33,15 +33,26 @@ const mockSelectWhere = vi.fn().mockImplementation(() => {
   return [];
 });
 
-const mockSelectFrom = vi.fn().mockImplementation(() => ({
-  where: mockSelectWhere,
-  orderBy: vi.fn().mockImplementation(() => {
-    const fn = selectResponses[selectCallIndex];
-    selectCallIndex++;
-    if (fn) return fn();
-    return [];
-  }),
-}));
+const mockSelectFrom = vi.fn().mockImplementation(() => {
+  const fn = selectResponses[selectCallIndex];
+  if (fn) {
+    const result = fn();
+    // Thenable response: returned directly from from() for queries without .where()
+    if (result && typeof result === 'object' && 'then' in result) {
+      selectCallIndex++;
+      return result;
+    }
+  }
+  return {
+    where: mockSelectWhere,
+    orderBy: vi.fn().mockImplementation(() => {
+      const fn2 = selectResponses[selectCallIndex];
+      selectCallIndex++;
+      if (fn2) return fn2();
+      return [];
+    }),
+  };
+});
 
 const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
 
@@ -117,6 +128,37 @@ describe('TagService', () => {
       expect(result.value).toHaveLength(1);
       expect(result.value[0]!.name).toBe('Production');
       expect(result.value[0]!.assignmentCount).toBe(5);
+    });
+  });
+
+  describe('listAssignments', () => {
+    it('returns all assignments', async () => {
+      const thenableResult = Object.assign(
+        Promise.resolve([{ tagId: TAG_ID, channelId: CHANNEL_ID }]),
+        { where: mockSelectWhere },
+      );
+      selectResponses.push(() => thenableResult);
+
+      const result = await TagService.listAssignments();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(1);
+      expect(result.value[0]!.tagId).toBe(TAG_ID);
+    });
+
+    it('returns empty array when no assignments', async () => {
+      const thenableResult = Object.assign(
+        Promise.resolve([]),
+        { where: mockSelectWhere },
+      );
+      selectResponses.push(() => thenableResult);
+
+      const result = await TagService.listAssignments();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(0);
     });
   });
 

@@ -80,6 +80,24 @@ export function useDeleteTag(): ReturnType<typeof useMutation<void, Error, strin
   });
 }
 
+// ----- Tag Assignment Types -----
+
+export interface TagAssignment {
+  readonly tagId: string;
+  readonly channelId: string;
+}
+
+export function useTagAssignments(): ReturnType<typeof useQuery<readonly TagAssignment[]>> {
+  return useQuery({
+    queryKey: [...TAG_KEYS.all, 'assignments'] as const,
+    queryFn: async () => {
+      const result = await api.get<readonly TagAssignment[]>('/tags/assignments');
+      if (!result.success) throw new Error(result.error.message);
+      return result.data;
+    },
+  });
+}
+
 export function useAssignTag(): ReturnType<typeof useMutation<void, Error, { tagId: string; channelId: string }>> {
   const queryClient = useQueryClient();
 

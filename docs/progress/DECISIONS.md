@@ -197,3 +197,13 @@ D-095: Tags use settings:write permission — Tags are system-wide configuration
 D-096: Dependencies use channels:deploy permission + DAG validation — Setting dependencies affects deployment order. Service validates no circular dependencies exist using iterative DFS cycle detection. Dependencies sub-route mounted under `/channels` prefix before greedy `/:id`. — 2026-03-02
 
 D-097: Resources store text content in DB — Resources table gets a `content text` column. Text storage sufficient for PEM certificates, XSLT files, CSV lookup tables, and JSON configs. Binary file support deferred (YAGNI). `sizeBytes` auto-computed from content. — 2026-03-02
+
+D-098: Global Map DELETE / route before DELETE /:key — Following the settings `/bulk` before `/:key` pattern, `DELETE /` (clear all) must be mounted before `DELETE /:key` to prevent Express treating empty path as key param. — 2026-03-02
+
+D-099: Config Map uses composite key in URL path — The `configuration` table uses `(category, name)` composite PK. API endpoints use two-segment params: `/config-map/:category/:name`. Bulk endpoint at `/config-map/bulk` mounted first. — 2026-03-02
+
+D-100: Client-side tag filtering (not SQL join) — The statistics query is performance-critical raw SQL. Rather than adding a tag JOIN, we load tag assignments in a separate lightweight query and filter client-side. Keeps stats query fast. — 2026-03-02
+
+D-101: System Info reuses health.service.ts functions — `SystemInfoService` calls existing `checkDatabase()`, `getMemoryStats()`, `getEngineStats()` from health.service.ts. Adds version, Node.js version, OS info, PID. — 2026-03-02
+
+D-102: Dashboard grouped view is a toggle — Users switch between flat view (existing ChannelStatusTable) and grouped view (GroupedChannelTable with collapsible group sections). Preserves existing behavior as default. — 2026-03-02

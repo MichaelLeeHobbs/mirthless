@@ -52,6 +52,20 @@ export class TagService {
     });
   }
 
+  /** List all tag-channel assignments. */
+  static async listAssignments(): Promise<Result<ReadonlyArray<{ readonly tagId: string; readonly channelId: string }>>> {
+    return tryCatch(async () => {
+      const rows = await db
+        .select({
+          tagId: channelTagAssignments.tagId,
+          channelId: channelTagAssignments.channelId,
+        })
+        .from(channelTagAssignments);
+
+      return rows;
+    });
+  }
+
   /** Create a new tag. */
   static async create(
     input: CreateTagInput,

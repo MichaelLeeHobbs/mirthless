@@ -33,6 +33,18 @@ export class TagController {
     res.json({ success: true, data: result.value });
   }
 
+  static async listAssignments(_req: Request, res: Response): Promise<void> {
+    const result = await TagService.listAssignments();
+
+    if (!result.ok) {
+      logger.error({ error: result.error }, 'Failed to list tag assignments');
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      return;
+    }
+
+    res.json({ success: true, data: result.value });
+  }
+
   static async create(req: Request, res: Response): Promise<void> {
     const input = req.body as CreateTagInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };

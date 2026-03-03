@@ -34,6 +34,18 @@ export class ChannelGroupController {
     res.json({ success: true, data: result.value });
   }
 
+  static async listMemberships(_req: Request, res: Response): Promise<void> {
+    const result = await ChannelGroupService.listMemberships();
+
+    if (!result.ok) {
+      logger.error({ error: result.error }, 'Failed to list group memberships');
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      return;
+    }
+
+    res.json({ success: true, data: result.value });
+  }
+
   static async getById(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const result = await ChannelGroupService.getById(id);

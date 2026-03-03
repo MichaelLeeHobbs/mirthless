@@ -62,6 +62,20 @@ export class ChannelGroupService {
     });
   }
 
+  /** List all group-channel memberships. */
+  static async listMemberships(): Promise<Result<ReadonlyArray<{ readonly channelGroupId: string; readonly channelId: string }>>> {
+    return tryCatch(async () => {
+      const rows = await db
+        .select({
+          channelGroupId: channelGroupMembers.channelGroupId,
+          channelId: channelGroupMembers.channelId,
+        })
+        .from(channelGroupMembers);
+
+      return rows;
+    });
+  }
+
   /** Get a single group by ID with its member channels. */
   static async getById(id: string): Promise<Result<ChannelGroupDetail>> {
     return tryCatch(async () => {

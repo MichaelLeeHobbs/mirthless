@@ -25,6 +25,13 @@ router.get(
   TagController.listTags,
 );
 
+// Static route before /:id
+router.get(
+  '/assignments',
+  requirePermission('channels:read'),
+  TagController.listAssignments,
+);
+
 router.post(
   '/',
   requirePermission('settings:write'),

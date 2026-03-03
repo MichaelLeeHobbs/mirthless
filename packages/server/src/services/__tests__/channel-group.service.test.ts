@@ -50,6 +50,11 @@ const mockSelectFrom = vi.fn().mockImplementation(() => {
       selectCallIndex++;
       return result;
     }
+    // Thenable response: returned directly from from() for queries without .where()
+    if (result && typeof result === 'object' && 'then' in result) {
+      selectCallIndex++;
+      return result;
+    }
   }
   return {
     where: mockSelectWhere,
@@ -148,6 +153,37 @@ describe('ChannelGroupService', () => {
       expect(result.value).toHaveLength(1);
       expect(result.value[0]!.name).toBe('HL7 Feeds');
       expect(result.value[0]!.memberCount).toBe(3);
+    });
+  });
+
+  describe('listMemberships', () => {
+    it('returns all memberships', async () => {
+      const thenableResult = Object.assign(
+        Promise.resolve([{ channelGroupId: GROUP_ID, channelId: CHANNEL_ID }]),
+        { where: mockSelectWhere },
+      );
+      selectResponses.push(() => thenableResult);
+
+      const result = await ChannelGroupService.listMemberships();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(1);
+      expect(result.value[0]!.channelGroupId).toBe(GROUP_ID);
+    });
+
+    it('returns empty array when no memberships', async () => {
+      const thenableResult = Object.assign(
+        Promise.resolve([]),
+        { where: mockSelectWhere },
+      );
+      selectResponses.push(() => thenableResult);
+
+      const result = await ChannelGroupService.listMemberships();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(0);
     });
   });
 
