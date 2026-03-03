@@ -14,6 +14,7 @@
     "db:generate": "pnpm run build && drizzle-kit generate",
     "db:migrate": "pnpm run build && drizzle-kit migrate",
     "db:studio": "pnpm run build && drizzle-kit studio",
+    "db:check": "pnpm run build && drizzle-kit check",
     "db:seed": "tsx src/db/seeds/run-seed.ts"
   },
   "dependencies": {

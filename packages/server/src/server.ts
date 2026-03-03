@@ -16,9 +16,10 @@ import { PrunerSchedulerService } from './services/pruner-scheduler.service.js';
 const PORT = config.PORT;
 
 const server = app.listen(PORT, () => {
-  logger.info(`Server running on port ${PORT}`);
-  logger.info({ env: config.NODE_ENV }, 'Environment');
-  logger.info(`Health check: http://localhost:${PORT}/health`);
+  logger.info(
+    { nodeVersion: process.version, environment: config.NODE_ENV, port: PORT },
+    'Mirthless server started'
+  );
 });
 
 // Attach Socket.IO to HTTP server
