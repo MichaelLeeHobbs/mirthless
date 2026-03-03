@@ -21,6 +21,8 @@ import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CircleIcon from '@mui/icons-material/Circle';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import Tooltip from '@mui/material/Tooltip';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
 import type { ChannelStatus } from '../../hooks/use-deployment.js';
 import type { ChannelGroupSummary } from '../../hooks/use-channel-groups.js';
@@ -249,7 +251,14 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                                     {row.queued.toLocaleString()}
                                   </TableCell>
                                   <TableCell>
-                                    <ChannelActions channelId={row.channelId} state={row.state === 'UNDEPLOYED' ? undefined : row.state} />
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                      <Tooltip title="Statistics">
+                                        <IconButton size="small" onClick={() => navigate(`/channels/${row.channelId}/statistics`)}>
+                                          <BarChartIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <ChannelActions channelId={row.channelId} state={row.state === 'UNDEPLOYED' ? undefined : row.state} />
+                                    </Box>
                                   </TableCell>
                                 </TableRow>
                               ))}

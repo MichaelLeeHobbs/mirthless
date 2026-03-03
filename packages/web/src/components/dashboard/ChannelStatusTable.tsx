@@ -20,6 +20,9 @@ import InputAdornment from '@mui/material/InputAdornment';
 import Link from '@mui/material/Link';
 import SearchIcon from '@mui/icons-material/Search';
 import CircleIcon from '@mui/icons-material/Circle';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import Tooltip from '@mui/material/Tooltip';
+import IconButton from '@mui/material/IconButton';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
 import type { ChannelStatus } from '../../hooks/use-deployment.js';
 import { ChannelActions } from './ChannelActions.js';
@@ -250,7 +253,14 @@ export function ChannelStatusTable({ statistics, deploymentStatuses }: ChannelSt
                     {row.queued.toLocaleString()}
                   </TableCell>
                   <TableCell>
-                    <ChannelActions channelId={row.channelId} state={row.state === 'UNDEPLOYED' ? undefined : row.state} />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Tooltip title="Statistics">
+                        <IconButton size="small" onClick={() => navigate(`/channels/${row.channelId}/statistics`)}>
+                          <BarChartIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <ChannelActions channelId={row.channelId} state={row.state === 'UNDEPLOYED' ? undefined : row.state} />
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))

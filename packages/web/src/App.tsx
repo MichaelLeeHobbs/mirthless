@@ -28,6 +28,7 @@ import { SystemInfoPage } from './pages/SystemInfoPage.js';
 import { MessageGeneratorPage } from './pages/MessageGeneratorPage.js';
 import { ExtensionsPage } from './pages/ExtensionsPage.js';
 import { CrossChannelSearchPage } from './pages/CrossChannelSearchPage.js';
+import { ChannelStatisticsPage } from './pages/ChannelStatisticsPage.js';
 
 const router = createBrowserRouter([
   {
@@ -45,6 +46,7 @@ const router = createBrowserRouter([
           { path: 'channels/new', element: <ChannelEditorPage /> },
           { path: 'channels/:id', element: <ChannelEditorPage /> },
           { path: 'channels/:id/messages', element: <MessageBrowserPage /> },
+          { path: 'channels/:id/statistics', element: <ChannelStatisticsPage /> },
           { path: 'messages', element: <CrossChannelSearchPage /> },
           { path: 'channel-groups', element: <ChannelGroupsPage /> },
           { path: 'alerts', element: <AlertsPage /> },

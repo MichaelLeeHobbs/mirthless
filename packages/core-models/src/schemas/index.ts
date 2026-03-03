@@ -22,3 +22,5 @@ export * from './message-generator.schema.js';
 export * from './extension.schema.js';
 export * from './message-reprocess.schema.js';
 export * from './cross-channel-search.schema.js';
+export * from './user-preference.schema.js';
+export * from './message-attachment.schema.js';

@@ -27,6 +27,7 @@ export interface ChannelScripts {
 export interface DestinationScripts {
   readonly filter?: CompiledScript;
   readonly transformer?: CompiledScript;
+  readonly responseTransformer?: CompiledScript;
 }
 
 /** Configuration for a single destination in the pipeline. */
@@ -112,6 +113,7 @@ const CT_RAW = 1;
 const CT_TRANSFORMED = 3;
 const CT_SENT = 5;
 const CT_RESPONSE = 6;
+const CT_RESPONSE_TRANSFORMED = 7;
 const CT_SOURCE_MAP = 9;
 
 // ----- Pipeline -----
@@ -333,6 +335,21 @@ export class MessageProcessor {
           await this.store.storeContent(
             channelId, messageId, dest.metaDataId, CT_RESPONSE, response.content, dataType,
           );
+
+          // Response transformer (if configured)
+          let responseContent = response.content;
+          if (dest.scripts.responseTransformer) {
+            const rtResult = await this.runScript(
+              dest.scripts.responseTransformer, response.content, input, signal,
+            );
+            if (rtResult.ok && typeof rtResult.value.returnValue === 'string') {
+              responseContent = rtResult.value.returnValue;
+              await this.store.storeContent(
+                channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
+              );
+            }
+          }
+
           await this.store.updateConnectorMessageStatus(
             channelId, messageId, dest.metaDataId, 'SENT',
           );
@@ -340,7 +357,7 @@ export class MessageProcessor {
           return {
             metaDataId: dest.metaDataId,
             status: 'SENT' as const,
-            response: response.content,
+            response: responseContent,
           };
         }
 

@@ -21,6 +21,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { useMessageDetail, useDeleteMessage, type ConnectorDetail } from '../../hooks/use-messages.js';
 import { ContentViewer } from './ContentViewer.js';
+import { AttachmentTab } from './AttachmentTab.js';
 
 interface MessageDetailProps {
   readonly channelId: string;
@@ -91,6 +92,7 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
   const { data: detail, isLoading, error } = useMessageDetail(channelId, messageId);
   const deleteMutation = useDeleteMessage();
   const [connectorTab, setConnectorTab] = useState(0);
+  const [showAttachments, setShowAttachments] = useState(false);
 
   if (isLoading) {
     return (
@@ -160,21 +162,34 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
         </Tabs>
       )}
 
-      {activeConnector && (
-        <Box>
-          <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
-            <Typography variant="body2" color="text.secondary">
-              {activeConnector.connectorName ?? (activeConnector.metaDataId === 0 ? 'Source' : `Destination ${String(activeConnector.metaDataId)}`)}
-            </Typography>
-            <Chip label={activeConnector.status} size="small" variant="outlined" />
-            {activeConnector.sendAttempts > 0 && (
+      <Tabs
+        value={showAttachments ? 1 : 0}
+        onChange={(_e, val: number) => setShowAttachments(val === 1)}
+        sx={{ mb: 1, borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab label="Content" />
+        <Tab label="Attachments" />
+      </Tabs>
+
+      {showAttachments ? (
+        <AttachmentTab channelId={channelId} messageId={messageId} />
+      ) : (
+        activeConnector && (
+          <Box>
+            <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
               <Typography variant="body2" color="text.secondary">
-                {String(activeConnector.sendAttempts)} attempt{activeConnector.sendAttempts !== 1 ? 's' : ''}
+                {activeConnector.connectorName ?? (activeConnector.metaDataId === 0 ? 'Source' : `Destination ${String(activeConnector.metaDataId)}`)}
               </Typography>
-            )}
+              <Chip label={activeConnector.status} size="small" variant="outlined" />
+              {activeConnector.sendAttempts > 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  {String(activeConnector.sendAttempts)} attempt{activeConnector.sendAttempts !== 1 ? 's' : ''}
+                </Typography>
+              )}
+            </Box>
+            <ConnectorContentTabs connector={activeConnector} />
           </Box>
-          <ConnectorContentTabs connector={activeConnector} />
-        </Box>
+        )
       )}
     </Paper>
   );
