@@ -1,0 +1,60 @@
+# Stage 1: Base with pnpm
+FROM node:22-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
+WORKDIR /app
+
+# Stage 2: Install dependencies
+FROM base AS deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/core-models/package.json packages/core-models/
+COPY packages/core-util/package.json packages/core-util/
+COPY packages/engine/package.json packages/engine/
+COPY packages/connectors/package.json packages/connectors/
+COPY packages/server/package.json packages/server/
+RUN pnpm install --frozen-lockfile --prod=false
+
+# Stage 3: Build TypeScript
+FROM deps AS build
+COPY packages/core-models/ packages/core-models/
+COPY packages/core-util/ packages/core-util/
+COPY packages/engine/ packages/engine/
+COPY packages/connectors/ packages/connectors/
+COPY packages/server/ packages/server/
+RUN pnpm run -r build
+
+# Stage 4: Production image
+FROM base AS production
+ENV NODE_ENV=production
+
+# Copy root and per-package node_modules from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/core-models/node_modules ./packages/core-models/node_modules
+COPY --from=deps /app/packages/core-util/node_modules ./packages/core-util/node_modules
+COPY --from=deps /app/packages/engine/node_modules ./packages/engine/node_modules
+COPY --from=deps /app/packages/connectors/node_modules ./packages/connectors/node_modules
+COPY --from=deps /app/packages/server/node_modules ./packages/server/node_modules
+
+# Copy compiled dist from build stage
+COPY --from=build /app/packages/core-models/dist ./packages/core-models/dist
+COPY --from=build /app/packages/core-util/dist ./packages/core-util/dist
+COPY --from=build /app/packages/engine/dist ./packages/engine/dist
+COPY --from=build /app/packages/connectors/dist ./packages/connectors/dist
+COPY --from=build /app/packages/server/dist ./packages/server/dist
+
+# Copy package.json files (needed for module resolution)
+COPY packages/core-models/package.json packages/core-models/
+COPY packages/core-util/package.json packages/core-util/
+COPY packages/engine/package.json packages/engine/
+COPY packages/connectors/package.json packages/connectors/
+COPY packages/server/package.json packages/server/
+COPY package.json pnpm-workspace.yaml ./
+
+# esbuild is needed at runtime for script compilation in engine sandbox
+# It is included in server's production dependencies
+
+# Non-root user for security
+RUN addgroup -S mirthless && adduser -S mirthless -G mirthless
+USER mirthless
+
+EXPOSE 3000
+CMD ["node", "packages/server/dist/index.js"]
