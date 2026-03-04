@@ -21,7 +21,6 @@ import { AlertEditorPage } from './pages/AlertEditorPage.js';
 import { EventsPage } from './pages/EventsPage.js';
 import { SettingsPage } from './pages/SettingsPage.js';
 import { UsersPage } from './pages/UsersPage.js';
-import { ChannelGroupsPage } from './pages/ChannelGroupsPage.js';
 import { TagsPage } from './pages/TagsPage.js';
 import { ResourcesPage } from './pages/ResourcesPage.js';
 import { GlobalMapPage } from './pages/GlobalMapPage.js';
@@ -51,7 +50,6 @@ const router = createBrowserRouter([
           { path: 'channels/:id/messages', element: <MessageBrowserPage /> },
           { path: 'channels/:id/statistics', element: <ChannelStatisticsPage /> },
           { path: 'messages', element: <CrossChannelSearchPage /> },
-          { path: 'channel-groups', element: <ChannelGroupsPage /> },
           { path: 'alerts', element: <AlertsPage /> },
           { path: 'alerts/new', element: <AlertEditorPage /> },
           { path: 'alerts/:id', element: <AlertEditorPage /> },

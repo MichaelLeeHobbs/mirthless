@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
+import { useNotificationStore } from '../stores/notification.store.js';
 
 // ----- Response Types -----
 
@@ -59,11 +60,24 @@ export function useDeploymentAction(): ReturnType<typeof useMutation<ChannelStat
       }
       return result.data;
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, { action }) => {
+      const actionLabels: Record<DeploymentAction, string> = {
+        deploy: 'deployed',
+        undeploy: 'undeployed',
+        start: 'started',
+        stop: 'stopped',
+        halt: 'halted',
+        pause: 'paused',
+        resume: 'resumed',
+      };
+      useNotificationStore.getState().notify(`Channel ${actionLabels[action]}`, 'success');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: DEPLOYMENT_KEYS.statuses() }),
         queryClient.invalidateQueries({ queryKey: ['statistics'] }),
       ]);
+    },
+    onError: (err: Error) => {
+      useNotificationStore.getState().notify(err.message || 'Deployment action failed', 'error');
     },
   });
 }
