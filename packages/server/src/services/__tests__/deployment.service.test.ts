@@ -288,4 +288,78 @@ describe('DeploymentService', () => {
       expect(result.value).toHaveLength(0);
     });
   });
+
+  describe('sendMessage', () => {
+    const mockProcessMessage = vi.fn();
+
+    it('sends message to STARTED channel and returns messageId', async () => {
+      mockRuntime.getState.mockReturnValue('STARTED');
+      mockProcessMessage.mockResolvedValue({ ok: true, value: { messageId: 42 }, error: null });
+      deployedChannels.set(CHANNEL_ID, {
+        channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [],
+        processMessage: mockProcessMessage,
+      });
+
+      const result = await DeploymentService.sendMessage(CHANNEL_ID, 'MSH|^~\\&|...');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.messageId).toBe(42);
+      expect(mockProcessMessage).toHaveBeenCalledWith('MSH|^~\\&|...');
+    });
+
+    it('returns NOT_FOUND when channel is not deployed', async () => {
+      const result = await DeploymentService.sendMessage(CHANNEL_ID, 'test');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+    });
+
+    it('returns CONFLICT when channel is STOPPED', async () => {
+      mockRuntime.getState.mockReturnValue('STOPPED');
+      deployedChannels.set(CHANNEL_ID, {
+        channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [],
+        processMessage: mockProcessMessage,
+      });
+
+      const result = await DeploymentService.sendMessage(CHANNEL_ID, 'test');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+      expect(result.error.message).toContain('STOPPED');
+    });
+
+    it('returns CONFLICT when channel is PAUSED', async () => {
+      mockRuntime.getState.mockReturnValue('PAUSED');
+      deployedChannels.set(CHANNEL_ID, {
+        channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [],
+        processMessage: mockProcessMessage,
+      });
+
+      const result = await DeploymentService.sendMessage(CHANNEL_ID, 'test');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+      expect(result.error.message).toContain('PAUSED');
+    });
+
+    it('returns CONFLICT when processMessage fails', async () => {
+      mockRuntime.getState.mockReturnValue('STARTED');
+      mockProcessMessage.mockResolvedValue({ ok: false, value: null, error: new Error('Processing failed') });
+      deployedChannels.set(CHANNEL_ID, {
+        channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [],
+        processMessage: mockProcessMessage,
+      });
+
+      const result = await DeploymentService.sendMessage(CHANNEL_ID, 'bad message');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+      expect(result.error.message).toContain('Processing failed');
+    });
+  });
 });

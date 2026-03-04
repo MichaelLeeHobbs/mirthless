@@ -26,6 +26,7 @@ import { ChannelStatusTable } from '../components/dashboard/ChannelStatusTable.j
 import { TagFilter } from '../components/dashboard/TagFilter.js';
 import { GroupedChannelTable } from '../components/dashboard/GroupedChannelTable.js';
 import { BulkActionsToolbar } from '../components/dashboard/BulkActionsToolbar.js';
+import { SendMessageDialog } from '../components/common/SendMessageDialog.js';
 import { useChannelSelection } from '../hooks/use-channel-selection.js';
 
 const EMPTY_STATS: readonly ChannelStatisticsSummary[] = [];
@@ -48,6 +49,7 @@ export function DashboardPage(): ReactNode {
 
   const [selectedTagIds, setSelectedTagIds] = useState<readonly string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('grouped');
+  const [sendMessageTarget, setSendMessageTarget] = useState<{ id: string; name: string } | null>(null);
   const selection = useChannelSelection();
 
   const statistics = statsQuery.data ?? EMPTY_STATS;
@@ -110,6 +112,10 @@ export function DashboardPage(): ReactNode {
     return { deployedCount: deployed, stoppedCount: stopped, erroredCount: errored };
   }, [filteredStatistics, deploymentStatuses]);
 
+  const handleSendMessage = useCallback((channelId: string, channelName: string): void => {
+    setSendMessageTarget({ id: channelId, name: channelName });
+  }, []);
+
   const isLoading = statsQuery.isLoading || deployQuery.isLoading;
   const error = statsQuery.error ?? deployQuery.error;
 
@@ -170,6 +176,7 @@ export function DashboardPage(): ReactNode {
               deploymentStatuses={deploymentStatuses}
               groups={groups}
               memberships={memberships}
+              onSendMessage={handleSendMessage}
             />
           ) : (
             <ChannelStatusTable
@@ -182,11 +189,20 @@ export function DashboardPage(): ReactNode {
                 else selection.selectAll(ids);
               }}
               isAllSelected={selection.isAllSelected(filteredStatistics.map((s) => s.channelId))}
+              onSendMessage={handleSendMessage}
             />
           )}
         </>
       )}
       <BulkActionsToolbar selectedIds={selection.selectedIds} onClear={selection.clearAll} />
+      {sendMessageTarget ? (
+        <SendMessageDialog
+          open
+          onClose={() => { setSendMessageTarget(null); }}
+          channelId={sendMessageTarget.id}
+          channelName={sendMessageTarget.name}
+        />
+      ) : null}
     </Box>
   );
 }

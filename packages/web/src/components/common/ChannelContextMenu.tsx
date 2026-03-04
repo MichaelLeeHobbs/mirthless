@@ -21,6 +21,7 @@ import CloudOffIcon from '@mui/icons-material/CloudOff';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
 import DeleteIcon from '@mui/icons-material/Delete';
+import SendIcon from '@mui/icons-material/Send';
 import type { ContextMenuState } from '../../hooks/use-context-menu.js';
 import { useDeploymentAction } from '../../hooks/use-deployment.js';
 
@@ -30,9 +31,10 @@ interface ChannelContextMenuProps {
   readonly channelName: string | null;
   readonly state: string | null;
   readonly onClose: () => void;
-  readonly onClone?: (channelId: string) => void;
-  readonly onDelete?: (channelId: string) => void;
-  readonly onExport?: (channelId: string) => void;
+  readonly onClone?: ((channelId: string) => void) | undefined;
+  readonly onDelete?: ((channelId: string) => void) | undefined;
+  readonly onExport?: ((channelId: string) => void) | undefined;
+  readonly onSendMessage?: ((channelId: string, channelName: string) => void) | undefined;
 }
 
 export function ChannelContextMenu({
@@ -44,6 +46,7 @@ export function ChannelContextMenu({
   onClone,
   onDelete,
   onExport,
+  onSendMessage,
 }: ChannelContextMenuProps): ReactNode {
   const navigate = useNavigate();
   const deployAction = useDeploymentAction();
@@ -128,6 +131,12 @@ export function ChannelContextMenu({
             <ListItemText>Stop</ListItemText>
           </MenuItem>
         </>
+      ) : null}
+      {state === 'STARTED' && onSendMessage ? (
+        <MenuItem onClick={() => { onClose(); onSendMessage(channelId, channelName ?? ''); }}>
+          <ListItemIcon><SendIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Send Message</ListItemText>
+        </MenuItem>
       ) : null}
       <Divider />
       {onClone ? (

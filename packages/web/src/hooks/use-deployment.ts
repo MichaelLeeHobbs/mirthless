@@ -81,3 +81,32 @@ export function useDeploymentAction(): ReturnType<typeof useMutation<ChannelStat
     },
   });
 }
+
+// ----- Send Message -----
+
+interface SendMessageInput {
+  readonly channelId: string;
+  readonly content: string;
+}
+
+interface SendMessageResult {
+  readonly messageId: number;
+}
+
+/** Send a raw message to a deployed, started channel. */
+export function useSendMessage(): ReturnType<typeof useMutation<SendMessageResult, Error, SendMessageInput>> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ channelId, content }: SendMessageInput) => {
+      const result = await api.post<SendMessageResult>(`/channels/${channelId}/send-message`, { content });
+      if (!result.success) {
+        throw new Error(result.error.message);
+      }
+      return result.data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['statistics'] });
+    },
+  });
+}

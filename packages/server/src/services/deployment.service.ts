@@ -247,6 +247,22 @@ export class DeploymentService {
       return statuses;
     });
   }
+
+  /** Send a raw message to a deployed, started channel. */
+  static async sendMessage(channelId: string, content: string): Promise<Result<{ messageId: number }>> {
+    return tryCatch(async () => {
+      const deployed = getDeployed(channelId);
+      const state = deployed.runtime.getState();
+      if (state !== 'STARTED') {
+        throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to receive messages`);
+      }
+      const result = await deployed.processMessage(content);
+      if (!result.ok) {
+        throw new ServiceError('CONFLICT', result.error.message);
+      }
+      return result.value;
+    });
+  }
 }
 
 // ----- Helper -----

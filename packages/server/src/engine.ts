@@ -64,6 +64,7 @@ export interface DeployedChannel {
   readonly alertManager: AlertManager;
   readonly queueConsumers: readonly QueueConsumer[];
   readonly scripts: ChannelScripts;
+  readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>;
 }
 
 // ----- Storage Policy -----
@@ -296,15 +297,23 @@ export class EngineManager {
       this.sandbox, store, sendFn, pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
     );
 
+    // Build the processMessage callback (used by both source connector and sendMessage API)
+    const scriptTimeoutMs = channel.scriptTimeoutSeconds
+      ? channel.scriptTimeoutSeconds * 1000
+      : 30_000;
+    const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<{ messageId: number }>> => {
+      return processor.processMessage(
+        { rawContent, sourceMap: sourceMap ?? {} },
+        AbortSignal.timeout(scriptTimeoutMs),
+      );
+    };
+
     // Build runtime config
     const runtimeConfig: ChannelRuntimeConfig = {
       channelId: channel.id,
       source,
       destinations,
-      onMessage: async (raw) => processor.processMessage(
-        { rawContent: raw.content, sourceMap: raw.sourceMap },
-        AbortSignal.timeout(30_000),
-      ),
+      onMessage: async (raw) => processMessage(raw.content, raw.sourceMap),
     };
 
     const result = await runtime.deploy(runtimeConfig);
@@ -312,7 +321,7 @@ export class EngineManager {
       throw new Error('Failed to deploy channel runtime');
     }
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts });
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage });
   }
 
   /** Get a deployed channel runtime. */
@@ -323,6 +332,25 @@ export class EngineManager {
   /** Get all deployed channel runtimes. */
   getAll(): ReadonlyMap<string, DeployedChannel> {
     return this.runtimes;
+  }
+
+  /** Send a raw message to a deployed, started channel. */
+  async sendMessage(channelId: string, content: string): Promise<Result<{ messageId: number }>> {
+    return tryCatch(async () => {
+      const deployed = this.runtimes.get(channelId);
+      if (!deployed) {
+        throw new Error(`Channel ${channelId} is not deployed`);
+      }
+      const state = deployed.runtime.getState();
+      if (state !== 'STARTED') {
+        throw new Error(`Channel is ${state}, must be STARTED to receive messages`);
+      }
+      const result = await deployed.processMessage(content);
+      if (!result.ok) {
+        throw new Error(result.error.message);
+      }
+      return result.value;
+    });
   }
 
   /** Undeploy a channel and remove it from management. */

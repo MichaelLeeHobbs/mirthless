@@ -33,10 +33,11 @@ import { useContextMenu } from '../../hooks/use-context-menu.js';
 interface ChannelStatusTableProps {
   readonly statistics: readonly ChannelStatisticsSummary[];
   readonly deploymentStatuses: readonly ChannelStatus[];
-  readonly selectedIds?: ReadonlySet<string>;
-  readonly onToggleSelect?: (id: string) => void;
-  readonly onSelectAll?: (ids: readonly string[]) => void;
-  readonly isAllSelected?: boolean;
+  readonly selectedIds?: ReadonlySet<string> | undefined;
+  readonly onToggleSelect?: ((id: string) => void) | undefined;
+  readonly onSelectAll?: ((ids: readonly string[]) => void) | undefined;
+  readonly isAllSelected?: boolean | undefined;
+  readonly onSendMessage?: ((channelId: string, channelName: string) => void) | undefined;
 }
 
 type SortField = 'channelName' | 'state' | 'received' | 'filtered' | 'sent' | 'errored' | 'queued';
@@ -72,7 +73,7 @@ export function getStatusDotColor(state: string): string {
   }
 }
 
-export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds, onToggleSelect, onSelectAll, isAllSelected }: ChannelStatusTableProps): ReactNode {
+export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds, onToggleSelect, onSelectAll, isAllSelected, onSendMessage }: ChannelStatusTableProps): ReactNode {
   const showCheckboxes = Boolean(onToggleSelect);
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
@@ -290,7 +291,7 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
                           <BarChartIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                      <ChannelActions channelId={row.channelId} state={row.state === 'UNDEPLOYED' ? undefined : row.state} />
+                      <ChannelActions channelId={row.channelId} channelName={row.channelName} state={row.state === 'UNDEPLOYED' ? undefined : row.state} onSendMessage={onSendMessage} />
                     </Box>
                   </TableCell>
                 </TableRow>
@@ -305,6 +306,7 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
         channelName={menuTarget?.channelName ?? null}
         state={menuTarget === null ? null : (menuTarget.state === 'UNDEPLOYED' ? null : menuTarget.state)}
         onClose={handleClose}
+        onSendMessage={onSendMessage}
       />
     </Paper>
   );
