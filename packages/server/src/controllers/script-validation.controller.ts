@@ -5,6 +5,7 @@
 
 import type { Request, Response } from 'express';
 import { ScriptValidationService } from '../services/script-validation.service.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 export class ScriptValidationController {
@@ -18,10 +19,7 @@ export class ScriptValidationController {
 
     if (!result.ok) {
       logger.error({ error: result.error }, 'Script validation service error');
-      res.status(500).json({
-        success: false,
-        error: { code: 'INTERNAL_ERROR', message: 'Script validation failed' },
-      });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

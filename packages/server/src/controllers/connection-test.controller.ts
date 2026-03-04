@@ -6,7 +6,7 @@
 import type { Request, Response } from 'express';
 import type { ConnectionTestInput } from '@mirthless/core-models';
 import { ConnectionTestService } from '../services/connection-test.service.js';
-import { isServiceError } from '../lib/service-error.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 export class ConnectionTestController {
@@ -20,14 +20,8 @@ export class ConnectionTestController {
     );
 
     if (!result.ok) {
-      const status = isServiceError(result.error, 'INVALID_INPUT') ? 400 : 500;
       logger.warn({ error: result.error, connectorType, mode }, 'Connection test failed');
-      res.status(status).json({
-        success: false,
-        error: isServiceError(result.error)
-          ? { code: result.error.code, message: result.error.message }
-          : { code: 'INTERNAL', message: 'Connection test failed' },
-      });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
