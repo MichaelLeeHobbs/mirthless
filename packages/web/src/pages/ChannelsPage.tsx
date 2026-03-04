@@ -46,12 +46,14 @@ import StopIcon from '@mui/icons-material/Stop';
 import PauseIcon from '@mui/icons-material/Pause';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
+import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
 import { useChannels, useDeleteChannel, useToggleChannelEnabled, useCloneChannel, type ChannelSummary } from '../hooks/use-channels.js';
 import { useAllDeploymentStatuses, useDeploymentAction } from '../hooks/use-deployment.js';
 import { useContextMenu } from '../hooks/use-context-menu.js';
 import { NewChannelDialog } from '../components/channels/NewChannelDialog.js';
 import { ExportButton } from '../components/channels/ExportButton.js';
 import { ImportDialog } from '../components/channels/ImportDialog.js';
+import { GroupManagementDialog } from '../components/channels/GroupManagementDialog.js';
 
 const CONNECTOR_TYPE_LABELS: Readonly<Record<string, string>> = {
   TCP_MLLP: 'TCP/MLLP',
@@ -79,6 +81,7 @@ export function ChannelsPage(): ReactNode {
   const [search, setSearch] = useState('');
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ChannelSummary | null>(null);
   const [cloneTarget, setCloneTarget] = useState<ChannelSummary | null>(null);
   const [cloneName, setCloneName] = useState('');
@@ -151,6 +154,13 @@ export function ChannelsPage(): ReactNode {
           Channels
         </Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<FolderSpecialIcon />}
+            onClick={() => { setGroupsDialogOpen(true); }}
+          >
+            Groups
+          </Button>
           <ExportButton />
           <Button
             variant="outlined"
@@ -475,6 +485,12 @@ export function ChannelsPage(): ReactNode {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Group Management Dialog */}
+      <GroupManagementDialog
+        open={groupsDialogOpen}
+        onClose={() => { setGroupsDialogOpen(false); }}
+      />
     </Box>
   );
 }
