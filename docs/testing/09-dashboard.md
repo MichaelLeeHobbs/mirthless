@@ -40,9 +40,32 @@
 |---|---|---|---|---|
 | 16 | Stats auto-update | Send messages while watching dashboard | Counts update without manual refresh (~5s polling) | |
 
+## Grouped View Layout
+
+| # | Scenario | Steps | Expected | Pass? |
+|---|---|---|---|---|
+| 17 | Header alignment | Switch to grouped view | Column headers (Name, State, Received, etc.) align with group row cells | |
+
+## Deploy Action Feedback
+
+| # | Scenario | Steps | Expected | Pass? |
+|---|---|---|---|---|
+| 18 | Deploy success toast | Deploy a channel from quick actions | Toast notification confirms successful deploy | |
+| 19 | Start success toast | Start a stopped channel | Toast notification confirms channel started | |
+| 20 | Stop success toast | Stop a started channel | Toast notification confirms channel stopped | |
+| 21 | Action error toast | Attempt deploy when server has an issue | Error toast notification with reason displayed | |
+
+## Send Message
+
+| # | Scenario | Steps | Expected | Pass? |
+|---|---|---|---|---|
+| 22 | Send via context menu | Right-click a started channel, select "Send Message" | Send Message dialog opens with Monaco editor | |
+| 23 | Send succeeds | Enter message content in dialog, click Send | Dialog closes, success toast, message appears in Message Browser | |
+| 24 | Send not available for stopped | Right-click a stopped channel | "Send Message" option is absent or disabled | |
+
 ## Error/Empty States
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 17 | No channels | Delete all channels, view Dashboard | Empty table or "No channels" message | |
-| 18 | API error | Stop server, view Dashboard | Error alert displayed | |
+| 25 | No channels | Delete all channels, view Dashboard | Empty table or "No channels" message | |
+| 26 | API error | Stop server, view Dashboard | Error alert displayed | |
