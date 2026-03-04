@@ -29,6 +29,7 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { CERTIFICATE_TYPE } from '@mirthless/core-models';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import {
   useCertificates,
   useCertificate,
@@ -67,33 +68,6 @@ const CERT_TYPES = [
   CERTIFICATE_TYPE.SERVER,
   CERTIFICATE_TYPE.KEYPAIR,
 ] as const;
-
-// ----- Delete Confirmation Dialog -----
-
-function DeleteConfirmDialog(props: {
-  readonly open: boolean;
-  readonly certName: string;
-  readonly isPending: boolean;
-  readonly onConfirm: () => void;
-  readonly onCancel: () => void;
-}): ReactNode {
-  return (
-    <Dialog open={props.open} onClose={props.onCancel}>
-      <DialogTitle>Delete Certificate</DialogTitle>
-      <DialogContent>
-        <Typography>
-          Are you sure you want to delete &quot;{props.certName}&quot;? This action cannot be undone.
-        </Typography>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={props.onCancel}>Cancel</Button>
-        <Button onClick={props.onConfirm} color="error" variant="contained" disabled={props.isPending}>
-          Delete
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-}
 
 // ----- Page Component -----
 
@@ -363,9 +337,12 @@ export function CertificatesPage(): ReactNode {
       </Dialog>
 
       {/* Delete Confirmation */}
-      <DeleteConfirmDialog
+      <ConfirmDialog
         open={deleteTarget !== null}
-        certName={deleteTarget?.name ?? ''}
+        title="Delete Certificate"
+        message={`Are you sure you want to delete "${deleteTarget?.name ?? ''}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        severity="error"
         isPending={deleteCertificate.isPending}
         onConfirm={handleDeleteConfirm}
         onCancel={handleDeleteCancel}

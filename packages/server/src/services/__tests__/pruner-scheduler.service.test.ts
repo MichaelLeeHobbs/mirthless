@@ -9,12 +9,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockSchedule = vi.fn().mockResolvedValue(undefined);
 const mockUnschedule = vi.fn().mockResolvedValue(undefined);
 const mockWork = vi.fn().mockResolvedValue(undefined);
+const mockCreateQueue = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../../lib/queue.js', () => ({
   getBoss: vi.fn(() => ({
     schedule: mockSchedule,
     unschedule: mockUnschedule,
     work: mockWork,
+    createQueue: mockCreateQueue,
   })),
 }));
 

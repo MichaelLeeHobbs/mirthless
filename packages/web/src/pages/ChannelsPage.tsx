@@ -4,7 +4,7 @@
 // Lists all channels with pagination, search, and CRUD actions.
 
 import { useState, useMemo, type ReactNode, type ChangeEvent, type MouseEvent } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
@@ -34,7 +34,21 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SearchIcon from '@mui/icons-material/Search';
 import UploadIcon from '@mui/icons-material/Upload';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
+import Divider from '@mui/material/Divider';
+import EditIcon from '@mui/icons-material/Edit';
+import MessageIcon from '@mui/icons-material/Message';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
+import PauseIcon from '@mui/icons-material/Pause';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import CloudOffIcon from '@mui/icons-material/CloudOff';
 import { useChannels, useDeleteChannel, useToggleChannelEnabled, useCloneChannel, type ChannelSummary } from '../hooks/use-channels.js';
+import { useAllDeploymentStatuses, useDeploymentAction } from '../hooks/use-deployment.js';
+import { useContextMenu } from '../hooks/use-context-menu.js';
 import { NewChannelDialog } from '../components/channels/NewChannelDialog.js';
 import { ExportButton } from '../components/channels/ExportButton.js';
 import { ImportDialog } from '../components/channels/ImportDialog.js';
@@ -59,6 +73,7 @@ function formatDate(dateStr: string): string {
 }
 
 export function ChannelsPage(): ReactNode {
+  const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState('');
@@ -73,6 +88,18 @@ export function ChannelsPage(): ReactNode {
   const deleteChannel = useDeleteChannel();
   const toggleEnabled = useToggleChannelEnabled();
   const cloneChannel = useCloneChannel();
+  const deployQuery = useAllDeploymentStatuses();
+  const deployAction = useDeploymentAction();
+  const { menuState, menuTarget, handleContextMenu, handleClose: closeMenu } = useContextMenu<ChannelSummary>();
+
+  // Build deployment state map for context menu
+  const deploymentMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of deployQuery.data ?? []) {
+      map.set(s.channelId, s.state);
+    }
+    return map;
+  }, [deployQuery.data]);
 
   // Client-side search filter on the current page of results
   const filteredChannels = useMemo(() => {
@@ -202,7 +229,7 @@ export function ChannelsPage(): ReactNode {
               </TableRow>
             ) : (
               filteredChannels.map((channel) => (
-                <TableRow key={channel.id} hover>
+                <TableRow key={channel.id} hover onContextMenu={(e) => handleContextMenu(e, channel)}>
                   <TableCell padding="checkbox">
                     <Switch
                       size="small"
@@ -329,6 +356,97 @@ export function ChannelsPage(): ReactNode {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Channel List Context Menu */}
+      <Menu
+        open={menuState !== null}
+        onClose={closeMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={menuState ? { top: menuState.mouseY, left: menuState.mouseX } : { top: 0, left: 0 }}
+      >
+        {menuTarget ? (
+          <>
+            <MenuItem disabled sx={{ opacity: '1 !important' }}>
+              <ListItemText primaryTypographyProps={{ variant: 'subtitle2', fontWeight: 600 }}>
+                {menuTarget.name}
+              </ListItemText>
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={() => { closeMenu(); navigate(`/channels/${menuTarget.id}`); }}>
+              <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Edit</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => { closeMenu(); navigate(`/channels/${menuTarget.id}/messages`); }}>
+              <ListItemIcon><MessageIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Messages</ListItemText>
+            </MenuItem>
+            <Divider />
+            {(() => {
+              const st = deploymentMap.get(menuTarget.id);
+              if (st === undefined || st === 'UNDEPLOYED') {
+                return (
+                  <MenuItem onClick={() => { closeMenu(); deployAction.mutate({ channelId: menuTarget.id, action: 'deploy' }); }}>
+                    <ListItemIcon><CloudUploadIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>Deploy</ListItemText>
+                  </MenuItem>
+                );
+              }
+              if (st === 'STOPPED') {
+                return (
+                  <>
+                    <MenuItem onClick={() => { closeMenu(); deployAction.mutate({ channelId: menuTarget.id, action: 'start' }); }}>
+                      <ListItemIcon><PlayArrowIcon fontSize="small" /></ListItemIcon>
+                      <ListItemText>Start</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={() => { closeMenu(); deployAction.mutate({ channelId: menuTarget.id, action: 'undeploy' }); }}>
+                      <ListItemIcon><CloudOffIcon fontSize="small" /></ListItemIcon>
+                      <ListItemText>Undeploy</ListItemText>
+                    </MenuItem>
+                  </>
+                );
+              }
+              if (st === 'STARTED') {
+                return (
+                  <>
+                    <MenuItem onClick={() => { closeMenu(); deployAction.mutate({ channelId: menuTarget.id, action: 'pause' }); }}>
+                      <ListItemIcon><PauseIcon fontSize="small" /></ListItemIcon>
+                      <ListItemText>Pause</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={() => { closeMenu(); deployAction.mutate({ channelId: menuTarget.id, action: 'stop' }); }}>
+                      <ListItemIcon><StopIcon fontSize="small" /></ListItemIcon>
+                      <ListItemText>Stop</ListItemText>
+                    </MenuItem>
+                  </>
+                );
+              }
+              if (st === 'PAUSED') {
+                return (
+                  <>
+                    <MenuItem onClick={() => { closeMenu(); deployAction.mutate({ channelId: menuTarget.id, action: 'resume' }); }}>
+                      <ListItemIcon><PlayArrowIcon fontSize="small" /></ListItemIcon>
+                      <ListItemText>Resume</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={() => { closeMenu(); deployAction.mutate({ channelId: menuTarget.id, action: 'stop' }); }}>
+                      <ListItemIcon><StopIcon fontSize="small" /></ListItemIcon>
+                      <ListItemText>Stop</ListItemText>
+                    </MenuItem>
+                  </>
+                );
+              }
+              return null;
+            })()}
+            <Divider />
+            <MenuItem onClick={() => { closeMenu(); handleCloneOpen(menuTarget); }}>
+              <ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Clone</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => { closeMenu(); setDeleteTarget(menuTarget); }}>
+              <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+              <ListItemText primaryTypographyProps={{ color: 'error' }}>Delete</ListItemText>
+            </MenuItem>
+          </>
+        ) : null}
+      </Menu>
 
       {/* Clone Channel Dialog */}
       <Dialog open={cloneTarget !== null} onClose={() => { setCloneTarget(null); }}>

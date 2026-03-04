@@ -52,6 +52,7 @@ export interface AdvancedFormValues {
   pruningEnabled: boolean;
   pruningMaxAgeDays: number | null;
   pruningArchiveEnabled: boolean;
+  scriptTimeoutSeconds: number;
   metadataColumns: readonly MetadataColumnFormValues[];
 }
 
@@ -202,6 +203,32 @@ export function AdvancedTab({ values, onChange }: AdvancedTabProps): ReactNode {
           </Grid>
         </Grid>
       ) : null}
+
+      <Divider sx={{ my: 3 }} />
+
+      {/* Script Execution Section */}
+      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+        Script Execution
+      </Typography>
+
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <TextField
+            label="Script Timeout (seconds)"
+            type="number"
+            value={values.scriptTimeoutSeconds}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              const parsed = parseInt(e.target.value, 10);
+              if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= 300) {
+                onChange({ scriptTimeoutSeconds: parsed });
+              }
+            }}
+            helperText="Maximum execution time per script (1-300 seconds)"
+            fullWidth
+            slotProps={{ htmlInput: { min: 1, max: 300 } }}
+          />
+        </Grid>
+      </Grid>
 
       <Divider sx={{ my: 3 }} />
 

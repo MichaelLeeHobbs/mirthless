@@ -33,6 +33,7 @@ import {
   useDeleteGlobalMapEntry,
   useClearGlobalMap,
 } from '../hooks/use-global-map.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 
 export function GlobalMapPage(): ReactNode {
   const { data: entries, isLoading, error } = useGlobalMap();
@@ -199,25 +200,16 @@ export function GlobalMapPage(): ReactNode {
       </Dialog>
 
       {/* Confirm Clear Dialog */}
-      <Dialog open={confirmClear} onClose={() => setConfirmClear(false)}>
-        <DialogTitle>Clear All Entries?</DialogTitle>
-        <DialogContent>
-          <Typography>
-            This will permanently delete all global map entries. This action cannot be undone.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmClear(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="error"
-            onClick={handleClearAll}
-            disabled={clearMutation.isPending}
-          >
-            {clearMutation.isPending ? 'Clearing...' : 'Clear All'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmClear}
+        title="Clear All Entries?"
+        message="This will permanently delete all global map entries. This action cannot be undone."
+        severity="error"
+        confirmLabel="Clear All"
+        isPending={clearMutation.isPending}
+        onConfirm={handleClearAll}
+        onCancel={() => setConfirmClear(false)}
+      />
     </Box>
   );
 }

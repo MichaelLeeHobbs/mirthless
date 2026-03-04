@@ -14,12 +14,12 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
-import Alert from '@mui/material/Alert';
-import Snackbar from '@mui/material/Snackbar';
 import AddIcon from '@mui/icons-material/Add';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import { LibraryTree } from '../components/code-templates/LibraryTree.js';
 import { TemplateEditor } from '../components/code-templates/TemplateEditor.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { useNotification } from '../stores/notification.store.js';
 import {
   useCodeTemplateLibraries,
   useCodeTemplates,
@@ -34,6 +34,15 @@ import type { CodeTemplateLibrary, CodeTemplateDetail } from '../api/client.js';
 
 type DialogMode = 'create-library' | 'edit-library' | 'create-template' | null;
 
+interface ConfirmState {
+  readonly open: boolean;
+  readonly title: string;
+  readonly message: string;
+  readonly onConfirm: () => void;
+}
+
+const CLOSED_CONFIRM: ConfirmState = { open: false, title: '', message: '', onConfirm: () => {} };
+
 export function CodeTemplatePage(): ReactNode {
   const { data: libraries = [], isLoading: libLoading } = useCodeTemplateLibraries();
   const { data: templates = [], isLoading: tmplLoading } = useCodeTemplates();
@@ -45,12 +54,14 @@ export function CodeTemplatePage(): ReactNode {
   const updateTemplate = useUpdateTemplate();
   const deleteTemplate = useDeleteTemplate();
 
+  const { notify } = useNotification();
+
   const [selectedTemplate, setSelectedTemplate] = useState<CodeTemplateDetail | null>(null);
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [editingLibrary, setEditingLibrary] = useState<CodeTemplateLibrary | null>(null);
   const [dialogName, setDialogName] = useState('');
   const [dialogDescription, setDialogDescription] = useState('');
-  const [snackbar, setSnackbar] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState>(CLOSED_CONFIRM);
 
   const handleDeselectTemplate = useCallback((): void => {
     setSelectedTemplate(null);
@@ -62,9 +73,9 @@ export function CodeTemplatePage(): ReactNode {
       setDialogMode(null);
       setDialogName('');
       setDialogDescription('');
-      setSnackbar('Library created');
+      notify('Library created', 'success');
     } catch (e) {
-      setSnackbar(e instanceof Error ? e.message : 'Failed to create library');
+      notify(e instanceof Error ? e.message : 'Failed to create library', 'error');
     }
   };
 
@@ -77,23 +88,32 @@ export function CodeTemplatePage(): ReactNode {
       });
       setDialogMode(null);
       setEditingLibrary(null);
-      setSnackbar('Library updated');
+      notify('Library updated', 'success');
     } catch (e) {
-      setSnackbar(e instanceof Error ? e.message : 'Failed to update library');
+      notify(e instanceof Error ? e.message : 'Failed to update library', 'error');
     }
   };
 
-  const handleDeleteLibrary = async (lib: CodeTemplateLibrary): Promise<void> => {
-    if (!window.confirm(`Delete library "${lib.name}" and all its templates?`)) return;
-    try {
-      await deleteLibrary.mutateAsync(lib.id);
-      if (selectedTemplate?.libraryId === lib.id) {
-        setSelectedTemplate(null);
-      }
-      setSnackbar('Library deleted');
-    } catch (e) {
-      setSnackbar(e instanceof Error ? e.message : 'Failed to delete library');
-    }
+  const handleDeleteLibrary = (lib: CodeTemplateLibrary): void => {
+    setConfirm({
+      open: true,
+      title: 'Delete Library',
+      message: `Delete library "${lib.name}" and all its templates?`,
+      onConfirm: () => {
+        setConfirm(CLOSED_CONFIRM);
+        void (async () => {
+          try {
+            await deleteLibrary.mutateAsync(lib.id);
+            if (selectedTemplate?.libraryId === lib.id) {
+              setSelectedTemplate(null);
+            }
+            notify('Library deleted', 'success');
+          } catch (e) {
+            notify(e instanceof Error ? e.message : 'Failed to delete library', 'error');
+          }
+        })();
+      },
+    });
   };
 
   const handleCreateTemplate = async (libraryId: string): Promise<void> => {
@@ -107,9 +127,9 @@ export function CodeTemplatePage(): ReactNode {
         contexts: [],
       });
       setSelectedTemplate(result);
-      setSnackbar('Template created');
+      notify('Template created', 'success');
     } catch (e) {
-      setSnackbar(e instanceof Error ? e.message : 'Failed to create template');
+      notify(e instanceof Error ? e.message : 'Failed to create template', 'error');
     }
   };
 
@@ -135,21 +155,30 @@ export function CodeTemplatePage(): ReactNode {
         },
       });
       setSelectedTemplate(result);
-      setSnackbar('Template saved');
+      notify('Template saved', 'success');
     } catch (e) {
-      setSnackbar(e instanceof Error ? e.message : 'Failed to save template');
+      notify(e instanceof Error ? e.message : 'Failed to save template', 'error');
     }
   };
 
-  const handleDeleteTemplate = async (id: string): Promise<void> => {
-    if (!window.confirm('Delete this template?')) return;
-    try {
-      await deleteTemplate.mutateAsync(id);
-      setSelectedTemplate(null);
-      setSnackbar('Template deleted');
-    } catch (e) {
-      setSnackbar(e instanceof Error ? e.message : 'Failed to delete template');
-    }
+  const handleDeleteTemplate = (id: string): void => {
+    setConfirm({
+      open: true,
+      title: 'Delete Template',
+      message: 'Delete this template? This action cannot be undone.',
+      onConfirm: () => {
+        setConfirm(CLOSED_CONFIRM);
+        void (async () => {
+          try {
+            await deleteTemplate.mutateAsync(id);
+            setSelectedTemplate(null);
+            notify('Template deleted', 'success');
+          } catch (e) {
+            notify(e instanceof Error ? e.message : 'Failed to delete template', 'error');
+          }
+        })();
+      },
+    });
   };
 
   const openEditLibraryDialog = (lib: CodeTemplateLibrary): void => {
@@ -189,7 +218,7 @@ export function CodeTemplatePage(): ReactNode {
             onClick={() => {
               const targetId = selectedTemplate?.libraryId ?? libraries[0]?.id;
               if (targetId) { void handleCreateTemplate(targetId); }
-              else { setSnackbar('Create a library first'); }
+              else { notify('Create a library first', 'warning'); }
             }}
             disabled={libraries.length === 0}
             size="small"
@@ -293,21 +322,16 @@ export function CodeTemplatePage(): ReactNode {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar */}
-      <Snackbar
-        open={snackbar !== null}
-        autoHideDuration={4000}
-        onClose={() => { setSnackbar(null); }}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={() => { setSnackbar(null); }}
-          severity="info"
-          variant="filled"
-        >
-          {snackbar}
-        </Alert>
-      </Snackbar>
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirm.open}
+        title={confirm.title}
+        message={confirm.message}
+        confirmLabel="Delete"
+        severity="error"
+        onConfirm={confirm.onConfirm}
+        onCancel={() => { setConfirm(CLOSED_CONFIRM); }}
+      />
     </Box>
   );
 }

@@ -36,6 +36,8 @@ import type { DestinationFormValues } from '../components/channels/destinations/
 import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, TransformerStepFormValues } from '../components/channels/source/types.js';
 import { createDefaultFilter, createDefaultTransformer } from '../components/channels/source/types.js';
 import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
+import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
+import { ChannelGroupChips } from '../components/channels/ChannelGroupChips.js';
 
 // ----- Form Data Type -----
 
@@ -78,6 +80,7 @@ const DEFAULT_ADVANCED: AdvancedFormValues = {
   pruningEnabled: false,
   pruningMaxAgeDays: null,
   pruningArchiveEnabled: false,
+  scriptTimeoutSeconds: 30,
   metadataColumns: [],
 };
 
@@ -230,6 +233,7 @@ export function ChannelEditorPage(): ReactNode {
         pruningEnabled: channel.pruningEnabled,
         pruningMaxAgeDays: channel.pruningMaxAgeDays,
         pruningArchiveEnabled: channel.pruningArchiveEnabled,
+        scriptTimeoutSeconds: channel.scriptTimeoutSeconds ?? 30,
         metadataColumns: channel.metadataColumns.map((c) => ({
           name: c.name,
           dataType: c.dataType,
@@ -513,6 +517,7 @@ export function ChannelEditorPage(): ReactNode {
               pruningEnabled: advanced.pruningEnabled,
               pruningMaxAgeDays: advanced.pruningMaxAgeDays,
               pruningArchiveEnabled: advanced.pruningArchiveEnabled,
+              scriptTimeoutSeconds: advanced.scriptTimeoutSeconds,
             },
             scripts: {
               deploy: scripts.deploy || null,
@@ -585,6 +590,10 @@ export function ChannelEditorPage(): ReactNode {
 
   return (
     <Box>
+      <PageBreadcrumbs items={[
+        { label: 'Channels', href: '/channels' },
+        { label: isEditMode ? (nameValue || 'Edit Channel') : 'New Channel' },
+      ]} />
       {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, overflow: 'hidden' }}>
         <IconButton onClick={() => { navigate('/channels'); }} aria-label="back to channels" sx={{ flexShrink: 0 }}>
@@ -664,6 +673,9 @@ export function ChannelEditorPage(): ReactNode {
             channelId={id}
             revision={channel?.revision}
           />
+          {isEditMode && id ? (
+            <ChannelGroupChips channelId={id} />
+          ) : null}
         </TabPanel>
         <TabPanel value={activeTab} index={1}>
           <SourceTab

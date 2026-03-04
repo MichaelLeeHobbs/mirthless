@@ -6,7 +6,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, count, asc } from 'drizzle-orm';
-import type { CreateChannelGroupInput, UpdateChannelGroupInput } from '@mirthless/core-models';
+import { DEFAULT_GROUP_NAME, type CreateChannelGroupInput, type UpdateChannelGroupInput } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
@@ -220,16 +220,20 @@ export class ChannelGroupService {
     });
   }
 
-  /** Delete a group (cascades members). */
+  /** Delete a group (cascades members). The "Default" group cannot be deleted. */
   static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const [existing] = await db
-        .select({ id: channelGroups.id })
+        .select({ id: channelGroups.id, name: channelGroups.name })
         .from(channelGroups)
         .where(eq(channelGroups.id, id));
 
       if (!existing) {
         throw new ServiceError('NOT_FOUND', `Channel group ${id} not found`);
+      }
+
+      if (existing.name === DEFAULT_GROUP_NAME) {
+        throw new ServiceError('FORBIDDEN', `The "${DEFAULT_GROUP_NAME}" channel group cannot be deleted`);
       }
 
       await db

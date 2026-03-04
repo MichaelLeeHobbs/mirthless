@@ -6,6 +6,7 @@
 import type { Request, Response } from 'express';
 import type { EventExportQuery } from '@mirthless/core-models';
 import { EventExportService } from '../services/event-export.service.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 export class EventExportController {
@@ -18,7 +19,7 @@ export class EventExportController {
 
       if (!result.ok) {
         logger.error({ error: result.error }, 'Failed to export events as CSV');
-        res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+        res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
         return;
       }
 
@@ -32,7 +33,7 @@ export class EventExportController {
 
     if (!result.ok) {
       logger.error({ error: result.error }, 'Failed to export events as JSON');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

@@ -30,6 +30,7 @@ import { TriggerSection, type TriggerFormValues } from '../components/alerts/Tri
 import { ChannelsSection } from '../components/alerts/ChannelsSection.js';
 import { ActionsSection, type ActionFormValues } from '../components/alerts/ActionsSection.js';
 import { TemplatesSection, type TemplateFormValues } from '../components/alerts/TemplatesSection.js';
+import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 
 // ----- Form Data -----
 
@@ -259,6 +260,10 @@ export function AlertEditorPage(): ReactNode {
 
   return (
     <Box>
+      <PageBreadcrumbs items={[
+        { label: 'Alerts', href: '/alerts' },
+        { label: isEditMode ? (nameValue || 'Edit Alert') : 'New Alert' },
+      ]} />
       {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, overflow: 'hidden' }}>
         <IconButton onClick={() => { navigate('/alerts'); }} aria-label="back to alerts" sx={{ flexShrink: 0 }}>

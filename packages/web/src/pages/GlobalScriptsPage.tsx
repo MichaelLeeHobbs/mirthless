@@ -10,10 +10,10 @@ import Typography from '@mui/material/Typography';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Button from '@mui/material/Button';
-import Alert from '@mui/material/Alert';
-import Snackbar from '@mui/material/Snackbar';
 import CircularProgress from '@mui/material/CircularProgress';
 import { ScriptEditor } from '../components/editors/ScriptEditor.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { useNotification } from '../stores/notification.store.js';
 import { useBlocker } from 'react-router-dom';
 import { useGlobalScripts, useUpdateGlobalScripts } from '../hooks/use-global-scripts.js';
 
@@ -36,6 +36,7 @@ interface ScriptsState {
 export function GlobalScriptsPage(): ReactNode {
   const { data, isLoading } = useGlobalScripts();
   const updateMutation = useUpdateGlobalScripts();
+  const { notify } = useNotification();
 
   const [scripts, setScripts] = useState<ScriptsState>({
     deploy: '',
@@ -45,7 +46,7 @@ export function GlobalScriptsPage(): ReactNode {
   });
   const [activeTab, setActiveTab] = useState(0);
   const [dirty, setDirty] = useState(false);
-  const [snackbar, setSnackbar] = useState<string | null>(null);
+  const [blockerConfirmOpen, setBlockerConfirmOpen] = useState(false);
 
   // Load data into form
   useEffect(() => {
@@ -65,14 +66,19 @@ export function GlobalScriptsPage(): ReactNode {
 
   useEffect(() => {
     if (blocker.state === 'blocked') {
-      const leave = window.confirm('You have unsaved changes. Leave anyway?');
-      if (leave) {
-        blocker.proceed();
-      } else {
-        blocker.reset();
-      }
+      setBlockerConfirmOpen(true);
     }
-  }, [blocker]);
+  }, [blocker.state]);
+
+  const handleBlockerConfirm = (): void => {
+    setBlockerConfirmOpen(false);
+    blocker.proceed?.();
+  };
+
+  const handleBlockerCancel = (): void => {
+    setBlockerConfirmOpen(false);
+    blocker.reset?.();
+  };
 
   const handleScriptChange = useCallback((key: ScriptKey, value: string | undefined): void => {
     setScripts((prev) => ({ ...prev, [key]: value ?? '' }));
@@ -83,9 +89,9 @@ export function GlobalScriptsPage(): ReactNode {
     try {
       await updateMutation.mutateAsync(scripts);
       setDirty(false);
-      setSnackbar('Global scripts saved');
+      notify('Global scripts saved', 'success');
     } catch (e) {
-      setSnackbar(e instanceof Error ? e.message : 'Failed to save');
+      notify(e instanceof Error ? e.message : 'Failed to save', 'error');
     }
   };
 
@@ -132,24 +138,21 @@ export function GlobalScriptsPage(): ReactNode {
           height="100%"
           value={scripts[activeKey]}
           onChange={(value) => { handleScriptChange(activeKey, value); }}
+          showLanguageToggle
         />
       </Box>
 
-      {/* Snackbar */}
-      <Snackbar
-        open={snackbar !== null}
-        autoHideDuration={4000}
-        onClose={() => { setSnackbar(null); }}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={() => { setSnackbar(null); }}
-          severity="info"
-          variant="filled"
-        >
-          {snackbar}
-        </Alert>
-      </Snackbar>
+      {/* Navigation blocker dialog */}
+      <ConfirmDialog
+        open={blockerConfirmOpen}
+        title="Unsaved Changes"
+        message="You have unsaved changes. Leave anyway?"
+        confirmLabel="Leave"
+        cancelLabel="Stay"
+        severity="warning"
+        onConfirm={handleBlockerConfirm}
+        onCancel={handleBlockerCancel}
+      />
     </Box>
   );
 }

@@ -15,6 +15,20 @@
       "when": 1772368919116,
       "tag": "0001_lumpy_catseye",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772577273971,
+      "tag": "0002_slow_longshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1772750000000,
+      "tag": "0003_add_script_timeout",
+      "breakpoints": true
     }
   ]
 }

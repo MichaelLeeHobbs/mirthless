@@ -235,6 +235,10 @@ export const GLOBAL_SCRIPT_TYPE = {
 } as const;
 export type GlobalScriptType = (typeof GLOBAL_SCRIPT_TYPE)[keyof typeof GLOBAL_SCRIPT_TYPE];
 
+// --- Channel Groups ---
+
+export const DEFAULT_GROUP_NAME = 'Default';
+
 // --- Socket Events ---
 
 export const SOCKET_EVENT = {

@@ -102,6 +102,7 @@ export function TransformerStepEditor({
             height="200px"
             value={step.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
+            showLanguageToggle
           />
         ) : (
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
