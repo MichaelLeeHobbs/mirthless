@@ -38,15 +38,18 @@
 
 ## UI Tests
 
-### Channel Groups Page
-- [ ] Navigate to Channel Groups via sidebar
-- [ ] Page shows empty state when no groups exist
-- [ ] Click "Create Group" opens dialog
-- [ ] Fill name and description, click Create — group appears in table
-- [ ] Click Edit icon — dialog pre-fills with group data
-- [ ] Update name, click Update — table updates
-- [ ] Click Delete icon — group removed from table
-- [ ] Member count column shows correct count
+### Manage Groups Dialog (Channels Page)
+- [ ] Click "Groups" button in Channels page toolbar — Manage Groups dialog opens
+- [ ] Dialog shows list of existing groups with member counts
+- [ ] Dialog shows empty state when no custom groups exist (only "Default" group)
+- [ ] Click "Create Group" within dialog — inline form or sub-dialog appears
+- [ ] Fill name and description, click Create — group appears in group list
+- [ ] Click Edit icon on a group — form pre-fills with group data
+- [ ] Update name, click Save — group list updates
+- [ ] Click Delete icon on a group — confirm dialog appears, group removed after confirm
+- [ ] "Default" group cannot be deleted (delete button disabled or absent)
+- [ ] Member count column shows correct count per group
+- [ ] Closing the dialog returns to the Channels page
 
 ### Permissions
 - [ ] Viewer role cannot create/edit/delete groups (buttons disabled or 403)
