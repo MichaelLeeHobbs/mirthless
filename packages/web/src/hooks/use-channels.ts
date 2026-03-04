@@ -33,6 +33,7 @@ export interface ChannelDetail extends ChannelSummary {
   readonly pruningEnabled: boolean;
   readonly pruningMaxAgeDays: number | null;
   readonly pruningArchiveEnabled: boolean;
+  readonly scriptTimeoutSeconds: number;
   readonly sourceConnectorProperties: Record<string, unknown>;
   readonly scripts: ReadonlyArray<{
     readonly id: string;

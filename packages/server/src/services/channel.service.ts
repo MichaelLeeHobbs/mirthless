@@ -6,10 +6,11 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, isNull, and, count, asc } from 'drizzle-orm';
-import type {
-  CreateChannelInput,
-  UpdateChannelInput,
-  ChannelListQuery,
+import {
+  DEFAULT_GROUP_NAME,
+  type CreateChannelInput,
+  type UpdateChannelInput,
+  type ChannelListQuery,
 } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -28,6 +29,8 @@ import {
   filterRules,
   channelTransformers,
   transformerSteps,
+  channelGroups,
+  channelGroupMembers,
 } from '../db/schema/index.js';
 
 // ----- Response Types -----
@@ -134,6 +137,7 @@ export interface ChannelDetail extends ChannelSummary {
   readonly pruningEnabled: boolean;
   readonly pruningMaxAgeDays: number | null;
   readonly pruningArchiveEnabled: boolean;
+  readonly scriptTimeoutSeconds: number;
   readonly sourceConnectorProperties: Record<string, unknown>;
   readonly scripts: readonly ChannelScript[];
   readonly destinations: readonly ChannelDestination[];
@@ -360,6 +364,7 @@ function assembleDetail(
     pruningEnabled: channel.pruningEnabled,
     pruningMaxAgeDays: channel.pruningMaxAgeDays,
     pruningArchiveEnabled: channel.pruningArchiveEnabled,
+    scriptTimeoutSeconds: channel.scriptTimeoutSeconds,
     sourceConnectorProperties: channel.sourceConnectorProperties,
     scripts: relations.scripts,
     destinations: relations.destinations,
@@ -418,6 +423,7 @@ function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelI
       pruningEnabled: source.pruningEnabled,
       pruningMaxAgeDays: source.pruningMaxAgeDays,
       pruningArchiveEnabled: source.pruningArchiveEnabled,
+      scriptTimeoutSeconds: source.scriptTimeoutSeconds,
     },
     scripts: buildCloneScripts(source),
     destinations: buildCloneDestinations(source),
@@ -524,6 +530,9 @@ export class ChannelService {
         channelValues.pruningEnabled = input.properties.pruningEnabled;
         channelValues.pruningMaxAgeDays = input.properties.pruningMaxAgeDays;
         channelValues.pruningArchiveEnabled = input.properties.pruningArchiveEnabled;
+        if (input.properties.scriptTimeoutSeconds !== undefined) {
+          channelValues.scriptTimeoutSeconds = input.properties.scriptTimeoutSeconds;
+        }
       }
 
       // Transaction: insert channel + default scripts + destinations + metadata columns
@@ -596,6 +605,23 @@ export class ChannelService {
         attributes: { channelName: input.name },
       });
 
+      // Auto-assign to "Default" channel group (non-blocking — skip silently if group doesn't exist)
+      try {
+        const [defaultGroup] = await db
+          .select({ id: channelGroups.id })
+          .from(channelGroups)
+          .where(eq(channelGroups.name, DEFAULT_GROUP_NAME));
+
+        if (defaultGroup) {
+          await db.insert(channelGroupMembers).values({
+            channelGroupId: defaultGroup.id,
+            channelId: channel.id,
+          });
+        }
+      } catch {
+        logger.warn({ channelId: channel.id }, 'Failed to auto-assign channel to Default group');
+      }
+
       return detail;
     });
   }
@@ -637,6 +663,7 @@ export class ChannelService {
         if (input.properties.pruningEnabled !== undefined) updateValues['pruningEnabled'] = input.properties.pruningEnabled;
         if (input.properties.pruningMaxAgeDays !== undefined) updateValues['pruningMaxAgeDays'] = input.properties.pruningMaxAgeDays;
         if (input.properties.pruningArchiveEnabled !== undefined) updateValues['pruningArchiveEnabled'] = input.properties.pruningArchiveEnabled;
+        if (input.properties.scriptTimeoutSeconds !== undefined) updateValues['scriptTimeoutSeconds'] = input.properties.scriptTimeoutSeconds;
       }
 
       // Check name uniqueness if name is changing

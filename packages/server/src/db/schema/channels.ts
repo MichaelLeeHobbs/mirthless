@@ -29,6 +29,9 @@ export const channels = pgTable('channels', {
   pruningMaxAgeDays: integer('pruning_max_age_days'),
   pruningArchiveEnabled: boolean('pruning_archive_enabled').notNull().default(false),
 
+  // Script execution timeout (seconds)
+  scriptTimeoutSeconds: integer('script_timeout_seconds').notNull().default(30),
+
   // Source connector (always exactly one — inline rather than separate join)
   sourceConnectorType: varchar('source_connector_type', { length: 50 }).notNull(),
   sourceConnectorProperties: jsonb('source_connector_properties').notNull().$type<Record<string, unknown>>(),

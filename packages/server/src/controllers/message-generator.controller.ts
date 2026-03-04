@@ -5,6 +5,7 @@
 import type { Request, Response } from 'express';
 import type { GenerateMessagesInput } from '@mirthless/core-models';
 import { MessageGeneratorService } from '../services/message-generator.service.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 export class MessageGeneratorController {
@@ -14,7 +15,7 @@ export class MessageGeneratorController {
 
     if (!result.ok) {
       logger.error({ error: result.error }, 'Failed to generate messages');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Failed to generate messages' } });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

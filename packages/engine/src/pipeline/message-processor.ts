@@ -110,6 +110,7 @@ export interface PipelineConfig {
   readonly dataType: string;
   readonly scripts: ChannelScripts;
   readonly destinations: readonly DestinationConfig[];
+  readonly scriptTimeoutMs?: number | undefined;
   readonly globalChannelMap?: GlobalChannelMap | undefined;
   readonly globalMapProxy?: GlobalMapProxy | undefined;
   readonly configMap?: Readonly<Record<string, unknown>> | undefined;
@@ -152,7 +153,10 @@ export class MessageProcessor {
     this.store = store;
     this.sendFn = sendFn;
     this.config = config;
-    this.execOptions = execOptions;
+    // Use per-channel scriptTimeoutMs if configured, otherwise fall back to execOptions
+    this.execOptions = config.scriptTimeoutMs
+      ? { ...execOptions, timeout: config.scriptTimeoutMs }
+      : execOptions;
   }
 
   /** Process an inbound message through the 8-stage pipeline. */

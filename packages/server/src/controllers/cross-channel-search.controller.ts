@@ -4,6 +4,7 @@
 
 import type { Request, Response } from 'express';
 import { CrossChannelSearchService, type SearchFilters } from '../services/cross-channel-search.service.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 export class CrossChannelSearchController {
@@ -22,7 +23,7 @@ export class CrossChannelSearchController {
 
     if (!result.ok) {
       logger.error({ error: result.error }, 'Failed to search messages across channels');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

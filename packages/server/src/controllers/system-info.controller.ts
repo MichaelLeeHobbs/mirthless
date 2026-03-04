@@ -5,6 +5,7 @@
 
 import type { Request, Response } from 'express';
 import { SystemInfoService } from '../services/system-info.service.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 export class SystemInfoController {
@@ -13,7 +14,7 @@ export class SystemInfoController {
 
     if (!result.ok) {
       logger.error({ error: result.error }, 'Failed to get system info');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

@@ -54,8 +54,9 @@ export class PrunerSchedulerService {
         return;
       }
 
-      // Register worker (once)
+      // Ensure queue exists (pgboss v10+ requires explicit creation)
       if (!workerRegistered) {
+        await boss.createQueue(JOB_NAME);
         await boss.work(JOB_NAME, async () => {
           logger.info('Auto data pruner triggered');
           const result = await DataPrunerService.pruneAll();

@@ -6,6 +6,7 @@
 import type { Request, Response } from 'express';
 import type { UpdateGlobalScriptsInput } from '@mirthless/core-models';
 import { GlobalScriptService } from '../services/global-script.service.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 export class GlobalScriptController {
@@ -14,7 +15,7 @@ export class GlobalScriptController {
 
     if (!result.ok) {
       logger.error({ error: result.error }, 'Failed to get global scripts');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -28,7 +29,7 @@ export class GlobalScriptController {
 
     if (!result.ok) {
       logger.error({ error: result.error }, 'Failed to update global scripts');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

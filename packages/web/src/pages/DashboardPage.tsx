@@ -25,6 +25,8 @@ import { SummaryCards } from '../components/dashboard/SummaryCards.js';
 import { ChannelStatusTable } from '../components/dashboard/ChannelStatusTable.js';
 import { TagFilter } from '../components/dashboard/TagFilter.js';
 import { GroupedChannelTable } from '../components/dashboard/GroupedChannelTable.js';
+import { BulkActionsToolbar } from '../components/dashboard/BulkActionsToolbar.js';
+import { useChannelSelection } from '../hooks/use-channel-selection.js';
 
 const EMPTY_STATS: readonly ChannelStatisticsSummary[] = [];
 const EMPTY_STATUSES: readonly ChannelStatus[] = [];
@@ -45,7 +47,8 @@ export function DashboardPage(): ReactNode {
   const membershipsQuery = useGroupMemberships();
 
   const [selectedTagIds, setSelectedTagIds] = useState<readonly string[]>([]);
-  const [viewMode, setViewMode] = useState<ViewMode>('flat');
+  const [viewMode, setViewMode] = useState<ViewMode>('grouped');
+  const selection = useChannelSelection();
 
   const statistics = statsQuery.data ?? EMPTY_STATS;
   const deploymentStatuses = deployQuery.data ?? EMPTY_STATUSES;
@@ -172,10 +175,18 @@ export function DashboardPage(): ReactNode {
             <ChannelStatusTable
               statistics={filteredStatistics}
               deploymentStatuses={deploymentStatuses}
+              selectedIds={selection.selectedIds}
+              onToggleSelect={selection.toggle}
+              onSelectAll={(ids) => {
+                if (selection.isAllSelected(ids)) selection.clearAll();
+                else selection.selectAll(ids);
+              }}
+              isAllSelected={selection.isAllSelected(filteredStatistics.map((s) => s.channelId))}
             />
           )}
         </>
       )}
+      <BulkActionsToolbar selectedIds={selection.selectedIds} onClear={selection.clearAll} />
     </Box>
   );
 }

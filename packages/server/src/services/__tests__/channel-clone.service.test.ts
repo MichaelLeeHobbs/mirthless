@@ -162,6 +162,7 @@ function makeChannel(overrides?: Partial<Record<string, unknown>>): Record<strin
     pruningEnabled: true,
     pruningMaxAgeDays: 30,
     pruningArchiveEnabled: true,
+    scriptTimeoutSeconds: 30,
     createdAt: NOW,
     updatedAt: NOW,
     deletedAt: null,

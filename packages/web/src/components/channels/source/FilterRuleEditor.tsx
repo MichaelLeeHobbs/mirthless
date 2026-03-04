@@ -111,6 +111,7 @@ export function FilterRuleEditor({
             height="200px"
             value={rule.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
+            showLanguageToggle
           />
         ) : (
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
