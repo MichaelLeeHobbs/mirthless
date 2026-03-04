@@ -9,17 +9,21 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
+import Divider from '@mui/material/Divider';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import PauseIcon from '@mui/icons-material/Pause';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
+import SendIcon from '@mui/icons-material/Send';
 import { useDeploymentAction } from '../../hooks/use-deployment.js';
 
 interface ChannelActionsProps {
   readonly channelId: string;
+  readonly channelName: string;
   readonly state: string | undefined;
+  readonly onSendMessage?: ((channelId: string, channelName: string) => void) | undefined;
 }
 
 interface ActionDef {
@@ -53,10 +57,11 @@ function getActions(state: string | undefined): readonly ActionDef[] {
   }
 }
 
-export function ChannelActions({ channelId, state }: ChannelActionsProps): ReactNode {
+export function ChannelActions({ channelId, channelName, state, onSendMessage }: ChannelActionsProps): ReactNode {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const deployAction = useDeploymentAction();
   const actions = getActions(state);
+  const showSendMessage = state === 'STARTED' && onSendMessage;
 
   const handleClick = (event: React.MouseEvent<HTMLElement>): void => {
     setAnchorEl(event.currentTarget);
@@ -71,7 +76,12 @@ export function ChannelActions({ channelId, state }: ChannelActionsProps): React
     deployAction.mutate({ channelId, action });
   };
 
-  if (actions.length === 0) return null;
+  const handleSendMessage = (): void => {
+    handleClose();
+    onSendMessage?.(channelId, channelName);
+  };
+
+  if (actions.length === 0 && !showSendMessage) return null;
 
   return (
     <>
@@ -85,6 +95,15 @@ export function ChannelActions({ channelId, state }: ChannelActionsProps): React
             <ListItemText>{a.label}</ListItemText>
           </MenuItem>
         ))}
+        {showSendMessage ? (
+          <>
+            {actions.length > 0 ? <Divider /> : null}
+            <MenuItem onClick={handleSendMessage}>
+              <ListItemIcon><SendIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Send Message</ListItemText>
+            </MenuItem>
+          </>
+        ) : null}
       </Menu>
     </>
   );

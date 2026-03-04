@@ -45,6 +45,7 @@ interface GroupedChannelTableProps {
   readonly deploymentStatuses: readonly ChannelStatus[];
   readonly groups: readonly ChannelGroupSummary[];
   readonly memberships: readonly GroupMembership[];
+  readonly onSendMessage?: ((channelId: string, channelName: string) => void) | undefined;
 }
 
 interface ChannelRow {
@@ -146,7 +147,7 @@ function InlineActions({ channelId, state }: { readonly channelId: string; reado
   return null;
 }
 
-export function GroupedChannelTable({ statistics, deploymentStatuses, groups, memberships }: GroupedChannelTableProps): ReactNode {
+export function GroupedChannelTable({ statistics, deploymentStatuses, groups, memberships, onSendMessage }: GroupedChannelTableProps): ReactNode {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [search, setSearch] = useState('');
@@ -363,7 +364,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                                           <BarChartIcon fontSize="small" />
                                         </IconButton>
                                       </Tooltip>
-                                      <ChannelActions channelId={row.channelId} state={row.state === 'UNDEPLOYED' ? undefined : row.state} />
+                                      <ChannelActions channelId={row.channelId} channelName={row.channelName} state={row.state === 'UNDEPLOYED' ? undefined : row.state} onSendMessage={onSendMessage} />
                                     </Box>
                                   </TableCell>
                                 </TableRow>

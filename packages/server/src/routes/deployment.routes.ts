@@ -4,6 +4,7 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
+import { sendMessageInputSchema } from '@mirthless/core-models';
 import { DeploymentController } from '../controllers/deployment.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
@@ -26,6 +27,7 @@ router.post('/:id/stop', requirePermission('channels:deploy'), validate({ params
 router.post('/:id/halt', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.halt);
 router.post('/:id/pause', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.pause);
 router.post('/:id/resume', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.resume);
+router.post('/:id/send-message', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema, body: sendMessageInputSchema }), DeploymentController.sendMessage);
 router.get('/:id/status', requirePermission('channels:read'), validate({ params: uuidParamsSchema }), DeploymentController.getStatus);
 
 // All channels status

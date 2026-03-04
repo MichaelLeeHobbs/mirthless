@@ -5,25 +5,8 @@
 
 import type { Request, Response } from 'express';
 import { DeploymentService } from '../services/deployment.service.js';
-import { isServiceError } from '../lib/service-error.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
-
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  if (isServiceError(error, 'INVALID_INPUT')) return 400;
-  if (isServiceError(error, 'CONFLICT')) return 409;
-  return 500;
-}
-
-function errorCode(error: unknown): string {
-  if (isServiceError(error)) return error.code;
-  return 'INTERNAL';
-}
-
-function errorMessage(error: unknown): string {
-  if (isServiceError(error)) return error.message;
-  return 'Internal server error';
-}
 
 export class DeploymentController {
   static async deploy(req: Request, res: Response): Promise<void> {
@@ -34,7 +17,7 @@ export class DeploymentController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ error: result.error, channelId: id }, 'Failed to deploy channel');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -49,7 +32,7 @@ export class DeploymentController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -64,7 +47,7 @@ export class DeploymentController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -79,7 +62,7 @@ export class DeploymentController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -94,7 +77,7 @@ export class DeploymentController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -109,7 +92,7 @@ export class DeploymentController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -124,7 +107,7 @@ export class DeploymentController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -138,7 +121,7 @@ export class DeploymentController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -149,10 +132,26 @@ export class DeploymentController {
     const result = await DeploymentService.getAllStatuses();
 
     if (!result.ok) {
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
+    res.json({ success: true, data: result.value });
+  }
+
+  static async sendMessage(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const { content } = req.body as { content: string };
+    const result = await DeploymentService.sendMessage(id, content);
+
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      logger.warn({ error: result.error, channelId: id }, 'Failed to send message');
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
+      return;
+    }
+
+    logger.info({ channelId: id, messageId: result.value.messageId }, 'Message sent');
     res.json({ success: true, data: result.value });
   }
 }
