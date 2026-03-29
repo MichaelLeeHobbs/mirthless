@@ -60,6 +60,7 @@ export class ChannelDispatcher implements DestinationConnectorRuntime {
           sourceChannelId: message.channelId,
           sourceMessageId: message.messageId,
           sourceMetaDataId: message.metaDataId,
+          ...(message.correlationId ? { correlationId: message.correlationId } : {}),
         },
       });
 

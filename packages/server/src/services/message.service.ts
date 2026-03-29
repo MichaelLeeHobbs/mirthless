@@ -25,6 +25,7 @@ import {
 
 export interface CreateMessageResult {
   readonly messageId: number;
+  readonly correlationId: string;
 }
 
 export interface ChannelStatistics {
@@ -39,18 +40,21 @@ type StatField = 'received' | 'filtered' | 'sent' | 'errored';
 // ----- Service -----
 
 export class MessageService {
-  /** Create a new message record. Returns the auto-generated message ID. */
+  /** Create a new message record. Returns the auto-generated message ID and correlation ID. */
   static async createMessage(
     channelId: string,
     serverId: string,
+    correlationId?: string,
   ): Promise<Result<CreateMessageResult>> {
     return tryCatch(async () => {
+      const values: Record<string, unknown> = { channelId, serverId };
+      if (correlationId) values['correlationId'] = correlationId;
       const [row] = await db
         .insert(messages)
-        .values({ channelId, serverId })
-        .returning({ messageId: messages.id });
+        .values(values as typeof messages.$inferInsert)
+        .returning({ messageId: messages.id, correlationId: messages.correlationId });
 
-      return { messageId: row!.messageId };
+      return { messageId: row!.messageId, correlationId: row!.correlationId };
     });
   }
 
@@ -385,18 +389,22 @@ export class MessageService {
     serverId: string,
     connectorName: string,
     contentRows: ReadonlyArray<{ metaDataId: number; contentType: number; content: string; dataType: string }>,
-  ): Promise<Result<{ messageId: number }>> {
+    correlationId?: string,
+  ): Promise<Result<{ messageId: number; correlationId: string }>> {
     return tryCatch(async () => {
       // Build content VALUES clause
       const contentValues = contentRows.map((row) =>
         sql`(${channelId}, currval('messages_id_seq'), ${row.metaDataId}, ${row.contentType}, ${row.content}, ${row.dataType}, false)`
       );
 
-      const result = await db.execute<{ message_id: number }>(sql`
+      const correlationInsert = correlationId
+        ? sql`INSERT INTO messages (channel_id, server_id, correlation_id) VALUES (${channelId}, ${serverId}, ${correlationId})`
+        : sql`INSERT INTO messages (channel_id, server_id) VALUES (${channelId}, ${serverId})`;
+
+      const result = await db.execute<{ message_id: number; correlation_id: string }>(sql`
         WITH new_msg AS (
-          INSERT INTO messages (channel_id, server_id)
-          VALUES (${channelId}, ${serverId})
-          RETURNING id
+          ${correlationInsert}
+          RETURNING id, correlation_id
         ),
         new_connector AS (
           INSERT INTO connector_messages (channel_id, message_id, meta_data_id, connector_name, status)
@@ -414,15 +422,16 @@ export class MessageService {
             received = message_statistics.received + 1,
             received_lifetime = message_statistics.received_lifetime + 1
         )
-        SELECT id AS message_id FROM new_msg
+        SELECT id AS message_id, correlation_id FROM new_msg
       `);
 
       const messageId = result.rows[0]!.message_id;
+      const resolvedCorrelationId = result.rows[0]!.correlation_id;
 
       emitToRoom(`channel:${channelId}`, SOCKET_EVENT.MESSAGE_NEW, { channelId, messageId, metaDataId: 0 });
       emitToRoom('dashboard', SOCKET_EVENT.STATS_UPDATE, { channelId, metaDataId: 0, serverId, field: 'received' });
 
-      return { messageId };
+      return { messageId, correlationId: resolvedCorrelationId };
     });
   }
 

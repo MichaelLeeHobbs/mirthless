@@ -26,7 +26,7 @@ function ok<T>(value: T): Result<T> {
 
 function makeStore(): MessageStore {
   return {
-    createMessage: vi.fn().mockResolvedValue(ok({ messageId: 1 })),
+    createMessage: vi.fn().mockResolvedValue(ok({ messageId: 1, correlationId: '00000000-0000-0000-0000-000000000099' })),
     createConnectorMessage: vi.fn().mockResolvedValue(ok(undefined)),
     updateConnectorMessageStatus: vi.fn().mockResolvedValue(ok(undefined)),
     storeContent: vi.fn().mockResolvedValue(ok(undefined)),

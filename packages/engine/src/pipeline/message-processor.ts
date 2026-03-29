@@ -50,6 +50,7 @@ export type SendToDestination = (
   metaDataId: number,
   content: string,
   signal: AbortSignal,
+  correlationId?: string,
 ) => Promise<Result<DestinationResponse>>;
 
 /** Response from a destination send. */
@@ -69,7 +70,7 @@ export interface ContentRow {
 
 /** Callback to persist message data. */
 export interface MessageStore {
-  createMessage(channelId: string, serverId: string): Promise<Result<{ messageId: number }>>;
+  createMessage(channelId: string, serverId: string, correlationId?: string): Promise<Result<{ messageId: number; correlationId: string }>>;
   createConnectorMessage(channelId: string, messageId: number, metaDataId: number, name: string, status: string): Promise<Result<void>>;
   updateConnectorMessageStatus(channelId: string, messageId: number, metaDataId: number, status: string, errorCode?: number): Promise<Result<void>>;
   storeContent(channelId: string, messageId: number, metaDataId: number, contentType: number, content: string, dataType: string): Promise<Result<void>>;
@@ -87,8 +88,8 @@ export interface MessageStore {
    */
   initializeMessage?(
     channelId: string, serverId: string, connectorName: string,
-    contentRows: readonly ContentRow[],
-  ): Promise<Result<{ messageId: number }>>;
+    contentRows: readonly ContentRow[], correlationId?: string,
+  ): Promise<Result<{ messageId: number; correlationId: string }>>;
 
   /**
    * Optional batch: sets source connector status to SENT, increments sent stat, marks processed — one round-trip.
@@ -102,11 +103,14 @@ export interface MessageStore {
 export interface PipelineInput {
   readonly rawContent: string;
   readonly sourceMap: Readonly<Record<string, unknown>>;
+  /** Cross-channel correlation ID. If provided, reuses an existing correlation chain. */
+  readonly correlationId?: string | undefined;
 }
 
 /** Result of processing a message. */
 export interface ProcessedMessage {
   readonly messageId: number;
+  readonly correlationId: string;
   readonly status: 'SENT' | 'FILTERED' | 'ERROR';
   readonly response?: string;
   readonly destinationResults: readonly DestinationResult[];
@@ -220,17 +224,20 @@ export class MessageProcessor {
 
       // Stage 1: Create message + source connector + raw content + stats
       let messageId: number;
+      let correlationId: string;
       if (this.store.initializeMessage) {
         const initResult = await this.store.initializeMessage(channelId, serverId, 'Source', [
           { metaDataId: 0, contentType: CT_RAW, content: input.rawContent, dataType },
           { metaDataId: 0, contentType: CT_SOURCE_MAP, content: JSON.stringify(input.sourceMap), dataType: 'JSON' },
-        ]);
+        ], input.correlationId);
         if (!initResult.ok) throw new Error('Failed to initialize message');
         messageId = initResult.value.messageId;
+        correlationId = initResult.value.correlationId;
       } else {
-        const createResult = await this.store.createMessage(channelId, serverId);
+        const createResult = await this.store.createMessage(channelId, serverId, input.correlationId);
         if (!createResult.ok) throw new Error('Failed to create message');
         messageId = createResult.value.messageId;
+        correlationId = createResult.value.correlationId;
         await Promise.all([
           this.store.createConnectorMessage(channelId, messageId, 0, 'Source', 'RECEIVED'),
           this.store.storeContent(channelId, messageId, 0, CT_RAW, input.rawContent, dataType),
@@ -285,7 +292,7 @@ export class MessageProcessor {
           ]);
           mark('filterFinalize');
           if (timing) timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
-          return { messageId, status: 'FILTERED' as const, destinationResults: [] } satisfies ProcessedMessage;
+          return { messageId, correlationId, status: 'FILTERED' as const, destinationResults: [] } satisfies ProcessedMessage;
         }
       }
 
@@ -316,7 +323,7 @@ export class MessageProcessor {
       // Stage 5+6: Route to destinations (filtered by destinationSet)
       const activeIds = destSet.getActiveMetaDataIds();
       const destResults = await this.routeToDestinations(
-        messageId, content, input, signal, mapState, activeIds,
+        messageId, content, input, signal, mapState, activeIds, correlationId,
       );
       mark('destinations');
 
@@ -368,6 +375,7 @@ export class MessageProcessor {
       const firstResponse = destResults.find((r) => r.response)?.response;
       const result: ProcessedMessage = {
         messageId,
+        correlationId,
         status: hasError ? 'ERROR' as const : 'SENT' as const,
         destinationResults: destResults,
       };
@@ -386,6 +394,7 @@ export class MessageProcessor {
     signal: AbortSignal,
     mapState: PipelineMapState,
     activeDestinations?: ReadonlySet<number> | undefined,
+    correlationId?: string | undefined,
   ): Promise<readonly DestinationResult[]> {
     const { channelId, serverId, dataType } = this.config;
     const results: DestinationResult[] = [];
@@ -438,7 +447,7 @@ export class MessageProcessor {
         }
 
         // Send to destination
-        const sendResult = await this.sendFn(dest.metaDataId, destContent, signal);
+        const sendResult = await this.sendFn(dest.metaDataId, destContent, signal, correlationId);
 
         if (!sendResult.ok) {
           await Promise.all([

@@ -36,6 +36,13 @@
       "when": 1774800688801,
       "tag": "0004_yielding_blizzard",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774900000000,
+      "tag": "0005_add_correlation_id",
+      "breakpoints": true
     }
   ]
 }

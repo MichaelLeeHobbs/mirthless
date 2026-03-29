@@ -8,6 +8,7 @@ export const messages = pgTable('messages', {
   id: bigserial('id', { mode: 'number' }).notNull(),
   channelId: uuid('channel_id').notNull(),
   serverId: varchar('server_id', { length: 36 }),
+  correlationId: uuid('correlation_id').notNull().defaultRandom(),
   receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
   processed: boolean('processed').notNull().default(false),
   processedAt: timestamp('processed_at', { withTimezone: true }),
@@ -18,6 +19,7 @@ export const messages = pgTable('messages', {
   primaryKey({ columns: [table.channelId, table.id] }),
   index('messages_received_idx').on(table.channelId, table.receivedAt),
   index('messages_processed_idx').on(table.channelId, table.processed),
+  index('messages_correlation_idx').on(table.correlationId),
 ]);
 
 export type Message = typeof messages.$inferSelect;

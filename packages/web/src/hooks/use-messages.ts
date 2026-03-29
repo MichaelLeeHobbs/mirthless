@@ -17,6 +17,7 @@ export interface ConnectorSummary {
 
 export interface MessageSummary {
   readonly messageId: number;
+  readonly correlationId: string;
   readonly receivedAt: string;
   readonly processed: boolean;
   readonly processedAt: string | null;
@@ -44,6 +45,7 @@ export interface ConnectorDetail {
 
 export interface MessageDetail {
   readonly messageId: number;
+  readonly correlationId: string;
   readonly receivedAt: string;
   readonly processed: boolean;
   readonly processedAt: string | null;

@@ -57,6 +57,8 @@ export interface ConnectorMessage {
   readonly metaDataId: number;
   readonly content: string;
   readonly dataType: string;
+  /** Correlation ID for cross-channel tracing. */
+  readonly correlationId?: string | undefined;
 }
 
 /** Response from a destination connector after sending. */

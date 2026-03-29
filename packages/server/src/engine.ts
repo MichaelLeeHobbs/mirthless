@@ -100,8 +100,8 @@ export function shouldStoreContent(mode: MessageStorageMode, contentType: number
 function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
   const mode = config?.messageStorageMode ?? MESSAGE_STORAGE_MODE.DEVELOPMENT;
   return {
-    createMessage: (channelId, serverId) =>
-      MessageService.createMessage(channelId, serverId),
+    createMessage: (channelId, serverId, correlationId) =>
+      MessageService.createMessage(channelId, serverId, correlationId),
     createConnectorMessage: (channelId, messageId, metaDataId, name, status) =>
       MessageService.createConnectorMessage(channelId, messageId, metaDataId, name, status as Parameters<typeof MessageService.createConnectorMessage>[4]),
     updateConnectorMessageStatus: (channelId, messageId, metaDataId, status, errorCode) =>
@@ -138,10 +138,10 @@ function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
       MessageService.release(channelId, messageId, metaDataId, newStatus as Parameters<typeof MessageService.release>[3]),
     storeAttachment: (channelId, messageId, attachmentId, mimeType, content, size) =>
       MessageService.storeAttachment(channelId, messageId, attachmentId, mimeType, content, size),
-    initializeMessage: (channelId, serverId, connectorName, contentRows) => {
+    initializeMessage: (channelId, serverId, connectorName, contentRows, correlationId) => {
       // Filter content rows by storage policy before sending to batch
       const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType));
-      return MessageService.initializeMessage(channelId, serverId, connectorName, filtered);
+      return MessageService.initializeMessage(channelId, serverId, connectorName, filtered, correlationId);
     },
     finalizeMessage: (channelId, messageId, serverId) =>
       MessageService.finalizeMessage(channelId, messageId, serverId),
@@ -283,12 +283,15 @@ export class EngineManager {
     };
 
     // Build send function
-    const sendFn: SendToDestination = async (metaDataId, content, signal) => {
+    const sendFn: SendToDestination = async (metaDataId, content, signal, correlationId) => {
       const connector = destinations.get(metaDataId);
       if (!connector) {
         return tryCatch(() => { throw new Error(`Destination ${String(metaDataId)} not found`); });
       }
-      return connector.send({ channelId: channel.id, messageId: 0, metaDataId, content, dataType: channel.inboundDataType }, signal);
+      return connector.send({
+        channelId: channel.id, messageId: 0, metaDataId, content,
+        dataType: channel.inboundDataType, correlationId,
+      }, signal);
     };
 
     // Create queue consumers for queued destinations
@@ -317,8 +320,12 @@ export class EngineManager {
       ? channel.scriptTimeoutSeconds * 1000
       : 30_000;
     const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<{ messageId: number }>> => {
+      // Extract correlationId from sourceMap if present (channel-to-channel routing)
+      const correlationId = typeof sourceMap?.['correlationId'] === 'string'
+        ? sourceMap['correlationId'] as string
+        : undefined;
       return processor.processMessage(
-        { rawContent, sourceMap: sourceMap ?? {} },
+        { rawContent, sourceMap: sourceMap ?? {}, correlationId },
         AbortSignal.timeout(scriptTimeoutMs),
       );
     };

@@ -82,7 +82,7 @@ vi.mock('@mirthless/connectors', () => ({
 
 vi.mock('../message.service.js', () => ({
   MessageService: {
-    createMessage: vi.fn().mockResolvedValue({ ok: true, value: { messageId: 1 }, error: null }),
+    createMessage: vi.fn().mockResolvedValue({ ok: true, value: { messageId: 1, correlationId: '00000000-0000-0000-0000-000000000099' }, error: null }),
     createConnectorMessage: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     updateConnectorMessageStatus: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     storeContent: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
