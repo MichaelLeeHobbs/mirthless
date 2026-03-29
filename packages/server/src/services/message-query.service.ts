@@ -5,7 +5,7 @@
 // Separated from the write-path MessageService used by the engine.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, sql, inArray } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import type { MessageSearchQuery } from '@mirthless/core-models';
 import { db } from '../lib/db.js';
 import { ServiceError } from '../lib/service-error.js';
@@ -162,51 +162,52 @@ export class MessageQueryService {
       }
 
       // Fetch connector messages for all returned message IDs
-      // Raw SQL returns bigint as string — coerce to number for Drizzle inArray
+      // Use raw SQL to avoid Drizzle bigint/number coercion issues with inArray
       const messageIds = messageRows.rows.map(r => Number(r.id));
-      const connectorRows = await db
-        .select({
-          messageId: connectorMessages.messageId,
-          metaDataId: connectorMessages.metaDataId,
-          connectorName: connectorMessages.connectorName,
-          status: connectorMessages.status,
-          sendAttempts: connectorMessages.sendAttempts,
-        })
-        .from(connectorMessages)
-        .where(
-          and(
-            eq(connectorMessages.channelId, channelId),
-            inArray(connectorMessages.messageId, messageIds),
-          ),
-        );
+      const connectorRows = await db.execute<{
+        message_id: number;
+        meta_data_id: number;
+        connector_name: string | null;
+        status: string;
+        send_attempts: number;
+      }>(sql`
+        SELECT message_id, meta_data_id, connector_name, status, send_attempts
+        FROM connector_messages
+        WHERE channel_id = ${channelId}
+          AND message_id = ANY(${messageIds}::bigint[])
+      `);
 
       // Group connectors by messageId
       const connectorMap = new Map<number, ConnectorSummary[]>();
-      for (const row of connectorRows) {
-        const existing = connectorMap.get(row.messageId);
+      for (const row of connectorRows.rows) {
+        const msgId = Number(row.message_id);
+        const existing = connectorMap.get(msgId);
         const entry: ConnectorSummary = {
-          metaDataId: row.metaDataId,
-          connectorName: row.connectorName,
+          metaDataId: row.meta_data_id,
+          connectorName: row.connector_name,
           status: row.status,
-          sendAttempts: row.sendAttempts,
+          sendAttempts: row.send_attempts,
         };
         if (existing) {
           existing.push(entry);
         } else {
-          connectorMap.set(row.messageId, [entry]);
+          connectorMap.set(msgId, [entry]);
         }
       }
 
-      const items: MessageSummary[] = messageRows.rows.map(row => ({
-        messageId: row.id,
-        correlationId: row.correlation_id,
-        receivedAt: typeof row.received_at === 'string' ? row.received_at : new Date(row.received_at).toISOString(),
-        processed: row.processed,
-        processedAt: row.processed_at
-          ? (typeof row.processed_at === 'string' ? row.processed_at : new Date(row.processed_at).toISOString())
-          : null,
-        connectors: connectorMap.get(row.id) ?? [],
-      }));
+      const items: MessageSummary[] = messageRows.rows.map(row => {
+        const id = Number(row.id);
+        return {
+          messageId: id,
+          correlationId: row.correlation_id,
+          receivedAt: typeof row.received_at === 'string' ? row.received_at : new Date(row.received_at).toISOString(),
+          processed: row.processed,
+          processedAt: row.processed_at
+            ? (typeof row.processed_at === 'string' ? row.processed_at : new Date(row.processed_at).toISOString())
+            : null,
+          connectors: connectorMap.get(id) ?? [],
+        };
+      });
 
       return { items, total, limit: filters.limit, offset: filters.offset };
     });
