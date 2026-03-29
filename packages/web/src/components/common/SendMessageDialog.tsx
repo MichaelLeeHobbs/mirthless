@@ -2,6 +2,7 @@
 // Send Message Dialog
 // ===========================================
 // Dialog with Monaco editor for sending raw messages to a deployed channel.
+// Fire-and-forget: closes immediately on send, notifications arrive async.
 
 import { useState, type ReactNode } from 'react';
 import Dialog from '@mui/material/Dialog';
@@ -10,7 +11,6 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
-import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Editor from '@monaco-editor/react';
 import { useUiStore } from '../../stores/ui.store.js';
@@ -32,26 +32,25 @@ export function SendMessageDialog({ open, onClose, channelId, channelName }: Sen
 
   const handleSend = (): void => {
     if (!content.trim()) return;
+    // Fire-and-forget: close immediately, notify async
     sendMessage.mutate(
       { channelId, content },
       {
         onSuccess: () => {
           notify('Message sent successfully', 'success');
-          setContent('');
-          onClose();
         },
         onError: (error) => {
           notify(`Failed to send message: ${error.message}`, 'error');
         },
       },
     );
+    setContent('');
+    onClose();
   };
 
   const handleClose = (): void => {
-    if (!sendMessage.isPending) {
-      setContent('');
-      onClose();
-    }
+    setContent('');
+    onClose();
   };
 
   return (
@@ -63,11 +62,6 @@ export function SendMessageDialog({ open, onClose, channelId, channelName }: Sen
         </Typography>
       </DialogTitle>
       <DialogContent>
-        {sendMessage.isError ? (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {sendMessage.error.message}
-          </Alert>
-        ) : null}
         <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, mt: 1 }}>
           <Editor
             height="300px"
@@ -86,15 +80,15 @@ export function SendMessageDialog({ open, onClose, channelId, channelName }: Sen
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={sendMessage.isPending}>
+        <Button onClick={handleClose}>
           Cancel
         </Button>
         <Button
           variant="contained"
           onClick={handleSend}
-          disabled={sendMessage.isPending || !content.trim()}
+          disabled={!content.trim()}
         >
-          {sendMessage.isPending ? 'Sending...' : 'Send'}
+          Send
         </Button>
       </DialogActions>
     </Dialog>

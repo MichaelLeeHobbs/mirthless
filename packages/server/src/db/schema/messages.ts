@@ -10,6 +10,7 @@ export const messages = pgTable('messages', {
   serverId: varchar('server_id', { length: 36 }),
   receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
   processed: boolean('processed').notNull().default(false),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
   originalMessageId: bigint('original_message_id', { mode: 'number' }),
   importId: bigint('import_id', { mode: 'number' }),
   importChannelId: uuid('import_channel_id'),

@@ -1,4 +1,4 @@
-CREATE TABLE "channel_revisions" (
+CREATE TABLE IF NOT EXISTS "channel_revisions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"channel_id" uuid NOT NULL,
 	"revision" integer NOT NULL,
@@ -8,7 +8,7 @@ CREATE TABLE "channel_revisions" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "certificates" (
+CREATE TABLE IF NOT EXISTS "certificates" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" varchar(255) NOT NULL,
 	"description" text,
@@ -25,4 +25,4 @@ CREATE TABLE "certificates" (
 	CONSTRAINT "certificates_name_unique" UNIQUE("name")
 );
 --> statement-breakpoint
-ALTER TABLE "resources" ADD COLUMN "content" text;
+ALTER TABLE "resources" ADD COLUMN IF NOT EXISTS "content" text;

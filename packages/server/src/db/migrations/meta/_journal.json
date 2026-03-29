@@ -29,6 +29,13 @@
       "when": 1772750000000,
       "tag": "0003_add_script_timeout",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774800688801,
+      "tag": "0004_yielding_blizzard",
+      "breakpoints": true
     }
   ]
 }

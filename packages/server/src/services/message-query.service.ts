@@ -28,6 +28,7 @@ export interface MessageSummary {
   readonly messageId: number;
   readonly receivedAt: string;
   readonly processed: boolean;
+  readonly processedAt: string | null;
   readonly connectors: readonly ConnectorSummary[];
 }
 
@@ -54,6 +55,7 @@ export interface MessageDetail {
   readonly messageId: number;
   readonly receivedAt: string;
   readonly processed: boolean;
+  readonly processedAt: string | null;
   readonly serverId: string | null;
   readonly connectors: readonly ConnectorDetail[];
 }
@@ -142,8 +144,9 @@ export class MessageQueryService {
         id: number;
         received_at: string;
         processed: boolean;
+        processed_at: string | null;
       }>(sql`
-        SELECT id, received_at, processed
+        SELECT id, received_at, processed, processed_at
         FROM messages
         WHERE ${whereClause}
         ORDER BY ${sql.raw(sortCol)} ${sortDirection}
@@ -194,6 +197,9 @@ export class MessageQueryService {
         messageId: row.id,
         receivedAt: typeof row.received_at === 'string' ? row.received_at : new Date(row.received_at).toISOString(),
         processed: row.processed,
+        processedAt: row.processed_at
+          ? (typeof row.processed_at === 'string' ? row.processed_at : new Date(row.processed_at).toISOString())
+          : null,
         connectors: connectorMap.get(row.id) ?? [],
       }));
 
@@ -268,6 +274,7 @@ export class MessageQueryService {
         messageId: message.id,
         receivedAt: message.receivedAt.toISOString(),
         processed: message.processed,
+        processedAt: message.processedAt?.toISOString() ?? null,
         serverId: message.serverId,
         connectors,
       };

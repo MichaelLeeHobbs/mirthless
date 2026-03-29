@@ -52,6 +52,13 @@ function formatTime(iso: string): string {
   }
 }
 
+function formatDuration(receivedAt: string, processedAt: string | null): string {
+  if (!processedAt) return '-';
+  const ms = new Date(processedAt).getTime() - new Date(receivedAt).getTime();
+  if (ms < 1000) return `${String(ms)}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
+}
+
 export function MessageTable({
   items,
   total,
@@ -73,6 +80,7 @@ export function MessageTable({
               <TableCell width={80}>Message ID</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Received</TableCell>
+              <TableCell align="right">Duration</TableCell>
               <TableCell align="right">Connectors</TableCell>
               <TableCell align="right">Send Attempts</TableCell>
             </TableRow>
@@ -80,7 +88,7 @@ export function MessageTable({
           <TableBody>
             {items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                   No messages found.
                 </TableCell>
               </TableRow>
@@ -107,6 +115,7 @@ export function MessageTable({
                       />
                     </TableCell>
                     <TableCell>{formatTime(msg.receivedAt)}</TableCell>
+                    <TableCell align="right">{formatDuration(msg.receivedAt, msg.processedAt)}</TableCell>
                     <TableCell align="right">{msg.connectors.length}</TableCell>
                     <TableCell align="right">{totalAttempts}</TableCell>
                   </TableRow>

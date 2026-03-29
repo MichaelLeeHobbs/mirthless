@@ -136,6 +136,7 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
           />
           <Typography variant="body2" color="text.secondary">
             {new Date(detail.receivedAt).toLocaleString()}
+            {detail.processedAt ? ` (${String(new Date(detail.processedAt).getTime() - new Date(detail.receivedAt).getTime())}ms)` : ''}
           </Typography>
         </Box>
         <Tooltip title="Delete message">

@@ -19,6 +19,9 @@ export type {
   DestinationResult,
   PipelineConfig,
   AlertEventHandler,
+  ContentRow,
+  StageTiming,
+  TimingCallback,
 } from './pipeline/message-processor.js';
 export { ChannelRuntime } from './runtime/channel-runtime.js';
 export type {

@@ -90,7 +90,7 @@ export function ChannelContextMenu({
       </MenuItem>
       <Divider />
       {/* State-aware deployment actions */}
-      {state === undefined || state === 'UNDEPLOYED' ? (
+      {state === undefined || state === null || state === 'UNDEPLOYED' ? (
         <MenuItem onClick={() => handleDeploy('deploy')}>
           <ListItemIcon><CloudUploadIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Deploy</ListItemText>

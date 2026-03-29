@@ -135,7 +135,7 @@ export class MessageService {
     return tryCatch(async () => {
       await db
         .update(messages)
-        .set({ processed: true })
+        .set({ processed: true, processedAt: new Date() })
         .where(
           and(
             eq(messages.channelId, channelId),
@@ -373,6 +373,88 @@ export class MessageService {
             eq(messageAttachments.messageId, messageId),
           ),
         );
+    });
+  }
+
+  /**
+   * Batch: create message + source connector + content rows + received stat in one round-trip.
+   * Uses raw SQL with multiple statements in a single query to minimize latency.
+   */
+  static async initializeMessage(
+    channelId: string,
+    serverId: string,
+    connectorName: string,
+    contentRows: ReadonlyArray<{ metaDataId: number; contentType: number; content: string; dataType: string }>,
+  ): Promise<Result<{ messageId: number }>> {
+    return tryCatch(async () => {
+      // Build content VALUES clause
+      const contentValues = contentRows.map((row) =>
+        sql`(${channelId}, currval('messages_id_seq'), ${row.metaDataId}, ${row.contentType}, ${row.content}, ${row.dataType}, false)`
+      );
+
+      const result = await db.execute<{ message_id: number }>(sql`
+        WITH new_msg AS (
+          INSERT INTO messages (channel_id, server_id)
+          VALUES (${channelId}, ${serverId})
+          RETURNING id
+        ),
+        new_connector AS (
+          INSERT INTO connector_messages (channel_id, message_id, meta_data_id, connector_name, status)
+          SELECT ${channelId}, id, 0, ${connectorName}, 'RECEIVED' FROM new_msg
+        ),
+        new_content AS (
+          INSERT INTO message_content (channel_id, message_id, meta_data_id, content_type, content, data_type, is_encrypted)
+          VALUES ${sql.join(contentValues, sql`, `)}
+        ),
+        new_stats AS (
+          INSERT INTO message_statistics (channel_id, meta_data_id, server_id, received, received_lifetime)
+          VALUES (${channelId}, 0, ${serverId}, 1, 1)
+          ON CONFLICT (channel_id, meta_data_id, server_id)
+          DO UPDATE SET
+            received = message_statistics.received + 1,
+            received_lifetime = message_statistics.received_lifetime + 1
+        )
+        SELECT id AS message_id FROM new_msg
+      `);
+
+      const messageId = result.rows[0]!.message_id;
+
+      emitToRoom(`channel:${channelId}`, SOCKET_EVENT.MESSAGE_NEW, { channelId, messageId, metaDataId: 0 });
+      emitToRoom('dashboard', SOCKET_EVENT.STATS_UPDATE, { channelId, metaDataId: 0, serverId, field: 'received' });
+
+      return { messageId };
+    });
+  }
+
+  /**
+   * Batch: set source SENT + increment sent stat + mark processed in one round-trip.
+   */
+  static async finalizeMessage(
+    channelId: string,
+    messageId: number,
+    serverId: string,
+  ): Promise<Result<void>> {
+    return tryCatch(async () => {
+      await db.execute(sql`
+        WITH update_connector AS (
+          UPDATE connector_messages
+          SET status = 'SENT', send_date = NOW()
+          WHERE channel_id = ${channelId} AND message_id = ${messageId} AND meta_data_id = 0
+        ),
+        update_stats AS (
+          INSERT INTO message_statistics (channel_id, meta_data_id, server_id, sent, sent_lifetime)
+          VALUES (${channelId}, 0, ${serverId}, 1, 1)
+          ON CONFLICT (channel_id, meta_data_id, server_id)
+          DO UPDATE SET
+            sent = message_statistics.sent + 1,
+            sent_lifetime = message_statistics.sent_lifetime + 1
+        )
+        UPDATE messages
+        SET processed = true, processed_at = NOW()
+        WHERE channel_id = ${channelId} AND id = ${messageId}
+      `);
+
+      emitToRoom('dashboard', SOCKET_EVENT.STATS_UPDATE, { channelId, metaDataId: 0, serverId, field: 'sent' });
     });
   }
 }

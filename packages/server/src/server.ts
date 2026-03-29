@@ -12,6 +12,7 @@ import { initializeSocketIO, shutdownSocketIO } from './lib/socket.js';
 import { setLogCaptureStream } from './lib/logger.js';
 import { LogStreamService } from './services/log-stream.service.js';
 import { PrunerSchedulerService } from './services/pruner-scheduler.service.js';
+import { DeploymentService } from './services/deployment.service.js';
 import { createShutdownHandler } from './lib/shutdown.js';
 
 const PORT = config.PORT;
@@ -29,12 +30,14 @@ initializeSocketIO(server);
 // Initialize log capture stream for server logs feature
 setLogCaptureStream(LogStreamService.createWritableStream());
 
-// Start pgboss job queue, then initialize pruner scheduler
+// Start pgboss job queue, pruner scheduler, then auto-deploy channels
 startQueue()
   .then(() => PrunerSchedulerService.start())
+  .then(() => DeploymentService.autoDeployChannels())
   .catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ error: message }, 'Failed to start pgboss or pruner scheduler');
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    logger.error({ errMsg, stack, phase: 'startup' }, 'Startup initialization failed');
   });
 
 // Graceful shutdown — ordered cleanup with engine disposal before DB pool close

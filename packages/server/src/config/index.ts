@@ -38,6 +38,7 @@ const configSchema = z.object({
 
   // Logging
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  LOG_HTTP_HEADERS: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
 });
 
 const result = configSchema.safeParse(process.env);

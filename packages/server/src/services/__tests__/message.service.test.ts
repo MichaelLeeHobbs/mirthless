@@ -243,7 +243,7 @@ describe('MessageService', () => {
       const result = await MessageService.markProcessed(CHANNEL_ID, MESSAGE_ID);
 
       expect(result.ok).toBe(true);
-      expect(mockSet).toHaveBeenCalledWith({ processed: true });
+      expect(mockSet).toHaveBeenCalledWith({ processed: true, processedAt: expect.any(Date) });
     });
 
     it('returns error on DB failure', async () => {

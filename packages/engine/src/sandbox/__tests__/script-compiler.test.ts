@@ -191,13 +191,13 @@ describe('compileTransformerStepsToScript', () => {
     expect(compileTransformerStepsToScript(steps)).toBeNull();
   });
 
-  it('compiles single step into script ending with return tmp', () => {
+  it('compiles single step into script ending with return msg', () => {
     const steps = [
       { enabled: true, type: 'JAVASCRIPT', script: 'tmp.x = 1;' },
     ];
     const result = compileTransformerStepsToScript(steps);
     expect(result).toContain('tmp.x = 1;');
-    expect(result).toContain('return tmp;');
+    expect(result).toContain('return msg;');
   });
 
   it('compiles multiple steps sequentially', () => {
@@ -208,7 +208,7 @@ describe('compileTransformerStepsToScript', () => {
     const result = compileTransformerStepsToScript(steps);
     expect(result).toContain('tmp.a = 1;');
     expect(result).toContain('tmp.b = 2;');
-    expect(result).toContain('return tmp;');
+    expect(result).toContain('return msg;');
   });
 
   it('skips disabled steps', () => {

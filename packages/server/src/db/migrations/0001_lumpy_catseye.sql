@@ -1,1 +1,1 @@
-ALTER TABLE "alerts" ADD COLUMN "revision" integer DEFAULT 1 NOT NULL;
+ALTER TABLE "alerts" ADD COLUMN IF NOT EXISTS "revision" integer DEFAULT 1 NOT NULL;

@@ -27,6 +27,8 @@ import type { ChannelStatus } from '../../hooks/use-deployment.js';
 import type { ChannelGroupSummary } from '../../hooks/use-channel-groups.js';
 import type { GroupMembership } from '../../hooks/use-channel-groups.js';
 import { ChannelActions } from './ChannelActions.js';
+import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
+import { useContextMenu } from '../../hooks/use-context-menu.js';
 import { getStateColor, getStatusDotColor } from './ChannelStatusTable.js';
 
 interface GroupedChannelTableProps {
@@ -70,6 +72,7 @@ function sumTotals(channels: readonly ChannelRow[]): { received: number; filtere
 export function GroupedChannelTable({ statistics, deploymentStatuses, groups, memberships, onSendMessage }: GroupedChannelTableProps): ReactNode {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const { menuState, menuTarget, handleContextMenu, handleClose } = useContextMenu<ChannelRow>();
 
   const toggleGroup = (groupId: string): void => {
     setCollapsed((prev) => {
@@ -212,7 +215,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                     </TableRow>
                     {/* Channel rows — flat in same table body for aligned columns */}
                     {isOpen && section.channels.map((row) => (
-                      <TableRow key={row.channelId} hover>
+                      <TableRow key={row.channelId} hover onContextMenu={(e) => handleContextMenu(e, row)}>
                         <TableCell width={40} />
                         <TableCell width={40}>
                           <CircleIcon sx={{ fontSize: 12, color: getStatusDotColor(row.state) }} />
@@ -264,6 +267,14 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
           </TableBody>
         </Table>
       </TableContainer>
+      <ChannelContextMenu
+        menuState={menuState}
+        channelId={menuTarget?.channelId ?? null}
+        channelName={menuTarget?.channelName ?? null}
+        state={menuTarget === null ? null : (menuTarget.state === 'UNDEPLOYED' ? null : menuTarget.state)}
+        onClose={handleClose}
+        onSendMessage={onSendMessage}
+      />
     </Paper>
   );
 }

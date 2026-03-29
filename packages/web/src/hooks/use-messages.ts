@@ -19,6 +19,7 @@ export interface MessageSummary {
   readonly messageId: number;
   readonly receivedAt: string;
   readonly processed: boolean;
+  readonly processedAt: string | null;
   readonly connectors: readonly ConnectorSummary[];
 }
 
@@ -45,6 +46,7 @@ export interface MessageDetail {
   readonly messageId: number;
   readonly receivedAt: string;
   readonly processed: boolean;
+  readonly processedAt: string | null;
   readonly serverId: string | null;
   readonly connectors: readonly ConnectorDetail[];
 }

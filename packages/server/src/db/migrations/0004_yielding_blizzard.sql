@@ -1,0 +1,2 @@
+ALTER TABLE "channels" ADD COLUMN IF NOT EXISTS "script_timeout_seconds" integer DEFAULT 30 NOT NULL;--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN IF NOT EXISTS "processed_at" timestamp with time zone;

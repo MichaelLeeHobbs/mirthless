@@ -13,6 +13,7 @@ import { ChannelService } from './channel.service.js';
 import { validateConnectorProperties } from './connector-validation.service.js';
 import { getEngine } from '../engine.js';
 import type { DeployedChannel } from '../engine.js';
+import logger from '../lib/logger.js';
 
 // ----- Types -----
 
@@ -47,9 +48,14 @@ export class DeploymentService {
         throw new ServiceError('CONFLICT', `Channel ${channelId} is already deployed`);
       }
 
+      // Auto-inject channelId for CHANNEL source connectors (used for registry self-registration)
+      const srcProps = channel.sourceConnectorType === 'CHANNEL'
+        ? { ...channel.sourceConnectorProperties, channelId: channel.id }
+        : channel.sourceConnectorProperties;
+
       // Validate source connector properties
       const srcValidation = validateConnectorProperties(
-        channel.sourceConnectorType, 'source', channel.sourceConnectorProperties,
+        channel.sourceConnectorType, 'source', srcProps,
       );
       if (!srcValidation.ok) {
         throw new ServiceError('INVALID_INPUT', srcValidation.error.message);
@@ -65,7 +71,11 @@ export class DeploymentService {
         }
       }
 
-      await engine.deploy(channel);
+      // Pass enriched source properties for CHANNEL connectors
+      const deployChannel = channel.sourceConnectorType === 'CHANNEL'
+        ? { ...channel, sourceConnectorProperties: { ...channel.sourceConnectorProperties, channelId: channel.id } }
+        : channel;
+      await engine.deploy(deployChannel);
 
       emitEvent({
         level: 'INFO', name: 'CHANNEL_DEPLOYED', outcome: 'SUCCESS',
@@ -246,6 +256,51 @@ export class DeploymentService {
       }
       return statuses;
     });
+  }
+
+  /**
+   * Auto-deploy all enabled channels on server startup.
+   * Channels with initialState STARTED are deployed and started.
+   * Channels with initialState PAUSED are deployed and started then paused.
+   * Channels with initialState STOPPED are deployed only.
+   */
+  static async autoDeployChannels(): Promise<void> {
+    const listResult = await ChannelService.list({ page: 1, pageSize: 1000 });
+    if (!listResult.ok) {
+      logger.error({ errMsg: listResult.error.message }, 'Failed to list channels for auto-deploy');
+      return;
+    }
+
+    const channels = listResult.value.data.filter((ch) => ch.enabled);
+    logger.info({ count: channels.length }, 'Auto-deploying enabled channels');
+
+    for (const ch of channels) {
+      const detailResult = await ChannelService.getById(ch.id);
+      if (!detailResult.ok) {
+        logger.warn({ channelId: ch.id, channelName: ch.name, errMsg: detailResult.error.message }, 'Skipping auto-deploy, failed to load channel');
+        continue;
+      }
+
+      const detail = detailResult.value;
+      const deployResult = await DeploymentService.deploy(ch.id);
+      if (!deployResult.ok) {
+        logger.warn({ channelId: ch.id, channelName: ch.name, errMsg: deployResult.error.message }, 'Failed to auto-deploy channel');
+        continue;
+      }
+
+      if (detail.initialState === 'STARTED' || detail.initialState === 'PAUSED') {
+        const startResult = await DeploymentService.start(ch.id);
+        if (!startResult.ok) {
+          logger.warn({ channelId: ch.id, channelName: ch.name, errMsg: startResult.error.message }, 'Failed to auto-start channel');
+          continue;
+        }
+        if (detail.initialState === 'PAUSED') {
+          await DeploymentService.pause(ch.id);
+        }
+      }
+
+      logger.info({ channelId: ch.id, channelName: ch.name, state: detail.initialState }, 'Auto-deployed channel');
+    }
   }
 
   /** Send a raw message to a deployed, started channel. */

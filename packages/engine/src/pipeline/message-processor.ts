@@ -59,6 +59,14 @@ export interface DestinationResponse {
   readonly errorMessage?: string;
 }
 
+/** A content row to insert in a batch. */
+export interface ContentRow {
+  readonly metaDataId: number;
+  readonly contentType: number;
+  readonly content: string;
+  readonly dataType: string;
+}
+
 /** Callback to persist message data. */
 export interface MessageStore {
   createMessage(channelId: string, serverId: string): Promise<Result<{ messageId: number }>>;
@@ -72,6 +80,22 @@ export interface MessageStore {
   release(channelId: string, messageId: number, metaDataId: number, newStatus: string): Promise<Result<void>>;
   incrementStats(channelId: string, metaDataId: number, serverId: string, field: 'received' | 'filtered' | 'sent' | 'errored'): Promise<Result<void>>;
   storeAttachment?(channelId: string, messageId: number, attachmentId: string, mimeType: string, content: string, size: number): Promise<Result<void>>;
+
+  /**
+   * Optional batch: creates message + source connector + content rows + stats in one round-trip.
+   * Implementations that don't provide this fall back to individual calls.
+   */
+  initializeMessage?(
+    channelId: string, serverId: string, connectorName: string,
+    contentRows: readonly ContentRow[],
+  ): Promise<Result<{ messageId: number }>>;
+
+  /**
+   * Optional batch: sets source connector status to SENT, increments sent stat, marks processed — one round-trip.
+   */
+  finalizeMessage?(
+    channelId: string, messageId: number, serverId: string,
+  ): Promise<Result<void>>;
 }
 
 /** Input to the pipeline. */
@@ -103,6 +127,15 @@ export type AlertEventHandler = (event: {
   readonly timestamp: number;
 }) => Promise<void>;
 
+/** Stage timing entry emitted by the pipeline. */
+export interface StageTiming {
+  readonly stage: string;
+  readonly durationMs: number;
+}
+
+/** Callback for pipeline debug timing. Called once per message with all stage timings. */
+export type TimingCallback = (messageId: number, totalMs: number, stages: readonly StageTiming[]) => void;
+
 /** Pipeline configuration. */
 export interface PipelineConfig {
   readonly channelId: string;
@@ -116,6 +149,7 @@ export interface PipelineConfig {
   readonly configMap?: Readonly<Record<string, unknown>> | undefined;
   readonly onError?: AlertEventHandler | undefined;
   readonly attachmentConfig?: AttachmentConfig | undefined;
+  readonly onTiming?: TimingCallback | undefined;
 }
 
 /** Mutable map state carried across pipeline stages. */
@@ -166,6 +200,17 @@ export class MessageProcessor {
   ): Promise<Result<ProcessedMessage>> {
     return tryCatch(async () => {
       const { channelId, serverId, dataType } = this.config;
+      const timing = this.config.onTiming;
+
+      // Lightweight timing tracker — zero overhead when onTiming is not set
+      const stages: StageTiming[] = [];
+      let lastMark = timing ? performance.now() : 0;
+      const mark = (stage: string): void => {
+        if (!timing) return;
+        const now = performance.now();
+        stages.push({ stage, durationMs: Math.round((now - lastMark) * 100) / 100 });
+        lastMark = now;
+      };
 
       // Initialize map state that persists across pipeline stages
       const mapState: PipelineMapState = {
@@ -173,16 +218,27 @@ export class MessageProcessor {
         responseMap: {},
       };
 
-      // Stage 1: Create message in DB
-      const createResult = await this.store.createMessage(channelId, serverId);
-      if (!createResult.ok) throw new Error('Failed to create message');
-      const { messageId } = createResult.value;
-
-      // Create source connector message (metaDataId=0)
-      await this.store.createConnectorMessage(channelId, messageId, 0, 'Source', 'RECEIVED');
-      await this.store.storeContent(channelId, messageId, 0, CT_RAW, input.rawContent, dataType);
-      await this.store.storeContent(channelId, messageId, 0, CT_SOURCE_MAP, JSON.stringify(input.sourceMap), 'JSON');
-      await this.store.incrementStats(channelId, 0, serverId, 'received');
+      // Stage 1: Create message + source connector + raw content + stats
+      let messageId: number;
+      if (this.store.initializeMessage) {
+        const initResult = await this.store.initializeMessage(channelId, serverId, 'Source', [
+          { metaDataId: 0, contentType: CT_RAW, content: input.rawContent, dataType },
+          { metaDataId: 0, contentType: CT_SOURCE_MAP, content: JSON.stringify(input.sourceMap), dataType: 'JSON' },
+        ]);
+        if (!initResult.ok) throw new Error('Failed to initialize message');
+        messageId = initResult.value.messageId;
+      } else {
+        const createResult = await this.store.createMessage(channelId, serverId);
+        if (!createResult.ok) throw new Error('Failed to create message');
+        messageId = createResult.value.messageId;
+        await Promise.all([
+          this.store.createConnectorMessage(channelId, messageId, 0, 'Source', 'RECEIVED'),
+          this.store.storeContent(channelId, messageId, 0, CT_RAW, input.rawContent, dataType),
+          this.store.storeContent(channelId, messageId, 0, CT_SOURCE_MAP, JSON.stringify(input.sourceMap), 'JSON'),
+          this.store.incrementStats(channelId, 0, serverId, 'received'),
+        ]);
+      }
+      mark('initialize');
 
       let content = input.rawContent;
 
@@ -194,6 +250,7 @@ export class MessageProcessor {
         if (gpreResult.ok && typeof gpreResult.value.returnValue === 'string') {
           content = gpreResult.value.returnValue;
         }
+        mark('globalPreprocessor');
       }
 
       // Stage 2b: Channel preprocessor
@@ -204,6 +261,7 @@ export class MessageProcessor {
         if (preResult.ok && typeof preResult.value.returnValue === 'string') {
           content = preResult.value.returnValue;
         }
+        mark('preprocessor');
       }
 
       // Create destination set for source filter/transformer to control routing
@@ -218,10 +276,15 @@ export class MessageProcessor {
         const filterResult = await this.runScript(
           this.config.scripts.sourceFilter, content, input, signal, mapState, destSetExtras,
         );
+        mark('sourceFilter');
         if (filterResult.ok && filterResult.value.returnValue === false) {
-          await this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'FILTERED');
-          await this.store.incrementStats(channelId, 0, serverId, 'filtered');
-          await this.store.markProcessed(channelId, messageId);
+          await Promise.all([
+            this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'FILTERED'),
+            this.store.incrementStats(channelId, 0, serverId, 'filtered'),
+            this.store.markProcessed(channelId, messageId),
+          ]);
+          mark('filterFinalize');
+          if (timing) timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
           return { messageId, status: 'FILTERED' as const, destinationResults: [] } satisfies ProcessedMessage;
         }
       }
@@ -231,25 +294,38 @@ export class MessageProcessor {
         const txResult = await this.runScript(
           this.config.scripts.sourceTransformer, content, input, signal, mapState, destSetExtras,
         );
-        if (txResult.ok && typeof txResult.value.returnValue === 'string') {
-          content = txResult.value.returnValue;
-          await this.store.storeContent(channelId, messageId, 0, CT_TRANSFORMED, content, dataType);
+        if (txResult.ok) {
+          // Use explicit return value if present, otherwise fall back to msg variable
+          const transformed = txResult.value.returnValue ?? txResult.value.msg;
+          if (typeof transformed === 'string') {
+            content = transformed;
+          }
         }
+        mark('sourceTransformer');
       }
 
-      await this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'TRANSFORMED');
+      // Store transformed content + update status (parallel)
+      await Promise.all([
+        this.config.scripts.sourceTransformer
+          ? this.store.storeContent(channelId, messageId, 0, CT_TRANSFORMED, content, dataType)
+          : Promise.resolve({ ok: true as const, value: undefined, error: null }),
+        this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'TRANSFORMED'),
+      ]);
+      mark('storeTransformed');
 
       // Stage 5+6: Route to destinations (filtered by destinationSet)
       const activeIds = destSet.getActiveMetaDataIds();
       const destResults = await this.routeToDestinations(
         messageId, content, input, signal, mapState, activeIds,
       );
+      mark('destinations');
 
       // Stage 7a: Channel postprocessor (receives responseMap populated with dest responses)
       if (this.config.scripts.postprocessor) {
         await this.runScript(
           this.config.scripts.postprocessor, content, input, signal, mapState,
         );
+        mark('postprocessor');
       }
 
       // Stage 7b: Global postprocessor
@@ -257,12 +333,25 @@ export class MessageProcessor {
         await this.runScript(
           this.config.scripts.globalPostprocessor, content, input, signal, mapState,
         );
+        mark('globalPostprocessor');
       }
 
       // Stage 8: Mark processed
-      await this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'SENT');
-      await this.store.incrementStats(channelId, 0, serverId, 'sent');
-      await this.store.markProcessed(channelId, messageId);
+      if (this.store.finalizeMessage) {
+        await this.store.finalizeMessage(channelId, messageId, serverId);
+      } else {
+        await Promise.all([
+          this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'SENT'),
+          this.store.incrementStats(channelId, 0, serverId, 'sent'),
+          this.store.markProcessed(channelId, messageId),
+        ]);
+      }
+      mark('finalize');
+
+      // Emit timing data
+      if (timing) {
+        timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
+      }
 
       const hasError = destResults.some((r) => r.status === 'ERROR');
 
@@ -317,10 +406,10 @@ export class MessageProcessor {
             dest.scripts.filter, destContent, input, signal, mapState,
           );
           if (filterResult.ok && filterResult.value.returnValue === false) {
-            await this.store.updateConnectorMessageStatus(
-              channelId, messageId, dest.metaDataId, 'FILTERED',
-            );
-            await this.store.incrementStats(channelId, dest.metaDataId, serverId, 'filtered');
+            await Promise.all([
+              this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'FILTERED'),
+              this.store.incrementStats(channelId, dest.metaDataId, serverId, 'filtered'),
+            ]);
             return { metaDataId: dest.metaDataId, status: 'FILTERED' as const };
           }
         }
@@ -330,8 +419,11 @@ export class MessageProcessor {
           const txResult = await this.runScript(
             dest.scripts.transformer, destContent, input, signal, mapState,
           );
-          if (txResult.ok && typeof txResult.value.returnValue === 'string') {
-            destContent = txResult.value.returnValue;
+          if (txResult.ok) {
+            const transformed = txResult.value.returnValue ?? txResult.value.msg;
+            if (typeof transformed === 'string') {
+              destContent = transformed;
+            }
           }
         }
 
@@ -349,10 +441,10 @@ export class MessageProcessor {
         const sendResult = await this.sendFn(dest.metaDataId, destContent, signal);
 
         if (!sendResult.ok) {
-          await this.store.updateConnectorMessageStatus(
-            channelId, messageId, dest.metaDataId, 'ERROR',
-          );
-          await this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored');
+          await Promise.all([
+            this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'ERROR'),
+            this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored'),
+          ]);
           return { metaDataId: dest.metaDataId, status: 'ERROR' as const };
         }
 
@@ -372,18 +464,21 @@ export class MessageProcessor {
             const rtResult = await this.runScript(
               dest.scripts.responseTransformer, response.content, input, signal, mapState,
             );
-            if (rtResult.ok && typeof rtResult.value.returnValue === 'string') {
-              responseContent = rtResult.value.returnValue;
-              await this.store.storeContent(
-                channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
-              );
+            if (rtResult.ok) {
+              const transformed = rtResult.value.returnValue ?? rtResult.value.msg;
+              if (typeof transformed === 'string') {
+                responseContent = transformed;
+                await this.store.storeContent(
+                  channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
+                );
+              }
             }
           }
 
-          await this.store.updateConnectorMessageStatus(
-            channelId, messageId, dest.metaDataId, 'SENT',
-          );
-          await this.store.incrementStats(channelId, dest.metaDataId, serverId, 'sent');
+          await Promise.all([
+            this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'SENT'),
+            this.store.incrementStats(channelId, dest.metaDataId, serverId, 'sent'),
+          ]);
           return {
             metaDataId: dest.metaDataId,
             status: 'SENT' as const,

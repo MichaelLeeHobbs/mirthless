@@ -114,5 +114,5 @@ export function compileTransformerStepsToScript(
   if (jsSteps.length === 0) return null;
 
   const lines = jsSteps.map((s) => s.script!);
-  return `${lines.join('\n')}\nreturn tmp;`;
+  return `${lines.join('\n')}\nreturn msg;`;
 }

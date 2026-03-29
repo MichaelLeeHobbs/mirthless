@@ -167,6 +167,48 @@ describe('MessageProcessor', () => {
     );
   });
 
+  it('source transformer modifies content via msg assignment (no return)', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: {
+        sourceTransformer: { code: 'msg = "test";' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput('original'), AbortSignal.timeout(5_000));
+
+    // Transformed content stored — msg assignment (no explicit return) should work
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 0, 3, 'test', 'HL7V2',
+    );
+    // Destination receives transformed content
+    expect(sendFn).toHaveBeenCalledWith(1, 'test', expect.any(AbortSignal));
+  });
+
+  it('destination transformer modifies content via msg assignment (no return)', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{
+        metaDataId: 1, name: 'Dest 1', enabled: true,
+        scripts: { transformer: { code: 'msg = "dest_modified";' } },
+        queueEnabled: false,
+      }],
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput('original'), AbortSignal.timeout(5_000));
+
+    // Destination receives msg-assigned content
+    expect(sendFn).toHaveBeenCalledWith(1, 'dest_modified', expect.any(AbortSignal));
+  });
+
   it('routes to 2 destinations in parallel', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();

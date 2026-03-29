@@ -138,6 +138,13 @@ function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
       MessageService.release(channelId, messageId, metaDataId, newStatus as Parameters<typeof MessageService.release>[3]),
     storeAttachment: (channelId, messageId, attachmentId, mimeType, content, size) =>
       MessageService.storeAttachment(channelId, messageId, attachmentId, mimeType, content, size),
+    initializeMessage: (channelId, serverId, connectorName, contentRows) => {
+      // Filter content rows by storage policy before sending to batch
+      const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType));
+      return MessageService.initializeMessage(channelId, serverId, connectorName, filtered);
+    },
+    finalizeMessage: (channelId, messageId, serverId) =>
+      MessageService.finalizeMessage(channelId, messageId, serverId),
   };
 }
 
@@ -265,6 +272,14 @@ export class EngineManager {
       globalMapProxy: globalMapProxyInstance,
       configMap: Object.freeze(configMapRecord),
       onError: async (event) => alertManager.handleEvent(event),
+      onTiming: logger.level === 'debug' || logger.level === 'trace'
+        ? (messageId, totalMs, stages) => {
+            logger.debug(
+              { channelId: channel.id, channelName: channel.name, messageId, totalMs, stages },
+              'Pipeline timing',
+            );
+          }
+        : undefined,
     };
 
     // Build send function
@@ -589,7 +604,7 @@ export class EngineManager {
     if (result.ok) {
       gcm.applyUpdates(result.value.mapUpdates.globalChannelMap);
     } else {
-      logger.error({ error: result.error, channelId: channel.id }, 'Deploy/undeploy script execution failed');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack, channelId: channel.id }, 'Deploy/undeploy script execution failed');
     }
   }
 

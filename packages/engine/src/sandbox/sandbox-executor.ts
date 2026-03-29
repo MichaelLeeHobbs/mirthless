@@ -23,12 +23,15 @@ export interface CompiledScript {
 export interface ExecutionOptions {
   readonly timeout: number;
   readonly memoryLimit: number;
-  readonly signal: AbortSignal;
+  /** Optional abort signal. A fresh signal is created from `timeout` if omitted. */
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** Result of executing a script in the sandbox. */
 export interface ExecutionResult {
   readonly returnValue: unknown;
+  /** The value of `msg` after script execution (used by transformers). */
+  readonly msg: unknown;
   readonly mapUpdates: {
     readonly channelMap: Readonly<Record<string, unknown>>;
     readonly connectorMap: Readonly<Record<string, unknown>>;
@@ -38,11 +41,10 @@ export interface ExecutionResult {
   readonly logs: readonly LogEntry[];
 }
 
-/** Default execution options. */
+/** Default execution options (signal created fresh per execution). */
 export const DEFAULT_EXECUTION_OPTIONS: ExecutionOptions = {
   timeout: 30_000,
   memoryLimit: 128 * 1024 * 1024,
-  signal: AbortSignal.timeout(30_000),
 } as const;
 
 // ----- Interface -----
@@ -81,7 +83,8 @@ export class VmSandboxExecutor implements SandboxExecutor {
     options: ExecutionOptions,
   ): Promise<Result<ExecutionResult>> {
     return tryCatch(async () => {
-      if (options.signal.aborted) {
+      const signal = options.signal ?? AbortSignal.timeout(options.timeout);
+      if (signal.aborted) {
         throw new Error('Execution aborted before start');
       }
 
@@ -180,6 +183,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
 
       return {
         returnValue: sandbox['__result'],
+        msg: sandbox['msg'],
         mapUpdates: { channelMap, connectorMap, globalChannelMap, globalMap },
         logs,
       };

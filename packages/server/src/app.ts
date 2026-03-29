@@ -52,7 +52,7 @@ app.use(express.urlencoded({ extended: true }));
 // Request ID tracking (before logging so requestId appears in logs)
 app.use(requestId);
 
-// Request logging
+// Request logging — set LOG_HTTP_HEADERS=true for full header output
 app.use(
   pinoHttp({
     logger,
@@ -63,6 +63,20 @@ app.use(
         return url === '/health' || url === '/health/live' || url === '/health/ready' || url === '/metrics';
       },
     },
+    ...(config.LOG_HTTP_HEADERS
+      ? {}
+      : {
+          serializers: {
+            req: (req: Record<string, unknown>) => ({
+              id: req['id'],
+              method: req['method'],
+              url: req['url'],
+            }),
+            res: (res: Record<string, unknown>) => ({
+              statusCode: res['statusCode'],
+            }),
+          },
+        }),
   })
 );
 
