@@ -85,26 +85,27 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
   const addMember = useAddGroupMember();
   const removeMember = useRemoveGroupMember();
 
-  const currentGroupId = useMemo((): string => {
-    const allMemberships = membershipsQuery.data ?? [];
-    const membership = allMemberships.find((m) => m.channelId === channelId);
-    return membership?.channelGroupId ?? NONE_GROUP;
+  const channelMemberships = useMemo((): readonly { channelGroupId: string }[] => {
+    return (membershipsQuery.data ?? []).filter((m) => m.channelId === channelId);
   }, [membershipsQuery.data, channelId]);
 
-  const handleGroupChange = useCallback((newGroupId: string): void => {
-    if (!channelId) return;
-    const oldGroupId = currentGroupId;
-    if (oldGroupId === newGroupId) return;
+  const currentGroupId = useMemo((): string => {
+    return channelMemberships[0]?.channelGroupId ?? NONE_GROUP;
+  }, [channelMemberships]);
 
-    // Remove from old group
-    if (oldGroupId !== NONE_GROUP) {
-      removeMember.mutate({ groupId: oldGroupId, channelId });
+  const handleGroupChange = useCallback(async (newGroupId: string): Promise<void> => {
+    if (!channelId) return;
+    if (channelMemberships.length > 0 && channelMemberships[0]?.channelGroupId === newGroupId) return;
+
+    // Remove from ALL current groups (handles multi-membership cleanup)
+    for (const m of channelMemberships) {
+      removeMember.mutate({ groupId: m.channelGroupId, channelId });
     }
     // Add to new group
     if (newGroupId !== NONE_GROUP) {
       addMember.mutate({ groupId: newGroupId, channelId });
     }
-  }, [channelId, currentGroupId, removeMember, addMember]);
+  }, [channelId, channelMemberships, removeMember, addMember]);
 
   // ----- Metadata column helpers -----
   const handleAddColumn = (): void => {

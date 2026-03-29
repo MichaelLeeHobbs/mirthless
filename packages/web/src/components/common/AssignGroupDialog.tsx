@@ -35,11 +35,13 @@ export function AssignGroupDialog({ open, onClose, channelId }: AssignGroupDialo
 
   const groups = groupsQuery.data ?? [];
 
-  const currentGroupId = useMemo((): string => {
-    const allMemberships = membershipsQuery.data ?? [];
-    const membership = allMemberships.find((m) => m.channelId === channelId);
-    return membership?.channelGroupId ?? NONE_VALUE;
+  const channelMemberships = useMemo((): readonly { channelGroupId: string }[] => {
+    return (membershipsQuery.data ?? []).filter((m) => m.channelId === channelId);
   }, [membershipsQuery.data, channelId]);
+
+  const currentGroupId = useMemo((): string => {
+    return channelMemberships[0]?.channelGroupId ?? NONE_VALUE;
+  }, [channelMemberships]);
 
   // Sync selection when data loads or channelId changes
   useEffect(() => {
@@ -54,9 +56,9 @@ export function AssignGroupDialog({ open, onClose, channelId }: AssignGroupDialo
 
     setSaving(true);
     try {
-      // Remove from old group if assigned
-      if (currentGroupId !== NONE_VALUE) {
-        await removeMember.mutateAsync({ groupId: currentGroupId, channelId });
+      // Remove from ALL current groups (handles multi-membership cleanup)
+      for (const m of channelMemberships) {
+        await removeMember.mutateAsync({ groupId: m.channelGroupId, channelId });
       }
       // Add to new group if not "None"
       if (selectedGroupId !== NONE_VALUE) {
@@ -69,7 +71,7 @@ export function AssignGroupDialog({ open, onClose, channelId }: AssignGroupDialo
     } finally {
       setSaving(false);
     }
-  }, [selectedGroupId, currentGroupId, channelId, removeMember, addMember, notify, onClose]);
+  }, [selectedGroupId, currentGroupId, channelId, channelMemberships, removeMember, addMember, notify, onClose]);
 
   const isLoading = groupsQuery.isLoading || membershipsQuery.isLoading;
 

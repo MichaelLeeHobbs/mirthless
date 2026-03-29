@@ -299,13 +299,6 @@ export class DeploymentService {
     }, 'Auto-deploying enabled channels');
 
     for (const ch of channels) {
-      const detailResult = await ChannelService.getById(ch.id);
-      if (!detailResult.ok) {
-        logger.warn({ channelId: ch.id, channelName: ch.name, errMsg: detailResult.error.message }, 'Skipping auto-deploy, failed to load channel');
-        continue;
-      }
-
-      const detail = detailResult.value;
       const deployResult = await DeploymentService.deploy(ch.id);
       if (!deployResult.ok) {
         logger.warn({ channelId: ch.id, channelName: ch.name, errMsg: deployResult.error.message }, 'Failed to auto-deploy channel');
