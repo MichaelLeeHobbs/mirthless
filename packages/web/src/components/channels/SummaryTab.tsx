@@ -3,7 +3,7 @@
 // ===========================================
 // Combined channel identity, data config, and advanced settings with collapsible sections.
 
-import { type ReactNode, type ChangeEvent } from 'react';
+import { useMemo, useCallback, type ReactNode, type ChangeEvent } from 'react';
 import { Controller, type Control, type FieldErrors } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid';
@@ -35,7 +35,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import type { ChannelFormData } from '../../pages/ChannelEditorPage.js';
 import type { AdvancedFormValues, MetadataColumnFormValues } from './AdvancedTab.js';
-import { ChannelGroupChips } from './ChannelGroupChips.js';
+import { useChannelGroups, useGroupMemberships, useAddGroupMember, useRemoveGroupMember } from '../../hooks/use-channel-groups.js';
 
 const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR'] as const;
 
@@ -76,7 +76,36 @@ function copyToClipboard(text: string): void {
   void navigator.clipboard.writeText(text);
 }
 
+const NONE_GROUP = '__none__';
+
 export function SummaryTab({ control, errors, isEditMode, channelId, revision, advancedValues, onAdvancedChange }: SummaryTabProps): ReactNode {
+  // ----- Group dropdown (edit mode only) -----
+  const groupsQuery = useChannelGroups();
+  const membershipsQuery = useGroupMemberships();
+  const addMember = useAddGroupMember();
+  const removeMember = useRemoveGroupMember();
+
+  const currentGroupId = useMemo((): string => {
+    const allMemberships = membershipsQuery.data ?? [];
+    const membership = allMemberships.find((m) => m.channelId === channelId);
+    return membership?.channelGroupId ?? NONE_GROUP;
+  }, [membershipsQuery.data, channelId]);
+
+  const handleGroupChange = useCallback((newGroupId: string): void => {
+    if (!channelId) return;
+    const oldGroupId = currentGroupId;
+    if (oldGroupId === newGroupId) return;
+
+    // Remove from old group
+    if (oldGroupId !== NONE_GROUP) {
+      removeMember.mutate({ groupId: oldGroupId, channelId });
+    }
+    // Add to new group
+    if (newGroupId !== NONE_GROUP) {
+      addMember.mutate({ groupId: newGroupId, channelId });
+    }
+  }, [channelId, currentGroupId, removeMember, addMember]);
+
   // ----- Metadata column helpers -----
   const handleAddColumn = (): void => {
     onAdvancedChange({
@@ -173,6 +202,21 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
                 sx={{ mb: 2 }}
                 slotProps={{ input: { readOnly: true } }}
               />
+
+              <TextField
+                label="Channel Group"
+                select
+                fullWidth
+                sx={{ mb: 2 }}
+                value={currentGroupId}
+                onChange={(e) => { handleGroupChange(e.target.value); }}
+                disabled={groupsQuery.isLoading || membershipsQuery.isLoading}
+              >
+                <MenuItem value={NONE_GROUP}><em>None</em></MenuItem>
+                {(groupsQuery.data ?? []).map((g) => (
+                  <MenuItem key={g.id} value={g.id}>{g.name}</MenuItem>
+                ))}
+              </TextField>
             </>
           ) : null}
         </Grid>
@@ -232,13 +276,6 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
           />
         </Grid>
       </Grid>
-
-      {/* Group assignment (edit mode only) */}
-      {isEditMode && channelId ? (
-        <Box sx={{ mt: 1 }}>
-          <ChannelGroupChips channelId={channelId} />
-        </Box>
-      ) : null}
 
       {/* --- Advanced Settings (collapsible) --- */}
       <Box sx={{ mt: 3 }}>
