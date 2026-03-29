@@ -76,7 +76,7 @@ D-035: Playwright at monorepo root, not in `packages/web/` — E2E tests span se
 
 D-036: `reuseExistingServer` for Playwright local dev — Avoids port conflicts when dev server is already running. CI starts fresh. — 2026-02-28
 
-D-037: TCP/MLLP E2E uses ports 18661/18662 — Avoids conflict with engine E2E tests using 17661/17662. — 2026-02-28
+D-037: TCP/MLLP E2E uses ports 18661/18662 ��� Avoids conflict with engine E2E tests using 17661/17662. — 2026-02-28
 
 D-038: Single Playwright worker, sequential tests — Healthcare data integrity — avoid state conflicts between parallel tests. — 2026-02-28
 
@@ -160,31 +160,11 @@ D-077: Channel-based rooms for scoped message push — Socket.IO rooms (`channel
 
 D-078: Keep polling as fallback alongside WebSocket (graceful degradation) — Dashboard and Message Browser retain `refetchInterval` polling even with WebSocket enabled. If WebSocket disconnects, polling provides continued updates. Eliminates single point of failure for real-time updates. — 2026-03-01
 
-D-079: Native Postgres over Docker for development — Docker Desktop WSL2 incurs 100x+ WAL fsync penalty on writes (44ms vs 0.36ms per INSERT). Message processing dropped from 420ms to 13ms by switching to native Postgres. Docker remains available for CI and production. — 2026-03-29
-
-D-080: CTE batching for pipeline DB operations — `initializeMessage()` and `finalizeMessage()` use PostgreSQL CTEs to combine 5 and 3 queries respectively into single round-trips. Reduces sequential DB calls from 10 to 2-3. Pipeline logic + VM overhead is ~1ms; all latency is DB round-trips. — 2026-03-29
-
-D-081: Transformer scripts return `msg` not `tmp` — `compileTransformerStepsToScript()` appends `return msg;` so that `msg = 'test'` assignment pattern works. `tmp` was a Mirth Connect legacy concept for the outbound message; our simplified model uses `msg` as the primary transform target. — 2026-03-29
-
-D-082: `correlationId` for cross-channel message tracing — UUID auto-generated on message creation, indexed. Propagated via sourceMap when Channel connector routes between channels. `requestId` stays for HTTP API tracing. `correlationId` is the cross-channel, cross-protocol tracing ID. — 2026-03-29
-
-D-083: Send Message dialog is fire-and-forget — Dialog closes immediately on send, success/error notifications arrive async. Processing time should not block the UI. The message browser shows results when ready. — 2026-03-29
-
-D-084: Pipeline timing as optional callback, not always-on — `onTiming` in `PipelineConfig` is `undefined` unless `LOG_LEVEL=debug`. When undefined, `mark()` calls short-circuit with zero overhead. No performance cost in production. — 2026-03-29
-
-D-085: Idempotent SQL migrations — All migrations use `IF NOT EXISTS`, `IF EXISTS`, and `DROP CONSTRAINT IF EXISTS` before `ADD CONSTRAINT`. Safe to re-run against existing databases. Enables switching between Docker and native Postgres without migration state conflicts. — 2026-03-29
-
-D-086: Deploy respects channel initialState — Manual deploy auto-starts if `initialState` is STARTED, auto-starts-then-pauses if PAUSED. Matches Mirth Connect behavior. Previously deploy always returned STOPPED regardless of config. — 2026-03-29
-
-D-087: Git as source of truth, not STATUS.md — Replaced STATUS.md with lean ROADMAP.md. Git history + CHANGELOG.md tracks what's done. DECISIONS.md tracks rationale. STATUS.md was always stale because it duplicated git. — 2026-03-29
-
-D-088: Group CRUD inline, no dedicated page — Create group: button on dashboard. Rename/delete: kebab menu on group header. Assign channel to group: context menu + dialog. No separate Groups page needed — reduces nav clutter for a simple CRUD operation. — 2026-03-29
-
 D-079: Socket reconnect re-joins rooms and invalidates all queries — On WebSocket reconnection, client re-joins previously subscribed rooms and invalidates all TanStack Query caches. Ensures no stale data after a connectivity gap. Token refresh triggers socket reconnection with updated auth. — 2026-03-01
 
 D-080: JS connector scripts compiled once at deploy, not per-message — `compileScript()` called during `deploy()` and result captured in closure. `setScriptRunner` callback reuses pre-compiled script. Eliminates redundant esbuild transpilation on every message. Compile failures surface at deploy time, not at first message. — 2026-03-02
 
-D-081: AlertService.getByIds() batch query to fix N+1 — `loadAlertsForChannel()` was calling `list()` + N × `getById()`. New `getByIds(ids)` fetches all alerts, channels, and actions in 3 queries using `inArray()`. Groups results by alertId using Maps. — 2026-03-02
+D-081: AlertService.getByIds() batch query to fix N+1 — `loadAlertsForChannel()` was calling `list()` + N x `getById()`. New `getByIds(ids)` fetches all alerts, channels, and actions in 3 queries using `inArray()`. Groups results by alertId using Maps. — 2026-03-02
 
 D-082: SOCKET_EVENT const object for centralized event names — `SOCKET_EVENT.CHANNEL_STATE`, `STATS_UPDATE`, `MESSAGE_NEW` replace 9 hardcoded string literals across deployment and message services. Type-safe, grep-friendly, single source of truth. — 2026-03-02
 
@@ -198,7 +178,7 @@ D-086: Factory injection for DICOM testability — Both DicomReceiver and DicomD
 
 D-087: DICOM dispatch mode: PER_FILE vs PER_ASSOCIATION — Source connector supports PER_FILE (default, each file = one message) and PER_ASSOCIATION (all files from one association = one message with JSON array content). PER_FILE gives transformers per-file granularity for routing by modality/patient. PER_ASSOCIATION batches files from a single sender session. — 2026-03-02
 
-D-089: C-STORE only scope for Phase 17 — DICOM connector supports C-STORE send/receive only. C-FIND, C-MOVE, C-GET, and PacsClient are deferred to a future phase. C-STORE covers the primary medical imaging workflow (receiving images from modalities, forwarding to PACS). — 2026-03-02
+D-088: C-STORE only scope for Phase 17 — DICOM connector supports C-STORE send/receive only. C-FIND, C-MOVE, C-GET, and PacsClient are deferred to a future phase. C-STORE covers the primary medical imaging workflow (receiving images from modalities, forwarding to PACS). — 2026-03-02
 
 D-089: Storage policy enforced in adapter, not pipeline — `createMessageStoreAdapter()` wraps `MessageService` and silently drops `storeContent()` calls for content types excluded by the channel's `messageStorageMode`. Pipeline code always calls `storeContent()`, adapter decides whether to persist. Same pattern as a no-op logger. — 2026-03-02
 
@@ -246,12 +226,32 @@ D-110: Server logs via in-memory ring buffer — Log entries captured via Pino t
 
 D-111: Log streaming via Socket.IO rooms — Clients join `logs` room for `server:log` events. Follows existing room pattern. Permission: `system:info`. — 2026-03-02
 
-D-112: Script errors mark message ERROR, not silent skip — Previously pipeline silently continued when preprocessor/filter/transformer threw. Now stores error as CT_PROCESSING_ERROR (contentType 13), marks source connector ERROR, increments errored stat, notifies alert system. Destinations are not invoked. — 2026-03-29
+D-112: Native Postgres over Docker for development — Docker Desktop WSL2 incurs 100x+ WAL fsync penalty on writes (44ms vs 0.36ms per INSERT). Message processing dropped from 420ms to 13ms by switching to native Postgres. Docker remains available for CI and production. — 2026-03-29
 
-D-113: Disabled channels cannot be deployed — Server rejects deploy for channels with `enabled: false`. Prevents accidental deployment of incomplete or intentionally disabled channels. UI shows error message. — 2026-03-29
+D-113: CTE batching for pipeline DB operations — `initializeMessage()` and `finalizeMessage()` use PostgreSQL CTEs to combine 5 and 3 queries respectively into single round-trips. Reduces sequential DB calls from 10 to 2-3. Pipeline logic + VM overhead is ~1ms; all latency is DB round-trips. — 2026-03-29
 
-D-114: isServiceError uses duck typing, not instanceof — stderr-lib's tryCatch reconstructs errors, breaking prototype chain. ServiceError detection checks `name === 'ServiceError'` and `typeof code === 'string'` instead of instanceof. Fixes all deployment actions returning 500 instead of proper 409/404/400. — 2026-03-29
+D-114: Transformer scripts return `msg` not `tmp` — `compileTransformerStepsToScript()` appends `return msg;` so that `msg = 'test'` assignment pattern works. `tmp` was a Mirth Connect legacy concept for the outbound message; our simplified model uses `msg` as the primary transform target. — 2026-03-29
 
-D-115: Raw SQL for bigint column lookups in message queries — Drizzle ORM's `inArray()` silently fails with bigint columns (returns empty results). Message search connector lookup uses raw SQL `IN (${sql.join(...)})` instead. The pg driver returns bigint as string; explicit `Number()` coercion needed. — 2026-03-29
+D-115: `correlationId` for cross-channel message tracing — UUID auto-generated on message creation, indexed. Propagated via sourceMap when Channel connector routes between channels. `requestId` stays for HTTP API tracing. `correlationId` is the cross-channel, cross-protocol tracing ID. — 2026-03-29
 
-D-116: Channel group is single-select despite many-to-many join table — The `channel_group_members` table supports many-to-many, but the UI and assignment logic treat it as single-select. Group change removes ALL existing memberships before adding the new one. Simplifies UX without schema migration. — 2026-03-29
+D-116: Send Message dialog is fire-and-forget — Dialog closes immediately on send, success/error notifications arrive async. Processing time should not block the UI. The message browser shows results when ready. — 2026-03-29
+
+D-117: Pipeline timing as optional callback, not always-on — `onTiming` in `PipelineConfig` is `undefined` unless `LOG_LEVEL=debug`. When undefined, `mark()` calls short-circuit with zero overhead. No performance cost in production. — 2026-03-29
+
+D-118: Idempotent SQL migrations — All migrations use `IF NOT EXISTS`, `IF EXISTS`, and `DROP CONSTRAINT IF EXISTS` before `ADD CONSTRAINT`. Safe to re-run against existing databases. Enables switching between Docker and native Postgres without migration state conflicts. — 2026-03-29
+
+D-119: Deploy respects channel initialState — Manual deploy auto-starts if `initialState` is STARTED, auto-starts-then-pauses if PAUSED. Matches Mirth Connect behavior. Previously deploy always returned STOPPED regardless of config. — 2026-03-29
+
+D-120: Git as source of truth, not STATUS.md — Replaced STATUS.md with lean ROADMAP.md. Git history + CHANGELOG.md tracks what's done. DECISIONS.md tracks rationale. STATUS.md was always stale because it duplicated git. — 2026-03-29
+
+D-121: Group CRUD inline, no dedicated page — Create group: button on dashboard. Rename/delete: kebab menu on group header. Assign channel to group: context menu + dialog. No separate Groups page needed — reduces nav clutter for a simple CRUD operation. — 2026-03-29
+
+D-122: Script errors mark message ERROR, not silent skip — Previously pipeline silently continued when preprocessor/filter/transformer threw. Now stores error as CT_PROCESSING_ERROR (contentType 13), marks source connector ERROR, increments errored stat, notifies alert system. Destinations are not invoked. — 2026-03-29
+
+D-123: Disabled channels cannot be deployed — Server rejects deploy for channels with `enabled: false`. Prevents accidental deployment of incomplete or intentionally disabled channels. UI shows error message. — 2026-03-29
+
+D-124: isServiceError uses duck typing, not instanceof — stderr-lib's tryCatch reconstructs errors, breaking prototype chain. ServiceError detection checks `name === 'ServiceError'` and `typeof code === 'string'` instead of instanceof. Fixes all deployment actions returning 500 instead of proper 409/404/400. — 2026-03-29
+
+D-125: Raw SQL for bigint column lookups in message queries — Drizzle ORM's `inArray()` silently fails with bigint columns (returns empty results). Message search connector lookup uses raw SQL `IN (${sql.join(...)})` instead. The pg driver returns bigint as string; explicit `Number()` coercion needed. — 2026-03-29
+
+D-126: Channel group is single-select despite many-to-many join table — The `channel_group_members` table supports many-to-many, but the UI and assignment logic treat it as single-select. Group change removes ALL existing memberships before adding the new one. Simplifies UX without schema migration. — 2026-03-29
