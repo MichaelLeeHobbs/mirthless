@@ -3,27 +3,37 @@
 // ===========================================
 // Per-channel statistics detail page with connector breakdown.
 
-import { useState, type ReactNode } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { useChannelStatistics, useResetStatistics } from '../hooks/use-statistics.js';
+import { useChannelStatistics, useResetStatistics, STATS_KEYS } from '../hooks/use-statistics.js';
 import { StatsSummaryCards } from '../components/statistics/StatsSummaryCards.js';
 import { ConnectorStatsTable } from '../components/statistics/ConnectorStatsTable.js';
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { useSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
 
 export function ChannelStatisticsPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const channelId = id ?? '';
   const { data: stats, isLoading, error } = useChannelStatistics(channelId.length > 0 ? channelId : null);
   const resetMutation = useResetStatistics();
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // WebSocket: join dashboard room for stats events, invalidate on update
+  useSocketRoom('join:dashboard', 'leave:dashboard');
+  const handleStatsUpdate = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: STATS_KEYS.all });
+  }, [queryClient]);
+  useSocketEvent('stats:update', handleStatsUpdate);
 
   const handleReset = (): void => {
     setConfirmOpen(true);

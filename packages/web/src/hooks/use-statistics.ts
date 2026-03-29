@@ -47,7 +47,7 @@ export const STATS_KEYS = {
 
 // ----- Queries -----
 
-/** Fetch statistics summary for all channels (dashboard). Auto-refreshes every 5s. */
+/** Fetch statistics summary for all channels (dashboard). WebSocket-driven with 60s fallback poll. */
 export function useAllChannelStatistics(): ReturnType<typeof useQuery<readonly ChannelStatisticsSummary[]>> {
   return useQuery({
     queryKey: STATS_KEYS.allChannels(),
@@ -58,7 +58,7 @@ export function useAllChannelStatistics(): ReturnType<typeof useQuery<readonly C
       }
       return result.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 60_000,
   });
 }
 
@@ -74,7 +74,7 @@ export function useChannelStatistics(channelId: string | null): ReturnType<typeo
       return result.data;
     },
     enabled: channelId !== null,
-    refetchInterval: 5000,
+    refetchInterval: 60_000,
   });
 }
 

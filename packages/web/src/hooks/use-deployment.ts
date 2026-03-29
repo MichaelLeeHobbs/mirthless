@@ -24,7 +24,7 @@ export const DEPLOYMENT_KEYS = {
 
 // ----- Queries -----
 
-/** Fetch deployment status for all channels. Auto-refreshes every 5s. */
+/** Fetch deployment status for all channels. WebSocket-driven with 60s fallback poll. */
 export function useAllDeploymentStatuses(): ReturnType<typeof useQuery<readonly ChannelStatus[]>> {
   return useQuery({
     queryKey: DEPLOYMENT_KEYS.statuses(),
@@ -35,7 +35,7 @@ export function useAllDeploymentStatuses(): ReturnType<typeof useQuery<readonly 
       }
       return result.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 60_000,
   });
 }
 
