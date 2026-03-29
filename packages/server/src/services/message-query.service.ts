@@ -162,7 +162,8 @@ export class MessageQueryService {
       }
 
       // Fetch connector messages for all returned message IDs
-      const messageIds = messageRows.rows.map(r => r.id);
+      // Raw SQL returns bigint as string — coerce to number for Drizzle inArray
+      const messageIds = messageRows.rows.map(r => Number(r.id));
       const connectorRows = await db
         .select({
           messageId: connectorMessages.messageId,
