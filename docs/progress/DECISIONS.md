@@ -198,7 +198,7 @@ D-086: Factory injection for DICOM testability — Both DicomReceiver and DicomD
 
 D-087: DICOM dispatch mode: PER_FILE vs PER_ASSOCIATION — Source connector supports PER_FILE (default, each file = one message) and PER_ASSOCIATION (all files from one association = one message with JSON array content). PER_FILE gives transformers per-file granularity for routing by modality/patient. PER_ASSOCIATION batches files from a single sender session. — 2026-03-02
 
-D-088: C-STORE only scope for Phase 17 — DICOM connector supports C-STORE send/receive only. C-FIND, C-MOVE, C-GET, and PacsClient are deferred to a future phase. C-STORE covers the primary medical imaging workflow (receiving images from modalities, forwarding to PACS). — 2026-03-02
+D-089: C-STORE only scope for Phase 17 — DICOM connector supports C-STORE send/receive only. C-FIND, C-MOVE, C-GET, and PacsClient are deferred to a future phase. C-STORE covers the primary medical imaging workflow (receiving images from modalities, forwarding to PACS). — 2026-03-02
 
 D-089: Storage policy enforced in adapter, not pipeline — `createMessageStoreAdapter()` wraps `MessageService` and silently drops `storeContent()` calls for content types excluded by the channel's `messageStorageMode`. Pipeline code always calls `storeContent()`, adapter decides whether to persist. Same pattern as a no-op logger. — 2026-03-02
 
@@ -245,3 +245,13 @@ D-109: ScriptEditor wrapper component — Shared `ScriptEditor` wraps Monaco Edi
 D-110: Server logs via in-memory ring buffer — Log entries captured via Pino tee stream into fixed-size ring buffer (10,000 entries). No DB storage. For persistent logs, users use external log aggregation. — 2026-03-02
 
 D-111: Log streaming via Socket.IO rooms — Clients join `logs` room for `server:log` events. Follows existing room pattern. Permission: `system:info`. — 2026-03-02
+
+D-112: Script errors mark message ERROR, not silent skip — Previously pipeline silently continued when preprocessor/filter/transformer threw. Now stores error as CT_PROCESSING_ERROR (contentType 13), marks source connector ERROR, increments errored stat, notifies alert system. Destinations are not invoked. — 2026-03-29
+
+D-113: Disabled channels cannot be deployed — Server rejects deploy for channels with `enabled: false`. Prevents accidental deployment of incomplete or intentionally disabled channels. UI shows error message. — 2026-03-29
+
+D-114: isServiceError uses duck typing, not instanceof — stderr-lib's tryCatch reconstructs errors, breaking prototype chain. ServiceError detection checks `name === 'ServiceError'` and `typeof code === 'string'` instead of instanceof. Fixes all deployment actions returning 500 instead of proper 409/404/400. — 2026-03-29
+
+D-115: Raw SQL for bigint column lookups in message queries — Drizzle ORM's `inArray()` silently fails with bigint columns (returns empty results). Message search connector lookup uses raw SQL `IN (${sql.join(...)})` instead. The pg driver returns bigint as string; explicit `Number()` coercion needed. — 2026-03-29
+
+D-116: Channel group is single-select despite many-to-many join table — The `channel_group_members` table supports many-to-many, but the UI and assignment logic treat it as single-select. Group change removes ALL existing memberships before adding the new one. Simplifies UX without schema migration. — 2026-03-29
