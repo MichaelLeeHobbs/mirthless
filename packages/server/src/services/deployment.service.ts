@@ -42,6 +42,10 @@ export class DeploymentService {
 
       const channel = channelResult.value;
 
+      if (!channel.enabled) {
+        throw new ServiceError('CONFLICT', 'Cannot deploy a disabled channel. Enable it first.');
+      }
+
       const engine = getEngine();
       const existing = engine.getRuntime(channelId);
       if (existing) {
@@ -286,8 +290,13 @@ export class DeploymentService {
       return;
     }
 
-    const channels = listResult.value.data.filter((ch) => ch.enabled);
-    logger.info({ count: channels.length }, 'Auto-deploying enabled channels');
+    const allChannels = listResult.value.data;
+    const channels = allChannels.filter((ch) => ch.enabled);
+    logger.info({
+      total: allChannels.length,
+      enabled: channels.length,
+      channels: channels.map((ch) => ({ id: ch.id, name: ch.name })),
+    }, 'Auto-deploying enabled channels');
 
     for (const ch of channels) {
       const detailResult = await ChannelService.getById(ch.id);
@@ -303,18 +312,9 @@ export class DeploymentService {
         continue;
       }
 
-      if (detail.initialState === 'STARTED' || detail.initialState === 'PAUSED') {
-        const startResult = await DeploymentService.start(ch.id);
-        if (!startResult.ok) {
-          logger.warn({ channelId: ch.id, channelName: ch.name, errMsg: startResult.error.message }, 'Failed to auto-start channel');
-          continue;
-        }
-        if (detail.initialState === 'PAUSED') {
-          await DeploymentService.pause(ch.id);
-        }
-      }
-
-      logger.info({ channelId: ch.id, channelName: ch.name, state: detail.initialState }, 'Auto-deployed channel');
+      // deploy() handles auto-start based on initialState — just log the result
+      const finalState = deployResult.value.state;
+      logger.info({ channelId: ch.id, channelName: ch.name, state: finalState }, 'Auto-deployed channel');
     }
   }
 
