@@ -95,12 +95,12 @@ describe('createShutdownHandler', () => {
     const infoCalls = (deps.logger.info as ReturnType<typeof vi.fn>).mock.calls;
     const messages = infoCalls.map((c: unknown[]) => (typeof c[0] === 'string' ? c[0] : c[1]));
 
-    expect(messages).toContain('Closing HTTP server...');
-    expect(messages).toContain('Stopping engine...');
-    expect(messages).toContain('Shutting down Socket.IO...');
-    expect(messages).toContain('Stopping pruner scheduler...');
-    expect(messages).toContain('Stopping job queue...');
-    expect(messages).toContain('Closing database pool...');
+    expect(messages).toContain('Closing HTTP server');
+    expect(messages).toContain('Stopping engine');
+    expect(messages).toContain('Shutting down Socket.IO');
+    expect(messages).toContain('Stopping pruner scheduler');
+    expect(messages).toContain('Stopping job queue');
+    expect(messages).toContain('Closing database pool');
     expect(messages).toContain('Graceful shutdown complete');
   });
 
@@ -145,7 +145,10 @@ describe('createShutdownHandler', () => {
     // Advance past the 30s timeout
     await vi.advanceTimersByTimeAsync(30_000);
 
-    expect(deps.logger.error).toHaveBeenCalledWith('Graceful shutdown timed out, forcing exit');
+    expect(deps.logger.error).toHaveBeenCalledWith(
+      { phase: 'shutdown', errMsg: 'Timeout exceeded' },
+      'Graceful shutdown timed out, forcing exit',
+    );
     expect(mockExit).toHaveBeenCalledWith(1);
   });
 
@@ -159,7 +162,7 @@ describe('createShutdownHandler', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(deps.logger.error).toHaveBeenCalledWith(
-      { error: 'engine boom' },
+      { errMsg: 'engine boom', stack: expect.any(String), phase: 'shutdown' },
       'Error during shutdown',
     );
     expect(mockExit).toHaveBeenCalledWith(1);
@@ -175,7 +178,7 @@ describe('createShutdownHandler', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(deps.logger.error).toHaveBeenCalledWith(
-      { error: 'string error' },
+      { errMsg: 'string error', stack: undefined, phase: 'shutdown' },
       'Error during shutdown',
     );
     expect(mockExit).toHaveBeenCalledWith(1);

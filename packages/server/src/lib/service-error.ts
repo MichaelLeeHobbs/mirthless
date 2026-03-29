@@ -32,8 +32,12 @@ export class ServiceError extends Error {
 
 /**
  * Type guard to check if an error is a ServiceError, optionally matching a specific code.
+ * Uses duck typing instead of instanceof — stderr-lib's tryCatch reconstructs errors,
+ * breaking the prototype chain.
  */
 export function isServiceError(error: unknown, code?: ServiceErrorCode): error is ServiceError {
-  if (!(error instanceof ServiceError)) return false;
-  return code ? error.code === code : true;
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as Record<string, unknown>;
+  if (candidate['name'] !== 'ServiceError' || typeof candidate['code'] !== 'string') return false;
+  return code ? candidate['code'] === code : true;
 }
