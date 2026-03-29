@@ -329,6 +329,35 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults[0]!.metaDataId).toBe(2);
   });
 
+  it('reports ERROR when source transformer throws', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: {
+        sourceTransformer: { code: 'throw new Error("Testing error handling!");' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.destinationResults).toHaveLength(0);
+    // Should store the error message
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 0, 13, expect.stringContaining('Testing error handling'), 'TEXT',
+    );
+    expect(store.incrementStats).toHaveBeenCalledWith(
+      expect.any(String), 0, expect.any(String), 'errored',
+    );
+    // Should NOT have been sent to destinations
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
   it('reports ERROR when destination send fails', async () => {
     const store = makeStore();
     const sendFn: SendToDestination = vi.fn().mockResolvedValue({

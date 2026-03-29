@@ -170,6 +170,7 @@ const CT_SENT = 5;
 const CT_RESPONSE = 6;
 const CT_RESPONSE_TRANSFORMED = 7;
 const CT_SOURCE_MAP = 9;
+const CT_PROCESSING_ERROR = 13;
 
 // ----- Pipeline -----
 
@@ -249,12 +250,32 @@ export class MessageProcessor {
 
       let content = input.rawContent;
 
+      // Helper: mark source as errored and return ERROR result
+      const errorOut = async (stage: string, errMsg: string): Promise<ProcessedMessage> => {
+        await Promise.all([
+          this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, errMsg, 'TEXT'),
+          this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+          this.store.incrementStats(channelId, 0, serverId, 'errored'),
+          this.store.markProcessed(channelId, messageId),
+        ]);
+        mark(stage);
+        if (this.config.onError) {
+          await this.config.onError({
+            channelId, errorType: 'SOURCE_CONNECTOR',
+            errorMessage: `Script error in ${stage}: ${errMsg}`, timestamp: Date.now(),
+          });
+        }
+        if (timing) timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
+        return { messageId, correlationId, status: 'ERROR' as const, destinationResults: [] };
+      };
+
       // Stage 2a: Global preprocessor
       if (this.config.scripts.globalPreprocessor) {
         const gpreResult = await this.runScript(
           this.config.scripts.globalPreprocessor, content, input, signal, mapState,
         );
-        if (gpreResult.ok && typeof gpreResult.value.returnValue === 'string') {
+        if (!gpreResult.ok) return errorOut('globalPreprocessor', gpreResult.error.message);
+        if (typeof gpreResult.value.returnValue === 'string') {
           content = gpreResult.value.returnValue;
         }
         mark('globalPreprocessor');
@@ -265,7 +286,8 @@ export class MessageProcessor {
         const preResult = await this.runScript(
           this.config.scripts.preprocessor, content, input, signal, mapState,
         );
-        if (preResult.ok && typeof preResult.value.returnValue === 'string') {
+        if (!preResult.ok) return errorOut('preprocessor', preResult.error.message);
+        if (typeof preResult.value.returnValue === 'string') {
           content = preResult.value.returnValue;
         }
         mark('preprocessor');
@@ -283,8 +305,9 @@ export class MessageProcessor {
         const filterResult = await this.runScript(
           this.config.scripts.sourceFilter, content, input, signal, mapState, destSetExtras,
         );
+        if (!filterResult.ok) return errorOut('sourceFilter', filterResult.error.message);
         mark('sourceFilter');
-        if (filterResult.ok && filterResult.value.returnValue === false) {
+        if (filterResult.value.returnValue === false) {
           await Promise.all([
             this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'FILTERED'),
             this.store.incrementStats(channelId, 0, serverId, 'filtered'),
@@ -301,12 +324,11 @@ export class MessageProcessor {
         const txResult = await this.runScript(
           this.config.scripts.sourceTransformer, content, input, signal, mapState, destSetExtras,
         );
-        if (txResult.ok) {
-          // Use explicit return value if present, otherwise fall back to msg variable
-          const transformed = txResult.value.returnValue ?? txResult.value.msg;
-          if (typeof transformed === 'string') {
-            content = transformed;
-          }
+        if (!txResult.ok) return errorOut('sourceTransformer', txResult.error.message);
+        // Use explicit return value if present, otherwise fall back to msg variable
+        const transformed = txResult.value.returnValue ?? txResult.value.msg;
+        if (typeof transformed === 'string') {
+          content = transformed;
         }
         mark('sourceTransformer');
       }
