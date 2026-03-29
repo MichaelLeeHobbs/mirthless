@@ -83,9 +83,11 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
       });
 
-      // Auto-start if channel's initialState calls for it
-      let finalState: ChannelState = CHANNEL_STATE.STOPPED;
-      if (channel.initialState === 'STARTED' || channel.initialState === 'PAUSED') {
+      // Auto-start if channel's initialState calls for it (skip if already in target state)
+      const deployed = engine.getRuntime(channelId);
+      const currentState = deployed?.runtime.getState() ?? 'STOPPED';
+      let finalState: ChannelState = currentState as ChannelState;
+      if ((channel.initialState === 'STARTED' || channel.initialState === 'PAUSED') && currentState === 'STOPPED') {
         const startResult = await DeploymentService.start(channelId, context);
         if (startResult.ok) {
           finalState = CHANNEL_STATE.STARTED;
@@ -136,7 +138,7 @@ export class DeploymentService {
       const deployed = getDeployed(channelId);
       const result = await deployed.runtime.start();
       if (!result.ok) {
-        throw new ServiceError('CONFLICT', 'Failed to start channel');
+        throw new ServiceError('CONFLICT', `Cannot start channel: ${result.error.message}`);
       }
 
       // Start queue consumers after runtime starts
@@ -165,7 +167,7 @@ export class DeploymentService {
 
       const result = await deployed.runtime.stop();
       if (!result.ok) {
-        throw new ServiceError('CONFLICT', 'Failed to stop channel');
+        throw new ServiceError('CONFLICT', `Cannot stop channel: ${result.error.message}`);
       }
 
       emitEvent({
@@ -191,7 +193,7 @@ export class DeploymentService {
 
       const result = await deployed.runtime.halt();
       if (!result.ok) {
-        throw new ServiceError('CONFLICT', 'Failed to halt channel');
+        throw new ServiceError('CONFLICT', `Cannot halt channel: ${result.error.message}`);
       }
 
       emitEvent({
@@ -213,7 +215,7 @@ export class DeploymentService {
       const deployed = getDeployed(channelId);
       const result = await deployed.runtime.pause();
       if (!result.ok) {
-        throw new ServiceError('CONFLICT', 'Failed to pause channel');
+        throw new ServiceError('CONFLICT', `Cannot pause channel: ${result.error.message}`);
       }
 
       emitEvent({
@@ -235,7 +237,7 @@ export class DeploymentService {
       const deployed = getDeployed(channelId);
       const result = await deployed.runtime.resume();
       if (!result.ok) {
-        throw new ServiceError('CONFLICT', 'Failed to resume channel');
+        throw new ServiceError('CONFLICT', `Cannot resume channel: ${result.error.message}`);
       }
 
       emitEvent({
