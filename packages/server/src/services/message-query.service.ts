@@ -162,8 +162,9 @@ export class MessageQueryService {
       }
 
       // Fetch connector messages for all returned message IDs
-      // Use raw SQL to avoid Drizzle bigint/number coercion issues with inArray
+      // Use raw SQL with IN clause to avoid Drizzle bigint/number coercion issues
       const messageIds = messageRows.rows.map(r => Number(r.id));
+      const idParams = messageIds.map((id) => sql`${id}`);
       const connectorRows = await db.execute<{
         message_id: number;
         meta_data_id: number;
@@ -174,7 +175,7 @@ export class MessageQueryService {
         SELECT message_id, meta_data_id, connector_name, status, send_attempts
         FROM connector_messages
         WHERE channel_id = ${channelId}
-          AND message_id = ANY(${messageIds}::bigint[])
+          AND message_id IN (${sql.join(idParams, sql`, `)})
       `);
 
       // Group connectors by messageId
