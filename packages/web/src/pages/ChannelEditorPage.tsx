@@ -31,13 +31,13 @@ import { SummaryTab } from '../components/channels/SummaryTab.js';
 import { SourceTab } from '../components/channels/SourceTab.js';
 import { DestinationsTab } from '../components/channels/DestinationsTab.js';
 import { ScriptsTab } from '../components/channels/ScriptsTab.js';
-import { AdvancedTab, type AdvancedFormValues } from '../components/channels/AdvancedTab.js';
+import type { AdvancedFormValues } from '../components/channels/AdvancedTab.js';
 import type { DestinationFormValues } from '../components/channels/destinations/types.js';
 import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, TransformerStepFormValues } from '../components/channels/source/types.js';
 import { createDefaultFilter, createDefaultTransformer } from '../components/channels/source/types.js';
 import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
-import { ChannelGroupChips } from '../components/channels/ChannelGroupChips.js';
+// ChannelGroupChips now rendered inside SummaryTab
 
 // ----- Form Data Type -----
 
@@ -655,11 +655,10 @@ export function ChannelEditorPage(): ReactNode {
       {/* Tabs */}
       <Paper sx={{ mb: 2 }}>
         <Tabs value={activeTab} onChange={handleTabChange}>
-          <Tab label="Summary" />
+          <Tab label="Channel Settings" />
           <Tab label="Source" />
           <Tab label="Destinations" />
           <Tab label="Scripts" />
-          <Tab label="Advanced" />
         </Tabs>
       </Paper>
 
@@ -672,10 +671,9 @@ export function ChannelEditorPage(): ReactNode {
             isEditMode={isEditMode}
             channelId={id}
             revision={channel?.revision}
+            advancedValues={advanced}
+            onAdvancedChange={handleAdvancedChange}
           />
-          {isEditMode && id ? (
-            <ChannelGroupChips channelId={id} />
-          ) : null}
         </TabPanel>
         <TabPanel value={activeTab} index={1}>
           <SourceTab
@@ -698,9 +696,6 @@ export function ChannelEditorPage(): ReactNode {
         </TabPanel>
         <TabPanel value={activeTab} index={3}>
           <ScriptsTab scripts={scripts} onChange={handleScriptsChange} />
-        </TabPanel>
-        <TabPanel value={activeTab} index={4}>
-          <AdvancedTab values={advanced} onChange={handleAdvancedChange} />
         </TabPanel>
       </Paper>
 
