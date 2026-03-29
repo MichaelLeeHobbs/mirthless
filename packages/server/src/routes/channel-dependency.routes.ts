@@ -40,7 +40,7 @@ router.get(
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId: id }, 'Failed to get dependencies');
+      logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to get dependencies');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -61,7 +61,7 @@ router.put(
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId: id }, 'Failed to set dependencies');
+      logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to set dependencies');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -80,7 +80,7 @@ router.get(
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId: id }, 'Failed to get dependents');
+      logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to get dependents');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

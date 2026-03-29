@@ -33,7 +33,7 @@ export class UserController {
     const result = await UserService.listUsers();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list users');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list users');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -61,7 +61,7 @@ export class UserController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, username: input.username }, 'Failed to create user');
+      logger.warn({ errMsg: result.error.message, username: input.username }, 'Failed to create user');
       res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
       return;
     }
@@ -79,7 +79,7 @@ export class UserController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, userId: id }, 'Failed to update user');
+      logger.warn({ errMsg: result.error.message, userId: id }, 'Failed to update user');
       res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
       return;
     }
@@ -96,7 +96,7 @@ export class UserController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, userId: id }, 'Failed to delete user');
+      logger.warn({ errMsg: result.error.message, userId: id }, 'Failed to delete user');
       res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
       return;
     }

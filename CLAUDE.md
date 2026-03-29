@@ -300,6 +300,20 @@ mirthless/
 
 The original NextGen Connect source is at `reference/connect/` for architecture study. This is a spiritual remake — we keep the core concepts but redesign everything for Node.js. Do not replicate Connect's Java patterns, XML config formats, or API quirks.
 
+## Progress Tracking
+
+**You MUST actively maintain these docs during every session:**
+
+| Doc | Purpose | When to Update |
+|-----|---------|---------------|
+| [`docs/progress/ROADMAP.md`](docs/progress/ROADMAP.md) | What's planned, not started | Check off items as they ship, add new items as they emerge |
+| [`docs/progress/CHANGELOG.md`](docs/progress/CHANGELOG.md) | What was built, session by session | Add an entry at the end of each working session |
+| [`docs/progress/DECISIONS.md`](docs/progress/DECISIONS.md) | Why we chose X over Y | Add whenever a non-obvious architectural or design choice is made |
+
+**Do NOT duplicate what git tracks.** These docs capture what git cannot: plans, rationale, and session context.
+
+Git is the source of truth for what changed and when. Use `git log` for that, not STATUS.md.
+
 ## Diagrams
 
 When creating diagrams, use **Mermaid** format with dark-mode-friendly colors.

@@ -11,7 +11,7 @@ import { config } from '../config/index.js';
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
   const error = stderr(err);
 
-  logger.error({ error, path: req.path, method: req.method }, 'Unhandled error');
+  logger.error({ errMsg: error.message, stack: error.stack, path: req.path, method: req.method }, 'Unhandled error');
 
   // Don't leak error details in production
   const message = config.NODE_ENV === 'production' ? 'Internal server error' : error.message;

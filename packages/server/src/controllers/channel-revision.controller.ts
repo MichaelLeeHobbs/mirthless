@@ -24,7 +24,7 @@ export class ChannelRevisionController {
     const result = await ChannelRevisionService.listRevisions(channelId);
 
     if (!result.ok) {
-      logger.error({ error: result.error, channelId }, 'Failed to list revisions');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack, channelId }, 'Failed to list revisions');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -39,7 +39,7 @@ export class ChannelRevisionController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId, rev }, 'Failed to get revision');
+      logger.warn({ errMsg: result.error.message, channelId, rev }, 'Failed to get revision');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

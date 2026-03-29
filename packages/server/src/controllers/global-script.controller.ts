@@ -14,7 +14,7 @@ export class GlobalScriptController {
     const result = await GlobalScriptService.getAll();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to get global scripts');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to get global scripts');
       res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -28,12 +28,12 @@ export class GlobalScriptController {
     const result = await GlobalScriptService.update(input, context);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to update global scripts');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to update global scripts');
       res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
-    logger.info('Global scripts updated');
+    logger.info({ operation: 'update' }, 'Global scripts updated');
     res.json({ success: true, data: result.value });
   }
 }

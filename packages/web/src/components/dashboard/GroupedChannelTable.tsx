@@ -3,7 +3,7 @@
 // ===========================================
 // Collapsible group sections with group headers and aggregate stats.
 
-import { Fragment, useState, useMemo, type ReactNode } from 'react';
+import { Fragment, useState, useMemo, useCallback, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Table from '@mui/material/Table';
@@ -17,18 +17,37 @@ import Chip from '@mui/material/Chip';
 import Link from '@mui/material/Link';
 import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import TextField from '@mui/material/TextField';
+import Button from '@mui/material/Button';
+import Alert from '@mui/material/Alert';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CircleIcon from '@mui/icons-material/Circle';
 import BarChartIcon from '@mui/icons-material/BarChart';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import Tooltip from '@mui/material/Tooltip';
+import { DEFAULT_GROUP_NAME } from '@mirthless/core-models';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
 import type { ChannelStatus } from '../../hooks/use-deployment.js';
 import type { ChannelGroupSummary } from '../../hooks/use-channel-groups.js';
 import type { GroupMembership } from '../../hooks/use-channel-groups.js';
+import { useUpdateChannelGroup, useDeleteChannelGroup } from '../../hooks/use-channel-groups.js';
 import { ChannelActions } from './ChannelActions.js';
 import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
+import { AssignGroupDialog } from '../common/AssignGroupDialog.js';
+import { ConfirmDialog } from '../common/ConfirmDialog.js';
 import { useContextMenu } from '../../hooks/use-context-menu.js';
+import { useNotification } from '../../stores/notification.store.js';
 import { getStateColor, getStatusDotColor } from './ChannelStatusTable.js';
 
 interface GroupedChannelTableProps {
@@ -73,6 +92,86 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const { menuState, menuTarget, handleContextMenu, handleClose } = useContextMenu<ChannelRow>();
+  const { notify } = useNotification();
+
+  // --- Group kebab menu state ---
+  const [groupMenuAnchor, setGroupMenuAnchor] = useState<HTMLElement | null>(null);
+  const [groupMenuTarget, setGroupMenuTarget] = useState<GroupSection | null>(null);
+
+  // --- Rename dialog state ---
+  const [renameTarget, setRenameTarget] = useState<GroupSection | null>(null);
+  const [renameName, setRenameName] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const updateGroup = useUpdateChannelGroup();
+
+  // --- Delete dialog state ---
+  const [deleteTarget, setDeleteTarget] = useState<GroupSection | null>(null);
+  const deleteGroup = useDeleteChannelGroup();
+
+  // --- Assign group dialog state ---
+  const [assignGroupTarget, setAssignGroupTarget] = useState<string | null>(null);
+
+  const handleGroupMenuOpen = useCallback((e: React.MouseEvent<HTMLElement>, section: GroupSection): void => {
+    e.stopPropagation();
+    setGroupMenuAnchor(e.currentTarget);
+    setGroupMenuTarget(section);
+  }, []);
+
+  const handleGroupMenuClose = useCallback((): void => {
+    setGroupMenuAnchor(null);
+    setGroupMenuTarget(null);
+  }, []);
+
+  const handleRenameOpen = useCallback((): void => {
+    if (!groupMenuTarget) return;
+    setRenameTarget(groupMenuTarget);
+    setRenameName(groupMenuTarget.groupName);
+    setRenameError(null);
+    handleGroupMenuClose();
+  }, [groupMenuTarget, handleGroupMenuClose]);
+
+  const handleRenameConfirm = useCallback((): void => {
+    if (!renameTarget || !renameName.trim()) return;
+    setRenameError(null);
+    const group = groups.find((g) => g.id === renameTarget.groupId);
+    if (!group) return;
+    updateGroup.mutate(
+      { id: renameTarget.groupId, input: { name: renameName.trim(), revision: group.revision } },
+      {
+        onSuccess: () => {
+          notify(`Group renamed to "${renameName.trim()}"`, 'success');
+          setRenameTarget(null);
+        },
+        onError: (err) => {
+          setRenameError(err.message);
+        },
+      },
+    );
+  }, [renameTarget, renameName, groups, updateGroup, notify]);
+
+  const handleDeleteOpen = useCallback((): void => {
+    if (!groupMenuTarget) return;
+    setDeleteTarget(groupMenuTarget);
+    handleGroupMenuClose();
+  }, [groupMenuTarget, handleGroupMenuClose]);
+
+  const handleDeleteConfirm = useCallback((): void => {
+    if (!deleteTarget) return;
+    deleteGroup.mutate(deleteTarget.groupId, {
+      onSuccess: () => {
+        notify(`Group "${deleteTarget.groupName}" deleted`, 'success');
+        setDeleteTarget(null);
+      },
+      onError: (err) => {
+        notify(`Failed to delete group: ${err.message}`, 'error');
+        setDeleteTarget(null);
+      },
+    });
+  }, [deleteTarget, deleteGroup, notify]);
+
+  const handleChangeGroup = useCallback((channelId: string): void => {
+    setAssignGroupTarget(channelId);
+  }, []);
 
   const toggleGroup = (groupId: string): void => {
     setCollapsed((prev) => {
@@ -134,14 +233,12 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     const result: GroupSection[] = [];
     for (const group of groups) {
       const channels = groupMap.get(group.id) ?? [];
-      if (channels.length > 0) {
-        result.push({
-          groupId: group.id,
-          groupName: group.name,
-          channels,
-          totals: sumTotals(channels),
-        });
-      }
+      result.push({
+        groupId: group.id,
+        groupName: group.name,
+        channels,
+        totals: sumTotals(channels),
+      });
     }
 
     if (ungrouped.length > 0) {
@@ -188,7 +285,11 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                   <Fragment key={section.groupId}>
                     {/* Group header row */}
                     <TableRow
-                      sx={{ backgroundColor: 'action.hover', cursor: 'pointer' }}
+                      sx={{
+                        backgroundColor: 'action.hover',
+                        cursor: 'pointer',
+                        '&:hover .group-menu-btn': { opacity: 1 },
+                      }}
                       onClick={() => toggleGroup(section.groupId)}
                     >
                       <TableCell>
@@ -198,9 +299,21 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                       </TableCell>
                       <TableCell />
                       <TableCell colSpan={2}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                          {section.groupName} ({section.channels.length})
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                            {section.groupName} ({section.channels.length})
+                          </Typography>
+                          {section.groupId !== '__ungrouped__' ? (
+                            <IconButton
+                              className="group-menu-btn"
+                              size="small"
+                              sx={{ opacity: 0, transition: 'opacity 0.15s' }}
+                              onClick={(e) => { handleGroupMenuOpen(e, section); }}
+                            >
+                              <MoreVertIcon fontSize="small" />
+                            </IconButton>
+                          ) : null}
+                        </Box>
                       </TableCell>
                       <TableCell align="right">{section.totals.received.toLocaleString()}</TableCell>
                       <TableCell align="right">{section.totals.filtered.toLocaleString()}</TableCell>
@@ -274,7 +387,76 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
         state={menuTarget === null ? null : (menuTarget.state === 'UNDEPLOYED' ? null : menuTarget.state)}
         onClose={handleClose}
         onSendMessage={onSendMessage}
+        onChangeGroup={handleChangeGroup}
       />
+      {/* Group kebab menu */}
+      <Menu
+        open={groupMenuAnchor !== null}
+        anchorEl={groupMenuAnchor}
+        onClose={handleGroupMenuClose}
+      >
+        <MenuItem onClick={handleRenameOpen}>
+          <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Rename</ListItemText>
+        </MenuItem>
+        <MenuItem
+          onClick={handleDeleteOpen}
+          disabled={
+            (groupMenuTarget?.channels.length ?? 0) > 0 ||
+            groupMenuTarget?.groupName === DEFAULT_GROUP_NAME
+          }
+        >
+          <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+          <ListItemText primaryTypographyProps={{ color: 'error' }}>Delete</ListItemText>
+        </MenuItem>
+      </Menu>
+      {/* Rename group dialog */}
+      <Dialog open={renameTarget !== null} onClose={() => { setRenameTarget(null); }} maxWidth="xs" fullWidth>
+        <DialogTitle>Rename Group</DialogTitle>
+        <DialogContent>
+          {renameError ? (
+            <Alert severity="error" sx={{ mb: 2 }}>{renameError}</Alert>
+          ) : null}
+          <TextField
+            autoFocus
+            fullWidth
+            label="Name"
+            value={renameName}
+            onChange={(e) => { setRenameName(e.target.value); }}
+            slotProps={{ htmlInput: { maxLength: 255 } }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setRenameTarget(null); }} disabled={updateGroup.isPending}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleRenameConfirm}
+            disabled={updateGroup.isPending || !renameName.trim()}
+          >
+            Rename
+          </Button>
+        </DialogActions>
+      </Dialog>
+      {/* Delete group confirm dialog */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete Group"
+        message={`Are you sure you want to delete the group "${deleteTarget?.groupName ?? ''}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        severity="error"
+        isPending={deleteGroup.isPending}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => { setDeleteTarget(null); }}
+      />
+      {/* Assign group dialog */}
+      {assignGroupTarget ? (
+        <AssignGroupDialog
+          open
+          onClose={() => { setAssignGroupTarget(null); }}
+          channelId={assignGroupTarget}
+        />
+      ) : null}
     </Paper>
   );
 }

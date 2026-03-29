@@ -3,7 +3,7 @@
 // ===========================================
 // Right-click context menu for channel rows on the dashboard.
 
-import type { ReactNode } from 'react';
+import type { ReactNode, MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
@@ -22,6 +22,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SendIcon from '@mui/icons-material/Send';
+import FolderIcon from '@mui/icons-material/Folder';
 import type { ContextMenuState } from '../../hooks/use-context-menu.js';
 import { useDeploymentAction } from '../../hooks/use-deployment.js';
 
@@ -35,6 +36,7 @@ interface ChannelContextMenuProps {
   readonly onDelete?: ((channelId: string) => void) | undefined;
   readonly onExport?: ((channelId: string) => void) | undefined;
   readonly onSendMessage?: ((channelId: string, channelName: string) => void) | undefined;
+  readonly onChangeGroup?: ((channelId: string) => void) | undefined;
 }
 
 export function ChannelContextMenu({
@@ -47,6 +49,7 @@ export function ChannelContextMenu({
   onDelete,
   onExport,
   onSendMessage,
+  onChangeGroup,
 }: ChannelContextMenuProps): ReactNode {
   const navigate = useNavigate();
   const deployAction = useDeploymentAction();
@@ -69,6 +72,7 @@ export function ChannelContextMenu({
       onClose={onClose}
       anchorReference="anchorPosition"
       anchorPosition={menuState ? { top: menuState.mouseY, left: menuState.mouseX } : { top: 0, left: 0 }}
+      slotProps={{ root: { onContextMenu: (e: ReactMouseEvent) => { e.preventDefault(); onClose(); } } }}
     >
       <MenuItem disabled sx={{ opacity: '1 !important' }}>
         <ListItemText primaryTypographyProps={{ variant: 'subtitle2', fontWeight: 600 }}>
@@ -136,6 +140,12 @@ export function ChannelContextMenu({
         <MenuItem onClick={() => { onClose(); onSendMessage(channelId, channelName ?? ''); }}>
           <ListItemIcon><SendIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Send Message</ListItemText>
+        </MenuItem>
+      ) : null}
+      {onChangeGroup ? (
+        <MenuItem onClick={() => { onClose(); onChangeGroup(channelId); }}>
+          <ListItemIcon><FolderIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Change Group</ListItemText>
         </MenuItem>
       ) : null}
       <Divider />

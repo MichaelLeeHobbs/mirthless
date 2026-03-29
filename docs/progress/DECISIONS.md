@@ -160,6 +160,26 @@ D-077: Channel-based rooms for scoped message push — Socket.IO rooms (`channel
 
 D-078: Keep polling as fallback alongside WebSocket (graceful degradation) — Dashboard and Message Browser retain `refetchInterval` polling even with WebSocket enabled. If WebSocket disconnects, polling provides continued updates. Eliminates single point of failure for real-time updates. — 2026-03-01
 
+D-079: Native Postgres over Docker for development — Docker Desktop WSL2 incurs 100x+ WAL fsync penalty on writes (44ms vs 0.36ms per INSERT). Message processing dropped from 420ms to 13ms by switching to native Postgres. Docker remains available for CI and production. — 2026-03-29
+
+D-080: CTE batching for pipeline DB operations — `initializeMessage()` and `finalizeMessage()` use PostgreSQL CTEs to combine 5 and 3 queries respectively into single round-trips. Reduces sequential DB calls from 10 to 2-3. Pipeline logic + VM overhead is ~1ms; all latency is DB round-trips. — 2026-03-29
+
+D-081: Transformer scripts return `msg` not `tmp` — `compileTransformerStepsToScript()` appends `return msg;` so that `msg = 'test'` assignment pattern works. `tmp` was a Mirth Connect legacy concept for the outbound message; our simplified model uses `msg` as the primary transform target. — 2026-03-29
+
+D-082: `correlationId` for cross-channel message tracing — UUID auto-generated on message creation, indexed. Propagated via sourceMap when Channel connector routes between channels. `requestId` stays for HTTP API tracing. `correlationId` is the cross-channel, cross-protocol tracing ID. — 2026-03-29
+
+D-083: Send Message dialog is fire-and-forget — Dialog closes immediately on send, success/error notifications arrive async. Processing time should not block the UI. The message browser shows results when ready. — 2026-03-29
+
+D-084: Pipeline timing as optional callback, not always-on — `onTiming` in `PipelineConfig` is `undefined` unless `LOG_LEVEL=debug`. When undefined, `mark()` calls short-circuit with zero overhead. No performance cost in production. — 2026-03-29
+
+D-085: Idempotent SQL migrations — All migrations use `IF NOT EXISTS`, `IF EXISTS`, and `DROP CONSTRAINT IF EXISTS` before `ADD CONSTRAINT`. Safe to re-run against existing databases. Enables switching between Docker and native Postgres without migration state conflicts. — 2026-03-29
+
+D-086: Deploy respects channel initialState — Manual deploy auto-starts if `initialState` is STARTED, auto-starts-then-pauses if PAUSED. Matches Mirth Connect behavior. Previously deploy always returned STOPPED regardless of config. — 2026-03-29
+
+D-087: Git as source of truth, not STATUS.md — Replaced STATUS.md with lean ROADMAP.md. Git history + CHANGELOG.md tracks what's done. DECISIONS.md tracks rationale. STATUS.md was always stale because it duplicated git. — 2026-03-29
+
+D-088: Group CRUD inline, no dedicated page — Create group: button on dashboard. Rename/delete: kebab menu on group header. Assign channel to group: context menu + dialog. No separate Groups page needed — reduces nav clutter for a simple CRUD operation. — 2026-03-29
+
 D-079: Socket reconnect re-joins rooms and invalidates all queries — On WebSocket reconnection, client re-joins previously subscribed rooms and invalidates all TanStack Query caches. Ensures no stale data after a connectivity gap. Token refresh triggers socket reconnection with updated auth. — 2026-03-01
 
 D-080: JS connector scripts compiled once at deploy, not per-message — `compileScript()` called during `deploy()` and result captured in closure. `setScriptRunner` callback reuses pre-compiled script. Eliminates redundant esbuild transpilation on every message. Compile failures surface at deploy time, not at first message. — 2026-03-02

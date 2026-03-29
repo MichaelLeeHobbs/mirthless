@@ -27,7 +27,7 @@ export class CertificateController {
     const result = await CertificateService.list(query);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list certificates');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list certificates');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -41,7 +41,7 @@ export class CertificateController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, certificateId: id }, 'Failed to get certificate');
+      logger.warn({ errMsg: result.error.message, certificateId: id }, 'Failed to get certificate');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -56,7 +56,7 @@ export class CertificateController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, name: input.name }, 'Failed to create certificate');
+      logger.warn({ errMsg: result.error.message, name: input.name }, 'Failed to create certificate');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -73,7 +73,7 @@ export class CertificateController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, certificateId: id }, 'Failed to update certificate');
+      logger.warn({ errMsg: result.error.message, certificateId: id }, 'Failed to update certificate');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -89,7 +89,7 @@ export class CertificateController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, certificateId: id }, 'Failed to delete certificate');
+      logger.warn({ errMsg: result.error.message, certificateId: id }, 'Failed to delete certificate');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

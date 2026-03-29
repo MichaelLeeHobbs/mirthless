@@ -25,7 +25,7 @@ export class ResourceController {
     const result = await ResourceService.list();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list resources');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list resources');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -39,7 +39,7 @@ export class ResourceController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, resourceId: id }, 'Failed to get resource');
+      logger.warn({ errMsg: result.error.message, resourceId: id }, 'Failed to get resource');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -54,7 +54,7 @@ export class ResourceController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, name: input.name }, 'Failed to create resource');
+      logger.warn({ errMsg: result.error.message, name: input.name }, 'Failed to create resource');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -71,7 +71,7 @@ export class ResourceController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, resourceId: id }, 'Failed to update resource');
+      logger.warn({ errMsg: result.error.message, resourceId: id }, 'Failed to update resource');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -87,7 +87,7 @@ export class ResourceController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, resourceId: id }, 'Failed to delete resource');
+      logger.warn({ errMsg: result.error.message, resourceId: id }, 'Failed to delete resource');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

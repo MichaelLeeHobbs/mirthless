@@ -20,7 +20,7 @@ export class ConnectionTestController {
     );
 
     if (!result.ok) {
-      logger.warn({ error: result.error, connectorType, mode }, 'Connection test failed');
+      logger.warn({ errMsg: result.error.message, connectorType, mode }, 'Connection test failed');
       res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }

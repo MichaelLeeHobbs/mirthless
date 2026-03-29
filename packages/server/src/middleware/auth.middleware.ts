@@ -98,7 +98,7 @@ export async function authenticate(
     }
     next();
   } catch (error) {
-    logger.debug({ error }, 'Token verification failed');
+    logger.debug({ errMsg: error instanceof Error ? error.message : String(error) }, 'Token verification failed');
     res.status(401).json({ success: false, error: 'Invalid or expired token' });
   }
 }

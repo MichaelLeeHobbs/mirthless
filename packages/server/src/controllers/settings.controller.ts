@@ -32,7 +32,7 @@ export class SettingsController {
     );
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list settings');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list settings');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -46,7 +46,7 @@ export class SettingsController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, key }, 'Failed to get setting');
+      logger.warn({ errMsg: result.error.message, key }, 'Failed to get setting');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -64,7 +64,7 @@ export class SettingsController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, key }, 'Failed to upsert setting');
+      logger.warn({ errMsg: result.error.message, key }, 'Failed to upsert setting');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -79,7 +79,7 @@ export class SettingsController {
     const result = await SettingsService.bulkUpsert(settings, context);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to bulk upsert settings');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to bulk upsert settings');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -95,7 +95,7 @@ export class SettingsController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, key }, 'Failed to delete setting');
+      logger.warn({ errMsg: result.error.message, key }, 'Failed to delete setting');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

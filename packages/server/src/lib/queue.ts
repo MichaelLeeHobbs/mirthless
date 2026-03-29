@@ -22,11 +22,11 @@ export async function startQueue(): Promise<PgBoss> {
   });
 
   boss.on('error', (err: Error) => {
-    logger.error({ error: err.message }, 'pgboss error');
+    logger.error({ errMsg: err.message, stack: err.stack }, 'pgboss error');
   });
 
   await boss.start();
-  logger.info('pgboss started');
+  logger.info({ component: 'pgboss' }, 'pgboss started');
   return boss;
 }
 
@@ -34,6 +34,6 @@ export async function stopQueue(): Promise<void> {
   if (boss) {
     await boss.stop({ graceful: true, timeout: 10_000 });
     boss = null;
-    logger.info('pgboss stopped');
+    logger.info({ component: 'pgboss' }, 'pgboss stopped');
   }
 }

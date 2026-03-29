@@ -26,7 +26,7 @@ export class PrunerSchedulerController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.error({ error: result.error }, 'Failed to get pruner status');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to get pruner status');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -40,7 +40,7 @@ export class PrunerSchedulerController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.error({ error: result.error }, 'Failed to update pruner schedule');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to update pruner schedule');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

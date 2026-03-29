@@ -3,7 +3,7 @@
 // ===========================================
 // Main dashboard table showing all channels with stats and deployment state.
 
-import { useState, useMemo, type ReactNode } from 'react';
+import { useState, useMemo, useCallback, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Table from '@mui/material/Table';
@@ -28,6 +28,7 @@ import type { ChannelStatus } from '../../hooks/use-deployment.js';
 import { ChannelActions } from './ChannelActions.js';
 import Checkbox from '@mui/material/Checkbox';
 import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
+import { AssignGroupDialog } from '../common/AssignGroupDialog.js';
 import { useContextMenu } from '../../hooks/use-context-menu.js';
 
 interface ChannelStatusTableProps {
@@ -80,6 +81,11 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
   const [sortField, setSortField] = useState<SortField>('channelName');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const { menuState, menuTarget, handleContextMenu, handleClose } = useContextMenu<ChannelRow>();
+  const [assignGroupTarget, setAssignGroupTarget] = useState<string | null>(null);
+
+  const handleChangeGroup = useCallback((channelId: string): void => {
+    setAssignGroupTarget(channelId);
+  }, []);
 
   // Merge statistics and deployment statuses
   const deploymentMap = useMemo(() => {
@@ -261,7 +267,7 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
                       component="button"
                       variant="body2"
                       underline="hover"
-                      onClick={() => navigate(`/channels/${row.channelId}`)}
+                      onClick={() => navigate(`/channels/${row.channelId}/messages`)}
                       sx={{ fontWeight: 500 }}
                     >
                       {row.channelName}
@@ -307,7 +313,15 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
         state={menuTarget === null ? null : (menuTarget.state === 'UNDEPLOYED' ? null : menuTarget.state)}
         onClose={handleClose}
         onSendMessage={onSendMessage}
+        onChangeGroup={handleChangeGroup}
       />
+      {assignGroupTarget ? (
+        <AssignGroupDialog
+          open
+          onClose={() => { setAssignGroupTarget(null); }}
+          channelId={assignGroupTarget}
+        />
+      ) : null}
     </Paper>
   );
 }

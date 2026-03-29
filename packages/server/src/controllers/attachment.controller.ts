@@ -25,7 +25,7 @@ export class AttachmentController {
     const result = await AttachmentService.listByMessage(channelId, messageId);
 
     if (!result.ok) {
-      logger.error({ error: result.error, channelId, messageId }, 'Failed to list attachments');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack, channelId, messageId }, 'Failed to list attachments');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -41,7 +41,7 @@ export class AttachmentController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId, messageId, attachmentId }, 'Failed to get attachment');
+      logger.warn({ errMsg: result.error.message, channelId, messageId, attachmentId }, 'Failed to get attachment');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

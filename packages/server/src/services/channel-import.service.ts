@@ -130,7 +130,7 @@ async function createChannel(
   // Create partitions (non-blocking)
   const partResult = await PartitionManagerService.createPartitions(entry.id);
   if (!partResult.ok) {
-    logger.warn({ channelId: entry.id, error: partResult.error }, 'Failed to create partitions for imported channel');
+    logger.warn({ channelId: entry.id, errMsg: partResult.error.message }, 'Failed to create partitions for imported channel');
   }
 
   return 'created';

@@ -33,7 +33,7 @@ export class MessageController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId }, 'Failed to search messages');
+      logger.warn({ errMsg: result.error.message, channelId }, 'Failed to search messages');
       res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
       return;
     }
@@ -64,7 +64,7 @@ export class MessageController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId, msgId }, 'Failed to delete message');
+      logger.warn({ errMsg: result.error.message, channelId, msgId }, 'Failed to delete message');
       res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
       return;
     }

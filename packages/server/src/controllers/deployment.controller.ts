@@ -16,7 +16,7 @@ export class DeploymentController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId: id }, 'Failed to deploy channel');
+      logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to deploy channel');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -146,7 +146,7 @@ export class DeploymentController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId: id }, 'Failed to send message');
+      logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to send message');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

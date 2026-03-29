@@ -22,7 +22,7 @@ export class AuthController {
     const result = await AuthService.login(username, password, metadata);
 
     if (!result.ok) {
-      logger.warn({ username, error: result.error.toString() }, 'Login failed');
+      logger.warn({ username, errMsg: result.error.message }, 'Login failed');
 
       if (isServiceError(result.error, 'ACCOUNT_LOCKED')) {
         const details = result.error.details;
@@ -92,7 +92,7 @@ export class AuthController {
     if (sessionId) {
       const result = await AuthService.logout(sessionId);
       if (!result.ok) {
-        logger.error({ error: result.error }, 'Logout failed');
+        logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Logout failed');
       }
     }
 

@@ -18,7 +18,7 @@ export class ScriptValidationController {
     const result = await ScriptValidationService.validate(script, language);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Script validation service error');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Script validation service error');
       res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }

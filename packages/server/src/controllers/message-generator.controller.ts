@@ -14,7 +14,7 @@ export class MessageGeneratorController {
     const result = MessageGeneratorService.generate(input);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to generate messages');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to generate messages');
       res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }

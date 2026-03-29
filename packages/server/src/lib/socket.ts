@@ -112,7 +112,7 @@ export function initializeSocketIO(httpServer: HttpServer): SocketIOServer {
   io.use(authMiddleware);
   registerConnectionHandlers(io);
 
-  logger.info('Socket.IO initialized');
+  logger.info({ component: 'socketio' }, 'Socket.IO initialized');
   return io;
 }
 
@@ -148,7 +148,7 @@ export async function shutdownSocketIO(): Promise<void> {
       io!.close(() => resolve());
     });
     io = null;
-    logger.info('Socket.IO shut down');
+    logger.info({ component: 'socketio' }, 'Socket.IO shut down');
   }
 }
 

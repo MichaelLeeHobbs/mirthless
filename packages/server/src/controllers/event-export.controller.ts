@@ -18,7 +18,7 @@ export class EventExportController {
       const result = await EventExportService.exportAsCsv(query);
 
       if (!result.ok) {
-        logger.error({ error: result.error }, 'Failed to export events as CSV');
+        logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to export events as CSV');
         res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
         return;
       }
@@ -32,7 +32,7 @@ export class EventExportController {
     const result = await EventExportService.exportAsJson(query);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to export events as JSON');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to export events as JSON');
       res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }

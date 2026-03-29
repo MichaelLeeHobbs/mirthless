@@ -22,7 +22,7 @@ export class MirthImportController {
     );
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Mirth Connect XML import failed');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Mirth Connect XML import failed');
       res.status(400).json({
         success: false,
         error: { code: 'IMPORT_FAILED', message: result.error.message ?? 'Failed to import Mirth Connect XML' },
@@ -40,7 +40,7 @@ export class MirthImportController {
     const convertResult = MirthImportService.convertXml(input.xml);
 
     if (!convertResult.ok) {
-      logger.error({ error: convertResult.error }, 'Mirth Connect XML preview failed');
+      logger.error({ errMsg: convertResult.error.message, stack: convertResult.error.stack }, 'Mirth Connect XML preview failed');
       res.status(400).json({
         success: false,
         error: { code: 'PARSE_FAILED', message: convertResult.error.message ?? 'Failed to parse Mirth Connect XML' },

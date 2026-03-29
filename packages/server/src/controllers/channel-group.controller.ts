@@ -26,7 +26,7 @@ export class ChannelGroupController {
     const result = await ChannelGroupService.listGroups();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list channel groups');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list channel groups');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -38,7 +38,7 @@ export class ChannelGroupController {
     const result = await ChannelGroupService.listMemberships();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list group memberships');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list group memberships');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -52,7 +52,7 @@ export class ChannelGroupController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, groupId: id }, 'Failed to get channel group');
+      logger.warn({ errMsg: result.error.message, groupId: id }, 'Failed to get channel group');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -67,7 +67,7 @@ export class ChannelGroupController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, name: input.name }, 'Failed to create channel group');
+      logger.warn({ errMsg: result.error.message, name: input.name }, 'Failed to create channel group');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -84,7 +84,7 @@ export class ChannelGroupController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, groupId: id }, 'Failed to update channel group');
+      logger.warn({ errMsg: result.error.message, groupId: id }, 'Failed to update channel group');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -100,7 +100,7 @@ export class ChannelGroupController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, groupId: id }, 'Failed to delete channel group');
+      logger.warn({ errMsg: result.error.message, groupId: id }, 'Failed to delete channel group');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -117,7 +117,7 @@ export class ChannelGroupController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, groupId, channelId }, 'Failed to add member');
+      logger.warn({ errMsg: result.error.message, groupId, channelId }, 'Failed to add member');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -133,7 +133,7 @@ export class ChannelGroupController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, groupId, channelId }, 'Failed to remove member');
+      logger.warn({ errMsg: result.error.message, groupId, channelId }, 'Failed to remove member');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

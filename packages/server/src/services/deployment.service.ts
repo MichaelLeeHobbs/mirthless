@@ -83,9 +83,22 @@ export class DeploymentService {
         serverId: null, ipAddress: context?.ipAddress ?? null, attributes: null,
       });
 
-      emitStateChange(channelId, CHANNEL_STATE.STOPPED);
+      // Auto-start if channel's initialState calls for it
+      let finalState: ChannelState = CHANNEL_STATE.STOPPED;
+      if (channel.initialState === 'STARTED' || channel.initialState === 'PAUSED') {
+        const startResult = await DeploymentService.start(channelId, context);
+        if (startResult.ok) {
+          finalState = CHANNEL_STATE.STARTED;
+          if (channel.initialState === 'PAUSED') {
+            const pauseResult = await DeploymentService.pause(channelId, context);
+            if (pauseResult.ok) finalState = CHANNEL_STATE.PAUSED;
+          }
+        }
+      }
 
-      return { channelId, state: CHANNEL_STATE.STOPPED };
+      emitStateChange(channelId, finalState);
+
+      return { channelId, state: finalState };
     });
   }
 
@@ -267,7 +280,7 @@ export class DeploymentService {
   static async autoDeployChannels(): Promise<void> {
     const listResult = await ChannelService.list({ page: 1, pageSize: 1000 });
     if (!listResult.ok) {
-      logger.error({ errMsg: listResult.error.message }, 'Failed to list channels for auto-deploy');
+      logger.error({ errMsg: listResult.error.message, stack: listResult.error.stack }, 'Failed to list channels for auto-deploy');
       return;
     }
 

@@ -26,7 +26,7 @@ export class ServerBackupController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.error({ error: result.error }, 'Failed to export backup');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to export backup');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -41,7 +41,7 @@ export class ServerBackupController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.error({ error: result.error }, 'Failed to restore backup');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to restore backup');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

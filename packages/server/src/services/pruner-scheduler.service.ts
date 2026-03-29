@@ -50,7 +50,7 @@ export class PrunerSchedulerService {
     return tryCatch(async () => {
       const boss = getBoss();
       if (!boss) {
-        logger.warn('pg-boss not available, pruner scheduler not started');
+        logger.warn({ component: 'pruner' }, 'pg-boss not available, pruner scheduler not started');
         return;
       }
 
@@ -58,7 +58,7 @@ export class PrunerSchedulerService {
       if (!workerRegistered) {
         await boss.createQueue(JOB_NAME);
         await boss.work(JOB_NAME, async () => {
-          logger.info('Auto data pruner triggered');
+          logger.info({ component: 'pruner' }, 'Auto data pruner triggered');
           const result = await DataPrunerService.pruneAll();
           const now = new Date().toISOString();
           lastRunAt = now;
@@ -72,7 +72,7 @@ export class PrunerSchedulerService {
             logger.info({ result: result.value }, 'Auto data pruner completed');
           } else {
             lastRunResult = { channelsPruned: 0, totalDeleted: 0, completedAt: now };
-            logger.error({ error: result.error }, 'Auto data pruner failed');
+            logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Auto data pruner failed');
           }
         });
         workerRegistered = true;
@@ -89,7 +89,7 @@ export class PrunerSchedulerService {
         await boss.schedule(JOB_NAME, cron, {});
         logger.info({ cron }, 'Pruner scheduler started');
       } else {
-        logger.info('Pruner scheduler disabled');
+        logger.info({ component: 'pruner' }, 'Pruner scheduler disabled');
       }
     });
   }
@@ -101,7 +101,7 @@ export class PrunerSchedulerService {
       if (!boss) return;
 
       await boss.unschedule(JOB_NAME);
-      logger.info('Pruner scheduler stopped');
+      logger.info({ component: 'pruner' }, 'Pruner scheduler stopped');
     });
   }
 
@@ -148,7 +148,7 @@ export class PrunerSchedulerService {
           await boss.schedule(JOB_NAME, input.cronExpression, {});
           logger.info({ cron: input.cronExpression }, 'Pruner schedule updated');
         } else {
-          logger.info('Pruner schedule disabled');
+          logger.info({ component: 'pruner' }, 'Pruner schedule disabled');
         }
       }
 

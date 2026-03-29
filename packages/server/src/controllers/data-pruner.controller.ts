@@ -37,7 +37,7 @@ export class DataPrunerController {
     const result = await DataPrunerService.pruneAll(auditContext(req));
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to prune all channels');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to prune all channels');
       res.status(500).json({
         success: false,
         error: { code: 'INTERNAL', message: 'Internal server error' },
@@ -81,7 +81,7 @@ export class DataPrunerController {
     const result = await DataPrunerService.getStatistics();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to get pruner statistics');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to get pruner statistics');
       res.status(500).json({
         success: false,
         error: { code: 'INTERNAL', message: 'Internal server error' },

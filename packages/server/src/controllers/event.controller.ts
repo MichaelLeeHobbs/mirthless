@@ -25,7 +25,7 @@ export class EventController {
     const result = await EventService.list(query);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list events');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list events');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -39,7 +39,7 @@ export class EventController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, eventId: id }, 'Failed to get event');
+      logger.warn({ errMsg: result.error.message, eventId: id }, 'Failed to get event');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -52,7 +52,7 @@ export class EventController {
     const result = await EventService.purge(olderThanDays);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to purge events');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to purge events');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }

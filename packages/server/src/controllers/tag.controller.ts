@@ -25,7 +25,7 @@ export class TagController {
     const result = await TagService.listTags();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list tags');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list tags');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -37,7 +37,7 @@ export class TagController {
     const result = await TagService.listAssignments();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list tag assignments');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list tag assignments');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -52,7 +52,7 @@ export class TagController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, name: input.name }, 'Failed to create tag');
+      logger.warn({ errMsg: result.error.message, name: input.name }, 'Failed to create tag');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -69,7 +69,7 @@ export class TagController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, tagId: id }, 'Failed to update tag');
+      logger.warn({ errMsg: result.error.message, tagId: id }, 'Failed to update tag');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -85,7 +85,7 @@ export class TagController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, tagId: id }, 'Failed to delete tag');
+      logger.warn({ errMsg: result.error.message, tagId: id }, 'Failed to delete tag');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -102,7 +102,7 @@ export class TagController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, tagId, channelId }, 'Failed to assign tag');
+      logger.warn({ errMsg: result.error.message, tagId, channelId }, 'Failed to assign tag');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -118,7 +118,7 @@ export class TagController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, tagId, channelId }, 'Failed to unassign tag');
+      logger.warn({ errMsg: result.error.message, tagId, channelId }, 'Failed to unassign tag');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

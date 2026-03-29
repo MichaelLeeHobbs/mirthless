@@ -43,7 +43,7 @@ export class StatisticsController {
     const result = await StatisticsService.getAllChannelStatistics();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to get all channel statistics');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to get all channel statistics');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }

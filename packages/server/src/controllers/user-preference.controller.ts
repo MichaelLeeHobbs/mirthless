@@ -25,7 +25,7 @@ export class UserPreferenceController {
     const result = await UserPreferenceService.list(userId);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list user preferences');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list user preferences');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -40,7 +40,7 @@ export class UserPreferenceController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, key }, 'Failed to get user preference');
+      logger.warn({ errMsg: result.error.message, key }, 'Failed to get user preference');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -54,7 +54,7 @@ export class UserPreferenceController {
     const result = await UserPreferenceService.upsert(userId, input.key, input.value);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to upsert user preference');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to upsert user preference');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -68,7 +68,7 @@ export class UserPreferenceController {
     const result = await UserPreferenceService.bulkUpsert(userId, input.entries);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to bulk upsert user preferences');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to bulk upsert user preferences');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -83,7 +83,7 @@ export class UserPreferenceController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, key }, 'Failed to delete user preference');
+      logger.warn({ errMsg: result.error.message, key }, 'Failed to delete user preference');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

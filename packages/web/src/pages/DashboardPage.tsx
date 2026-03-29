@@ -11,10 +11,12 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAllChannelStatistics, STATS_KEYS, type ChannelStatisticsSummary } from '../hooks/use-statistics.js';
 import { useAllDeploymentStatuses, DEPLOYMENT_KEYS, type ChannelStatus } from '../hooks/use-deployment.js';
@@ -27,6 +29,7 @@ import { TagFilter } from '../components/dashboard/TagFilter.js';
 import { GroupedChannelTable } from '../components/dashboard/GroupedChannelTable.js';
 import { BulkActionsToolbar } from '../components/dashboard/BulkActionsToolbar.js';
 import { SendMessageDialog } from '../components/common/SendMessageDialog.js';
+import { CreateGroupDialog } from '../components/dashboard/CreateGroupDialog.js';
 import { useChannelSelection } from '../hooks/use-channel-selection.js';
 
 const EMPTY_STATS: readonly ChannelStatisticsSummary[] = [];
@@ -50,6 +53,7 @@ export function DashboardPage(): ReactNode {
   const [selectedTagIds, setSelectedTagIds] = useState<readonly string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('grouped');
   const [sendMessageTarget, setSendMessageTarget] = useState<{ id: string; name: string } | null>(null);
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const selection = useChannelSelection();
 
   const statistics = statsQuery.data ?? EMPTY_STATS;
@@ -129,6 +133,14 @@ export function DashboardPage(): ReactNode {
           {(statsQuery.isFetching || deployQuery.isFetching) && !isLoading && (
             <CircularProgress size={20} />
           )}
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<CreateNewFolderIcon />}
+            onClick={() => { setCreateGroupOpen(true); }}
+          >
+            New Group
+          </Button>
           <ToggleButtonGroup
             value={viewMode}
             exclusive
@@ -203,6 +215,10 @@ export function DashboardPage(): ReactNode {
           channelName={sendMessageTarget.name}
         />
       ) : null}
+      <CreateGroupDialog
+        open={createGroupOpen}
+        onClose={() => { setCreateGroupOpen(false); }}
+      />
     </Box>
   );
 }

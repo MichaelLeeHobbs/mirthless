@@ -34,7 +34,7 @@ export class CodeTemplateController {
     const result = await CodeTemplateService.listLibraries();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list libraries');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list libraries');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -49,7 +49,7 @@ export class CodeTemplateController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, name: input.name }, 'Failed to create library');
+      logger.warn({ errMsg: result.error.message, name: input.name }, 'Failed to create library');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -66,7 +66,7 @@ export class CodeTemplateController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, libraryId: id }, 'Failed to update library');
+      logger.warn({ errMsg: result.error.message, libraryId: id }, 'Failed to update library');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -82,7 +82,7 @@ export class CodeTemplateController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, libraryId: id }, 'Failed to delete library');
+      logger.warn({ errMsg: result.error.message, libraryId: id }, 'Failed to delete library');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -98,7 +98,7 @@ export class CodeTemplateController {
     const result = await CodeTemplateService.listTemplates(query.libraryId);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list templates');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list templates');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -113,7 +113,7 @@ export class CodeTemplateController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, name: input.name }, 'Failed to create template');
+      logger.warn({ errMsg: result.error.message, name: input.name }, 'Failed to create template');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -130,7 +130,7 @@ export class CodeTemplateController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, templateId: id }, 'Failed to update template');
+      logger.warn({ errMsg: result.error.message, templateId: id }, 'Failed to update template');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -146,7 +146,7 @@ export class CodeTemplateController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, templateId: id }, 'Failed to delete template');
+      logger.warn({ errMsg: result.error.message, templateId: id }, 'Failed to delete template');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

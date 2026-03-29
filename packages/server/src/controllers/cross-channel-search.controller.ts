@@ -22,7 +22,7 @@ export class CrossChannelSearchController {
     const result = await CrossChannelSearchService.search(filters);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to search messages across channels');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to search messages across channels');
       res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }

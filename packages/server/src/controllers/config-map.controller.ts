@@ -26,7 +26,7 @@ export class ConfigMapController {
     const result = await ConfigMapService.list(query);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list config map entries');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list config map entries');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -41,7 +41,7 @@ export class ConfigMapController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, category, name }, 'Failed to get config map entry');
+      logger.warn({ errMsg: result.error.message, category, name }, 'Failed to get config map entry');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -57,7 +57,7 @@ export class ConfigMapController {
     const result = await ConfigMapService.upsert(category, name, input.value, context);
 
     if (!result.ok) {
-      logger.error({ error: result.error, category, name }, 'Failed to upsert config map entry');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack, category, name }, 'Failed to upsert config map entry');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -72,7 +72,7 @@ export class ConfigMapController {
     const result = await ConfigMapService.bulkUpsert(input.entries, context);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to bulk upsert config map entries');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to bulk upsert config map entries');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -89,7 +89,7 @@ export class ConfigMapController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, category, name }, 'Failed to delete config map entry');
+      logger.warn({ errMsg: result.error.message, category, name }, 'Failed to delete config map entry');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

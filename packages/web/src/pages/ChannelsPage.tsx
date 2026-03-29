@@ -43,6 +43,7 @@ import { ExportButton } from '../components/channels/ExportButton.js';
 import { ImportDialog } from '../components/channels/ImportDialog.js';
 import { GroupManagementDialog } from '../components/channels/GroupManagementDialog.js';
 import { ChannelContextMenu } from '../components/common/ChannelContextMenu.js';
+import { AssignGroupDialog } from '../components/common/AssignGroupDialog.js';
 import { SendMessageDialog } from '../components/common/SendMessageDialog.js';
 
 const CONNECTOR_TYPE_LABELS: Readonly<Record<string, string>> = {
@@ -82,6 +83,7 @@ export function ChannelsPage(): ReactNode {
   const toggleEnabled = useToggleChannelEnabled();
   const cloneChannel = useCloneChannel();
   const deployQuery = useAllDeploymentStatuses();
+  const [assignGroupTarget, setAssignGroupTarget] = useState<string | null>(null);
   const { menuState, menuTarget, handleContextMenu, handleClose: closeMenu } = useContextMenu<ChannelSummary>();
 
   // Build deployment state map for context menu
@@ -95,6 +97,10 @@ export function ChannelsPage(): ReactNode {
 
   const handleSendMessage = useCallback((channelId: string, channelName: string): void => {
     setSendMessageTarget({ id: channelId, name: channelName });
+  }, []);
+
+  const handleChangeGroup = useCallback((channelId: string): void => {
+    setAssignGroupTarget(channelId);
   }, []);
 
   // Client-side search filter on the current page of results
@@ -376,7 +382,17 @@ export function ChannelsPage(): ReactNode {
           if (ch) setDeleteTarget(ch);
         } : undefined}
         onSendMessage={handleSendMessage}
+        onChangeGroup={handleChangeGroup}
       />
+
+      {/* Assign Group Dialog */}
+      {assignGroupTarget ? (
+        <AssignGroupDialog
+          open
+          onClose={() => { setAssignGroupTarget(null); }}
+          channelId={assignGroupTarget}
+        />
+      ) : null}
 
       {/* Clone Channel Dialog */}
       <Dialog open={cloneTarget !== null} onClose={() => { setCloneTarget(null); }}>

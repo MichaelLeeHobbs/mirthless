@@ -46,36 +46,37 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string) => v
     deps.logger.info({ signal }, 'Received signal, starting graceful shutdown');
 
     const forceTimer = setTimeout(() => {
-      deps.logger.error('Graceful shutdown timed out, forcing exit');
+      deps.logger.error({ phase: 'shutdown', errMsg: 'Timeout exceeded' }, 'Graceful shutdown timed out, forcing exit');
       process.exit(1);
     }, DRAIN_TIMEOUT_MS);
     forceTimer.unref();
 
     void (async (): Promise<void> => {
       try {
-        deps.logger.info('Closing HTTP server...');
+        deps.logger.info({ phase: 'shutdown', step: 'http' }, 'Closing HTTP server');
         await deps.stopAccepting();
 
-        deps.logger.info('Stopping engine...');
+        deps.logger.info({ phase: 'shutdown', step: 'engine' }, 'Stopping engine');
         await deps.stopEngine();
 
-        deps.logger.info('Shutting down Socket.IO...');
+        deps.logger.info({ phase: 'shutdown', step: 'socketio' }, 'Shutting down Socket.IO');
         await deps.stopSocketIO();
 
-        deps.logger.info('Stopping pruner scheduler...');
+        deps.logger.info({ phase: 'shutdown', step: 'pruner' }, 'Stopping pruner scheduler');
         await deps.stopPrunerScheduler();
 
-        deps.logger.info('Stopping job queue...');
+        deps.logger.info({ phase: 'shutdown', step: 'queue' }, 'Stopping job queue');
         await deps.stopQueue();
 
-        deps.logger.info('Closing database pool...');
+        deps.logger.info({ phase: 'shutdown', step: 'database' }, 'Closing database pool');
         await deps.closePool();
 
-        deps.logger.info('Graceful shutdown complete');
+        deps.logger.info({ phase: 'shutdown' }, 'Graceful shutdown complete');
         process.exit(0);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        deps.logger.error({ error: message }, 'Error during shutdown');
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack : undefined;
+        deps.logger.error({ errMsg, stack, phase: 'shutdown' }, 'Error during shutdown');
         process.exit(1);
       }
     })();

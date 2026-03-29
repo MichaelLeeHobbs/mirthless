@@ -17,7 +17,7 @@ const pool = new pg.Pool({
 });
 
 pool.on('error', (err) => {
-  logger.error({ error: err.message }, 'Unexpected database pool error');
+  logger.error({ errMsg: err.message, stack: err.stack }, 'Unexpected database pool error');
 });
 
 export { pool };

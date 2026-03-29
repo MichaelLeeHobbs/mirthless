@@ -226,7 +226,7 @@ export class EngineManager {
     const emailSender = async (to: readonly string[], subject: string, body: string): Promise<void> => {
       const result = await EmailService.sendMail(to, subject, body);
       if (!result.ok) {
-        logger.error({ error: result.error }, 'Failed to send alert email');
+        logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to send alert email');
       }
     };
 
@@ -549,7 +549,7 @@ export class EngineManager {
     const sourceScript = (channel.sourceConnectorProperties as { script: string }).script;
     const compiled = await compileScript(sourceScript, { sourcefile: `${channel.name}/js-source.js` });
     if (!compiled.ok) {
-      logger.error({ error: compiled.error }, 'Failed to compile JS source script');
+      logger.error({ errMsg: compiled.error.message, stack: compiled.error.stack }, 'Failed to compile JS source script');
       return;
     }
     const cachedScript = compiled.value;
@@ -574,7 +574,7 @@ export class EngineManager {
       const destScript = (dest.properties as { script: string }).script;
       const compiled = await compileScript(destScript, { sourcefile: `${channel.name}/js-dest-${String(dest.metaDataId)}.js` });
       if (!compiled.ok) {
-        logger.error({ error: compiled.error, metaDataId: dest.metaDataId }, 'Failed to compile JS dest script');
+        logger.error({ errMsg: compiled.error.message, stack: compiled.error.stack, metaDataId: dest.metaDataId }, 'Failed to compile JS dest script');
         continue;
       }
       const cachedScript = compiled.value;

@@ -2,6 +2,49 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-03-29 — Deep Review Round 4: Performance, Pipeline Fixes, UX
+
+### Pipeline Fixes
+- **Transformer `msg =` assignment** — `compileTransformerStepsToScript()` now returns `msg` instead of `tmp`, fixing the core transformer pattern where scripts modify `msg` in-place
+- **Stale AbortSignal** — `DEFAULT_EXECUTION_OPTIONS.signal` was a one-time `AbortSignal.timeout(30s)` created at module load; expired after 30s, breaking all subsequent deploy scripts. Now created fresh per execution.
+- **CHANNEL source connector deploy** — Auto-inject `channelId` into source connector properties
+- **Deploy respects initialState** — Manual deploy now auto-starts/pauses based on channel's `initialState` setting
+- **Channel auto-deploy on startup** — `DeploymentService.autoDeployChannels()` wired into server startup
+
+### Performance (message processing: 420ms → 13ms)
+- **Batched DB operations** — `initializeMessage()` CTE combines 5 queries into 1 round-trip; `finalizeMessage()` CTE combines 3 into 1
+- **Pipeline parallelization** — `Promise.all` for independent store operations within each stage
+- **Root cause: Docker Postgres WAL fsync** — Individual INSERT takes 44ms in Docker vs 0.36ms native (122x). Created `scripts/bench-db.mjs` benchmark to prove this.
+- **Pipeline timing instrumentation** — `onTiming` callback with per-stage `StageTiming` data, enabled at `LOG_LEVEL=debug`
+
+### Message Tracking
+- **`processedAt` timestamp** — New column on messages table, set by `markProcessed()`. UI shows duration in message table + detail panel.
+- **`correlationId`** — UUID column on messages for cross-channel tracing. Auto-generated on first entry, propagated through channel-to-channel routing via sourceMap. Indexed for query-time tracing.
+
+### Logging Standards
+- **Updated `docs/standards/LoggingStandard.md`** — Section 5 rewritten: `requestId` (HTTP), `correlationId` (messages), protocol-specific IDs
+- **Codebase alignment** — 38 server files updated: `error:` → `errMsg:` + `stack`, static messages, object-first pattern
+- **HTTP log verbosity** — `LOG_HTTP_HEADERS` config (default: false) controls request/response header logging
+
+### UI/UX
+- **Dashboard channel name → messages** — Clicking channel name navigates to message browser, not editor
+- **Channel Settings tab** — Merged "Summary" + "Advanced" tabs into single "Channel Settings" with collapsible Accordion sections
+- **Group CRUD** — "New Group" button on dashboard, group kebab menu (rename/delete), "Change Group" in channel context menu with AssignGroupDialog
+- **Send Message fire-and-forget** — Dialog closes immediately, notifications arrive async
+- **Context menu fix** — Right-clicking new row while menu open no longer shows browser context menu
+
+### Developer Experience
+- **`pnpm db:init`** — Cross-platform database initialization (Node.js + bash + PowerShell scripts)
+- **`pnpm db:bench`** — Database latency benchmark
+- **Idempotent migrations** — All SQL migrations use IF NOT EXISTS / IF EXISTS guards
+- **`scripts/patch-migrations.mjs`** — Utility to re-apply idempotency to drizzle-generated migrations
+- **package.json reorganized** — Scripts grouped with section separators
+
+### Documentation
+- **Added `docs/standards/`** — CodingStandard.md, LoggingStandard.md, ReferenceConfigs.md
+- **Replaced STATUS.md with ROADMAP.md** — Git is source of truth for what's done; ROADMAP tracks what's planned
+- **CLAUDE.md** — References to standards docs, updated module structure
+
 ## 2026-03-03 — Phase 28: Deep Polish
 
 ### What was done:

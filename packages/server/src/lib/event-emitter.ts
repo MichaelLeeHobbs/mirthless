@@ -21,9 +21,9 @@ export interface AuditContext {
 export function emitEvent(input: CreateEventInput): void {
   EventService.create(input).then((result) => {
     if (!result.ok) {
-      logger.warn({ error: result.error, event: input.name }, 'Failed to emit event');
+      logger.warn({ errMsg: result.error.message, event: input.name }, 'Failed to emit event');
     }
   }).catch((err: unknown) => {
-    logger.warn({ error: err, event: input.name }, 'Failed to emit event');
+    logger.warn({ errMsg: err instanceof Error ? err.message : String(err), event: input.name }, 'Failed to emit event');
   });
 }

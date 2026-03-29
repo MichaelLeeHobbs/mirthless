@@ -13,7 +13,7 @@ export class SystemInfoController {
     const result = await SystemInfoService.getInfo();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to get system info');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to get system info');
       res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }

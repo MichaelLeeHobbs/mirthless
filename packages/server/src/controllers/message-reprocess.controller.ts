@@ -26,7 +26,7 @@ export class MessageReprocessController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId, messageId }, 'Failed to get raw content for reprocess');
+      logger.warn({ errMsg: result.error.message, channelId, messageId }, 'Failed to get raw content for reprocess');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -42,7 +42,7 @@ export class MessageReprocessController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId }, 'Failed to bulk delete messages');
+      logger.warn({ errMsg: result.error.message, channelId }, 'Failed to bulk delete messages');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

@@ -32,7 +32,7 @@ export class AlertController {
     const result = await AlertService.list(query);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list alerts');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list alerts');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -46,7 +46,7 @@ export class AlertController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, alertId: id }, 'Failed to get alert');
+      logger.warn({ errMsg: result.error.message, alertId: id }, 'Failed to get alert');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -61,7 +61,7 @@ export class AlertController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, name: input.name }, 'Failed to create alert');
+      logger.warn({ errMsg: result.error.message, name: input.name }, 'Failed to create alert');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -78,7 +78,7 @@ export class AlertController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, alertId: id }, 'Failed to update alert');
+      logger.warn({ errMsg: result.error.message, alertId: id }, 'Failed to update alert');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -94,7 +94,7 @@ export class AlertController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, alertId: id }, 'Failed to delete alert');
+      logger.warn({ errMsg: result.error.message, alertId: id }, 'Failed to delete alert');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -110,7 +110,7 @@ export class AlertController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, alertId: id }, 'Failed to toggle alert enabled');
+      logger.warn({ errMsg: result.error.message, alertId: id }, 'Failed to toggle alert enabled');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

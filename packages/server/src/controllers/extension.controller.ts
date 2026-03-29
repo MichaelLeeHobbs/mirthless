@@ -23,7 +23,7 @@ export class ExtensionController {
     const result = await ExtensionService.list();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list extensions');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list extensions');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -37,7 +37,7 @@ export class ExtensionController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, extensionId: id }, 'Failed to get extension');
+      logger.warn({ errMsg: result.error.message, extensionId: id }, 'Failed to get extension');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -52,7 +52,7 @@ export class ExtensionController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, extensionId: id }, 'Failed to set extension enabled');
+      logger.warn({ errMsg: result.error.message, extensionId: id }, 'Failed to set extension enabled');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

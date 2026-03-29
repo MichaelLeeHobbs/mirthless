@@ -21,7 +21,7 @@ export class ChannelExportController {
         res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Channel not found' } });
         return;
       }
-      logger.error({ error: result.error }, 'Failed to export channel');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to export channel');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Export failed' } });
       return;
     }
@@ -34,7 +34,7 @@ export class ChannelExportController {
     const result = await ChannelExportService.exportAll();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to export all channels');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to export all channels');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Export failed' } });
       return;
     }
@@ -49,7 +49,7 @@ export class ChannelExportController {
     const result = await ChannelImportService.importChannels(input.channels, input.collisionMode, context);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to import channels');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to import channels');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Import failed' } });
       return;
     }

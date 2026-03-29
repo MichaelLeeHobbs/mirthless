@@ -24,7 +24,7 @@ export class GlobalMapController {
     const result = await GlobalMapService.list();
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list global map entries');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list global map entries');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -38,7 +38,7 @@ export class GlobalMapController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, key }, 'Failed to get global map entry');
+      logger.warn({ errMsg: result.error.message, key }, 'Failed to get global map entry');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
@@ -53,7 +53,7 @@ export class GlobalMapController {
     const result = await GlobalMapService.upsert(key, input.value, context);
 
     if (!result.ok) {
-      logger.error({ error: result.error, key }, 'Failed to upsert global map entry');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack, key }, 'Failed to upsert global map entry');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -67,12 +67,12 @@ export class GlobalMapController {
     const result = await GlobalMapService.clear(context);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to clear global map');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to clear global map');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
 
-    logger.info('Global map cleared');
+    logger.info({ operation: 'clear' }, 'Global map cleared');
     res.status(204).send();
   }
 
@@ -83,7 +83,7 @@ export class GlobalMapController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, key }, 'Failed to delete global map entry');
+      logger.warn({ errMsg: result.error.message, key }, 'Failed to delete global map entry');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }

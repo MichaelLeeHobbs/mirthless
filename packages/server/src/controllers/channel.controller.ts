@@ -33,7 +33,7 @@ export class ChannelController {
     const result = await ChannelService.list(query);
 
     if (!result.ok) {
-      logger.error({ error: result.error }, 'Failed to list channels');
+      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list channels');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
       return;
     }
@@ -61,7 +61,7 @@ export class ChannelController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelName: input.name }, 'Failed to create channel');
+      logger.warn({ errMsg: result.error.message, channelName: input.name }, 'Failed to create channel');
       res.status(status).json({ success: false, error: { code: isServiceError(result.error) ? result.error.code : 'INTERNAL', message: errorMessage(result.error) } });
       return;
     }
@@ -78,7 +78,7 @@ export class ChannelController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId: id }, 'Failed to update channel');
+      logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to update channel');
       res.status(status).json({ success: false, error: { code: isServiceError(result.error) ? result.error.code : 'INTERNAL', message: errorMessage(result.error) } });
       return;
     }
@@ -94,7 +94,7 @@ export class ChannelController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId: id }, 'Failed to delete channel');
+      logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to delete channel');
       res.status(status).json({ success: false, error: { code: isServiceError(result.error) ? result.error.code : 'INTERNAL', message: errorMessage(result.error) } });
       return;
     }
@@ -111,7 +111,7 @@ export class ChannelController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ error: result.error, channelId: id }, 'Failed to clone channel');
+      logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to clone channel');
       res.status(status).json({ success: false, error: { code: isServiceError(result.error) ? result.error.code : 'INTERNAL', message: errorMessage(result.error) } });
       return;
     }
