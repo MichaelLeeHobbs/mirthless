@@ -148,7 +148,13 @@ pnpm docker:reset                     # Reset volumes and restart
 
 ## Coding Standards
 
-Follow **mission-critical-ts** standards strictly:
+Follow **mission-critical-ts** standards strictly. Full standards are in `docs/standards/`:
+
+- [`docs/standards/CodingStandard.md`](docs/standards/CodingStandard.md) — TypeScript rules for mission-critical systems
+- [`docs/standards/LoggingStandard.md`](docs/standards/LoggingStandard.md) — Structured logging, correlation, audit trails
+- [`docs/standards/ReferenceConfigs.md`](docs/standards/ReferenceConfigs.md) — tsconfig, ESLint, utility type reference
+
+Key rules:
 
 - No `any` (use `unknown` + type guards)
 - No enums (use const objects + `as const`)
@@ -274,8 +280,9 @@ mirthless/
 │   ├── web/             — React + MUI admin: channel editor, message browser, dashboard
 │   └── cli/             — CLI for server management
 ├── docker/              — Docker Compose (Postgres, server, web)
-├── drizzle/             — DB migrations and schema
 ├── docs/design/         — Design documents (00-08)
+├── docs/standards/      — Coding, logging, and config standards
+├── scripts/             — DB init, benchmarks, migration utilities
 ├── reference/           — Mirth Connect source + code samples (git-ignored)
 └── pnpm-workspace.yaml
 ```
