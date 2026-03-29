@@ -36,6 +36,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import type { ChannelFormData } from '../../pages/ChannelEditorPage.js';
 import type { AdvancedFormValues, MetadataColumnFormValues } from './AdvancedTab.js';
 import { useChannelGroups, useGroupMemberships, useAddGroupMember, useRemoveGroupMember } from '../../hooks/use-channel-groups.js';
+import { useNotification } from '../../stores/notification.store.js';
 
 const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR'] as const;
 
@@ -84,6 +85,7 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
   const membershipsQuery = useGroupMemberships();
   const addMember = useAddGroupMember();
   const removeMember = useRemoveGroupMember();
+  const { notify } = useNotification();
 
   const channelMemberships = useMemo((): readonly { channelGroupId: string }[] => {
     return (membershipsQuery.data ?? []).filter((m) => m.channelId === channelId);
@@ -105,7 +107,8 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
     if (newGroupId !== NONE_GROUP) {
       addMember.mutate({ groupId: newGroupId, channelId });
     }
-  }, [channelId, channelMemberships, removeMember, addMember]);
+    notify('Channel group updated', 'success');
+  }, [channelId, channelMemberships, removeMember, addMember, notify]);
 
   // ----- Metadata column helpers -----
   const handleAddColumn = (): void => {
