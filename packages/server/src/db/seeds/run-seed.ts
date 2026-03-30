@@ -143,6 +143,11 @@ async function seed(): Promise<void> {
       // eslint-disable-next-line no-console
       console.log('\nSeed complete.');
     });
+
+    // Seed example channels (separate from main transaction — uses channel IDs)
+    const { seedExampleChannels } = await import('./seed-examples.js');
+    const exampleDb = drizzle(pool, { schema });
+    await seedExampleChannels(exampleDb);
   } finally {
     await pool.end();
   }
