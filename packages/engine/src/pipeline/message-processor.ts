@@ -558,7 +558,14 @@ export class MessageProcessor {
     mapState: PipelineMapState,
     extras?: Readonly<Record<string, unknown>> | undefined,
   ): Promise<Result<ExecutionResult>> {
-    const parsedMsg = parseForSandbox(content, this.config.dataType);
+    // Parse content based on data type. If parsing fails (e.g., content was
+    // transformed to a different format), fall back to raw string.
+    let parsedMsg: unknown;
+    try {
+      parsedMsg = parseForSandbox(content, this.config.dataType);
+    } catch {
+      parsedMsg = content;
+    }
     const base = createSandboxContext(parsedMsg, input.rawContent, parsedMsg);
     const gcm = this.config.globalChannelMap;
     const globalMapProxy = this.config.globalMapProxy;
