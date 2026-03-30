@@ -23,6 +23,7 @@
     "@mirthless/core-models": "workspace:*",
     "@mirthless/core-util": "workspace:*",
     "esbuild": "^0.27.3",
+    "fast-xml-parser": "^5.4.2",
     "isolated-vm": "^6.0.2"
   },
   "devDependencies": {

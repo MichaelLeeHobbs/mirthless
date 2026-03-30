@@ -55,7 +55,7 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
   return {
     channelId: '00000000-0000-0000-0000-000000000001',
     serverId: 'server-01',
-    dataType: 'HL7V2',
+    dataType: 'RAW',
     scripts: {},
     destinations: [{
       metaDataId: 1,
@@ -127,7 +127,7 @@ describe('Response Transformer', () => {
     expect(transformedStores[0]![4]).toBe('transformed: original response');
   });
 
-  it('uses original response when transformer returns non-string', async () => {
+  it('serializes non-string response transformer return value', async () => {
     const store = makeStore();
     const sendFn = makeSendFn({ status: 'SENT', content: 'original' });
     const responseTransformerScript = makeScript('return 42;');
@@ -146,7 +146,8 @@ describe('Response Transformer', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.destinationResults[0]!.response).toBe('original');
+    // Non-string return values are now serialized (42 → "42")
+    expect(result.value.destinationResults[0]!.response).toBe('42');
   });
 
   it('does not run response transformer on ERROR status', async () => {

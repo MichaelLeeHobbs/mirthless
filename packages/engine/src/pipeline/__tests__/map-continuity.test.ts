@@ -61,7 +61,7 @@ describe('Pipeline Map Continuity', () => {
     const config: PipelineConfig = {
       channelId: 'ch-1',
       serverId: 'srv-1',
-      dataType: 'HL7V2',
+      dataType: 'RAW',
       scripts,
       destinations: [],
     };
@@ -89,7 +89,7 @@ describe('Pipeline Map Continuity', () => {
     const config: PipelineConfig = {
       channelId: 'ch-1',
       serverId: 'srv-1',
-      dataType: 'HL7V2',
+      dataType: 'RAW',
       scripts,
       destinations: [],
     };
@@ -117,7 +117,7 @@ describe('Pipeline Map Continuity', () => {
     const config: PipelineConfig = {
       channelId: 'ch-1',
       serverId: 'srv-1',
-      dataType: 'HL7V2',
+      dataType: 'RAW',
       scripts,
       destinations: [{
         metaDataId: 1,
@@ -146,7 +146,7 @@ describe('Pipeline Map Continuity', () => {
     const config: PipelineConfig = {
       channelId: 'ch-1',
       serverId: 'srv-1',
-      dataType: 'HL7V2',
+      dataType: 'RAW',
       scripts,
       destinations: [],
       globalChannelMap: gcm,
@@ -169,7 +169,7 @@ describe('Pipeline Map Continuity', () => {
     const config: PipelineConfig = {
       channelId: 'ch-1',
       serverId: 'srv-1',
-      dataType: 'HL7V2',
+      dataType: 'RAW',
       scripts,
       destinations: [],
       configMap: Object.freeze({ 'db.host': 'localhost' }),
@@ -199,7 +199,7 @@ describe('Pipeline Map Continuity', () => {
     const config: PipelineConfig = {
       channelId: 'ch-1',
       serverId: 'srv-1',
-      dataType: 'HL7V2',
+      dataType: 'RAW',
       scripts,
       destinations: [],
     };
@@ -225,7 +225,7 @@ describe('Pipeline Map Continuity', () => {
     const config: PipelineConfig = {
       channelId: 'ch-1',
       serverId: 'srv-1',
-      dataType: 'HL7V2',
+      dataType: 'RAW',
       scripts: {},
       destinations: [
         { metaDataId: 1, name: 'Dest1', enabled: true, scripts: { filter: destFilter }, queueEnabled: false },
@@ -253,7 +253,7 @@ describe('Pipeline Map Continuity', () => {
     const config: PipelineConfig = {
       channelId: 'ch-1',
       serverId: 'srv-1',
-      dataType: 'HL7V2',
+      dataType: 'RAW',
       scripts,
       destinations: [],
     };

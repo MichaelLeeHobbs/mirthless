@@ -54,7 +54,7 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
   return {
     channelId: '00000000-0000-0000-0000-000000000001',
     serverId: 'server-01',
-    dataType: 'HL7V2',
+    dataType: 'RAW',
     scripts: {},
     destinations: [{
       metaDataId: 1,
@@ -163,7 +163,7 @@ describe('MessageProcessor', () => {
 
     // Transformed content stored
     expect(store.storeContent).toHaveBeenCalledWith(
-      expect.any(String), 1, 0, 3, 'TRANSFORMED_CONTENT', 'HL7V2',
+      expect.any(String), 1, 0, 3, 'TRANSFORMED_CONTENT', 'RAW',
     );
   });
 
@@ -183,7 +183,7 @@ describe('MessageProcessor', () => {
 
     // Transformed content stored — msg assignment (no explicit return) should work
     expect(store.storeContent).toHaveBeenCalledWith(
-      expect.any(String), 1, 0, 3, 'test', 'HL7V2',
+      expect.any(String), 1, 0, 3, 'test', 'RAW',
     );
     // Destination receives transformed content
     expect(sendFn).toHaveBeenCalledWith(1, 'test', expect.any(AbortSignal), expect.any(String));
@@ -230,6 +230,136 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults[0]!.status).toBe('SENT');
     expect(result.value.destinationResults[1]!.status).toBe('SENT');
     expect(sendFn).toHaveBeenCalledTimes(2);
+  });
+
+  // ----- Data Type Tests -----
+
+  it('HL7V2 channel: msg is auto-parsed, transformer accesses fields directly', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const hl7 = [
+      'MSH|^~\\&|SEND|FAC|RECV|FAC|20260329||ADT^A01|CTL001|P|2.5',
+      'PID|||12345^^^MRN||DOE^JOHN||19800101|M',
+    ].join('\r');
+    const config = makeConfig({
+      dataType: 'HL7V2',
+      scripts: {
+        // Access msg.get() directly — no parseHL7 call needed
+        sourceTransformer: { code: 'return msg.get("PID.3");' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(
+      { rawContent: hl7, sourceMap: {} }, AbortSignal.timeout(5_000),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('SENT');
+    // The transformer returned the PID.3 value as content
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 0, 3, '12345', 'HL7V2',
+    );
+  });
+
+  it('JSON channel: msg is auto-parsed, transformer accesses properties', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      dataType: 'JSON',
+      scripts: {
+        sourceTransformer: { code: 'return msg.patient.name;' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(
+      { rawContent: '{"patient":{"name":"John Doe"}}', sourceMap: {} },
+      AbortSignal.timeout(5_000),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('SENT');
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 0, 3, 'John Doe', 'JSON',
+    );
+  });
+
+  it('invalid JSON errors the message', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({ dataType: 'JSON' });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(
+      { rawContent: 'not valid json {{{', sourceMap: {} },
+      AbortSignal.timeout(5_000),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    // Error stored as processing error
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 0, 13, expect.stringContaining('Invalid JSON'), 'TEXT',
+    );
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('invalid HL7V2 errors the message', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({ dataType: 'HL7V2' });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(
+      { rawContent: 'not valid hl7', sourceMap: {} },
+      AbortSignal.timeout(5_000),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 0, 13, expect.stringContaining('Invalid HL7V2'), 'TEXT',
+    );
+  });
+
+  it('parseHL7(msg) on already-parsed HL7V2 msg is a no-op', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const hl7 = 'MSH|^~\\&|S|F|R|F|20260329||ADT^A01|C1|P|2.5\rPID|||99999^^^MRN';
+    const config = makeConfig({
+      dataType: 'HL7V2',
+      scripts: {
+        // Explicitly call parseHL7 even though msg is already parsed — should work
+        sourceTransformer: { code: 'var parsed = parseHL7(msg); return parsed.get("PID.3");' },
+      },
+    });
+    const processor = new MessageProcessor(
+      sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(
+      { rawContent: hl7, sourceMap: {} }, AbortSignal.timeout(5_000),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('SENT');
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 0, 3, '99999', 'HL7V2',
+    );
   });
 
   it('destination filter rejects one destination', async () => {

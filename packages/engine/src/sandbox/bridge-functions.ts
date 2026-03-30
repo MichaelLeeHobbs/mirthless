@@ -6,6 +6,7 @@
 // class instance issues with private fields.
 
 import { Hl7Message, createAck, type AckOptions } from '@mirthless/core-util';
+import { isHl7MessageProxy, createHl7Proxy } from '../pipeline/data-type-handler.js';
 
 // ----- Types -----
 
@@ -88,35 +89,12 @@ function isBlockedHost(hostname: string): boolean {
 /** Create bridge functions for sandbox injection. */
 export function createBridgeFunctions(deps?: BridgeDependencies): BridgeFunctions {
   const bridges: BridgeFunctions = {
-    parseHL7(raw: string): Hl7MessageProxy {
+    parseHL7(raw: unknown): Hl7MessageProxy {
+      // If already an Hl7MessageProxy (auto-parsed by data-type-handler), return as-is
+      if (isHl7MessageProxy(raw)) return raw;
+      if (typeof raw !== 'string') throw new Error('parseHL7 expects a string or HL7 message proxy');
       const msg = Hl7Message.parse(raw);
-
-      return {
-        get(path: string): string | undefined {
-          return msg.get(path);
-        },
-        set(path: string, value: string): void {
-          msg.set(path, value);
-        },
-        delete(path: string): void {
-          msg.delete(path);
-        },
-        toString(): string {
-          return msg.toString();
-        },
-        get messageType(): string {
-          return msg.messageType;
-        },
-        get messageControlId(): string {
-          return msg.messageControlId;
-        },
-        getSegmentCount(name: string): number {
-          return msg.getSegmentCount(name);
-        },
-        getSegmentString(name: string, index?: number): string | undefined {
-          return msg.getSegmentString(name, index);
-        },
-      };
+      return createHl7Proxy(msg);
     },
 
     createACK(originalRaw: string, ackCode: string, textMessage?: string): string {

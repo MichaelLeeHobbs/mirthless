@@ -12,6 +12,7 @@ import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
 import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
 import type { AttachmentConfig } from './attachment-handler.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
+import { parseForSandbox, serializeFromSandbox } from './data-type-handler.js';
 
 // ----- Types -----
 
@@ -250,6 +251,29 @@ export class MessageProcessor {
 
       let content = input.rawContent;
 
+      // Validate inbound data type — parse to verify format is valid
+      try {
+        parseForSandbox(content, dataType);
+      } catch (parseErr) {
+        const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+        // Use inline error-out since errorOut helper isn't defined yet
+        await Promise.all([
+          this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, `Invalid ${dataType}: ${parseMsg}`, 'TEXT'),
+          this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+          this.store.incrementStats(channelId, 0, serverId, 'errored'),
+          this.store.markProcessed(channelId, messageId),
+        ]);
+        mark('parseInbound');
+        if (this.config.onError) {
+          await this.config.onError({
+            channelId, errorType: 'SOURCE_CONNECTOR',
+            errorMessage: `Invalid ${dataType}: ${parseMsg}`, timestamp: Date.now(),
+          });
+        }
+        if (timing) timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
+        return { messageId, correlationId, status: 'ERROR' as const, destinationResults: [] };
+      }
+
       // Helper: mark source as errored and return ERROR result
       const errorOut = async (stage: string, errMsg: string): Promise<ProcessedMessage> => {
         await Promise.all([
@@ -275,8 +299,9 @@ export class MessageProcessor {
           this.config.scripts.globalPreprocessor, content, input, signal, mapState,
         );
         if (!gpreResult.ok) return errorOut('globalPreprocessor', gpreResult.error.message);
-        if (typeof gpreResult.value.returnValue === 'string') {
-          content = gpreResult.value.returnValue;
+        const gpreVal = gpreResult.value.returnValue ?? gpreResult.value.msg;
+        if (gpreVal != null) {
+          content = serializeFromSandbox(gpreVal, dataType);
         }
         mark('globalPreprocessor');
       }
@@ -287,8 +312,9 @@ export class MessageProcessor {
           this.config.scripts.preprocessor, content, input, signal, mapState,
         );
         if (!preResult.ok) return errorOut('preprocessor', preResult.error.message);
-        if (typeof preResult.value.returnValue === 'string') {
-          content = preResult.value.returnValue;
+        const preVal = preResult.value.returnValue ?? preResult.value.msg;
+        if (preVal != null) {
+          content = serializeFromSandbox(preVal, dataType);
         }
         mark('preprocessor');
       }
@@ -327,9 +353,7 @@ export class MessageProcessor {
         if (!txResult.ok) return errorOut('sourceTransformer', txResult.error.message);
         // Use explicit return value if present, otherwise fall back to msg variable
         const transformed = txResult.value.returnValue ?? txResult.value.msg;
-        if (typeof transformed === 'string') {
-          content = transformed;
-        }
+        content = serializeFromSandbox(transformed, dataType);
         mark('sourceTransformer');
       }
 
@@ -452,9 +476,7 @@ export class MessageProcessor {
           );
           if (txResult.ok) {
             const transformed = txResult.value.returnValue ?? txResult.value.msg;
-            if (typeof transformed === 'string') {
-              destContent = transformed;
-            }
+            destContent = serializeFromSandbox(transformed, dataType);
           }
         }
 
@@ -497,12 +519,10 @@ export class MessageProcessor {
             );
             if (rtResult.ok) {
               const transformed = rtResult.value.returnValue ?? rtResult.value.msg;
-              if (typeof transformed === 'string') {
-                responseContent = transformed;
-                await this.store.storeContent(
-                  channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
-                );
-              }
+              responseContent = serializeFromSandbox(transformed, dataType);
+              await this.store.storeContent(
+                channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
+              );
             }
           }
 
@@ -538,7 +558,8 @@ export class MessageProcessor {
     mapState: PipelineMapState,
     extras?: Readonly<Record<string, unknown>> | undefined,
   ): Promise<Result<ExecutionResult>> {
-    const base = createSandboxContext(content, input.rawContent, content);
+    const parsedMsg = parseForSandbox(content, this.config.dataType);
+    const base = createSandboxContext(parsedMsg, input.rawContent, parsedMsg);
     const gcm = this.config.globalChannelMap;
     const globalMapProxy = this.config.globalMapProxy;
     const context: SandboxContext = {
