@@ -29,36 +29,25 @@ export function isHl7MessageProxy(value: unknown): value is Hl7MessageProxy {
   return typeof value === 'object' && value !== null && (value as Record<string, unknown>)[HL7_PROXY_BRAND] === true;
 }
 
-/** Create a closure-based Hl7MessageProxy from an Hl7Message instance. */
+/**
+ * Create a closure-based Hl7MessageProxy from an Hl7Message instance.
+ * Uses explicit property descriptors to ensure all methods survive vm.createContext().
+ */
 export function createHl7Proxy(msg: Hl7Message): Hl7MessageProxy {
-  const proxy: Hl7MessageProxy & Record<string, unknown> = {
+  // Build as a plain object with arrow-function properties.
+  // Avoids getter/method-shorthand edge cases in V8 cross-realm contexts.
+  const proxy: Record<string, unknown> = {
     [HL7_PROXY_BRAND]: true,
-    get(path: string): string | undefined {
-      return msg.get(path);
-    },
-    set(path: string, value: string): void {
-      msg.set(path, value);
-    },
-    delete(path: string): void {
-      msg.delete(path);
-    },
-    toString(): string {
-      return msg.toString();
-    },
-    get messageType(): string {
-      return msg.messageType;
-    },
-    get messageControlId(): string {
-      return msg.messageControlId;
-    },
-    getSegmentCount(name: string): number {
-      return msg.getSegmentCount(name);
-    },
-    getSegmentString(name: string, index?: number): string | undefined {
-      return msg.getSegmentString(name, index);
-    },
+    get: (path: string): string | undefined => msg.get(path),
+    set: (path: string, value: string): void => { msg.set(path, value); },
+    delete: (path: string): void => { msg.delete(path); },
+    toString: (): string => msg.toString(),
+    messageType: msg.messageType,
+    messageControlId: msg.messageControlId,
+    getSegmentCount: (name: string): number => msg.getSegmentCount(name),
+    getSegmentString: (name: string, index?: number): string | undefined => msg.getSegmentString(name, index),
   };
-  return proxy;
+  return proxy as unknown as Hl7MessageProxy;
 }
 
 /**
