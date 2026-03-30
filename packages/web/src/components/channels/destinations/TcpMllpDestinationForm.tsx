@@ -12,6 +12,7 @@ import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { TCP_MLLP_DEST_DEFAULTS } from './connector-defaults.js';
+import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const CHARSETS = ['UTF-8', 'ISO-8859-1', 'US-ASCII'] as const;
 const TRANSMISSION_MODES = ['MLLP', 'RAW', 'DELIMITED'] as const;
@@ -152,6 +153,10 @@ export function TcpMllpDestinationForm({ properties, onChange }: DestConnectorFo
           sx={{ mb: 2 }}
           slotProps={{ htmlInput: { min: 1024 } }}
         />
+      </Grid>
+
+      <Grid item xs={12}>
+        <TestConnectionButton connectorType="TCP_MLLP" mode="DESTINATION" properties={properties} />
       </Grid>
     </Grid>
   );

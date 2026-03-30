@@ -15,6 +15,7 @@ import InputLabel from '@mui/material/InputLabel';
 import FormControl from '@mui/material/FormControl';
 import type { SourceConnectorFormProps } from './types.js';
 import { HTTP_SOURCE_DEFAULTS } from './connector-defaults.js';
+import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const CHARSETS = ['UTF-8', 'ISO-8859-1', 'US-ASCII'] as const;
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
@@ -162,6 +163,10 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
             <MenuItem key={c} value={c}>{c}</MenuItem>
           ))}
         </TextField>
+      </Grid>
+
+      <Grid item xs={12}>
+        <TestConnectionButton connectorType="HTTP" mode="SOURCE" properties={properties} />
       </Grid>
     </Grid>
   );

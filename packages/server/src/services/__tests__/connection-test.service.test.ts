@@ -482,6 +482,38 @@ describe('ConnectionTestService', () => {
     });
   });
 
+  // ----- EMAIL (IMAP) -----
+
+  describe('EMAIL', () => {
+    it('returns success when TCP connection to IMAP host succeeds', async () => {
+      createFakeSocket('connect');
+
+      const result = await ConnectionTestService.testConnection('EMAIL', 'SOURCE', {
+        host: 'imap.example.com',
+        port: 993,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(true);
+      expect(result.value.message).toContain('imap.example.com:993');
+    });
+
+    it('returns failure when IMAP TCP connection fails', async () => {
+      createFakeSocket('error', 'ECONNREFUSED');
+
+      const result = await ConnectionTestService.testConnection('EMAIL', 'SOURCE', {
+        host: 'imap.example.com',
+        port: 993,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toContain('ECONNREFUSED');
+    });
+  });
+
   // ----- Unknown Connector Type -----
 
   describe('unknown connector type', () => {

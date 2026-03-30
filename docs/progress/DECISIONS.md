@@ -255,3 +255,7 @@ D-124: isServiceError uses duck typing, not instanceof — stderr-lib's tryCatch
 D-125: Raw SQL for bigint column lookups in message queries — Drizzle ORM's `inArray()` silently fails with bigint columns (returns empty results). Message search connector lookup uses raw SQL `IN (${sql.join(...)})` instead. The pg driver returns bigint as string; explicit `Number()` coercion needed. — 2026-03-29
 
 D-126: Channel group is single-select despite many-to-many join table — The `channel_group_members` table supports many-to-many, but the UI and assignment logic treat it as single-select. Group change removes ALL existing memberships before adding the new one. Simplifies UX without schema migration. — 2026-03-29
+
+D-127: Connection test button uses centralized service, not per-connector test() methods — All 10 connector types tested via `ConnectionTestService` with tester registry. Connectors don't need a `test()` interface method. TCP/MLLP and DICOM use socket connect, HTTP uses HEAD, Database uses `SELECT 1`, SMTP uses nodemailer verify, File uses fs.access, FHIR hits /metadata. Channel and JavaScript always succeed. — 2026-03-30
+
+D-128: Reusable TestConnectionButton component — Single component handles all connector types. Accepts connectorType, mode (SOURCE/DESTINATION), and properties props. Shows inline success/failure with latency. Used across 13 connector forms. — 2026-03-30

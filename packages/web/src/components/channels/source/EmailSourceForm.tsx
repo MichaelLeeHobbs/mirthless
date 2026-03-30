@@ -12,6 +12,7 @@ import Checkbox from '@mui/material/Checkbox';
 import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { EMAIL_SOURCE_DEFAULTS } from './connector-defaults.js';
+import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const PROTOCOLS = ['IMAP', 'POP3'] as const;
 const POST_ACTIONS = ['DELETE', 'MARK_READ', 'MOVE'] as const;
@@ -205,6 +206,10 @@ export function EmailSourceForm({ properties, onChange }: SourceConnectorFormPro
           label="Include Attachments"
           sx={{ mb: 2, display: 'block' }}
         />
+      </Grid>
+
+      <Grid item xs={12}>
+        <TestConnectionButton connectorType="EMAIL" mode="SOURCE" properties={properties} />
       </Grid>
     </Grid>
   );

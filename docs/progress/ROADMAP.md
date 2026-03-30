@@ -87,7 +87,8 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] ~~Data type serialization — XML/JSON/HL7v2 parsed `msg` object in sandbox~~
 - [x] ~~Inbound data validation — reject malformed messages at source connector~~
 - [x] ~~Dashboard: replace polling with WebSocket-driven query invalidation~~
-- [ ] Connection testing — "Test Connection" button per connector type
+- [x] ~~Example channels seeded (10 channels in Examples group)~~
+- [x] ~~Connection testing — "Test Connection" button per connector type~~
 - [ ] Load testing — throughput benchmarks with realistic message volumes
 - [ ] E2E test suite refresh — 19 specs may need updates after recent UI changes
 - [ ] Security review — HIPAA compliance checklist, penetration testing

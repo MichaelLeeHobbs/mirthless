@@ -11,6 +11,7 @@ import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { DATABASE_DEST_DEFAULTS } from './connector-defaults.js';
+import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
   const val = props[key];
@@ -147,6 +148,10 @@ export function DatabaseDestinationForm({ properties, onChange }: DestConnectorF
           label="Return Generated Keys"
           sx={{ mb: 2, display: 'block' }}
         />
+      </Grid>
+
+      <Grid item xs={12}>
+        <TestConnectionButton connectorType="DATABASE" mode="DESTINATION" properties={properties} />
       </Grid>
     </Grid>
   );

@@ -12,6 +12,7 @@ import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { SMTP_DEST_DEFAULTS } from './connector-defaults.js';
+import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const CONTENT_TYPES = ['text/plain', 'text/html'] as const;
 
@@ -198,6 +199,10 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
           label="Attach Message Content"
           sx={{ mb: 2, display: 'block' }}
         />
+      </Grid>
+
+      <Grid item xs={12}>
+        <TestConnectionButton connectorType="SMTP" mode="DESTINATION" properties={properties} />
       </Grid>
     </Grid>
   );

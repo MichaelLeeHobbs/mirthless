@@ -332,6 +332,13 @@ const testJavascript: Tester = async () => {
   return successResult('JavaScript connector is script-based — always available', 0);
 };
 
+/** Email (IMAP) tester — verifies TCP connectivity to IMAP host:port. */
+const testEmail: Tester = async (_mode, props) => {
+  const host = requireString(props, 'host');
+  const port = requireNumber(props, 'port');
+  return testTcpConnect(host, port);
+};
+
 // ----- Tester Registry -----
 
 const TESTERS: Readonly<Record<string, Tester>> = {
@@ -344,6 +351,7 @@ const TESTERS: Readonly<Record<string, Tester>> = {
   DICOM: testDicom,
   CHANNEL: testChannel,
   JAVASCRIPT: testJavascript,
+  EMAIL: testEmail,
 };
 
 // ----- Public API -----

@@ -12,6 +12,7 @@ import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { FILE_DEST_DEFAULTS } from './connector-defaults.js';
+import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const CHARSETS = ['UTF-8', 'ISO-8859-1', 'US-ASCII'] as const;
 
@@ -127,6 +128,10 @@ export function FileDestinationForm({ properties, onChange }: DestConnectorFormP
           label="Append Mode"
           sx={{ mb: 2, display: 'block' }}
         />
+      </Grid>
+
+      <Grid item xs={12}>
+        <TestConnectionButton connectorType="FILE" mode="DESTINATION" properties={properties} />
       </Grid>
     </Grid>
   );

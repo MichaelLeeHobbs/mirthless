@@ -15,6 +15,7 @@ const CONNECTOR_TYPE_VALUES = [
   'DICOM',
   'SMTP',
   'FHIR',
+  'EMAIL',
 ] as const;
 
 const CONNECTOR_MODE_VALUES = [

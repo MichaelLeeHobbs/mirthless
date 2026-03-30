@@ -10,6 +10,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { FHIR_DEST_DEFAULTS } from './connector-defaults.js';
+import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const RESOURCE_TYPES = [
   'Patient', 'Observation', 'Encounter', 'Condition',
@@ -209,6 +210,10 @@ export function FhirDestinationForm({ properties, onChange }: DestConnectorFormP
           minRows={3}
           sx={{ mb: 2, '& .MuiInputBase-input': { fontFamily: 'monospace', fontSize: '0.875rem' } }}
         />
+      </Grid>
+
+      <Grid item xs={12}>
+        <TestConnectionButton connectorType="FHIR" mode="DESTINATION" properties={properties} />
       </Grid>
     </Grid>
   );

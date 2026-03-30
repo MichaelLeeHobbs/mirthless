@@ -10,6 +10,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { DATABASE_SOURCE_DEFAULTS } from './connector-defaults.js';
+import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const UPDATE_MODES = ['NEVER', 'ALWAYS', 'ON_SUCCESS'] as const;
 const ROW_FORMATS = ['JSON'] as const;
@@ -167,6 +168,10 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
             <MenuItem key={f} value={f}>{f}</MenuItem>
           ))}
         </TextField>
+      </Grid>
+
+      <Grid item xs={12}>
+        <TestConnectionButton connectorType="DATABASE" mode="SOURCE" properties={properties} />
       </Grid>
     </Grid>
   );

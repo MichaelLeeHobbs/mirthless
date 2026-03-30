@@ -10,6 +10,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { DICOM_DEST_DEFAULTS } from './connector-defaults.js';
+import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const SEND_MODES = ['single', 'multiple'] as const;
 
@@ -165,6 +166,10 @@ export function DicomDestinationForm({ properties, onChange }: DestConnectorForm
           sx={{ mb: 2 }}
           slotProps={{ htmlInput: { min: 0 } }}
         />
+      </Grid>
+
+      <Grid item xs={12}>
+        <TestConnectionButton connectorType="DICOM" mode="DESTINATION" properties={properties} />
       </Grid>
     </Grid>
   );

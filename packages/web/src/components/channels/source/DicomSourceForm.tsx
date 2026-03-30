@@ -10,6 +10,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { DICOM_SOURCE_DEFAULTS } from './connector-defaults.js';
+import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const DISPATCH_MODES = ['PER_FILE', 'PER_ASSOCIATION'] as const;
 const POST_ACTIONS = ['DELETE', 'MOVE', 'NONE'] as const;
@@ -167,6 +168,10 @@ export function DicomSourceForm({ properties, onChange }: SourceConnectorFormPro
             sx={{ mb: 2 }}
           />
         )}
+      </Grid>
+
+      <Grid item xs={12}>
+        <TestConnectionButton connectorType="DICOM" mode="SOURCE" properties={properties} />
       </Grid>
     </Grid>
   );
