@@ -143,4 +143,20 @@ export {
   type ImapClient,
   type ImapClientFactory,
 } from './email/index.js';
+export {
+  SftpReceiver,
+  SftpDispatcher,
+  joinRemote,
+  validateAuth,
+  makeHostVerifier,
+  buildConnectOptions,
+  SFTP_POST_ACTION,
+  type SftpReceiverConfig,
+  type SftpDispatcherConfig,
+  type SftpPostAction,
+  type SftpClient,
+  type SftpClientFactory,
+  type SftpConnectionOptions,
+  type SftpFileInfo,
+} from './sftp/index.js';
 export { createSourceConnector, createDestinationConnector } from './registry.js';

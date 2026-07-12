@@ -28,12 +28,14 @@
     "imapflow": "^1.0.171",
     "nodemailer": "^8.0.1",
     "pg": "^8.13.0",
-    "pino": "^10.2.1"
+    "pino": "^10.2.1",
+    "ssh2-sftp-client": "^12.1.1"
   },
   "devDependencies": {
     "@types/generic-pool": "^3.8.3",
     "@types/nodemailer": "^7.0.11",
     "@types/pg": "^8.11.0",
+    "@types/ssh2-sftp-client": "^9.0.6",
     "@vitest/coverage-v8": "2.1.8",
     "rimraf": "6.0.1",
     "typescript": "5.7.2",
