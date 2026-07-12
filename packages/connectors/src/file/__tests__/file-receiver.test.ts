@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import type { Result } from '@mirthless/core-util';
 import { FileReceiver, matchGlob, FILE_SORT_BY, FILE_POST_ACTION, type FileReceiverConfig } from '../file-receiver.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 // ----- Mock node:fs/promises -----
 
@@ -569,6 +570,44 @@ describe('FileReceiver', () => {
       // Second poll succeeds
       await vi.advanceTimersByTimeAsync(5_000);
       expect(captured).toHaveLength(1);
+    });
+  });
+
+  describe('failure visibility & post-action safety', () => {
+    it('logs an error when the poll cycle throws (vanished directory)', async () => {
+      const { logger, errors } = makeMockLogger();
+      mockReaddir.mockRejectedValue(new Error('ENOENT: no such directory'));
+
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.msg).toContain('poll cycle failed');
+    });
+
+    it('quarantines a file whose post-action fails, preventing re-dispatch', async () => {
+      const { logger, errors } = makeMockLogger();
+      const now = Date.now();
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7', true)] as never);
+      mockStat.mockResolvedValue(makeStatResult(now - 5_000, 100) as never);
+      mockReadFile.mockResolvedValue('MSH|^~\\&|X');
+      mockUnlink.mockRejectedValue(new Error('EPERM: unlink failed'));
+
+      let dispatchCount = 0;
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: dispatchCount }; }));
+      await receiver.onStart();
+
+      // Cycle 1: dispatched once, post-action fails → quarantined.
+      await vi.advanceTimersByTimeAsync(5_000);
+      // Cycle 2: same file present; must NOT dispatch again.
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(dispatchCount).toBe(1);
+      expect(errors.some((e) => e.msg.includes('quarantining'))).toBe(true);
     });
   });
 });

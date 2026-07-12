@@ -33,10 +33,29 @@ export interface RawMessage {
 
 // ----- Source Connector -----
 
+/**
+ * Outcome of a message through the pipeline, used by source connectors
+ * to decide how to acknowledge (e.g. MLLP ACK vs NAK).
+ * - PROCESSED: filter passed and destinations completed.
+ * - FILTERED: rejected by a filter (application reject → NAK AR).
+ * - ERROR: a processing error occurred (→ NAK AE).
+ */
+export const DISPATCH_STATUS = {
+  PROCESSED: 'PROCESSED',
+  FILTERED: 'FILTERED',
+  ERROR: 'ERROR',
+} as const;
+export type DispatchStatus = typeof DISPATCH_STATUS[keyof typeof DISPATCH_STATUS];
+
 /** Result of dispatching a message through the pipeline. */
 export interface DispatchResult {
   readonly messageId: number;
   readonly response?: string;
+  /**
+   * Pipeline outcome. Absent implies PROCESSED (backward compatible with
+   * callers that do not yet report status).
+   */
+  readonly status?: DispatchStatus | undefined;
 }
 
 /** Callback provided by the engine to process incoming messages. */

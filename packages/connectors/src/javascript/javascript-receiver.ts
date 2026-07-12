@@ -6,6 +6,7 @@
 
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Config -----
 
@@ -26,13 +27,15 @@ export type ScriptRunner = (script: string) => Promise<Result<unknown>>;
 
 export class JavaScriptReceiver implements SourceConnectorRuntime {
   private readonly config: JavaScriptReceiverConfig;
+  private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
   private scriptRunner: ScriptRunner | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
 
-  constructor(config: JavaScriptReceiverConfig) {
+  constructor(config: JavaScriptReceiverConfig, logger?: ConnectorLogger) {
     this.config = config;
+    this.logger = logger ?? createConnectorLogger('JAVASCRIPT');
   }
 
   /** Set the callback used to execute scripts in the sandbox. */
@@ -99,8 +102,10 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
         };
         await this.dispatcher(raw);
       }
-    } catch {
-      // Poll cycle errors are non-fatal; next cycle will retry.
+    } catch (err) {
+      // Non-fatal but MUST be visible so a broken source script does not leave
+      // the channel STARTED yet silently producing nothing.
+      this.logger.error(errorInfo(err), 'JavaScript source poll cycle failed');
     } finally {
       this.polling = false;
     }

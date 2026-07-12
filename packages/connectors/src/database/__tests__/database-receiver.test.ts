@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, type DatabaseReceiverConfig } from '../database-receiver.js';
 import { ConnectionPool } from '../connection-pool.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import type { Result } from '@mirthless/core-util';
 
@@ -427,6 +428,43 @@ describe('DatabaseReceiver', () => {
       expect(result.ok).toBe(true);
 
       receiver = null;
+    });
+  });
+
+  describe('failure visibility', () => {
+    it('logs an error when the SELECT query fails (e.g. expired creds)', async () => {
+      const { pool, queryFn } = makeMockPool();
+      queryFn.mockResolvedValue({ ok: false, value: null, error: { name: 'Error', code: 'ECONNREFUSED', message: 'connection refused' } });
+      const { logger, errors } = makeMockLogger();
+
+      receiver = new DatabaseReceiver(makeConfig(), pool, logger);
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(errors.some((e) => e.msg.includes('SELECT failed'))).toBe(true);
+    });
+
+    it('logs an error when a mark-as-processed UPDATE fails', async () => {
+      const { pool, queryFn } = makeMockPool();
+      // First call (SELECT) returns one row; second call (UPDATE) fails.
+      queryFn
+        .mockResolvedValueOnce({ ok: true, value: { rows: [{ id: 1 }], rowCount: 1 }, error: null })
+        .mockResolvedValueOnce({ ok: false, value: null, error: { name: 'Error', code: 'X', message: 'update failed' } });
+      const { logger, errors } = makeMockLogger();
+
+      receiver = new DatabaseReceiver(
+        makeConfig({ updateMode: UPDATE_MODE.ALWAYS, updateQuery: 'UPDATE messages SET processed = true WHERE id = :id' }),
+        pool,
+        logger,
+      );
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(errors.some((e) => e.msg.includes('UPDATE failed'))).toBe(true);
     });
   });
 });

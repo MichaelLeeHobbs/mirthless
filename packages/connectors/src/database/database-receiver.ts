@@ -9,6 +9,7 @@ import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { ConnectionPool, type PoolConfig } from './connection-pool.js';
 import { prepare } from './query-builder.js';
+import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Constants -----
 
@@ -62,13 +63,15 @@ function toPoolConfig(config: DatabaseReceiverConfig): PoolConfig {
 export class DatabaseReceiver implements SourceConnectorRuntime {
   private readonly config: DatabaseReceiverConfig;
   private readonly pool: ConnectionPool;
+  private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
 
-  constructor(config: DatabaseReceiverConfig, pool?: ConnectionPool) {
+  constructor(config: DatabaseReceiverConfig, pool?: ConnectionPool, logger?: ConnectorLogger) {
     this.config = config;
     this.pool = pool ?? new ConnectionPool();
+    this.logger = logger ?? createConnectorLogger('DATABASE');
   }
 
   setDispatcher(dispatcher: MessageDispatcher): void {
@@ -138,11 +141,24 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     this.polling = true;
     try {
       const queryResult = await this.pool.query(this.config.selectQuery, []);
-      if (!queryResult.ok) return;
+      if (!queryResult.ok) {
+        // Expired credentials / dropped connection otherwise leave the channel
+        // STARTED yet silently idle — surface it loudly.
+        this.logger.error(
+          { ...errorInfo(queryResult.error), database: this.config.database },
+          'Database poll SELECT failed',
+        );
+        return;
+      }
 
       for (const row of queryResult.value.rows) {
         await this.processRow(row);
       }
+    } catch (err) {
+      this.logger.error(
+        { ...errorInfo(err), database: this.config.database },
+        'Database poll cycle failed',
+      );
     } finally {
       this.polling = false;
     }
@@ -176,7 +192,12 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     if (this.config.updateMode === UPDATE_MODE.ON_SUCCESS && !dispatchOk) return;
 
     const prepared = prepare(this.config.updateQuery, row as Record<string, unknown>);
-    await this.pool.query(prepared.sql, prepared.params);
+    const updateResult = await this.pool.query(prepared.sql, prepared.params);
+    if (!updateResult.ok) {
+      // A failed mark-as-processed means the row will be re-selected next
+      // cycle (at-least-once) — this MUST be visible for reconciliation.
+      this.logger.error(errorInfo(updateResult.error), 'Database mark-as-processed UPDATE failed');
+    }
   }
 
   /** Clear the poll interval timer. */
