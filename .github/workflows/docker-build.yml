@@ -10,8 +10,62 @@ env:
   IMAGE_PREFIX: michaelleehobbs/mirthless
 
 jobs:
+  # Gate the release on the full CI suite passing for the tagged commit.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  # Build the server image and prove it boots end-to-end: the entrypoint runs
+  # migrations + seed against a real Postgres, then we curl /health/live.
+  smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: mirthless_test
+          POSTGRES_USER: mirthless
+          POSTGRES_PASSWORD: mirthless_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mirthless -d mirthless_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build server image
+        run: docker build -f docker/Dockerfile.server -t mirthless-server:smoke .
+
+      - name: Run server container (migrates + seeds on start)
+        run: |
+          docker run -d --name mirthless-smoke --network host \
+            -e DATABASE_URL=postgresql://mirthless:mirthless_test@localhost:5432/mirthless_test \
+            -e JWT_SECRET=ci-smoke-secret-that-is-at-least-32-characters \
+            -e NODE_ENV=production \
+            mirthless-server:smoke
+
+      - name: Wait for /health/live
+        run: |
+          for i in $(seq 1 45); do
+            if curl -fsS http://localhost:3000/health/live; then
+              echo "server healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::server did not become healthy"
+          docker logs mirthless-smoke
+          exit 1
+
+      - name: Dump server logs
+        if: always()
+        run: docker logs mirthless-smoke || true
+
   build-and-push:
     runs-on: ubuntu-latest
+    needs: [ci, smoke]
     permissions:
       contents: read
       packages: write
