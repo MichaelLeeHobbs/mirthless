@@ -41,6 +41,7 @@ import InfoIcon from '@mui/icons-material/Info';
 import LogoutIcon from '@mui/icons-material/Logout';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import { useAuthStore } from '../../stores/auth.store.js';
 import { useUiStore } from '../../stores/ui.store.js';
 import { useSocketConnection } from '../../hooks/use-socket.js';
@@ -203,26 +204,38 @@ export function AppLayout(): ReactNode {
                   onClick={handleNavClick}
                   sx={{
                     minHeight: 40,
+                    mx: 1,
+                    mb: 0.25,
+                    borderRadius: 1.5,
                     justifyContent: sidebarOpen ? 'initial' : 'center',
-                    px: 2.5,
+                    px: sidebarOpen ? 1.5 : 1.25,
                     '&.Mui-selected': {
                       backgroundColor: 'action.selected',
-                      borderRight: 3,
-                      borderColor: 'primary.main',
+                      '&:hover': { backgroundColor: 'action.selected' },
                     },
                   }}
                 >
                   <ListItemIcon
                     sx={{
                       minWidth: 0,
-                      mr: sidebarOpen ? 2 : 'auto',
+                      mr: sidebarOpen ? 1.75 : 'auto',
                       justifyContent: 'center',
                       color: isActive ? 'primary.main' : 'text.secondary',
                     }}
                   >
                     {item.icon}
                   </ListItemIcon>
-                  {sidebarOpen ? <ListItemText primary={item.label} /> : null}
+                  {sidebarOpen ? (
+                    <ListItemText
+                      primary={item.label}
+                      primaryTypographyProps={{
+                        fontSize: '0.875rem',
+                        fontWeight: isActive ? 600 : 500,
+                        color: isActive ? 'text.primary' : 'text.secondary',
+                        noWrap: true,
+                      }}
+                    />
+                  ) : null}
                 </ListItemButton>
               );
               return sidebarOpen ? button : (
@@ -260,13 +273,29 @@ export function AppLayout(): ReactNode {
           >
             <MenuIcon />
           </IconButton>
-          <Typography
-            variant="h6"
-            component="div"
-            sx={{ flexGrow: 1, fontWeight: 700, color: 'primary.main' }}
-          >
-            Mirthless
-          </Typography>
+          <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <Box
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 30,
+                height: 30,
+                borderRadius: 1.5,
+                color: 'primary.contrastText',
+                bgcolor: 'primary.main',
+              }}
+            >
+              <MonitorHeartIcon sx={{ fontSize: 20 }} />
+            </Box>
+            <Typography
+              variant="h6"
+              component="div"
+              sx={{ fontWeight: 700, letterSpacing: '-0.01em', color: 'text.primary' }}
+            >
+              Mirthless
+            </Typography>
+          </Box>
           <Tooltip title={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             <IconButton color="inherit" onClick={toggleThemeMode} aria-label="toggle theme" sx={{ mr: 1 }}>
               {themeMode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}

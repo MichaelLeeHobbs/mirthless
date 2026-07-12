@@ -5,11 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mirthless</title>
     <style>
+      html {
+        /* Painted before React mounts to avoid a wrong-theme flash. Overwritten
+           by the inline script below from the operator's saved preference. */
+        background-color: #0b1120;
+        color-scheme: dark;
+      }
       body {
         margin: 0;
-        background-color: #0a0e17;
+        font-family: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
     </style>
+    <script>
+      // Apply the saved theme's surface colour before first paint.
+      (function () {
+        try {
+          var mode = localStorage.getItem('mirthless_theme');
+          if (mode === 'light') {
+            document.documentElement.style.backgroundColor = '#f3f6fb';
+            document.documentElement.style.colorScheme = 'light';
+          }
+        } catch (e) { /* localStorage unavailable */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

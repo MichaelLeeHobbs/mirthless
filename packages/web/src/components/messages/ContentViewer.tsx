@@ -61,7 +61,7 @@ export function ContentViewer({ content, label }: ContentViewerProps): ReactNode
       )}
       <Box sx={{ position: 'absolute', top: label ? 24 : 4, right: 4, zIndex: 1 }}>
         <Tooltip title={copied ? 'Copied!' : 'Copy to clipboard'}>
-          <IconButton size="small" onClick={handleCopy}>
+          <IconButton size="small" aria-label={copied ? 'Copied' : 'Copy content'} onClick={handleCopy}>
             {copied ? <CheckIcon fontSize="small" /> : <ContentCopyIcon fontSize="small" />}
           </IconButton>
         </Tooltip>

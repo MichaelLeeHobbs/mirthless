@@ -17,14 +17,17 @@ import TableRow from '@mui/material/TableRow';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Chip from '@mui/material/Chip';
-import CircularProgress from '@mui/material/CircularProgress';
-import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
+import PeopleIcon from '@mui/icons-material/People';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useChangePassword, useUnlockUser } from '../hooks/use-users.js';
 import { UserDialog, type UserFormData } from '../components/users/UserDialog.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { EmptyState } from '../components/common/states/EmptyState.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 import type { UserSummary } from '../api/client.js';
@@ -46,7 +49,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 export function UsersPage(): ReactNode {
-  const { data: users, isLoading, error, isFetching } = useUsers();
+  const { data: users, isLoading, error, isFetching, refetch } = useUsers();
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
   const deleteUser = useDeleteUser();
@@ -146,46 +149,44 @@ export function UsersPage(): ReactNode {
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Users</Typography>
-          {isFetching && !isLoading && <CircularProgress size={20} />}
-        </Box>
-        <Tooltip title={canWrite ? '' : 'Requires users:write permission'}>
-          <span>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
-              Create User
-            </Button>
-          </span>
-        </Tooltip>
-      </Box>
+      <PageHeader
+        title="Users"
+        description="Manage operator accounts, roles, and access."
+        isFetching={isFetching && !isLoading}
+        actions={
+          <Tooltip title={canWrite ? '' : 'Requires users:write permission'}>
+            <span>
+              <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
+                Create User
+              </Button>
+            </span>
+          </Tooltip>
+        }
+      />
 
       {/* Error */}
-      {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load users: {error.message}</Alert>}
+      {error && (
+        <ErrorState title="Couldn't load users" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
+      )}
 
-      {/* Loading */}
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Username</TableCell>
-                <TableCell>Email</TableCell>
-                <TableCell>Full Name</TableCell>
-                <TableCell>Role</TableCell>
-                <TableCell align="center">Enabled</TableCell>
-                <TableCell>Last Login</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {users && users.length > 0 ? (
-                users.map((user) => (
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Username</TableCell>
+              <TableCell>Email</TableCell>
+              <TableCell>Full Name</TableCell>
+              <TableCell>Role</TableCell>
+              <TableCell align="center">Enabled</TableCell>
+              <TableCell>Last Login</TableCell>
+              <TableCell align="right">Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {isLoading ? (
+              <TableSkeleton rows={6} columns={7} />
+            ) : users && users.length > 0 ? (
+              users.map((user) => (
                   <TableRow key={user.id} hover>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>{user.username}</Typography>
@@ -213,7 +214,7 @@ export function UsersPage(): ReactNode {
                     <TableCell align="right">
                       <Tooltip title={canWrite ? 'Edit' : 'Requires users:write permission'}>
                         <span>
-                          <IconButton size="small" onClick={() => { handleOpenEdit(user); }} disabled={!canWrite}>
+                          <IconButton aria-label="Edit user" size="small" onClick={() => { handleOpenEdit(user); }} disabled={!canWrite}>
                             <EditIcon fontSize="small" />
                           </IconButton>
                         </span>
@@ -221,6 +222,7 @@ export function UsersPage(): ReactNode {
                       <Tooltip title={user.enabled ? 'Disable' : 'Enable'}>
                         <span>
                           <IconButton
+                            aria-label={user.enabled ? 'Disable user' : 'Enable user'}
                             size="small"
                             onClick={() => { handleToggleEnabled(user); }}
                             color={user.enabled ? 'default' : 'success'}
@@ -232,7 +234,7 @@ export function UsersPage(): ReactNode {
                       </Tooltip>
                       <Tooltip title={canWrite ? 'Unlock' : 'Requires users:write permission'}>
                         <span>
-                          <IconButton size="small" onClick={() => { handleUnlock(user); }} disabled={!canWrite}>
+                          <IconButton aria-label="Unlock user" size="small" onClick={() => { handleUnlock(user); }} disabled={!canWrite}>
                             <LockOpenIcon fontSize="small" />
                           </IconButton>
                         </span>
@@ -240,19 +242,21 @@ export function UsersPage(): ReactNode {
                     </TableCell>
                   </TableRow>
                 ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={7} align="center">
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
-                      No users found
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+            ) : (
+              <TableRow>
+                <TableCell colSpan={7}>
+                  <EmptyState
+                    dense
+                    icon={<PeopleIcon />}
+                    title="No users yet"
+                    description="Create an operator account to grant access to Mirthless."
+                  />
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       {/* Create/Edit Dialog */}
       <UserDialog

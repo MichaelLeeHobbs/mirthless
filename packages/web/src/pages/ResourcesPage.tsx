@@ -16,7 +16,6 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -26,6 +25,7 @@ import TextField from '@mui/material/TextField';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import FolderIcon from '@mui/icons-material/Folder';
 import {
   useResources,
   useResource,
@@ -35,6 +35,10 @@ import {
   type ResourceSummary,
 } from '../hooks/use-resources.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { EmptyState } from '../components/common/states/EmptyState.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 
@@ -45,7 +49,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function ResourcesPage(): ReactNode {
-  const { data: resources, isLoading, error, isFetching } = useResources();
+  const { data: resources, isLoading, error, isFetching, refetch } = useResources();
   const createResource = useCreateResource();
   const updateResource = useUpdateResource();
   const deleteResource = useDeleteResource();
@@ -139,41 +143,41 @@ export function ResourcesPage(): ReactNode {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Resources</Typography>
-          {isFetching && !isLoading && <CircularProgress size={20} />}
-        </Box>
-        <Tooltip title={canWrite ? '' : 'Requires resources:write permission'}>
-          <span>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
-              Create Resource
-            </Button>
-          </span>
-        </Tooltip>
-      </Box>
+      <PageHeader
+        title="Resources"
+        description="Shared files and libraries available to channel scripts."
+        isFetching={isFetching && !isLoading}
+        actions={
+          <Tooltip title={canWrite ? '' : 'Requires resources:write permission'}>
+            <span>
+              <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
+                Create Resource
+              </Button>
+            </span>
+          </Tooltip>
+        }
+      />
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load resources: {error.message}</Alert>}
+      {error && (
+        <ErrorState title="Couldn't load resources" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
+      )}
 
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Description</TableCell>
-                <TableCell>MIME Type</TableCell>
-                <TableCell align="right">Size</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {resources && resources.length > 0 ? (
-                resources.map((resource) => (
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Name</TableCell>
+              <TableCell>Description</TableCell>
+              <TableCell>MIME Type</TableCell>
+              <TableCell align="right">Size</TableCell>
+              <TableCell align="right">Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {isLoading ? (
+              <TableSkeleton rows={6} columns={5} />
+            ) : resources && resources.length > 0 ? (
+              resources.map((resource) => (
                   <TableRow key={resource.id} hover>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>{resource.name}</Typography>
@@ -184,14 +188,14 @@ export function ResourcesPage(): ReactNode {
                     <TableCell align="right">
                       <Tooltip title={canWrite ? 'Edit' : 'Requires resources:write permission'}>
                         <span>
-                          <IconButton size="small" onClick={() => { handleOpenEdit(resource); }} disabled={!canWrite}>
+                          <IconButton aria-label="Edit resource" size="small" onClick={() => { handleOpenEdit(resource); }} disabled={!canWrite}>
                             <EditIcon fontSize="small" />
                           </IconButton>
                         </span>
                       </Tooltip>
                       <Tooltip title={canDelete ? 'Delete' : 'Requires resources:delete permission'}>
                         <span>
-                          <IconButton size="small" onClick={() => { setDeleteTarget(resource); }} disabled={!canDelete}>
+                          <IconButton aria-label="Delete resource" size="small" onClick={() => { setDeleteTarget(resource); }} disabled={!canDelete}>
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </span>
@@ -199,19 +203,21 @@ export function ResourcesPage(): ReactNode {
                     </TableCell>
                   </TableRow>
                 ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5} align="center">
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
-                      No resources found
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+            ) : (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <EmptyState
+                    dense
+                    icon={<FolderIcon />}
+                    title="No resources yet"
+                    description="Create a resource to share files or libraries with your channel scripts."
+                  />
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       <Dialog open={dialogOpen} onClose={handleRequestClose} maxWidth="md" fullWidth>
         <DialogTitle>{editingId ? 'Edit Resource' : 'Create Resource'}</DialogTitle>

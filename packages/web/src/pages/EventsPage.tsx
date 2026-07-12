@@ -17,7 +17,6 @@ import TableRow from '@mui/material/TableRow';
 import TablePagination from '@mui/material/TablePagination';
 import Chip from '@mui/material/Chip';
 import Collapse from '@mui/material/Collapse';
-import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -33,12 +32,17 @@ import MenuItem from '@mui/material/MenuItem';
 import Select, { type SelectChangeEvent } from '@mui/material/Select';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import DownloadIcon from '@mui/icons-material/Download';
+import EventIcon from '@mui/icons-material/Event';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import { useEvents, usePurgeEvents } from '../hooks/use-events.js';
 import { useEventExport } from '../hooks/use-event-export.js';
 import { EventFilterBar, type EventFilters } from '../components/events/EventFilterBar.js';
 import { EventDetailPanel } from '../components/events/EventDetailPanel.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { EmptyState } from '../components/common/states/EmptyState.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import type { EventSummary } from '../api/client.js';
 
 const LEVEL_COLORS: Record<string, 'info' | 'warning' | 'error'> = {
@@ -70,7 +74,7 @@ export function EventsPage(): ReactNode {
     ...(filters.outcome !== '' ? { outcome: filters.outcome } : {}),
   };
 
-  const { data, isLoading, error, isFetching } = useEvents(queryParams);
+  const { data, isLoading, error, isFetching, refetch } = useEvents(queryParams);
   const purgeEvents = usePurgeEvents();
   const { isExporting, error: exportError, exportEvents } = useEventExport();
 
@@ -102,68 +106,70 @@ export function EventsPage(): ReactNode {
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Events</Typography>
-          {isFetching && !isLoading && <CircularProgress size={20} />}
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Tooltip title="Export events">
-            <Button
-              variant="outlined"
-              startIcon={<DownloadIcon />}
-              onClick={() => { setExportDialogOpen(true); }}
-              disabled={isExporting}
-            >
-              {isExporting ? 'Exporting...' : 'Export'}
-            </Button>
-          </Tooltip>
-          <Tooltip title="Purge old events">
-            <Button
-              variant="outlined"
-              color="error"
-              startIcon={<DeleteSweepIcon />}
-              onClick={() => { setPurgeDialogOpen(true); }}
-            >
-              Purge
-            </Button>
-          </Tooltip>
-        </Box>
-      </Box>
+      <PageHeader
+        title="Events"
+        description="Browse the audit log of system and user activity."
+        isFetching={isFetching && !isLoading}
+        actions={
+          <>
+            <Tooltip title="Export events">
+              <Button
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={() => { setExportDialogOpen(true); }}
+                disabled={isExporting}
+              >
+                {isExporting ? 'Exporting...' : 'Export'}
+              </Button>
+            </Tooltip>
+            <Tooltip title="Purge old events">
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteSweepIcon />}
+                onClick={() => { setPurgeDialogOpen(true); }}
+              >
+                Purge
+              </Button>
+            </Tooltip>
+          </>
+        }
+      />
 
       {/* Filters */}
       <EventFilterBar filters={filters} onFilterChange={setFilters} />
 
       {/* Errors */}
-      {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load events: {error.message}</Alert>}
+      {error && (
+        <ErrorState title="Couldn't load events" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
+      )}
       {exportError && <Alert severity="error" sx={{ mb: 2 }}>{exportError}</Alert>}
 
-      {/* Loading */}
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer component={Paper}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell padding="checkbox" />
-                <TableCell>Date/Time</TableCell>
-                <TableCell>Level</TableCell>
-                <TableCell>Event</TableCell>
-                <TableCell>Outcome</TableCell>
-                <TableCell>User ID</TableCell>
-                <TableCell>IP Address</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {data && data.data.length > 0 ? (
-                data.data.map((event) => (
+      <TableContainer component={Paper}>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell padding="checkbox" />
+              <TableCell>Date/Time</TableCell>
+              <TableCell>Level</TableCell>
+              <TableCell>Event</TableCell>
+              <TableCell>Outcome</TableCell>
+              <TableCell>User ID</TableCell>
+              <TableCell>IP Address</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {isLoading ? (
+              <TableSkeleton rows={6} columns={7} />
+            ) : data && data.data.length > 0 ? (
+              data.data.map((event) => (
                   <TableRow key={event.id} hover sx={{ '& > *': { borderBottom: expandedId === event.id ? 'unset' : undefined } }}>
                     <TableCell padding="checkbox">
-                      <IconButton size="small" onClick={() => { handleToggleExpand(event); }}>
+                      <IconButton
+                        aria-label={expandedId === event.id ? 'Collapse event details' : 'Expand event details'}
+                        size="small"
+                        onClick={() => { handleToggleExpand(event); }}
+                      >
                         {expandedId === event.id ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
                       </IconButton>
                     </TableCell>
@@ -204,44 +210,46 @@ export function EventsPage(): ReactNode {
                     </TableCell>
                   </TableRow>
                 ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={7} align="center">
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
-                      No events recorded
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
+            ) : (
+              <TableRow>
+                <TableCell colSpan={7}>
+                  <EmptyState
+                    dense
+                    icon={<EventIcon />}
+                    title="No events recorded"
+                    description="Audit events will appear here as users and channels act on the system."
+                  />
+                </TableCell>
+              </TableRow>
+            )}
 
-              {/* Expanded Detail Row */}
-              {data?.data.map((event) => (
-                <TableRow key={`detail-${String(event.id)}`}>
-                  <TableCell colSpan={7} sx={{ py: 0, borderBottom: expandedId === event.id ? undefined : 'none' }}>
-                    <Collapse in={expandedId === event.id} timeout="auto" unmountOnExit>
-                      <EventDetailPanel eventId={event.id} />
-                    </Collapse>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {data && data.pagination.total > 0 ? (
-            <TablePagination
-              component="div"
-              count={data.pagination.total}
-              page={page}
-              onPageChange={(_e, newPage) => { setPage(newPage); }}
-              rowsPerPage={pageSize}
-              onRowsPerPageChange={(e) => {
-                setPageSize(parseInt(e.target.value, 10));
-                setPage(0);
-              }}
-              rowsPerPageOptions={[10, 25, 50, 100]}
-            />
-          ) : null}
-        </TableContainer>
-      )}
+            {/* Expanded Detail Row */}
+            {!isLoading && data?.data.map((event) => (
+              <TableRow key={`detail-${String(event.id)}`}>
+                <TableCell colSpan={7} sx={{ py: 0, borderBottom: expandedId === event.id ? undefined : 'none' }}>
+                  <Collapse in={expandedId === event.id} timeout="auto" unmountOnExit>
+                    <EventDetailPanel eventId={event.id} />
+                  </Collapse>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {data && data.pagination.total > 0 ? (
+          <TablePagination
+            component="div"
+            count={data.pagination.total}
+            page={page}
+            onPageChange={(_e, newPage) => { setPage(newPage); }}
+            rowsPerPage={pageSize}
+            onRowsPerPageChange={(e) => {
+              setPageSize(parseInt(e.target.value, 10));
+              setPage(0);
+            }}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+          />
+        ) : null}
+      </TableContainer>
 
       {/* Export Dialog */}
       <Dialog open={exportDialogOpen} onClose={() => { setExportDialogOpen(false); }}>
