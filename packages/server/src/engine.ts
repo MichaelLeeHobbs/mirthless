@@ -54,6 +54,7 @@ import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { db } from './lib/db.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
+import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
 import type { ChannelDetail } from './services/channel.service.js';
 
@@ -96,9 +97,16 @@ export interface StorageConfig {
   readonly messageStorageMode: MessageStorageMode;
   readonly removeContentOnCompletion: boolean;
   readonly removeAttachmentsOnCompletion: boolean;
+  /** When true, encrypt content at rest (AES-256-GCM) before persisting. */
+  readonly encryptData: boolean;
 }
 
 const OK_VOID = { ok: true as const, value: undefined, error: null } as Result<void>;
+
+/** Build a failure Result carrying the given error. */
+function fail<T>(error: Result<T>['error'] & object): Result<T> {
+  return { ok: false, value: null, error } as Result<T>;
+}
 
 /**
  * Determines whether a given content type should be stored based on the storage mode.
@@ -119,8 +127,9 @@ export function shouldStoreContent(mode: MessageStorageMode, contentType: number
  * When a StorageConfig is provided, filters storeContent calls by storage mode
  * and handles content/attachment cleanup on completion.
  */
-function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
+export function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
   const mode = config?.messageStorageMode ?? MESSAGE_STORAGE_MODE.DEVELOPMENT;
+  const encrypt = config?.encryptData ?? false;
   return {
     createMessage: (channelId, serverId, correlationId) =>
       MessageService.createMessage(channelId, serverId, correlationId),
@@ -132,7 +141,14 @@ function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
       if (!shouldStoreContent(mode, contentType)) {
         return Promise.resolve(OK_VOID);
       }
-      return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], content, dataType);
+      let toStore = content;
+      if (encrypt) {
+        const enc = encryptContent(content);
+        // Fail loud: never fall back to storing plaintext when encryption is on.
+        if (!enc.ok) return Promise.resolve(fail<void>(enc.error));
+        toStore = enc.value;
+      }
+      return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], toStore, dataType, encrypt);
     },
     markProcessed: async (channelId, messageId) => {
       const result = await MessageService.markProcessed(channelId, messageId);
@@ -163,7 +179,21 @@ function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
     initializeMessage: (channelId, serverId, connectorName, contentRows, correlationId) => {
       // Filter content rows by storage policy before sending to batch
       const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType));
-      return MessageService.initializeMessage(channelId, serverId, connectorName, filtered, correlationId);
+      if (!encrypt) {
+        return MessageService.initializeMessage(channelId, serverId, connectorName, filtered, correlationId, false);
+      }
+      // Encrypt each surviving content row before it is persisted. Fail loud on
+      // any encryption error so the whole message init fails rather than storing
+      // PHI in plaintext under an encryptData channel.
+      const encRows: { metaDataId: number; contentType: number; content: string; dataType: string }[] = [];
+      for (const r of filtered) {
+        const enc = encryptContent(r.content);
+        if (!enc.ok) {
+          return Promise.resolve(fail<{ messageId: number; correlationId: string }>(enc.error));
+        }
+        encRows.push({ ...r, content: enc.value });
+      }
+      return MessageService.initializeMessage(channelId, serverId, connectorName, encRows, correlationId, true);
     },
     finalizeMessage: (channelId, messageId, serverId) =>
       MessageService.finalizeMessage(channelId, messageId, serverId),
@@ -188,6 +218,16 @@ export class EngineManager {
       throw new Error(`Channel ${channel.id} is already deployed`);
     }
 
+    // Fail loud, never silent: a channel that asks for at-rest encryption must
+    // not deploy (and store PHI as plaintext) when no key is configured.
+    if (channel.encryptData && !isContentEncryptionConfigured()) {
+      throw new Error(
+        `Channel ${channel.id} has encryptData enabled but CONTENT_ENCRYPTION_KEY is not configured. ` +
+        'Refusing to deploy — message content would be stored in plaintext. ' +
+        'Set CONTENT_ENCRYPTION_KEY (64 hex chars) or disable encryptData on the channel.',
+      );
+    }
+
     const runtime = new ChannelRuntime();
     const gcm = new GlobalChannelMap();
 
@@ -196,6 +236,7 @@ export class EngineManager {
       messageStorageMode: channel.messageStorageMode as MessageStorageMode,
       removeContentOnCompletion: channel.removeContentOnCompletion,
       removeAttachmentsOnCompletion: channel.removeAttachmentsOnCompletion,
+      encryptData: channel.encryptData,
     });
 
     // Create source connector

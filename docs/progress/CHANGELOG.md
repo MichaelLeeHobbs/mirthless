@@ -2,6 +2,149 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-12 — Backend production-readiness: deferred items closed (branch `w1/backend`)
+
+Scope: `packages/{engine,connectors,server,core-models}`. Closed three deferred release items
+(D-140, D-141, D-143). Full workspace build + lint (`--max-warnings 0`) clean;
+connectors 400→418, server 916→922 tests passing (engine 347, core-util 88 unchanged).
+
+### encryptData wired end-to-end (supersedes D-143 → D-156)
+- Message store adapter (`engine.ts`) encrypts content rows (`content-crypto.encryptContent`,
+  AES-256-GCM) and sets `message_content.is_encrypted` when a channel has `encryptData`.
+- Decrypt-on-read via new `decryptIfEncrypted()` (self-describing `enc:v1:` envelopes) in
+  `MessageService.loadContent`, `MessageQueryService.getMessageDetail`, and
+  `MessageReprocessService` — mixed plaintext/ciphertext rows both read back.
+- `EngineManager.deploy()` fails loud if `encryptData` is set but `CONTENT_ENCRYPTION_KEY`
+  is missing (never stores PHI as plaintext). Removed the 422 rejection in `channel.service`.
+- Tests: content-crypto (`decryptIfEncrypted`), `engine-encryption.test.ts` (round-trip,
+  is_encrypted flag, stored-bytes-not-plaintext, encrypt-fail-is-loud, deploy key guard),
+  channel.service accepts+persists the flag.
+
+### DB read-then-update atomicity + statement timeouts (supersedes D-141 → D-157)
+- `connection-pool.ts`: `statement_timeout`/`query_timeout` (30s default) + new `transaction()`
+  helper (BEGIN/COMMIT, ROLLBACK on throw).
+- `database-receiver.ts`: ALWAYS/ON_SUCCESS now claim rows in one transaction via
+  `SELECT ... FOR UPDATE SKIP LOCKED` (new `appendLockClause`), dispatch + ack under lock →
+  no concurrent double-processing. NEVER mode unchanged.
+- Timeouts for IMAP (`email-receiver.ts`) and SMTP send (`smtp-dispatcher.ts`) via new
+  connectors-local `timeout.ts` (`withTimeout`/`withTimeoutSignal`).
+- Tests: concurrent-poller no-double-dispatch (locking fake), lock-clause unit, pool
+  statement_timeout + transaction commit/rollback, SMTP/IMAP hang → timeout error.
+
+### Durable file quarantine (supersedes D-140 → D-158)
+- `file-receiver.ts`: quarantine set persisted to `.mirthless-quarantine.json` sidecar in the
+  watched dir; loaded on start, excluded from polling, rewritten on quarantine. Survives restart.
+- Tests: persist-on-quarantine, and durable survival (new receiver instance over same dir
+  loads the ledger and does not re-dispatch).
+
+## 2026-07-12 — Web UI Design-System Foundation Pass
+
+Branch `w1/ui` (worktree). Scope: `packages/web/**` only. A restyle + a11y + perf
+foundation pass — no new pages or features. Build clean with **no chunk-size warning**;
+web tests 25 → 45 passing; ESLint clean (`--max-warnings 0`).
+
+### Design tokens & theme (`styles/tokens.ts`, `styles/theme.ts`)
+- Split the theme into a token layer (`tokens.ts`) + MUI theme builder (`theme.ts`). Both
+  dark and light are now first-class and fully polished (verified by screenshot).
+- **Palette**: calm clinical primary (dark `#38bdf8` / light `#0369a1`) on richer slate
+  surfaces (dark `#0b1120` bg, `#131b2e` paper; light `#f3f6fb` bg, white paper), hairline
+  dividers, tuned text tiers. Restrained teal secondary.
+- **Semantic status colours are first-class** — `palette.status` = healthy / warning /
+  critical / info / neutral, mode-tuned (light-step on dark, dark-step on light) for AA
+  contrast in both modes.
+- **Typography**: self-hosted Inter Variable (`@fontsource-variable/inter`, no runtime CDN);
+  compact type scale; **tabular numerals** on all tables + stat tiles.
+- **Elevation/borders**: subtle 1px borders over shadows; consistent radii (6/8/12).
+- **Global via CssBaseline**: visible `:focus-visible` ring on every control, subtle
+  scrollbars, `prefers-reduced-motion` honoured, pre-paint theme colour (no flash).
+- Component overrides for Paper/Card/Button/Chip/Tooltip/Table*/OutlinedInput/Alert so
+  every page is consistent without per-page styling.
+
+### Signature: unified status system
+- `lib/status.ts` (pure, tested) maps channel states & message statuses → semantic level.
+- `components/common/StatusChip.tsx` — `StatusChip` / `StatusDot` / `ChannelStateChip` /
+  `MessageStatusChip`: dot + label so state is never colour-alone (CVD/AT safe). Adopted in
+  ChannelStatusTable, GroupedChannelTable, MessageTable, CrossChannelSearch. Removed the old
+  scattered `getStateColor` / `getStatusColor` / `getStatusDotColor` helpers.
+- Dashboard `SummaryCards` reworked into colour-keyed stat tiles (tabular, accent bar).
+
+### Shared state components (applied across ~18 pages)
+- `common/PageHeader.tsx` (title + description + actions + isFetching), `common/states/`
+  `EmptyState`, `ErrorState` (Alert + Retry), `LoadingState` (`TableSkeleton`, `LoadingBlock`).
+- Retrofitted list/detail pages to skeletons-over-spinners, inviting empty states, and
+  honest retryable error states. Fixed CodeTemplatePage's plain "Loading…" text and
+  ExtensionsPage's full-page error early-return.
+
+### Chrome & a11y
+- AppLayout: brand mark (MonitorHeart badge), refined active nav state, tidier sidebar.
+- Added `aria-label` to ~40 previously-unlabelled icon-only buttons across the app.
+
+### Performance (code-splitting)
+- Route-level `React.lazy` + Suspense (`RouteFallback`) for every page; `manualChunks`
+  splits vendor-react / vendor-mui / vendor-data / vendor-monaco.
+- **Bundle: single 1,109 kB chunk → largest chunk 413 kB** (vendor-mui, gzip 124 kB); pages
+  are 2–21 kB each and load on demand. Chunk-size warning eliminated.
+
+### Tests
+- New: `lib/__tests__/status.test.ts`, `components/common/__tests__/StatusChip.test.tsx`,
+  `components/common/states/__tests__/states.test.tsx` (20 tests).
+## 2026-07-12 — Ops, Docs & CI Hardening (v0.1 readiness)
+
+Branch `w1/ops`. Scope: repo root, `.github/**`, `docker` docs, `docs/**`, `scripts/**`,
+new test files under `packages/server/test/integration/**`. No application source changed.
+
+### Community & security docs
+- `SECURITY.md` (private disclosure via GitHub advisories/email, supported versions,
+  healthcare-appropriate response expectations), `CONTRIBUTING.md` (pnpm+Postgres setup,
+  quality gates, branch/PR/commit conventions, standards pointer), `CODE_OF_CONDUCT.md`
+  (Contributor Covenant 2.1).
+- `.github/ISSUE_TEMPLATE/` (bug_report, feature_request, config.yml) + `PULL_REQUEST_TEMPLATE.md`
+  — all with PHI/security guardrails and a data-integrity checklist.
+
+### Operator docs (`docs/ops/`)
+- `backup-restore.md` (Postgres `pg_dump`/`pg_restore` + the config backup API at
+  `GET/POST /api/v1/system/backup`; documents included/excluded — messages/stats/events and
+  user password hashes are excluded), `upgrade.md` (migrate-before-start, downtime, rollback
+  via dump restore), `tls-and-phi.md` (nginx edge TLS + connector `TlsServerOptions`/
+  `TlsClientOptions` shapes from `connectors/src/tls.ts`), `resource-and-observability.md`
+  (`/health/{live,ready}` + `/health`, auth-gated `/metrics`, `LOG_HTTP_HEADERS` caveat,
+  sizing), `throughput-benchmark.md`. README gained Operations + Contributing/Security links.
+- Cross-checked `.env.production.example` against `server/src/config/index.ts`: already
+  complete — every validated var present (`CONTENT_ENCRYPTION_KEY`, `METRICS_PUBLIC`,
+  `API_DOCS_ENABLED`, `LOG_HTTP_HEADERS`, etc.) plus compose/entrypoint vars
+  (`POSTGRES_PASSWORD`, `SEED_ON_START`). No missing vars.
+
+### CI hardening (`.github/workflows/`)
+- `ci.yml`: existing build/lint/unit gate now also runs `pnpm db:migrate` against the
+  Postgres service and a new **integration lane** (`pnpm test:integration`) exercising real
+  SQL. Added an **E2E job** (migrate+seed, `npx playwright install --with-deps chromium`,
+  `pnpm exec playwright test`). `ci.yml` is now `workflow_call`-able.
+- `docker-build.yml`: gated on CI passing (`uses: ./.github/workflows/ci.yml`) + a new
+  **smoke job** that builds the server image, boots it against Postgres (entrypoint runs
+  migrations+seed), and curls `/health/live` before `build-and-push` pushes `:latest`.
+
+### Real-DB integration tests (new files only)
+- `packages/server/test/integration/*.itest.ts` + `vitest.integration.config.ts` +
+  `_setup.ts` harness. Gated to run only when `DATABASE_URL` targets a `*_test` database
+  (skips gracefully otherwise); excluded from `pnpm test` via the `.itest.ts` suffix. Script:
+  `pnpm test:integration`. Covers queue `FOR UPDATE SKIP LOCKED` claim + no-double-claim,
+  partition existence/DDL, data-pruner fail-safety, channel CRUD + message round trip.
+  **Validated locally against real Postgres: 9/9 pass.**
+- **Bug found (release blocker):** the integration suite caught that
+  `packages/server/src/services/message-delete-helper.ts` builds
+  `message_id = ANY(${ids})`, which drizzle renders as invalid SQL ("malformed array
+  literal") — the data pruner's delete has never worked end-to-end (mocks hid it). Test
+  asserts the current fail-safe/atomic behavior and documents the fix (`inArray(...)` /
+  `ANY(${ids}::bigint[])`). See D-157.
+- **Latent bug confirmed:** partition parent tables ship as plain tables, not
+  `PARTITION BY LIST` — so `createPartitions` fails against the real schema. See D-156.
+
+### Throughput benchmark
+- `scripts/bench-throughput.mjs` (+ `pnpm bench:throughput`) drives HL7v2 through the real
+  engine `MessageProcessor` + `VmSandboxExecutor`. Baseline (dev box, in-memory store):
+  **~500 msgs/sec** with one sandbox script/message, **~23,000 msgs/sec** without scripts —
+  the `node:vm` sandbox is the dominant cost. ROADMAP "throughput: untested" updated.
+
 ## 2026-07-12 — Connectors Hardening (release blockers)
 
 Branch `fix/connectors-hardening`. Scope: `packages/connectors/**`. Introduced the first

@@ -7,7 +7,6 @@ import { useState, useCallback, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
-import Typography from '@mui/material/Typography';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -15,18 +14,20 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import TablePagination from '@mui/material/TablePagination';
-import Chip from '@mui/material/Chip';
 import TextField from '@mui/material/TextField';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
-import CircularProgress from '@mui/material/CircularProgress';
-import Alert from '@mui/material/Alert';
 import Link from '@mui/material/Link';
+import SearchOffIcon from '@mui/icons-material/SearchOff';
 import { MESSAGE_STATUS } from '@mirthless/core-models';
 import { useCrossChannelSearch, type CrossChannelFilters } from '../hooks/use-cross-channel-search.js';
-import { getStatusColor } from '../components/messages/MessageTable.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { MessageStatusChip } from '../components/common/StatusChip.js';
+import { EmptyState } from '../components/common/states/EmptyState.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { TableSkeleton } from '../components/common/states/LoadingState.js';
 
 const STATUS_OPTIONS = Object.values(MESSAGE_STATUS);
 
@@ -46,7 +47,7 @@ export function CrossChannelSearchPage(): ReactNode {
     ...(dateTo ? { dateTo: new Date(dateTo).toISOString() } : {}),
   };
 
-  const { data: searchResult, isLoading, error } = useCrossChannelSearch(filters);
+  const { data: searchResult, isLoading, isFetching, error, refetch } = useCrossChannelSearch(filters);
 
   const handlePageChange = useCallback((_event: unknown, page: number) => {
     setOffset(page * limit);
@@ -59,9 +60,11 @@ export function CrossChannelSearchPage(): ReactNode {
 
   return (
     <Box>
-      <Typography variant="h5" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
-        Messages
-      </Typography>
+      <PageHeader
+        title="Messages"
+        description="Search and trace messages across every channel."
+        isFetching={isFetching && !isLoading}
+      />
 
       {/* Filters */}
       <Paper sx={{ p: 2, mb: 3 }}>
@@ -102,32 +105,44 @@ export function CrossChannelSearchPage(): ReactNode {
       </Paper>
 
       {error ? (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Failed to search messages: {error.message}
-        </Alert>
+        <ErrorState
+          title="Couldn't search messages"
+          error={error}
+          onRetry={() => void refetch()}
+          sx={{ mb: 2 }}
+        />
       ) : null}
 
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <Paper>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
+      <Paper>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>ID</TableCell>
+                <TableCell>Channel</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Received</TableCell>
+                <TableCell>Processed</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {isLoading ? (
+                <TableSkeleton rows={6} columns={5} />
+              ) : (!searchResult?.items || searchResult.items.length === 0) ? (
                 <TableRow>
-                  <TableCell>ID</TableCell>
-                  <TableCell>Channel</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Received</TableCell>
-                  <TableCell>Processed</TableCell>
+                  <TableCell colSpan={5} sx={{ border: 0 }}>
+                    <EmptyState
+                      dense
+                      icon={<SearchOffIcon />}
+                      title="No messages found"
+                      description="Try widening the date range or clearing the status filter."
+                    />
+                  </TableCell>
                 </TableRow>
-              </TableHead>
-              <TableBody>
-                {searchResult?.items.map((item) => (
+              ) : (
+                searchResult.items.map((item) => (
                   <TableRow key={`${item.channelId}-${String(item.messageId)}`} hover>
-                    <TableCell>{item.messageId}</TableCell>
+                    <TableCell sx={{ fontFamily: (t) => t.palette.fontFamilyMono, fontSize: '0.8125rem' }}>{item.messageId}</TableCell>
                     <TableCell>
                       <Link
                         component="button"
@@ -139,37 +154,26 @@ export function CrossChannelSearchPage(): ReactNode {
                       </Link>
                     </TableCell>
                     <TableCell>
-                      {item.status ? (
-                        <Chip label={item.status} color={getStatusColor(item.status ?? '')} size="small" variant="outlined" />
-                      ) : '-'}
+                      {item.status ? <MessageStatusChip status={item.status} /> : '-'}
                     </TableCell>
                     <TableCell>{new Date(item.receivedAt).toLocaleString()}</TableCell>
                     <TableCell>{item.processed ? 'Yes' : 'No'}</TableCell>
                   </TableRow>
-                ))}
-                {(!searchResult?.items || searchResult.items.length === 0) ? (
-                  <TableRow>
-                    <TableCell colSpan={5} align="center">
-                      <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                        No messages found
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                ) : null}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          <TablePagination
-            component="div"
-            count={searchResult?.total ?? 0}
-            page={Math.floor(offset / limit)}
-            onPageChange={handlePageChange}
-            rowsPerPage={limit}
-            onRowsPerPageChange={handleRowsPerPageChange}
-            rowsPerPageOptions={[10, 25, 50, 100]}
-          />
-        </Paper>
-      )}
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        <TablePagination
+          component="div"
+          count={searchResult?.total ?? 0}
+          page={Math.floor(offset / limit)}
+          onPageChange={handlePageChange}
+          rowsPerPage={limit}
+          onRowsPerPageChange={handleRowsPerPageChange}
+          rowsPerPageOptions={[10, 25, 50, 100]}
+        />
+      </Paper>
     </Box>
   );
 }

@@ -9,6 +9,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import type { MessageSearchQuery } from '@mirthless/core-models';
 import { db } from '../lib/db.js';
 import { ServiceError } from '../lib/service-error.js';
+import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import {
   messages,
   connectorMessages,
@@ -257,15 +258,18 @@ export class MessageQueryService {
           ),
         );
 
-      // Group content by metaDataId
+      // Group content by metaDataId, decrypting any at-rest encrypted rows.
       const contentMap = new Map<number, ConnectorContent>();
       for (const row of contentRows) {
         const typeName = CONTENT_TYPE_NAMES[row.contentType] ?? `type_${String(row.contentType)}`;
+        const decrypted = decryptIfEncrypted(row.content ?? null);
+        if (!decrypted.ok) throw decrypted.error;
+        const value = decrypted.value ?? undefined;
         const existing = contentMap.get(row.metaDataId);
         if (existing) {
-          (existing as Record<string, string | undefined>)[typeName] = row.content ?? undefined;
+          (existing as Record<string, string | undefined>)[typeName] = value;
         } else {
-          contentMap.set(row.metaDataId, { [typeName]: row.content ?? undefined });
+          contentMap.set(row.metaDataId, { [typeName]: value });
         }
       }
 

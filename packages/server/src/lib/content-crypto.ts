@@ -5,12 +5,14 @@
 // `encryptData` enabled. The key is derived from the CONTENT_ENCRYPTION_KEY
 // environment variable (64 hex chars = 32 bytes), validated at startup.
 //
-// INTEGRATION POINT (not yet wired): the message write path
-// (packages/server/src/services/message.service.ts — owned by the engine agent)
-// must call `encryptContent()` before persisting message/connector content when
-// `channel.encryptData` is true, and `decryptContent()` on read. Until that
-// wiring lands, the API rejects enabling `encryptData` (see channel.service.ts)
-// so the flag can never masquerade as protection. See docs/progress/DECISIONS.md.
+// WIRED: the message store adapter (packages/server/src/engine.ts) calls
+// `encryptContent()` before persisting content rows for channels with
+// `encryptData` true (setting message_content.is_encrypted). Read paths
+// (MessageService.loadContent, MessageQueryService.getMessageDetail,
+// MessageReprocessService) call `decryptIfEncrypted()`, which decrypts only
+// self-describing envelopes so mixed plaintext/ciphertext rows both read back
+// correctly. EngineManager.deploy() refuses to deploy an encryptData channel
+// when no key is configured. See docs/progress/DECISIONS.md (D-143).
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { tryCatch, type Result } from 'stderr-lib';
@@ -60,6 +62,20 @@ export function encryptContent(plaintext: string): Result<string> {
     const packed = Buffer.concat([iv, authTag, ciphertext]).toString('base64');
     return `${ENVELOPE_PREFIX}${packed}`;
   });
+}
+
+/**
+ * Decrypt content read from storage when it is an encrypted envelope; otherwise
+ * return it unchanged. This lets mixed plaintext/ciphertext rows (written before
+ * and after encryptData was enabled) both read back correctly. A `null` value
+ * (absent content) passes through untouched. Decryption of a genuine envelope
+ * fails loudly (missing key, tampering) rather than returning ciphertext.
+ */
+export function decryptIfEncrypted(content: string | null): Result<string | null> {
+  if (content === null || !isEncryptedEnvelope(content)) {
+    return { ok: true, value: content, error: null };
+  }
+  return decryptContent(content);
 }
 
 /**

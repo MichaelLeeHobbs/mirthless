@@ -8,6 +8,10 @@
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+import { withTimeout } from '../timeout.js';
+
+/** Bound each IMAP operation — a hung mailbox must not wedge the poll loop. */
+const IMAP_OP_TIMEOUT_MS = 30_000;
 
 // ----- Constants -----
 
@@ -116,7 +120,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
       }
 
       this.client = this.createClient(this.config);
-      await this.client.connect();
+      await withTimeout(this.client.connect(), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
 
       this.pollTimer = setInterval(() => {
         void this.pollCycle();
@@ -152,7 +156,9 @@ export class EmailReceiver implements SourceConnectorRuntime {
     try {
       if (!this.client) await this.reconnect();
       if (!this.client) return;
-      const messages = await this.client.fetchUnread(this.config.folder);
+      const messages = await withTimeout(
+        this.client.fetchUnread(this.config.folder), IMAP_OP_TIMEOUT_MS, 'IMAP fetchUnread',
+      );
       for (const msg of messages) {
         if (this.matchesSubjectFilter(msg)) {
           await this.processMessage(msg);
@@ -173,7 +179,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
   /** (Re)establish the IMAP connection. Throws on failure (caught by caller). */
   private async reconnect(): Promise<void> {
     const client = this.createClient(this.config);
-    await client.connect();
+    await withTimeout(client.connect(), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
     this.client = client;
   }
 
@@ -221,13 +227,13 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
     switch (this.config.postAction) {
       case EMAIL_POST_ACTION.DELETE:
-        await this.client.deleteMessage(uid);
+        await withTimeout(this.client.deleteMessage(uid), IMAP_OP_TIMEOUT_MS, 'IMAP deleteMessage');
         break;
       case EMAIL_POST_ACTION.MARK_READ:
-        await this.client.markRead(uid);
+        await withTimeout(this.client.markRead(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markRead');
         break;
       case EMAIL_POST_ACTION.MOVE:
-        await this.client.moveMessage(uid, this.config.moveToFolder);
+        await withTimeout(this.client.moveMessage(uid, this.config.moveToFolder), IMAP_OP_TIMEOUT_MS, 'IMAP moveMessage');
         break;
     }
   }
@@ -235,7 +241,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
   /** Disconnect the IMAP client if connected. */
   private async disconnectClient(): Promise<void> {
     if (this.client) {
-      await this.client.disconnect();
+      await withTimeout(this.client.disconnect(), IMAP_OP_TIMEOUT_MS, 'IMAP disconnect');
     }
   }
 

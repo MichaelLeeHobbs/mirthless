@@ -10,6 +10,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import { SOCKET_EVENT, type ContentType, type MessageStatus } from '@mirthless/core-models';
 import { db } from '../lib/db.js';
 import { emitToRoom } from '../lib/socket.js';
+import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import {
   messages,
   connectorMessages,
@@ -318,7 +319,11 @@ export class MessageService {
           ),
         );
 
-      return row?.content ?? null;
+      // Decrypt if the stored value is an encryption envelope; plaintext (mixed
+      // legacy rows / non-encrypted channels) passes through unchanged.
+      const decrypted = decryptIfEncrypted(row?.content ?? null);
+      if (!decrypted.ok) throw decrypted.error;
+      return decrypted.value;
     });
   }
 
@@ -463,6 +468,7 @@ export class MessageService {
   private static buildContentInsert(
     channelId: string,
     contentRows: ReadonlyArray<{ metaDataId: number; contentType: number; content: string; dataType: string }>,
+    encrypted: boolean,
   ): ReturnType<typeof sql> {
     const valuesRows = contentRows.map((row, i) =>
       i === 0
@@ -471,7 +477,7 @@ export class MessageService {
     );
     return sql`
       INSERT INTO message_content (meta_data_id, content_type, content, data_type, message_id, channel_id, is_encrypted)
-      SELECT c.meta_data_id, c.content_type, c.content, c.data_type, new_msg.id, ${channelId}, false
+      SELECT c.meta_data_id, c.content_type, c.content, c.data_type, new_msg.id, ${channelId}, ${encrypted}
       FROM new_msg
       CROSS JOIN (VALUES ${sql.join(valuesRows, sql`, `)}) AS c(meta_data_id, content_type, content, data_type)
     `;
@@ -486,6 +492,10 @@ export class MessageService {
    * to the storage policy: when `contentRows` is empty the content INSERT is
    * skipped entirely (an empty VALUES list is invalid SQL and, previously, threw
    * — silently losing the whole message in PRODUCTION/METADATA/DISABLED modes).
+   *
+   * `encrypted` marks the content rows as encrypted (is_encrypted = true). The
+   * caller (message store adapter) is responsible for having already encrypted
+   * each row's content when the channel has encryptData enabled.
    */
   static async initializeMessage(
     channelId: string,
@@ -493,6 +503,7 @@ export class MessageService {
     connectorName: string,
     contentRows: ReadonlyArray<{ metaDataId: number; contentType: number; content: string; dataType: string }>,
     correlationId?: string,
+    encrypted = false,
   ): Promise<Result<{ messageId: number; correlationId: string }>> {
     return tryCatch(async () => {
       const correlationInsert = correlationId
@@ -503,7 +514,7 @@ export class MessageService {
       // (new_msg.id) rather than currval() — currval on a pooled connection can
       // read a previous message's id and misattribute PHI content.
       const contentCte = contentRows.length > 0
-        ? sql`, new_content AS (${MessageService.buildContentInsert(channelId, contentRows)})`
+        ? sql`, new_content AS (${MessageService.buildContentInsert(channelId, contentRows, encrypted)})`
         : sql``;
 
       const result = await db.execute<{ message_id: number; correlation_id: string }>(sql`

@@ -19,8 +19,6 @@ import TablePagination from '@mui/material/TablePagination';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Chip from '@mui/material/Chip';
-import CircularProgress from '@mui/material/CircularProgress';
-import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -29,14 +27,19 @@ import DialogActions from '@mui/material/DialogActions';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import NotificationsIcon from '@mui/icons-material/Notifications';
 import { useAlerts, useDeleteAlert, useToggleAlertEnabled } from '../hooks/use-alerts.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { EmptyState } from '../components/common/states/EmptyState.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import type { AlertSummary } from '../api/client.js';
 
 export function AlertsPage(): ReactNode {
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
-  const { data, isLoading, error, isFetching } = useAlerts(page + 1, pageSize);
+  const { data, isLoading, error, isFetching, refetch } = useAlerts(page + 1, pageSize);
   const deleteAlert = useDeleteAlert();
   const toggleEnabled = useToggleAlertEnabled();
 
@@ -55,45 +58,43 @@ export function AlertsPage(): ReactNode {
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Alerts</Typography>
-          {isFetching && !isLoading && <CircularProgress size={20} />}
-        </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => { navigate('/alerts/new'); }}
-        >
-          Create Alert
-        </Button>
-      </Box>
+      <PageHeader
+        title="Alerts"
+        description="Configure notifications for channel errors and events."
+        isFetching={isFetching && !isLoading}
+        actions={
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => { navigate('/alerts/new'); }}
+          >
+            Create Alert
+          </Button>
+        }
+      />
 
       {/* Error */}
-      {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load alerts: {error.message}</Alert>}
+      {error && (
+        <ErrorState title="Couldn't load alerts" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
+      )}
 
-      {/* Loading */}
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Trigger Type</TableCell>
-                <TableCell align="center">Channels</TableCell>
-                <TableCell align="center">Actions</TableCell>
-                <TableCell align="center">Enabled</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {data && data.data.length > 0 ? (
-                data.data.map((alert) => (
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Name</TableCell>
+              <TableCell>Trigger Type</TableCell>
+              <TableCell align="center">Channels</TableCell>
+              <TableCell align="center">Actions</TableCell>
+              <TableCell align="center">Enabled</TableCell>
+              <TableCell align="right">Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {isLoading ? (
+              <TableSkeleton rows={6} columns={6} />
+            ) : data && data.data.length > 0 ? (
+              data.data.map((alert) => (
                   <TableRow key={alert.id} hover>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>{alert.name}</Typography>
@@ -117,45 +118,47 @@ export function AlertsPage(): ReactNode {
                     </TableCell>
                     <TableCell align="right">
                       <Tooltip title="Edit">
-                        <IconButton size="small" onClick={() => { navigate(`/alerts/${alert.id}`); }}>
+                        <IconButton aria-label="Edit alert" size="small" onClick={() => { navigate(`/alerts/${alert.id}`); }}>
                           <EditIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Delete">
-                        <IconButton size="small" onClick={() => { setDeleteTarget(alert); }}>
+                        <IconButton aria-label="Delete alert" size="small" onClick={() => { setDeleteTarget(alert); }}>
                           <DeleteIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} align="center">
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
-                      No alerts configured
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-          {data && data.pagination.total > 0 ? (
-            <TablePagination
-              component="div"
-              count={data.pagination.total}
-              page={page}
-              onPageChange={(_e, newPage) => { setPage(newPage); }}
-              rowsPerPage={pageSize}
-              onRowsPerPageChange={(e) => {
-                setPageSize(parseInt(e.target.value, 10));
-                setPage(0);
-              }}
-              rowsPerPageOptions={[10, 25, 50]}
-            />
-          ) : null}
-        </TableContainer>
-      )}
+            ) : (
+              <TableRow>
+                <TableCell colSpan={6}>
+                  <EmptyState
+                    dense
+                    icon={<NotificationsIcon />}
+                    title="No alerts configured"
+                    description="Create an alert to get notified when channel errors or events occur."
+                  />
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+        {data && data.pagination.total > 0 ? (
+          <TablePagination
+            component="div"
+            count={data.pagination.total}
+            page={page}
+            onPageChange={(_e, newPage) => { setPage(newPage); }}
+            rowsPerPage={pageSize}
+            onRowsPerPageChange={(e) => {
+              setPageSize(parseInt(e.target.value, 10));
+              setPage(0);
+            }}
+            rowsPerPageOptions={[10, 25, 50]}
+          />
+        ) : null}
+      </TableContainer>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteTarget !== null} onClose={() => { setDeleteTarget(null); }}>

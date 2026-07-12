@@ -10,6 +10,7 @@ import { db } from '../lib/db.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { messageContent, messages } from '../db/schema/index.js';
 import { CONTENT_TYPE } from '../db/schema/message-content.js';
+import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { deleteMessagesByIds } from './message-delete-helper.js';
 import { getEngine } from '../engine.js';
 
@@ -56,6 +57,11 @@ export class MessageReprocessService {
         throw new ServiceError('NOT_FOUND', `Raw content not found for message ${String(messageId)}. Reprocess requires stored raw content (DEVELOPMENT/RAW storage mode).`);
       }
 
+      // Decrypt at-rest encrypted raw content before re-injecting it.
+      const decrypted = decryptIfEncrypted(row.content);
+      if (!decrypted.ok) throw decrypted.error;
+      const rawContent = decrypted.value ?? '';
+
       // Re-inject the raw content through the deployed channel's pipeline.
       const deployed = getEngine().getRuntime(channelId);
       if (!deployed) {
@@ -66,7 +72,7 @@ export class MessageReprocessService {
         throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to reprocess a message.`);
       }
 
-      const injected = await deployed.processMessage(row.content, { reprocessedFrom: messageId });
+      const injected = await deployed.processMessage(rawContent, { reprocessedFrom: messageId });
       if (!injected.ok) {
         throw new ServiceError('INTERNAL', injected.error.message);
       }

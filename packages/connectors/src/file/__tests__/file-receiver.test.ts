@@ -13,6 +13,7 @@ import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 vi.mock('node:fs/promises', () => ({
   readdir: vi.fn(),
   readFile: vi.fn(),
+  writeFile: vi.fn(),
   stat: vi.fn(),
   unlink: vi.fn(),
   rename: vi.fn(),
@@ -23,10 +24,13 @@ import * as fs from 'node:fs/promises';
 
 const mockReaddir = vi.mocked(fs.readdir);
 const mockReadFile = vi.mocked(fs.readFile);
+const mockWriteFile = vi.mocked(fs.writeFile);
 const mockStat = vi.mocked(fs.stat);
 const mockUnlink = vi.mocked(fs.unlink);
 const mockRename = vi.mocked(fs.rename);
 const mockMkdir = vi.mocked(fs.mkdir);
+
+const QUARANTINE_LEDGER = '.mirthless-quarantine.json';
 
 // ----- Helpers -----
 
@@ -73,6 +77,9 @@ let receiver: FileReceiver | null = null;
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
+  // Default: no ledger on disk (readFile rejects), writes succeed.
+  mockReadFile.mockRejectedValue(new Error('ENOENT'));
+  mockWriteFile.mockResolvedValue(undefined as never);
 });
 
 afterEach(async () => {
@@ -608,6 +615,54 @@ describe('FileReceiver', () => {
 
       expect(dispatchCount).toBe(1);
       expect(errors.some((e) => e.msg.includes('quarantining'))).toBe(true);
+    });
+
+    it('persists the quarantine to the sidecar ledger on quarantine', async () => {
+      const { logger } = makeMockLogger();
+      const now = Date.now();
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7', true)] as never);
+      mockStat.mockResolvedValue(makeStatResult(now - 5_000, 100) as never);
+      mockReadFile.mockResolvedValue('MSH|^~\\&|X');
+      mockUnlink.mockRejectedValue(new Error('EPERM: unlink failed'));
+
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      // The ledger was written with this file's key (name:mtime) in the watched dir.
+      const writeCall = mockWriteFile.mock.calls.find(
+        (c) => typeof c[0] === 'string' && (c[0] as string).endsWith(QUARANTINE_LEDGER),
+      );
+      expect(writeCall).toBeDefined();
+      expect(String(writeCall![1])).toContain('a.hl7:');
+    });
+
+    it('durable quarantine survives a restart: a new receiver loads the ledger and does not re-dispatch', async () => {
+      const { logger } = makeMockLogger();
+      const now = Date.now();
+      const mtime = now - 5_000;
+      const key = `a.hl7:${String(mtime)}`;
+
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7', true)] as never);
+      mockStat.mockResolvedValue(makeStatResult(mtime, 100) as never);
+      // Ledger read returns the previously-quarantined key; data reads return content.
+      mockReadFile.mockImplementation((p: unknown) =>
+        (typeof p === 'string' && p.endsWith(QUARANTINE_LEDGER)
+          ? Promise.resolve(JSON.stringify([key]))
+          : Promise.resolve('MSH|^~\\&|X')) as never,
+      );
+
+      let dispatchCount = 0;
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: dispatchCount }; }));
+      await receiver.onStart(); // loads the ledger → key is already quarantined
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      // The file is the same (same name+mtime) and was quarantined before the
+      // "restart": it must NOT be re-dispatched.
+      expect(dispatchCount).toBe(0);
     });
   });
 });

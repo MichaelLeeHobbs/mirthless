@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability (private disclosure)
+    url: https://github.com/MichaelLeeHobbs/mirthless/security/advisories/new
+    about: Do NOT open a public issue for security problems. Report privately here (see SECURITY.md).
+  - name: Question / discussion
+    url: https://github.com/MichaelLeeHobbs/mirthless/discussions
+    about: Ask questions and discuss ideas that aren't yet a concrete bug or feature request.

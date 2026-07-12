@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import pg from 'pg';
 import { ConnectionPool, type PoolConfig } from '../connection-pool.js';
 
 // ----- Mock pg -----
@@ -11,6 +12,7 @@ const mockQuery = vi.fn();
 const mockConnect = vi.fn();
 const mockEnd = vi.fn();
 const mockRelease = vi.fn();
+const mockClientQuery = vi.fn();
 
 vi.mock('pg', () => {
   const MockPool = vi.fn().mockImplementation(() => ({
@@ -44,8 +46,9 @@ let pool: ConnectionPool | null = null;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default: connect returns a client that can be released
-  mockConnect.mockResolvedValue({ release: mockRelease });
+  // Default: connect returns a client that can be released and queried
+  mockConnect.mockResolvedValue({ release: mockRelease, query: mockClientQuery });
+  mockClientQuery.mockResolvedValue({ rows: [], rowCount: 0 });
   mockEnd.mockResolvedValue(undefined);
 });
 
@@ -76,6 +79,67 @@ describe('ConnectionPool', () => {
       const result = await pool.create(makePoolConfig());
 
       expect(result.ok).toBe(false);
+    });
+
+    it('applies a default 30s statement_timeout when none is configured', async () => {
+      pool = new ConnectionPool();
+      await pool.create(makePoolConfig());
+
+      const opts = vi.mocked(pg.Pool).mock.calls[0]![0] as Record<string, unknown>;
+      expect(opts['statement_timeout']).toBe(30_000);
+      expect(opts['query_timeout']).toBe(30_000);
+    });
+
+    it('honors a configured statement_timeout', async () => {
+      pool = new ConnectionPool();
+      await pool.create(makePoolConfig({ statementTimeoutMs: 5_000 }));
+
+      const opts = vi.mocked(pg.Pool).mock.calls[0]![0] as Record<string, unknown>;
+      expect(opts['statement_timeout']).toBe(5_000);
+    });
+  });
+
+  describe('transaction', () => {
+    it('BEGINs, runs the callback, and COMMITs on success', async () => {
+      pool = new ConnectionPool();
+      await pool.create(makePoolConfig());
+      mockRelease.mockClear(); // ignore the create() connectivity-ping release
+
+      const result = await pool.transaction(async (tx) => {
+        await tx.query('UPDATE t SET x = 1', []);
+        return 'done';
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe('done');
+      const sqls = mockClientQuery.mock.calls.map((c) => c[0]);
+      expect(sqls[0]).toBe('BEGIN');
+      expect(sqls).toContain('COMMIT');
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('ROLLBACKs and returns an error when the callback throws', async () => {
+      pool = new ConnectionPool();
+      await pool.create(makePoolConfig());
+      mockRelease.mockClear(); // ignore the create() connectivity-ping release
+
+      const result = await pool.transaction(async () => {
+        throw new Error('boom');
+      });
+
+      expect(result.ok).toBe(false);
+      const sqls = mockClientQuery.mock.calls.map((c) => c[0]);
+      expect(sqls).toContain('ROLLBACK');
+      expect(sqls).not.toContain('COMMIT');
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns an error when the pool is not initialized', async () => {
+      pool = new ConnectionPool();
+      const result = await pool.transaction(async () => 1);
+      expect(result.ok).toBe(false);
+      pool = null;
     });
   });
 

@@ -11,8 +11,6 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
-import CircularProgress from '@mui/material/CircularProgress';
-import Alert from '@mui/material/Alert';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -25,6 +23,8 @@ import { MessageTable } from '../components/messages/MessageTable.js';
 import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
 import { useReprocessMessage, useBulkDeleteMessages } from '../hooks/use-message-actions.js';
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
 import { usePermissions } from '../hooks/use-permissions.js';
@@ -113,7 +113,7 @@ export function MessageBrowserPage(): ReactNode {
     sortDir: 'desc',
   };
 
-  const { data: searchResult, isLoading, error } = useMessageSearch(searchParams);
+  const { data: searchResult, isLoading, error, refetch } = useMessageSearch(searchParams);
 
   const handlePageChange = useCallback((newOffset: number) => {
     setOffset(newOffset);
@@ -198,15 +198,16 @@ export function MessageBrowserPage(): ReactNode {
       />
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Failed to search messages: {error.message}
-        </Alert>
+        <ErrorState
+          title="Couldn't search messages"
+          error={error}
+          onRetry={() => void refetch()}
+          sx={{ mb: 2 }}
+        />
       )}
 
       {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress />
-        </Box>
+        <LoadingBlock label="Loading messages" py={4} />
       ) : (
         <MessageTable
           items={searchResult?.items ?? []}

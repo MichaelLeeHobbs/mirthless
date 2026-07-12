@@ -12,7 +12,9 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import TablePagination from '@mui/material/TablePagination';
 import Paper from '@mui/material/Paper';
-import Chip from '@mui/material/Chip';
+import { MessageStatusChip } from '../common/StatusChip.js';
+import { EmptyState } from '../common/states/EmptyState.js';
+import InboxIcon from '@mui/icons-material/Inbox';
 import type { MessageSummary } from '../../hooks/use-messages.js';
 
 interface MessageTableProps {
@@ -24,16 +26,6 @@ interface MessageTableProps {
   readonly onSelect: (messageId: number) => void;
   readonly onPageChange: (offset: number) => void;
   readonly onLimitChange: (limit: number) => void;
-}
-
-export function getStatusColor(status: string): 'success' | 'error' | 'warning' | 'info' | 'default' {
-  switch (status) {
-    case 'SENT': return 'success';
-    case 'ERROR': return 'error';
-    case 'QUEUED': return 'warning';
-    case 'FILTERED': return 'info';
-    default: return 'default';
-  }
 }
 
 function getWorstStatus(connectors: readonly { readonly status: string }[]): string {
@@ -88,8 +80,13 @@ export function MessageTable({
           <TableBody>
             {items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                  No messages found.
+                <TableCell colSpan={6} sx={{ border: 0 }}>
+                  <EmptyState
+                    dense
+                    icon={<InboxIcon />}
+                    title="No messages"
+                    description="No messages match the current filters yet."
+                  />
                 </TableCell>
               </TableRow>
             ) : (
@@ -105,14 +102,9 @@ export function MessageTable({
                     onClick={() => onSelect(msg.messageId)}
                     sx={{ cursor: 'pointer' }}
                   >
-                    <TableCell>{msg.messageId}</TableCell>
+                    <TableCell sx={{ fontFamily: (t) => t.palette.fontFamilyMono, fontSize: '0.8125rem' }}>{msg.messageId}</TableCell>
                     <TableCell>
-                      <Chip
-                        label={worstStatus}
-                        size="small"
-                        color={getStatusColor(worstStatus)}
-                        variant="outlined"
-                      />
+                      <MessageStatusChip status={worstStatus} />
                     </TableCell>
                     <TableCell>{formatTime(msg.receivedAt)}</TableCell>
                     <TableCell align="right">{formatDuration(msg.receivedAt, msg.processedAt)}</TableCell>
