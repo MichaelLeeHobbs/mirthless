@@ -14,6 +14,7 @@ import {
   type ImapClientFactory,
   type EmailMessage,
 } from '../email-receiver.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 // ----- Helpers -----
 
@@ -503,6 +504,34 @@ describe('EmailReceiver', () => {
       expect(startResult.ok).toBe(false);
 
       receiver = null;
+    });
+  });
+
+  describe('failure visibility & reconnect', () => {
+    it('logs a poll failure and reconnects on the next cycle', async () => {
+      const client1 = makeMockClient();
+      vi.mocked(client1.fetchUnread).mockRejectedValue(new Error('IMAP connection dropped'));
+      const client2 = makeMockClient([makeMessage()]);
+
+      const clients = [client1, client2];
+      let idx = 0;
+      const factory: ImapClientFactory = (): ImapClient => clients[idx++]!;
+
+      const dispatched: RawMessage[] = [];
+      const { logger, errors } = makeMockLogger();
+      receiver = new EmailReceiver(makeConfig({ pollingIntervalMs: 1_000 }), factory, logger);
+      receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw); return { messageId: 1 }; }));
+      await receiver.onStart();
+
+      // Cycle 1: fetch fails → error logged, client dropped.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(errors.some((e) => e.msg.includes('poll cycle failed'))).toBe(true);
+      expect(dispatched).toHaveLength(0);
+
+      // Cycle 2: reconnect with fresh client → message dispatched.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(vi.mocked(client2.connect)).toHaveBeenCalled();
+      expect(dispatched).toHaveLength(1);
     });
   });
 });

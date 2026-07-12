@@ -259,3 +259,19 @@ D-126: Channel group is single-select despite many-to-many join table — The `c
 D-127: Connection test button uses centralized service, not per-connector test() methods — All 10 connector types tested via `ConnectionTestService` with tester registry. Connectors don't need a `test()` interface method. TCP/MLLP and DICOM use socket connect, HTTP uses HEAD, Database uses `SELECT 1`, SMTP uses nodemailer verify, File uses fs.access, FHIR hits /metadata. Channel and JavaScript always succeed. — 2026-03-30
 
 D-128: Reusable TestConnectionButton component — Single component handles all connector types. Accepts connectorType, mode (SOURCE/DESTINATION), and properties props. Shows inline success/failure with latency. Used across 13 connector forms. — 2026-03-30
+
+D-129: MLLP source auto-generates HL7 ACK/NAK by default — The MLLP receiver previously framed the pipeline/destination `response` back to the sender, which for an MLLP→File channel meant a filesystem path was returned as the "ACK" (and nothing on error → retransmit/duplicates). The receiver now builds a real ACK/NAK from the inbound MSH (`responseMode: AUTO_ACK` default; `PASSTHROUGH` preserves the old behavior for the rare case a destination truly returns the wire response). Chose one setting over many to keep YAGNI. — 2026-07-12
+
+D-130: `DispatchResult.status` added (optional) to carry pipeline outcome to source connectors — Needed so the MLLP source can return AR (application reject/filter) vs AE (processing error) vs AA. Kept optional/back-compatible: absent = PROCESSED. The engine pipeline still needs to populate `status` (esp. FILTERED) for AR to fire in production; until then filtered messages ACK as AA. Wiring it is an engine-package change, out of this worktree's scope. — 2026-07-12
+
+D-131: MLLP NAK (MSA-1 AE/AR/CE/CR) maps to ConnectorResponse status ERROR, not a rejected transport — A NAK is a valid response from a healthy connection, so the socket is released (not destroyed) but the message is marked ERROR so it surfaces and retries per queue policy. Unparseable responses are also ERROR. `classifyAckResponse` tolerates a bare MSA segment without MSH (liberal in what we accept). — 2026-07-12
+
+D-132: First logger in connectors is pino via an injectable `ConnectorLogger` — Connectors had no logging, so silent poll-cycle catches hid vanished directories / expired DB creds / dropped IMAP. Added a pino root logger + `createConnectorLogger(name)`; each connector takes an optional injected logger (last constructor param) for testable, structured error logging. Narrow `ConnectorLogger` interface keeps mocks trivial. — 2026-07-12
+
+D-133: TLS wired as a nested `tls` object in connector properties — Server verification (`rejectUnauthorized`) defaults TRUE on the dispatcher; never silently disabled. Presence of a `tls` prop toggles TLS. Kept option shapes minimal (cert/key/ca + optional mutual-TLS). — 2026-07-12
+
+D-134: DoS caps default to 50 MiB (MLLP frame, HTTP body) — Comfortably exceeds any real HL7v2/FHIR payload while bounding an attacker's unauthenticated in-frame/body growth. MLLP over-limit throws+resets the parser and destroys the connection; HTTP over-limit returns 413. — 2026-07-12
+
+D-135: File post-action failure quarantines the file (name+mtime) instead of retrying — Retrying a delete/move that already dispatched would re-dispatch the file next cycle → duplicate delivery (unacceptable for healthcare). Quarantine skips + loudly logs until an operator intervenes. In-memory only (resets on restart); durable quarantine deferred. — 2026-07-12
+
+D-136: DB read-then-update atomicity (finding 11) deferred; visibility added instead — Full FOR UPDATE SKIP LOCKED / per-statement timeouts are a larger change touching the pool and query builder. For now the at-least-once window is made VISIBLE (SELECT + mark-as-processed UPDATE failures are logged). Follow-up tracked. — 2026-07-12

@@ -5,6 +5,8 @@
 export {
   SmtpDispatcher,
   substituteTemplate,
+  buildNodemailerOptions,
+  createNodemailerTransport,
   type SmtpDispatcherConfig,
   type SmtpAuth,
   type SmtpTransport,

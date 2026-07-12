@@ -2,6 +2,59 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-12 — Connectors Hardening (release blockers)
+
+Branch `fix/connectors-hardening`. Scope: `packages/connectors/**`. Introduced the first
+logger in the connectors package (pino). Tests: 348 → 400 passing; build + lint clean.
+
+### Blockers
+- **MLLP auto-ACK/NAK (receiver)** — MLLP source now generates a real HL7 ACK/NAK from the
+  inbound MSH by default (never frames destination content like a file path). New
+  `responseMode` setting (`AUTO_ACK` default | `PASSTHROUGH`). AA on success, AE on
+  processing error, AR on filter/reject. New `ack-builder.ts` wraps core-util `createAck`
+  with a well-formed fallback ACK for non-HL7 input (always responds → no retransmit storms).
+  Depends on new optional `DispatchResult.status` (`PROCESSED|FILTERED|ERROR`) in base.ts —
+  engine still needs to populate it for AR (see DECISIONS).
+- **MLLP NAK-as-SENT (dispatcher)** — ACK responses are now parsed: MSA-1 AA/CA → SENT;
+  AE/AR/CE/CR/unparseable → ERROR (surfaces + retries per queue policy). Robust to a bare
+  MSA segment without MSH.
+- **TLS** — Optional TLS on TCP/MLLP receiver (`tls.createServer`), TCP/MLLP dispatcher
+  (`tls.connect`, `rejectUnauthorized` defaults TRUE), and HTTP receiver (`https.createServer`).
+  New `tls.ts` option shapes + `readTlsServerOptions`/`readTlsClientOptions` registry helpers.
+
+### High
+- **Idle pooled socket crash (dispatcher)** — Pooled sockets get persistent `error`/`close`
+  handlers that destroy+evict them, so an idle-socket error can never become an
+  uncaughtException that takes down the engine. Pool `factoryCreateError` is logged.
+- **Unbounded acquire / abort ignored (dispatcher)** — Pool now has `acquireTimeoutMillis`;
+  `send()` honors the AbortSignal around acquire and send, failing promptly on host-down/abort.
+- **Per-connection frame ordering (receiver)** — Frames on one connection are processed and
+  ACKed strictly in order via a per-connection async chain (no interleaving).
+- **Unbounded buffers (DoS)** — MLLP parser enforces `maxFrameBytes` (default 50 MiB; throws
+  + resets on exceed → connection destroyed). HTTP `readBody` enforces `maxBodyBytes`
+  (default 50 MiB → 413).
+- **HTTP success-status-on-failure + auth** — Pipeline failure returns `errorStatusCode`
+  (default 500), success returns 200 only. Optional `auth` guard (BASIC / bearer TOKEN → 401).
+- **Silent failures / logging** — Introduced pino `ConnectorLogger` (injectable per connector).
+  File/JS/Database/Email poll cycles now log caught errors at error level with context. Email
+  receiver reconnects on failure. DB SELECT + mark-as-processed UPDATE failures are logged.
+
+### Medium
+- **File post-action guard** — A file whose post-action (delete/move) fails after a successful
+  dispatch is quarantined (tracked by name+mtime) and never re-dispatched (no duplicates).
+- **SMTP** — `requireTLS` option added; auth object only sent when credentials present
+  (extracted `buildNodemailerOptions`).
+- **FHIR PUT** — Now targets the instance URL `PUT /{type}/{id}` (id extracted from the
+  resource body); errors if the body has no id.
+- **MLLP charset** — `wrapMllp`/`MllpParser` accept a charset (latin1/iso-8859-1 supported) so
+  accented PHI is not corrupted.
+
+### Deferred
+- DB read-then-update atomicity (finding 11) — logging added for at-least-once visibility;
+  full FOR UPDATE SKIP LOCKED / statement-timeout deferred (see DECISIONS).
+- Timeouts on DB/IMAP/SMTP ops (finding 12) — SMTP/FHIR/MLLP honor AbortSignal + timeouts;
+  IMAP/DB statement timeouts deferred.
+
 ## 2026-03-29 — Deep Review Round 4: Performance, Pipeline Fixes, UX
 
 ### Pipeline Fixes

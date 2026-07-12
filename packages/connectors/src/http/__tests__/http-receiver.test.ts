@@ -3,9 +3,14 @@
 // ===========================================
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { HttpReceiver, type HttpReceiverConfig } from '../http-receiver.js';
+import {
+  HttpReceiver,
+  DEFAULT_MAX_BODY_BYTES,
+  type HttpReceiverConfig,
+} from '../http-receiver.js';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import type { Result } from '@mirthless/core-util';
+import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 
 // ----- Helpers -----
 
@@ -19,6 +24,8 @@ function makeConfig(overrides?: Partial<HttpReceiverConfig>): HttpReceiverConfig
     method: 'POST',
     responseContentType: 'text/plain',
     responseStatusCode: 200,
+    errorStatusCode: 500,
+    maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
     ...overrides,
   };
 }
@@ -33,6 +40,11 @@ function makeDispatcher(
       : { messageId: 1, response: 'OK' },
     error: null,
   });
+}
+
+/** Dispatcher that always returns a failed Result. */
+function failingDispatcher(): (raw: RawMessage) => Promise<Result<DispatchResult>> {
+  return async () => ({ ok: false as const, value: null, error: new Error('pipeline down') });
 }
 
 async function sendRequest(
@@ -230,4 +242,110 @@ describe('HttpReceiver', () => {
 
     receiver = null; // Already halted
   });
+
+  it('returns 500 when the pipeline dispatch fails (never a false 200)', async () => {
+    receiver = new HttpReceiver(makeConfig());
+    receiver.setDispatcher(failingDispatcher());
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    const response = await sendRequest(TEST_PORT, { body: 'test' });
+
+    expect(response.status).toBe(500);
+  });
+
+  it('returns the configured error status on failure', async () => {
+    receiver = new HttpReceiver(makeConfig({ errorStatusCode: 502 }));
+    receiver.setDispatcher(failingDispatcher());
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    const response = await sendRequest(TEST_PORT, { body: 'test' });
+
+    expect(response.status).toBe(502);
+  });
+
+  it('returns 413 when the body exceeds the size cap', async () => {
+    receiver = new HttpReceiver(makeConfig({ maxBodyBytes: 16 }));
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    const response = await sendRequest(TEST_PORT, { body: 'x'.repeat(1024) });
+
+    expect(response.status).toBe(413);
+  });
 });
+
+describe('HttpReceiver authentication', () => {
+  it('rejects missing basic-auth with 401', async () => {
+    receiver = new HttpReceiver(makeConfig({ auth: { type: 'BASIC', username: 'u', password: 'p' } }));
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    const response = await sendRequest(TEST_PORT, { body: 'test' });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('accepts valid basic-auth', async () => {
+    receiver = new HttpReceiver(makeConfig({ auth: { type: 'BASIC', username: 'u', password: 'p' } }));
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    const creds = Buffer.from('u:p').toString('base64');
+    const response = await sendRequest(TEST_PORT, {
+      body: 'test',
+      headers: { Authorization: `Basic ${creds}` },
+    });
+
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects a wrong bearer token and accepts the correct one', async () => {
+    receiver = new HttpReceiver(makeConfig({ auth: { type: 'TOKEN', token: 'secret' } }));
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    const bad = await sendRequest(TEST_PORT, { body: 't', headers: { Authorization: 'Bearer nope' } });
+    expect(bad.status).toBe(401);
+
+    const good = await sendRequest(TEST_PORT, { body: 't', headers: { Authorization: 'Bearer secret' } });
+    expect(good.status).toBe(200);
+  });
+});
+
+describe('HttpReceiver TLS', () => {
+  it('serves over HTTPS and dispatches the body', async () => {
+    receiver = new HttpReceiver(makeConfig({ tls: { cert: TEST_CERT_PEM, key: TEST_KEY_PEM } }));
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 1, response: 'SECURE' })));
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    const result = await httpsPost(TEST_PORT, 'test');
+
+    expect(result.status).toBe(200);
+    expect(result.body).toBe('SECURE');
+  });
+});
+
+/** POST over HTTPS trusting the test CA. */
+function httpsPost(port: number, body: string): Promise<{ status: number; body: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const https = require('node:https') as typeof import('node:https');
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      { host: '127.0.0.1', port, path: '/', method: 'POST', ca: TEST_CERT_PEM },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString() }));
+      },
+    );
+    req.on('error', reject);
+    req.end(body);
+  });
+}

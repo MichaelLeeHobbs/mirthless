@@ -9,6 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Constants -----
 
@@ -82,12 +83,20 @@ interface FileEntry {
 
 export class FileReceiver implements SourceConnectorRuntime {
   private readonly config: FileReceiverConfig;
+  private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
+  /**
+   * Files that dispatched successfully but whose post-action (delete/move)
+   * failed. Tracked by name+mtime so they are NOT re-dispatched next cycle,
+   * preventing duplicate message delivery. Requires operator intervention.
+   */
+  private readonly quarantined = new Set<string>();
 
-  constructor(config: FileReceiverConfig) {
+  constructor(config: FileReceiverConfig, logger?: ConnectorLogger) {
     this.config = config;
+    this.logger = logger ?? createConnectorLogger('FILE');
   }
 
   setDispatcher(dispatcher: MessageDispatcher): void {
@@ -151,8 +160,14 @@ export class FileReceiver implements SourceConnectorRuntime {
       for (const entry of sorted) {
         await this.processFile(entry);
       }
-    } catch {
-      // Poll cycle errors are non-fatal; next cycle will retry.
+    } catch (err) {
+      // Non-fatal (next cycle retries) but MUST be visible: a vanished
+      // directory or permission change otherwise leaves the channel STARTED
+      // yet silently processing nothing.
+      this.logger.error(
+        { ...errorInfo(err), directory: this.config.directory },
+        'File poll cycle failed',
+      );
     } finally {
       this.polling = false;
     }
@@ -203,6 +218,17 @@ export class FileReceiver implements SourceConnectorRuntime {
   private async processFile(entry: FileEntry): Promise<void> {
     if (!this.dispatcher) return;
 
+    const key = `${entry.name}:${String(entry.mtime)}`;
+    if (this.quarantined.has(key)) {
+      // Already dispatched; post-action failed previously. Skip to avoid a
+      // duplicate delivery. Surface loudly until an operator resolves it.
+      this.logger.error(
+        { file: entry.fullPath },
+        'File quarantined after post-action failure; skipping to avoid duplicate delivery',
+      );
+      return;
+    }
+
     const content = this.config.binary
       ? (await fs.readFile(entry.fullPath)).toString('base64')
       : await fs.readFile(entry.fullPath, { encoding: this.config.charset });
@@ -220,7 +246,15 @@ export class FileReceiver implements SourceConnectorRuntime {
     const result = await this.dispatcher(raw);
 
     if (result.ok) {
-      await this.postProcess(entry);
+      try {
+        await this.postProcess(entry);
+      } catch (err) {
+        this.quarantined.add(key);
+        this.logger.error(
+          { ...errorInfo(err), file: entry.fullPath },
+          'Post-action failed after successful dispatch; quarantining file',
+        );
+      }
     }
   }
 

@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { wrapMllp, MllpParser } from '../mllp-mode.js';
+import { wrapMllp, MllpParser, DEFAULT_MAX_FRAME_BYTES } from '../mllp-mode.js';
 
 const VT = 0x0B;
 const FS = 0x1C;
@@ -130,5 +130,40 @@ describe('MllpParser', () => {
     const messages = parser.parse(wrapMllp('FRESH'));
     expect(messages).toHaveLength(1);
     expect(messages[0]).toBe('FRESH');
+  });
+});
+
+describe('MllpParser DoS guard', () => {
+  it('exposes a sane default max frame size', () => {
+    expect(DEFAULT_MAX_FRAME_BYTES).toBeGreaterThanOrEqual(1024 * 1024);
+  });
+
+  it('throws and resets when an unterminated frame exceeds the cap', () => {
+    const parser = new MllpParser({ maxFrameBytes: 64 });
+    // Start-of-frame byte then 128 bytes with no end block.
+    const chunk = Buffer.concat([Buffer.from([0x0b]), Buffer.alloc(128, 0x41)]);
+    expect(() => parser.parse(chunk)).toThrow(/maximum size/);
+
+    // After reset a fresh, well-formed frame parses normally.
+    const messages = parser.parse(wrapMllp('OK'));
+    expect(messages).toEqual(['OK']);
+  });
+});
+
+describe('MllpParser charset', () => {
+  it('round-trips latin1 (iso-8859-1) accented PHI without corruption', () => {
+    const name = 'MSH|^~\\&|José Muñoz';
+    const framed = wrapMllp(name, 'latin1');
+    const parser = new MllpParser({ charset: 'latin1' });
+    const messages = parser.parse(framed);
+    expect(messages).toEqual([name]);
+  });
+
+  it('corrupts latin1 bytes when decoded as utf-8 (demonstrates why charset matters)', () => {
+    const name = 'MSH|café';
+    const framed = wrapMllp(name, 'latin1');
+    const utf8Parser = new MllpParser({ charset: 'utf-8' });
+    const messages = utf8Parser.parse(framed);
+    expect(messages[0]).not.toBe(name);
   });
 });

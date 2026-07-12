@@ -4,13 +4,20 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
+import * as tls from 'node:tls';
 import { TcpMllpDispatcher, type TcpMllpDispatcherConfig } from '../tcp-mllp-dispatcher.js';
 import { wrapMllp, MllpParser } from '../../transmission/mllp-mode.js';
 import type { ConnectorMessage } from '../../base.js';
+import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 
 // ----- Helpers -----
 
 const DEST_PORT = 16662;
+
+/** A full HL7 acknowledgement with the given MSA-1 code. */
+function ackFrame(code: string): string {
+  return `MSH|^~\\&|R|F|S|SF|20240101||ACK|1|P|2.5.1\rMSA|${code}|MSGID`;
+}
 
 function makeConfig(overrides?: Partial<TcpMllpDispatcherConfig>): TcpMllpDispatcherConfig {
   return {
@@ -18,6 +25,8 @@ function makeConfig(overrides?: Partial<TcpMllpDispatcherConfig>): TcpMllpDispat
     port: DEST_PORT,
     maxConnections: 5,
     responseTimeout: 5_000,
+    acquireTimeoutMs: 5_000,
+    charset: 'utf-8',
     ...overrides,
   };
 }
@@ -220,5 +229,128 @@ describe('TcpMllpDispatcher', () => {
     expect(stopResult.ok).toBe(true);
 
     dispatcher = null; // Already stopped
+  });
+});
+
+describe('TcpMllpDispatcher acknowledgement validation', () => {
+  it('marks an AA acknowledgement as SENT', async () => {
+    mockServer = createMockServer(DEST_PORT, () => ackFrame('AA'));
+    await new Promise<void>((r) => mockServer!.server.once('listening', r));
+    dispatcher = new TcpMllpDispatcher(makeConfig());
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('SENT');
+  });
+
+  it('marks an AE negative acknowledgement as ERROR (not a silent SENT)', async () => {
+    mockServer = createMockServer(DEST_PORT, () => ackFrame('AE'));
+    await new Promise<void>((r) => mockServer!.server.once('listening', r));
+    dispatcher = new TcpMllpDispatcher(makeConfig());
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.errorMessage).toContain('AE');
+  });
+
+  it('marks an AR rejection as ERROR', async () => {
+    mockServer = createMockServer(DEST_PORT, () => ackFrame('AR'));
+    await new Promise<void>((r) => mockServer!.server.once('listening', r));
+    dispatcher = new TcpMllpDispatcher(makeConfig());
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+  });
+
+  it('marks an unparseable response as ERROR with a clear message', async () => {
+    mockServer = createMockServer(DEST_PORT, () => 'not-an-hl7-ack');
+    await new Promise<void>((r) => mockServer!.server.once('listening', r));
+    dispatcher = new TcpMllpDispatcher(makeConfig());
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.errorMessage).toContain('Unparseable');
+  });
+});
+
+describe('TcpMllpDispatcher resilience', () => {
+  it('does not crash and evicts an idle pooled socket that errors', async () => {
+    let connectionCount = 0;
+    let serverSocket: net.Socket | null = null;
+    const server = net.createServer((socket) => {
+      connectionCount++;
+      serverSocket = socket;
+      const parser = new MllpParser();
+      socket.on('data', (chunk: Buffer) => {
+        for (const _msg of parser.parse(chunk)) socket.write(wrapMllp(ackFrame('AA')));
+      });
+      socket.on('error', () => { /* ignore RST on the server side */ });
+    });
+    server.listen(DEST_PORT, '127.0.0.1');
+    await new Promise<void>((r) => server.once('listening', r));
+    mockServer = { server, close: () => new Promise<void>((r) => server.close(() => r())) };
+
+    dispatcher = new TcpMllpDispatcher(makeConfig());
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const first = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+    expect(first.ok).toBe(true);
+
+    // Force a reset on the now-idle pooled socket — with no persistent error
+    // handler this would become an uncaughtException that crashes the engine.
+    serverSocket!.resetAndDestroy();
+    await new Promise<void>((r) => setTimeout(r, 150));
+
+    // A subsequent send must still succeed on a fresh connection.
+    const second = await dispatcher.send(makeMessage({ messageId: 2 }), AbortSignal.timeout(5_000));
+    expect(second.ok).toBe(true);
+    expect(connectionCount).toBe(2);
+  });
+
+  it('fails promptly when the destination host is down (no indefinite hang)', async () => {
+    // Nothing listening on this port → connect refused.
+    dispatcher = new TcpMllpDispatcher(makeConfig({ port: 16689, acquireTimeoutMs: 3_000 }));
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(10_000));
+    expect(result.ok).toBe(false);
+  });
+
+  it('sends over TLS and validates the acknowledgement', async () => {
+    const server = tls.createServer({ cert: TEST_CERT_PEM, key: TEST_KEY_PEM }, (socket) => {
+      const parser = new MllpParser();
+      socket.on('data', (chunk: Buffer) => {
+        for (const _msg of parser.parse(chunk)) socket.write(wrapMllp(ackFrame('AA')));
+      });
+    });
+    server.listen(DEST_PORT, '127.0.0.1');
+    await new Promise<void>((r) => server.once('listening', r));
+    mockServer = { server: server as unknown as net.Server, close: () => new Promise<void>((r) => server.close(() => r())) };
+
+    dispatcher = new TcpMllpDispatcher(makeConfig({ tls: { ca: TEST_CERT_PEM } }));
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('SENT');
   });
 });
