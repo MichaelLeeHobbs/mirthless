@@ -19,6 +19,7 @@ export const messageSearchQuerySchema = z.object({
   receivedFrom: z.coerce.date().optional(),
   receivedTo: z.coerce.date().optional(),
   metaDataId: z.coerce.number().int().nonnegative().optional(),
+  messageId: z.coerce.number().int().positive().optional(),
   contentSearch: z.string().max(500).optional(),
   limit: z.coerce.number().int().positive().max(100).default(25),
   offset: z.coerce.number().int().nonnegative().default(0),

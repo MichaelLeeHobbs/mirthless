@@ -61,6 +61,7 @@ vi.mock('drizzle-orm', () => ({
 
 // Must import after mocks
 const { MessageQueryService } = await import('../message-query.service.js');
+const { eq: mockEq } = await import('drizzle-orm');
 
 // ----- Fixtures -----
 
@@ -163,6 +164,28 @@ describe('MessageQueryService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.items).toHaveLength(1);
+    });
+
+    it('applies exact messageId filter', async () => {
+      mockExecute
+        .mockResolvedValueOnce({ rows: [{ count: '1' }] })
+        .mockResolvedValueOnce({ rows: [makeMessageRow({ id: 42 })] });
+      pushSelectResponse([makeConnectorRow({ messageId: 42 })]);
+
+      const result = await MessageQueryService.searchMessages(CHANNEL_ID, {
+        messageId: 42,
+        limit: 25,
+        offset: 0,
+        sort: 'receivedAt',
+        sortDir: 'desc',
+      } as never);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.items).toHaveLength(1);
+      expect(result.value.items[0]!.messageId).toBe(42);
+      // The messageId condition was added via eq(messages.id, 42).
+      expect(vi.mocked(mockEq)).toHaveBeenCalledWith(expect.anything(), 42);
     });
 
     it('applies date range filter', async () => {

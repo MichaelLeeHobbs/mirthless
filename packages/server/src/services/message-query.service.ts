@@ -98,6 +98,9 @@ export class MessageQueryService {
     return tryCatch(async () => {
       const conditions = [eq(messages.channelId, channelId)];
 
+      if (filters.messageId !== undefined) {
+        conditions.push(eq(messages.id, filters.messageId));
+      }
       if (filters.receivedFrom !== undefined) {
         conditions.push(sql`${messages.receivedAt} >= ${filters.receivedFrom.toISOString()}`);
       }
