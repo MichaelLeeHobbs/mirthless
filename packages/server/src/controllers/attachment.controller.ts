@@ -6,6 +6,7 @@
 import type { Request, Response } from 'express';
 import { AttachmentService } from '../services/attachment.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { emitEvent } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
@@ -45,6 +46,14 @@ export class AttachmentController {
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
+
+    // HIPAA audit: attachment content is PHI.
+    emitEvent({
+      level: 'INFO', name: 'ATTACHMENT_DOWNLOADED', outcome: 'SUCCESS',
+      userId: req.user?.id ?? null, channelId,
+      serverId: null, ipAddress: req.ip ?? null,
+      attributes: { messageId, attachmentId },
+    });
 
     res.json({ success: true, data: result.value });
   }

@@ -5,6 +5,8 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import type { ChannelExport, ChannelExportEntry } from '@mirthless/core-models';
+import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import { redactConnectorProperties } from '../lib/secret-redaction.js';
 import { ChannelService, type ChannelDetail } from './channel.service.js';
 
 // ----- Helpers -----
@@ -19,7 +21,9 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
     inboundDataType: detail.inboundDataType,
     outboundDataType: detail.outboundDataType,
     sourceConnectorType: detail.sourceConnectorType,
-    sourceConnectorProperties: detail.sourceConnectorProperties,
+    // Secret credentials are redacted from exports so a backup file cannot leak
+    // DB/SMTP/IMAP passwords. Re-import requires re-entering credentials.
+    sourceConnectorProperties: redactConnectorProperties(detail.sourceConnectorProperties),
     responseMode: detail.responseMode,
     responseConnectorName: detail.responseConnectorName,
     initialState: detail.initialState,
@@ -39,7 +43,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
       name: d.name,
       enabled: d.enabled,
       connectorType: d.connectorType,
-      properties: d.properties,
+      properties: redactConnectorProperties(d.properties),
       queueMode: d.queueMode,
       retryCount: d.retryCount,
       retryIntervalMs: d.retryIntervalMs,
@@ -91,10 +95,17 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
 
 export class ChannelExportService {
   /** Export a single channel by ID. */
-  static async exportChannel(id: string): Promise<Result<ChannelExport>> {
+  static async exportChannel(id: string, context?: AuditContext): Promise<Result<ChannelExport>> {
     return tryCatch(async () => {
       const detailResult = await ChannelService.getById(id);
       if (!detailResult.ok) throw detailResult.error;
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_EXPORTED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: id,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { scope: 'single' },
+      });
 
       return {
         version: 1 as const,
@@ -105,7 +116,7 @@ export class ChannelExportService {
   }
 
   /** Export all channels. */
-  static async exportAll(): Promise<Result<ChannelExport>> {
+  static async exportAll(context?: AuditContext): Promise<Result<ChannelExport>> {
     return tryCatch(async () => {
       // Load all channels (up to 10000 — reasonable upper bound)
       const listResult = await ChannelService.list({ page: 1, pageSize: 10000 });
@@ -118,6 +129,13 @@ export class ChannelExportService {
           entries.push(channelToExportEntry(detailResult.value));
         }
       }
+
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_EXPORTED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { scope: 'all', count: entries.length },
+      });
 
       return {
         version: 1 as const,

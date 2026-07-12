@@ -55,6 +55,32 @@ logger in the connectors package (pino). Tests: 348 → 400 passing; build + lin
 - Timeouts on DB/IMAP/SMTP ops (finding 12) — SMTP/FHIR/MLLP honor AbortSignal + timeouts;
   IMAP/DB statement timeouts deferred.
 
+## 2026-07-12 — Server Security Hardening (release-blocking fixes)
+
+Fixed verified release-blocking security findings in `@mirthless/server`. All server (901) and core-models (198) tests pass; build + lint (`--max-warnings 0`) clean.
+
+### Blockers
+- **RBAC now works for non-admins** — API-created users are granted their role's permission set (single source of truth `lib/role-permissions.ts` from `db/seeds/roles.ts`), assigned transactionally on create and re-synced on role change. Added `GET /users/:id/permissions` and self-service `POST /users/me/password` (auth-only, no `users:write`).
+- **PHI-read auditing** — `MESSAGE_CONTENT_VIEWED` / `MESSAGE_SEARCHED` / `ATTACHMENT_DOWNLOADED` / `CHANNEL_EXPORTED` audit events (userId+IP) emitted on content reads/exports; audit failure logged, never blocks the read.
+
+### High
+- **Channel update transactional + atomic optimistic lock** — delete/reinsert of connectors/filters/transformers wrapped in `db.transaction`; revision moved into the UPDATE WHERE, 0 rows → 409.
+- **Secret redaction** — cert private keys never returned by GET (`hasPrivateKey` flag only); secret settings masked in GET (new `password` setting type; `smtp.auth_pass` reclassified); channel exports redact secret connector properties.
+- **encryptData rejected** — no-op flag now rejected at the API (422) until real encryption is wired; shipped tested AES-256-GCM primitive `lib/content-crypto.ts` (+ `CONTENT_ENCRYPTION_KEY` config) for the engine agent to wire. See DECISIONS D-143.
+- **Default admin forced change** — `users.must_change_password` column (migration `0006_fair_quasar.sql`), seeded admin true, login returns flag, startup warns if default password unchanged.
+
+### Medium
+- Self password-change verifies current password + invalidates other sessions; password policy gained complexity (≥1 letter + ≥1 digit).
+- `refreshSession` re-validates user (enabled/exists); disabling/deleting a user and password changes revoke sessions.
+- SSRF guard resolves DNS and checks resolved IPs; HTTP/FHIR testers block redirects.
+- Consistent `{ code, message }` error envelope across all middleware; pino redacts auth/cookie/secret fields; `/metrics` + `/api-docs` gated (config toggles), `/health` public; `GET /system/logs` Zod-validated.
+
+### New env vars
+- `CONTENT_ENCRYPTION_KEY` (optional, 64 hex chars), `METRICS_PUBLIC` (default false), `API_DOCS_ENABLED` (default: on outside production).
+
+### Migration
+- `packages/server/src/db/migrations/0006_fair_quasar.sql` — adds `users.must_change_password`.
+
 ## 2026-03-29 — Deep Review Round 4: Performance, Pipeline Fixes, UX
 
 ### Pipeline Fixes

@@ -17,7 +17,7 @@ export const authRateLimiter = rateLimit({
   max: isProduction ? 5 : 1000, // strict in production, relaxed in dev/test (E2E runs ~60 logins)
   message: {
     success: false,
-    error: 'Too many login attempts. Please try again in 15 minutes.',
+    error: { code: 'RATE_LIMITED', message: 'Too many login attempts. Please try again in 15 minutes.' },
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -33,7 +33,7 @@ export const apiRateLimiter = rateLimit({
   max: isProduction ? 100 : 1000, // strict in production, relaxed in dev/test
   message: {
     success: false,
-    error: 'Too many requests. Please slow down.',
+    error: { code: 'RATE_LIMITED', message: 'Too many requests. Please slow down.' },
   },
   standardHeaders: true,
   legacyHeaders: false,

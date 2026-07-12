@@ -36,7 +36,32 @@ const logTee = new Writable({
 
 // ----- Logger Setup -----
 
-const pinoOptions: pino.LoggerOptions = { level: config.LOG_LEVEL };
+// Redact credentials and PHI-adjacent fields from all log output. Covers both
+// pino-http request/response serialization and ad-hoc structured logs.
+const REDACT_PATHS: readonly string[] = [
+  'req.headers.authorization',
+  'req.headers.cookie',
+  'req.headers["set-cookie"]',
+  'req.headers["x-api-key"]',
+  'res.headers["set-cookie"]',
+  'headers.authorization',
+  'headers.cookie',
+  'authorization',
+  'cookie',
+  'password',
+  'passwordHash',
+  'newPassword',
+  'currentPassword',
+  'token',
+  'accessToken',
+  'refreshToken',
+  'secret',
+];
+
+const pinoOptions: pino.LoggerOptions = {
+  level: config.LOG_LEVEL,
+  redact: { paths: [...REDACT_PATHS], censor: '[REDACTED]' },
+};
 
 let logger: Logger;
 

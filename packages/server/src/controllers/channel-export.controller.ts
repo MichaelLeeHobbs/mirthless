@@ -14,7 +14,8 @@ export class ChannelExportController {
   /** Export a single channel by ID. */
   static async exportChannel(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await ChannelExportService.exportChannel(id);
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await ChannelExportService.exportChannel(id, context);
 
     if (!result.ok) {
       if (isServiceError(result.error, 'NOT_FOUND')) {
@@ -30,8 +31,9 @@ export class ChannelExportController {
   }
 
   /** Export all channels. */
-  static async exportAll(_req: Request, res: Response): Promise<void> {
-    const result = await ChannelExportService.exportAll();
+  static async exportAll(req: Request, res: Response): Promise<void> {
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await ChannelExportService.exportAll(context);
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to export all channels');
