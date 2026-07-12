@@ -34,6 +34,9 @@ import {
   useUpsertConfigMapEntry,
   useDeleteConfigMapEntry,
 } from '../hooks/use-config-map.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 export function ConfigMapPage(): ReactNode {
   const { data: entries, isLoading, error } = useConfigMap();
@@ -46,6 +49,9 @@ export function ConfigMapPage(): ReactNode {
   const [formName, setFormName] = useState('');
   const [formValue, setFormValue] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [deleteTarget, setDeleteTarget] = useState<{ category: string; name: string } | null>(null);
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.CONFIG_MAP_WRITE);
 
   const categories = useMemo(() => {
     if (!entries) return [];
@@ -86,8 +92,10 @@ export function ConfigMapPage(): ReactNode {
     });
   };
 
-  const handleDelete = (category: string, name: string): void => {
-    deleteMutation.mutate({ category, name });
+  const handleConfirmDelete = (): void => {
+    if (!deleteTarget) return;
+    deleteMutation.mutate(deleteTarget);
+    setDeleteTarget(null);
   };
 
   if (isLoading) {
@@ -104,9 +112,13 @@ export function ConfigMapPage(): ReactNode {
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Configuration Map
         </Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-          Add Entry
-        </Button>
+        <Tooltip title={canWrite ? '' : 'Requires config_map:write permission'}>
+          <span>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
+              Add Entry
+            </Button>
+          </span>
+        </Tooltip>
       </Box>
 
       {error && (
@@ -160,15 +172,19 @@ export function ConfigMapPage(): ReactNode {
                       {entry.value}
                     </TableCell>
                     <TableCell>
-                      <Tooltip title="Edit">
-                        <IconButton size="small" onClick={() => handleOpenEdit(entry.category, entry.name, entry.value)}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Edit' : 'Requires config_map:write permission'}>
+                        <span>
+                          <IconButton size="small" onClick={() => handleOpenEdit(entry.category, entry.name, entry.value)} disabled={!canWrite}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton size="small" color="error" onClick={() => handleDelete(entry.category, entry.name)}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Delete' : 'Requires config_map:write permission'}>
+                        <span>
+                          <IconButton size="small" color="error" onClick={() => setDeleteTarget({ category: entry.category, name: entry.name })} disabled={!canWrite}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
@@ -221,6 +237,17 @@ export function ConfigMapPage(): ReactNode {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete Entry"
+        message={`Delete "${deleteTarget?.category ?? ''}/${deleteTarget?.name ?? ''}"? This cannot be undone.`}
+        severity="error"
+        confirmLabel="Delete"
+        isPending={deleteMutation.isPending}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </Box>
   );
 }

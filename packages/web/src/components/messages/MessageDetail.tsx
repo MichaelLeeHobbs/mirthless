@@ -22,6 +22,9 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { useMessageDetail, useDeleteMessage, type ConnectorDetail } from '../../hooks/use-messages.js';
 import { ContentViewer } from './ContentViewer.js';
 import { AttachmentTab } from './AttachmentTab.js';
+import { ConfirmDialog } from '../common/ConfirmDialog.js';
+import { usePermissions } from '../../hooks/use-permissions.js';
+import { PERMISSION } from '../../lib/permissions.js';
 
 interface MessageDetailProps {
   readonly channelId: string;
@@ -93,6 +96,9 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
   const deleteMutation = useDeleteMessage();
   const [connectorTab, setConnectorTab] = useState(0);
   const [showAttachments, setShowAttachments] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const { has } = usePermissions();
+  const canDelete = has(PERMISSION.MESSAGES_DELETE);
 
   if (isLoading) {
     return (
@@ -115,10 +121,9 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
   const connectors = detail.connectors;
   const activeConnector = connectors[connectorTab] ?? connectors[0];
 
-  const handleDelete = (): void => {
-    if (window.confirm(`Delete message ${String(messageId)}? This cannot be undone.`)) {
-      deleteMutation.mutate({ channelId, messageId });
-    }
+  const handleConfirmDelete = (): void => {
+    setConfirmDeleteOpen(false);
+    deleteMutation.mutate({ channelId, messageId });
   };
 
   return (
@@ -139,12 +144,30 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
             {detail.processedAt ? ` (${String(new Date(detail.processedAt).getTime() - new Date(detail.receivedAt).getTime())}ms)` : ''}
           </Typography>
         </Box>
-        <Tooltip title="Delete message">
-          <IconButton size="small" color="error" onClick={handleDelete} disabled={deleteMutation.isPending}>
-            <DeleteIcon fontSize="small" />
-          </IconButton>
+        <Tooltip title={canDelete ? 'Delete message' : 'Requires messages:delete permission'}>
+          <span>
+            <IconButton
+              size="small"
+              color="error"
+              onClick={() => { setConfirmDeleteOpen(true); }}
+              disabled={deleteMutation.isPending || !canDelete}
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </span>
         </Tooltip>
       </Box>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete Message"
+        message={`Delete message #${String(messageId)}? This cannot be undone.`}
+        confirmLabel="Delete"
+        severity="error"
+        isPending={deleteMutation.isPending}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => { setConfirmDeleteOpen(false); }}
+      />
 
       {connectors.length > 1 && (
         <Tabs

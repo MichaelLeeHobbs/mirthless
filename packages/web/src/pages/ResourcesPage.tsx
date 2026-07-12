@@ -34,6 +34,9 @@ import {
   useDeleteResource,
   type ResourceSummary,
 } from '../hooks/use-resources.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${String(bytes)} B`;
@@ -54,6 +57,12 @@ export function ResourcesPage(): ReactNode {
   const [mimeType, setMimeType] = useState('text/plain');
   const [content, setContent] = useState('');
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ResourceSummary | null>(null);
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.RESOURCES_WRITE);
+  const canDelete = has(PERMISSION.RESOURCES_DELETE);
 
   const { data: editingDetail, isLoading: isDetailLoading } = useResource(editingId ?? '');
 
@@ -71,6 +80,7 @@ export function ResourcesPage(): ReactNode {
     setMimeType('text/plain');
     setContent('');
     setDialogError(null);
+    setDirty(false);
     setDialogOpen(true);
   };
 
@@ -81,6 +91,7 @@ export function ResourcesPage(): ReactNode {
     setMimeType(resource.mimeType ?? 'text/plain');
     setContent('');
     setDialogError(null);
+    setDirty(false);
     setDialogOpen(true);
   };
 
@@ -88,6 +99,16 @@ export function ResourcesPage(): ReactNode {
     setDialogOpen(false);
     setEditingId(null);
     setDialogError(null);
+    setDirty(false);
+  };
+
+  // Guard against losing unsaved edits when closing/cancelling the dialog.
+  const handleRequestClose = (): void => {
+    if (dirty) {
+      setConfirmDiscardOpen(true);
+      return;
+    }
+    handleClose();
   };
 
   const handleSave = (): void => {
@@ -110,8 +131,10 @@ export function ResourcesPage(): ReactNode {
     }
   };
 
-  const handleDelete = (resource: ResourceSummary): void => {
-    deleteResource.mutate(resource.id);
+  const handleConfirmDelete = (): void => {
+    if (!deleteTarget) return;
+    deleteResource.mutate(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   return (
@@ -121,9 +144,13 @@ export function ResourcesPage(): ReactNode {
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Resources</Typography>
           {isFetching && !isLoading && <CircularProgress size={20} />}
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-          Create Resource
-        </Button>
+        <Tooltip title={canWrite ? '' : 'Requires resources:write permission'}>
+          <span>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
+              Create Resource
+            </Button>
+          </span>
+        </Tooltip>
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load resources: {error.message}</Alert>}
@@ -155,15 +182,19 @@ export function ResourcesPage(): ReactNode {
                     <TableCell>{resource.mimeType || '-'}</TableCell>
                     <TableCell align="right">{formatBytes(resource.sizeBytes)}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Edit">
-                        <IconButton size="small" onClick={() => { handleOpenEdit(resource); }}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Edit' : 'Requires resources:write permission'}>
+                        <span>
+                          <IconButton size="small" onClick={() => { handleOpenEdit(resource); }} disabled={!canWrite}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton size="small" onClick={() => { handleDelete(resource); }}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canDelete ? 'Delete' : 'Requires resources:delete permission'}>
+                        <span>
+                          <IconButton size="small" onClick={() => { setDeleteTarget(resource); }} disabled={!canDelete}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
@@ -182,7 +213,7 @@ export function ResourcesPage(): ReactNode {
         </TableContainer>
       )}
 
-      <Dialog open={dialogOpen} onClose={handleClose} maxWidth="md" fullWidth>
+      <Dialog open={dialogOpen} onClose={handleRequestClose} maxWidth="md" fullWidth>
         <DialogTitle>{editingId ? 'Edit Resource' : 'Create Resource'}</DialogTitle>
         <DialogContent>
           {dialogError && <Alert severity="error" sx={{ mb: 2 }}>{dialogError}</Alert>}
@@ -192,21 +223,21 @@ export function ResourcesPage(): ReactNode {
             label="Name"
             fullWidth
             value={name}
-            onChange={(e) => { setName(e.target.value); }}
+            onChange={(e) => { setName(e.target.value); setDirty(true); }}
           />
           <TextField
             margin="dense"
             label="Description"
             fullWidth
             value={description}
-            onChange={(e) => { setDescription(e.target.value); }}
+            onChange={(e) => { setDescription(e.target.value); setDirty(true); }}
           />
           <TextField
             margin="dense"
             label="MIME Type"
             fullWidth
             value={mimeType}
-            onChange={(e) => { setMimeType(e.target.value); }}
+            onChange={(e) => { setMimeType(e.target.value); setDirty(true); }}
           />
           <TextField
             margin="dense"
@@ -215,23 +246,45 @@ export function ResourcesPage(): ReactNode {
             multiline
             rows={12}
             value={content}
-            onChange={(e) => { setContent(e.target.value); }}
+            onChange={(e) => { setContent(e.target.value); setDirty(true); }}
             disabled={editingId != null && isDetailLoading}
             placeholder={editingId != null && isDetailLoading ? 'Loading content...' : ''}
             sx={{ fontFamily: 'monospace' }}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleRequestClose}>Cancel</Button>
           <Button
             onClick={handleSave}
             variant="contained"
-            disabled={!name.trim() || createResource.isPending || updateResource.isPending}
+            disabled={!name.trim() || !canWrite || createResource.isPending || updateResource.isPending}
           >
             {editingId ? 'Update' : 'Create'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDiscardOpen}
+        title="Unsaved Changes"
+        message="You have unsaved changes to this resource. Discard them?"
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        severity="warning"
+        onConfirm={() => { setConfirmDiscardOpen(false); handleClose(); }}
+        onCancel={() => { setConfirmDiscardOpen(false); }}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete Resource"
+        message={`Delete resource "${deleteTarget?.name ?? ''}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        severity="error"
+        isPending={deleteResource.isPending}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => { setDeleteTarget(null); }}
+      />
     </Box>
   );
 }

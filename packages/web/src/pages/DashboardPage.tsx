@@ -2,7 +2,7 @@
 // Dashboard Page
 // ===========================================
 // Live overview: summary cards, channel status table, quick actions.
-// Auto-refreshes via TanStack Query polling (5s interval) with
+// Auto-refreshes via TanStack Query polling (60s interval) with
 // WebSocket events for instant cache invalidation.
 // Supports tag filtering and grouped view toggle.
 

@@ -53,9 +53,16 @@ interface TemplateEditorProps {
   readonly onDelete: (id: string) => void;
   readonly onClose: () => void;
   readonly saving: boolean;
+  /** Reports unsaved-changes state up so the page can guard navigation/switching. */
+  readonly onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function TemplateEditor({ template, onSave, onDelete, onClose, saving }: TemplateEditorProps): ReactNode {
+function contextsEqual(a: ReadonlySet<string>, b: readonly string[]): boolean {
+  if (a.size !== b.length) return false;
+  return b.every((c) => a.has(c));
+}
+
+export function TemplateEditor({ template, onSave, onDelete, onClose, saving, onDirtyChange }: TemplateEditorProps): ReactNode {
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? '');
   const [type, setType] = useState(template.type);
@@ -70,6 +77,20 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving }: 
     setCode(template.code);
     setContexts(new Set(template.contexts));
   }, [template.id, template.revision, template.name, template.description, template.type, template.code, template.contexts]);
+
+  const isDirty =
+    name !== template.name ||
+    description !== (template.description ?? '') ||
+    type !== template.type ||
+    code !== template.code ||
+    !contextsEqual(contexts, template.contexts);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  // Clear the dirty flag when this editor unmounts so a stale guard doesn't linger.
+  useEffect(() => (): void => { onDirtyChange?.(false); }, [onDirtyChange]);
 
   const toggleContext = (ctx: string): void => {
     setContexts((prev) => {

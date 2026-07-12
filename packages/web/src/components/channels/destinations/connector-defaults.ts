@@ -5,22 +5,19 @@
 import type { DestinationFormValues } from './types.js';
 import { createDefaultFilter, createDefaultTransformer } from '../source/types.js';
 
+// Keys must match what packages/connectors/src/registry.ts reads for each type.
 export const TCP_MLLP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: 'localhost',
   port: 6661,
-  sendTimeout: 10000,
-  keepConnectionOpen: true,
-  charset: 'UTF-8',
-  transmissionMode: 'MLLP',
-  bufferSize: 65536,
+  maxConnections: 5,
+  responseTimeout: 30000,
 };
 
 export const HTTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   url: 'http://localhost:8080',
   method: 'POST',
-  headers: '',
+  headers: {},
   contentType: 'text/plain',
-  charset: 'UTF-8',
   responseTimeout: 30000,
 };
 
@@ -81,7 +78,7 @@ export const FHIR_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   authApiKey: '',
   format: 'json',
   timeout: 30000,
-  headers: '',
+  headers: {},
 };
 
 export const DICOM_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {

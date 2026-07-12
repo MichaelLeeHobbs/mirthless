@@ -34,6 +34,8 @@ import {
   useClearGlobalMap,
 } from '../hooks/use-global-map.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 export function GlobalMapPage(): ReactNode {
   const { data: entries, isLoading, error } = useGlobalMap();
@@ -46,6 +48,9 @@ export function GlobalMapPage(): ReactNode {
   const [formKey, setFormKey] = useState('');
   const [formValue, setFormValue] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.GLOBAL_MAP_WRITE);
 
   const handleOpenCreate = (): void => {
     setEditingKey(null);
@@ -70,8 +75,10 @@ export function GlobalMapPage(): ReactNode {
     });
   };
 
-  const handleDelete = (key: string): void => {
-    deleteMutation.mutate(key);
+  const handleConfirmDelete = (): void => {
+    if (deleteTarget === null) return;
+    deleteMutation.mutate(deleteTarget);
+    setDeleteTarget(null);
   };
 
   const handleClearAll = (): void => {
@@ -100,13 +107,17 @@ export function GlobalMapPage(): ReactNode {
             color="error"
             startIcon={<DeleteSweepIcon />}
             onClick={() => setConfirmClear(true)}
-            disabled={!entries || entries.length === 0}
+            disabled={!entries || entries.length === 0 || !canWrite}
           >
             Clear All
           </Button>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-            Add Entry
-          </Button>
+          <Tooltip title={canWrite ? '' : 'Requires global_map:write permission'}>
+            <span>
+              <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
+                Add Entry
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
       </Box>
 
@@ -145,15 +156,19 @@ export function GlobalMapPage(): ReactNode {
                       {new Date(entry.updatedAt).toLocaleString()}
                     </TableCell>
                     <TableCell>
-                      <Tooltip title="Edit">
-                        <IconButton size="small" onClick={() => handleOpenEdit(entry.key, entry.value)}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Edit' : 'Requires global_map:write permission'}>
+                        <span>
+                          <IconButton size="small" onClick={() => handleOpenEdit(entry.key, entry.value)} disabled={!canWrite}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton size="small" color="error" onClick={() => handleDelete(entry.key)}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Delete' : 'Requires global_map:write permission'}>
+                        <span>
+                          <IconButton size="small" color="error" onClick={() => setDeleteTarget(entry.key)} disabled={!canWrite}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
@@ -209,6 +224,18 @@ export function GlobalMapPage(): ReactNode {
         isPending={clearMutation.isPending}
         onConfirm={handleClearAll}
         onCancel={() => setConfirmClear(false)}
+      />
+
+      {/* Confirm Single Delete Dialog */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete Entry"
+        message={`Delete global map entry "${deleteTarget ?? ''}"? This cannot be undone.`}
+        severity="error"
+        confirmLabel="Delete"
+        isPending={deleteMutation.isPending}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTarget(null)}
       />
     </Box>
   );

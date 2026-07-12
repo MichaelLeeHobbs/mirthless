@@ -8,6 +8,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 import Button from '@mui/material/Button';
+import Tooltip from '@mui/material/Tooltip';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import TextField from '@mui/material/TextField';
@@ -17,6 +18,8 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import SaveIcon from '@mui/icons-material/Save';
 import { useSettings, useBulkUpsertSettings } from '../hooks/use-settings.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 import type { SettingDetail } from '../api/client.js';
 
 const CATEGORIES = ['all', 'general', 'security', 'features', 'smtp'] as const;
@@ -33,6 +36,8 @@ export function SettingsPage(): ReactNode {
   const [activeTab, setActiveTab] = useState(0);
   const { data: settings, isLoading, error, isFetching } = useSettings();
   const bulkUpsert = useBulkUpsertSettings();
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.SETTINGS_WRITE);
 
   const [editValues, setEditValues] = useState<Record<string, EditableValue>>({});
 
@@ -156,14 +161,18 @@ export function SettingsPage(): ReactNode {
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Settings</Typography>
           {isFetching && !isLoading && <CircularProgress size={20} />}
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<SaveIcon />}
-          disabled={!hasDirtySettings || bulkUpsert.isPending}
-          onClick={handleSave}
-        >
-          {bulkUpsert.isPending ? 'Saving...' : 'Save Changes'}
-        </Button>
+        <Tooltip title={canWrite ? '' : 'Requires settings:write permission'}>
+          <span>
+            <Button
+              variant="contained"
+              startIcon={<SaveIcon />}
+              disabled={!hasDirtySettings || bulkUpsert.isPending || !canWrite}
+              onClick={handleSave}
+            >
+              {bulkUpsert.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </span>
+        </Tooltip>
       </Box>
 
       {/* Error */}

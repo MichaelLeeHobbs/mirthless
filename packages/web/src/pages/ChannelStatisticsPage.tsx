@@ -10,6 +10,8 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
+import Alert from '@mui/material/Alert';
+import Tooltip from '@mui/material/Tooltip';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { useChannelStatistics, useResetStatistics, STATS_KEYS } from '../hooks/use-statistics.js';
@@ -18,6 +20,8 @@ import { ConnectorStatsTable } from '../components/statistics/ConnectorStatsTabl
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 export function ChannelStatisticsPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -27,6 +31,8 @@ export function ChannelStatisticsPage(): ReactNode {
   const { data: stats, isLoading, error } = useChannelStatistics(channelId.length > 0 ? channelId : null);
   const resetMutation = useResetStatistics();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const { has } = usePermissions();
+  const canReset = has(PERMISSION.CHANNELS_WRITE);
 
   // WebSocket: join dashboard room for stats events, invalidate on update
   useSocketRoom('join:dashboard', 'leave:dashboard');
@@ -61,16 +67,20 @@ export function ChannelStatisticsPage(): ReactNode {
         <Typography variant="h5" sx={{ fontWeight: 600, flex: 1 }}>
           Channel Statistics
         </Typography>
-        <Button
-          startIcon={<RefreshIcon />}
-          variant="outlined"
-          color="error"
-          size="small"
-          onClick={handleReset}
-          disabled={resetMutation.isPending}
-        >
-          Reset Statistics
-        </Button>
+        <Tooltip title={canReset ? '' : 'Requires channels:write permission'}>
+          <span>
+            <Button
+              startIcon={<RefreshIcon />}
+              variant="outlined"
+              color="error"
+              size="small"
+              onClick={handleReset}
+              disabled={resetMutation.isPending || !canReset}
+            >
+              Reset Statistics
+            </Button>
+          </span>
+        </Tooltip>
       </Box>
 
       {isLoading && (
@@ -80,7 +90,7 @@ export function ChannelStatisticsPage(): ReactNode {
       )}
 
       {error && (
-        <Typography color="error">Failed to load statistics: {error.message}</Typography>
+        <Alert severity="error" sx={{ mb: 2 }}>Failed to load statistics: {error.message}</Alert>
       )}
 
       {stats && (

@@ -18,15 +18,17 @@ import { QueueSettingsSection } from './QueueSettingsSection.js';
 import { DestinationFilterSection } from './DestinationFilterSection.js';
 import { DestinationTransformerSection } from './DestinationTransformerSection.js';
 
+// Must match the destination factories in packages/connectors/src/registry.ts.
 const CONNECTOR_TYPES = [
   { value: 'TCP_MLLP', label: 'TCP / MLLP' },
   { value: 'HTTP', label: 'HTTP' },
   { value: 'FILE', label: 'File' },
   { value: 'DATABASE', label: 'Database' },
   { value: 'JAVASCRIPT', label: 'JavaScript' },
+  { value: 'SMTP', label: 'SMTP (Email)' },
   { value: 'CHANNEL', label: 'Channel' },
-  { value: 'DICOM', label: 'DICOM' },
   { value: 'FHIR', label: 'FHIR' },
+  { value: 'DICOM', label: 'DICOM' },
 ] as const;
 
 interface DestinationSettingsPanelProps {
