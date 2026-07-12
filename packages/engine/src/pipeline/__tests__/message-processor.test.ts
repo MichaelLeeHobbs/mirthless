@@ -508,6 +508,109 @@ describe('MessageProcessor', () => {
     );
   });
 
+  it('destination filter script error marks the destination ERROR and does not send', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{
+        metaDataId: 1, name: 'Dest 1', enabled: true,
+        scripts: { filter: { code: 'throw new Error("filter boom");' } },
+        queueEnabled: false,
+      }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
+    // Never sent; error content stored against the destination.
+    expect(sendFn).not.toHaveBeenCalled();
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 1, 13, expect.stringContaining('filter boom'), 'TEXT',
+    );
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 1, expect.any(String), 'errored');
+  });
+
+  it('destination transformer script error marks ERROR and never sends untransformed data', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{
+        metaDataId: 1, name: 'Dest 1', enabled: true,
+        scripts: { transformer: { code: 'throw new Error("transform boom");' } },
+        queueEnabled: false,
+      }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
+    expect(sendFn).not.toHaveBeenCalled();
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 1, 13, expect.stringContaining('transform boom'), 'TEXT',
+    );
+  });
+
+  it('preprocessor returning boolean true does not corrupt the message to "true"', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: { preprocessor: { code: 'return true;' } },
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
+
+    // Destination must receive the original message, not the string "true".
+    expect(sendFn).toHaveBeenCalledWith(1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+  });
+
+  it('does not count the source as SENT when the only destination errors (stats overcount)', async () => {
+    const store = makeStore();
+    const sendFn: SendToDestination = vi.fn().mockResolvedValue({
+      ok: false, value: null, error: { message: 'Connection refused' },
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    // Source (metaDataId 0) must be counted errored, never sent.
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
+    expect(store.incrementStats).not.toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'sent');
+  });
+
+  it('postprocessor script error surfaces as ERROR, stores error content, and alerts', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const onError = vi.fn().mockResolvedValue(undefined);
+    const config = makeConfig({
+      scripts: { postprocessor: { code: 'throw new Error("post fail");' } },
+      onError,
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 0, 13, expect.stringContaining('post fail'), 'TEXT',
+    );
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
+    expect(onError).toHaveBeenCalled();
+  });
+
   it('destination transformer modifies content before send', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();

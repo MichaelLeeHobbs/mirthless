@@ -17,6 +17,8 @@ import {
   compileTransformerStepsToScript,
   prependTemplates,
   AlertManager,
+  RecoveryManager,
+  type RecoveryStore,
   type ChannelRuntimeConfig,
   type PipelineConfig,
   type ChannelScripts,
@@ -344,6 +346,10 @@ export class EngineManager {
     }
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage });
+
+    // Recover any messages left unprocessed by a prior crash/restart. Best-effort:
+    // recovery failures are logged, never allowed to abort a deploy.
+    await this.recoverChannel(channel, store, processMessage, sendFn);
   }
 
   /** Get a deployed channel runtime. */
@@ -405,6 +411,78 @@ export class EngineManager {
     }
 
     this.runtimes.delete(channelId);
+  }
+
+  /**
+   * Recover unprocessed messages for a freshly deployed channel.
+   *
+   * - Stale PENDING claims (in-flight dispatches interrupted by a crash) are reset
+   *   to QUEUED so the queue consumers redeliver them.
+   * - RECEIVED source messages are reprocessed from their stored raw content.
+   * - RECEIVED destination messages are re-dispatched from their stored SENT content.
+   * QUEUED messages are left for the queue consumers. All failures are logged only.
+   */
+  private async recoverChannel(
+    channel: ChannelDetail,
+    store: MessageStore,
+    processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>,
+    sendFn: SendToDestination,
+  ): Promise<void> {
+    // Reset stale PENDING claims for every queued destination.
+    for (const dest of channel.destinations) {
+      if (dest.queueMode === 'NEVER') continue;
+      const reset = await MessageService.resetPending(channel.id, dest.metaDataId);
+      if (!reset.ok) {
+        logger.error({ channelId: channel.id, metaDataId: dest.metaDataId, errMsg: reset.error.message }, 'Failed to reset PENDING messages');
+      }
+    }
+
+    const recoveryStore: RecoveryStore = {
+      getUnprocessedMessages: async (channelId) => {
+        const r = await MessageService.getUnprocessedMessages(channelId);
+        if (!r.ok) return r;
+        return { ok: true, value: r.value.map((m) => ({ messageId: m.id, channelId: m.channelId })), error: null };
+      },
+      getConnectorMessages: (channelId, messageId) => MessageService.getConnectorMessages(channelId, messageId),
+    };
+
+    const CT_RAW = 1;
+    const CT_SENT = 5;
+
+    const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
+      const raw = await store.loadContent(channelId, messageId, 0, CT_RAW);
+      if (!raw.ok || raw.value === null) {
+        return { ok: false, value: null, error: new Error('Raw content unavailable for recovery') } as Result<void>;
+      }
+      const processed = await processMessage(raw.value);
+      // Mark the original message processed so it is not recovered again on the next deploy.
+      await MessageService.markProcessed(channelId, messageId);
+      if (!processed.ok) return { ok: false, value: null, error: processed.error } as Result<void>;
+      return OK_VOID;
+    };
+
+    const redispatchDestination = async (channelId: string, messageId: number, metaDataId: number): Promise<Result<void>> => {
+      const sent = await store.loadContent(channelId, messageId, metaDataId, CT_SENT);
+      if (!sent.ok || sent.value === null) {
+        return { ok: false, value: null, error: new Error('Sent content unavailable for recovery') } as Result<void>;
+      }
+      const sendResult = await sendFn(metaDataId, sent.value, AbortSignal.timeout(30_000));
+      const success = sendResult.ok && sendResult.value.status === 'SENT';
+      await store.updateConnectorMessageStatus(channelId, messageId, metaDataId, success ? 'SENT' : 'ERROR');
+      await store.incrementStats(channelId, metaDataId, this.serverId, success ? 'sent' : 'errored');
+      return success ? OK_VOID : ({ ok: false, value: null, error: new Error('Redispatch send failed') } as Result<void>);
+    };
+
+    const manager = new RecoveryManager(recoveryStore, reprocessSource, redispatchDestination);
+    const recovered = await manager.recover(channel.id);
+    if (!recovered.ok) {
+      logger.error({ channelId: channel.id, errMsg: recovered.error.message }, 'Channel recovery failed');
+      return;
+    }
+    const summary = recovered.value;
+    if (summary.recovered > 0 || summary.errors > 0) {
+      logger.info({ channelId: channel.id, ...summary }, 'Channel recovery complete');
+    }
   }
 
   /** Compile a script with optional template prepending. */

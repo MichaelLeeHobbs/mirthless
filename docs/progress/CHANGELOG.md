@@ -1377,3 +1377,22 @@
 - Persistent message store (Drizzle-backed, replacing in-memory)
 - Wire emailSender callback in server startup (nodemailer transport → AlertManager deps)
 - E2E tests for clone and CLI (requires running server + DB)
+
+## 2026-07-12 — Engine data-integrity & sandbox RCE fixes (branch: fix/engine-data-integrity)
+
+Fixed six verified release-blocking bugs plus three cheaper related issues in the engine + message layer. All engine (347) and server (851) tests green; full workspace build + `pnpm lint --max-warnings 0` green.
+
+### Data integrity
+- **Storage-mode message loss** — `MessageService.initializeMessage` always writes the message/source-connector/received-stat rows; content rows are the only thing subject to storage policy. Empty content no longer emits invalid `VALUES ()` (which threw and silently lost the message in PRODUCTION/METADATA/DISABLED). (D-131)
+- **currval CTE misattribution** — content `message_id` now bound from the `new_msg` CTE via `CROSS JOIN` instead of `currval('messages_id_seq')`, so PHI content can't be attributed to a previous message on a pooled connection. (D-131)
+- **Queue path** — `dequeue` maps rows to camelCase (queue-consumer read undefined before); atomically claims rows `QUEUED → PENDING` to stop the 1s poll double-dispatching in-flight sends; `send_attempts` incremented on requeue so the retry cap trips (no more infinite poison-message retry); stale PENDING reset to QUEUED on deploy. (D-130)
+- **RecoveryManager wired** into `EngineManager.deploy()` — resets PENDING, reprocesses RECEIVED source messages, re-dispatches RECEIVED destinations; QUEUED left to consumers. Best-effort, logged. (D-133)
+
+### Pipeline correctness
+- **Destination filter/transformer script errors** now mark the destination ERROR (error content + errored stat + alert) instead of falling through / sending untransformed PHI. (D-132)
+- **Stats overcount** — source no longer counted SENT when a destination or postprocessor failed; counted errored instead. (D-132)
+- **Postprocessor errors** (channel + global) now surface (error content + alert + ERROR status). (D-132)
+- **Preprocessor `return true`** no longer corrupts the message to the string "true" (boolean returns fall back to `msg`). (D-132)
+
+### Security
+- **Sandbox RCE closed** — hardened `VmSandboxExecutor` so no host-realm object/function is reachable from user scripts; `logger.info.constructor('return process')()` and friends can no longer reach host `process`/env. Added escape-attempt tests, an async wall-clock timeout, and removed the dead `memoryLimit` knob. See `packages/engine/src/sandbox/README.md`. (D-129)

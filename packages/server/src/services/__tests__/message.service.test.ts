@@ -61,9 +61,35 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   sql: Object.assign(
     (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values, type: 'sql' }),
-    { raw: (s: string) => ({ raw: s }) },
+    {
+      raw: (s: string) => ({ raw: s, type: 'sql_raw' }),
+      join: (arr: unknown[], sep: unknown) => ({ type: 'sql_join', arr, sep }),
+    },
   ),
 }));
+
+/** Flatten a mocked drizzle sql node tree back to approximate SQL text for assertions. */
+function renderSql(node: unknown): string {
+  if (node == null) return '';
+  if (typeof node !== 'object') return String(node);
+  const n = node as Record<string, unknown>;
+  if (n['type'] === 'sql') {
+    const strings = n['strings'] as readonly string[];
+    const values = n['values'] as readonly unknown[];
+    let out = '';
+    for (let i = 0; i < strings.length; i++) {
+      out += strings[i];
+      if (i < values.length) out += renderSql(values[i]);
+    }
+    return out;
+  }
+  if (n['type'] === 'sql_join') {
+    const arr = n['arr'] as readonly unknown[];
+    return arr.map(renderSql).join(renderSql(n['sep']));
+  }
+  if (n['type'] === 'sql_raw') return String(n['raw']);
+  return '?';
+}
 
 // Must import after mocks
 const { MessageService } = await import('../message.service.js');
@@ -543,6 +569,103 @@ describe('MessageService', () => {
       const result = await MessageService.deleteAttachments(CHANNEL_ID, MESSAGE_ID);
 
       expect(result.ok).toBe(false);
+    });
+  });
+
+  // ========== INITIALIZE MESSAGE (storage-mode loss + currval bug) ==========
+  describe('initializeMessage', () => {
+    it('persists the message even when no content rows are provided (PRODUCTION/METADATA/DISABLED)', async () => {
+      mockExecute.mockResolvedValue({ rows: [{ message_id: 7, correlation_id: 'corr-7' }] });
+
+      const result = await MessageService.initializeMessage(CHANNEL_ID, SERVER_ID, 'Source', []);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.messageId).toBe(7);
+      expect(mockExecute).toHaveBeenCalledOnce();
+      // No content CTE emitted when there are no content rows.
+      const sqlText = renderSql(mockExecute.mock.calls[0]![0]);
+      expect(sqlText).toContain('INSERT INTO messages');
+      expect(sqlText).toContain('INSERT INTO connector_messages');
+      expect(sqlText).not.toContain('INSERT INTO message_content');
+    });
+
+    it('inserts content rows bound to the new message id (never currval)', async () => {
+      mockExecute.mockResolvedValue({ rows: [{ message_id: 8, correlation_id: 'corr-8' }] });
+
+      const result = await MessageService.initializeMessage(CHANNEL_ID, SERVER_ID, 'Source', [
+        { metaDataId: 0, contentType: 1, content: 'RAW', dataType: 'HL7V2' },
+        { metaDataId: 0, contentType: 9, content: '{}', dataType: 'JSON' },
+      ]);
+
+      expect(result.ok).toBe(true);
+      const sqlText = renderSql(mockExecute.mock.calls[0]![0]);
+      expect(sqlText).toContain('INSERT INTO message_content');
+      // Content message_id is bound to this message via new_msg — NOT currval.
+      expect(sqlText).toContain('new_msg.id');
+      expect(sqlText).toContain('CROSS JOIN');
+      expect(sqlText).not.toContain('currval');
+    });
+
+    it('returns error on DB failure', async () => {
+      mockExecute.mockRejectedValue(new Error('constraint violation'));
+
+      const result = await MessageService.initializeMessage(CHANNEL_ID, SERVER_ID, 'Source', []);
+
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  // ========== DEQUEUE atomic claim (double-dispatch) ==========
+  describe('dequeue claim semantics', () => {
+    it('atomically transitions claimed rows to PENDING via SKIP LOCKED', async () => {
+      mockExecute.mockResolvedValue({ rows: [] });
+
+      await MessageService.dequeue(CHANNEL_ID, 1, 5);
+
+      const sqlText = renderSql(mockExecute.mock.calls[0]![0]);
+      expect(sqlText).toContain("SET status = 'PENDING'");
+      expect(sqlText).toContain('FOR UPDATE SKIP LOCKED');
+      // Columns aliased to camelCase so the consumer's QueuedMessage shape matches.
+      expect(sqlText).toContain('"messageId"');
+      expect(sqlText).toContain('"sendAttempts"');
+    });
+  });
+
+  // ========== RESET PENDING (crash recovery) ==========
+  describe('resetPending', () => {
+    it('resets PENDING rows back to QUEUED', async () => {
+      const result = await MessageService.resetPending(CHANNEL_ID, 1);
+
+      expect(result.ok).toBe(true);
+      expect(mockSet).toHaveBeenCalledWith({ status: 'QUEUED' });
+    });
+
+    it('returns error on DB failure', async () => {
+      mockUpdateWhere.mockRejectedValue(new Error('DB error'));
+
+      const result = await MessageService.resetPending(CHANNEL_ID, 1);
+
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  // ========== QUEUED requeue increments send_attempts (poison-message cap) ==========
+  describe('updateConnectorMessageStatus QUEUED increment', () => {
+    it('increments send_attempts when transitioning back to QUEUED', async () => {
+      const result = await MessageService.updateConnectorMessageStatus(CHANNEL_ID, MESSAGE_ID, 1, 'QUEUED');
+
+      expect(result.ok).toBe(true);
+      expect(mockSet).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'QUEUED', sendAttempts: expect.anything() }),
+      );
+    });
+
+    it('does NOT increment send_attempts for non-QUEUED transitions', async () => {
+      await MessageService.updateConnectorMessageStatus(CHANNEL_ID, MESSAGE_ID, 1, 'SENT');
+
+      const arg = mockSet.mock.calls[0]![0] as Record<string, unknown>;
+      expect(arg).not.toHaveProperty('sendAttempts');
     });
   });
 });

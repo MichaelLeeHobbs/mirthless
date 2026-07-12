@@ -20,6 +20,9 @@ vi.mock('@mirthless/engine', () => ({
   prependTemplates: vi.fn(),
   AlertManager: vi.fn(),
   QueueConsumer: vi.fn(),
+  RecoveryManager: vi.fn().mockImplementation(() => ({
+    recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
+  })),
 }));
 
 vi.mock('@mirthless/connectors', () => ({
@@ -48,6 +51,9 @@ vi.mock('../message.service.js', () => ({
     release: vi.fn(),
     deleteContent: mockDeleteContent,
     deleteAttachments: mockDeleteAttachments,
+    resetPending: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
+    getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
   },
 }));
 
