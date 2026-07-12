@@ -2,6 +2,47 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-12 — Web UI + Release Infra release-blocker fixes (branch fix/web-and-infra)
+
+### Connector correctness (blockers 1-2)
+- Fixed connector form ↔ runtime key drift so what the UI saves matches what the registry reads:
+  HTTP source `contextPath`/`methods[]` → `path`/`method`; TCP/MLLP source reduced to
+  host/port/maxConnections (decorative keys removed); TCP/MLLP dest `sendTimeout` → `responseTimeout`
+  + `maxConnections`; HTTP + FHIR dest `headers` now a `Record<string,string>` via a new reusable
+  `HeadersEditor` (dispatchers spread headers as an object — a raw string broke at runtime).
+- Fixed connector dropdowns to match `packages/connectors/src/registry.ts`: source removes FHIR
+  (destination-only) and adds EMAIL (IMAP); destination adds SMTP. `core-models` CONNECTOR_TYPES
+  gained SMTP + EMAIL (an SMTP dest or EMAIL source previously failed channel validation).
+
+### Safety & permissions (blockers 3-6, high 7-9)
+- Reprocess button now calls the reprocess API with a confirm dialog + query invalidation (was a no-op toast).
+- Added `usePermissions()` + `PERMISSION` strings (mirror server) and a `RequirePermission` route guard;
+  gated nav, routes, and destructive/privileged controls (deploy/start/stop, delete, reset stats, user mgmt,
+  settings/map/tag/resource writes) by permission.
+- Global `MutationCache.onError` toast as a fail-loud safety net; notification store dedupes identical toasts
+  and self-prunes; fixed `mutateAsync`-without-catch cases.
+- Confirmations added for user disable, tag/map/resource/message deletes; replaced last `window.confirm`.
+- Self-service Change Password + About (version) in the user menu.
+- Unsaved-changes guards for the Code Template editor and Resources content dialog.
+- Load-error Alerts on Code Templates, Global Scripts, Channel Statistics; message-list 30s polling fallback.
+
+### Release infrastructure (blockers 10-13)
+- Added MIT LICENSE (2026, Michael Hobbs).
+- Prod Docker made runnable: prod-deps stage (no devDependencies in runtime), copied Drizzle migrations +
+  a standalone `docker/migrate.mjs` runner + `server-entrypoint.sh` that migrates + idempotently seeds before
+  `node dist/index.js`; kept non-root user.
+- Compose hardening: required `POSTGRES_PASSWORD` (no insecure default), server (/health/live) + web
+  healthchecks; nginx restricts /metrics to internal ranges, adds `client_max_body_size 200m` and TLS guidance;
+  `.env.production.example` gains LOG_HTTP_HEADERS + SEED_ON_START.
+- User docs: quickstart, connector reference (aligned to registry.ts), scripting API reference; README links them.
+
+### Verification
+- `pnpm --filter @mirthless/web test` — 25 passing (new: usePermissions, RequirePermission, coerceHeaders,
+  notification dedup, global mutation handler)
+- `pnpm --filter @mirthless/web build` — 0 TS errors, vite build OK
+- `eslint packages/web packages/core-models --max-warnings 0` — clean
+- `pnpm --filter @mirthless/core-models test` — 189 passing (shared enum change)
+
 ## 2026-03-29 — Deep Review Round 4: Performance, Pipeline Fixes, UX
 
 ### Pipeline Fixes

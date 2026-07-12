@@ -259,3 +259,13 @@ D-126: Channel group is single-select despite many-to-many join table — The `c
 D-127: Connection test button uses centralized service, not per-connector test() methods — All 10 connector types tested via `ConnectionTestService` with tester registry. Connectors don't need a `test()` interface method. TCP/MLLP and DICOM use socket connect, HTTP uses HEAD, Database uses `SELECT 1`, SMTP uses nodemailer verify, File uses fs.access, FHIR hits /metadata. Channel and JavaScript always succeed. — 2026-03-30
 
 D-128: Reusable TestConnectionButton component — Single component handles all connector types. Accepts connectorType, mode (SOURCE/DESTINATION), and properties props. Shows inline success/failure with latency. Used across 13 connector forms. — 2026-03-30
+
+D-129: UI permission gating mirrors server permission strings — Web has a local `PERMISSION` const (packages/web/src/lib/permissions.ts) duplicating the server's resource:action strings, read via `usePermissions()` from the auth store. UI gating is UX-only; the server still enforces authorization. Chose duplication over sharing through core-models to avoid coupling the web bundle to server seed code. — 2026-07-12
+
+D-130: Global MutationCache.onError as a fail-loud safety net + toast dedupe — A single global handler surfaces an error toast for any rejected mutation so failed saves/toggles/deletes are never silent. To avoid double toasts where a call site already notifies, the notification store dedupes identical message+severity within 1.5s (and self-prunes the dedupe map). — 2026-07-12
+
+D-131: Connector form property keys are the registry contract — Forms/defaults must write exactly the keys packages/connectors/src/registry.ts reads. Decorative controls that map to no registry key were removed rather than left misleading (TCP/MLLP charset/transmissionMode/etc.). HTTP/FHIR `headers` must be a Record<string,string> (dispatchers spread it), edited via a shared HeadersEditor. — 2026-07-12
+
+D-132: core-models CONNECTOR_TYPES is the union of source+dest types — The shared enum now includes SMTP and EMAIL. Source vs destination validity is enforced by the UI dropdowns and the runtime registry, not the schema. Fixes SMTP destinations / EMAIL sources previously failing channel validation despite the connectors existing. — 2026-07-12
+
+D-133: Prod Docker migrates via a standalone drizzle-orm runner, not drizzle-kit — docker/migrate.mjs uses drizzle-orm's built-in migrator (drizzle-orm + pg are prod deps) so the runtime image needs no devDependencies. Entrypoint runs migrations then an idempotent seed (SEED_ON_START, default true) before starting the server. — 2026-07-12
