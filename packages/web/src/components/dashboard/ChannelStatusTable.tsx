@@ -262,7 +262,22 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
                   <TableCell align="right">{row.filtered.toLocaleString()}</TableCell>
                   <TableCell align="right">{row.sent.toLocaleString()}</TableCell>
                   <TableCell align="right" sx={{ color: row.errored > 0 ? 'error.main' : undefined }}>
-                    {row.errored.toLocaleString()}
+                    {row.errored > 0 ? (
+                      <Tooltip title="View errored messages">
+                        <Link
+                          component="button"
+                          variant="body2"
+                          underline="hover"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/channels/${row.channelId}/messages?status=ERROR`); }}
+                          aria-label={`View ${String(row.errored)} errored messages for ${row.channelName}`}
+                          sx={{ color: 'error.main', fontWeight: 600 }}
+                        >
+                          {row.errored.toLocaleString()}
+                        </Link>
+                      </Tooltip>
+                    ) : (
+                      row.errored.toLocaleString()
+                    )}
                   </TableCell>
                   <TableCell align="right" sx={{ color: row.queued > 0 ? 'warning.main' : undefined }}>
                     {row.queued.toLocaleString()}

@@ -52,6 +52,7 @@ const SOURCE_CONNECTOR_TYPES = [
   'CHANNEL',
   'DICOM',
   'EMAIL',
+  'SFTP',
 ] as const;
 
 const INITIAL_STATES = ['STARTED', 'STOPPED', 'PAUSED'] as const;

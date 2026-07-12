@@ -14,24 +14,31 @@ interface AuthState {
   readonly accessToken: string | null;
   readonly isAuthenticated: boolean;
   readonly isLoading: boolean;
+  /**
+   * True when the server requires the signed-in user to change their password
+   * before using the app (e.g. a seeded/flagged admin). The self-change endpoint
+   * clears the flag server-side; the UI mirrors that via clearMustChangePassword.
+   */
+  readonly mustChangePassword: boolean;
 }
 
 interface AuthActions {
-  readonly setAuth: (user: AuthUser, accessToken: string) => void;
+  readonly setAuth: (user: AuthUser, accessToken: string, mustChangePassword?: boolean) => void;
   readonly setAccessToken: (accessToken: string) => void;
   readonly clearAuth: () => void;
   readonly setLoading: (isLoading: boolean) => void;
+  readonly clearMustChangePassword: () => void;
 }
 
 type AuthStore = AuthState & AuthActions;
 
 const STORAGE_KEY = 'mirthless_auth';
 
-function loadPersistedState(): Pick<AuthState, 'user' | 'accessToken' | 'isAuthenticated'> {
+function loadPersistedState(): Pick<AuthState, 'user' | 'accessToken' | 'isAuthenticated' | 'mustChangePassword'> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return { user: null, accessToken: null, isAuthenticated: false };
+      return { user: null, accessToken: null, isAuthenticated: false, mustChangePassword: false };
     }
     const parsed: unknown = JSON.parse(raw);
     if (
@@ -40,24 +47,25 @@ function loadPersistedState(): Pick<AuthState, 'user' | 'accessToken' | 'isAuthe
       'user' in parsed &&
       'accessToken' in parsed
     ) {
-      const state = parsed as { user: unknown; accessToken: unknown };
+      const state = parsed as { user: unknown; accessToken: unknown; mustChangePassword?: unknown };
       if (typeof state.accessToken === 'string' && state.user !== null) {
         return {
           user: state.user as AuthUser,
           accessToken: state.accessToken,
           isAuthenticated: true,
+          mustChangePassword: state.mustChangePassword === true,
         };
       }
     }
   } catch {
     // Corrupted storage — ignore and start fresh
   }
-  return { user: null, accessToken: null, isAuthenticated: false };
+  return { user: null, accessToken: null, isAuthenticated: false, mustChangePassword: false };
 }
 
-function persistState(user: AuthUser | null, accessToken: string | null): void {
+function persistState(user: AuthUser | null, accessToken: string | null, mustChangePassword: boolean): void {
   if (user && accessToken) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ user, accessToken }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ user, accessToken, mustChangePassword }));
   } else {
     localStorage.removeItem(STORAGE_KEY);
   }
@@ -70,25 +78,33 @@ export const useAuthStore = create<AuthStore>((set) => ({
   accessToken: initialState.accessToken,
   isAuthenticated: initialState.isAuthenticated,
   isLoading: false,
+  mustChangePassword: initialState.mustChangePassword,
 
-  setAuth: (user: AuthUser, accessToken: string): void => {
-    persistState(user, accessToken);
-    set({ user, accessToken, isAuthenticated: true, isLoading: false });
+  setAuth: (user: AuthUser, accessToken: string, mustChangePassword = false): void => {
+    persistState(user, accessToken, mustChangePassword);
+    set({ user, accessToken, isAuthenticated: true, isLoading: false, mustChangePassword });
   },
 
   setAccessToken: (accessToken: string): void => {
     set((state) => {
-      persistState(state.user, accessToken);
+      persistState(state.user, accessToken, state.mustChangePassword);
       return { accessToken };
     });
   },
 
   clearAuth: (): void => {
-    persistState(null, null);
-    set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
+    persistState(null, null, false);
+    set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false, mustChangePassword: false });
   },
 
   setLoading: (isLoading: boolean): void => {
     set({ isLoading });
+  },
+
+  clearMustChangePassword: (): void => {
+    set((state) => {
+      persistState(state.user, state.accessToken, false);
+      return { mustChangePassword: false };
+    });
   },
 }));

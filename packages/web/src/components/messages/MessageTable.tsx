@@ -12,6 +12,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import TablePagination from '@mui/material/TablePagination';
 import Paper from '@mui/material/Paper';
+import Checkbox from '@mui/material/Checkbox';
 import { MessageStatusChip } from '../common/StatusChip.js';
 import { EmptyState } from '../common/states/EmptyState.js';
 import InboxIcon from '@mui/icons-material/Inbox';
@@ -26,6 +27,9 @@ interface MessageTableProps {
   readonly onSelect: (messageId: number) => void;
   readonly onPageChange: (offset: number) => void;
   readonly onLimitChange: (limit: number) => void;
+  readonly checkedIds: ReadonlySet<number>;
+  readonly onToggleChecked: (messageId: number) => void;
+  readonly onToggleCheckedAll: () => void;
 }
 
 function getWorstStatus(connectors: readonly { readonly status: string }[]): string {
@@ -60,8 +64,13 @@ export function MessageTable({
   onSelect,
   onPageChange,
   onLimitChange,
+  checkedIds,
+  onToggleChecked,
+  onToggleCheckedAll,
 }: MessageTableProps): ReactNode {
   const page = Math.floor(offset / limit);
+  const allChecked = items.length > 0 && items.every((m) => checkedIds.has(m.messageId));
+  const someChecked = items.some((m) => checkedIds.has(m.messageId));
 
   return (
     <Paper>
@@ -69,6 +78,15 @@ export function MessageTable({
         <Table size="small">
           <TableHead>
             <TableRow>
+              <TableCell padding="checkbox">
+                <Checkbox
+                  size="small"
+                  checked={allChecked}
+                  indeterminate={!allChecked && someChecked}
+                  onChange={onToggleCheckedAll}
+                  inputProps={{ 'aria-label': 'Select all messages on this page' }}
+                />
+              </TableCell>
               <TableCell width={80}>Message ID</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Received</TableCell>
@@ -80,7 +98,7 @@ export function MessageTable({
           <TableBody>
             {items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} sx={{ border: 0 }}>
+                <TableCell colSpan={7} sx={{ border: 0 }}>
                   <EmptyState
                     dense
                     icon={<InboxIcon />}
@@ -102,6 +120,15 @@ export function MessageTable({
                     onClick={() => onSelect(msg.messageId)}
                     sx={{ cursor: 'pointer' }}
                   >
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        size="small"
+                        checked={checkedIds.has(msg.messageId)}
+                        onClick={(e) => { e.stopPropagation(); }}
+                        onChange={() => onToggleChecked(msg.messageId)}
+                        inputProps={{ 'aria-label': `Select message ${String(msg.messageId)}` }}
+                      />
+                    </TableCell>
                     <TableCell sx={{ fontFamily: (t) => t.palette.fontFamilyMono, fontSize: '0.8125rem' }}>{msg.messageId}</TableCell>
                     <TableCell>
                       <MessageStatusChip status={worstStatus} />
