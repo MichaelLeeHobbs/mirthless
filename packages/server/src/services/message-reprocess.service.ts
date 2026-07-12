@@ -11,12 +11,15 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { messageContent, messages } from '../db/schema/index.js';
 import { CONTENT_TYPE } from '../db/schema/message-content.js';
 import { deleteMessagesByIds } from './message-delete-helper.js';
+import { getEngine } from '../engine.js';
 
 // ----- Response Types -----
 
 export interface ReprocessResult {
+  /** The original message that was reprocessed. */
   readonly messageId: number;
-  readonly rawContent: string;
+  /** The new message produced by re-injecting the raw content through the pipeline. */
+  readonly newMessageId: number;
 }
 
 export interface BulkDeleteResult {
@@ -26,10 +29,15 @@ export interface BulkDeleteResult {
 // ----- Service -----
 
 export class MessageReprocessService {
-  /** Read raw content for a message to allow reprocessing. */
+  /**
+   * Reprocess a message by re-injecting its stored raw source content through the
+   * deployed channel's pipeline as a new message. The channel must be deployed and
+   * STARTED. Returns the original and newly-produced message ids.
+   */
   static async reprocessMessage(
     channelId: string,
     messageId: number,
+    context?: AuditContext,
   ): Promise<Result<ReprocessResult>> {
     return tryCatch(async () => {
       const [row] = await db
@@ -45,10 +53,32 @@ export class MessageReprocessService {
         );
 
       if (!row?.content) {
-        throw new ServiceError('NOT_FOUND', `Raw content not found for message ${String(messageId)}`);
+        throw new ServiceError('NOT_FOUND', `Raw content not found for message ${String(messageId)}. Reprocess requires stored raw content (DEVELOPMENT/RAW storage mode).`);
       }
 
-      return { messageId, rawContent: row.content };
+      // Re-inject the raw content through the deployed channel's pipeline.
+      const deployed = getEngine().getRuntime(channelId);
+      if (!deployed) {
+        throw new ServiceError('CONFLICT', `Channel ${channelId} is not deployed; deploy and start it to reprocess.`);
+      }
+      const state = deployed.runtime.getState();
+      if (state !== 'STARTED') {
+        throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to reprocess a message.`);
+      }
+
+      const injected = await deployed.processMessage(row.content, { reprocessedFrom: messageId });
+      if (!injected.ok) {
+        throw new ServiceError('INTERNAL', injected.error.message);
+      }
+
+      emitEvent({
+        level: 'INFO', name: 'MESSAGE_REPROCESSED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { originalMessageId: messageId, newMessageId: injected.value.messageId },
+      });
+
+      return { messageId, newMessageId: injected.value.messageId };
     });
   }
 

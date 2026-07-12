@@ -108,14 +108,14 @@ export function useDeleteUser(): ReturnType<typeof useMutation<void, Error, stri
 /**
  * Change the CURRENT user's own password (self-service).
  *
- * Targets `POST /auth/change-password` with `{ currentPassword, newPassword }`.
- * This endpoint is provided by the server auth routes; if it is not yet
- * deployed the request will 404 and surface an error toast.
+ * Targets `POST /users/me/password` with `{ currentPassword, newPassword }`
+ * (auth-only, no `users:write`). Verifies the current password server-side and
+ * invalidates the user's other sessions.
  */
 export function useChangeOwnPassword(): ReturnType<typeof useMutation<void, Error, { currentPassword: string; newPassword: string }>> {
   return useMutation({
     mutationFn: async ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) => {
-      const result = await api.post<void>('/auth/change-password', { currentPassword, newPassword });
+      const result = await api.post<void>('/users/me/password', { currentPassword, newPassword });
       if (!result.success) {
         throw new Error(result.error.message);
       }

@@ -38,6 +38,8 @@ import {
   createDestinationConnector,
   JavaScriptReceiver,
   JavaScriptDispatcher,
+  DISPATCH_STATUS,
+  type DispatchStatus,
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@mirthless/connectors';
@@ -66,7 +68,25 @@ export interface DeployedChannel {
   readonly alertManager: AlertManager;
   readonly queueConsumers: readonly QueueConsumer[];
   readonly scripts: ChannelScripts;
-  readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>;
+  readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<SourceDispatchOutcome>>;
+}
+
+/**
+ * What the source connector learns about a dispatched message. `status` lets a
+ * source connector build the right response (e.g. an MLLP receiver returns an AA
+ * ACK for SENT, AE for ERROR, AR for FILTERED).
+ */
+export interface SourceDispatchOutcome {
+  readonly messageId: number;
+  readonly status: DispatchStatus;
+  readonly response?: string;
+}
+
+/** Map the pipeline's message status to the source-connector dispatch status. */
+function toDispatchStatus(status: 'SENT' | 'FILTERED' | 'ERROR'): DispatchStatus {
+  if (status === 'FILTERED') return DISPATCH_STATUS.FILTERED;
+  if (status === 'ERROR') return DISPATCH_STATUS.ERROR;
+  return DISPATCH_STATUS.PROCESSED;
 }
 
 // ----- Storage Policy -----
@@ -321,15 +341,21 @@ export class EngineManager {
     const scriptTimeoutMs = channel.scriptTimeoutSeconds
       ? channel.scriptTimeoutSeconds * 1000
       : 30_000;
-    const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<{ messageId: number }>> => {
+    const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
       // Extract correlationId from sourceMap if present (channel-to-channel routing)
       const correlationId = typeof sourceMap?.['correlationId'] === 'string'
         ? sourceMap['correlationId'] as string
         : undefined;
-      return processor.processMessage(
+      const result = await processor.processMessage(
         { rawContent, sourceMap: sourceMap ?? {}, correlationId },
         AbortSignal.timeout(scriptTimeoutMs),
       );
+      if (!result.ok) return result;
+      // Surface the pipeline's final status so the source connector can build the
+      // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AR).
+      const { messageId, response } = result.value;
+      const status = toDispatchStatus(result.value.status);
+      return { ok: true, value: response === undefined ? { messageId, status } : { messageId, status, response }, error: null };
     };
 
     // Build runtime config

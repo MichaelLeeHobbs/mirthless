@@ -21,15 +21,32 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
+const mockGetRuntime = vi.fn();
+vi.mock('../../engine.js', () => ({
+  getEngine: () => ({ getRuntime: mockGetRuntime }),
+}));
+
 import { MessageReprocessService } from '../message-reprocess.service.js';
 import { db } from '../../lib/db.js';
 
 const mockSelect = vi.mocked(db.select);
 
+/** A deployed channel whose pipeline accepts a re-injected message. */
+function deployedChannel(state: string, processMessage: ReturnType<typeof vi.fn>) {
+  return { runtime: { getState: () => state }, processMessage };
+}
+
+function mockRawContent(content: string | null): void {
+  const mockWhere = vi.fn().mockResolvedValue(content === null ? [] : [{ content }]);
+  const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
+  mockSelect.mockReturnValue({ from: mockFrom } as never);
+}
+
 // ----- Setup -----
 
 beforeEach(() => {
   mockSelect.mockReset();
+  mockGetRuntime.mockReset();
   mockTxExecute.mockReset();
   mockTxExecute.mockResolvedValue({ rows: [], rowCount: 0 });
 });
@@ -37,24 +54,24 @@ beforeEach(() => {
 // ----- reprocessMessage -----
 
 describe('MessageReprocessService.reprocessMessage', () => {
-  it('returns raw content for valid message', async () => {
-    const mockWhere = vi.fn().mockResolvedValue([{ content: 'MSH|^~\\&|...' }]);
-    const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom } as never);
+  it('re-injects raw content through the deployed channel and returns the new message id', async () => {
+    mockRawContent('MSH|^~\\&|...');
+    const processMessage = vi.fn().mockResolvedValue({ ok: true, value: { messageId: 42, status: 'PROCESSED' }, error: null });
+    mockGetRuntime.mockReturnValue(deployedChannel('STARTED', processMessage));
 
     const result = await MessageReprocessService.reprocessMessage('ch-001', 1);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.messageId).toBe(1);
-      expect(result.value.rawContent).toBe('MSH|^~\\&|...');
+      expect(result.value.newMessageId).toBe(42);
     }
+    // Re-injected the exact stored raw content
+    expect(processMessage).toHaveBeenCalledWith('MSH|^~\\&|...', { reprocessedFrom: 1 });
   });
 
   it('returns NOT_FOUND when no raw content exists', async () => {
-    const mockWhere = vi.fn().mockResolvedValue([]);
-    const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom } as never);
+    mockRawContent(null);
 
     const result = await MessageReprocessService.reprocessMessage('ch-001', 999);
 
@@ -65,9 +82,7 @@ describe('MessageReprocessService.reprocessMessage', () => {
   });
 
   it('returns NOT_FOUND when content is null', async () => {
-    const mockWhere = vi.fn().mockResolvedValue([{ content: null }]);
-    const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom } as never);
+    mockRawContent(null);
 
     const result = await MessageReprocessService.reprocessMessage('ch-001', 1);
 
@@ -75,6 +90,40 @@ describe('MessageReprocessService.reprocessMessage', () => {
     if (!result.ok) {
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
     }
+  });
+
+  it('returns CONFLICT when the channel is not deployed', async () => {
+    mockRawContent('MSH|...');
+    mockGetRuntime.mockReturnValue(undefined);
+
+    const result = await MessageReprocessService.reprocessMessage('ch-001', 1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+    }
+  });
+
+  it('returns CONFLICT when the channel is deployed but not STARTED', async () => {
+    mockRawContent('MSH|...');
+    mockGetRuntime.mockReturnValue(deployedChannel('STOPPED', vi.fn()));
+
+    const result = await MessageReprocessService.reprocessMessage('ch-001', 1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+    }
+  });
+
+  it('returns error when the pipeline rejects the re-injected message', async () => {
+    mockRawContent('MSH|...');
+    const processMessage = vi.fn().mockResolvedValue({ ok: false, value: null, error: { message: 'pipeline error' } });
+    mockGetRuntime.mockReturnValue(deployedChannel('STARTED', processMessage));
+
+    const result = await MessageReprocessService.reprocessMessage('ch-001', 1);
+
+    expect(result.ok).toBe(false);
   });
 
   it('returns error on DB failure', async () => {

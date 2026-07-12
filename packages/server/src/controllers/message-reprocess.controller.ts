@@ -10,6 +10,7 @@ import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
+  if (isServiceError(error, 'CONFLICT')) return 409;
   return 500;
 }
 
@@ -22,15 +23,17 @@ export class MessageReprocessController {
   static async reprocess(req: Request, res: Response): Promise<void> {
     const channelId = req.params['id'] as string;
     const messageId = Number(req.params['msgId']);
-    const result = await MessageReprocessService.reprocessMessage(channelId, messageId);
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await MessageReprocessService.reprocessMessage(channelId, messageId, context);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      logger.warn({ errMsg: result.error.message, channelId, messageId }, 'Failed to get raw content for reprocess');
+      logger.warn({ errMsg: result.error.message, channelId, messageId }, 'Failed to reprocess message');
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
+    logger.info({ channelId, messageId, newMessageId: result.value.newMessageId }, 'Message reprocessed');
     res.json({ success: true, data: result.value });
   }
 
