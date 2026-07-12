@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import type { Result } from '@mirthless/core-util';
 import { JavaScriptReceiver, normalizeScriptResult, type JavaScriptReceiverConfig, type ScriptRunner } from '../javascript-receiver.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 // ----- Helpers -----
 
@@ -296,5 +297,20 @@ describe('JavaScriptReceiver poll cycle', () => {
     // Second poll: success
     await vi.advanceTimersByTimeAsync(1_000);
     expect(dispatched).toHaveLength(1);
+  });
+
+  it('logs an error when the poll cycle throws', async () => {
+    const { logger, errors } = makeMockLogger();
+    const throwingRunner: ScriptRunner = async () => { throw new Error('sandbox exploded'); };
+
+    receiver = new JavaScriptReceiver(makeConfig({ pollingIntervalMs: 1_000 }), logger);
+    receiver.setDispatcher(makeDispatcher());
+    receiver.setScriptRunner(throwingRunner);
+    await receiver.onStart();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.msg).toContain('poll cycle failed');
   });
 });

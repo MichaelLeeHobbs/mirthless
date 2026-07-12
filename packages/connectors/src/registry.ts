@@ -4,9 +4,11 @@
 // Maps connector types to factory functions.
 
 import type { SourceConnectorRuntime, DestinationConnectorRuntime } from './base.js';
-import { TcpMllpReceiver } from './tcp-mllp/tcp-mllp-receiver.js';
+import { TcpMllpReceiver, MLLP_RESPONSE_MODE, type MllpResponseMode } from './tcp-mllp/tcp-mllp-receiver.js';
 import { TcpMllpDispatcher } from './tcp-mllp/tcp-mllp-dispatcher.js';
-import { HttpReceiver } from './http/http-receiver.js';
+import { HttpReceiver, DEFAULT_MAX_BODY_BYTES, type HttpAuthConfig } from './http/http-receiver.js';
+import { DEFAULT_MAX_FRAME_BYTES } from './transmission/mllp-mode.js';
+import { readTlsServerOptions, readTlsClientOptions } from './tls.js';
 import { HttpDispatcher } from './http/http-dispatcher.js';
 import { FileReceiver, FILE_SORT_BY, FILE_POST_ACTION, type FileSortBy, type FilePostAction } from './file/file-receiver.js';
 import { FileDispatcher } from './file/file-dispatcher.js';
@@ -31,6 +33,10 @@ const sourceFactories = new Map<string, SourceFactory>([
     host: (props['host'] as string | undefined) ?? '0.0.0.0',
     port: props['port'] as number,
     maxConnections: (props['maxConnections'] as number | undefined) ?? 10,
+    responseMode: (props['responseMode'] as MllpResponseMode | undefined) ?? MLLP_RESPONSE_MODE.AUTO_ACK,
+    charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
+    maxFrameBytes: (props['maxFrameBytes'] as number | undefined) ?? DEFAULT_MAX_FRAME_BYTES,
+    tls: readTlsServerOptions(props),
   })],
   ['HTTP', (props): SourceConnectorRuntime => new HttpReceiver({
     host: (props['host'] as string | undefined) ?? '0.0.0.0',
@@ -39,6 +45,10 @@ const sourceFactories = new Map<string, SourceFactory>([
     method: (props['method'] as string | undefined) ?? 'POST',
     responseContentType: (props['responseContentType'] as string | undefined) ?? 'text/plain',
     responseStatusCode: (props['responseStatusCode'] as number | undefined) ?? 200,
+    errorStatusCode: (props['errorStatusCode'] as number | undefined) ?? 500,
+    maxBodyBytes: (props['maxBodyBytes'] as number | undefined) ?? DEFAULT_MAX_BODY_BYTES,
+    auth: props['auth'] as HttpAuthConfig | undefined,
+    tls: readTlsServerOptions(props),
   })],
   ['FILE', (props): SourceConnectorRuntime => new FileReceiver({
     directory: props['directory'] as string,
@@ -108,6 +118,9 @@ const destinationFactories = new Map<string, DestinationFactory>([
     port: props['port'] as number,
     maxConnections: (props['maxConnections'] as number | undefined) ?? 5,
     responseTimeout: (props['responseTimeout'] as number | undefined) ?? 30_000,
+    acquireTimeoutMs: (props['acquireTimeoutMs'] as number | undefined) ?? 30_000,
+    charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
+    tls: readTlsClientOptions(props),
   })],
   ['HTTP', (props): DestinationConnectorRuntime => new HttpDispatcher({
     url: props['url'] as string,
@@ -141,10 +154,11 @@ const destinationFactories = new Map<string, DestinationFactory>([
     host: (props['host'] as string | undefined) ?? '',
     port: (props['port'] as number | undefined) ?? 587,
     secure: (props['secure'] as boolean | undefined) ?? false,
-    auth: {
-      user: (props['authUser'] as string | undefined) ?? '',
-      pass: (props['authPass'] as string | undefined) ?? '',
-    },
+    requireTLS: (props['requireTLS'] as boolean | undefined) ?? false,
+    // Only attach auth when a username is configured (anonymous relay otherwise).
+    ...(props['authUser']
+      ? { auth: { user: props['authUser'] as string, pass: (props['authPass'] as string | undefined) ?? '' } }
+      : {}),
     from: (props['from'] as string | undefined) ?? '',
     to: (props['to'] as string | undefined) ?? '',
     cc: (props['cc'] as string | undefined) ?? '',

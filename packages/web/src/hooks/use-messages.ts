@@ -115,6 +115,9 @@ export function useMessageSearch(params: MessageSearchParams): ReturnType<typeof
       return result.data;
     },
     enabled: params.channelId.length > 0,
+    // Fallback polling so the list keeps refreshing even if the WebSocket
+    // connection drops (real-time push is the primary path).
+    refetchInterval: 30_000,
   });
 }
 

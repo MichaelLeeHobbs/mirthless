@@ -9,7 +9,6 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import Select, { type SelectChangeEvent } from '@mui/material/Select';
-import TextField from '@mui/material/TextField';
 
 export interface EventFilters {
   readonly level: string;
@@ -79,14 +78,6 @@ export function EventFilterBar({ filters, onFilterChange }: EventFilterBarProps)
           ))}
         </Select>
       </FormControl>
-
-      <TextField
-        size="small"
-        label="Search"
-        placeholder="Filter by event name..."
-        disabled
-        sx={{ minWidth: 160 }}
-      />
     </Box>
   );
 }

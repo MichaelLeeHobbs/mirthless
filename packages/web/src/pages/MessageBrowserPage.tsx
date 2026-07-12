@@ -10,6 +10,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
+import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -24,7 +25,10 @@ import { MessageTable } from '../components/messages/MessageTable.js';
 import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
 import { useReprocessMessage, useBulkDeleteMessages } from '../hooks/use-message-actions.js';
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 export function MessageBrowserPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
@@ -44,9 +48,37 @@ export function MessageBrowserPage(): ReactNode {
   const [limit, setLimit] = useState(25);
   const [offset, setOffset] = useState(0);
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
+  const [confirmReprocessOpen, setConfirmReprocessOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const { notify } = useNotification();
+  const { has } = usePermissions();
+  const canReprocess = has(PERMISSION.CHANNELS_DEPLOY);
+  const canDelete = has(PERMISSION.CHANNELS_DELETE);
   const reprocessMutation = useReprocessMessage();
   const bulkDeleteMutation = useBulkDeleteMessages();
+
+  const handleReprocessConfirm = useCallback((): void => {
+    if (selectedMessageId === null) return;
+    setConfirmReprocessOpen(false);
+    reprocessMutation.mutate(
+      { channelId, messageId: selectedMessageId },
+      { onSuccess: () => { notify('Message submitted for reprocessing', 'success'); } },
+    );
+  }, [channelId, selectedMessageId, reprocessMutation, notify]);
+
+  const handleDeleteConfirm = useCallback((): void => {
+    if (selectedMessageId === null) return;
+    setConfirmDeleteOpen(false);
+    bulkDeleteMutation.mutate(
+      { channelId, messageIds: [selectedMessageId] },
+      {
+        onSuccess: (data) => {
+          notify(`Deleted ${String(data.deletedCount)} message(s)`, 'success');
+          setSelectedMessageId(null);
+        },
+      },
+    );
+  }, [channelId, selectedMessageId, bulkDeleteMutation, notify]);
 
   // Debounce content search
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -123,42 +155,31 @@ export function MessageBrowserPage(): ReactNode {
         </Typography>
         {selectedMessageId !== null ? (
           <>
-            <Button
-              size="small"
-              startIcon={<ReplayIcon />}
-              disabled={reprocessMutation.isPending}
-              onClick={() => {
-                reprocessMutation.mutate(
-                  { channelId, messageId: selectedMessageId },
-                  {
-                    onSuccess: () => { notify('Raw content retrieved for reprocessing', 'success'); },
-                    onError: (err) => { notify(`Reprocess failed: ${err.message}`, 'error'); },
-                  },
-                );
-              }}
-            >
-              Reprocess
-            </Button>
-            <Button
-              size="small"
-              color="error"
-              startIcon={<DeleteIcon />}
-              disabled={bulkDeleteMutation.isPending}
-              onClick={() => {
-                bulkDeleteMutation.mutate(
-                  { channelId, messageIds: [selectedMessageId] },
-                  {
-                    onSuccess: (data) => {
-                      notify(`Deleted ${String(data.deletedCount)} message(s)`, 'success');
-                      setSelectedMessageId(null);
-                    },
-                    onError: (err) => { notify(`Delete failed: ${err.message}`, 'error'); },
-                  },
-                );
-              }}
-            >
-              Delete
-            </Button>
+            <Tooltip title={canReprocess ? '' : 'Requires channels:deploy permission'}>
+              <span>
+                <Button
+                  size="small"
+                  startIcon={<ReplayIcon />}
+                  disabled={reprocessMutation.isPending || !canReprocess}
+                  onClick={() => { setConfirmReprocessOpen(true); }}
+                >
+                  Reprocess
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title={canDelete ? '' : 'Requires channels:delete permission'}>
+              <span>
+                <Button
+                  size="small"
+                  color="error"
+                  startIcon={<DeleteIcon />}
+                  disabled={bulkDeleteMutation.isPending || !canDelete}
+                  onClick={() => { setConfirmDeleteOpen(true); }}
+                >
+                  Delete
+                </Button>
+              </span>
+            </Tooltip>
           </>
         ) : null}
       </Box>
@@ -203,6 +224,27 @@ export function MessageBrowserPage(): ReactNode {
         <MessageDetailPanel channelId={channelId} messageId={selectedMessageId} />
       )}
 
+      <ConfirmDialog
+        open={confirmReprocessOpen}
+        title="Reprocess Message"
+        message={`Re-inject message #${selectedMessageId !== null ? String(selectedMessageId) : ''} into this channel's pipeline?`}
+        confirmLabel="Reprocess"
+        severity="warning"
+        isPending={reprocessMutation.isPending}
+        onConfirm={handleReprocessConfirm}
+        onCancel={() => { setConfirmReprocessOpen(false); }}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete Message"
+        message={`Delete message #${selectedMessageId !== null ? String(selectedMessageId) : ''}? This cannot be undone.`}
+        confirmLabel="Delete"
+        severity="error"
+        isPending={bulkDeleteMutation.isPending}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => { setConfirmDeleteOpen(false); }}
+      />
     </Box>
   );
 }

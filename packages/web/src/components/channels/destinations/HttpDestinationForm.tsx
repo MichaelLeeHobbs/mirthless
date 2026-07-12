@@ -11,8 +11,8 @@ import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { HTTP_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
+import { HeadersEditor, coerceHeaders } from '../../common/HeadersEditor.js';
 
-const CHARSETS = ['UTF-8', 'ISO-8859-1', 'US-ASCII'] as const;
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 
 function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
@@ -89,15 +89,10 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
           sx={{ mb: 2 }}
         />
 
-        <TextField
-          label="Headers"
-          value={getStr(properties, 'headers', '')}
-          onChange={handleText('headers')}
-          helperText="Additional headers (key: value, one per line)"
-          fullWidth
-          multiline
-          minRows={2}
-          sx={{ mb: 2 }}
+        <HeadersEditor
+          value={coerceHeaders(properties['headers'])}
+          onChange={(headers) => { update('headers', headers); }}
+          label="Additional request headers"
         />
       </Grid>
 
@@ -117,19 +112,6 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
           sx={{ mb: 2 }}
           slotProps={{ htmlInput: { min: 0 } }}
         />
-
-        <TextField
-          label="Charset"
-          value={getStr(properties, 'charset', 'UTF-8')}
-          onChange={handleText('charset')}
-          select
-          fullWidth
-          sx={{ mb: 2 }}
-        >
-          {CHARSETS.map((c) => (
-            <MenuItem key={c} value={c}>{c}</MenuItem>
-          ))}
-        </TextField>
       </Grid>
 
       <Grid item xs={12}>

@@ -19,6 +19,7 @@ function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
   if (isServiceError(error, 'ALREADY_EXISTS')) return 409;
   if (isServiceError(error, 'CONFLICT')) return 409;
+  if (isServiceError(error, 'NOT_SUPPORTED')) return 422;
   return 500;
 }
 

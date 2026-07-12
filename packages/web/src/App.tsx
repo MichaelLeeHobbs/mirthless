@@ -9,6 +9,8 @@ import { ErrorBoundary } from './components/common/ErrorBoundary.js';
 import { NotificationSnackbar } from './components/common/NotificationSnackbar.js';
 import { AppLayout } from './components/layout/AppLayout.js';
 import { ProtectedRoute } from './components/layout/ProtectedRoute.js';
+import { RequirePermission } from './components/layout/RequirePermission.js';
+import { PERMISSION } from './lib/permissions.js';
 import { LoginPage } from './pages/LoginPage.js';
 import { DashboardPage } from './pages/DashboardPage.js';
 import { ChannelsPage } from './pages/ChannelsPage.js';
@@ -54,18 +56,31 @@ const router = createBrowserRouter([
           { path: 'alerts/new', element: <AlertEditorPage /> },
           { path: 'alerts/:id', element: <AlertEditorPage /> },
           { path: 'code-templates', element: <CodeTemplatePage /> },
-          { path: 'events', element: <EventsPage /> },
           { path: 'global-scripts', element: <GlobalScriptsPage /> },
           { path: 'resources', element: <ResourcesPage /> },
           { path: 'certificates', element: <CertificatesPage /> },
-          { path: 'settings', element: <SettingsPage /> },
           { path: 'tags', element: <TagsPage /> },
           { path: 'global-map', element: <GlobalMapPage /> },
           { path: 'config-map', element: <ConfigMapPage /> },
-          { path: 'system', element: <SystemInfoPage /> },
           { path: 'tools/message-generator', element: <MessageGeneratorPage /> },
           { path: 'extensions', element: <ExtensionsPage /> },
-          { path: 'users', element: <UsersPage /> },
+          // Privileged routes — gated so a viewer cannot reach them by URL.
+          {
+            element: <RequirePermission anyOf={[PERMISSION.EVENTS_READ]} />,
+            children: [{ path: 'events', element: <EventsPage /> }],
+          },
+          {
+            element: <RequirePermission anyOf={[PERMISSION.SETTINGS_READ, PERMISSION.SETTINGS_WRITE]} />,
+            children: [{ path: 'settings', element: <SettingsPage /> }],
+          },
+          {
+            element: <RequirePermission anyOf={[PERMISSION.SYSTEM_INFO]} />,
+            children: [{ path: 'system', element: <SystemInfoPage /> }],
+          },
+          {
+            element: <RequirePermission anyOf={[PERMISSION.USERS_READ]} />,
+            children: [{ path: 'users', element: <UsersPage /> }],
+          },
         ],
       },
     ],

@@ -215,6 +215,29 @@ describe('CertificateService', () => {
       if (result.ok) return;
       expect(result.error).toHaveProperty('message', expect.stringContaining('not found'));
     });
+
+    it('never returns private key material — only a hasPrivateKey flag (finding 5a)', async () => {
+      const row = makeCertRow({ privateKeyPem: '-----BEGIN PRIVATE KEY-----\nSECRET\n-----END PRIVATE KEY-----' });
+      pushResponse([row]);
+
+      const result = await CertificateService.getById(CERT_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).not.toHaveProperty('privateKeyPem');
+      expect(JSON.stringify(result.value)).not.toContain('SECRET');
+      expect(result.value.hasPrivateKey).toBe(true);
+    });
+
+    it('reports hasPrivateKey false when no key is stored', async () => {
+      pushResponse([makeCertRow({ privateKeyPem: null })]);
+
+      const result = await CertificateService.getById(CERT_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.hasPrivateKey).toBe(false);
+    });
   });
 
   describe('create', () => {

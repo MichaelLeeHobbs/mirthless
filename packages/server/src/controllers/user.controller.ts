@@ -4,7 +4,7 @@
 // Handles HTTP requests for user management.
 
 import type { Request, Response } from 'express';
-import type { CreateUserInput, UpdateUserInput, ChangePasswordInput } from '@mirthless/core-models';
+import type { CreateUserInput, UpdateUserInput, ChangePasswordInput, ChangeOwnPasswordInput } from '@mirthless/core-models';
 import { UserService } from '../services/user.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';
@@ -15,6 +15,7 @@ function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'CONFLICT')) return 409;
   if (isServiceError(error, 'SELF_ACTION')) return 400;
   if (isServiceError(error, 'FORBIDDEN')) return 403;
+  if (isServiceError(error, 'INVALID_CREDENTIALS')) return 400;
   return 500;
 }
 
@@ -120,6 +121,37 @@ export class UserController {
 
     logger.info({ userId: id }, 'Password changed');
     res.status(204).send();
+  }
+
+  /** POST /users/me/password — self-service password change (no users:write). */
+  static async changeOwnPassword(req: Request, res: Response): Promise<void> {
+    const { currentPassword, newPassword } = req.body as ChangeOwnPasswordInput;
+    const userId = req.user!.id;
+    const result = await UserService.changeOwnPassword(userId, currentPassword, newPassword, req.sessionId);
+
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      logger.warn({ errMsg: result.error.message, userId }, 'Self password change failed');
+      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      return;
+    }
+
+    logger.info({ userId }, 'Self password changed');
+    res.status(204).send();
+  }
+
+  /** GET /users/:id/permissions — view a user's effective role→permissions. */
+  static async getPermissions(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const result = await UserService.getPermissions(id);
+
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      return;
+    }
+
+    res.json({ success: true, data: result.value });
   }
 
   static async unlock(req: Request, res: Response): Promise<void> {

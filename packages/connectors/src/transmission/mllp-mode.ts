@@ -15,11 +15,24 @@ const FS = 0x1C;
 /** Carriage Return (CR, 0x0D) */
 const CR = 0x0D;
 
+/**
+ * Default maximum frame size (bytes). Unauthenticated network input must be
+ * bounded to prevent memory-exhaustion (DoS). 50 MiB comfortably exceeds any
+ * realistic HL7v2 message while capping an attacker's ability to grow the
+ * in-frame buffer without end.
+ */
+export const DEFAULT_MAX_FRAME_BYTES = 50 * 1024 * 1024;
+
 // ----- Framing -----
 
-/** Wrap a message in MLLP envelope. */
-export function wrapMllp(message: string): Buffer {
-  const payload = Buffer.from(message, 'utf-8');
+/**
+ * Wrap a message in an MLLP envelope.
+ * @param message - The message payload.
+ * @param charset - Character encoding for the payload. Defaults to utf-8;
+ *   latin1 (iso-8859-1) is common in real HL7 feeds with accented PHI.
+ */
+export function wrapMllp(message: string, charset: BufferEncoding = 'utf-8'): Buffer {
+  const payload = Buffer.from(message, charset);
   const frame = Buffer.allocUnsafe(payload.length + 3);
   frame[0] = VT;
   payload.copy(frame, 1);
@@ -38,13 +51,32 @@ export function wrapMllp(message: string): Buffer {
 export class MllpParser {
   private buffer: Buffer = Buffer.alloc(0);
   private inFrame = false;
+  private readonly maxFrameBytes: number;
+  private readonly charset: BufferEncoding;
+
+  /**
+   * @param options.maxFrameBytes - Hard cap on buffered bytes; on exceed the
+   *   parser resets and throws so the caller can NAK/close (DoS guard).
+   * @param options.charset - Payload decoding charset (default utf-8).
+   */
+  constructor(options?: { maxFrameBytes?: number; charset?: BufferEncoding }) {
+    this.maxFrameBytes = options?.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES;
+    this.charset = options?.charset ?? 'utf-8';
+  }
 
   /**
    * Feed incoming data and return any complete messages extracted.
    * May return 0, 1, or multiple messages from a single chunk.
+   * @throws Error when buffered data exceeds the configured max frame size.
    */
   parse(chunk: Buffer): readonly string[] {
     this.buffer = Buffer.concat([this.buffer, chunk]);
+    if (this.buffer.length > this.maxFrameBytes) {
+      this.reset();
+      throw new Error(
+        `MLLP frame exceeds maximum size of ${String(this.maxFrameBytes)} bytes`,
+      );
+    }
     const results: string[] = [];
 
     let offset = 0;
@@ -82,7 +114,7 @@ export class MllpParser {
         }
 
         // Complete frame found
-        const payload = this.buffer.subarray(offset, fsIndex).toString('utf-8');
+        const payload = this.buffer.subarray(offset, fsIndex).toString(this.charset);
         results.push(payload);
         this.inFrame = false;
         offset = fsIndex + 2; // Skip past FS + CR

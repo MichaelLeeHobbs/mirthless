@@ -75,7 +75,15 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
       if (!this.started) throw new Error('Dispatcher not started');
       if (signal.aborted) throw new Error('Send aborted');
 
-      const url = buildFhirUrl(this.config.baseUrl, this.config.resourceType);
+      // FHIR update (PUT) targets a specific instance: PUT /{type}/{id}.
+      // A bare `PUT /{type}` is rejected by R4 servers, so require the id.
+      const resourceId = this.config.method === 'PUT'
+        ? extractResourceId(message.content, this.config.format)
+        : undefined;
+      if (this.config.method === 'PUT' && !resourceId) {
+        throw new Error('FHIR PUT requires a resource id in the message body');
+      }
+      const url = buildFhirUrl(this.config.baseUrl, this.config.resourceType, resourceId);
       const headers = buildHeaders(this.config);
 
       const timeoutSignal = AbortSignal.timeout(this.config.timeout);
@@ -122,10 +130,24 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
 
 // ----- Helpers -----
 
-/** Build FHIR endpoint URL. */
-export function buildFhirUrl(baseUrl: string, resourceType: string): string {
+/** Build FHIR endpoint URL. Appends the resource id for instance-level ops. */
+export function buildFhirUrl(baseUrl: string, resourceType: string, resourceId?: string): string {
   const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  return `${base}/${resourceType}`;
+  return resourceId ? `${base}/${resourceType}/${resourceId}` : `${base}/${resourceType}`;
+}
+
+/** Extract the resource id from a serialized FHIR resource (json or xml). */
+export function extractResourceId(content: string, format: 'json' | 'xml'): string | undefined {
+  if (format === 'json') {
+    try {
+      const parsed = JSON.parse(content) as { id?: unknown };
+      return typeof parsed.id === 'string' && parsed.id.length > 0 ? parsed.id : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  const match = /<id\b[^>]*\bvalue\s*=\s*"([^"]+)"/.exec(content);
+  return match?.[1];
 }
 
 /** Build HTTP headers including auth and content type. */

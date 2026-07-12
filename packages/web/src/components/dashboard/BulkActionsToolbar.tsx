@@ -14,6 +14,8 @@ import CloudOffIcon from '@mui/icons-material/CloudOff';
 import CloseIcon from '@mui/icons-material/Close';
 import IconButton from '@mui/material/IconButton';
 import { useDeploymentAction } from '../../hooks/use-deployment.js';
+import { usePermissions } from '../../hooks/use-permissions.js';
+import { PERMISSION } from '../../lib/permissions.js';
 
 interface BulkActionsToolbarProps {
   readonly selectedIds: ReadonlySet<string>;
@@ -22,9 +24,11 @@ interface BulkActionsToolbarProps {
 
 export function BulkActionsToolbar({ selectedIds, onClear }: BulkActionsToolbarProps): ReactNode {
   const deployAction = useDeploymentAction();
+  const { has } = usePermissions();
   const count = selectedIds.size;
 
-  if (count === 0) return null;
+  // Bulk deploy/start/stop/undeploy all require channels:deploy.
+  if (count === 0 || !has(PERMISSION.CHANNELS_DEPLOY)) return null;
 
   const handleBulk = (action: 'deploy' | 'undeploy' | 'start' | 'stop'): void => {
     for (const channelId of selectedIds) {

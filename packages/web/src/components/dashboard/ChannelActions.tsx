@@ -18,6 +18,8 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
 import SendIcon from '@mui/icons-material/Send';
 import { useDeploymentAction } from '../../hooks/use-deployment.js';
+import { usePermissions } from '../../hooks/use-permissions.js';
+import { PERMISSION } from '../../lib/permissions.js';
 
 interface ChannelActionsProps {
   readonly channelId: string;
@@ -60,8 +62,12 @@ function getActions(state: string | undefined): readonly ActionDef[] {
 export function ChannelActions({ channelId, channelName, state, onSendMessage }: ChannelActionsProps): ReactNode {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const deployAction = useDeploymentAction();
-  const actions = getActions(state);
-  const showSendMessage = state === 'STARTED' && onSendMessage;
+  const { has } = usePermissions();
+  const canDeploy = has(PERMISSION.CHANNELS_DEPLOY);
+  // Deployment actions are hidden entirely without channels:deploy — a viewer
+  // clicking them would only 403.
+  const actions = canDeploy ? getActions(state) : [];
+  const showSendMessage = state === 'STARTED' && onSendMessage && canDeploy;
 
   const handleClick = (event: React.MouseEvent<HTMLElement>): void => {
     setAnchorEl(event.currentTarget);

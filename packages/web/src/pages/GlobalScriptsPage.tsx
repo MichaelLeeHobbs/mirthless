@@ -11,6 +11,7 @@ import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
+import Alert from '@mui/material/Alert';
 import { ScriptEditor } from '../components/editors/ScriptEditor.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
@@ -34,7 +35,7 @@ interface ScriptsState {
 }
 
 export function GlobalScriptsPage(): ReactNode {
-  const { data, isLoading } = useGlobalScripts();
+  const { data, isLoading, error } = useGlobalScripts();
   const updateMutation = useUpdateGlobalScripts();
   const { notify } = useNotification();
 
@@ -120,6 +121,12 @@ export function GlobalScriptsPage(): ReactNode {
           {updateMutation.isPending ? 'Saving...' : 'Save'}
         </Button>
       </Box>
+
+      {error ? (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Failed to load global scripts: {error instanceof Error ? error.message : 'Unknown error'}
+        </Alert>
+      ) : null}
 
       {/* Tabs */}
       <Tabs

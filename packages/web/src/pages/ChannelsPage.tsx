@@ -45,6 +45,8 @@ import { GroupManagementDialog } from '../components/channels/GroupManagementDia
 import { ChannelContextMenu } from '../components/common/ChannelContextMenu.js';
 import { AssignGroupDialog } from '../components/common/AssignGroupDialog.js';
 import { SendMessageDialog } from '../components/common/SendMessageDialog.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 const CONNECTOR_TYPE_LABELS: Readonly<Record<string, string>> = {
   TCP_MLLP: 'TCP/MLLP',
@@ -54,6 +56,7 @@ const CONNECTOR_TYPE_LABELS: Readonly<Record<string, string>> = {
   JAVASCRIPT: 'JavaScript',
   CHANNEL: 'Channel',
   DICOM: 'DICOM',
+  EMAIL: 'Email',
   FHIR: 'FHIR',
 };
 
@@ -85,6 +88,9 @@ export function ChannelsPage(): ReactNode {
   const deployQuery = useAllDeploymentStatuses();
   const [assignGroupTarget, setAssignGroupTarget] = useState<string | null>(null);
   const { menuState, menuTarget, handleContextMenu, handleClose: closeMenu } = useContextMenu<ChannelSummary>();
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.CHANNELS_WRITE);
+  const canDelete = has(PERMISSION.CHANNELS_DELETE);
 
   // Build deployment state map for context menu
   const deploymentMap = useMemo(() => {
@@ -130,8 +136,12 @@ export function ChannelsPage(): ReactNode {
 
   const handleDeleteConfirm = async (): Promise<void> => {
     if (!deleteTarget) return;
-    await deleteChannel.mutateAsync(deleteTarget.id);
-    setDeleteTarget(null);
+    try {
+      await deleteChannel.mutateAsync(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch {
+      // Error toast is surfaced by the global mutation handler; keep the dialog open.
+    }
   };
 
   const handleCloneOpen = (channel: ChannelSummary): void => {
@@ -141,9 +151,13 @@ export function ChannelsPage(): ReactNode {
 
   const handleCloneConfirm = async (): Promise<void> => {
     if (!cloneTarget || !cloneName.trim()) return;
-    await cloneChannel.mutateAsync({ id: cloneTarget.id, name: cloneName.trim() });
-    setCloneTarget(null);
-    setCloneName('');
+    try {
+      await cloneChannel.mutateAsync({ id: cloneTarget.id, name: cloneName.trim() });
+      setCloneTarget(null);
+      setCloneName('');
+    } catch {
+      // Error toast is surfaced by the global mutation handler; keep the dialog open.
+    }
   };
 
   return (
@@ -168,13 +182,18 @@ export function ChannelsPage(): ReactNode {
           >
             Import
           </Button>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => { setNewDialogOpen(true); }}
-          >
-            New Channel
-          </Button>
+          <Tooltip title={canWrite ? '' : 'Requires channels:write permission'}>
+            <span>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => { setNewDialogOpen(true); }}
+                disabled={!canWrite}
+              >
+                New Channel
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
       </Box>
 
@@ -244,6 +263,7 @@ export function ChannelsPage(): ReactNode {
                       size="small"
                       checked={channel.enabled}
                       onChange={() => { handleToggleEnabled(channel); }}
+                      disabled={!canWrite}
                     />
                   </TableCell>
                   <TableCell>
@@ -299,22 +319,28 @@ export function ChannelsPage(): ReactNode {
                     <Typography variant="caption">{formatDate(channel.updatedAt)}</Typography>
                   </TableCell>
                   <TableCell align="right">
-                    <Tooltip title="Clone">
-                      <IconButton
-                        size="small"
-                        onClick={() => { handleCloneOpen(channel); }}
-                      >
-                        <ContentCopyIcon fontSize="small" />
-                      </IconButton>
+                    <Tooltip title={canWrite ? 'Clone' : 'Requires channels:write permission'}>
+                      <span>
+                        <IconButton
+                          size="small"
+                          onClick={() => { handleCloneOpen(channel); }}
+                          disabled={!canWrite}
+                        >
+                          <ContentCopyIcon fontSize="small" />
+                        </IconButton>
+                      </span>
                     </Tooltip>
-                    <Tooltip title="Delete">
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => { setDeleteTarget(channel); }}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
+                    <Tooltip title={canDelete ? 'Delete' : 'Requires channels:delete permission'}>
+                      <span>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => { setDeleteTarget(channel); }}
+                          disabled={!canDelete}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </span>
                     </Tooltip>
                   </TableCell>
                 </TableRow>

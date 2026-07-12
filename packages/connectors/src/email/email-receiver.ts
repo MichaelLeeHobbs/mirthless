@@ -7,6 +7,7 @@
 
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Constants -----
 
@@ -74,14 +75,16 @@ export type ImapClientFactory = (config: EmailReceiverConfig) => ImapClient;
 export class EmailReceiver implements SourceConnectorRuntime {
   private readonly config: EmailReceiverConfig;
   private readonly createClient: ImapClientFactory;
+  private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
   private client: ImapClient | null = null;
 
-  constructor(config: EmailReceiverConfig, createClient?: ImapClientFactory) {
+  constructor(config: EmailReceiverConfig, createClient?: ImapClientFactory, logger?: ConnectorLogger) {
     this.config = config;
     this.createClient = createClient ?? defaultImapClientFactory;
+    this.logger = logger ?? createConnectorLogger('EMAIL');
   }
 
   setDispatcher(dispatcher: MessageDispatcher): void {
@@ -144,19 +147,43 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   /** Execute one poll cycle: fetch unread, filter, dispatch, post-process. */
   private async pollCycle(): Promise<void> {
-    if (this.polling || !this.dispatcher || !this.client) return;
+    if (this.polling || !this.dispatcher) return;
     this.polling = true;
     try {
+      if (!this.client) await this.reconnect();
+      if (!this.client) return;
       const messages = await this.client.fetchUnread(this.config.folder);
       for (const msg of messages) {
         if (this.matchesSubjectFilter(msg)) {
           await this.processMessage(msg);
         }
       }
-    } catch {
-      // Poll cycle errors are non-fatal; next cycle will retry.
+    } catch (err) {
+      // A dropped IMAP connection otherwise leaves the channel STARTED yet
+      // silently idle. Surface it and drop the client so the next cycle
+      // reconnects.
+      this.logger.error(errorInfo(err), 'Email poll cycle failed; will reconnect');
+      await this.safeDisconnect();
+      this.client = null;
     } finally {
       this.polling = false;
+    }
+  }
+
+  /** (Re)establish the IMAP connection. Throws on failure (caught by caller). */
+  private async reconnect(): Promise<void> {
+    const client = this.createClient(this.config);
+    await client.connect();
+    this.client = client;
+  }
+
+  /** Disconnect the current client, ignoring errors. */
+  private async safeDisconnect(): Promise<void> {
+    if (!this.client) return;
+    try {
+      await this.client.disconnect();
+    } catch (err) {
+      this.logger.warn(errorInfo(err), 'Error disconnecting IMAP client during reconnect');
     }
   }
 

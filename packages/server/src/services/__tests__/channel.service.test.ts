@@ -210,7 +210,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
   mockSet.mockReturnValue({ where: mockUpdateWhere });
-  mockUpdateWhere.mockResolvedValue(undefined);
+  // update().set().where() is awaited directly (delete/setEnabled) AND chained with
+  // .returning() (the atomic optimistic-lock update in update()). Support both.
+  mockUpdateWhere.mockImplementation(() =>
+    Object.assign(Promise.resolve(undefined), {
+      returning: vi.fn().mockResolvedValue([{ id: CHANNEL_ID }]),
+    }),
+  );
+  // By default a transaction just runs its callback against the shared mockDb.
+  // Individual create tests override this with a bespoke tx.
+  mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb));
   mockDeleteWhere.mockResolvedValue(undefined);
   mockDelete.mockReturnValue({ where: mockDeleteWhere });
   mockInsertReturning.mockResolvedValue([]);
@@ -583,6 +592,69 @@ describe('ChannelService', () => {
       if (!result.ok) return;
       expect(result.value.destinations).toHaveLength(0);
       expect(mockDelete).toHaveBeenCalled();
+    });
+  });
+
+  // ========== TRANSACTION & OPTIMISTIC LOCK ==========
+  describe('update — transaction & atomic optimistic lock', () => {
+    it('returns CONFLICT when the atomic UPDATE affects 0 rows (concurrent writer won)', async () => {
+      const channel = makeChannel({ revision: 1 });
+      // findChannel passes and the pre-check matches revision 1...
+      pushResponse([channel]);
+      // ...but the atomic UPDATE ... WHERE revision = 1 affects 0 rows (race lost).
+      mockUpdateWhere.mockImplementationOnce(() =>
+        Object.assign(Promise.resolve(undefined), {
+          returning: vi.fn().mockResolvedValue([]),
+        }),
+      );
+
+      const result = await ChannelService.update(CHANNEL_ID, { revision: 1, enabled: true });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+    });
+
+    it('wraps mutations in a transaction and fails the whole update if one step throws (rollback)', async () => {
+      const channel = makeChannel({ revision: 1 });
+      pushResponse([channel]);
+      // Simulate the DB rolling back the transaction on a mid-way failure.
+      mockTransaction.mockImplementationOnce(async () => {
+        throw new Error('insert failed mid-update');
+      });
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        destinations: [],
+      });
+
+      expect(result.ok).toBe(false);
+      expect(mockTransaction).toHaveBeenCalled();
+    });
+  });
+
+  // ========== ENCRYPT DATA (rejected until wired) ==========
+  describe('encryptData is rejected', () => {
+    it('rejects create when encryptData is enabled', async () => {
+      const result = await ChannelService.create({
+        ...CREATE_INPUT,
+        properties: { encryptData: true },
+      } as unknown as Parameters<typeof ChannelService.create>[0]);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'NOT_SUPPORTED');
+    });
+
+    it('rejects update when encryptData is enabled', async () => {
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        properties: { encryptData: true },
+      } as unknown as Parameters<typeof ChannelService.update>[1]);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'NOT_SUPPORTED');
     });
   });
 

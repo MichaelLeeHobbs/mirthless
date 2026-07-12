@@ -63,6 +63,9 @@ vi.mock('@mirthless/engine', () => ({
   compileTransformerStepsToScript: vi.fn().mockReturnValue(null),
   prependTemplates: vi.fn().mockImplementation((src: string) => src),
   AlertManager: MockAlertManagerCtor,
+  RecoveryManager: vi.fn().mockImplementation(() => ({
+    recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
+  })),
 }));
 
 // Mock JavaScript connectors
@@ -147,6 +150,9 @@ vi.mock('../message.service.js', () => ({
     release: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     deleteContent: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     deleteAttachments: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    resetPending: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
+    getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
   },
 }));
 

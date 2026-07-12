@@ -7,6 +7,7 @@ import type { ConnectorMessage } from '../../base.js';
 import {
   SmtpDispatcher,
   substituteTemplate,
+  buildNodemailerOptions,
   type SmtpDispatcherConfig,
   type SmtpTransport,
   type SmtpMailOptions,
@@ -20,6 +21,7 @@ function makeConfig(overrides?: Partial<SmtpDispatcherConfig>): SmtpDispatcherCo
     host: 'smtp.example.com',
     port: 587,
     secure: false,
+    requireTLS: false,
     auth: { user: 'test@example.com', pass: 'secret' },
     from: 'sender@example.com',
     to: 'recipient@example.com',
@@ -283,5 +285,24 @@ describe('SmtpDispatcher.send', () => {
     await dispatcher.onStart();
     const result = await dispatcher.send(makeMessage(), makeSignal(true));
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('buildNodemailerOptions', () => {
+  it('omits auth entirely when no credentials are configured', () => {
+    const opts = buildNodemailerOptions(makeConfig({ requireTLS: true, auth: undefined }));
+    expect(opts['auth']).toBeUndefined();
+    expect(opts['requireTLS']).toBe(true);
+  });
+
+  it('omits auth when the username is empty (no empty auth object)', () => {
+    const opts = buildNodemailerOptions(makeConfig({ auth: { user: '', pass: '' } }));
+    expect(opts['auth']).toBeUndefined();
+  });
+
+  it('includes auth and forwards requireTLS when credentials are present', () => {
+    const opts = buildNodemailerOptions(makeConfig({ requireTLS: true }));
+    expect(opts['auth']).toEqual({ user: 'test@example.com', pass: 'secret' });
+    expect(opts['requireTLS']).toBe(true);
   });
 });

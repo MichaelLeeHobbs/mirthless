@@ -25,6 +25,8 @@ import SendIcon from '@mui/icons-material/Send';
 import FolderIcon from '@mui/icons-material/Folder';
 import type { ContextMenuState } from '../../hooks/use-context-menu.js';
 import { useDeploymentAction } from '../../hooks/use-deployment.js';
+import { usePermissions } from '../../hooks/use-permissions.js';
+import { PERMISSION } from '../../lib/permissions.js';
 
 interface ChannelContextMenuProps {
   readonly menuState: ContextMenuState | null;
@@ -53,6 +55,10 @@ export function ChannelContextMenu({
 }: ChannelContextMenuProps): ReactNode {
   const navigate = useNavigate();
   const deployAction = useDeploymentAction();
+  const { has } = usePermissions();
+  const canDeploy = has(PERMISSION.CHANNELS_DEPLOY);
+  const canWrite = has(PERMISSION.CHANNELS_WRITE);
+  const canDelete = has(PERMISSION.CHANNELS_DELETE);
 
   if (!channelId) return null;
 
@@ -92,15 +98,15 @@ export function ChannelContextMenu({
         <ListItemIcon><BarChartIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Statistics</ListItemText>
       </MenuItem>
-      <Divider />
-      {/* State-aware deployment actions */}
-      {state === undefined || state === null || state === 'UNDEPLOYED' ? (
+      {canDeploy ? <Divider /> : null}
+      {/* State-aware deployment actions (channels:deploy only) */}
+      {canDeploy && (state === undefined || state === null || state === 'UNDEPLOYED') ? (
         <MenuItem onClick={() => handleDeploy('deploy')}>
           <ListItemIcon><CloudUploadIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Deploy</ListItemText>
         </MenuItem>
       ) : null}
-      {state === 'STOPPED' ? (
+      {canDeploy && state === 'STOPPED' ? (
         <>
           <MenuItem onClick={() => handleDeploy('start')}>
             <ListItemIcon><PlayArrowIcon fontSize="small" /></ListItemIcon>
@@ -112,7 +118,7 @@ export function ChannelContextMenu({
           </MenuItem>
         </>
       ) : null}
-      {state === 'STARTED' ? (
+      {canDeploy && state === 'STARTED' ? (
         <>
           <MenuItem onClick={() => handleDeploy('pause')}>
             <ListItemIcon><PauseIcon fontSize="small" /></ListItemIcon>
@@ -124,7 +130,7 @@ export function ChannelContextMenu({
           </MenuItem>
         </>
       ) : null}
-      {state === 'PAUSED' ? (
+      {canDeploy && state === 'PAUSED' ? (
         <>
           <MenuItem onClick={() => handleDeploy('resume')}>
             <ListItemIcon><PlayArrowIcon fontSize="small" /></ListItemIcon>
@@ -136,7 +142,7 @@ export function ChannelContextMenu({
           </MenuItem>
         </>
       ) : null}
-      {state === 'STARTED' && onSendMessage ? (
+      {canDeploy && state === 'STARTED' && onSendMessage ? (
         <MenuItem onClick={() => { onClose(); onSendMessage(channelId, channelName ?? ''); }}>
           <ListItemIcon><SendIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Send Message</ListItemText>
@@ -149,7 +155,7 @@ export function ChannelContextMenu({
         </MenuItem>
       ) : null}
       <Divider />
-      {onClone ? (
+      {onClone && canWrite ? (
         <MenuItem onClick={() => { onClose(); onClone(channelId); }}>
           <ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Clone</ListItemText>
@@ -161,7 +167,7 @@ export function ChannelContextMenu({
           <ListItemText>Export</ListItemText>
         </MenuItem>
       ) : null}
-      {onDelete ? (
+      {onDelete && canDelete ? (
         <MenuItem onClick={() => { onClose(); onDelete(channelId); }}>
           <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
           <ListItemText primaryTypographyProps={{ color: 'error' }}>Delete</ListItemText>

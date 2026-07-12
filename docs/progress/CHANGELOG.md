@@ -2,6 +2,126 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-12 — Connectors Hardening (release blockers)
+
+Branch `fix/connectors-hardening`. Scope: `packages/connectors/**`. Introduced the first
+logger in the connectors package (pino). Tests: 348 → 400 passing; build + lint clean.
+
+### Blockers
+- **MLLP auto-ACK/NAK (receiver)** — MLLP source now generates a real HL7 ACK/NAK from the
+  inbound MSH by default (never frames destination content like a file path). New
+  `responseMode` setting (`AUTO_ACK` default | `PASSTHROUGH`). AA on success, AE on
+  processing error, AR on filter/reject. New `ack-builder.ts` wraps core-util `createAck`
+  with a well-formed fallback ACK for non-HL7 input (always responds → no retransmit storms).
+  Depends on new optional `DispatchResult.status` (`PROCESSED|FILTERED|ERROR`) in base.ts —
+  engine still needs to populate it for AR (see DECISIONS).
+- **MLLP NAK-as-SENT (dispatcher)** — ACK responses are now parsed: MSA-1 AA/CA → SENT;
+  AE/AR/CE/CR/unparseable → ERROR (surfaces + retries per queue policy). Robust to a bare
+  MSA segment without MSH.
+- **TLS** — Optional TLS on TCP/MLLP receiver (`tls.createServer`), TCP/MLLP dispatcher
+  (`tls.connect`, `rejectUnauthorized` defaults TRUE), and HTTP receiver (`https.createServer`).
+  New `tls.ts` option shapes + `readTlsServerOptions`/`readTlsClientOptions` registry helpers.
+
+### High
+- **Idle pooled socket crash (dispatcher)** — Pooled sockets get persistent `error`/`close`
+  handlers that destroy+evict them, so an idle-socket error can never become an
+  uncaughtException that takes down the engine. Pool `factoryCreateError` is logged.
+- **Unbounded acquire / abort ignored (dispatcher)** — Pool now has `acquireTimeoutMillis`;
+  `send()` honors the AbortSignal around acquire and send, failing promptly on host-down/abort.
+- **Per-connection frame ordering (receiver)** — Frames on one connection are processed and
+  ACKed strictly in order via a per-connection async chain (no interleaving).
+- **Unbounded buffers (DoS)** — MLLP parser enforces `maxFrameBytes` (default 50 MiB; throws
+  + resets on exceed → connection destroyed). HTTP `readBody` enforces `maxBodyBytes`
+  (default 50 MiB → 413).
+- **HTTP success-status-on-failure + auth** — Pipeline failure returns `errorStatusCode`
+  (default 500), success returns 200 only. Optional `auth` guard (BASIC / bearer TOKEN → 401).
+- **Silent failures / logging** — Introduced pino `ConnectorLogger` (injectable per connector).
+  File/JS/Database/Email poll cycles now log caught errors at error level with context. Email
+  receiver reconnects on failure. DB SELECT + mark-as-processed UPDATE failures are logged.
+
+### Medium
+- **File post-action guard** — A file whose post-action (delete/move) fails after a successful
+  dispatch is quarantined (tracked by name+mtime) and never re-dispatched (no duplicates).
+- **SMTP** — `requireTLS` option added; auth object only sent when credentials present
+  (extracted `buildNodemailerOptions`).
+- **FHIR PUT** — Now targets the instance URL `PUT /{type}/{id}` (id extracted from the
+  resource body); errors if the body has no id.
+- **MLLP charset** — `wrapMllp`/`MllpParser` accept a charset (latin1/iso-8859-1 supported) so
+  accented PHI is not corrupted.
+
+### Deferred
+- DB read-then-update atomicity (finding 11) — logging added for at-least-once visibility;
+  full FOR UPDATE SKIP LOCKED / statement-timeout deferred (see DECISIONS).
+- Timeouts on DB/IMAP/SMTP ops (finding 12) — SMTP/FHIR/MLLP honor AbortSignal + timeouts;
+  IMAP/DB statement timeouts deferred.
+
+## 2026-07-12 — Server Security Hardening (release-blocking fixes)
+
+Fixed verified release-blocking security findings in `@mirthless/server`. All server (901) and core-models (198) tests pass; build + lint (`--max-warnings 0`) clean.
+
+### Blockers
+- **RBAC now works for non-admins** — API-created users are granted their role's permission set (single source of truth `lib/role-permissions.ts` from `db/seeds/roles.ts`), assigned transactionally on create and re-synced on role change. Added `GET /users/:id/permissions` and self-service `POST /users/me/password` (auth-only, no `users:write`).
+- **PHI-read auditing** — `MESSAGE_CONTENT_VIEWED` / `MESSAGE_SEARCHED` / `ATTACHMENT_DOWNLOADED` / `CHANNEL_EXPORTED` audit events (userId+IP) emitted on content reads/exports; audit failure logged, never blocks the read.
+
+### High
+- **Channel update transactional + atomic optimistic lock** — delete/reinsert of connectors/filters/transformers wrapped in `db.transaction`; revision moved into the UPDATE WHERE, 0 rows → 409.
+- **Secret redaction** — cert private keys never returned by GET (`hasPrivateKey` flag only); secret settings masked in GET (new `password` setting type; `smtp.auth_pass` reclassified); channel exports redact secret connector properties.
+- **encryptData rejected** — no-op flag now rejected at the API (422) until real encryption is wired; shipped tested AES-256-GCM primitive `lib/content-crypto.ts` (+ `CONTENT_ENCRYPTION_KEY` config) for the engine agent to wire. See DECISIONS D-143.
+- **Default admin forced change** — `users.must_change_password` column (migration `0006_fair_quasar.sql`), seeded admin true, login returns flag, startup warns if default password unchanged.
+
+### Medium
+- Self password-change verifies current password + invalidates other sessions; password policy gained complexity (≥1 letter + ≥1 digit).
+- `refreshSession` re-validates user (enabled/exists); disabling/deleting a user and password changes revoke sessions.
+- SSRF guard resolves DNS and checks resolved IPs; HTTP/FHIR testers block redirects.
+- Consistent `{ code, message }` error envelope across all middleware; pino redacts auth/cookie/secret fields; `/metrics` + `/api-docs` gated (config toggles), `/health` public; `GET /system/logs` Zod-validated.
+
+### New env vars
+- `CONTENT_ENCRYPTION_KEY` (optional, 64 hex chars), `METRICS_PUBLIC` (default false), `API_DOCS_ENABLED` (default: on outside production).
+
+### Migration
+- `packages/server/src/db/migrations/0006_fair_quasar.sql` — adds `users.must_change_password`.
+
+## 2026-07-12 — Web UI + Release Infra release-blocker fixes (branch fix/web-and-infra)
+
+### Connector correctness (blockers 1-2)
+- Fixed connector form ↔ runtime key drift so what the UI saves matches what the registry reads:
+  HTTP source `contextPath`/`methods[]` → `path`/`method`; TCP/MLLP source reduced to
+  host/port/maxConnections (decorative keys removed); TCP/MLLP dest `sendTimeout` → `responseTimeout`
+  + `maxConnections`; HTTP + FHIR dest `headers` now a `Record<string,string>` via a new reusable
+  `HeadersEditor` (dispatchers spread headers as an object — a raw string broke at runtime).
+- Fixed connector dropdowns to match `packages/connectors/src/registry.ts`: source removes FHIR
+  (destination-only) and adds EMAIL (IMAP); destination adds SMTP. `core-models` CONNECTOR_TYPES
+  gained SMTP + EMAIL (an SMTP dest or EMAIL source previously failed channel validation).
+
+### Safety & permissions (blockers 3-6, high 7-9)
+- Reprocess button now calls the reprocess API with a confirm dialog + query invalidation (was a no-op toast).
+- Added `usePermissions()` + `PERMISSION` strings (mirror server) and a `RequirePermission` route guard;
+  gated nav, routes, and destructive/privileged controls (deploy/start/stop, delete, reset stats, user mgmt,
+  settings/map/tag/resource writes) by permission.
+- Global `MutationCache.onError` toast as a fail-loud safety net; notification store dedupes identical toasts
+  and self-prunes; fixed `mutateAsync`-without-catch cases.
+- Confirmations added for user disable, tag/map/resource/message deletes; replaced last `window.confirm`.
+- Self-service Change Password + About (version) in the user menu.
+- Unsaved-changes guards for the Code Template editor and Resources content dialog.
+- Load-error Alerts on Code Templates, Global Scripts, Channel Statistics; message-list 30s polling fallback.
+
+### Release infrastructure (blockers 10-13)
+- Added MIT LICENSE (2026, Michael Hobbs).
+- Prod Docker made runnable: prod-deps stage (no devDependencies in runtime), copied Drizzle migrations +
+  a standalone `docker/migrate.mjs` runner + `server-entrypoint.sh` that migrates + idempotently seeds before
+  `node dist/index.js`; kept non-root user.
+- Compose hardening: required `POSTGRES_PASSWORD` (no insecure default), server (/health/live) + web
+  healthchecks; nginx restricts /metrics to internal ranges, adds `client_max_body_size 200m` and TLS guidance;
+  `.env.production.example` gains LOG_HTTP_HEADERS + SEED_ON_START.
+- User docs: quickstart, connector reference (aligned to registry.ts), scripting API reference; README links them.
+
+### Verification
+- `pnpm --filter @mirthless/web test` — 25 passing (new: usePermissions, RequirePermission, coerceHeaders,
+  notification dedup, global mutation handler)
+- `pnpm --filter @mirthless/web build` — 0 TS errors, vite build OK
+- `eslint packages/web packages/core-models --max-warnings 0` — clean
+- `pnpm --filter @mirthless/core-models test` — 189 passing (shared enum change)
+
 ## 2026-03-29 — Deep Review Round 4: Performance, Pipeline Fixes, UX
 
 ### Pipeline Fixes
@@ -1377,3 +1497,22 @@
 - Persistent message store (Drizzle-backed, replacing in-memory)
 - Wire emailSender callback in server startup (nodemailer transport → AlertManager deps)
 - E2E tests for clone and CLI (requires running server + DB)
+
+## 2026-07-12 — Engine data-integrity & sandbox RCE fixes (branch: fix/engine-data-integrity)
+
+Fixed six verified release-blocking bugs plus three cheaper related issues in the engine + message layer. All engine (347) and server (851) tests green; full workspace build + `pnpm lint --max-warnings 0` green.
+
+### Data integrity
+- **Storage-mode message loss** — `MessageService.initializeMessage` always writes the message/source-connector/received-stat rows; content rows are the only thing subject to storage policy. Empty content no longer emits invalid `VALUES ()` (which threw and silently lost the message in PRODUCTION/METADATA/DISABLED). (D-131)
+- **currval CTE misattribution** — content `message_id` now bound from the `new_msg` CTE via `CROSS JOIN` instead of `currval('messages_id_seq')`, so PHI content can't be attributed to a previous message on a pooled connection. (D-131)
+- **Queue path** — `dequeue` maps rows to camelCase (queue-consumer read undefined before); atomically claims rows `QUEUED → PENDING` to stop the 1s poll double-dispatching in-flight sends; `send_attempts` incremented on requeue so the retry cap trips (no more infinite poison-message retry); stale PENDING reset to QUEUED on deploy. (D-130)
+- **RecoveryManager wired** into `EngineManager.deploy()` — resets PENDING, reprocesses RECEIVED source messages, re-dispatches RECEIVED destinations; QUEUED left to consumers. Best-effort, logged. (D-133)
+
+### Pipeline correctness
+- **Destination filter/transformer script errors** now mark the destination ERROR (error content + errored stat + alert) instead of falling through / sending untransformed PHI. (D-132)
+- **Stats overcount** — source no longer counted SENT when a destination or postprocessor failed; counted errored instead. (D-132)
+- **Postprocessor errors** (channel + global) now surface (error content + alert + ERROR status). (D-132)
+- **Preprocessor `return true`** no longer corrupts the message to the string "true" (boolean returns fall back to `msg`). (D-132)
+
+### Security
+- **Sandbox RCE closed** — hardened `VmSandboxExecutor` so no host-realm object/function is reachable from user scripts; `logger.info.constructor('return process')()` and friends can no longer reach host `process`/env. Added escape-attempt tests, an async wall-clock timeout, and removed the dead `memoryLimit` knob. See `packages/engine/src/sandbox/README.md`. (D-129)

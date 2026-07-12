@@ -17,6 +17,8 @@ import {
   compileTransformerStepsToScript,
   prependTemplates,
   AlertManager,
+  RecoveryManager,
+  type RecoveryStore,
   type ChannelRuntimeConfig,
   type PipelineConfig,
   type ChannelScripts,
@@ -36,6 +38,8 @@ import {
   createDestinationConnector,
   JavaScriptReceiver,
   JavaScriptDispatcher,
+  DISPATCH_STATUS,
+  type DispatchStatus,
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@mirthless/connectors';
@@ -64,7 +68,25 @@ export interface DeployedChannel {
   readonly alertManager: AlertManager;
   readonly queueConsumers: readonly QueueConsumer[];
   readonly scripts: ChannelScripts;
-  readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>;
+  readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<SourceDispatchOutcome>>;
+}
+
+/**
+ * What the source connector learns about a dispatched message. `status` lets a
+ * source connector build the right response (e.g. an MLLP receiver returns an AA
+ * ACK for SENT, AE for ERROR, AR for FILTERED).
+ */
+export interface SourceDispatchOutcome {
+  readonly messageId: number;
+  readonly status: DispatchStatus;
+  readonly response?: string;
+}
+
+/** Map the pipeline's message status to the source-connector dispatch status. */
+function toDispatchStatus(status: 'SENT' | 'FILTERED' | 'ERROR'): DispatchStatus {
+  if (status === 'FILTERED') return DISPATCH_STATUS.FILTERED;
+  if (status === 'ERROR') return DISPATCH_STATUS.ERROR;
+  return DISPATCH_STATUS.PROCESSED;
 }
 
 // ----- Storage Policy -----
@@ -319,15 +341,21 @@ export class EngineManager {
     const scriptTimeoutMs = channel.scriptTimeoutSeconds
       ? channel.scriptTimeoutSeconds * 1000
       : 30_000;
-    const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<{ messageId: number }>> => {
+    const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
       // Extract correlationId from sourceMap if present (channel-to-channel routing)
       const correlationId = typeof sourceMap?.['correlationId'] === 'string'
         ? sourceMap['correlationId'] as string
         : undefined;
-      return processor.processMessage(
+      const result = await processor.processMessage(
         { rawContent, sourceMap: sourceMap ?? {}, correlationId },
         AbortSignal.timeout(scriptTimeoutMs),
       );
+      if (!result.ok) return result;
+      // Surface the pipeline's final status so the source connector can build the
+      // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AR).
+      const { messageId, response } = result.value;
+      const status = toDispatchStatus(result.value.status);
+      return { ok: true, value: response === undefined ? { messageId, status } : { messageId, status, response }, error: null };
     };
 
     // Build runtime config
@@ -344,6 +372,10 @@ export class EngineManager {
     }
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage });
+
+    // Recover any messages left unprocessed by a prior crash/restart. Best-effort:
+    // recovery failures are logged, never allowed to abort a deploy.
+    await this.recoverChannel(channel, store, processMessage, sendFn);
   }
 
   /** Get a deployed channel runtime. */
@@ -405,6 +437,78 @@ export class EngineManager {
     }
 
     this.runtimes.delete(channelId);
+  }
+
+  /**
+   * Recover unprocessed messages for a freshly deployed channel.
+   *
+   * - Stale PENDING claims (in-flight dispatches interrupted by a crash) are reset
+   *   to QUEUED so the queue consumers redeliver them.
+   * - RECEIVED source messages are reprocessed from their stored raw content.
+   * - RECEIVED destination messages are re-dispatched from their stored SENT content.
+   * QUEUED messages are left for the queue consumers. All failures are logged only.
+   */
+  private async recoverChannel(
+    channel: ChannelDetail,
+    store: MessageStore,
+    processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>,
+    sendFn: SendToDestination,
+  ): Promise<void> {
+    // Reset stale PENDING claims for every queued destination.
+    for (const dest of channel.destinations) {
+      if (dest.queueMode === 'NEVER') continue;
+      const reset = await MessageService.resetPending(channel.id, dest.metaDataId);
+      if (!reset.ok) {
+        logger.error({ channelId: channel.id, metaDataId: dest.metaDataId, errMsg: reset.error.message }, 'Failed to reset PENDING messages');
+      }
+    }
+
+    const recoveryStore: RecoveryStore = {
+      getUnprocessedMessages: async (channelId) => {
+        const r = await MessageService.getUnprocessedMessages(channelId);
+        if (!r.ok) return r;
+        return { ok: true, value: r.value.map((m) => ({ messageId: m.id, channelId: m.channelId })), error: null };
+      },
+      getConnectorMessages: (channelId, messageId) => MessageService.getConnectorMessages(channelId, messageId),
+    };
+
+    const CT_RAW = 1;
+    const CT_SENT = 5;
+
+    const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
+      const raw = await store.loadContent(channelId, messageId, 0, CT_RAW);
+      if (!raw.ok || raw.value === null) {
+        return { ok: false, value: null, error: new Error('Raw content unavailable for recovery') } as Result<void>;
+      }
+      const processed = await processMessage(raw.value);
+      // Mark the original message processed so it is not recovered again on the next deploy.
+      await MessageService.markProcessed(channelId, messageId);
+      if (!processed.ok) return { ok: false, value: null, error: processed.error } as Result<void>;
+      return OK_VOID;
+    };
+
+    const redispatchDestination = async (channelId: string, messageId: number, metaDataId: number): Promise<Result<void>> => {
+      const sent = await store.loadContent(channelId, messageId, metaDataId, CT_SENT);
+      if (!sent.ok || sent.value === null) {
+        return { ok: false, value: null, error: new Error('Sent content unavailable for recovery') } as Result<void>;
+      }
+      const sendResult = await sendFn(metaDataId, sent.value, AbortSignal.timeout(30_000));
+      const success = sendResult.ok && sendResult.value.status === 'SENT';
+      await store.updateConnectorMessageStatus(channelId, messageId, metaDataId, success ? 'SENT' : 'ERROR');
+      await store.incrementStats(channelId, metaDataId, this.serverId, success ? 'sent' : 'errored');
+      return success ? OK_VOID : ({ ok: false, value: null, error: new Error('Redispatch send failed') } as Result<void>);
+    };
+
+    const manager = new RecoveryManager(recoveryStore, reprocessSource, redispatchDestination);
+    const recovered = await manager.recover(channel.id);
+    if (!recovered.ok) {
+      logger.error({ channelId: channel.id, errMsg: recovered.error.message }, 'Channel recovery failed');
+      return;
+    }
+    const summary = recovered.value;
+    if (summary.recovered > 0 || summary.errors > 0) {
+      logger.info({ channelId: channel.id, ...summary }, 'Channel recovery complete');
+    }
   }
 
   /** Compile a script with optional template prepending. */

@@ -21,7 +21,7 @@ export function validate(schema: ValidationTarget) {
       if (!result.success) {
         res.status(400).json({
           success: false,
-          error: z.prettifyError(result.error),
+          error: { code: 'VALIDATION_ERROR', message: z.prettifyError(result.error) },
         });
         return;
       }
@@ -33,7 +33,7 @@ export function validate(schema: ValidationTarget) {
       if (!result.success) {
         res.status(400).json({
           success: false,
-          error: z.prettifyError(result.error),
+          error: { code: 'VALIDATION_ERROR', message: z.prettifyError(result.error) },
         });
         return;
       }
@@ -45,7 +45,7 @@ export function validate(schema: ValidationTarget) {
       if (!result.success) {
         res.status(400).json({
           success: false,
-          error: z.prettifyError(result.error),
+          error: { code: 'VALIDATION_ERROR', message: z.prettifyError(result.error) },
         });
         return;
       }

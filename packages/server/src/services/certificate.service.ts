@@ -31,7 +31,12 @@ export interface CertificateSummary {
 
 export interface CertificateDetail extends CertificateSummary {
   readonly certificatePem: string;
-  readonly privateKeyPem: string | null;
+  /**
+   * Whether a private key is stored server-side. The key material itself is
+   * NEVER returned in read responses — a `settings:read` caller must not be able
+   * to exfiltrate private keys. The raw key stays in the DB for server-side use.
+   */
+  readonly hasPrivateKey: boolean;
 }
 
 // ----- Helpers -----
@@ -77,7 +82,7 @@ function toDetail(row: typeof certificates.$inferSelect): CertificateDetail {
   return {
     ...toSummary(row),
     certificatePem: row.certificatePem,
-    privateKeyPem: row.privateKeyPem,
+    hasPrivateKey: row.privateKeyPem !== null && row.privateKeyPem.length > 0,
   };
 }
 

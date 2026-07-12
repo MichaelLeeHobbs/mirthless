@@ -22,7 +22,7 @@ export interface RuntimeConnector {
 
 /** Source connector with dispatcher. */
 export interface RuntimeSourceConnector extends RuntimeConnector {
-  setDispatcher(dispatcher: (raw: { content: string; sourceMap: Record<string, unknown> }) => Promise<Result<{ messageId: number; response?: string }>>): void;
+  setDispatcher(dispatcher: (raw: { content: string; sourceMap: Record<string, unknown> }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string }>>): void;
 }
 
 /** Channel configuration needed for runtime. */
@@ -30,7 +30,7 @@ export interface ChannelRuntimeConfig {
   readonly channelId: string;
   readonly source: RuntimeSourceConnector;
   readonly destinations: ReadonlyMap<number, RuntimeConnector>;
-  readonly onMessage: (raw: { content: string; sourceMap: Record<string, unknown> }) => Promise<Result<{ messageId: number; response?: string }>>;
+  readonly onMessage: (raw: { content: string; sourceMap: Record<string, unknown> }) => Promise<Result<{ messageId: number; status?: 'PROCESSED' | 'FILTERED' | 'ERROR'; response?: string }>>;
 }
 
 // ----- State Machine -----

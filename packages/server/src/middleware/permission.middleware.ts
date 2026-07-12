@@ -13,7 +13,7 @@ import logger from '../lib/logger.js';
 export function requirePermission(...permissions: readonly string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
-      res.status(401).json({ success: false, error: 'Unauthorized' });
+      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
       return;
     }
 
@@ -28,7 +28,7 @@ export function requirePermission(...permissions: readonly string[]) {
         },
         'Permission denied'
       );
-      res.status(403).json({ success: false, error: 'Forbidden' });
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
       return;
     }
 
@@ -42,7 +42,7 @@ export function requirePermission(...permissions: readonly string[]) {
 export function requireAllPermissions(...permissions: readonly string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
-      res.status(401).json({ success: false, error: 'Unauthorized' });
+      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
       return;
     }
 
@@ -57,7 +57,7 @@ export function requireAllPermissions(...permissions: readonly string[]) {
         },
         'Permission denied (all required)'
       );
-      res.status(403).json({ success: false, error: 'Forbidden' });
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
       return;
     }
 

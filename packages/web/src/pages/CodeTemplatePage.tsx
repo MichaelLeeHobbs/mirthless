@@ -4,6 +4,7 @@
 // Two-panel page: library tree (left) + template editor (right).
 
 import { useState, useCallback, type ReactNode } from 'react';
+import { useBlocker } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -14,6 +15,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
+import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import { LibraryTree } from '../components/code-templates/LibraryTree.js';
@@ -44,8 +46,9 @@ interface ConfirmState {
 const CLOSED_CONFIRM: ConfirmState = { open: false, title: '', message: '', onConfirm: () => {} };
 
 export function CodeTemplatePage(): ReactNode {
-  const { data: libraries = [], isLoading: libLoading } = useCodeTemplateLibraries();
-  const { data: templates = [], isLoading: tmplLoading } = useCodeTemplates();
+  const { data: libraries = [], isLoading: libLoading, error: libError } = useCodeTemplateLibraries();
+  const { data: templates = [], isLoading: tmplLoading, error: tmplError } = useCodeTemplates();
+  const loadError = libError ?? tmplError;
 
   const createLibrary = useCreateLibrary();
   const updateLibrary = useUpdateLibrary();
@@ -62,10 +65,51 @@ export function CodeTemplatePage(): ReactNode {
   const [dialogName, setDialogName] = useState('');
   const [dialogDescription, setDialogDescription] = useState('');
   const [confirm, setConfirm] = useState<ConfirmState>(CLOSED_CONFIRM);
+  const [editorDirty, setEditorDirty] = useState(false);
+  // undefined = no pending in-page switch; a value = switch target once confirmed.
+  const [pendingSwitch, setPendingSwitch] = useState<CodeTemplateDetail | null | undefined>(undefined);
+
+  const handleDirtyChange = useCallback((dirty: boolean): void => {
+    setEditorDirty(dirty);
+  }, []);
+
+  // Guard in-page template switch / close when there are unsaved edits.
+  const requestSelectTemplate = useCallback((next: CodeTemplateDetail | null): void => {
+    setSelectedTemplate((current) => {
+      if (current && current.id !== next?.id && editorDirty) {
+        setPendingSwitch(next);
+        return current;
+      }
+      return next;
+    });
+  }, [editorDirty]);
 
   const handleDeselectTemplate = useCallback((): void => {
-    setSelectedTemplate(null);
-  }, []);
+    requestSelectTemplate(null);
+  }, [requestSelectTemplate]);
+
+  // Route-level navigation guard (consistent with the channel editor).
+  const blocker = useBlocker(editorDirty);
+
+  const unsavedOpen = pendingSwitch !== undefined || blocker.state === 'blocked';
+
+  const handleUnsavedConfirm = useCallback((): void => {
+    setEditorDirty(false);
+    if (blocker.state === 'blocked') {
+      blocker.proceed?.();
+    }
+    if (pendingSwitch !== undefined) {
+      setSelectedTemplate(pendingSwitch);
+      setPendingSwitch(undefined);
+    }
+  }, [blocker, pendingSwitch]);
+
+  const handleUnsavedCancel = useCallback((): void => {
+    if (blocker.state === 'blocked') {
+      blocker.reset?.();
+    }
+    setPendingSwitch(undefined);
+  }, [blocker]);
 
   const handleCreateLibrary = async (): Promise<void> => {
     try {
@@ -228,6 +272,12 @@ export function CodeTemplatePage(): ReactNode {
         </Stack>
       </Stack>
 
+      {loadError ? (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Failed to load code templates: {loadError instanceof Error ? loadError.message : 'Unknown error'}
+        </Alert>
+      ) : null}
+
       {/* Two-panel layout */}
       <Box sx={{ display: 'flex', flexGrow: 1, gap: 2, minHeight: 0 }}>
         {/* Left panel: Library tree */}
@@ -246,7 +296,7 @@ export function CodeTemplatePage(): ReactNode {
               libraries={libraries}
               templates={templates}
               selectedTemplateId={selectedTemplate?.id ?? null}
-              onSelectTemplate={setSelectedTemplate}
+              onSelectTemplate={requestSelectTemplate}
               onCreateTemplate={(id) => { void handleCreateTemplate(id); }}
               onEditLibrary={openEditLibraryDialog}
               onDeleteLibrary={handleDeleteLibrary}
@@ -271,6 +321,7 @@ export function CodeTemplatePage(): ReactNode {
               onDelete={handleDeleteTemplate}
               onClose={handleDeselectTemplate}
               saving={updateTemplate.isPending}
+              onDirtyChange={handleDirtyChange}
             />
           ) : (
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
@@ -331,6 +382,18 @@ export function CodeTemplatePage(): ReactNode {
         severity="error"
         onConfirm={confirm.onConfirm}
         onCancel={() => { setConfirm(CLOSED_CONFIRM); }}
+      />
+
+      {/* Unsaved-changes guard (template switch / close / route navigation) */}
+      <ConfirmDialog
+        open={unsavedOpen}
+        title="Unsaved Changes"
+        message="You have unsaved template changes. Discard them?"
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        severity="warning"
+        onConfirm={handleUnsavedConfirm}
+        onCancel={handleUnsavedCancel}
       />
     </Box>
   );

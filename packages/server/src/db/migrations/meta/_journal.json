@@ -43,6 +43,13 @@
       "when": 1774900000000,
       "tag": "0005_add_correlation_id",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783886195326,
+      "tag": "0006_fair_quasar",
+      "breakpoints": true
     }
   ]
 }

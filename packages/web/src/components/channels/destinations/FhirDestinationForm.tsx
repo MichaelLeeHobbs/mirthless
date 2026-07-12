@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { FHIR_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
+import { HeadersEditor, coerceHeaders } from '../../common/HeadersEditor.js';
 
 const RESOURCE_TYPES = [
   'Patient', 'Observation', 'Encounter', 'Condition',
@@ -200,15 +201,10 @@ export function FhirDestinationForm({ properties, onChange }: DestConnectorFormP
           Custom Headers
         </Typography>
 
-        <TextField
-          label="Headers"
-          value={getStr(properties, 'headers', '')}
-          onChange={handleText('headers')}
-          helperText="One per line: Header-Name: value"
-          fullWidth
-          multiline
-          minRows={3}
-          sx={{ mb: 2, '& .MuiInputBase-input': { fontFamily: 'monospace', fontSize: '0.875rem' } }}
+        <HeadersEditor
+          value={coerceHeaders(properties['headers'])}
+          onChange={(headers) => { update('headers', headers); }}
+          label="Extra headers sent with every request"
         />
       </Grid>
 

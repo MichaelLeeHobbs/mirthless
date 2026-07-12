@@ -14,6 +14,7 @@ import { LogStreamService } from './services/log-stream.service.js';
 import { PrunerSchedulerService } from './services/pruner-scheduler.service.js';
 import { DeploymentService } from './services/deployment.service.js';
 import { createShutdownHandler } from './lib/shutdown.js';
+import { warnIfDefaultAdminPassword } from './lib/security-checks.js';
 
 const PORT = config.PORT;
 
@@ -34,6 +35,7 @@ setLogCaptureStream(LogStreamService.createWritableStream());
 startQueue()
   .then(() => PrunerSchedulerService.start())
   .then(() => DeploymentService.autoDeployChannels())
+  .then(() => warnIfDefaultAdminPassword())
   .catch((err: unknown) => {
     const errMsg = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : undefined;

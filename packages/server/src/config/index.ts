@@ -39,6 +39,23 @@ const configSchema = z.object({
   // Logging
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   LOG_HTTP_HEADERS: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+
+  // At-rest content encryption key (AES-256-GCM). 64 hex chars = 32 bytes.
+  // Optional; required only for channels with encryptData enabled.
+  CONTENT_ENCRYPTION_KEY: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, 'CONTENT_ENCRYPTION_KEY must be 64 hex characters (32 bytes)')
+    .optional(),
+
+  // Observability exposure — default to protected/off in production.
+  // METRICS_PUBLIC=true exposes /metrics without auth (for a network-isolated
+  // Prometheus scraper). Otherwise /metrics requires auth.
+  METRICS_PUBLIC: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  // Serve the Swagger UI at /api-docs. Defaults on outside production.
+  API_DOCS_ENABLED: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
 });
 
 const result = configSchema.safeParse(process.env);
