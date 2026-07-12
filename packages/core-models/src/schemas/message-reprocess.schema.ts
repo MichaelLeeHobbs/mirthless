@@ -20,3 +20,19 @@ export type BulkDeleteInput = z.infer<typeof bulkDeleteInputSchema>;
 export const bulkDeleteParamsSchema = z.object({
   id: z.string().uuid(),
 });
+
+/** Body for POST /channels/:id/messages/bulk-reprocess. */
+export const bulkReprocessInputSchema = z.object({
+  messageIds: z.array(z.number().int().positive()).min(1).max(500),
+});
+
+export type BulkReprocessInput = z.infer<typeof bulkReprocessInputSchema>;
+
+/** Params for POST /channels/:id/messages/:msgId/connectors/:metaDataId/resend. */
+export const resendParamsSchema = z.object({
+  id: z.string().uuid(),
+  msgId: z.coerce.number().int().positive(),
+  metaDataId: z.coerce.number().int().nonnegative(),
+});
+
+export type ResendParams = z.infer<typeof resendParamsSchema>;

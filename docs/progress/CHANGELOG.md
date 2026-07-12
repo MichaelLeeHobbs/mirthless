@@ -37,6 +37,18 @@ connectors 418→475 tests, core-models 198 tests passing.
 ### Dependency added
 - `ssh2-sftp-client@^12.1.1` (dep) + `@types/ssh2-sftp-client@^9.0.6` (dev) in
   `@mirthless/connectors`.
+## 2026-07-12 — Message ops endpoints + real partitioning (branch `w2/server`)
+
+Scope: `packages/{server,core-models}` only. Added four message-operations endpoints and resolved the D-166 partitioning gap. New/changed files lint clean (`pnpm lint --max-warnings 0`); core-models + server builds green; core-models 221 tests green; the 64 tests across the 5 touched server test files green. (Pre-existing, out-of-scope: 9 `data-pruner.service.test.ts` unit failures inherited from the D-165 `inArray` change — those files are untouched here.)
+
+### New endpoints (exact contracts the web wave builds against)
+- **Bulk reprocess** — `POST /api/v1/channels/:id/messages/bulk-reprocess`, perm `messages:reprocess`, body `{ messageIds: number[] }` (1–500). Reuses `MessageReprocessService.reprocessMessage` per id; one up-front 409 if the channel isn't deployed+STARTED, then per-item results (partial success). Response `{ success, data: { requested, reprocessed, results: [{ messageId, newMessageId?, error? }] } }`. Emits aggregate `MESSAGES_REPROCESSED` audit.
+- **Message export** — `GET /api/v1/channels/:id/messages/export?format=csv|json&status=&startDate=&endDate=&limit=&includeContent=`, perm `messages:read`. Metadata columns (messageId, correlationId, receivedAt, processed, flattened per-connector statuses); `includeContent=true` adds decrypted raw source (audited). RFC4180 CSV with spreadsheet-formula-injection guard (leading `=+-@`→quote-prefixed). Cap 10k rows; truncation via `X-Export-Truncated`/`X-Export-Count` headers; `Content-Disposition` attachment. Emits `MESSAGES_EXPORTED` (PHI-read) audit.
+- **Per-destination resend** — `POST /api/v1/channels/:id/messages/:msgId/connectors/:metaDataId/resend`, perm `messages:reprocess`. Re-enqueues the one connector message so the running queue consumer redispatches stored SENT content (isolated, no duplicate sends). Requires queue-enabled destination (else 409). Response `{ success, data: { messageId, metaDataId, status: 'QUEUED' } }`. Emits `MESSAGE_RESEND_QUEUED` audit. (D-168)
+- **Message-id search** — added `messageId` exact-match filter to `messageSearchQuerySchema` + `MessageQueryService.searchMessages`. (Message **detail** already returns all stored content types via `CONTENT_TYPE_NAMES` with decryption — no change needed.)
+
+### Partitioning (D-167, resolves D-166)
+- New hand-written migration `0007_partition_message_tables.sql` recreates the six message parent tables as `PARTITION BY LIST (channel_id)` with a DEFAULT partition each, so the already-correct `PartitionManagerService` works. Registered in `meta/_journal.json`. Verified against a throwaway Postgres 17 (partition routing + DEFAULT fallback + drop). `db:migrate` not run against any live DB.
 
 ## 2026-07-12 — Backend production-readiness: deferred items closed (branch `w1/backend`)
 
