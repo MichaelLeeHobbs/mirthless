@@ -9,19 +9,20 @@ import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import Stack from '@mui/material/Stack';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
-import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import { LibraryTree } from '../components/code-templates/LibraryTree.js';
 import { TemplateEditor } from '../components/code-templates/TemplateEditor.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import {
   useCodeTemplateLibraries,
   useCodeTemplates,
@@ -46,8 +47,20 @@ interface ConfirmState {
 const CLOSED_CONFIRM: ConfirmState = { open: false, title: '', message: '', onConfirm: () => {} };
 
 export function CodeTemplatePage(): ReactNode {
-  const { data: libraries = [], isLoading: libLoading, error: libError } = useCodeTemplateLibraries();
-  const { data: templates = [], isLoading: tmplLoading, error: tmplError } = useCodeTemplates();
+  const {
+    data: libraries = [],
+    isLoading: libLoading,
+    isFetching: libFetching,
+    error: libError,
+    refetch: refetchLibraries,
+  } = useCodeTemplateLibraries();
+  const {
+    data: templates = [],
+    isLoading: tmplLoading,
+    isFetching: tmplFetching,
+    error: tmplError,
+    refetch: refetchTemplates,
+  } = useCodeTemplates();
   const loadError = libError ?? tmplError;
 
   const createLibrary = useCreateLibrary();
@@ -242,40 +255,44 @@ export function CodeTemplatePage(): ReactNode {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 100px)' }}>
-      {/* Header */}
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>
-          Code Templates
-        </Typography>
-        <Stack direction="row" spacing={1}>
-          <Button
-            variant="outlined"
-            startIcon={<CreateNewFolderIcon />}
-            onClick={openCreateLibraryDialog}
-            size="small"
-          >
-            Library
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => {
-              const targetId = selectedTemplate?.libraryId ?? libraries[0]?.id;
-              if (targetId) { void handleCreateTemplate(targetId); }
-              else { notify('Create a library first', 'warning'); }
-            }}
-            disabled={libraries.length === 0}
-            size="small"
-          >
-            Template
-          </Button>
-        </Stack>
-      </Stack>
+      <PageHeader
+        title="Code Templates"
+        description="Reusable JavaScript functions and code blocks shared across channels, organized into libraries."
+        isFetching={(libFetching || tmplFetching) && !isLoading}
+        actions={
+          <>
+            <Button
+              variant="outlined"
+              startIcon={<CreateNewFolderIcon />}
+              onClick={openCreateLibraryDialog}
+              size="small"
+            >
+              Library
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                const targetId = selectedTemplate?.libraryId ?? libraries[0]?.id;
+                if (targetId) { void handleCreateTemplate(targetId); }
+                else { notify('Create a library first', 'warning'); }
+              }}
+              disabled={libraries.length === 0}
+              size="small"
+            >
+              Template
+            </Button>
+          </>
+        }
+      />
 
       {loadError ? (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Failed to load code templates: {loadError instanceof Error ? loadError.message : 'Unknown error'}
-        </Alert>
+        <ErrorState
+          title="Couldn't load code templates"
+          error={loadError}
+          onRetry={() => { void refetchLibraries(); void refetchTemplates(); }}
+          sx={{ mb: 2 }}
+        />
       ) : null}
 
       {/* Two-panel layout */}
@@ -290,7 +307,7 @@ export function CodeTemplatePage(): ReactNode {
           }}
         >
           {isLoading ? (
-            <Typography sx={{ p: 2 }} color="text.secondary">Loading...</Typography>
+            <LoadingBlock label="Loading templates" />
           ) : (
             <LibraryTree
               libraries={libraries}

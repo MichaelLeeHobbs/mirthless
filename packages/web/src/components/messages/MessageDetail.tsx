@@ -149,6 +149,7 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
             <IconButton
               size="small"
               color="error"
+              aria-label="Delete message"
               onClick={() => { setConfirmDeleteOpen(true); }}
               disabled={deleteMutation.isPending || !canDelete}
             >

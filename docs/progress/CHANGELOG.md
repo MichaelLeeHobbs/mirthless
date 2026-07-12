@@ -37,6 +37,58 @@ connectors 400→418, server 916→922 tests passing (engine 347, core-util 88 u
 - Tests: persist-on-quarantine, and durable survival (new receiver instance over same dir
   loads the ledger and does not re-dispatch).
 
+## 2026-07-12 — Web UI Design-System Foundation Pass
+
+Branch `w1/ui` (worktree). Scope: `packages/web/**` only. A restyle + a11y + perf
+foundation pass — no new pages or features. Build clean with **no chunk-size warning**;
+web tests 25 → 45 passing; ESLint clean (`--max-warnings 0`).
+
+### Design tokens & theme (`styles/tokens.ts`, `styles/theme.ts`)
+- Split the theme into a token layer (`tokens.ts`) + MUI theme builder (`theme.ts`). Both
+  dark and light are now first-class and fully polished (verified by screenshot).
+- **Palette**: calm clinical primary (dark `#38bdf8` / light `#0369a1`) on richer slate
+  surfaces (dark `#0b1120` bg, `#131b2e` paper; light `#f3f6fb` bg, white paper), hairline
+  dividers, tuned text tiers. Restrained teal secondary.
+- **Semantic status colours are first-class** — `palette.status` = healthy / warning /
+  critical / info / neutral, mode-tuned (light-step on dark, dark-step on light) for AA
+  contrast in both modes.
+- **Typography**: self-hosted Inter Variable (`@fontsource-variable/inter`, no runtime CDN);
+  compact type scale; **tabular numerals** on all tables + stat tiles.
+- **Elevation/borders**: subtle 1px borders over shadows; consistent radii (6/8/12).
+- **Global via CssBaseline**: visible `:focus-visible` ring on every control, subtle
+  scrollbars, `prefers-reduced-motion` honoured, pre-paint theme colour (no flash).
+- Component overrides for Paper/Card/Button/Chip/Tooltip/Table*/OutlinedInput/Alert so
+  every page is consistent without per-page styling.
+
+### Signature: unified status system
+- `lib/status.ts` (pure, tested) maps channel states & message statuses → semantic level.
+- `components/common/StatusChip.tsx` — `StatusChip` / `StatusDot` / `ChannelStateChip` /
+  `MessageStatusChip`: dot + label so state is never colour-alone (CVD/AT safe). Adopted in
+  ChannelStatusTable, GroupedChannelTable, MessageTable, CrossChannelSearch. Removed the old
+  scattered `getStateColor` / `getStatusColor` / `getStatusDotColor` helpers.
+- Dashboard `SummaryCards` reworked into colour-keyed stat tiles (tabular, accent bar).
+
+### Shared state components (applied across ~18 pages)
+- `common/PageHeader.tsx` (title + description + actions + isFetching), `common/states/`
+  `EmptyState`, `ErrorState` (Alert + Retry), `LoadingState` (`TableSkeleton`, `LoadingBlock`).
+- Retrofitted list/detail pages to skeletons-over-spinners, inviting empty states, and
+  honest retryable error states. Fixed CodeTemplatePage's plain "Loading…" text and
+  ExtensionsPage's full-page error early-return.
+
+### Chrome & a11y
+- AppLayout: brand mark (MonitorHeart badge), refined active nav state, tidier sidebar.
+- Added `aria-label` to ~40 previously-unlabelled icon-only buttons across the app.
+
+### Performance (code-splitting)
+- Route-level `React.lazy` + Suspense (`RouteFallback`) for every page; `manualChunks`
+  splits vendor-react / vendor-mui / vendor-data / vendor-monaco.
+- **Bundle: single 1,109 kB chunk → largest chunk 413 kB** (vendor-mui, gzip 124 kB); pages
+  are 2–21 kB each and load on demand. Chunk-size warning eliminated.
+
+### Tests
+- New: `lib/__tests__/status.test.ts`, `components/common/__tests__/StatusChip.test.tsx`,
+  `components/common/states/__tests__/states.test.tsx` (20 tests).
+
 ## 2026-07-12 — Connectors Hardening (release blockers)
 
 Branch `fix/connectors-hardening`. Scope: `packages/connectors/**`. Introduced the first

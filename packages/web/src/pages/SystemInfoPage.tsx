@@ -10,12 +10,13 @@ import Grid from '@mui/material/Grid';
 import Paper from '@mui/material/Paper';
 import LinearProgress from '@mui/material/LinearProgress';
 import Chip from '@mui/material/Chip';
-import CircularProgress from '@mui/material/CircularProgress';
-import Alert from '@mui/material/Alert';
 import { useSystemInfo } from '../hooks/use-system-info.js';
 import { BackupRestoreSection } from '../components/system/BackupRestoreSection.js';
 import { PrunerSection } from '../components/system/PrunerSection.js';
 import { LogViewer } from '../components/system/LogViewer.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { LoadingBlock } from '../components/common/states/LoadingState.js';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -74,27 +75,26 @@ function InfoRow({ label, value }: InfoRowProps): ReactNode {
 }
 
 export function SystemInfoPage(): ReactNode {
-  const { data: info, isLoading, error } = useSystemInfo();
-
-  if (isLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const { data: info, isLoading, isFetching, error, refetch } = useSystemInfo();
 
   return (
     <Box>
-      <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
-        System Information
-      </Typography>
+      <PageHeader
+        title="System Information"
+        description="Server, database, memory, and engine status at a glance."
+        isFetching={isFetching && !isLoading}
+      />
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Failed to load system info: {error.message}
-        </Alert>
-      )}
+      {error ? (
+        <ErrorState
+          title="Couldn't load system info"
+          error={error}
+          onRetry={() => void refetch()}
+          sx={{ mb: 2 }}
+        />
+      ) : null}
+
+      {isLoading ? <LoadingBlock label="Loading system information" /> : null}
 
       {info && (
         <Grid container spacing={3}>

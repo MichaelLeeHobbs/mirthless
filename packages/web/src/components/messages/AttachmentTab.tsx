@@ -100,6 +100,7 @@ export function AttachmentTab({ channelId, messageId }: AttachmentTabProps): Rea
                   <Tooltip title="Preview">
                     <IconButton
                       size="small"
+                      aria-label={previewId === att.id ? 'Hide attachment preview' : 'Preview attachment'}
                       onClick={() => setPreviewId(previewId === att.id ? null : att.id)}
                     >
                       <VisibilityIcon fontSize="small" />

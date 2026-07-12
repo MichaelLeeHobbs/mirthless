@@ -13,7 +13,6 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
-import Chip from '@mui/material/Chip';
 import Link from '@mui/material/Link';
 import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
@@ -30,7 +29,6 @@ import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import CircleIcon from '@mui/icons-material/Circle';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
@@ -48,7 +46,8 @@ import { AssignGroupDialog } from '../common/AssignGroupDialog.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
 import { useContextMenu } from '../../hooks/use-context-menu.js';
 import { useNotification } from '../../stores/notification.store.js';
-import { getStateColor, getStatusDotColor } from './ChannelStatusTable.js';
+import { ChannelStateChip, StatusDot } from '../common/StatusChip.js';
+import { channelStateLevel } from '../../lib/status.js';
 
 interface GroupedChannelTableProps {
   readonly statistics: readonly ChannelStatisticsSummary[];
@@ -293,7 +292,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                       onClick={() => toggleGroup(section.groupId)}
                     >
                       <TableCell>
-                        <IconButton size="small">
+                        <IconButton size="small" aria-label={isOpen ? `Collapse ${section.groupName}` : `Expand ${section.groupName}`}>
                           {isOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                         </IconButton>
                       </TableCell>
@@ -307,6 +306,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                             <IconButton
                               className="group-menu-btn"
                               size="small"
+                              aria-label={`Group actions for ${section.groupName}`}
                               sx={{ opacity: 0, transition: 'opacity 0.15s' }}
                               onClick={(e) => { handleGroupMenuOpen(e, section); }}
                             >
@@ -331,7 +331,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                       <TableRow key={row.channelId} hover onContextMenu={(e) => handleContextMenu(e, row)}>
                         <TableCell width={40} />
                         <TableCell width={40}>
-                          <CircleIcon sx={{ fontSize: 12, color: getStatusDotColor(row.state) }} />
+                          <StatusDot level={channelStateLevel(row.state)} title={row.state} />
                         </TableCell>
                         <TableCell>
                           <Link
@@ -345,12 +345,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                           </Link>
                         </TableCell>
                         <TableCell>
-                          <Chip
-                            label={row.state}
-                            size="small"
-                            color={getStateColor(row.state)}
-                            variant="outlined"
-                          />
+                          <ChannelStateChip state={row.state} />
                         </TableCell>
                         <TableCell align="right">{row.received.toLocaleString()}</TableCell>
                         <TableCell align="right">{row.filtered.toLocaleString()}</TableCell>
@@ -364,7 +359,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                             <Tooltip title="Statistics">
-                              <IconButton size="small" onClick={() => navigate(`/channels/${row.channelId}/statistics`)}>
+                              <IconButton size="small" aria-label={`View statistics for ${row.channelName}`} onClick={() => navigate(`/channels/${row.channelId}/statistics`)}>
                                 <BarChartIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>

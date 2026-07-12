@@ -28,13 +28,13 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import Skeleton from '@mui/material/Skeleton';
-import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SearchIcon from '@mui/icons-material/Search';
 import UploadIcon from '@mui/icons-material/Upload';
 import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
+import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import { useChannels, useDeleteChannel, useToggleChannelEnabled, useCloneChannel, type ChannelSummary } from '../hooks/use-channels.js';
 import { useAllDeploymentStatuses } from '../hooks/use-deployment.js';
 import { useContextMenu } from '../hooks/use-context-menu.js';
@@ -47,6 +47,9 @@ import { AssignGroupDialog } from '../components/common/AssignGroupDialog.js';
 import { SendMessageDialog } from '../components/common/SendMessageDialog.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { EmptyState } from '../components/common/states/EmptyState.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
 
 const CONNECTOR_TYPE_LABELS: Readonly<Record<string, string>> = {
   TCP_MLLP: 'TCP/MLLP',
@@ -162,40 +165,41 @@ export function ChannelsPage(): ReactNode {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
-          Channels
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="outlined"
-            startIcon={<FolderSpecialIcon />}
-            onClick={() => { setGroupsDialogOpen(true); }}
-          >
-            Groups
-          </Button>
-          <ExportButton />
-          <Button
-            variant="outlined"
-            startIcon={<UploadIcon />}
-            onClick={() => { setImportDialogOpen(true); }}
-          >
-            Import
-          </Button>
-          <Tooltip title={canWrite ? '' : 'Requires channels:write permission'}>
-            <span>
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={() => { setNewDialogOpen(true); }}
-                disabled={!canWrite}
-              >
-                New Channel
-              </Button>
-            </span>
-          </Tooltip>
-        </Box>
-      </Box>
+      <PageHeader
+        title="Channels"
+        description="Configure and monitor message pipelines."
+        actions={
+          <>
+            <Button
+              variant="outlined"
+              startIcon={<FolderSpecialIcon />}
+              onClick={() => { setGroupsDialogOpen(true); }}
+            >
+              Groups
+            </Button>
+            <ExportButton />
+            <Button
+              variant="outlined"
+              startIcon={<UploadIcon />}
+              onClick={() => { setImportDialogOpen(true); }}
+            >
+              Import
+            </Button>
+            <Tooltip title={canWrite ? '' : 'Requires channels:write permission'}>
+              <span>
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => { setNewDialogOpen(true); }}
+                  disabled={!canWrite}
+                >
+                  New Channel
+                </Button>
+              </span>
+            </Tooltip>
+          </>
+        }
+      />
 
       {/* Search */}
       <Paper sx={{ p: 2, mb: 2 }}>
@@ -219,9 +223,7 @@ export function ChannelsPage(): ReactNode {
 
       {/* Error state */}
       {isError ? (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Failed to load channels: {error instanceof Error ? error.message : 'Unknown error'}
-        </Alert>
+        <ErrorState title="Couldn't load channels" error={error} sx={{ mb: 2 }} />
       ) : null}
 
       {/* Table */}
@@ -249,10 +251,18 @@ export function ChannelsPage(): ReactNode {
               ))
             ) : filteredChannels.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
-                  <Typography color="text.secondary">
-                    {search ? 'No channels match your search.' : 'No channels yet. Create one to get started.'}
-                  </Typography>
+                <TableCell colSpan={7} sx={{ border: 0 }}>
+                  <EmptyState
+                    dense
+                    icon={<SyncAltIcon />}
+                    title={search ? 'No matching channels' : 'No channels yet'}
+                    description={search ? 'No channels match your search.' : 'Create your first channel to start routing messages.'}
+                    action={!search && canWrite ? (
+                      <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setNewDialogOpen(true); }}>
+                        New Channel
+                      </Button>
+                    ) : undefined}
+                  />
                 </TableCell>
               </TableRow>
             ) : (
@@ -323,6 +333,7 @@ export function ChannelsPage(): ReactNode {
                       <span>
                         <IconButton
                           size="small"
+                          aria-label={`Clone ${channel.name}`}
                           onClick={() => { handleCloneOpen(channel); }}
                           disabled={!canWrite}
                         >
@@ -335,6 +346,7 @@ export function ChannelsPage(): ReactNode {
                         <IconButton
                           size="small"
                           color="error"
+                          aria-label={`Delete ${channel.name}`}
                           onClick={() => { setDeleteTarget(channel); }}
                           disabled={!canDelete}
                         >

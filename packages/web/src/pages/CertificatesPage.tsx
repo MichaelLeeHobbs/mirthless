@@ -16,7 +16,6 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import Chip from '@mui/material/Chip';
 import Dialog from '@mui/material/Dialog';
@@ -28,8 +27,13 @@ import MenuItem from '@mui/material/MenuItem';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import SecurityIcon from '@mui/icons-material/Security';
 import { CERTIFICATE_TYPE } from '@mirthless/core-models';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { EmptyState } from '../components/common/states/EmptyState.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import {
   useCertificates,
   useCertificate,
@@ -72,7 +76,7 @@ const CERT_TYPES = [
 // ----- Page Component -----
 
 export function CertificatesPage(): ReactNode {
-  const { data: certificates, isLoading, error, isFetching } = useCertificates();
+  const { data: certificates, isLoading, error, isFetching, refetch } = useCertificates();
   const createCertificate = useCreateCertificate();
   const updateCertificate = useUpdateCertificate();
   const deleteCertificate = useDeleteCertificate();
@@ -181,38 +185,38 @@ export function CertificatesPage(): ReactNode {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Certificates</Typography>
-          {isFetching && !isLoading && <CircularProgress size={20} />}
-        </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-          Add Certificate
-        </Button>
-      </Box>
+      <PageHeader
+        title="Certificates"
+        description="Manage SSL/TLS certificates and key pairs for secure connectors."
+        isFetching={isFetching && !isLoading}
+        actions={
+          <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
+            Add Certificate
+          </Button>
+        }
+      />
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load certificates: {error.message}</Alert>}
+      {error && (
+        <ErrorState title="Couldn't load certificates" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
+      )}
 
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Subject</TableCell>
-                <TableCell>Issuer</TableCell>
-                <TableCell>Expiry</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {certificates && certificates.length > 0 ? (
-                certificates.map((cert) => {
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Name</TableCell>
+              <TableCell>Type</TableCell>
+              <TableCell>Subject</TableCell>
+              <TableCell>Issuer</TableCell>
+              <TableCell>Expiry</TableCell>
+              <TableCell align="right">Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {isLoading ? (
+              <TableSkeleton rows={6} columns={6} />
+            ) : certificates && certificates.length > 0 ? (
+              certificates.map((cert) => {
                   const days = getExpiryDays(cert.notAfter);
                   const color = getExpiryColor(days);
                   return (
@@ -240,12 +244,12 @@ export function CertificatesPage(): ReactNode {
                       </TableCell>
                       <TableCell align="right">
                         <Tooltip title="Edit">
-                          <IconButton size="small" onClick={() => { handleOpenEdit(cert); }}>
+                          <IconButton aria-label="Edit certificate" size="small" onClick={() => { handleOpenEdit(cert); }}>
                             <EditIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Delete">
-                          <IconButton size="small" onClick={() => { handleDeleteClick(cert); }}>
+                          <IconButton aria-label="Delete certificate" size="small" onClick={() => { handleDeleteClick(cert); }}>
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -253,19 +257,21 @@ export function CertificatesPage(): ReactNode {
                     </TableRow>
                   );
                 })
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} align="center">
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
-                      No certificates found
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+            ) : (
+              <TableRow>
+                <TableCell colSpan={6}>
+                  <EmptyState
+                    dense
+                    icon={<SecurityIcon />}
+                    title="No certificates yet"
+                    description="Add an SSL/TLS certificate to secure your connectors."
+                  />
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onClose={handleClose} maxWidth="md" fullWidth>
