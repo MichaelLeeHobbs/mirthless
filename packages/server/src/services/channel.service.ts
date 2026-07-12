@@ -161,6 +161,23 @@ export interface ChannelListResult {
 
 const DEFAULT_SCRIPT_TYPES = ['DEPLOY', 'UNDEPLOY', 'PREPROCESSOR', 'POSTPROCESSOR'] as const;
 
+// At-rest message-content encryption (encryptData) is not yet wired into the
+// message write path (packages/server/src/services/message.service.ts). Until it
+// is, we REJECT enabling the flag so it cannot masquerade as protection while
+// content is still stored in plaintext. The AES-256-GCM primitive is implemented
+// and tested in lib/content-crypto.ts, ready for the engine agent to wire.
+// See docs/progress/DECISIONS.md.
+const ENCRYPT_DATA_NOT_SUPPORTED =
+  'At-rest message content encryption (encryptData) is not yet supported. ' +
+  'The flag is rejected to avoid a false sense of protection — content would still be stored in plaintext.';
+
+/** Reject a request that tries to enable encryptData. */
+function assertEncryptDataNotEnabled(properties?: { readonly encryptData?: boolean }): void {
+  if (properties?.encryptData === true) {
+    throw new ServiceError('NOT_SUPPORTED', ENCRYPT_DATA_NOT_SUPPORTED);
+  }
+}
+
 // ----- Private Helpers -----
 
 async function findChannel(id: string): Promise<typeof channels.$inferSelect> {
@@ -417,7 +434,9 @@ function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelI
     properties: {
       initialState: source.initialState as 'UNDEPLOYED' | 'STARTED' | 'PAUSED' | 'STOPPED',
       messageStorageMode: source.messageStorageMode as 'DEVELOPMENT' | 'PRODUCTION' | 'RAW' | 'METADATA' | 'DISABLED',
-      encryptData: source.encryptData,
+      // encryptData is not yet supported (see assertEncryptDataNotEnabled); a clone
+      // must not carry a legacy true value or create() would reject it.
+      encryptData: false,
       removeContentOnCompletion: source.removeContentOnCompletion,
       removeAttachmentsOnCompletion: source.removeAttachmentsOnCompletion,
       pruningEnabled: source.pruningEnabled,
@@ -494,6 +513,8 @@ export class ChannelService {
   /** Create a new channel with default scripts. */
   static async create(input: CreateChannelInput, context?: AuditContext): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
+      assertEncryptDataNotEnabled(input.properties);
+
       // Check name uniqueness among non-deleted channels
       const [existing] = await db
         .select({ id: channels.id })
@@ -629,6 +650,8 @@ export class ChannelService {
   /** Update a channel with optimistic locking via revision. */
   static async update(id: string, input: UpdateChannelInput, context?: AuditContext): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
+      assertEncryptDataNotEnabled(input.properties);
+
       const existing = await findChannel(id);
 
       if (existing.revision !== input.revision) {
@@ -678,144 +701,158 @@ export class ChannelService {
         }
       }
 
-      await db.update(channels).set(updateValues).where(eq(channels.id, id));
-
-      // Update scripts if provided
-      if (input.scripts) {
-        for (const [key, value] of Object.entries(input.scripts)) {
-          if (value !== undefined) {
-            const scriptType = key.toUpperCase();
-            await db
-              .update(channelScripts)
-              .set({ script: value ?? '' })
-              .where(and(eq(channelScripts.channelId, id), eq(channelScripts.scriptType, scriptType)));
-          }
-        }
-      }
-
-      // Sync destinations if provided (delete-and-reinsert)
-      // Track new destination IDs by metaDataId for filter/transformer mapping
+      // All mutations run in one transaction so a mid-way failure cannot leave a
+      // channel with its destinations/filters/transformers deleted-but-not-reinserted.
+      // The optimistic lock is enforced atomically: the UPDATE carries the expected
+      // revision in its WHERE, and 0 rows affected means a concurrent writer won the
+      // race (409). Track new destination IDs by metaDataId for filter/transformer mapping.
       const destIdByMetaDataId = new Map<number, string>();
 
-      if (input.destinations) {
-        await db.delete(channelConnectors).where(eq(channelConnectors.channelId, id));
+      await db.transaction(async (tx) => {
+        const updatedRows = await tx
+          .update(channels)
+          .set(updateValues)
+          .where(and(eq(channels.id, id), eq(channels.revision, input.revision)))
+          .returning({ id: channels.id });
 
-        if (input.destinations.length > 0) {
-          const destValues = input.destinations.map((dest, index) => ({
-            channelId: id,
-            metaDataId: index + 1,
-            name: dest.name,
-            enabled: dest.enabled,
-            connectorType: dest.connectorType,
-            properties: dest.properties,
-            queueMode: dest.queueMode,
-            retryCount: dest.retryCount,
-            retryIntervalMs: dest.retryIntervalMs,
-            rotateQueue: dest.rotateQueue,
-            queueThreadCount: dest.queueThreadCount,
-            waitForPrevious: dest.waitForPrevious,
-          }));
-          const insertedDests = await db.insert(channelConnectors).values(destValues).returning({
-            id: channelConnectors.id,
-            metaDataId: channelConnectors.metaDataId,
+        if (updatedRows.length === 0) {
+          throw new ServiceError('CONFLICT', 'Channel has been modified by another user', {
+            providedRevision: input.revision,
           });
-          for (const d of insertedDests) {
-            destIdByMetaDataId.set(d.metaDataId, d.id);
+        }
+
+        // Update scripts if provided
+        if (input.scripts) {
+          for (const [key, value] of Object.entries(input.scripts)) {
+            if (value !== undefined) {
+              const scriptType = key.toUpperCase();
+              await tx
+                .update(channelScripts)
+                .set({ script: value ?? '' })
+                .where(and(eq(channelScripts.channelId, id), eq(channelScripts.scriptType, scriptType)));
+            }
           }
         }
-      }
 
-      // Sync metadata columns if provided (delete-and-reinsert)
-      if (input.metadataColumns) {
-        await db.delete(channelMetadataColumns).where(eq(channelMetadataColumns.channelId, id));
+        // Sync destinations if provided (delete-and-reinsert)
+        if (input.destinations) {
+          await tx.delete(channelConnectors).where(eq(channelConnectors.channelId, id));
 
-        if (input.metadataColumns.length > 0) {
-          const metaValues = input.metadataColumns.map((col) => ({
-            channelId: id,
-            name: col.name,
-            dataType: col.dataType,
-            mappingExpression: col.mappingExpression,
-          }));
-          await db.insert(channelMetadataColumns).values(metaValues);
-        }
-      }
-
-      // Sync filters if provided (delete-and-reinsert, cascade deletes rules)
-      if (input.filters) {
-        await db.delete(channelFilters).where(eq(channelFilters.channelId, id));
-
-        for (const filter of input.filters) {
-          // Resolve connectorId: use metaDataId to look up newly-inserted destination ID
-          let resolvedConnectorId: string | null = filter.connectorId ?? null;
-          if (resolvedConnectorId === null && filter.metaDataId !== undefined && filter.metaDataId !== null) {
-            resolvedConnectorId = destIdByMetaDataId.get(filter.metaDataId) ?? null;
-          }
-
-          const [inserted] = await db
-            .insert(channelFilters)
-            .values({ channelId: id, connectorId: resolvedConnectorId })
-            .returning({ id: channelFilters.id });
-
-          if (inserted && filter.rules.length > 0) {
-            const ruleValues = filter.rules.map((rule, idx) => ({
-              filterId: inserted.id,
-              sequenceNumber: idx,
-              enabled: rule.enabled,
-              name: rule.name ?? null,
-              operator: rule.operator,
-              type: rule.type,
-              script: rule.script ?? null,
-              field: rule.field ?? null,
-              condition: rule.condition ?? null,
-              values: rule.values ?? null,
-            }));
-            await db.insert(filterRules).values(ruleValues);
-          }
-        }
-      }
-
-      // Sync transformers if provided (delete-and-reinsert, cascade deletes steps)
-      if (input.transformers) {
-        await db.delete(channelTransformers).where(eq(channelTransformers.channelId, id));
-
-        for (const transformer of input.transformers) {
-          // Resolve connectorId: use metaDataId to look up newly-inserted destination ID
-          let resolvedConnectorId: string | null = transformer.connectorId ?? null;
-          if (resolvedConnectorId === null && transformer.metaDataId !== undefined && transformer.metaDataId !== null) {
-            resolvedConnectorId = destIdByMetaDataId.get(transformer.metaDataId) ?? null;
-          }
-
-          const [inserted] = await db
-            .insert(channelTransformers)
-            .values({
+          if (input.destinations.length > 0) {
+            const destValues = input.destinations.map((dest, index) => ({
               channelId: id,
-              connectorId: resolvedConnectorId,
-              inboundDataType: transformer.inboundDataType,
-              outboundDataType: transformer.outboundDataType,
-              inboundProperties: transformer.inboundProperties,
-              outboundProperties: transformer.outboundProperties,
-              inboundTemplate: transformer.inboundTemplate ?? null,
-              outboundTemplate: transformer.outboundTemplate ?? null,
-            })
-            .returning({ id: channelTransformers.id });
-
-          if (inserted && transformer.steps.length > 0) {
-            const stepValues = transformer.steps.map((step, idx) => ({
-              transformerId: inserted.id,
-              sequenceNumber: idx,
-              enabled: step.enabled,
-              name: step.name ?? null,
-              type: step.type,
-              script: step.script ?? null,
-              sourceField: step.sourceField ?? null,
-              targetField: step.targetField ?? null,
-              defaultValue: step.defaultValue ?? null,
-              mapping: step.mapping ?? null,
+              metaDataId: index + 1,
+              name: dest.name,
+              enabled: dest.enabled,
+              connectorType: dest.connectorType,
+              properties: dest.properties,
+              queueMode: dest.queueMode,
+              retryCount: dest.retryCount,
+              retryIntervalMs: dest.retryIntervalMs,
+              rotateQueue: dest.rotateQueue,
+              queueThreadCount: dest.queueThreadCount,
+              waitForPrevious: dest.waitForPrevious,
             }));
-            await db.insert(transformerSteps).values(stepValues);
+            const insertedDests = await tx.insert(channelConnectors).values(destValues).returning({
+              id: channelConnectors.id,
+              metaDataId: channelConnectors.metaDataId,
+            });
+            for (const d of insertedDests) {
+              destIdByMetaDataId.set(d.metaDataId, d.id);
+            }
           }
         }
-      }
+
+        // Sync metadata columns if provided (delete-and-reinsert)
+        if (input.metadataColumns) {
+          await tx.delete(channelMetadataColumns).where(eq(channelMetadataColumns.channelId, id));
+
+          if (input.metadataColumns.length > 0) {
+            const metaValues = input.metadataColumns.map((col) => ({
+              channelId: id,
+              name: col.name,
+              dataType: col.dataType,
+              mappingExpression: col.mappingExpression,
+            }));
+            await tx.insert(channelMetadataColumns).values(metaValues);
+          }
+        }
+
+        // Sync filters if provided (delete-and-reinsert, cascade deletes rules)
+        if (input.filters) {
+          await tx.delete(channelFilters).where(eq(channelFilters.channelId, id));
+
+          for (const filter of input.filters) {
+            let resolvedConnectorId: string | null = filter.connectorId ?? null;
+            if (resolvedConnectorId === null && filter.metaDataId !== undefined && filter.metaDataId !== null) {
+              resolvedConnectorId = destIdByMetaDataId.get(filter.metaDataId) ?? null;
+            }
+
+            const [inserted] = await tx
+              .insert(channelFilters)
+              .values({ channelId: id, connectorId: resolvedConnectorId })
+              .returning({ id: channelFilters.id });
+
+            if (inserted && filter.rules.length > 0) {
+              const ruleValues = filter.rules.map((rule, idx) => ({
+                filterId: inserted.id,
+                sequenceNumber: idx,
+                enabled: rule.enabled,
+                name: rule.name ?? null,
+                operator: rule.operator,
+                type: rule.type,
+                script: rule.script ?? null,
+                field: rule.field ?? null,
+                condition: rule.condition ?? null,
+                values: rule.values ?? null,
+              }));
+              await tx.insert(filterRules).values(ruleValues);
+            }
+          }
+        }
+
+        // Sync transformers if provided (delete-and-reinsert, cascade deletes steps)
+        if (input.transformers) {
+          await tx.delete(channelTransformers).where(eq(channelTransformers.channelId, id));
+
+          for (const transformer of input.transformers) {
+            let resolvedConnectorId: string | null = transformer.connectorId ?? null;
+            if (resolvedConnectorId === null && transformer.metaDataId !== undefined && transformer.metaDataId !== null) {
+              resolvedConnectorId = destIdByMetaDataId.get(transformer.metaDataId) ?? null;
+            }
+
+            const [inserted] = await tx
+              .insert(channelTransformers)
+              .values({
+                channelId: id,
+                connectorId: resolvedConnectorId,
+                inboundDataType: transformer.inboundDataType,
+                outboundDataType: transformer.outboundDataType,
+                inboundProperties: transformer.inboundProperties,
+                outboundProperties: transformer.outboundProperties,
+                inboundTemplate: transformer.inboundTemplate ?? null,
+                outboundTemplate: transformer.outboundTemplate ?? null,
+              })
+              .returning({ id: channelTransformers.id });
+
+            if (inserted && transformer.steps.length > 0) {
+              const stepValues = transformer.steps.map((step, idx) => ({
+                transformerId: inserted.id,
+                sequenceNumber: idx,
+                enabled: step.enabled,
+                name: step.name ?? null,
+                type: step.type,
+                script: step.script ?? null,
+                sourceField: step.sourceField ?? null,
+                targetField: step.targetField ?? null,
+                defaultValue: step.defaultValue ?? null,
+                mapping: step.mapping ?? null,
+              }));
+              await tx.insert(transformerSteps).values(stepValues);
+            }
+          }
+        }
+      });
 
       const channel = await findChannel(id);
       const relations = await fetchChannelRelations(id);

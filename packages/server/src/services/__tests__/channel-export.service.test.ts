@@ -12,11 +12,17 @@ vi.mock('../channel.service.js', () => ({
   },
 }));
 
+vi.mock('../../lib/event-emitter.js', () => ({
+  emitEvent: vi.fn(),
+}));
+
 import { ChannelExportService } from '../channel-export.service.js';
 import { ChannelService } from '../channel.service.js';
+import { emitEvent } from '../../lib/event-emitter.js';
 
 const mockGetById = vi.mocked(ChannelService.getById);
 const mockList = vi.mocked(ChannelService.list);
+const mockEmitEvent = vi.mocked(emitEvent);
 
 // ----- Helpers -----
 
@@ -86,6 +92,34 @@ describe('ChannelExportService.exportChannel', () => {
       expect(result.value.channels[0]?.name).toBe('Test Channel');
       expect(result.value.exportedAt).toBeDefined();
     }
+  });
+
+  it('redacts secret connector properties and audits the export (finding 5c)', async () => {
+    const detail = makeChannelDetail({
+      sourceConnectorProperties: { host: 'lab', port: 6661, password: 'src-secret' },
+      destinations: [
+        {
+          id: 'd1', metaDataId: 1, name: 'DB Dest', enabled: true,
+          connectorType: 'DATABASE', properties: { host: 'db', user: 'svc', password: 'dest-secret' },
+          queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 10000,
+          rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+        },
+      ],
+    });
+    mockGetById.mockResolvedValue({ ok: true, value: detail as never, error: null });
+
+    const result = await ChannelExportService.exportChannel('ch-001', { userId: 'u1', ipAddress: '10.0.0.9' });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const json = JSON.stringify(result.value);
+    expect(json).not.toContain('src-secret');
+    expect(json).not.toContain('dest-secret');
+    expect(result.value.channels[0]?.sourceConnectorProperties['password']).toBe('__REDACTED__');
+    expect(result.value.channels[0]?.destinations[0]?.properties['password']).toBe('__REDACTED__');
+    // Non-secret values preserved.
+    expect(result.value.channels[0]?.destinations[0]?.properties['user']).toBe('svc');
+    expect(mockEmitEvent).toHaveBeenCalledWith(expect.objectContaining({ name: 'CHANNEL_EXPORTED' }));
   });
 
   it('includes scripts in export', async () => {

@@ -16,9 +16,9 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   // Don't leak error details in production
   const message = config.NODE_ENV === 'production' ? 'Internal server error' : error.message;
 
-  res.status(500).json({ success: false, error: message });
+  res.status(500).json({ success: false, error: { code: 'INTERNAL', message } });
 }
 
 export function notFoundHandler(req: Request, res: Response): void {
-  res.status(404).json({ success: false, error: `Route ${req.method} ${req.path} not found` });
+  res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: `Route ${req.method} ${req.path} not found` } });
 }

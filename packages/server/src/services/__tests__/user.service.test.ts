@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import bcrypt from 'bcryptjs';
 
 // ----- Mock DB -----
 
@@ -53,10 +54,18 @@ const mockInsertReturning = vi.fn();
 const mockInsertValues = vi.fn().mockReturnValue({ returning: mockInsertReturning });
 const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 
+const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
+const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
+
+// A transaction just runs its callback against the same mockDb.
+const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb));
+
 const mockDb = {
   select: mockSelect,
   insert: mockInsert,
   update: mockUpdate,
+  delete: mockDelete,
+  transaction: mockTransaction,
 };
 
 vi.mock('../../lib/db.js', () => ({
@@ -66,12 +75,15 @@ vi.mock('../../lib/db.js', () => ({
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
+  ne: vi.fn((_col: unknown, val: unknown) => ({ type: 'ne', val })),
+  and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
 }));
 
 vi.mock('bcryptjs', () => ({
   default: {
     hash: vi.fn().mockResolvedValue('$2a$12$hashed'),
+    compare: vi.fn().mockResolvedValue(true),
   },
 }));
 
@@ -324,6 +336,120 @@ describe('UserService', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+    });
+  });
+
+  // ----- RBAC: role → permission assignment (finding 1) -----
+  describe('role permission assignment', () => {
+    function permissionCalls(): unknown[][] {
+      // Calls to insert().values() whose argument is an array of permission rows.
+      return mockInsertValues.mock.calls.filter(
+        (c) => Array.isArray(c[0]) && (c[0] as unknown[]).length > 0 &&
+          typeof (c[0] as Record<string, unknown>[])[0]?.['resource'] === 'string',
+      );
+    }
+
+    it('grants the role permission set when creating a user', async () => {
+      pushResponse([]); // username
+      pushResponse([]); // email
+      mockInsertReturning.mockResolvedValueOnce([makeUser({ id: USER_ID, role: 'developer' })]);
+
+      const result = await UserService.createUser({
+        username: 'dev', email: 'dev@test.com', password: 'password123', role: 'developer',
+      });
+
+      expect(result.ok).toBe(true);
+      const permCall = permissionCalls()[0];
+      expect(permCall).toBeDefined();
+      const rows = permCall![0] as Record<string, unknown>[];
+      expect(rows).toContainEqual({ userId: USER_ID, resource: 'channels', action: 'write', scope: 'all' });
+      expect(rows).not.toContainEqual(expect.objectContaining({ resource: 'users', action: 'write' }));
+    });
+
+    it('re-syncs permissions and clears sessions cache path when role changes', async () => {
+      pushResponse([{ id: USER_ID, role: 'developer' }]); // existing
+      pushResponse([makeUser({ role: 'viewer' })]);        // getUser after update
+
+      const result = await UserService.updateUser(USER_ID, { role: 'viewer' }, ADMIN_ID);
+
+      expect(result.ok).toBe(true);
+      // Old permissions deleted then viewer set re-inserted.
+      expect(mockDelete).toHaveBeenCalled();
+      const permCall = permissionCalls()[0];
+      expect(permCall).toBeDefined();
+      const rows = permCall![0] as Record<string, unknown>[];
+      expect(rows).toContainEqual({ userId: USER_ID, resource: 'channels', action: 'read', scope: 'all' });
+      expect(rows).not.toContainEqual(expect.objectContaining({ resource: 'channels', action: 'write' }));
+    });
+  });
+
+  // ----- Session revocation on disable (finding 10) -----
+  describe('session revocation', () => {
+    it('revokes sessions when a user is disabled via update', async () => {
+      pushResponse([{ id: USER_ID, role: 'developer' }]);
+      pushResponse([makeUser({ enabled: false })]);
+
+      const result = await UserService.updateUser(USER_ID, { enabled: false }, ADMIN_ID);
+
+      expect(result.ok).toBe(true);
+      expect(mockDelete).toHaveBeenCalled();
+    });
+
+    it('revokes sessions when a user is soft-deleted', async () => {
+      pushResponse([{ id: USER_ID, role: 'developer' }]);
+
+      const result = await UserService.deleteUser(USER_ID, ADMIN_ID);
+
+      expect(result.ok).toBe(true);
+      expect(mockDelete).toHaveBeenCalled();
+    });
+  });
+
+  // ----- Self password change (finding 8) -----
+  describe('changeOwnPassword', () => {
+    it('verifies the current password, updates, and clears other sessions', async () => {
+      vi.mocked(bcrypt.compare).mockResolvedValueOnce(true as unknown as never);
+      pushResponse([{ id: USER_ID, passwordHash: '$2a$12$existing' }]);
+
+      const result = await UserService.changeOwnPassword(USER_ID, 'oldPass123', 'newPass123', 'session-1');
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdate).toHaveBeenCalled();
+      expect(mockDelete).toHaveBeenCalled(); // other sessions removed
+    });
+
+    it('rejects when the current password is wrong', async () => {
+      vi.mocked(bcrypt.compare).mockResolvedValueOnce(false as unknown as never);
+      pushResponse([{ id: USER_ID, passwordHash: '$2a$12$existing' }]);
+
+      const result = await UserService.changeOwnPassword(USER_ID, 'wrong', 'newPass123', 'session-1');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'INVALID_CREDENTIALS');
+    });
+
+    it('returns NOT_FOUND when the user does not exist', async () => {
+      pushResponse([]);
+
+      const result = await UserService.changeOwnPassword('nope', 'x', 'newPass123', 'session-1');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+    });
+  });
+
+  describe('getPermissions', () => {
+    it('returns the effective permission names for a role', async () => {
+      pushResponse([{ role: 'viewer' }]);
+
+      const result = await UserService.getPermissions(USER_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.role).toBe('viewer');
+      expect(result.value.permissions).toContain('channels:read');
     });
   });
 

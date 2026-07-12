@@ -66,7 +66,7 @@ export const defaultSettings: readonly NewSystemSetting[] = [
   {
     key: 'smtp.auth_pass',
     value: '',
-    type: 'string',
+    type: 'password',
     category: 'smtp',
     description: 'SMTP authentication password',
   },

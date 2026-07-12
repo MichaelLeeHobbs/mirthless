@@ -7,6 +7,8 @@
 // Returns Result<ConnectionTestResult> — never throws.
 
 import * as net from 'node:net';
+import * as dns from 'node:dns/promises';
+import { type LookupAddress } from 'node:dns';
 import * as fs from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
@@ -90,9 +92,51 @@ const BLOCKED_IP_PATTERNS = [
   /^localhost$/i,
 ] as const;
 
-/** Check if a hostname resolves to a private/reserved IP range. */
+/** Check if a literal hostname string matches a blocked pattern (e.g. localhost). */
 function isBlockedHost(hostname: string): boolean {
   return BLOCKED_IP_PATTERNS.some((pattern) => pattern.test(hostname));
+}
+
+/** Check if a resolved IP address falls in a private/reserved range. */
+function isBlockedIp(ip: string): boolean {
+  // Strip IPv4-mapped IPv6 prefix so ::ffff:127.0.0.1 is checked as 127.0.0.1.
+  const normalized = ip.startsWith('::ffff:') ? ip.slice('::ffff:'.length) : ip;
+  return BLOCKED_IP_PATTERNS.some((pattern) => pattern.test(normalized) || pattern.test(ip));
+}
+
+/**
+ * Full SSRF guard: reject literal private hostnames, literal private IPs, and —
+ * critically — DNS names (or decimal/hex encodings) that RESOLVE to a private IP.
+ * Unresolvable hosts are allowed through; the connection attempt itself will fail
+ * loudly, which is not an SSRF exposure.
+ */
+async function assertHostAllowed(hostname: string): Promise<void> {
+  if (isBlockedHost(hostname)) {
+    throw new ServiceError('INVALID_INPUT', `Connection to ${hostname} is blocked (private/reserved address)`);
+  }
+
+  if (net.isIP(hostname) !== 0) {
+    if (isBlockedIp(hostname)) {
+      throw new ServiceError('INVALID_INPUT', `Connection to ${hostname} is blocked (private/reserved address)`);
+    }
+    return;
+  }
+
+  let addresses: readonly LookupAddress[];
+  try {
+    addresses = await dns.lookup(hostname, { all: true });
+  } catch {
+    return;
+  }
+
+  for (const addr of addresses) {
+    if (isBlockedIp(addr.address)) {
+      throw new ServiceError(
+        'INVALID_INPUT',
+        `Connection to ${hostname} is blocked (resolves to private/reserved address ${addr.address})`,
+      );
+    }
+  }
 }
 
 // ----- Types -----
@@ -132,21 +176,11 @@ function requireNumber(props: Readonly<Record<string, unknown>>, key: string): n
   return val;
 }
 
-/** Validate hostname is not a blocked (SSRF) address. */
-function assertNotBlocked(hostname: string): void {
-  if (isBlockedHost(hostname)) {
-    throw new ServiceError(
-      'INVALID_INPUT',
-      `Connection to ${hostname} is blocked (private/reserved address)`,
-    );
-  }
-}
-
 // ----- Individual Testers -----
 
 /** Test TCP connectivity to host:port (used for TCP_MLLP and DICOM). */
 async function testTcpConnect(host: string, port: number): Promise<ConnectionTestResult> {
-  assertNotBlocked(host);
+  await assertHostAllowed(host);
   const start = performance.now();
 
   return new Promise<ConnectionTestResult>((resolve) => {
@@ -181,7 +215,7 @@ const testTcpMllp: Tester = async (_mode, props) => {
 const testHttp: Tester = async (_mode, props) => {
   const url = requireString(props, 'url');
   const parsed = new URL(url);
-  assertNotBlocked(parsed.hostname);
+  await assertHostAllowed(parsed.hostname);
 
   const start = performance.now();
   const controller = new AbortController();
@@ -190,6 +224,7 @@ const testHttp: Tester = async (_mode, props) => {
   try {
     const response = await fetch(url, {
       method: 'HEAD',
+      redirect: 'error',
       signal: controller.signal,
     });
     const latency = performance.now() - start;
@@ -227,7 +262,7 @@ const testDatabase: Tester = async (_mode, props) => {
   const host = requireString(props, 'host');
   const port = requireNumber(props, 'port');
   const database = requireString(props, 'database');
-  assertNotBlocked(host);
+  await assertHostAllowed(host);
 
   const start = performance.now();
 
@@ -257,7 +292,7 @@ const testDatabase: Tester = async (_mode, props) => {
 const testSmtp: Tester = async (_mode, props) => {
   const host = requireString(props, 'host');
   const port = requireNumber(props, 'port');
-  assertNotBlocked(host);
+  await assertHostAllowed(host);
 
   const start = performance.now();
 
@@ -288,7 +323,7 @@ const testSmtp: Tester = async (_mode, props) => {
 const testFhir: Tester = async (_mode, props) => {
   const baseUrl = requireString(props, 'baseUrl');
   const parsed = new URL(baseUrl);
-  assertNotBlocked(parsed.hostname);
+  await assertHostAllowed(parsed.hostname);
 
   const metadataUrl = baseUrl.replace(/\/+$/, '') + '/metadata';
   const start = performance.now();
@@ -299,6 +334,7 @@ const testFhir: Tester = async (_mode, props) => {
     const response = await fetch(metadataUrl, {
       method: 'GET',
       headers: { Accept: 'application/fhir+json' },
+      redirect: 'error',
       signal: controller.signal,
     });
     const latency = performance.now() - start;
@@ -402,5 +438,7 @@ export class ConnectionTestService {
 /** Exported for testing only — not part of the public API. */
 export const _testing = {
   isBlockedHost,
+  isBlockedIp,
+  assertHostAllowed,
   TEST_TIMEOUT_MS,
 } as const;

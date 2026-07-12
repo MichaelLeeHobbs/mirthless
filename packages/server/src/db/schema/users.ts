@@ -14,6 +14,7 @@ export const users = pgTable('users', {
   description: text('description'),
   role: varchar('role', { length: 50 }).notNull().default('viewer'),
   enabled: boolean('enabled').notNull().default(true),
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   failedLoginAttempts: integer('failed_login_attempts').notNull().default(0),
   lockedUntil: timestamp('locked_until', { withTimezone: true }),

@@ -12,6 +12,8 @@ export const SETTING_TYPE = {
   NUMBER: 'number',
   BOOLEAN: 'boolean',
   JSON: 'json',
+  /** Secret value — masked in GET responses, only writable. */
+  PASSWORD: 'password',
 } as const;
 
 export type SettingType = (typeof SETTING_TYPE)[keyof typeof SETTING_TYPE];
@@ -22,7 +24,7 @@ export type SettingType = (typeof SETTING_TYPE)[keyof typeof SETTING_TYPE];
 export const upsertSettingSchema = z.object({
   key: z.string().min(1).max(255),
   value: z.string().nullable().default(null),
-  type: z.enum(['string', 'number', 'boolean', 'json']).default('string'),
+  type: z.enum(['string', 'number', 'boolean', 'json', 'password']).default('string'),
   description: z.string().nullable().default(null),
   category: z.string().max(100).default('general'),
 });

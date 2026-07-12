@@ -51,7 +51,7 @@ export async function authenticate(
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, error: 'Unauthorized' });
+    res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
     return;
   }
 
@@ -73,12 +73,12 @@ export async function authenticate(
       .where(eq(users.id, payload.userId));
 
     if (!user) {
-      res.status(401).json({ success: false, error: 'User not found' });
+      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'User not found' } });
       return;
     }
 
     if (!user.enabled) {
-      res.status(403).json({ success: false, error: 'Account is deactivated' });
+      res.status(403).json({ success: false, error: { code: 'ACCOUNT_DEACTIVATED', message: 'Account is deactivated' } });
       return;
     }
 
@@ -99,7 +99,7 @@ export async function authenticate(
     next();
   } catch (error) {
     logger.debug({ errMsg: error instanceof Error ? error.message : String(error) }, 'Token verification failed');
-    res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token' } });
   }
 }
 
