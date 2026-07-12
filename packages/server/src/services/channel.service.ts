@@ -67,6 +67,7 @@ export interface ChannelDestination {
   readonly rotateQueue: boolean;
   readonly queueThreadCount: number;
   readonly waitForPrevious: boolean;
+  readonly responseTransformer: string | null;
 }
 
 export interface ChannelMetadataCol {
@@ -211,6 +212,7 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
         rotateQueue: channelConnectors.rotateQueue,
         queueThreadCount: channelConnectors.queueThreadCount,
         waitForPrevious: channelConnectors.waitForPrevious,
+        responseTransformer: channelConnectors.responseTransformer,
       })
       .from(channelConnectors)
       .where(eq(channelConnectors.channelId, id))
@@ -407,6 +409,7 @@ function buildCloneDestinations(source: ChannelDetail): CreateChannelInput['dest
     rotateQueue: d.rotateQueue,
     queueThreadCount: d.queueThreadCount,
     waitForPrevious: d.waitForPrevious,
+    responseTransformer: d.responseTransformer,
   }));
 }
 
@@ -577,6 +580,7 @@ export class ChannelService {
             rotateQueue: dest.rotateQueue,
             queueThreadCount: dest.queueThreadCount,
             waitForPrevious: dest.waitForPrevious,
+            responseTransformer: dest.responseTransformer ?? null,
           }));
           await tx.insert(channelConnectors).values(destValues);
         }
@@ -738,6 +742,7 @@ export class ChannelService {
               rotateQueue: dest.rotateQueue,
               queueThreadCount: dest.queueThreadCount,
               waitForPrevious: dest.waitForPrevious,
+              responseTransformer: dest.responseTransformer ?? null,
             }));
             const insertedDests = await tx.insert(channelConnectors).values(destValues).returning({
               id: channelConnectors.id,

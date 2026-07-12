@@ -23,6 +23,8 @@ import { FhirDispatcher, FHIR_AUTH_TYPE } from './fhir/fhir-dispatcher.js';
 import { DicomReceiver } from './dicom/dicom-receiver.js';
 import { DicomDispatcher } from './dicom/dicom-dispatcher.js';
 import { EmailReceiver, EMAIL_POST_ACTION, type EmailPostAction, type EmailProtocol } from './email/email-receiver.js';
+import { SftpReceiver, SFTP_POST_ACTION, type SftpPostAction } from './sftp/sftp-receiver.js';
+import { SftpDispatcher } from './sftp/sftp-dispatcher.js';
 
 // ----- Source Factories -----
 
@@ -105,6 +107,22 @@ const sourceFactories = new Map<string, SourceFactory>([
     moveToFolder: (props['moveToFolder'] as string | undefined) ?? '',
     subjectFilter: (props['subjectFilter'] as string | undefined) ?? '',
     includeAttachments: (props['includeAttachments'] as boolean | undefined) ?? false,
+  })],
+  ['SFTP', (props): SourceConnectorRuntime => new SftpReceiver({
+    host: props['host'] as string,
+    port: (props['port'] as number | undefined) ?? 22,
+    username: props['username'] as string,
+    password: props['password'] as string | undefined,
+    privateKey: props['privateKey'] as string | undefined,
+    passphrase: props['passphrase'] as string | undefined,
+    remoteDirectory: props['remoteDirectory'] as string,
+    filePattern: (props['filePattern'] as string | undefined) ?? '*',
+    pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 5_000,
+    afterProcessing: (props['afterProcessing'] as SftpPostAction | undefined) ?? SFTP_POST_ACTION.DELETE,
+    moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
+    minFileAgeMs: (props['minFileAgeMs'] as number | undefined) ?? 1_000,
+    strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? false,
+    hostKey: props['hostKey'] as string | undefined,
   })],
 ]);
 
@@ -198,6 +216,19 @@ const destinationFactories = new Map<string, DestinationFactory>([
     maxRetries: (props['maxRetries'] as number | undefined) ?? 3,
     retryDelayMs: (props['retryDelayMs'] as number | undefined) ?? 1_000,
     timeoutMs: (props['timeoutMs'] as number | undefined) ?? 30_000,
+  })],
+  ['SFTP', (props): DestinationConnectorRuntime => new SftpDispatcher({
+    host: props['host'] as string,
+    port: (props['port'] as number | undefined) ?? 22,
+    username: props['username'] as string,
+    password: props['password'] as string | undefined,
+    privateKey: props['privateKey'] as string | undefined,
+    passphrase: props['passphrase'] as string | undefined,
+    remoteDirectory: props['remoteDirectory'] as string,
+    fileNameTemplate: (props['fileNameTemplate'] as string | undefined) ?? '${messageId}.dat',
+    appendMode: (props['appendMode'] as boolean | undefined) ?? false,
+    strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? false,
+    hostKey: props['hostKey'] as string | undefined,
   })],
 ]);
 

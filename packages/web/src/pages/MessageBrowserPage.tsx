@@ -5,15 +5,19 @@
 // Master-detail: paginated table top, detail panel bottom.
 // WebSocket events refresh the message list in real time.
 
-import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import CircularProgress from '@mui/material/CircularProgress';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DownloadIcon from '@mui/icons-material/Download';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChannel } from '../hooks/use-channels.js';
 import { useMessageSearch, type MessageSearchParams } from '../hooks/use-messages.js';
@@ -21,7 +25,9 @@ import { useSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
 import { MessageSearchBar } from '../components/messages/MessageSearchBar.js';
 import { MessageTable } from '../components/messages/MessageTable.js';
 import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
+import { BulkMessageActionsToolbar } from '../components/messages/BulkMessageActionsToolbar.js';
 import { useReprocessMessage, useBulkDeleteMessages } from '../hooks/use-message-actions.js';
+import { useMessageExport, type ExportFormat } from '../hooks/use-message-export.js';
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { LoadingBlock } from '../components/common/states/LoadingState.js';
@@ -34,28 +40,36 @@ export function MessageBrowserPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParamsUrl] = useSearchParams();
   const channelId = id ?? '';
 
   const { data: channel } = useChannel(channelId.length > 0 ? channelId : null);
 
+  // Pre-filter by status from the URL (e.g. dashboard error drill-through).
+  const initialStatus = searchParamsUrl.get('status');
+
   // Search state
   const [receivedFrom, setReceivedFrom] = useState('');
   const [receivedTo, setReceivedTo] = useState('');
-  const [statuses, setStatuses] = useState<readonly string[]>([]);
+  const [statuses, setStatuses] = useState<readonly string[]>(initialStatus ? [initialStatus] : []);
   const [metaDataId, setMetaDataId] = useState('');
+  const [messageIdSearch, setMessageIdSearch] = useState('');
   const [contentSearch, setContentSearch] = useState('');
   const [debouncedContentSearch, setDebouncedContentSearch] = useState('');
   const [limit, setLimit] = useState(25);
   const [offset, setOffset] = useState(0);
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
+  const [checkedIds, setCheckedIds] = useState<ReadonlySet<number>>(new Set());
   const [confirmReprocessOpen, setConfirmReprocessOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null);
   const { notify } = useNotification();
   const { has } = usePermissions();
   const canReprocess = has(PERMISSION.CHANNELS_DEPLOY);
   const canDelete = has(PERMISSION.CHANNELS_DELETE);
   const reprocessMutation = useReprocessMessage();
   const bulkDeleteMutation = useBulkDeleteMessages();
+  const { exportMessages, isExporting } = useMessageExport();
 
   const handleReprocessConfirm = useCallback((): void => {
     if (selectedMessageId === null) return;
@@ -106,6 +120,7 @@ export function MessageBrowserPage(): ReactNode {
     ...(receivedFrom.length > 0 ? { receivedFrom: new Date(receivedFrom).toISOString() } : {}),
     ...(receivedTo.length > 0 ? { receivedTo: new Date(receivedTo).toISOString() } : {}),
     ...(metaDataId.length > 0 ? { metaDataId: Number(metaDataId) } : {}),
+    ...(messageIdSearch.length > 0 ? { messageId: Number(messageIdSearch) } : {}),
     ...(debouncedContentSearch.length > 0 ? { contentSearch: debouncedContentSearch } : {}),
     limit,
     offset,
@@ -130,10 +145,49 @@ export function MessageBrowserPage(): ReactNode {
     setSelectedMessageId((prev) => (prev === messageId ? null : messageId));
   }, []);
 
-  // Reset pagination when filters change
+  const items = useMemo(() => searchResult?.items ?? [], [searchResult]);
+
+  const handleToggleChecked = useCallback((messageId: number) => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  }, []);
+
+  const handleToggleCheckedAll = useCallback(() => {
+    setCheckedIds((prev) => {
+      const allChecked = items.length > 0 && items.every((m) => prev.has(m.messageId));
+      if (allChecked) return new Set();
+      return new Set(items.map((m) => m.messageId));
+    });
+  }, [items]);
+
+  const clearChecked = useCallback(() => { setCheckedIds(new Set()); }, []);
+
+  const handleExport = useCallback((format: ExportFormat) => {
+    setExportAnchor(null);
+    void exportMessages({
+      channelId,
+      channelName: channel?.name ?? 'channel',
+      format,
+      filters: {
+        ...(statuses.length > 0 ? { status: statuses } : {}),
+        ...(receivedFrom.length > 0 ? { receivedFrom: new Date(receivedFrom).toISOString() } : {}),
+        ...(receivedTo.length > 0 ? { receivedTo: new Date(receivedTo).toISOString() } : {}),
+        ...(metaDataId.length > 0 ? { metaDataId: Number(metaDataId) } : {}),
+        ...(messageIdSearch.length > 0 ? { messageId: Number(messageIdSearch) } : {}),
+        ...(debouncedContentSearch.length > 0 ? { contentSearch: debouncedContentSearch } : {}),
+      },
+    }).catch(() => { notify('Failed to export messages', 'error'); });
+  }, [exportMessages, channelId, channel?.name, statuses, receivedFrom, receivedTo, metaDataId, messageIdSearch, debouncedContentSearch, notify]);
+
+  // Reset pagination and clear bulk selection when filters change
   useEffect(() => {
     setOffset(0);
-  }, [statuses, receivedFrom, receivedTo, metaDataId, debouncedContentSearch]);
+    setCheckedIds(new Set());
+  }, [statuses, receivedFrom, receivedTo, metaDataId, messageIdSearch, debouncedContentSearch]);
 
   return (
     <Box>
@@ -153,6 +207,23 @@ export function MessageBrowserPage(): ReactNode {
         <Typography variant="h5" component="h1" sx={{ fontWeight: 600, flexGrow: 1 }}>
           Messages: {channel?.name ?? 'Loading...'}
         </Typography>
+        <Button
+          size="small"
+          startIcon={isExporting ? <CircularProgress size={16} /> : <DownloadIcon />}
+          disabled={isExporting}
+          aria-haspopup="menu"
+          onClick={(e) => { setExportAnchor(e.currentTarget); }}
+        >
+          Export
+        </Button>
+        <Menu
+          open={exportAnchor !== null}
+          anchorEl={exportAnchor}
+          onClose={() => { setExportAnchor(null); }}
+        >
+          <MenuItem onClick={() => { handleExport('csv'); }}>Export as CSV</MenuItem>
+          <MenuItem onClick={() => { handleExport('json'); }}>Export as JSON</MenuItem>
+        </Menu>
         {selectedMessageId !== null ? (
           <>
             <Tooltip title={canReprocess ? '' : 'Requires channels:deploy permission'}>
@@ -189,11 +260,13 @@ export function MessageBrowserPage(): ReactNode {
         receivedTo={receivedTo}
         statuses={statuses}
         metaDataId={metaDataId}
+        messageId={messageIdSearch}
         contentSearch={contentSearch}
         onReceivedFromChange={setReceivedFrom}
         onReceivedToChange={setReceivedTo}
         onStatusesChange={setStatuses}
         onMetaDataIdChange={setMetaDataId}
+        onMessageIdChange={setMessageIdSearch}
         onContentSearchChange={setContentSearch}
       />
 
@@ -218,12 +291,21 @@ export function MessageBrowserPage(): ReactNode {
           onSelect={handleSelect}
           onPageChange={handlePageChange}
           onLimitChange={handleLimitChange}
+          checkedIds={checkedIds}
+          onToggleChecked={handleToggleChecked}
+          onToggleCheckedAll={handleToggleCheckedAll}
         />
       )}
 
       {selectedMessageId !== null && (
         <MessageDetailPanel channelId={channelId} messageId={selectedMessageId} />
       )}
+
+      <BulkMessageActionsToolbar
+        channelId={channelId}
+        selectedIds={checkedIds}
+        onClear={clearChecked}
+      />
 
       <ConfirmDialog
         open={confirmReprocessOpen}

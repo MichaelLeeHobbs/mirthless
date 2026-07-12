@@ -50,6 +50,20 @@
       "when": 1783886195326,
       "tag": "0006_fair_quasar",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784000000000,
+      "tag": "0007_partition_message_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784000100000,
+      "tag": "0008_add_response_transformer",
+      "breakpoints": true
     }
   ]
 }

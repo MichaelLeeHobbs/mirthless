@@ -215,6 +215,7 @@ export function ChannelEditorPage(): ReactNode {
                 })),
               }
             : createDefaultTransformer(),
+          responseTransformer: d.responseTransformer ?? '',
         };
       }));
 
@@ -355,6 +356,9 @@ export function ChannelEditorPage(): ReactNode {
     rotateQueue: boolean;
     queueThreadCount: number;
     waitForPrevious: boolean;
+    // Per-destination response transformer (CT_RESPONSE_TRANSFORMED). Sent as a
+    // single script; null when empty. Round-trips via the destination object.
+    responseTransformer: string | null;
   }> => {
     return destinations.map((d) => ({
       name: d.name,
@@ -367,6 +371,7 @@ export function ChannelEditorPage(): ReactNode {
       rotateQueue: d.rotateQueue,
       queueThreadCount: d.queueThreadCount,
       waitForPrevious: d.waitForPrevious,
+      responseTransformer: d.responseTransformer.trim() ? d.responseTransformer : null,
     }));
   };
 

@@ -2,7 +2,7 @@
 // Channel Connectors Table Schema (Destinations)
 // ===========================================
 
-import { pgTable, uuid, varchar, timestamp, boolean, integer, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, boolean, integer, jsonb, text, uniqueIndex } from 'drizzle-orm/pg-core';
 import { channels } from './channels.js';
 
 export const channelConnectors = pgTable('channel_connectors', {
@@ -15,6 +15,10 @@ export const channelConnectors = pgTable('channel_connectors', {
   enabled: boolean('enabled').notNull().default(true),
   connectorType: varchar('connector_type', { length: 50 }).notNull(),
   properties: jsonb('properties').notNull().$type<Record<string, unknown>>(),
+
+  // Per-destination response transformer script (runs on the destination's
+  // response after a successful send). Null/empty = no response transformer.
+  responseTransformer: text('response_transformer'),
 
   // Queue settings
   queueMode: varchar('queue_mode', { length: 20 }).notNull().default('NEVER'),

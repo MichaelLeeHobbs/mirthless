@@ -16,6 +16,7 @@ const CONNECTOR_TYPE_VALUES = [
   'SMTP',
   'FHIR',
   'EMAIL',
+  'SFTP',
 ] as const;
 
 const CONNECTOR_MODE_VALUES = [

@@ -61,6 +61,7 @@ export interface MessageSearchParams {
   readonly receivedFrom?: string;
   readonly receivedTo?: string;
   readonly metaDataId?: number;
+  readonly messageId?: number;
   readonly contentSearch?: string;
   readonly limit: number;
   readonly offset: number;
@@ -90,6 +91,7 @@ function buildSearchQuery(params: MessageSearchParams): string {
   if (params.receivedFrom) parts.push(`receivedFrom=${encodeURIComponent(params.receivedFrom)}`);
   if (params.receivedTo) parts.push(`receivedTo=${encodeURIComponent(params.receivedTo)}`);
   if (params.metaDataId !== undefined) parts.push(`metaDataId=${String(params.metaDataId)}`);
+  if (params.messageId !== undefined) parts.push(`messageId=${String(params.messageId)}`);
   if (params.contentSearch) parts.push(`contentSearch=${encodeURIComponent(params.contentSearch)}`);
   parts.push(`limit=${String(params.limit)}`);
   parts.push(`offset=${String(params.offset)}`);

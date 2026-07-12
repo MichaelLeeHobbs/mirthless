@@ -122,6 +122,7 @@ export function AppLayout(): ReactNode {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const user = useAuthStore((state) => state.user);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+  const mustChangePassword = useAuthStore((state) => state.mustChangePassword);
   const { hasAny } = usePermissions();
   const sidebarOpen = useUiStore((state) => state.sidebarOpen);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
@@ -379,7 +380,9 @@ export function AppLayout(): ReactNode {
         <Outlet />
       </Box>
       <KeyboardShortcutHelp open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
-      <ChangePasswordDialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} />
+      <ChangePasswordDialog open={changePasswordOpen && !mustChangePassword} onClose={() => setChangePasswordOpen(false)} />
+      {/* Mandatory password change blocks the app until completed. */}
+      <ChangePasswordDialog forced open={mustChangePassword} onClose={() => { /* cleared via store on success */ }} />
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </Box>
   );

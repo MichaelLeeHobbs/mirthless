@@ -2,6 +2,104 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-12 — SFTP connector (source + destination) (branch `w2/sftp`)
+
+Scope: `packages/connectors` + `packages/core-models` (connector-type enums only). New `SFTP`
+connector usable as BOTH source (reader) and destination (writer), registered for both in the
+registry. Mirrors the File connector's structure/lifecycle/Result usage/logging/post-action
+model + durable-quarantine + file-age patterns; reuses `matchGlob` (glob) and
+`resolveOutputFilename` (filename template) from the File connector, and `withTimeout`/
+`withTimeoutSignal` from `timeout.ts`. All builds + full lint (`--max-warnings 0`) clean;
+connectors 418→475 tests, core-models 198 tests passing.
+
+### Files added
+- `packages/connectors/src/sftp/sftp-client.ts` — injectable `SftpClient` interface +
+  `SftpClientFactory`, `validateAuth` (password OR privateKey), `makeHostVerifier` (strict
+  host-key check), `buildConnectOptions`, and the default `createSsh2SftpClient`
+  (`ssh2-sftp-client`, loaded via `require` like SMTP/Email so it's not pulled in under test).
+- `packages/connectors/src/sftp/sftp-receiver.ts` — `SftpReceiver`: interval poll with
+  reentrancy guard, glob match, `minFileAgeMs` skip, download → dispatch → afterProcessing
+  (DELETE/MOVE/NONE), remote sidecar quarantine ledger (`.mirthless-quarantine.json`),
+  reconnect + loud logging on poll-cycle failure. `joinRemote` POSIX path helper.
+- `packages/connectors/src/sftp/sftp-dispatcher.ts` — `SftpDispatcher`: connect-per-send,
+  ensure remote dir, append vs overwrite, `${messageId}`/`${timestamp}` filename template,
+  AbortSignal + 30s send timeout, teardown in `finally`.
+- `packages/connectors/src/sftp/index.ts`, `__fixtures__/mock-sftp-client.ts` (stateful
+  in-memory fake backing a shared `RemoteState`), and three test files (client 14, receiver
+  28, dispatcher 15 = 57 new tests).
+
+### Wiring
+- `registry.ts`: `SFTP` → `SftpReceiver` (source) and `SftpDispatcher` (destination) factories.
+- `connectors/src/index.ts`: exports the SFTP surface.
+- `core-models`: `SFTP` added to `CONNECTOR_TYPES` (channel), destination connector enum, and
+  connection-test connector enum.
+
+### Dependency added
+- `ssh2-sftp-client@^12.1.1` (dep) + `@types/ssh2-sftp-client@^9.0.6` (dev) in
+  `@mirthless/connectors`.
+## 2026-07-12 — Message ops endpoints + real partitioning (branch `w2/server`)
+
+Scope: `packages/{server,core-models}` only. Added four message-operations endpoints and resolved the D-166 partitioning gap. New/changed files lint clean (`pnpm lint --max-warnings 0`); core-models + server builds green; core-models 221 tests green; the 64 tests across the 5 touched server test files green. (Pre-existing, out-of-scope: 9 `data-pruner.service.test.ts` unit failures inherited from the D-165 `inArray` change — those files are untouched here.)
+
+### New endpoints (exact contracts the web wave builds against)
+- **Bulk reprocess** — `POST /api/v1/channels/:id/messages/bulk-reprocess`, perm `messages:reprocess`, body `{ messageIds: number[] }` (1–500). Reuses `MessageReprocessService.reprocessMessage` per id; one up-front 409 if the channel isn't deployed+STARTED, then per-item results (partial success). Response `{ success, data: { requested, reprocessed, results: [{ messageId, newMessageId?, error? }] } }`. Emits aggregate `MESSAGES_REPROCESSED` audit.
+- **Message export** — `GET /api/v1/channels/:id/messages/export?format=csv|json&status=&startDate=&endDate=&limit=&includeContent=`, perm `messages:read`. Metadata columns (messageId, correlationId, receivedAt, processed, flattened per-connector statuses); `includeContent=true` adds decrypted raw source (audited). RFC4180 CSV with spreadsheet-formula-injection guard (leading `=+-@`→quote-prefixed). Cap 10k rows; truncation via `X-Export-Truncated`/`X-Export-Count` headers; `Content-Disposition` attachment. Emits `MESSAGES_EXPORTED` (PHI-read) audit.
+- **Per-destination resend** — `POST /api/v1/channels/:id/messages/:msgId/connectors/:metaDataId/resend`, perm `messages:reprocess`. Re-enqueues the one connector message so the running queue consumer redispatches stored SENT content (isolated, no duplicate sends). Requires queue-enabled destination (else 409). Response `{ success, data: { messageId, metaDataId, status: 'QUEUED' } }`. Emits `MESSAGE_RESEND_QUEUED` audit. (D-168)
+- **Message-id search** — added `messageId` exact-match filter to `messageSearchQuerySchema` + `MessageQueryService.searchMessages`. (Message **detail** already returns all stored content types via `CONTENT_TYPE_NAMES` with decryption — no change needed.)
+
+### Partitioning (D-167, resolves D-166)
+- New hand-written migration `0007_partition_message_tables.sql` recreates the six message parent tables as `PARTITION BY LIST (channel_id)` with a DEFAULT partition each, so the already-correct `PartitionManagerService` works. Registered in `meta/_journal.json`. Verified against a throwaway Postgres 17 (partition routing + DEFAULT fallback + drop). `db:migrate` not run against any live DB.
+## 2026-07-12 — Web admin console feature completion (branch `w2/web`)
+
+Scope: `packages/web/**` only. Five feature areas. Web: 68 tests passing (was 45),
+`pnpm --filter @mirthless/web build` clean, `eslint packages/web/src --max-warnings 0` clean,
+`tsc --noEmit` clean. Consumes several server endpoints being added in parallel (see DECISIONS).
+
+### A. Message Browser — bulk ops, export, search, content tabs, per-destination resend
+- Row checkboxes + select-all in `MessageTable`; new floating `BulkMessageActionsToolbar`
+  (mirrors dashboard `BulkActionsToolbar`) with **Bulk Reprocess** (`messages:reprocess`) and
+  **Bulk Delete** (`messages:delete`), both ConfirmDialog-gated. Reprocess notifies a summary
+  ("Reprocessed 8/10; 2 failed"). Hooks: `useBulkReprocessMessages` →
+  `POST /channels/:id/messages/bulk-reprocess`, reuses `useBulkDeleteMessages`.
+- **Export** button (CSV/JSON menu) → `GET /channels/:id/messages/export?format&<filters>`;
+  new `use-message-export.ts` fetches the blob with the Bearer token and triggers a download.
+- **Message-ID search** field added to `MessageSearchBar`; `messageId` flows through
+  `MessageSearchParams` → list query.
+- **Content tabs**: added the **Encoded** stage tab to `MessageDetail` (Raw/Transformed/Encoded/
+  Sent/Response/Error, each rendered only when present) via the existing `ContentViewer`.
+- **Per-destination Resend** in the detail panel (destinations only) →
+  `POST /channels/:id/messages/:msgId/connectors/:metaDataId/resend`; `useResendDestination`
+  surfaces a 501/again message without assuming a success shape.
+
+### B. Response-transformer editor (per destination)
+- New `ResponseTransformerSection` (Monaco `ScriptEditor`, JS/TS toggle) wired into
+  `DestinationSettingsPanel`. Added `responseTransformer: string` to `DestinationFormValues` +
+  `createDefaultDestination`. `ChannelEditorPage` loads it from
+  `channel.destinations[i].responseTransformer` and emits `responseTransformer` (string|null)
+  in the destinations save payload — round-trips via the destination object.
+
+### C. Dashboard error drill-through
+- Errored counts in `ChannelStatusTable` and `GroupedChannelTable` (channel rows) are now
+  clickable links → `/channels/:id/messages?status=ERROR`. `MessageBrowserPage` reads the
+  `status` query param to pre-filter. (Group totals stay non-clickable — aggregate.)
+
+### D. Forced password change
+- `auth.store` now holds `mustChangePassword` (persisted); `setAuth(user, token, mustChange?)`
+  + `clearMustChangePassword()`. `LoginPage` stores the login-response flag. `ChangePasswordDialog`
+  gained a `forced` mode (non-dismissable: no cancel/escape/backdrop, warning banner, clears the
+  flag on success). `AppLayout` mounts the forced dialog whenever the flag is set.
+
+### E. SFTP connector forms (source + destination)
+- New `SftpSourceForm` / `SftpDestinationForm` (mirror the File forms; secrets use password
+  fields). Registered in `ConnectorSettingsSection` + `DestinationConnectorSettings`, added to
+  both type dropdowns (`SummaryTab`, `DestinationSettingsPanel`) and both `connector-defaults.ts`
+  maps with the exact property keys the connectors read. Test Connection button included.
+
+### Tests added
+- `use-message-export` (buildExportQuery), `auth.store` (mustChangePassword flow),
+  `connector-defaults` (SFTP key sets + responseTransformer default), `use-message-actions`
+  (bulk reprocess + resend hooks), `BulkMessageActionsToolbar` (render + permission gating).
+
 ## 2026-07-12 — Backend production-readiness: deferred items closed (branch `w1/backend`)
 
 Scope: `packages/{engine,connectors,server,core-models}`. Closed three deferred release items

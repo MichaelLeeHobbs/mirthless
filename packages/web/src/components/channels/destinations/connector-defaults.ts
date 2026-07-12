@@ -93,6 +93,23 @@ export const DICOM_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   timeoutMs: 30000,
 };
 
+// Keys MUST match exactly what the SFTP destination connector reads in
+// packages/connectors/src/sftp (host/port/username/password/privateKey/
+// passphrase/remoteDirectory/fileNameTemplate/appendMode/strictHostKey/hostKey).
+export const SFTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  host: '',
+  port: 22,
+  username: '',
+  password: '',
+  privateKey: '',
+  passphrase: '',
+  remoteDirectory: '',
+  fileNameTemplate: '${messageId}.dat',
+  appendMode: false,
+  strictHostKey: false,
+  hostKey: '',
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_DEST_DEFAULTS,
   HTTP: HTTP_DEST_DEFAULTS,
@@ -103,6 +120,7 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   CHANNEL: CHANNEL_DEST_DEFAULTS,
   FHIR: FHIR_DEST_DEFAULTS,
   DICOM: DICOM_DEST_DEFAULTS,
+  SFTP: SFTP_DEST_DEFAULTS,
 };
 
 /** Get default properties for a destination connector type. */
@@ -125,5 +143,6 @@ export function createDefaultDestination(index: number): DestinationFormValues {
     waitForPrevious: false,
     filter: createDefaultFilter(),
     transformer: createDefaultTransformer(),
+    responseTransformer: '',
   };
 }

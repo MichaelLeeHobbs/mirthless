@@ -7,6 +7,7 @@
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
+import Button from '@mui/material/Button';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Typography from '@mui/material/Typography';
@@ -19,10 +20,13 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ReplayIcon from '@mui/icons-material/Replay';
 import { useMessageDetail, useDeleteMessage, type ConnectorDetail } from '../../hooks/use-messages.js';
+import { useResendDestination } from '../../hooks/use-message-actions.js';
 import { ContentViewer } from './ContentViewer.js';
 import { AttachmentTab } from './AttachmentTab.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
+import { useNotification } from '../../stores/notification.store.js';
 import { usePermissions } from '../../hooks/use-permissions.js';
 import { PERMISSION } from '../../lib/permissions.js';
 
@@ -31,10 +35,12 @@ interface MessageDetailProps {
   readonly messageId: number;
 }
 
-// Content keys displayed as tabs, in order
+// Content keys displayed as tabs, in order. The detail endpoint returns every
+// stored pipeline stage; each tab renders only when its content is present.
 const CONTENT_TABS = [
   { key: 'raw', label: 'Raw' },
   { key: 'transformed', label: 'Transformed' },
+  { key: 'encoded', label: 'Encoded' },
   { key: 'sent', label: 'Sent' },
   { key: 'response', label: 'Response' },
   { key: 'error', label: 'Error' },
@@ -94,11 +100,15 @@ function ConnectorContentTabs({ connector }: { readonly connector: ConnectorDeta
 export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps): ReactNode {
   const { data: detail, isLoading, error } = useMessageDetail(channelId, messageId);
   const deleteMutation = useDeleteMessage();
+  const resendMutation = useResendDestination();
+  const { notify } = useNotification();
   const [connectorTab, setConnectorTab] = useState(0);
   const [showAttachments, setShowAttachments] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [resendTarget, setResendTarget] = useState<number | null>(null);
   const { has } = usePermissions();
   const canDelete = has(PERMISSION.MESSAGES_DELETE);
+  const canResend = has(PERMISSION.MESSAGES_REPROCESS);
 
   if (isLoading) {
     return (
@@ -124,6 +134,21 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
   const handleConfirmDelete = (): void => {
     setConfirmDeleteOpen(false);
     deleteMutation.mutate({ channelId, messageId });
+  };
+
+  const handleConfirmResend = (): void => {
+    if (resendTarget === null) return;
+    const metaDataId = resendTarget;
+    setResendTarget(null);
+    resendMutation.mutate(
+      { channelId, messageId, metaDataId },
+      {
+        // The server may reprocess the whole message or return 501; surface whatever
+        // it sends without assuming a success shape.
+        onSuccess: (data) => { notify(data.message ?? 'Destination resend submitted', 'success'); },
+        onError: (err) => { notify(err.message, 'error'); },
+      },
+    );
   };
 
   return (
@@ -211,11 +236,37 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
                   {String(activeConnector.sendAttempts)} attempt{activeConnector.sendAttempts !== 1 ? 's' : ''}
                 </Typography>
               )}
+              <Box sx={{ flexGrow: 1 }} />
+              {activeConnector.metaDataId > 0 && (
+                <Tooltip title={canResend ? 'Resend to this destination' : 'Requires messages:reprocess permission'}>
+                  <span>
+                    <Button
+                      size="small"
+                      startIcon={<ReplayIcon />}
+                      disabled={resendMutation.isPending || !canResend}
+                      onClick={() => { setResendTarget(activeConnector.metaDataId); }}
+                    >
+                      Resend
+                    </Button>
+                  </span>
+                </Tooltip>
+              )}
             </Box>
             <ConnectorContentTabs connector={activeConnector} />
           </Box>
         )
       )}
+
+      <ConfirmDialog
+        open={resendTarget !== null}
+        title="Resend to Destination"
+        message={`Resend message #${String(messageId)} to destination ${resendTarget !== null ? String(resendTarget) : ''}?`}
+        confirmLabel="Resend"
+        severity="warning"
+        isPending={resendMutation.isPending}
+        onConfirm={handleConfirmResend}
+        onCancel={() => { setResendTarget(null); }}
+      />
     </Paper>
   );
 }
