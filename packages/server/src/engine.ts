@@ -666,6 +666,13 @@ export class EngineManager {
         }
       }
 
+      // Destination response transformer (runs on the send response)
+      if (d.responseTransformer && d.responseTransformer.trim().length > 0) {
+        destScripts['responseTransformer'] = await this.compileWithTemplates(
+          d.responseTransformer, 'destinationResponseTransformer', templates, `${channel.name}/${d.name}/response-transformer.ts`,
+        );
+      }
+
       // Remove undefined entries
       const cleanScripts: Record<string, CompiledScript> = {};
       for (const [key, value] of Object.entries(destScripts)) {

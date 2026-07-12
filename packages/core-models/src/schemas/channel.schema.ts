@@ -60,6 +60,8 @@ export const destinationInputSchema = z.object({
   rotateQueue: z.boolean().default(false),
   queueThreadCount: z.number().int().positive().default(1),
   waitForPrevious: z.boolean().default(false),
+  /** Optional per-destination response transformer script (JS/TS source). */
+  responseTransformer: z.string().nullish(),
 });
 
 export type DestinationInput = z.infer<typeof destinationInputSchema>;
