@@ -533,5 +533,22 @@ describe('EmailReceiver', () => {
       expect(vi.mocked(client2.connect)).toHaveBeenCalled();
       expect(dispatched).toHaveLength(1);
     });
+
+    it('times out a hung fetchUnread instead of wedging the poll loop', async () => {
+      const client = makeMockClient();
+      // fetchUnread never resolves → must be bounded by the op timeout.
+      vi.mocked(client.fetchUnread).mockReturnValue(new Promise(() => { /* never */ }));
+
+      const { logger, errors } = makeMockLogger();
+      receiver = new EmailReceiver(makeConfig({ pollingIntervalMs: 1_000 }), makeClientFactory(client), logger);
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+
+      // Trigger a poll, then let the 30s op timeout elapse.
+      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(errors.some((e) => e.msg.includes('poll cycle failed'))).toBe(true);
+    });
   });
 });

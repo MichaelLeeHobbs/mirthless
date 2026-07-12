@@ -161,22 +161,12 @@ export interface ChannelListResult {
 
 const DEFAULT_SCRIPT_TYPES = ['DEPLOY', 'UNDEPLOY', 'PREPROCESSOR', 'POSTPROCESSOR'] as const;
 
-// At-rest message-content encryption (encryptData) is not yet wired into the
-// message write path (packages/server/src/services/message.service.ts). Until it
-// is, we REJECT enabling the flag so it cannot masquerade as protection while
-// content is still stored in plaintext. The AES-256-GCM primitive is implemented
-// and tested in lib/content-crypto.ts, ready for the engine agent to wire.
-// See docs/progress/DECISIONS.md.
-const ENCRYPT_DATA_NOT_SUPPORTED =
-  'At-rest message content encryption (encryptData) is not yet supported. ' +
-  'The flag is rejected to avoid a false sense of protection — content would still be stored in plaintext.';
-
-/** Reject a request that tries to enable encryptData. */
-function assertEncryptDataNotEnabled(properties?: { readonly encryptData?: boolean }): void {
-  if (properties?.encryptData === true) {
-    throw new ServiceError('NOT_SUPPORTED', ENCRYPT_DATA_NOT_SUPPORTED);
-  }
-}
+// At-rest message-content encryption (encryptData) is now wired end-to-end: the
+// message store adapter (engine.ts) encrypts content rows via
+// lib/content-crypto.ts, read paths decrypt, and EngineManager.deploy() refuses
+// to deploy an encryptData channel when CONTENT_ENCRYPTION_KEY is not configured.
+// The flag is therefore a real, working toggle — accepted on create/update.
+// See docs/progress/DECISIONS.md (D-143).
 
 // ----- Private Helpers -----
 
@@ -434,8 +424,8 @@ function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelI
     properties: {
       initialState: source.initialState as 'UNDEPLOYED' | 'STARTED' | 'PAUSED' | 'STOPPED',
       messageStorageMode: source.messageStorageMode as 'DEVELOPMENT' | 'PRODUCTION' | 'RAW' | 'METADATA' | 'DISABLED',
-      // encryptData is not yet supported (see assertEncryptDataNotEnabled); a clone
-      // must not carry a legacy true value or create() would reject it.
+      // A clone starts with encryptData off; the operator re-enables it explicitly
+      // (and ensures CONTENT_ENCRYPTION_KEY is configured) on the new channel.
       encryptData: false,
       removeContentOnCompletion: source.removeContentOnCompletion,
       removeAttachmentsOnCompletion: source.removeAttachmentsOnCompletion,
@@ -513,8 +503,6 @@ export class ChannelService {
   /** Create a new channel with default scripts. */
   static async create(input: CreateChannelInput, context?: AuditContext): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
-      assertEncryptDataNotEnabled(input.properties);
-
       // Check name uniqueness among non-deleted channels
       const [existing] = await db
         .select({ id: channels.id })
@@ -650,8 +638,6 @@ export class ChannelService {
   /** Update a channel with optimistic locking via revision. */
   static async update(id: string, input: UpdateChannelInput, context?: AuditContext): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
-      assertEncryptDataNotEnabled(input.properties);
-
       const existing = await findChannel(id);
 
       if (existing.revision !== input.revision) {

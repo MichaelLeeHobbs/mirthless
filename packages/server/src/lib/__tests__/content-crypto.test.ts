@@ -13,6 +13,7 @@ vi.mock('../../config/index.js', () => ({ config: cfg }));
 const {
   encryptContent,
   decryptContent,
+  decryptIfEncrypted,
   isEncryptedEnvelope,
   isContentEncryptionConfigured,
 } = await import('../content-crypto.js');
@@ -76,5 +77,40 @@ describe('content-crypto', () => {
     cfg.CONTENT_ENCRYPTION_KEY = 'ab';
     const result = encryptContent('x');
     expect(result.ok).toBe(false);
+  });
+
+  describe('decryptIfEncrypted', () => {
+    it('decrypts an encrypted envelope back to plaintext', () => {
+      const enc = encryptContent('PHI payload');
+      expect(enc.ok).toBe(true);
+      if (!enc.ok) return;
+      const result = decryptIfEncrypted(enc.value);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe('PHI payload');
+    });
+
+    it('passes plaintext (non-envelope) through unchanged — mixed legacy rows', () => {
+      const result = decryptIfEncrypted('plain HL7 content');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe('plain HL7 content');
+    });
+
+    it('passes null through unchanged', () => {
+      const result = decryptIfEncrypted(null);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBeNull();
+    });
+
+    it('fails loudly when the key is missing but the row is an envelope', () => {
+      const enc = encryptContent('secret');
+      expect(enc.ok).toBe(true);
+      if (!enc.ok) return;
+      cfg.CONTENT_ENCRYPTION_KEY = undefined;
+      const result = decryptIfEncrypted(enc.value);
+      expect(result.ok).toBe(false);
+    });
   });
 });

@@ -6,6 +6,10 @@
 
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { withTimeoutSignal } from '../timeout.js';
+
+/** Default SMTP send timeout — nodemailer has no native cancellation. */
+const SEND_TIMEOUT_MS = 30_000;
 
 // ----- Config -----
 
@@ -137,7 +141,12 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
 
       const transport = this.createTransport(this.config);
       try {
-        const result = await transport.sendMail(mailOptions);
+        // nodemailer sendMail has no AbortSignal support, so race it against the
+        // caller's signal AND a hard timeout; a hung SMTP server surfaces as a
+        // Result error (via the enclosing tryCatch) instead of an unbounded wait.
+        const result = await withTimeoutSignal(
+          transport.sendMail(mailOptions), SEND_TIMEOUT_MS, 'SMTP sendMail', signal,
+        );
         const accepted = result.accepted.length;
         const rejected = result.rejected.length;
         return {

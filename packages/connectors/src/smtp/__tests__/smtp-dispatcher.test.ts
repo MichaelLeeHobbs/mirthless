@@ -279,6 +279,28 @@ describe('SmtpDispatcher.send', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('returns an error (does not hang) when sendMail exceeds the timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = makeMockTransport({
+        sendMail: vi.fn(() => new Promise(() => { /* never resolves */ })),
+        close: vi.fn(),
+      });
+      const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));
+      await dispatcher.onStart();
+
+      const pending = dispatcher.send(makeMessage(), makeSignal());
+      await vi.advanceTimersByTimeAsync(30_000);
+      const result = await pending;
+
+      expect(result.ok).toBe(false);
+      // Transport is still closed even though the send timed out.
+      expect(transport.close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('fails when signal is aborted', async () => {
     const transport = makeMockTransport();
     const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));

@@ -2,6 +2,41 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-12 — Backend production-readiness: deferred items closed (branch `w1/backend`)
+
+Scope: `packages/{engine,connectors,server,core-models}`. Closed three deferred release items
+(D-140, D-141, D-143). Full workspace build + lint (`--max-warnings 0`) clean;
+connectors 400→418, server 916→922 tests passing (engine 347, core-util 88 unchanged).
+
+### encryptData wired end-to-end (supersedes D-143 → D-156)
+- Message store adapter (`engine.ts`) encrypts content rows (`content-crypto.encryptContent`,
+  AES-256-GCM) and sets `message_content.is_encrypted` when a channel has `encryptData`.
+- Decrypt-on-read via new `decryptIfEncrypted()` (self-describing `enc:v1:` envelopes) in
+  `MessageService.loadContent`, `MessageQueryService.getMessageDetail`, and
+  `MessageReprocessService` — mixed plaintext/ciphertext rows both read back.
+- `EngineManager.deploy()` fails loud if `encryptData` is set but `CONTENT_ENCRYPTION_KEY`
+  is missing (never stores PHI as plaintext). Removed the 422 rejection in `channel.service`.
+- Tests: content-crypto (`decryptIfEncrypted`), `engine-encryption.test.ts` (round-trip,
+  is_encrypted flag, stored-bytes-not-plaintext, encrypt-fail-is-loud, deploy key guard),
+  channel.service accepts+persists the flag.
+
+### DB read-then-update atomicity + statement timeouts (supersedes D-141 → D-157)
+- `connection-pool.ts`: `statement_timeout`/`query_timeout` (30s default) + new `transaction()`
+  helper (BEGIN/COMMIT, ROLLBACK on throw).
+- `database-receiver.ts`: ALWAYS/ON_SUCCESS now claim rows in one transaction via
+  `SELECT ... FOR UPDATE SKIP LOCKED` (new `appendLockClause`), dispatch + ack under lock →
+  no concurrent double-processing. NEVER mode unchanged.
+- Timeouts for IMAP (`email-receiver.ts`) and SMTP send (`smtp-dispatcher.ts`) via new
+  connectors-local `timeout.ts` (`withTimeout`/`withTimeoutSignal`).
+- Tests: concurrent-poller no-double-dispatch (locking fake), lock-clause unit, pool
+  statement_timeout + transaction commit/rollback, SMTP/IMAP hang → timeout error.
+
+### Durable file quarantine (supersedes D-140 → D-158)
+- `file-receiver.ts`: quarantine set persisted to `.mirthless-quarantine.json` sidecar in the
+  watched dir; loaded on start, excluded from polling, rewritten on quarantine. Survives restart.
+- Tests: persist-on-quarantine, and durable survival (new receiver instance over same dir
+  loads the ledger and does not re-dispatch).
+
 ## 2026-07-12 — Connectors Hardening (release blockers)
 
 Branch `fix/connectors-hardening`. Scope: `packages/connectors/**`. Introduced the first

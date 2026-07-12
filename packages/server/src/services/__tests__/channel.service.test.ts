@@ -633,28 +633,86 @@ describe('ChannelService', () => {
     });
   });
 
-  // ========== ENCRYPT DATA (rejected until wired) ==========
-  describe('encryptData is rejected', () => {
-    it('rejects create when encryptData is enabled', async () => {
+  // ========== ENCRYPT DATA (now a real, working toggle) ==========
+  describe('encryptData is accepted and persisted', () => {
+    it('accepts create with encryptData enabled and writes the flag', async () => {
+      const channel = makeChannel();
+      let channelInsertValues: Record<string, unknown> | null = null;
+
+      // Uniqueness check → no duplicate
+      pushResponse([]);
+      // fetchChannelRelations after transaction
+      pushResponse(DEFAULT_SCRIPTS);
+      pushResponse([], { orderable: true });
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+
+      mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        let insertCallCount = 0;
+        const tx = {
+          insert: vi.fn().mockImplementation(() => {
+            insertCallCount++;
+            if (insertCallCount === 1) {
+              return {
+                values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+                  channelInsertValues = v;
+                  return { returning: vi.fn().mockResolvedValue([channel]) };
+                }),
+              };
+            }
+            return { values: vi.fn().mockResolvedValue(undefined) };
+          }),
+        };
+        return fn(tx);
+      });
+
       const result = await ChannelService.create({
         ...CREATE_INPUT,
-        properties: { encryptData: true },
+        properties: {
+          initialState: 'STOPPED',
+          messageStorageMode: 'DEVELOPMENT',
+          encryptData: true,
+          removeContentOnCompletion: false,
+          removeAttachmentsOnCompletion: false,
+          pruningEnabled: false,
+          pruningMaxAgeDays: null,
+          pruningArchiveEnabled: false,
+        },
       } as unknown as Parameters<typeof ChannelService.create>[0]);
 
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'NOT_SUPPORTED');
+      expect(result.ok).toBe(true);
+      expect(channelInsertValues).not.toBeNull();
+      expect(channelInsertValues!['encryptData']).toBe(true);
     });
 
-    it('rejects update when encryptData is enabled', async () => {
+    it('accepts update with encryptData enabled and writes the flag', async () => {
+      const channel = makeChannel();
+      // findChannel (revision check)
+      pushResponse([{ ...channel, revision: 1 }]);
+      // getById after update: findChannel + relations
+      setupGetByIdMocks({ ...channel, encryptData: true });
+
       const result = await ChannelService.update(CHANNEL_ID, {
         revision: 1,
-        properties: { encryptData: true },
+        properties: {
+          initialState: 'STOPPED',
+          messageStorageMode: 'DEVELOPMENT',
+          encryptData: true,
+          removeContentOnCompletion: false,
+          removeAttachmentsOnCompletion: false,
+          pruningEnabled: false,
+          pruningMaxAgeDays: null,
+          pruningArchiveEnabled: false,
+        },
       } as unknown as Parameters<typeof ChannelService.update>[1]);
 
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'NOT_SUPPORTED');
+      expect(result.ok).toBe(true);
+      const setArg = mockSet.mock.calls.find((c) => (c[0] as Record<string, unknown>)['encryptData'] === true);
+      expect(setArg).toBeDefined();
     });
   });
 
