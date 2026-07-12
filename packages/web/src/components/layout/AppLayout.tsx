@@ -36,6 +36,8 @@ import BuildIcon from '@mui/icons-material/Build';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import SecurityIcon from '@mui/icons-material/Security';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import LockResetIcon from '@mui/icons-material/LockReset';
+import InfoIcon from '@mui/icons-material/Info';
 import LogoutIcon from '@mui/icons-material/Logout';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
@@ -46,6 +48,8 @@ import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts.js';
 import { usePermissions } from '../../hooks/use-permissions.js';
 import { PERMISSION, type PermissionString } from '../../lib/permissions.js';
 import { KeyboardShortcutHelp } from '../common/KeyboardShortcutHelp.js';
+import { ChangePasswordDialog } from '../account/ChangePasswordDialog.js';
+import { AboutDialog } from '../account/AboutDialog.js';
 
 const DRAWER_WIDTH = 240;
 const COLLAPSED_DRAWER_WIDTH = 64;
@@ -127,6 +131,8 @@ export function AppLayout(): ReactNode {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const userMenuOpen = Boolean(anchorEl);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const handleHelpOpen = useCallback(() => { setShortcutHelpOpen(true); }, []);
   useKeyboardShortcuts({ onHelpOpen: handleHelpOpen });
 
@@ -284,6 +290,19 @@ export function AppLayout(): ReactNode {
               </MenuItem>
             ) : null}
             <Divider />
+            <MenuItem onClick={() => { handleUserMenuClose(); setChangePasswordOpen(true); }}>
+              <ListItemIcon>
+                <LockResetIcon fontSize="small" />
+              </ListItemIcon>
+              Change Password
+            </MenuItem>
+            <MenuItem onClick={() => { handleUserMenuClose(); setAboutOpen(true); }}>
+              <ListItemIcon>
+                <InfoIcon fontSize="small" />
+              </ListItemIcon>
+              About
+            </MenuItem>
+            <Divider />
             <MenuItem onClick={handleLogout}>
               <ListItemIcon>
                 <LogoutIcon fontSize="small" />
@@ -331,6 +350,8 @@ export function AppLayout(): ReactNode {
         <Outlet />
       </Box>
       <KeyboardShortcutHelp open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
+      <ChangePasswordDialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} />
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </Box>
   );
 }

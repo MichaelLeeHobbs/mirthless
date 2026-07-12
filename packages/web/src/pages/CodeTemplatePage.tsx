@@ -14,6 +14,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
+import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import { LibraryTree } from '../components/code-templates/LibraryTree.js';
@@ -44,8 +45,9 @@ interface ConfirmState {
 const CLOSED_CONFIRM: ConfirmState = { open: false, title: '', message: '', onConfirm: () => {} };
 
 export function CodeTemplatePage(): ReactNode {
-  const { data: libraries = [], isLoading: libLoading } = useCodeTemplateLibraries();
-  const { data: templates = [], isLoading: tmplLoading } = useCodeTemplates();
+  const { data: libraries = [], isLoading: libLoading, error: libError } = useCodeTemplateLibraries();
+  const { data: templates = [], isLoading: tmplLoading, error: tmplError } = useCodeTemplates();
+  const loadError = libError ?? tmplError;
 
   const createLibrary = useCreateLibrary();
   const updateLibrary = useUpdateLibrary();
@@ -227,6 +229,12 @@ export function CodeTemplatePage(): ReactNode {
           </Button>
         </Stack>
       </Stack>
+
+      {loadError ? (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Failed to load code templates: {loadError instanceof Error ? loadError.message : 'Unknown error'}
+        </Alert>
+      ) : null}
 
       {/* Two-panel layout */}
       <Box sx={{ display: 'flex', flexGrow: 1, gap: 2, minHeight: 0 }}>

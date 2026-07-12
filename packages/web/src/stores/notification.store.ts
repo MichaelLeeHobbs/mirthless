@@ -38,6 +38,10 @@ export const useNotificationStore = create<NotificationStore>((set) => ({
   notify: (message: string, severity: NotificationSeverity = 'info'): void => {
     const dedupeKey = `${severity}:${message}`;
     const now = Date.now();
+    // Prune expired entries so the map stays bounded over a long-running session.
+    for (const [key, ts] of recent) {
+      if (now - ts >= DEDUPE_WINDOW_MS) recent.delete(key);
+    }
     const last = recent.get(dedupeKey);
     if (last !== undefined && now - last < DEDUPE_WINDOW_MS) {
       return;

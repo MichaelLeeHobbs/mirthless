@@ -34,6 +34,9 @@ import {
   useDeleteTag,
   type TagSummary,
 } from '../hooks/use-tags.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 export function TagsPage(): ReactNode {
   const { data: tags, isLoading, error, isFetching } = useTags();
@@ -46,6 +49,9 @@ export function TagsPage(): ReactNode {
   const [name, setName] = useState('');
   const [color, setColor] = useState('#2196F3');
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TagSummary | null>(null);
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.SETTINGS_WRITE);
 
   const handleOpenCreate = (): void => {
     setEditing(null);
@@ -89,8 +95,10 @@ export function TagsPage(): ReactNode {
     }
   };
 
-  const handleDelete = (tag: TagSummary): void => {
-    deleteTag.mutate(tag.id);
+  const handleConfirmDelete = (): void => {
+    if (!deleteTarget) return;
+    deleteTag.mutate(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   return (
@@ -100,9 +108,13 @@ export function TagsPage(): ReactNode {
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Tags</Typography>
           {isFetching && !isLoading && <CircularProgress size={20} />}
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-          Create Tag
-        </Button>
+        <Tooltip title={canWrite ? '' : 'Requires settings:write permission'}>
+          <span>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
+              Create Tag
+            </Button>
+          </span>
+        </Tooltip>
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load tags: {error.message}</Alert>}
@@ -150,15 +162,19 @@ export function TagsPage(): ReactNode {
                     </TableCell>
                     <TableCell align="center">{tag.assignmentCount}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Edit">
-                        <IconButton size="small" onClick={() => { handleOpenEdit(tag); }}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Edit' : 'Requires settings:write permission'}>
+                        <span>
+                          <IconButton size="small" onClick={() => { handleOpenEdit(tag); }} disabled={!canWrite}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton size="small" onClick={() => { handleDelete(tag); }}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Delete' : 'Requires settings:write permission'}>
+                        <span>
+                          <IconButton size="small" onClick={() => { setDeleteTarget(tag); }} disabled={!canWrite}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
@@ -215,6 +231,17 @@ export function TagsPage(): ReactNode {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete Tag"
+        message={`Delete tag "${deleteTarget?.name ?? ''}"? It will be removed from all channels.`}
+        confirmLabel="Delete"
+        severity="error"
+        isPending={deleteTag.isPending}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => { setDeleteTarget(null); }}
+      />
     </Box>
   );
 }

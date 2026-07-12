@@ -24,6 +24,9 @@ import EditIcon from '@mui/icons-material/Edit';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useChangePassword, useUnlockUser } from '../hooks/use-users.js';
 import { UserDialog, type UserFormData } from '../components/users/UserDialog.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 import type { UserSummary } from '../api/client.js';
 
 const ROLE_COLORS: Readonly<Record<string, 'error' | 'warning' | 'info' | 'default'>> = {
@@ -53,6 +56,10 @@ export function UsersPage(): ReactNode {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserSummary | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [disableTarget, setDisableTarget] = useState<UserSummary | null>(null);
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.USERS_WRITE);
+  const canDelete = has(PERMISSION.USERS_DELETE);
 
   const handleOpenCreate = (): void => {
     setEditingUser(null);
@@ -120,10 +127,17 @@ export function UsersPage(): ReactNode {
 
   const handleToggleEnabled = (user: UserSummary): void => {
     if (user.enabled) {
-      deleteUser.mutate(user.id);
+      // Disabling is destructive — confirm first.
+      setDisableTarget(user);
     } else {
       updateUser.mutate({ id: user.id, input: { enabled: true } });
     }
+  };
+
+  const handleConfirmDisable = (): void => {
+    if (!disableTarget) return;
+    deleteUser.mutate(disableTarget.id);
+    setDisableTarget(null);
   };
 
   const handleUnlock = (user: UserSummary): void => {
@@ -138,9 +152,13 @@ export function UsersPage(): ReactNode {
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Users</Typography>
           {isFetching && !isLoading && <CircularProgress size={20} />}
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-          Create User
-        </Button>
+        <Tooltip title={canWrite ? '' : 'Requires users:write permission'}>
+          <span>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
+              Create User
+            </Button>
+          </span>
+        </Tooltip>
       </Box>
 
       {/* Error */}
@@ -193,24 +211,31 @@ export function UsersPage(): ReactNode {
                     </TableCell>
                     <TableCell>{formatDate(user.lastLoginAt)}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Edit">
-                        <IconButton size="small" onClick={() => { handleOpenEdit(user); }}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Edit' : 'Requires users:write permission'}>
+                        <span>
+                          <IconButton size="small" onClick={() => { handleOpenEdit(user); }} disabled={!canWrite}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                       <Tooltip title={user.enabled ? 'Disable' : 'Enable'}>
-                        <IconButton
-                          size="small"
-                          onClick={() => { handleToggleEnabled(user); }}
-                          color={user.enabled ? 'default' : 'success'}
-                        >
-                          <Chip label={user.enabled ? 'Disable' : 'Enable'} size="small" variant="outlined" />
-                        </IconButton>
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => { handleToggleEnabled(user); }}
+                            color={user.enabled ? 'default' : 'success'}
+                            disabled={user.enabled ? !canDelete : !canWrite}
+                          >
+                            <Chip label={user.enabled ? 'Disable' : 'Enable'} size="small" variant="outlined" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
-                      <Tooltip title="Unlock">
-                        <IconButton size="small" onClick={() => { handleUnlock(user); }}>
-                          <LockOpenIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Unlock' : 'Requires users:write permission'}>
+                        <span>
+                          <IconButton size="small" onClick={() => { handleUnlock(user); }} disabled={!canWrite}>
+                            <LockOpenIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
@@ -237,6 +262,17 @@ export function UsersPage(): ReactNode {
         onSave={handleSave}
         error={dialogError}
         saving={createUser.isPending || updateUser.isPending}
+      />
+
+      <ConfirmDialog
+        open={disableTarget !== null}
+        title="Disable User"
+        message={`Disable ${disableTarget?.username ?? ''}? They will no longer be able to sign in.`}
+        confirmLabel="Disable"
+        severity="warning"
+        isPending={deleteUser.isPending}
+        onConfirm={handleConfirmDisable}
+        onCancel={() => { setDisableTarget(null); }}
       />
     </Box>
   );

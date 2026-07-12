@@ -27,6 +27,8 @@ import SaveIcon from '@mui/icons-material/Save';
 import HistoryIcon from '@mui/icons-material/History';
 import type { CreateChannelInput, UpdateChannelInput } from '@mirthless/core-models';
 import { useChannel, useCreateChannel, useUpdateChannel } from '../hooks/use-channels.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 import { SummaryTab } from '../components/channels/SummaryTab.js';
 import { SourceTab } from '../components/channels/SourceTab.js';
 import { DestinationsTab } from '../components/channels/DestinationsTab.js';
@@ -125,6 +127,8 @@ export function ChannelEditorPage(): ReactNode {
   const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
   const isSaving = createChannel.isPending || updateChannel.isPending;
+  const { has: hasPermission } = usePermissions();
+  const canWrite = hasPermission(PERMISSION.CHANNELS_WRITE);
 
   // Form
   const {
@@ -629,15 +633,19 @@ export function ChannelEditorPage(): ReactNode {
             </IconButton>
           </Tooltip>
         ) : null}
-        <Button
-          variant="contained"
-          startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
-          disabled={isSaving || (!isDirty && isEditMode)}
-          onClick={handleSubmit(onSubmit)}
-          sx={{ flexShrink: 0 }}
-        >
-          {isEditMode ? 'Save' : 'Create'}
-        </Button>
+        <Tooltip title={canWrite ? '' : 'Requires channels:write permission'}>
+          <span>
+            <Button
+              variant="contained"
+              startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
+              disabled={isSaving || (!isDirty && isEditMode) || !canWrite}
+              onClick={handleSubmit(onSubmit)}
+              sx={{ flexShrink: 0 }}
+            >
+              {isEditMode ? 'Save' : 'Create'}
+            </Button>
+          </span>
+        </Tooltip>
       </Box>
 
       {/* Status messages */}
