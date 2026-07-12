@@ -22,17 +22,30 @@ COPY packages/connectors/ packages/connectors/
 COPY packages/server/ packages/server/
 RUN pnpm run -r build
 
+# Stage 3b: Production-only dependencies (no devDependencies)
+# The runtime image ships these instead of the dev+prod tree from `deps`.
+# Migrations run via drizzle-orm's migrator (a prod dep), so drizzle-kit
+# is intentionally absent from the runtime layer.
+FROM base AS prod-deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/core-models/package.json packages/core-models/
+COPY packages/core-util/package.json packages/core-util/
+COPY packages/engine/package.json packages/engine/
+COPY packages/connectors/package.json packages/connectors/
+COPY packages/server/package.json packages/server/
+RUN pnpm install --frozen-lockfile --prod
+
 # Stage 4: Production image
 FROM base AS production
 ENV NODE_ENV=production
 
-# Copy root and per-package node_modules from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/core-models/node_modules ./packages/core-models/node_modules
-COPY --from=deps /app/packages/core-util/node_modules ./packages/core-util/node_modules
-COPY --from=deps /app/packages/engine/node_modules ./packages/engine/node_modules
-COPY --from=deps /app/packages/connectors/node_modules ./packages/connectors/node_modules
-COPY --from=deps /app/packages/server/node_modules ./packages/server/node_modules
+# Copy root and per-package node_modules from prod-deps stage (prod-only)
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/packages/core-models/node_modules ./packages/core-models/node_modules
+COPY --from=prod-deps /app/packages/core-util/node_modules ./packages/core-util/node_modules
+COPY --from=prod-deps /app/packages/engine/node_modules ./packages/engine/node_modules
+COPY --from=prod-deps /app/packages/connectors/node_modules ./packages/connectors/node_modules
+COPY --from=prod-deps /app/packages/server/node_modules ./packages/server/node_modules
 
 # Copy compiled dist from build stage
 COPY --from=build /app/packages/core-models/dist ./packages/core-models/dist
@@ -52,9 +65,19 @@ COPY package.json pnpm-workspace.yaml ./
 # esbuild is needed at runtime for script compilation in engine sandbox
 # It is included in server's production dependencies
 
+# Drizzle migrations + standalone migrate runner (run at container start).
+# The migrator reads meta/_journal.json and the .sql files from this folder.
+COPY packages/server/src/db/migrations ./packages/server/migrations
+COPY docker/migrate.mjs ./packages/server/migrate.mjs
+COPY docker/server-entrypoint.sh ./docker/server-entrypoint.sh
+RUN chmod +x ./docker/server-entrypoint.sh
+
 # Non-root user for security
 RUN addgroup -S mirthless && adduser -S mirthless -G mirthless
 USER mirthless
 
 EXPOSE 3000
+
+# Entrypoint migrates + seeds, then execs the CMD (the server).
+ENTRYPOINT ["/app/docker/server-entrypoint.sh"]
 CMD ["node", "packages/server/dist/index.js"]

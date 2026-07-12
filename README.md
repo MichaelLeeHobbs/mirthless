@@ -46,6 +46,26 @@ pnpm dev                    # starts server (:3000) + web UI (:5173)
 # Login: admin / Admin123!
 ```
 
+### Docker (production)
+
+The production stack (Postgres + server + nginx-served web) is defined in
+[`docker/docker-compose.prod.yml`](docker/docker-compose.prod.yml). The server image runs
+database migrations and an idempotent seed on start before booting.
+
+```bash
+cp .env.production.example .env   # set POSTGRES_PASSWORD, JWT_SECRET, etc.
+docker compose -f docker/docker-compose.prod.yml up -d --build
+```
+
+The API is served behind nginx on port 80; interactive API docs (Swagger UI) are at
+**`/api-docs`** (served by the server at `:3000/api-docs`).
+
+### Documentation
+
+- [Quickstart: create your first channel](docs/user/quickstart-first-channel.md)
+- [Connector reference](docs/user/connector-reference.md) — all 10 connector types and their settings
+- [Transformer scripting API](docs/user/scripting-api.md) — the sandbox surface for filters/transformers
+
 ## Architecture
 
 ```
