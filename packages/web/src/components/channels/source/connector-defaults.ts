@@ -3,25 +3,23 @@
 // ===========================================
 // Default property objects for each source connector type.
 
+// Keys must match what packages/connectors/src/registry.ts reads for each type.
+// The TcpMllpReceiver only consumes host/port/maxConnections today. TLS/charset/
+// ackMode may be added by the connectors package later — do not add decorative
+// keys the receiver ignores (they mislead users into thinking they take effect).
 export const TCP_MLLP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: '0.0.0.0',
   port: 6661,
   maxConnections: 10,
-  receiveTimeout: 0,
-  bufferSize: 65536,
-  keepConnectionOpen: true,
-  charset: 'UTF-8',
-  transmissionMode: 'MLLP',
 };
 
 export const HTTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: '0.0.0.0',
   port: 8080,
-  contextPath: '/',
-  methods: ['POST'],
+  path: '/',
+  method: 'POST',
   responseStatusCode: 200,
   responseContentType: 'text/plain',
-  charset: 'UTF-8',
 };
 
 export const FILE_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {

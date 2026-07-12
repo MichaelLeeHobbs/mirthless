@@ -20,6 +20,8 @@ interface BulkDeleteResult {
 // ----- Hooks -----
 
 export function useReprocessMessage(): ReturnType<typeof useMutation<ReprocessResult, Error, { channelId: string; messageId: number }>> {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({ channelId, messageId }: { channelId: string; messageId: number }) => {
       const result = await api.post<ReprocessResult>(
@@ -28,6 +30,9 @@ export function useReprocessMessage(): ReturnType<typeof useMutation<ReprocessRe
       );
       if (!result.success) throw new Error(result.error.message);
       return result.data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['messages'] });
     },
   });
 }

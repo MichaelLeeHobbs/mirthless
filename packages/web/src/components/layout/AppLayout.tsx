@@ -43,6 +43,8 @@ import { useAuthStore } from '../../stores/auth.store.js';
 import { useUiStore } from '../../stores/ui.store.js';
 import { useSocketConnection } from '../../hooks/use-socket.js';
 import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts.js';
+import { usePermissions } from '../../hooks/use-permissions.js';
+import { PERMISSION, type PermissionString } from '../../lib/permissions.js';
 import { KeyboardShortcutHelp } from '../common/KeyboardShortcutHelp.js';
 
 const DRAWER_WIDTH = 240;
@@ -52,6 +54,8 @@ interface NavItem {
   readonly label: string;
   readonly path: string;
   readonly icon: ReactNode;
+  /** If set, the item is shown only when the user holds one of these permissions. */
+  readonly anyOf?: readonly PermissionString[];
 }
 
 interface NavSection {
@@ -72,34 +76,34 @@ const NAV_SECTIONS: readonly NavSection[] = [
     heading: 'Channels',
     items: [
       { label: 'Tags', path: '/tags', icon: <LocalOfferIcon /> },
-      { label: 'Code Templates', path: '/code-templates', icon: <CodeIcon /> },
-      { label: 'Global Scripts', path: '/global-scripts', icon: <JavascriptIcon /> },
-      { label: 'Resources', path: '/resources', icon: <FolderIcon /> },
+      { label: 'Code Templates', path: '/code-templates', icon: <CodeIcon />, anyOf: [PERMISSION.CODE_TEMPLATES_READ] },
+      { label: 'Global Scripts', path: '/global-scripts', icon: <JavascriptIcon />, anyOf: [PERMISSION.GLOBAL_SCRIPTS_READ] },
+      { label: 'Resources', path: '/resources', icon: <FolderIcon />, anyOf: [PERMISSION.RESOURCES_READ] },
     ],
   },
   {
     heading: 'Configuration',
     items: [
-      { label: 'Alerts', path: '/alerts', icon: <NotificationsIcon /> },
-      { label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
-      { label: 'Global Map', path: '/global-map', icon: <StorageIcon /> },
-      { label: 'Config Map', path: '/config-map', icon: <TuneIcon /> },
-      { label: 'Certificates', path: '/certificates', icon: <SecurityIcon /> },
+      { label: 'Alerts', path: '/alerts', icon: <NotificationsIcon />, anyOf: [PERMISSION.ALERTS_READ] },
+      { label: 'Settings', path: '/settings', icon: <SettingsIcon />, anyOf: [PERMISSION.SETTINGS_READ, PERMISSION.SETTINGS_WRITE] },
+      { label: 'Global Map', path: '/global-map', icon: <StorageIcon />, anyOf: [PERMISSION.GLOBAL_MAP_READ] },
+      { label: 'Config Map', path: '/config-map', icon: <TuneIcon />, anyOf: [PERMISSION.CONFIG_MAP_READ] },
+      { label: 'Certificates', path: '/certificates', icon: <SecurityIcon />, anyOf: [PERMISSION.SETTINGS_READ, PERMISSION.SETTINGS_WRITE] },
     ],
   },
   {
     heading: 'Administration',
     items: [
-      { label: 'Users', path: '/users', icon: <PeopleIcon /> },
-      { label: 'Events', path: '/events', icon: <EventIcon /> },
+      { label: 'Users', path: '/users', icon: <PeopleIcon />, anyOf: [PERMISSION.USERS_READ] },
+      { label: 'Events', path: '/events', icon: <EventIcon />, anyOf: [PERMISSION.EVENTS_READ] },
     ],
   },
   {
     heading: 'System',
     items: [
-      { label: 'System Info', path: '/system', icon: <InfoOutlinedIcon /> },
+      { label: 'System Info', path: '/system', icon: <InfoOutlinedIcon />, anyOf: [PERMISSION.SYSTEM_INFO] },
       { label: 'Tools', path: '/tools/message-generator', icon: <BuildIcon /> },
-      { label: 'Extensions', path: '/extensions', icon: <ExtensionIcon /> },
+      { label: 'Extensions', path: '/extensions', icon: <ExtensionIcon />, anyOf: [PERMISSION.SETTINGS_READ, PERMISSION.SETTINGS_WRITE] },
     ],
   },
 ];
@@ -113,6 +117,7 @@ export function AppLayout(): ReactNode {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const user = useAuthStore((state) => state.user);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+  const { hasAny } = usePermissions();
   const sidebarOpen = useUiStore((state) => state.sidebarOpen);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
@@ -149,11 +154,18 @@ export function AppLayout(): ReactNode {
   const drawerWidth = sidebarOpen ? DRAWER_WIDTH : COLLAPSED_DRAWER_WIDTH;
   const drawerVariant = isMobile ? 'temporary' as const : 'permanent' as const;
 
+  const visibleSections = NAV_SECTIONS
+    .map((section) => ({
+      heading: section.heading,
+      items: section.items.filter((item) => (item.anyOf ? hasAny(item.anyOf) : true)),
+    }))
+    .filter((section) => section.items.length > 0);
+
   const drawerContent = (
     <>
       <Toolbar />
       <List sx={{ pt: 1 }}>
-        {NAV_SECTIONS.map((section) => (
+        {visibleSections.map((section) => (
           <Box key={section.heading}>
             {sidebarOpen ? (
               <ListSubheader
