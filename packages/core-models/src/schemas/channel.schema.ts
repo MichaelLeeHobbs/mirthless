@@ -26,6 +26,7 @@ export const CONNECTOR_TYPES = [
   'FHIR',
   'SMTP',
   'EMAIL',
+  'SFTP',
 ] as const;
 
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);

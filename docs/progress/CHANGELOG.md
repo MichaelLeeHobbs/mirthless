@@ -2,6 +2,42 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-12 — SFTP connector (source + destination) (branch `w2/sftp`)
+
+Scope: `packages/connectors` + `packages/core-models` (connector-type enums only). New `SFTP`
+connector usable as BOTH source (reader) and destination (writer), registered for both in the
+registry. Mirrors the File connector's structure/lifecycle/Result usage/logging/post-action
+model + durable-quarantine + file-age patterns; reuses `matchGlob` (glob) and
+`resolveOutputFilename` (filename template) from the File connector, and `withTimeout`/
+`withTimeoutSignal` from `timeout.ts`. All builds + full lint (`--max-warnings 0`) clean;
+connectors 418→475 tests, core-models 198 tests passing.
+
+### Files added
+- `packages/connectors/src/sftp/sftp-client.ts` — injectable `SftpClient` interface +
+  `SftpClientFactory`, `validateAuth` (password OR privateKey), `makeHostVerifier` (strict
+  host-key check), `buildConnectOptions`, and the default `createSsh2SftpClient`
+  (`ssh2-sftp-client`, loaded via `require` like SMTP/Email so it's not pulled in under test).
+- `packages/connectors/src/sftp/sftp-receiver.ts` — `SftpReceiver`: interval poll with
+  reentrancy guard, glob match, `minFileAgeMs` skip, download → dispatch → afterProcessing
+  (DELETE/MOVE/NONE), remote sidecar quarantine ledger (`.mirthless-quarantine.json`),
+  reconnect + loud logging on poll-cycle failure. `joinRemote` POSIX path helper.
+- `packages/connectors/src/sftp/sftp-dispatcher.ts` — `SftpDispatcher`: connect-per-send,
+  ensure remote dir, append vs overwrite, `${messageId}`/`${timestamp}` filename template,
+  AbortSignal + 30s send timeout, teardown in `finally`.
+- `packages/connectors/src/sftp/index.ts`, `__fixtures__/mock-sftp-client.ts` (stateful
+  in-memory fake backing a shared `RemoteState`), and three test files (client 14, receiver
+  28, dispatcher 15 = 57 new tests).
+
+### Wiring
+- `registry.ts`: `SFTP` → `SftpReceiver` (source) and `SftpDispatcher` (destination) factories.
+- `connectors/src/index.ts`: exports the SFTP surface.
+- `core-models`: `SFTP` added to `CONNECTOR_TYPES` (channel), destination connector enum, and
+  connection-test connector enum.
+
+### Dependency added
+- `ssh2-sftp-client@^12.1.1` (dep) + `@types/ssh2-sftp-client@^9.0.6` (dev) in
+  `@mirthless/connectors`.
+
 ## 2026-07-12 — Backend production-readiness: deferred items closed (branch `w1/backend`)
 
 Scope: `packages/{engine,connectors,server,core-models}`. Closed three deferred release items
