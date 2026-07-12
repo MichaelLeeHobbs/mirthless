@@ -21,9 +21,9 @@ interface LoginResponseData {
     readonly email: string;
     readonly role: string;
     readonly permissions: ReadonlyArray<string>;
+    /** Server flag: user must change their password before using the app. */
+    readonly mustChangePassword?: boolean;
   };
-  /** Server flag: user must change their password before using the app. */
-  readonly mustChangePassword?: boolean;
 }
 
 export function LoginPage(): ReactNode {
@@ -53,7 +53,7 @@ export function LoginPage(): ReactNode {
       return;
     }
 
-    setAuth(result.data.user, result.data.accessToken, result.data.mustChangePassword === true);
+    setAuth(result.data.user, result.data.accessToken, result.data.user.mustChangePassword === true);
     navigate('/');
   };
 
