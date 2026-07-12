@@ -36,39 +36,41 @@ describeIntegration('DataPruner (real Postgres)', () => {
     return messageId;
   }
 
-  // KNOWN BUG (release blocker) — this test documents current, broken behavior.
-  // packages/server/src/services/message-delete-helper.ts builds
-  //   `message_id = ANY(${ids})`
-  // where `ids` is a JS array. Drizzle renders that as invalid SQL and Postgres
-  // rejects it ("malformed array literal"). The mock-DB unit tests never ran the
-  // real statement, so the pruner's delete has never actually worked end-to-end.
-  //
-  // What this test verifies (both genuinely desirable properties):
-  //   1. pruneChannel FAILS LOUDLY — it surfaces the DB error as a Failure
-  //      Result instead of silently succeeding (fail-safe, not silent).
-  //   2. The delete runs in a transaction, so a failure deletes NOTHING —
-  //      no partial data loss (critical for healthcare data integrity).
-  //
-  // FIX: replace `ANY(${ids})` with drizzle's `inArray(table.col, ids)` (or
-  // `= ANY(${ids}::bigint[])`). Once fixed, this test will start passing the
-  // prune, flip red here, and must be rewritten to assert result.ok,
-  // deletedCount === 1, and the dependency-order child-row cascade.
-  it('pruneChannel is fail-safe and atomic when the delete SQL errors (KNOWN BUG)', async () => {
-    const { db, schema, eq, DataPrunerService } = mods;
+  // This suite caught a real bug: message-delete-helper.ts bound a JS array to
+  // `message_id = ANY(${ids})` with no Postgres type, so the delete failed with
+  // "malformed array literal" (mock-DB unit tests never ran the real statement).
+  // Fixed by casting to `ANY(${ids}::bigint[])`. This test now asserts the prune
+  // actually deletes only the aged-out message and cascades to its child rows,
+  // leaving the recent message (and its children) intact.
+  it('pruneChannel deletes aged-out messages and their child rows in one transaction', async () => {
+    const { db, schema, eq, and, DataPrunerService } = mods;
     const channelId = randomUUID();
     const oldId = await seedMessage(channelId, 40);
     const recentId = await seedMessage(channelId, 1);
 
     const result = await DataPrunerService.pruneChannel(channelId, 30);
 
-    // 1. Failure is surfaced, not swallowed.
-    expect(result.ok).toBe(false);
+    // Prune succeeded and removed exactly the aged-out message.
+    expect(result.ok).toBe(true);
 
-    // 2. Transaction rolled back — nothing was deleted (no partial loss).
     const remaining = await db
       .select({ id: schema.messages.id })
       .from(schema.messages)
       .where(eq(schema.messages.channelId, channelId));
-    expect(remaining.map((r) => r.id).sort()).toEqual([oldId, recentId].sort());
+    expect(remaining.map((r) => r.id)).toEqual([recentId]);
+
+    // Child rows of the pruned message are gone (dependency-order cascade)...
+    const orphanContent = await db
+      .select({ messageId: schema.messageContent.messageId })
+      .from(schema.messageContent)
+      .where(and(eq(schema.messageContent.channelId, channelId), eq(schema.messageContent.messageId, oldId)));
+    expect(orphanContent).toHaveLength(0);
+
+    // ...while the recent message keeps its content.
+    const keptContent = await db
+      .select({ messageId: schema.messageContent.messageId })
+      .from(schema.messageContent)
+      .where(and(eq(schema.messageContent.channelId, channelId), eq(schema.messageContent.messageId, recentId)));
+    expect(keptContent.length).toBeGreaterThan(0);
   });
 });
