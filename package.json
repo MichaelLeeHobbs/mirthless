@@ -20,6 +20,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
+    "test:integration": "pnpm --filter @mirthless/server exec vitest run --config vitest.integration.config.ts",
 
     "------------ Database ------------": "",
     "db:init": "node scripts/init-db.mjs",
@@ -36,7 +37,8 @@
     "docker:logs": "docker compose -f docker/docker-compose.yml logs -f",
 
     "------------ Performance ------------": "",
-    "db:bench": "node scripts/bench-db.mjs"
+    "db:bench": "node scripts/bench-db.mjs",
+    "bench:throughput": "node scripts/bench-throughput.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.17.0",

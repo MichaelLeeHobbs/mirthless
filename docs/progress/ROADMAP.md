@@ -193,7 +193,7 @@ Ideas that may become relevant. Not committed to any timeline.
 | Simple message (no transformer) | ~10ms | <10ms | <5ms |
 | Message with transformer | ~13ms | <15ms | <8ms |
 | Message with 3 destinations | ~30ms | <30ms | <15ms |
-| Throughput (messages/sec) | untested | 1,000+ | 5,000+ |
+| Throughput (messages/sec) | ~500 w/ script, ~23k no-script (in-mem baseline — see [benchmark](../ops/throughput-benchmark.md)) | 1,000+ | 5,000+ |
 | Dashboard load | ~150ms | <200ms | <100ms |
 
 ---

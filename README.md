@@ -66,6 +66,20 @@ The API is served behind nginx on port 80; interactive API docs (Swagger UI) are
 - [Connector reference](docs/user/connector-reference.md) — all 10 connector types and their settings
 - [Transformer scripting API](docs/user/scripting-api.md) — the sandbox surface for filters/transformers
 
+### Operations
+
+Running Mirthless in production? See the operator guides in [`docs/ops/`](docs/ops/):
+
+- [Backup & restore](docs/ops/backup-restore.md) — Postgres `pg_dump`/`pg_restore` plus the config backup API
+- [Upgrade procedure](docs/ops/upgrade.md) — migrations, downtime, and rollback
+- [TLS & PHI-in-transit](docs/ops/tls-and-phi.md) — edge TLS and connector-level TLS
+- [Resource sizing & observability](docs/ops/resource-and-observability.md) — health, `/metrics`, logging, sizing
+- [Throughput benchmark](docs/ops/throughput-benchmark.md) — how to measure msgs/sec, with a baseline
+
+### Contributing & Security
+
+- [Contributing guide](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security policy](SECURITY.md)
+
 ## Architecture
 
 ```
