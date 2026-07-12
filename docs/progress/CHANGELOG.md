@@ -2,6 +2,57 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-12 — Web admin console feature completion (branch `w2/web`)
+
+Scope: `packages/web/**` only. Five feature areas. Web: 68 tests passing (was 45),
+`pnpm --filter @mirthless/web build` clean, `eslint packages/web/src --max-warnings 0` clean,
+`tsc --noEmit` clean. Consumes several server endpoints being added in parallel (see DECISIONS).
+
+### A. Message Browser — bulk ops, export, search, content tabs, per-destination resend
+- Row checkboxes + select-all in `MessageTable`; new floating `BulkMessageActionsToolbar`
+  (mirrors dashboard `BulkActionsToolbar`) with **Bulk Reprocess** (`messages:reprocess`) and
+  **Bulk Delete** (`messages:delete`), both ConfirmDialog-gated. Reprocess notifies a summary
+  ("Reprocessed 8/10; 2 failed"). Hooks: `useBulkReprocessMessages` →
+  `POST /channels/:id/messages/bulk-reprocess`, reuses `useBulkDeleteMessages`.
+- **Export** button (CSV/JSON menu) → `GET /channels/:id/messages/export?format&<filters>`;
+  new `use-message-export.ts` fetches the blob with the Bearer token and triggers a download.
+- **Message-ID search** field added to `MessageSearchBar`; `messageId` flows through
+  `MessageSearchParams` → list query.
+- **Content tabs**: added the **Encoded** stage tab to `MessageDetail` (Raw/Transformed/Encoded/
+  Sent/Response/Error, each rendered only when present) via the existing `ContentViewer`.
+- **Per-destination Resend** in the detail panel (destinations only) →
+  `POST /channels/:id/messages/:msgId/connectors/:metaDataId/resend`; `useResendDestination`
+  surfaces a 501/again message without assuming a success shape.
+
+### B. Response-transformer editor (per destination)
+- New `ResponseTransformerSection` (Monaco `ScriptEditor`, JS/TS toggle) wired into
+  `DestinationSettingsPanel`. Added `responseTransformer: string` to `DestinationFormValues` +
+  `createDefaultDestination`. `ChannelEditorPage` loads it from
+  `channel.destinations[i].responseTransformer` and emits `responseTransformer` (string|null)
+  in the destinations save payload — round-trips via the destination object.
+
+### C. Dashboard error drill-through
+- Errored counts in `ChannelStatusTable` and `GroupedChannelTable` (channel rows) are now
+  clickable links → `/channels/:id/messages?status=ERROR`. `MessageBrowserPage` reads the
+  `status` query param to pre-filter. (Group totals stay non-clickable — aggregate.)
+
+### D. Forced password change
+- `auth.store` now holds `mustChangePassword` (persisted); `setAuth(user, token, mustChange?)`
+  + `clearMustChangePassword()`. `LoginPage` stores the login-response flag. `ChangePasswordDialog`
+  gained a `forced` mode (non-dismissable: no cancel/escape/backdrop, warning banner, clears the
+  flag on success). `AppLayout` mounts the forced dialog whenever the flag is set.
+
+### E. SFTP connector forms (source + destination)
+- New `SftpSourceForm` / `SftpDestinationForm` (mirror the File forms; secrets use password
+  fields). Registered in `ConnectorSettingsSection` + `DestinationConnectorSettings`, added to
+  both type dropdowns (`SummaryTab`, `DestinationSettingsPanel`) and both `connector-defaults.ts`
+  maps with the exact property keys the connectors read. Test Connection button included.
+
+### Tests added
+- `use-message-export` (buildExportQuery), `auth.store` (mustChangePassword flow),
+  `connector-defaults` (SFTP key sets + responseTransformer default), `use-message-actions`
+  (bulk reprocess + resend hooks), `BulkMessageActionsToolbar` (render + permission gating).
+
 ## 2026-07-12 — Backend production-readiness: deferred items closed (branch `w1/backend`)
 
 Scope: `packages/{engine,connectors,server,core-models}`. Closed three deferred release items

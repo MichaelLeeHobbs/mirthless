@@ -18,6 +18,12 @@ export interface DestinationFormValues {
   waitForPrevious: boolean;
   filter: FilterFormValues;
   transformer: TransformerFormValues;
+  /**
+   * Per-destination response transformer script (CT_RESPONSE_TRANSFORMED). A
+   * single JavaScript/TypeScript body run against the destination's response
+   * after a successful send. Empty string = no response transformer.
+   */
+  responseTransformer: string;
 }
 
 /** Props for destination connector-specific settings forms. */

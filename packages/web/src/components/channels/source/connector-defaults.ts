@@ -84,6 +84,27 @@ export const EMAIL_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   includeAttachments: false,
 };
 
+// Keys MUST match exactly what the SFTP source connector reads in
+// packages/connectors/src/sftp (host/port/username/password/privateKey/
+// passphrase/remoteDirectory/filePattern/pollingIntervalMs/afterProcessing/
+// moveToDirectory/minFileAgeMs/strictHostKey/hostKey).
+export const SFTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  host: '',
+  port: 22,
+  username: '',
+  password: '',
+  privateKey: '',
+  passphrase: '',
+  remoteDirectory: '',
+  filePattern: '*',
+  pollingIntervalMs: 5000,
+  afterProcessing: 'DELETE',
+  moveToDirectory: '',
+  minFileAgeMs: 1000,
+  strictHostKey: false,
+  hostKey: '',
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_SOURCE_DEFAULTS,
   HTTP: HTTP_SOURCE_DEFAULTS,
@@ -93,6 +114,7 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   CHANNEL: CHANNEL_SOURCE_DEFAULTS,
   DICOM: DICOM_SOURCE_DEFAULTS,
   EMAIL: EMAIL_SOURCE_DEFAULTS,
+  SFTP: SFTP_SOURCE_DEFAULTS,
 };
 
 /** Get default properties for a connector type. Returns empty object for unknown types. */
