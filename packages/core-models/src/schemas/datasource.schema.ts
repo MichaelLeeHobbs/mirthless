@@ -69,6 +69,18 @@ export const dbQueryInputSchema = z.object({
 
 export type DbQueryInput = z.infer<typeof dbQueryInputSchema>;
 
+// ----- Test connection (unsaved form values) -----
+
+export const testDataSourceSchema = z.object({
+  host: z.string().min(1).max(255),
+  port: portSchema.default(5432),
+  database: z.string().min(1).max(255),
+  user: z.string().min(1).max(255),
+  password: z.string(),
+});
+
+export type TestDataSourceInput = z.infer<typeof testDataSourceSchema>;
+
 // ----- Params -----
 
 export const dataSourceUuidParamSchema = z.object({

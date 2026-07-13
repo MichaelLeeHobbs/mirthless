@@ -129,7 +129,7 @@ describe('Bridge IO Functions', () => {
         { id: 2, name: 'Bob' },
       ]);
 
-      const script = makeScript('return await dbQuery("postgresql", "postgres://localhost/test", "SELECT * FROM users WHERE id = $1", [1]);');
+      const script = makeScript('return await dbQuery("reporting-db", "SELECT * FROM users WHERE id = $1", [1]);');
       const result = await executor.execute(script, makeContext(), makeOptions());
 
       expect(result.ok).toBe(true);
@@ -142,17 +142,17 @@ describe('Bridge IO Functions', () => {
     it('passes empty params when none provided', async () => {
       mockDbQuery.mockResolvedValue([]);
 
-      const script = makeScript('return await dbQuery("postgresql", "postgres://localhost/test", "SELECT 1");');
+      const script = makeScript('return await dbQuery("reporting-db", "SELECT 1");');
       const result = await executor.execute(script, makeContext(), makeOptions());
 
       expect(result.ok).toBe(true);
-      expect(mockDbQuery).toHaveBeenCalledWith('postgresql', 'postgres://localhost/test', 'SELECT 1', []);
+      expect(mockDbQuery).toHaveBeenCalledWith('reporting-db', 'SELECT 1', []);
     });
 
     it('propagates query errors', async () => {
       mockDbQuery.mockRejectedValue(new Error('Connection refused'));
 
-      const script = makeScript('return await dbQuery("postgresql", "postgres://bad-host/test", "SELECT 1");');
+      const script = makeScript('return await dbQuery("reporting-db", "SELECT 1");');
       const result = await executor.execute(script, makeContext(), makeOptions());
 
       expect(result.ok).toBe(false);

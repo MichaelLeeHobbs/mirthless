@@ -157,7 +157,7 @@ function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown
       case 'parseHL7': return registerHl7(state, bridges.parseHL7(args[0] as string));
       case 'createACK': return bridges.createACK(args[0] as string, args[1] as string, args[2] as string | undefined);
       case 'httpFetch': return ioDispatch(() => bridges.httpFetch!(args[0] as string, args[1] as HttpFetchOptions));
-      case 'dbQuery': return ioDispatch(() => bridges.dbQuery!(args[0] as string, args[1] as string, args[2] as string, args[3] as readonly unknown[]));
+      case 'dbQuery': return ioDispatch(() => bridges.dbQuery!(args[0] as string, args[1] as string, args[2] as readonly unknown[]));
       case 'routeMessage': return ioDispatch(() => bridges.routeMessage!(args[0] as string, args[1] as string));
       case 'getResource': return ioDispatch(() => bridges.getResource!(args[0] as string));
       case 'collectionStore': return ioDispatch(() => bridges.collections!.store(
@@ -292,8 +292,8 @@ globalThis.__build = function (dispatch, payload) {
     };
   }
   if (payload.bridges.dbQuery) {
-    globalThis.dbQuery = async function (driver, connectionUrl, sqlText, params) {
-      var r = JSON.parse(await dispatch('dbQuery', driver, connectionUrl, sqlText, params || []));
+    globalThis.dbQuery = async function (dataSourceName, sqlText, params) {
+      var r = JSON.parse(await dispatch('dbQuery', dataSourceName, sqlText, params || []));
       if (!r.ok) { throw new Error(r.e); }
       return r.v;
     };

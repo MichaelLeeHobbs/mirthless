@@ -42,7 +42,7 @@ if (!shouldRunIntegration) {
  * process.exit on a missing DATABASE_URL) never runs.
  */
 export async function loadServerModules() {
-  const [dbMod, schemaMod, drizzleMod, messageMod, queueMod, channelMod, partitionMod, prunerMod, collectionMod] =
+  const [dbMod, schemaMod, drizzleMod, messageMod, queueMod, channelMod, partitionMod, prunerMod, collectionMod, dataSourceMod, poolMgrMod] =
     await Promise.all([
       import('../../src/lib/db.js'),
       import('../../src/db/schema/index.js'),
@@ -53,6 +53,8 @@ export async function loadServerModules() {
       import('../../src/services/partition-manager.service.js'),
       import('../../src/services/data-pruner.service.js'),
       import('../../src/services/collection.service.js'),
+      import('../../src/services/data-source.service.js'),
+      import('../../src/services/data-source-pool-manager.js'),
     ]);
 
   return {
@@ -68,6 +70,8 @@ export async function loadServerModules() {
     PartitionManagerService: partitionMod.PartitionManagerService,
     DataPrunerService: prunerMod.DataPrunerService,
     CollectionService: collectionMod.CollectionService,
+    DataSourceService: dataSourceMod.DataSourceService,
+    dataSourcePoolManager: poolMgrMod.dataSourcePoolManager,
   };
 }
 

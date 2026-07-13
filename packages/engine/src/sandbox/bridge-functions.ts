@@ -88,7 +88,7 @@ export interface CollectionBridge {
 /** Host-side dependency callbacks for IO bridge functions. */
 export interface BridgeDependencies {
   readonly httpFetch?: (url: string, options: HttpFetchOptions) => Promise<HttpFetchResult>;
-  readonly dbQuery?: (driver: string, connectionUrl: string, sql: string, params: readonly unknown[]) => Promise<readonly Record<string, unknown>[]>;
+  readonly dbQuery?: (dataSourceName: string, sql: string, params: readonly unknown[]) => Promise<readonly Record<string, unknown>[]>;
   readonly routeMessage?: (channelName: string, rawData: string) => Promise<RouteMessageResult>;
   readonly getResource?: (name: string) => Promise<string | null>;
   readonly collections?: CollectionBridge;
@@ -99,7 +99,7 @@ export interface BridgeFunctions {
   readonly parseHL7: (raw: string) => Hl7MessageProxy;
   readonly createACK: (originalRaw: string, ackCode: string, textMessage?: string) => string;
   readonly httpFetch?: (url: string, options?: HttpFetchOptions) => Promise<HttpFetchResult>;
-  readonly dbQuery?: (driver: string, connectionUrl: string, sql: string, params?: readonly unknown[]) => Promise<readonly Record<string, unknown>[]>;
+  readonly dbQuery?: (dataSourceName: string, sql: string, params?: readonly unknown[]) => Promise<readonly Record<string, unknown>[]>;
   readonly routeMessage?: (channelName: string, rawData: string) => Promise<RouteMessageResult>;
   readonly getResource?: (name: string) => Promise<string | null>;
   readonly collections?: CollectionBridge;
@@ -162,8 +162,8 @@ export function createBridgeFunctions(deps?: BridgeDependencies): BridgeFunction
     } : {}),
 
     ...(deps?.dbQuery ? {
-      dbQuery: async (driver: string, connectionUrl: string, sql: string, params?: readonly unknown[]): Promise<readonly Record<string, unknown>[]> => {
-        return deps.dbQuery!(driver, connectionUrl, sql, params ?? []);
+      dbQuery: async (dataSourceName: string, sql: string, params?: readonly unknown[]): Promise<readonly Record<string, unknown>[]> => {
+        return deps.dbQuery!(dataSourceName, sql, params ?? []);
       },
     } : {}),
 

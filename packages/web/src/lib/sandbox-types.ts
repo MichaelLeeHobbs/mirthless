@@ -193,7 +193,17 @@ declare function httpFetch(
  */
 declare function routeMessage(channelName: string, rawData: string): Promise<{ success: boolean; response?: string }>;
 
-// NOTE: dbQuery is intentionally NOT declared — it is not wired into the engine
-// yet (needs a driver registry + URL-keyed connection pooling + a security model
-// for script-supplied connection URLs). Calling it throws a ReferenceError.
+/**
+ * Run a parameterized query against a named Data Source (defined under Data
+ * Sources in the admin UI). Data sources are read-only unless configured
+ * otherwise. Never string-interpolate values into sql — use params ($1, $2, …).
+ * @param dataSourceName - The data source name.
+ * @param sql - Parameterized SQL.
+ * @param params - Positional query parameters.
+ */
+declare function dbQuery(
+  dataSourceName: string,
+  sql: string,
+  params?: readonly unknown[],
+): Promise<readonly Record<string, unknown>[]>;
 `;

@@ -41,6 +41,7 @@ const UsersPage = page(() => import('./pages/UsersPage.js'), 'UsersPage');
 const TagsPage = page(() => import('./pages/TagsPage.js'), 'TagsPage');
 const ResourcesPage = page(() => import('./pages/ResourcesPage.js'), 'ResourcesPage');
 const CollectionsPage = page(() => import('./pages/CollectionsPage.js'), 'CollectionsPage');
+const DataSourcesPage = page(() => import('./pages/DataSourcesPage.js'), 'DataSourcesPage');
 const GlobalMapPage = page(() => import('./pages/GlobalMapPage.js'), 'GlobalMapPage');
 const ConfigMapPage = page(() => import('./pages/ConfigMapPage.js'), 'ConfigMapPage');
 const SystemInfoPage = page(() => import('./pages/SystemInfoPage.js'), 'SystemInfoPage');
@@ -80,6 +81,7 @@ const router = createBrowserRouter([
           { path: 'global-scripts', element: lazyRoute(<GlobalScriptsPage />) },
           { path: 'resources', element: lazyRoute(<ResourcesPage />) },
           { path: 'collections', element: lazyRoute(<CollectionsPage />) },
+          { path: 'datasources', element: lazyRoute(<DataSourcesPage />) },
           { path: 'certificates', element: lazyRoute(<CertificatesPage />) },
           { path: 'tags', element: lazyRoute(<TagsPage />) },
           { path: 'global-map', element: lazyRoute(<GlobalMapPage />) },

@@ -71,6 +71,13 @@
       "when": 1783948291197,
       "tag": "0009_spicy_killer_shrike",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783960167393,
+      "tag": "0010_ambitious_wild_pack",
+      "breakpoints": true
     }
   ]
 }

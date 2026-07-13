@@ -53,6 +53,7 @@ import { ConfigMapService } from './services/config-map.service.js';
 import { CodeTemplateService } from './services/code-template.service.js';
 import { CollectionService, type CollectionRecordResult } from './services/collection.service.js';
 import { ResourceService } from './services/resource.service.js';
+import { DataSourceService } from './services/data-source.service.js';
 import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { db } from './lib/db.js';
@@ -295,6 +296,15 @@ function createResourceBridge(): NonNullable<BridgeDependencies['getResource']> 
   };
 }
 
+/** dbQuery() script bridge: parameterized query against a named Data Source (read-only by default). */
+function createDbQueryBridge(): NonNullable<BridgeDependencies['dbQuery']> {
+  return async (dataSourceName, sql, params) => {
+    const result = await DataSourceService.runQuery(dataSourceName, sql, params);
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  };
+}
+
 /**
  * httpFetch() script bridge: outbound HTTP via global fetch. SSRF host-blocking is
  * already applied in the sandbox bridge layer before this runs; here we just perform
@@ -331,6 +341,7 @@ export class EngineManager {
       collections: createCollectionBridge(),
       getResource: createResourceBridge(),
       httpFetch: createHttpFetchBridge(),
+      dbQuery: createDbQueryBridge(),
       routeMessage: this.createRouteMessageBridge(),
     });
     this.serverId = serverId ?? 'server-01';

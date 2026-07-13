@@ -86,6 +86,7 @@ const NAV_SECTIONS: readonly NavSection[] = [
       { label: 'Global Scripts', path: '/global-scripts', icon: <JavascriptIcon />, anyOf: [PERMISSION.GLOBAL_SCRIPTS_READ] },
       { label: 'Resources', path: '/resources', icon: <FolderIcon />, anyOf: [PERMISSION.RESOURCES_READ] },
       { label: 'Collections', path: '/collections', icon: <Inventory2Icon />, anyOf: [PERMISSION.COLLECTIONS_READ] },
+      { label: 'Data Sources', path: '/datasources', icon: <StorageIcon />, anyOf: [PERMISSION.DATASOURCES_READ] },
     ],
   },
   {

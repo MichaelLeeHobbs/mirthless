@@ -40,6 +40,10 @@ export const PERMISSION = {
   COLLECTIONS_WRITE: 'collections:write',
   COLLECTIONS_DELETE: 'collections:delete',
 
+  DATASOURCES_READ: 'datasources:read',
+  DATASOURCES_WRITE: 'datasources:write',
+  DATASOURCES_DELETE: 'datasources:delete',
+
   GLOBAL_SCRIPTS_READ: 'global_scripts:read',
   GLOBAL_SCRIPTS_WRITE: 'global_scripts:write',
 

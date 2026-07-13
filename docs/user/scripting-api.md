@@ -94,15 +94,32 @@ subject to SSRF protection: requests to private/loopback address ranges are bloc
 | Function | Signature | Description |
 |---|---|---|
 | `httpFetch` | `httpFetch(url, { method, headers, body, timeout }?)` → `{ status, statusText, headers, body }` | Outbound HTTP request. |
-| `dbQuery` | `dbQuery(driver, connectionUrl, sql, params?)` → rows | Parameterized query. Never string-interpolate values into `sql`. |
+| `dbQuery` | `dbQuery(dataSourceName, sql, params?)` → rows | Parameterized query against a named [Data Source](#data-sources). Never string-interpolate values into `sql`. |
 | `routeMessage` | `routeMessage(channelName, rawData)` → `{ success, response? }` | Route a message to another channel. |
 | `getResource` | `getResource(name)` → `string \| null` | Load a configured resource by name. |
 | `getCollection` | `getCollection(name)` → `{ store, find }` | Read/write a durable keyed record store. See [Collections](#collections). |
 
-> Wiring status: `getResource`, `httpFetch`, `routeMessage`, and `getCollection` are wired into
-> the production engine. `dbQuery` is **not** yet wired — calling it throws a `ReferenceError`
-> (it needs a driver registry + connection pooling + a security model for script-supplied
-> connection URLs). Guard `dbQuery` with `typeof`.
+> Wiring status: all bridges above (`getResource`, `httpFetch`, `routeMessage`, `getCollection`,
+> `dbQuery`) are wired into the production engine.
+
+## Data Sources
+
+`dbQuery(dataSourceName, sql, params?)` runs a parameterized query against a **Data Source** —
+a database connection profile an admin defines under **Data Sources** in the admin UI (host,
+port, database, user, password). Credentials live server-side, encrypted at rest; scripts never
+see them and can only reach configured sources.
+
+```js
+const [order] = await dbQuery('reporting-db',
+  'SELECT report FROM reports WHERE accession = $1 ORDER BY created_at DESC LIMIT 1',
+  [accession]);
+```
+
+- **Parameterized only** — pass values as `params` (`$1, $2, …`); never build SQL by string
+  concatenation.
+- **Read-only by default** — a data source rejects writes unless an admin marks it read-write.
+- Bounded by a per-source statement timeout and a max-rows cap (a larger result set fails loud).
+- PostgreSQL only in v1.
 
 ## Collections
 

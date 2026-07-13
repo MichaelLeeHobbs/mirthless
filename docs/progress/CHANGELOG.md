@@ -1833,3 +1833,18 @@ Migration 0009 applied to the dev DB; full real-Postgres integration suite green
 - **routeMessage** — cross-channel routing via existing `sendMessage`/`processMessage`, with a name→id resolver and a `MAX_ROUTE_DEPTH=25` hop-depth loop guard (`EngineManager.routeMessage`).
 - IntelliSense restored for all three; **`dbQuery` deliberately left unwired** — needs a driver registry, URL-keyed connection pooling, and a security model for script-supplied connection URLs (flagged in ROADMAP/scripting-api).
 - Tests: `resource.service` getByName (content/null), `engine-bridges.test.ts` (httpFetch mapping/forwarding + routeMessage happy/unknown/loop-guard). Server 984, engine 359, all green.
+
+## 2026-07-13 (cont.) — Data Sources: dbQuery wired (branch: feature/collections)
+
+Implemented the dbQuery bridge per D-178 / `docs/design/11-datasources.md` — the last IO bridge, so all five are now live. Also applied migration 0009 (collections) + 0010 (data_sources) and ran the real-Postgres integration suites.
+
+- **core-models** — `datasource.schema.ts` (create/update/test/query; read-only default, pool/row bounds), branded `DataSourceId`, `DATASOURCE_UPDATED` event (13 schema tests).
+- **server** — `data_sources` table (password stored as a content-crypto envelope) + migration 0010; `DataSourceService` (CRUD + `runQuery` + `testConnection`; encrypt-before-insert fail-loud without `CONTENT_ENCRYPTION_KEY`; password never returned); `DataSourcePoolManager` (one `ConnectionPool` per source keyed by id, read-only enforced via `SET TRANSACTION READ ONLY`, `maxRows` cap, invalidation on edit/delete, shutdown teardown wired into the graceful-shutdown sequence); routes + `datasources:*` RBAC (deployer RWD, developer/viewer R).
+- **engine/sandbox** — changed the `dbQuery` bridge signature from `(driver, connectionUrl, sql, params)` to `(dataSourceName, sql, params)`; wired `createDbQueryBridge()` into `EngineManager`; restored the `dbQuery` editor IntelliSense decl.
+- **web** — Data Sources page (connection form, Test Connection, read-only toggle, write-only password), `use-datasources` hook, `/datasources` route + nav.
+- **tests** — schema (13), pool-manager unit (7, mocked ConnectionPool), service unit (2, encryption guard + redaction), real-Postgres integration (6: encrypted round-trip, params, read-only-blocks-writes, read-write-allows, row cap, NOT_FOUND-after-delete); dbQuery sandbox bridge test updated to the new signature.
+- **docs** — `docs/design/11-datasources.md`, D-178, `scripting-api.md` (dbQuery + Data Sources section), `docs/testing/67-datasources.md`, `e2e/datasources.spec.ts`.
+
+All 5 unit suites green; both integration suites green (12 tests on `mirthless_test`); full build + `pnpm lint --max-warnings 0` clean.
+
+> Infra note: `drizzle-kit migrate`'s config loads `../../.env` via dotenv, which took precedence over a `DATABASE_URL` env override — migrations meant for `mirthless_test` hit the dev DB. To migrate a non-`.env` database, apply the migration SQL directly (or point `.env` at it). Applied 0010 to `mirthless_test` directly for the integration run.
