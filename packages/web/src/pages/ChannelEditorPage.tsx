@@ -203,6 +203,10 @@ export function ChannelEditorPage(): ReactNode {
             ? {
                 inboundDataType: dTransformer.inboundDataType,
                 outboundDataType: dTransformer.outboundDataType,
+                inboundTemplate: dTransformer.inboundTemplate ?? null,
+                outboundTemplate: dTransformer.outboundTemplate ?? null,
+                inboundProperties: (dTransformer.inboundProperties as Record<string, unknown> | undefined) ?? {},
+                outboundProperties: (dTransformer.outboundProperties as Record<string, unknown> | undefined) ?? {},
                 steps: dTransformer.steps.map((s) => ({
                   enabled: s.enabled,
                   name: s.name ?? '',
@@ -271,6 +275,10 @@ export function ChannelEditorPage(): ReactNode {
         setSourceTransformer({
           inboundDataType: srcTransformer.inboundDataType,
           outboundDataType: srcTransformer.outboundDataType,
+          inboundTemplate: srcTransformer.inboundTemplate ?? null,
+          outboundTemplate: srcTransformer.outboundTemplate ?? null,
+          inboundProperties: (srcTransformer.inboundProperties as Record<string, unknown> | undefined) ?? {},
+          outboundProperties: (srcTransformer.outboundProperties as Record<string, unknown> | undefined) ?? {},
           steps: srcTransformer.steps.map((s) => ({
             enabled: s.enabled,
             name: s.name ?? '',
@@ -470,10 +478,10 @@ export function ChannelEditorPage(): ReactNode {
         metaDataId: null,
         inboundDataType: sourceTransformer.inboundDataType,
         outboundDataType: sourceTransformer.outboundDataType,
-        inboundProperties: {},
-        outboundProperties: {},
-        inboundTemplate: null,
-        outboundTemplate: null,
+        inboundProperties: sourceTransformer.inboundProperties,
+        outboundProperties: sourceTransformer.outboundProperties,
+        inboundTemplate: sourceTransformer.inboundTemplate,
+        outboundTemplate: sourceTransformer.outboundTemplate,
         steps: mapStepsToPayload(sourceTransformer.steps),
       });
     }
@@ -488,10 +496,10 @@ export function ChannelEditorPage(): ReactNode {
           metaDataId: i + 1,
           inboundDataType: t.inboundDataType,
           outboundDataType: t.outboundDataType,
-          inboundProperties: {},
-          outboundProperties: {},
-          inboundTemplate: null,
-          outboundTemplate: null,
+          inboundProperties: t.inboundProperties,
+          outboundProperties: t.outboundProperties,
+          inboundTemplate: t.inboundTemplate,
+          outboundTemplate: t.outboundTemplate,
           steps: mapStepsToPayload(t.steps),
         });
       }
