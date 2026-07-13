@@ -229,10 +229,10 @@ describe('E2E Pipeline', () => {
 
     const processor = new MessageProcessor(
       sandbox, store,
-      async (_metaDataId, content, signal) => {
+      async (_metaDataId, messageId, content, signal) => {
         return dispatcher.send({
           channelId: CHANNEL_ID,
-          messageId: 0,
+          messageId,
           metaDataId: 1,
           content,
           dataType: 'HL7V2',

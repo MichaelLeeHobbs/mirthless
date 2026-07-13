@@ -49,6 +49,7 @@ export interface DestinationConfig {
 /** Callback to send a message to a destination connector. */
 export type SendToDestination = (
   metaDataId: number,
+  messageId: number,
   content: string,
   signal: AbortSignal,
   correlationId?: string,
@@ -528,7 +529,7 @@ export class MessageProcessor {
         }
 
         // Send to destination
-        const sendResult = await this.sendFn(dest.metaDataId, destContent, signal, correlationId);
+        const sendResult = await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId);
 
         if (!sendResult.ok) {
           await Promise.all([

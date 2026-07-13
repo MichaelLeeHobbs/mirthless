@@ -162,7 +162,7 @@ describe('QueueConsumer', () => {
       expect(store.loadContent).toHaveBeenCalledWith(
         '00000000-0000-0000-0000-000000000001', 10, 1, 5,
       );
-      expect(sendFn).toHaveBeenCalledWith(1, 'test content', expect.any(AbortSignal));
+      expect(sendFn).toHaveBeenCalledWith(1, 10, 'test content', expect.any(AbortSignal));
     });
 
     it('releases as ERROR when loadContent fails', async () => {

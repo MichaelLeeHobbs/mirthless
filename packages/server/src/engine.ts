@@ -346,13 +346,13 @@ export class EngineManager {
     };
 
     // Build send function
-    const sendFn: SendToDestination = async (metaDataId, content, signal, correlationId) => {
+    const sendFn: SendToDestination = async (metaDataId, messageId, content, signal, correlationId) => {
       const connector = destinations.get(metaDataId);
       if (!connector) {
         return tryCatch(() => { throw new Error(`Destination ${String(metaDataId)} not found`); });
       }
       return connector.send({
-        channelId: channel.id, messageId: 0, metaDataId, content,
+        channelId: channel.id, messageId, metaDataId, content,
         dataType: channel.inboundDataType, correlationId,
       }, signal);
     };

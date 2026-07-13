@@ -103,6 +103,7 @@ export class QueueConsumer {
 
     const sendResult: Result<DestinationResponse> = await this.sendFn(
       msg.metaDataId,
+      msg.messageId,
       contentResult.value,
       signal,
     );
