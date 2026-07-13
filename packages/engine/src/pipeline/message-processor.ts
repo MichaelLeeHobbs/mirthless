@@ -480,9 +480,15 @@ export class MessageProcessor {
     const promises = this.config.destinations
       .filter((d) => d.enabled && (!activeDestinations || activeDestinations.has(d.metaDataId)))
       .map(async (dest): Promise<DestinationResult> => {
-        await this.store.createConnectorMessage(
+        // A persistence failure here must fail the destination loudly (ERROR +
+        // alert), never be ignored — otherwise the message is silently lost with
+        // no dest row, no recovery, and a SENT source status.
+        const createResult = await this.store.createConnectorMessage(
           channelId, messageId, dest.metaDataId, dest.name, 'RECEIVED',
         );
+        if (!createResult.ok) {
+          return this.destErrorOut(messageId, dest, 'createConnectorMessage', createResult.error.message);
+        }
 
         let destContent = content;
 
@@ -518,13 +524,26 @@ export class MessageProcessor {
           destContent = serializeFromSandbox(transformed, dataType);
         }
 
-        await this.store.storeContent(
+        // Persist the outbound (SENT) content BEFORE queuing/sending. A queued
+        // destination reloads exactly this row to deliver, and crash recovery
+        // redispatches from it — if the write fails we must error now (before any
+        // send) rather than silently lose the message or deliver un-persisted PHI.
+        const storeSentResult = await this.store.storeContent(
           channelId, messageId, dest.metaDataId, CT_SENT, destContent, dataType,
         );
+        if (!storeSentResult.ok) {
+          return this.destErrorOut(messageId, dest, 'storeSentContent', storeSentResult.error.message);
+        }
 
         // Queue or send directly
         if (dest.queueEnabled) {
-          await this.store.enqueue(channelId, messageId, dest.metaDataId);
+          const enqueueResult = await this.store.enqueue(channelId, messageId, dest.metaDataId);
+          if (!enqueueResult.ok) {
+            // Enqueue failed — the message would otherwise be marked QUEUED but sit
+            // undelivered forever (queue consumer never sees it, recovery skips
+            // processed rows). Fail loud so it is retried/alerted, not lost.
+            return this.destErrorOut(messageId, dest, 'enqueue', enqueueResult.error.message);
+          }
           return { metaDataId: dest.metaDataId, status: 'QUEUED' as const };
         }
 
@@ -549,7 +568,11 @@ export class MessageProcessor {
           // Populate responseMap with destination response
           mapState.responseMap[dest.name] = { status: response.status, content: response.content };
 
-          // Response transformer (if configured)
+          // Response transformer (if configured). A script error here must be
+          // surfaced loudly (error content + alert), never swallowed — but the
+          // message was already delivered to the destination, so we keep the
+          // destination SENT and fall back to the untransformed response rather
+          // than flip to ERROR (which could trigger a duplicate redelivery).
           let responseContent = response.content;
           if (dest.scripts.responseTransformer) {
             const rtResult = await this.runScript(
@@ -561,6 +584,18 @@ export class MessageProcessor {
               await this.store.storeContent(
                 channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
               );
+            } else {
+              await this.store.storeContent(
+                channelId, messageId, dest.metaDataId, CT_PROCESSING_ERROR,
+                `Script error in responseTransformer: ${rtResult.error.message}`, 'TEXT',
+              );
+              if (this.config.onError) {
+                await this.config.onError({
+                  channelId, errorType: 'DESTINATION_CONNECTOR',
+                  errorMessage: `Response transformer error in message ${String(messageId)}: ${rtResult.error.message}`,
+                  timestamp: Date.now(),
+                });
+              }
             }
           }
 

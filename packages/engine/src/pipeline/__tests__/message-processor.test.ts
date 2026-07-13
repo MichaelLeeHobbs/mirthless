@@ -418,6 +418,63 @@ describe('MessageProcessor', () => {
     expect(sendFn).not.toHaveBeenCalled();
   });
 
+  it('errors the destination (never QUEUED) when enqueue fails — no silent loss', async () => {
+    const store = makeStore();
+    (store.enqueue as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false, value: null, error: new Error('db down'),
+    });
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueEnabled: true }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
+    expect(store.incrementStats).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('errors the destination when the SENT content write fails (before send)', async () => {
+    const store = makeStore();
+    // Fail only the CT_SENT (5) write; other content writes succeed.
+    (store.storeContent as ReturnType<typeof vi.fn>).mockImplementation(
+      (_c: string, _m: number, _md: number, contentType: number) =>
+        contentType === 5
+          ? Promise.resolve({ ok: false, value: null, error: new Error('disk full') })
+          : Promise.resolve(ok(undefined)),
+    );
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
+    // Must error before sending — never deliver un-persisted PHI.
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('errors the destination when createConnectorMessage fails', async () => {
+    const store = makeStore();
+    (store.createConnectorMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false, value: null, error: new Error('no row'),
+    });
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
   it('preprocessor and postprocessor scripts execute', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
