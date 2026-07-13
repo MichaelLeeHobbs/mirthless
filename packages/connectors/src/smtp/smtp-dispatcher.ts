@@ -149,6 +149,15 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
         );
         const accepted = result.accepted.length;
         const rejected = result.rejected.length;
+        // Every recipient rejected = nothing delivered. Reporting SENT here would
+        // silently lose the message (e.g. an alert/result email the server refused).
+        if (accepted === 0) {
+          return {
+            status: 'ERROR' as const,
+            content: `SMTP delivery failed: all ${String(rejected)} recipient(s) rejected (messageId=${String(result.messageId)})`,
+            errorMessage: 'All recipients rejected',
+          };
+        }
         return {
           status: 'SENT' as const,
           content: `messageId=${result.messageId}, accepted=${String(accepted)}, rejected=${String(rejected)}`,

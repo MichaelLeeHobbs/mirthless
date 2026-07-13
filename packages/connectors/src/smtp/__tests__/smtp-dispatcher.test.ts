@@ -190,6 +190,25 @@ describe('SmtpDispatcher.send', () => {
     }
   });
 
+  it('returns ERROR when every recipient is rejected (no silent loss)', async () => {
+    const transport = makeMockTransport({
+      sendMail: vi.fn(async () => ({
+        messageId: '<test-id@example.com>',
+        accepted: [],
+        rejected: ['recipient@example.com'],
+      })),
+    });
+    const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe('ERROR');
+      expect(result.value.content).toContain('rejected');
+    }
+  });
+
   it('calls sendMail with correct options for text/plain', async () => {
     const transport = makeMockTransport();
     const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));
