@@ -17,6 +17,7 @@ import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
+import Alert from '@mui/material/Alert';
 import RadioGroup from '@mui/material/RadioGroup';
 import Radio from '@mui/material/Radio';
 import FormControl from '@mui/material/FormControl';
@@ -365,11 +366,12 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
                     slotProps={{ htmlInput: { min: 1 } }}
                   />
                 </Grid>
-                <Grid item xs={12} md={6}>
-                  <FormControlLabel
-                    control={<Switch checked={advancedValues.pruningArchiveEnabled} onChange={(_e, checked) => { onAdvancedChange({ pruningArchiveEnabled: checked }); }} />}
-                    label="Archive before pruning"
-                  />
+                <Grid item xs={12}>
+                  <Alert severity="warning" sx={{ mt: 1 }}>
+                    Pruning <strong>permanently deletes</strong> messages older than the age above,
+                    including message content (PHI). There is no archive step — export any messages
+                    you need to retain before they are pruned.
+                  </Alert>
                 </Grid>
               </Grid>
             ) : null}
