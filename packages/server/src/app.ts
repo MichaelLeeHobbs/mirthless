@@ -94,6 +94,17 @@ app.get('/health/ready', async (_req: Request, res: Response) => {
 });
 
 app.get('/health', async (_req: Request, res: Response) => {
+  // Unauthenticated liveness only — do NOT leak memory usage / engine deployment
+  // counts to the public. Detailed health is available on the authenticated
+  // /health/full endpoint.
+  const health = await getHealthStatus();
+  const status = health.status === 'ok' ? 200 : 503;
+  res.status(status).json({ status: health.status });
+});
+
+// Full health detail (memory, engine deployment counts, dependency checks) — behind
+// auth so it isn't exposed to the public.
+app.get('/health/full', authenticate, requirePermission('system:info'), async (_req: Request, res: Response) => {
   const health = await getHealthStatus();
   const status = health.status === 'ok' ? 200 : 503;
   res.status(status).json(health);
