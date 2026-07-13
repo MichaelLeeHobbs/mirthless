@@ -751,7 +751,7 @@ export class EngineManager {
         name: d.name,
         enabled: d.enabled,
         scripts: cleanScripts as DestinationScripts,
-        queueEnabled: d.queueMode !== 'NEVER',
+        queueMode: (d.queueMode ?? 'NEVER') as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
       });
     }
 

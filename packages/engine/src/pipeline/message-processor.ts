@@ -43,7 +43,12 @@ export interface DestinationConfig {
   readonly name: string;
   readonly enabled: boolean;
   readonly scripts: DestinationScripts;
-  readonly queueEnabled: boolean;
+  /**
+   * NEVER — send directly, mark ERROR on failure.
+   * ALWAYS — always enqueue (the queue consumer delivers + retries).
+   * ON_FAILURE — try a direct send; only enqueue for retry if that send fails.
+   */
+  readonly queueMode: 'NEVER' | 'ON_FAILURE' | 'ALWAYS';
 }
 
 /** Callback to send a message to a destination connector. */
@@ -535,22 +540,19 @@ export class MessageProcessor {
           return this.destErrorOut(messageId, dest, 'storeSentContent', storeSentResult.error.message);
         }
 
-        // Queue or send directly
-        if (dest.queueEnabled) {
-          const enqueueResult = await this.store.enqueue(channelId, messageId, dest.metaDataId);
-          if (!enqueueResult.ok) {
-            // Enqueue failed — the message would otherwise be marked QUEUED but sit
-            // undelivered forever (queue consumer never sees it, recovery skips
-            // processed rows). Fail loud so it is retried/alerted, not lost.
-            return this.destErrorOut(messageId, dest, 'enqueue', enqueueResult.error.message);
-          }
-          return { metaDataId: dest.metaDataId, status: 'QUEUED' as const };
+        // ALWAYS: hand straight to the queue (the consumer delivers + retries).
+        if (dest.queueMode === 'ALWAYS') {
+          return this.enqueueDestination(messageId, dest);
         }
 
-        // Send to destination
+        // NEVER / ON_FAILURE: attempt a direct send first.
         const sendResult = await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId);
 
         if (!sendResult.ok) {
+          // ON_FAILURE: fall back to the queue for retry instead of a hard ERROR.
+          if (dest.queueMode === 'ON_FAILURE') {
+            return this.enqueueDestination(messageId, dest);
+          }
           await Promise.all([
             this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'ERROR'),
             this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored'),
@@ -610,6 +612,11 @@ export class MessageProcessor {
           };
         }
 
+        // Destination responded but not SENT (e.g. remote NAK). ON_FAILURE queues
+        // it for retry; otherwise mark ERROR.
+        if (dest.queueMode === 'ON_FAILURE') {
+          return this.enqueueDestination(messageId, dest);
+        }
         await this.store.updateConnectorMessageStatus(
           channelId, messageId, dest.metaDataId, 'ERROR',
         );
@@ -620,6 +627,21 @@ export class MessageProcessor {
     const settled = await Promise.all(promises);
     results.push(...settled);
     return results;
+  }
+
+  /** Enqueue a destination for (retried) delivery by the queue consumer. */
+  private async enqueueDestination(
+    messageId: number,
+    dest: DestinationConfig,
+  ): Promise<DestinationResult> {
+    const enqueueResult = await this.store.enqueue(this.config.channelId, messageId, dest.metaDataId);
+    if (!enqueueResult.ok) {
+      // Enqueue failed — the message would otherwise be marked QUEUED but sit
+      // undelivered forever (queue consumer never sees it, recovery skips
+      // processed rows). Fail loud so it is retried/alerted, not lost.
+      return this.destErrorOut(messageId, dest, 'enqueue', enqueueResult.error.message);
+    }
+    return { metaDataId: dest.metaDataId, status: 'QUEUED' as const };
   }
 
   /** Mark a destination ERRORed after a filter/transformer script failure (stores error content + errored stat). */

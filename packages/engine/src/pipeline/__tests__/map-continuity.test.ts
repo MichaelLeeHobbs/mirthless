@@ -124,7 +124,7 @@ describe('Pipeline Map Continuity', () => {
         name: 'Dest1',
         enabled: true,
         scripts: {},
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     };
 
@@ -228,8 +228,8 @@ describe('Pipeline Map Continuity', () => {
       dataType: 'RAW',
       scripts: {},
       destinations: [
-        { metaDataId: 1, name: 'Dest1', enabled: true, scripts: { filter: destFilter }, queueEnabled: false },
-        { metaDataId: 2, name: 'Dest2', enabled: true, scripts: { filter: destFilter }, queueEnabled: false },
+        { metaDataId: 1, name: 'Dest1', enabled: true, scripts: { filter: destFilter }, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest2', enabled: true, scripts: { filter: destFilter }, queueMode: 'NEVER' },
       ],
     };
 

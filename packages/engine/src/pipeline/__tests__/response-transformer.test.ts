@@ -62,7 +62,7 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
       name: 'Dest 1',
       enabled: true,
       scripts: {},
-      queueEnabled: false,
+      queueMode: 'NEVER',
     }],
     ...overrides,
   };
@@ -108,7 +108,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: responseTransformerScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -137,7 +137,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: responseTransformerScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -160,7 +160,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: responseTransformerScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -187,7 +187,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: responseTransformerScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     } as Partial<PipelineConfig>);
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -218,7 +218,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: responseTransformerScript },
-        queueEnabled: true,
+        queueMode: 'ALWAYS',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -248,8 +248,8 @@ describe('Response Transformer', () => {
     const rtScript = makeScript('return "TX:" + msg;');
     const config = makeConfig({
       destinations: [
-        { metaDataId: 1, name: 'D1', enabled: true, scripts: { responseTransformer: rtScript }, queueEnabled: false },
-        { metaDataId: 2, name: 'D2', enabled: true, scripts: { responseTransformer: rtScript }, queueEnabled: false },
+        { metaDataId: 1, name: 'D1', enabled: true, scripts: { responseTransformer: rtScript }, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'D2', enabled: true, scripts: { responseTransformer: rtScript }, queueMode: 'NEVER' },
       ],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -274,7 +274,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: rtScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -297,7 +297,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: rtScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -320,7 +320,7 @@ describe('Response Transformer', () => {
         name: 'Dest 3',
         enabled: true,
         scripts: { responseTransformer: rtScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);

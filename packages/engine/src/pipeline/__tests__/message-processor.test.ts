@@ -61,7 +61,7 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
       name: 'Dest 1',
       enabled: true,
       scripts: {},
-      queueEnabled: false,
+      queueMode: 'NEVER',
     }],
     ...overrides,
   };
@@ -196,7 +196,7 @@ describe('MessageProcessor', () => {
       destinations: [{
         metaDataId: 1, name: 'Dest 1', enabled: true,
         scripts: { transformer: { code: 'msg = "dest_modified";' } },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(
@@ -214,8 +214,8 @@ describe('MessageProcessor', () => {
     const sendFn = makeSendFn();
     const config = makeConfig({
       destinations: [
-        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueEnabled: false },
-        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER' },
       ],
     });
     const processor = new MessageProcessor(
@@ -370,12 +370,12 @@ describe('MessageProcessor', () => {
         {
           metaDataId: 1, name: 'Dest 1', enabled: true,
           scripts: { filter: { code: 'return false;' } },
-          queueEnabled: false,
+          queueMode: 'NEVER',
         },
         {
           metaDataId: 2, name: 'Dest 2', enabled: true,
           scripts: {},
-          queueEnabled: false,
+          queueMode: 'NEVER',
         },
       ],
     });
@@ -402,7 +402,7 @@ describe('MessageProcessor', () => {
       destinations: [{
         metaDataId: 1, name: 'Dest 1', enabled: true,
         scripts: {},
-        queueEnabled: true,
+        queueMode: 'ALWAYS',
       }],
     });
     const processor = new MessageProcessor(
@@ -425,7 +425,7 @@ describe('MessageProcessor', () => {
     });
     const sendFn = makeSendFn();
     const config = makeConfig({
-      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueEnabled: true }],
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ALWAYS' }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
 
@@ -435,6 +435,43 @@ describe('MessageProcessor', () => {
     if (!result.ok) return;
     expect(result.value.destinationResults[0]!.status).toBe('ERROR');
     expect(store.incrementStats).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('ON_FAILURE: attempts a direct send first, then queues on failure (not ERROR)', async () => {
+    const store = makeStore();
+    // Direct send fails.
+    const sendFn = vi.fn().mockResolvedValue({ ok: false, value: null, error: new Error('conn refused') }) as SendToDestination;
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ON_FAILURE' }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // A direct send WAS attempted (unlike ALWAYS), and on failure it was queued.
+    expect(sendFn).toHaveBeenCalledOnce();
+    expect(result.value.destinationResults[0]!.status).toBe('QUEUED');
+    expect(store.enqueue).toHaveBeenCalledOnce();
+    // Not marked ERROR.
+    expect(store.incrementStats).not.toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
+  });
+
+  it('ALWAYS: queues without attempting a direct send', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ALWAYS' }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults[0]!.status).toBe('QUEUED');
     expect(sendFn).not.toHaveBeenCalled();
   });
 
@@ -500,8 +537,8 @@ describe('MessageProcessor', () => {
     const sendFn = makeSendFn();
     const config = makeConfig({
       destinations: [
-        { metaDataId: 1, name: 'Dest 1', enabled: false, scripts: {}, queueEnabled: false },
-        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 1, name: 'Dest 1', enabled: false, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER' },
       ],
     });
     const processor = new MessageProcessor(
@@ -572,7 +609,7 @@ describe('MessageProcessor', () => {
       destinations: [{
         metaDataId: 1, name: 'Dest 1', enabled: true,
         scripts: { filter: { code: 'throw new Error("filter boom");' } },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -598,7 +635,7 @@ describe('MessageProcessor', () => {
       destinations: [{
         metaDataId: 1, name: 'Dest 1', enabled: true,
         scripts: { transformer: { code: 'throw new Error("transform boom");' } },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -675,7 +712,7 @@ describe('MessageProcessor', () => {
       destinations: [{
         metaDataId: 1, name: 'Dest 1', enabled: true,
         scripts: { transformer: { code: 'return "DEST_TRANSFORMED";' } },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(
@@ -823,8 +860,8 @@ describe('MessageProcessor', () => {
         sourceTransformer: { code: 'destinationSet.remove("Dest 2"); return rawData;' },
       },
       destinations: [
-        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueEnabled: false },
-        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER' },
       ],
     });
     const processor = new MessageProcessor(
@@ -849,9 +886,9 @@ describe('MessageProcessor', () => {
         sourceTransformer: { code: 'destinationSet.removeAllExcept("Dest 2"); return rawData;' },
       },
       destinations: [
-        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueEnabled: false },
-        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueEnabled: false },
-        { metaDataId: 3, name: 'Dest 3', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 3, name: 'Dest 3', enabled: true, scripts: {}, queueMode: 'NEVER' },
       ],
     });
     const processor = new MessageProcessor(
