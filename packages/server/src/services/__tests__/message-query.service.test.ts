@@ -44,6 +44,11 @@ vi.mock('../../lib/db.js', () => ({
   default: mockDb,
 }));
 
+const mockDeleteMessagesByIds = vi.fn().mockResolvedValue(undefined);
+vi.mock('../message-delete-helper.js', () => ({
+  deleteMessagesByIds: mockDeleteMessagesByIds,
+}));
+
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
@@ -96,6 +101,7 @@ beforeEach(() => {
   resetSelectState();
   mockExecute.mockResolvedValue({ rows: [] });
   mockDeleteWhere.mockResolvedValue(undefined);
+  mockDeleteMessagesByIds.mockResolvedValue(undefined);
 });
 
 // ----- Tests -----
@@ -379,14 +385,15 @@ describe('MessageQueryService', () => {
 
   // ========== DELETE MESSAGE ==========
   describe('deleteMessage', () => {
-    it('deletes message and all related data', async () => {
+    it('deletes message and all related data atomically (incl. attachments + metadata)', async () => {
       pushSelectResponse([{ id: MESSAGE_ID }]);
 
       const result = await MessageQueryService.deleteMessage(CHANNEL_ID, MESSAGE_ID);
 
       expect(result.ok).toBe(true);
-      // Verify delete was called 3 times (content, connector_messages, messages)
-      expect(mockDelete).toHaveBeenCalledTimes(3);
+      // Routes through the transactional helper that also removes attachments and
+      // custom metadata — not three loose, non-transactional db.delete() calls.
+      expect(mockDeleteMessagesByIds).toHaveBeenCalledWith(CHANNEL_ID, [MESSAGE_ID]);
     });
 
     it('returns NOT_FOUND when message does not exist', async () => {
@@ -401,7 +408,7 @@ describe('MessageQueryService', () => {
 
     it('returns error on DB failure', async () => {
       pushSelectResponse([{ id: MESSAGE_ID }]);
-      mockDeleteWhere.mockRejectedValueOnce(new Error('DB error'));
+      mockDeleteMessagesByIds.mockRejectedValueOnce(new Error('DB error'));
 
       const result = await MessageQueryService.deleteMessage(CHANNEL_ID, MESSAGE_ID);
 

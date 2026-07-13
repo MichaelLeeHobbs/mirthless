@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PartitionManagerService } from '../partition-manager.service.js';
 
 // ----- Mock DB -----
 // We mock at the db module boundary per CLAUDE.md rules.
@@ -477,6 +478,8 @@ describe('ChannelService', () => {
       expect(mockSet).toHaveBeenCalledWith(
         expect.objectContaining({ deletedAt: expect.any(Date) })
       );
+      // A soft delete must NOT destroy message history (HIPAA retention).
+      expect(PartitionManagerService.dropPartitions).not.toHaveBeenCalled();
     });
 
     it('returns NOT_FOUND for missing channel', async () => {

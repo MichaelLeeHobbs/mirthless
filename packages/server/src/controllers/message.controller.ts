@@ -86,6 +86,15 @@ export class MessageController {
       return;
     }
 
+    // HIPAA audit: deleting a message destroys PHI and must be recorded, like
+    // content view/search/export.
+    emitEvent({
+      level: 'WARN', name: 'MESSAGE_DELETED', outcome: 'SUCCESS',
+      userId: req.user?.id ?? null, channelId,
+      serverId: null, ipAddress: req.ip ?? null,
+      attributes: { messageId: msgId },
+    });
+
     logger.info({ channelId, msgId }, 'Message deleted');
     res.status(204).send();
   }

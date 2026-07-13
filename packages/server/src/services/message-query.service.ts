@@ -10,6 +10,7 @@ import type { MessageSearchQuery } from '@mirthless/core-models';
 import { db } from '../lib/db.js';
 import { ServiceError } from '../lib/service-error.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
+import { deleteMessagesByIds } from './message-delete-helper.js';
 import {
   messages,
   connectorMessages,
@@ -317,25 +318,11 @@ export class MessageQueryService {
         throw new ServiceError('NOT_FOUND', `Message not found: ${String(messageId)}`);
       }
 
-      // Delete in dependency order: content → connector_messages → messages
-      await db.delete(messageContent).where(
-        and(
-          eq(messageContent.channelId, channelId),
-          eq(messageContent.messageId, messageId),
-        ),
-      );
-      await db.delete(connectorMessages).where(
-        and(
-          eq(connectorMessages.channelId, channelId),
-          eq(connectorMessages.messageId, messageId),
-        ),
-      );
-      await db.delete(messages).where(
-        and(
-          eq(messages.channelId, channelId),
-          eq(messages.id, messageId),
-        ),
-      );
+      // Delete atomically and in full dependency order (attachments + custom
+      // metadata included). The previous inline delete ran three non-transactional
+      // statements and left message_attachments / message_custom_metadata rows
+      // orphaned — PHI that persisted after a "delete" and was unreachable via UI.
+      await deleteMessagesByIds(channelId, [messageId]);
     });
   }
 

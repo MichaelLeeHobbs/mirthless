@@ -872,17 +872,19 @@ export class ChannelService {
     });
   }
 
-  /** Soft-delete a channel by setting deletedAt. */
+  /**
+   * Soft-delete a channel by setting deletedAt.
+   *
+   * This is reversible and intentionally retains all message history/PHI: a soft
+   * delete must NOT drop the channel's message partitions (that would irreversibly
+   * destroy the message and audit trail that a "soft" delete promises to keep, and
+   * is a HIPAA retention hazard). Physical partition removal is a separate, explicit
+   * purge operation performed only on an undeployed channel.
+   */
   static async delete(id: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
       const channel = await findChannel(id);
       await db.update(channels).set({ deletedAt: new Date() }).where(eq(channels.id, id));
-
-      // Drop message partitions for the deleted channel (non-blocking — log warning on failure)
-      const partitionResult = await PartitionManagerService.dropPartitions(id);
-      if (!partitionResult.ok) {
-        logger.warn({ channelId: id, errMsg: partitionResult.error.message }, 'Failed to drop partitions for channel');
-      }
 
       emitEvent({
         level: 'INFO', name: 'CHANNEL_DELETED', outcome: 'SUCCESS',
