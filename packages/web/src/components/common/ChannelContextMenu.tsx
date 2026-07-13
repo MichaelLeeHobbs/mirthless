@@ -24,8 +24,11 @@ import DownloadIcon from '@mui/icons-material/Download';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SendIcon from '@mui/icons-material/Send';
 import FolderIcon from '@mui/icons-material/Folder';
+import ToggleOnIcon from '@mui/icons-material/ToggleOn';
+import ToggleOffIcon from '@mui/icons-material/ToggleOff';
 import type { ContextMenuState } from '../../hooks/use-context-menu.js';
 import { useDeploymentAction } from '../../hooks/use-deployment.js';
+import { useToggleChannelEnabled } from '../../hooks/use-channels.js';
 import { usePermissions } from '../../hooks/use-permissions.js';
 import { PERMISSION } from '../../lib/permissions.js';
 
@@ -34,9 +37,11 @@ interface ChannelContextMenuProps {
   readonly channelId: string | null;
   readonly channelName: string | null;
   readonly state: string | null;
+  /** Config enabled flag — drives the Enable/Disable item. Undefined hides it. */
+  readonly enabled?: boolean | undefined;
   readonly onClose: () => void;
-  readonly onClone?: ((channelId: string) => void) | undefined;
-  readonly onDelete?: ((channelId: string) => void) | undefined;
+  readonly onClone?: ((channelId: string, channelName: string) => void) | undefined;
+  readonly onDelete?: ((channelId: string, channelName: string) => void) | undefined;
   readonly onExport?: ((channelId: string) => void) | undefined;
   readonly onSendMessage?: ((channelId: string, channelName: string) => void) | undefined;
   readonly onChangeGroup?: ((channelId: string) => void) | undefined;
@@ -47,6 +52,7 @@ export function ChannelContextMenu({
   channelId,
   channelName,
   state,
+  enabled,
   onClose,
   onClone,
   onDelete,
@@ -56,6 +62,7 @@ export function ChannelContextMenu({
 }: ChannelContextMenuProps): ReactNode {
   const navigate = useNavigate();
   const deployAction = useDeploymentAction();
+  const toggleEnabled = useToggleChannelEnabled();
   const { has } = usePermissions();
   const canDeploy = has(PERMISSION.CHANNELS_DEPLOY);
   const canWrite = has(PERMISSION.CHANNELS_WRITE);
@@ -71,6 +78,11 @@ export function ChannelContextMenu({
   const handleDeploy = (action: 'deploy' | 'undeploy' | 'redeploy' | 'start' | 'stop' | 'pause' | 'resume'): void => {
     onClose();
     deployAction.mutate({ channelId, action });
+  };
+
+  const handleToggleEnabled = (): void => {
+    onClose();
+    toggleEnabled.mutate({ id: channelId, enabled: !enabled });
   };
 
   return (
@@ -99,6 +111,14 @@ export function ChannelContextMenu({
         <ListItemIcon><BarChartIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Statistics</ListItemText>
       </MenuItem>
+      {canWrite && enabled !== undefined ? (
+        <MenuItem onClick={handleToggleEnabled}>
+          <ListItemIcon>
+            {enabled ? <ToggleOffIcon fontSize="small" /> : <ToggleOnIcon fontSize="small" />}
+          </ListItemIcon>
+          <ListItemText>{enabled ? 'Disable' : 'Enable'}</ListItemText>
+        </MenuItem>
+      ) : null}
       {canDeploy ? <Divider /> : null}
       {/* State-aware deployment actions (channels:deploy only) */}
       {canDeploy && (state === undefined || state === null || state === 'UNDEPLOYED') ? (
@@ -163,7 +183,7 @@ export function ChannelContextMenu({
       ) : null}
       <Divider />
       {onClone && canWrite ? (
-        <MenuItem onClick={() => { onClose(); onClone(channelId); }}>
+        <MenuItem onClick={() => { onClose(); onClone(channelId, channelName ?? ''); }}>
           <ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Clone</ListItemText>
         </MenuItem>
@@ -175,7 +195,7 @@ export function ChannelContextMenu({
         </MenuItem>
       ) : null}
       {onDelete && canDelete ? (
-        <MenuItem onClick={() => { onClose(); onDelete(channelId); }}>
+        <MenuItem onClick={() => { onClose(); onDelete(channelId, channelName ?? ''); }}>
           <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
           <ListItemText primaryTypographyProps={{ color: 'error' }}>Delete</ListItemText>
         </MenuItem>

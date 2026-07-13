@@ -55,11 +55,15 @@ interface GroupedChannelTableProps {
   readonly groups: readonly ChannelGroupSummary[];
   readonly memberships: readonly GroupMembership[];
   readonly onSendMessage?: ((channelId: string, channelName: string) => void) | undefined;
+  readonly onClone?: ((channelId: string, channelName: string) => void) | undefined;
+  readonly onDelete?: ((channelId: string, channelName: string) => void) | undefined;
+  readonly onExport?: ((channelId: string) => void) | undefined;
 }
 
 interface ChannelRow {
   readonly channelId: string;
   readonly channelName: string;
+  readonly enabled: boolean;
   readonly state: string;
   readonly received: number;
   readonly filtered: number;
@@ -87,7 +91,7 @@ function sumTotals(channels: readonly ChannelRow[]): { received: number; filtere
   return { received, filtered, sent, errored, queued };
 }
 
-export function GroupedChannelTable({ statistics, deploymentStatuses, groups, memberships, onSendMessage }: GroupedChannelTableProps): ReactNode {
+export function GroupedChannelTable({ statistics, deploymentStatuses, groups, memberships, onSendMessage, onClone, onDelete, onExport }: GroupedChannelTableProps): ReactNode {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const { menuState, menuTarget, handleContextMenu, handleClose } = useContextMenu<ChannelRow>();
@@ -195,6 +199,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     return statistics.map((s) => ({
       channelId: s.channelId,
       channelName: s.channelName,
+      enabled: s.enabled,
       state: deploymentMap.get(s.channelId) ?? 'UNDEPLOYED',
       received: s.received,
       filtered: s.filtered,
@@ -395,9 +400,13 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
         channelId={menuTarget?.channelId ?? null}
         channelName={menuTarget?.channelName ?? null}
         state={menuTarget === null ? null : (menuTarget.state === 'UNDEPLOYED' ? null : menuTarget.state)}
+        enabled={menuTarget?.enabled}
         onClose={handleClose}
         onSendMessage={onSendMessage}
         onChangeGroup={handleChangeGroup}
+        onClone={onClone}
+        onDelete={onDelete}
+        onExport={onExport}
       />
       {/* Group kebab menu */}
       <Menu

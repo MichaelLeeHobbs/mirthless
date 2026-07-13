@@ -31,6 +31,7 @@ import { BulkActionsToolbar } from '../components/dashboard/BulkActionsToolbar.j
 import { SendMessageDialog } from '../components/common/SendMessageDialog.js';
 import { CreateGroupDialog } from '../components/dashboard/CreateGroupDialog.js';
 import { useChannelSelection } from '../hooks/use-channel-selection.js';
+import { useChannelCrud } from '../hooks/use-channel-crud.js';
 
 const EMPTY_STATS: readonly ChannelStatisticsSummary[] = [];
 const EMPTY_STATUSES: readonly ChannelStatus[] = [];
@@ -55,6 +56,7 @@ export function DashboardPage(): ReactNode {
   const [sendMessageTarget, setSendMessageTarget] = useState<{ id: string; name: string } | null>(null);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const selection = useChannelSelection();
+  const crud = useChannelCrud();
 
   const statistics = statsQuery.data ?? EMPTY_STATS;
   const deploymentStatuses = deployQuery.data ?? EMPTY_STATUSES;
@@ -196,6 +198,9 @@ export function DashboardPage(): ReactNode {
               groups={groups}
               memberships={memberships}
               onSendMessage={handleSendMessage}
+              onClone={crud.onClone}
+              onDelete={crud.onDelete}
+              onExport={crud.onExport}
             />
           ) : (
             <ChannelStatusTable
@@ -209,6 +214,9 @@ export function DashboardPage(): ReactNode {
               }}
               isAllSelected={selection.isAllSelected(filteredStatistics.map((s) => s.channelId))}
               onSendMessage={handleSendMessage}
+              onClone={crud.onClone}
+              onDelete={crud.onDelete}
+              onExport={crud.onExport}
             />
           )}
         </>
@@ -226,6 +234,7 @@ export function DashboardPage(): ReactNode {
         open={createGroupOpen}
         onClose={() => { setCreateGroupOpen(false); }}
       />
+      {crud.dialogs}
     </Box>
   );
 }

@@ -39,6 +39,9 @@ interface ChannelStatusTableProps {
   readonly onSelectAll?: ((ids: readonly string[]) => void) | undefined;
   readonly isAllSelected?: boolean | undefined;
   readonly onSendMessage?: ((channelId: string, channelName: string) => void) | undefined;
+  readonly onClone?: ((channelId: string, channelName: string) => void) | undefined;
+  readonly onDelete?: ((channelId: string, channelName: string) => void) | undefined;
+  readonly onExport?: ((channelId: string) => void) | undefined;
 }
 
 type SortField = 'channelName' | 'state' | 'received' | 'filtered' | 'sent' | 'errored' | 'queued';
@@ -56,7 +59,7 @@ interface ChannelRow {
   readonly queued: number;
 }
 
-export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds, onToggleSelect, onSelectAll, isAllSelected, onSendMessage }: ChannelStatusTableProps): ReactNode {
+export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds, onToggleSelect, onSelectAll, isAllSelected, onSendMessage, onClone, onDelete, onExport }: ChannelStatusTableProps): ReactNode {
   const showCheckboxes = Boolean(onToggleSelect);
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
@@ -303,9 +306,13 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
         channelId={menuTarget?.channelId ?? null}
         channelName={menuTarget?.channelName ?? null}
         state={menuTarget === null ? null : (menuTarget.state === 'UNDEPLOYED' ? null : menuTarget.state)}
+        enabled={menuTarget?.enabled}
         onClose={handleClose}
         onSendMessage={onSendMessage}
         onChangeGroup={handleChangeGroup}
+        onClone={onClone}
+        onDelete={onDelete}
+        onExport={onExport}
       />
       {assignGroupTarget ? (
         <AssignGroupDialog
