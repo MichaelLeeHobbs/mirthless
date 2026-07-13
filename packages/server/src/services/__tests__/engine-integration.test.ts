@@ -20,9 +20,15 @@ const MockAlertManagerCtor = vi.fn().mockImplementation(() => mockAlertManager);
 // Mock ChannelRuntime
 const mockRuntimeDeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeUndeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
+const mockRuntimeStop = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
+const mockRuntimeHalt = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
+const mockRuntimeGetState = vi.fn().mockReturnValue('STOPPED');
 const mockChannelRuntime = {
   deploy: mockRuntimeDeploy,
   undeploy: mockRuntimeUndeploy,
+  stop: mockRuntimeStop,
+  halt: mockRuntimeHalt,
+  getState: mockRuntimeGetState,
 };
 const MockChannelRuntime = vi.fn().mockImplementation(() => mockChannelRuntime);
 
@@ -289,6 +295,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   _lastSourceConnector = null;
   destConnectorsByCall = [];
+  mockRuntimeGetState.mockReturnValue('STOPPED');
+  mockRuntimeStop.mockResolvedValue({ ok: true, value: undefined, error: null });
+  mockRuntimeHalt.mockResolvedValue({ ok: true, value: undefined, error: null });
   mockAlertServiceList.mockResolvedValue({
     ok: true,
     value: { data: [], pagination: { page: 1, pageSize: 1000, total: 0, totalPages: 0 } },
@@ -655,6 +664,32 @@ describe('EngineManager', () => {
       const engine = new EngineManager('test-server');
 
       await expect(engine.undeploy(CHANNEL_ID)).rejects.toThrow('not deployed');
+    });
+
+    it('stops a STARTED channel before undeploying it (graceful shutdown safety)', async () => {
+      const engine = new EngineManager('test-server');
+      await engine.deploy(makeChannel() as never);
+      mockRuntimeGetState.mockReturnValue('STARTED');
+
+      await engine.undeploy(CHANNEL_ID);
+
+      // Must stop (drain source) before runtime.undeploy(), which requires STOPPED.
+      expect(mockRuntimeStop).toHaveBeenCalledOnce();
+      expect(mockRuntimeUndeploy).toHaveBeenCalledOnce();
+      expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
+    });
+
+    it('force-halts a STARTED channel when a graceful stop fails', async () => {
+      const engine = new EngineManager('test-server');
+      await engine.deploy(makeChannel() as never);
+      mockRuntimeGetState.mockReturnValue('STARTED');
+      mockRuntimeStop.mockResolvedValue({ ok: false, value: null, error: new Error('stop boom') });
+
+      await engine.undeploy(CHANNEL_ID);
+
+      expect(mockRuntimeStop).toHaveBeenCalledOnce();
+      expect(mockRuntimeHalt).toHaveBeenCalledOnce();
+      expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
     });
   });
 

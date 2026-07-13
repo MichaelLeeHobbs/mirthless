@@ -46,7 +46,15 @@ startQueue()
 const shutdown = createShutdownHandler({
   logger,
   stopAccepting: () => new Promise<void>((resolve, reject) => {
-    server.close((err) => (err ? reject(err) : resolve()));
+    server.close((err) => {
+      // Socket.IO shutdown runs first and closes the shared HTTP server, so by
+      // the time we get here the server may already be closed — that's success.
+      if (err && (err as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') {
+        reject(err);
+        return;
+      }
+      resolve();
+    });
   }),
   stopEngine: async () => {
     const { getEngine } = await import('./engine.js');

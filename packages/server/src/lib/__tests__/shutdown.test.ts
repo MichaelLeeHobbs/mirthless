@@ -66,9 +66,9 @@ describe('createShutdownHandler', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(callOrder).toEqual([
+      'stopSocketIO',
       'stopAccepting',
       'stopEngine',
-      'stopSocketIO',
       'stopPrunerScheduler',
       'stopQueue',
       'closePool',
@@ -186,16 +186,16 @@ describe('createShutdownHandler', () => {
 
   it('does not call subsequent steps after one fails', async () => {
     const deps = createMockDeps({
-      stopSocketIO: vi.fn().mockRejectedValue(new Error('socket fail')),
+      stopEngine: vi.fn().mockRejectedValue(new Error('engine fail')),
     });
 
     const handler = createShutdownHandler(deps);
     handler('SIGTERM');
     await vi.advanceTimersByTimeAsync(0);
 
-    // stopAccepting and stopEngine run before stopSocketIO
+    // stopSocketIO and stopAccepting run before stopEngine
+    expect(deps.stopSocketIO).toHaveBeenCalledTimes(1);
     expect(deps.stopAccepting).toHaveBeenCalledTimes(1);
-    expect(deps.stopEngine).toHaveBeenCalledTimes(1);
     // stopPrunerScheduler, stopQueue, closePool should NOT run
     expect(deps.stopPrunerScheduler).not.toHaveBeenCalled();
     expect(deps.stopQueue).not.toHaveBeenCalled();

@@ -18,9 +18,14 @@ const MockAlertManagerCtor = vi.fn().mockImplementation(() => mockAlertManager);
 
 const mockRuntimeDeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeUndeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
+const mockRuntimeStop = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
+const mockRuntimeHalt = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const MockChannelRuntime = vi.fn().mockImplementation(() => ({
   deploy: mockRuntimeDeploy,
   undeploy: mockRuntimeUndeploy,
+  stop: mockRuntimeStop,
+  halt: mockRuntimeHalt,
+  getState: vi.fn().mockReturnValue('STOPPED'),
 }));
 
 const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn() };

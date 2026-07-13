@@ -455,6 +455,19 @@ export class EngineManager {
       throw new Error(`Channel ${channelId} is not deployed`);
     }
 
+    // Stop the running channel first — runtime.undeploy() requires STOPPED, and
+    // shutdown/undeploy must never throw on a STARTED channel (that would sever
+    // in-flight messages and skip the rest of the teardown). Stopping first
+    // drains the source connector cleanly. Idempotent for already-STOPPED channels.
+    const state = deployed.runtime.getState();
+    if (state === 'STARTED' || state === 'PAUSED') {
+      const stopResult = await deployed.runtime.stop();
+      if (!stopResult.ok) {
+        // Fall back to a force-halt so teardown can still proceed.
+        await deployed.runtime.halt();
+      }
+    }
+
     // Stop all queue consumers before cleanup
     await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
 

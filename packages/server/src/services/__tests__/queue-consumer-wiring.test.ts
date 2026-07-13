@@ -36,6 +36,9 @@ const mockRuntimeUndeploy = vi.fn().mockResolvedValue({ ok: true, value: undefin
 const mockChannelRuntime = {
   deploy: mockRuntimeDeploy,
   undeploy: mockRuntimeUndeploy,
+  stop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+  halt: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+  getState: vi.fn().mockReturnValue('STOPPED'),
 };
 const MockChannelRuntime = vi.fn().mockImplementation(() => mockChannelRuntime);
 

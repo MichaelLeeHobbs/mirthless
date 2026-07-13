@@ -144,6 +144,10 @@ export function emitToAll(event: string, data: unknown): void {
 
 export async function shutdownSocketIO(): Promise<void> {
   if (io) {
+    // Force-disconnect all clients first. Open websockets otherwise keep the
+    // underlying HTTP server's `close()` from ever resolving, which would hang
+    // graceful shutdown until the force-exit timer fires (SIGTERM => hard kill).
+    io.disconnectSockets(true);
     await new Promise<void>((resolve) => {
       io!.close(() => resolve());
     });
