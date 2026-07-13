@@ -9,6 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { normalizeEncoding } from '../encoding.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Constants -----
@@ -247,7 +248,7 @@ export class FileReceiver implements SourceConnectorRuntime {
 
     const content = this.config.binary
       ? (await fs.readFile(entry.fullPath)).toString('base64')
-      : await fs.readFile(entry.fullPath, { encoding: this.config.charset });
+      : await fs.readFile(entry.fullPath, { encoding: normalizeEncoding(this.config.charset) });
 
     const raw: RawMessage = {
       content,

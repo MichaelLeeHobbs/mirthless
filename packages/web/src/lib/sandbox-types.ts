@@ -114,42 +114,10 @@ declare function parseHL7(raw: string): Hl7MessageProxy;
  */
 declare function createACK(originalRaw: string, ackCode: string, textMessage?: string): string;
 
-// ----- IO Bridge Functions -----
-
-/**
- * Perform an HTTP request from within the sandbox.
- * @param url - The URL to fetch.
- * @param options - Optional request options.
- * @returns Response object with status, headers, and body.
- */
-declare function httpFetch(url: string, options?: {
-  method?: string;
-  headers?: Record<string, string>;
-  body?: string;
-  timeout?: number;
-}): Promise<HttpFetchResponse>;
-
-/**
- * Execute a database query.
- * @param resourceId - The resource ID for the database connection.
- * @param sql - SQL query string.
- * @param params - Query parameters.
- * @returns Query result with rows and row count.
- */
-declare function dbQuery(resourceId: string, sql: string, params?: readonly unknown[]): Promise<DbQueryResult>;
-
-/**
- * Route a message to another channel by name.
- * @param channelName - The target channel name.
- * @param content - The message content to send.
- * @returns The response from the target channel.
- */
-declare function routeMessage(channelName: string, content: string): Promise<string>;
-
-/**
- * Get a resource value by ID.
- * @param resourceId - The resource ID.
- * @returns The resource content string.
- */
-declare function getResource(resourceId: string): Promise<string>;
+// NOTE: The IO bridge functions (httpFetch, dbQuery, routeMessage, getResource)
+// are intentionally NOT declared here. They are not wired into the production
+// sandbox runtime, so calling them throws a ReferenceError at message time.
+// Do not add them back to the editor's IntelliSense until the bridges are actually
+// wired end-to-end in the engine (packages/server/src/engine.ts builds the sandbox
+// executor with no bridge dependencies today).
 `;
