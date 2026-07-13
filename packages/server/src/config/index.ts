@@ -20,6 +20,12 @@ const configSchema = z.object({
   // Database
   DATABASE_URL: z.string().url(),
   DATABASE_SSL: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  // PEM contents of a private CA bundle to verify the Postgres server cert against
+  // (for hospital/internal CAs). When set, TLS still verifies the certificate.
+  DATABASE_SSL_CA: z.string().optional(),
+  // Escape hatch to disable cert verification (INSECURE — MITM-able PHI link).
+  // Defaults to verifying. Only set 'false' for a throwaway/self-signed dev setup.
+  DATABASE_SSL_REJECT_UNAUTHORIZED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
 
   // Authentication
   JWT_SECRET: z.string().min(32),

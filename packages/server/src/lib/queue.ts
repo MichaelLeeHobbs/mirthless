@@ -6,6 +6,7 @@
 
 import { PgBoss } from 'pg-boss';
 import { config } from '../config/index.js';
+import { buildDbSslConfig } from './db.js';
 import logger from './logger.js';
 
 let boss: PgBoss | null = null;
@@ -15,10 +16,11 @@ export function getBoss(): PgBoss | null {
 }
 
 export async function startQueue(): Promise<PgBoss> {
+  const ssl = buildDbSslConfig();
   boss = new PgBoss({
     connectionString: config.DATABASE_URL,
     schema: 'pgboss',
-    ...(config.DATABASE_SSL ? { ssl: { rejectUnauthorized: false } } : {}),
+    ...(ssl ? { ssl } : {}),
   });
 
   boss.on('error', (err: Error) => {

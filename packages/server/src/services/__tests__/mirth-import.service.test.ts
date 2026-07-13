@@ -85,6 +85,15 @@ describe('MirthImportService.convertXml', () => {
     expect(result.value.warnings).toHaveLength(0);
   });
 
+  it('rejects XML containing a DOCTYPE (entity-expansion/XXE defense)', () => {
+    const xml = '<!DOCTYPE foo [<!ENTITY a "x">]><channel><name>Evil</name></channel>';
+    const result = MirthImportService.convertXml(xml);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('DOCTYPE');
+  });
+
   it('preserves channel ID from XML', () => {
     const xml = loadFixture('mirth-channel-basic.xml');
     const result = MirthImportService.convertXml(xml);

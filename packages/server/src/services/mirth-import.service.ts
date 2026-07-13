@@ -50,6 +50,10 @@ function createParser(): XMLParser {
     attributeNamePrefix: '@_',
     parseTagValue: true,
     trimValues: true,
+    // Mirth channel exports do not use custom entities. Disabling entity
+    // processing prevents a billion-laughs / numeric-entity expansion DoS from a
+    // malicious upload (the validate endpoint is reachable by lower-priv roles).
+    processEntities: false,
     isArray: (tagName: string) => {
       // These elements should always be parsed as arrays even when single
       const arrayTags = new Set([
@@ -66,6 +70,11 @@ export class MirthImportService {
   /** Convert Mirth Connect XML to Mirthless channel entries. */
   static convertXml(xml: string): Result<MirthConvertResult> {
     return tryCatch(() => {
+      // Reject a DOCTYPE outright — Mirth exports never carry one, and it is the
+      // vehicle for entity-expansion/XXE attacks.
+      if (/<!DOCTYPE/i.test(xml)) {
+        throw new Error('XML with a DOCTYPE declaration is not allowed');
+      }
       const parser = createParser();
       const parsed: unknown = parser.parse(xml);
 
