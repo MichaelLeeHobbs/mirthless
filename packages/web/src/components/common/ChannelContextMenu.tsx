@@ -17,6 +17,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import PauseIcon from '@mui/icons-material/Pause';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import CloudSyncIcon from '@mui/icons-material/CloudSync';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -67,7 +68,7 @@ export function ChannelContextMenu({
     navigate(path);
   };
 
-  const handleDeploy = (action: 'deploy' | 'undeploy' | 'start' | 'stop' | 'pause' | 'resume'): void => {
+  const handleDeploy = (action: 'deploy' | 'undeploy' | 'redeploy' | 'start' | 'stop' | 'pause' | 'resume'): void => {
     onClose();
     deployAction.mutate({ channelId, action });
   };
@@ -104,6 +105,12 @@ export function ChannelContextMenu({
         <MenuItem onClick={() => handleDeploy('deploy')}>
           <ListItemIcon><CloudUploadIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Deploy</ListItemText>
+        </MenuItem>
+      ) : null}
+      {canDeploy && (state === 'STOPPED' || state === 'STARTED' || state === 'PAUSED') ? (
+        <MenuItem onClick={() => handleDeploy('redeploy')}>
+          <ListItemIcon><CloudSyncIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Redeploy (apply saved config)</ListItemText>
         </MenuItem>
       ) : null}
       {canDeploy && state === 'STOPPED' ? (

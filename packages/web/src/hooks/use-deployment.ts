@@ -41,7 +41,7 @@ export function useAllDeploymentStatuses(): ReturnType<typeof useQuery<readonly 
 
 // ----- Mutations -----
 
-type DeploymentAction = 'deploy' | 'undeploy' | 'start' | 'stop' | 'halt' | 'pause' | 'resume';
+type DeploymentAction = 'deploy' | 'undeploy' | 'redeploy' | 'start' | 'stop' | 'halt' | 'pause' | 'resume';
 
 interface DeploymentInput {
   readonly channelId: string;
@@ -64,6 +64,7 @@ export function useDeploymentAction(): ReturnType<typeof useMutation<ChannelStat
       const actionLabels: Record<DeploymentAction, string> = {
         deploy: 'deployed',
         undeploy: 'undeployed',
+        redeploy: 'redeployed',
         start: 'started',
         stop: 'stopped',
         halt: 'halted',
