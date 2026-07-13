@@ -130,10 +130,23 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
 
 // ----- Helpers -----
 
-/** Build FHIR endpoint URL. Appends the resource id for instance-level ops. */
+/** FHIR resource logical id: `[A-Za-z0-9-.]{1,64}` (FHIR spec). */
+const FHIR_ID_RE = /^[A-Za-z0-9\-.]{1,64}$/;
+
+/**
+ * Build FHIR endpoint URL. Appends the resource id for instance-level ops. The id
+ * comes from message content, so it is validated against the FHIR id grammar — an
+ * id containing `/`, `?`, or `..` would otherwise rewrite the request path.
+ */
 export function buildFhirUrl(baseUrl: string, resourceType: string, resourceId?: string): string {
   const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  return resourceId ? `${base}/${resourceType}/${resourceId}` : `${base}/${resourceType}`;
+  if (resourceId !== undefined) {
+    if (!FHIR_ID_RE.test(resourceId)) {
+      throw new Error(`Invalid FHIR resource id: ${resourceId}`);
+    }
+    return `${base}/${resourceType}/${resourceId}`;
+  }
+  return `${base}/${resourceType}`;
 }
 
 /** Extract the resource id from a serialized FHIR resource (json or xml). */

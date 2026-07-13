@@ -71,6 +71,13 @@ describe('buildFhirUrl', () => {
   it('appends the resource id for instance-level operations', () => {
     expect(buildFhirUrl('https://fhir.example.com/r4', 'Patient', 'p1')).toBe('https://fhir.example.com/r4/Patient/p1');
   });
+
+  it('rejects a resource id that would rewrite the request path', () => {
+    // Id comes from message content — must match the FHIR id grammar.
+    expect(() => buildFhirUrl('https://fhir.example.com/r4', 'Patient', '../../admin')).toThrow(/Invalid FHIR resource id/);
+    expect(() => buildFhirUrl('https://fhir.example.com/r4', 'Patient', 'p1?evil=1')).toThrow(/Invalid FHIR resource id/);
+    expect(() => buildFhirUrl('https://fhir.example.com/r4', 'Patient', 'a/b')).toThrow(/Invalid FHIR resource id/);
+  });
 });
 
 // ----- extractResourceId -----
