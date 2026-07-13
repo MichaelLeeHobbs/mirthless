@@ -108,16 +108,51 @@ function fail<T>(error: Result<T>['error'] & object): Result<T> {
   return { ok: false, value: null, error } as Result<T>;
 }
 
+/** Error content types (always stored except in METADATA/DISABLED). */
+const ERROR_CONTENT_TYPES: ReadonlySet<number> = new Set([
+  CONTENT_TYPE.ERROR, CONTENT_TYPE.RESPONSE_ERROR, CONTENT_TYPE.PROCESSING_ERROR,
+]);
+
+/**
+ * PRODUCTION stores everything needed to deliver, view, recover, and reprocess a
+ * message — RAW (reprocess), SENT (queued delivery + crash recovery), the
+ * transformed/encoded/response bodies (message browser), and all errors. It omits
+ * only the debug-only PROCESSED copy and the map snapshots (Mirth's "Production"
+ * semantics). RAW must be present or crash recovery and reprocess break; SENT must
+ * be present or queued destinations reload null content and error 100% of messages.
+ */
+const PRODUCTION_CONTENT_TYPES: ReadonlySet<number> = new Set([
+  CONTENT_TYPE.RAW, CONTENT_TYPE.TRANSFORMED, CONTENT_TYPE.ENCODED,
+  CONTENT_TYPE.SENT, CONTENT_TYPE.RESPONSE, CONTENT_TYPE.RESPONSE_TRANSFORMED,
+  CONTENT_TYPE.RESPONSE_SENT,
+  ...ERROR_CONTENT_TYPES,
+]);
+
+/** RAW mode keeps only the raw inbound content (enough to reprocess) plus errors. */
+const RAW_CONTENT_TYPES: ReadonlySet<number> = new Set([
+  CONTENT_TYPE.RAW, ...ERROR_CONTENT_TYPES,
+]);
+
 /**
  * Determines whether a given content type should be stored based on the storage mode.
- * Error content types (11-13) are stored in DEVELOPMENT, PRODUCTION, and RAW modes.
+ * Error content types are stored in every mode except METADATA/DISABLED.
  */
 export function shouldStoreContent(mode: MessageStorageMode, contentType: number): boolean {
   if (mode === MESSAGE_STORAGE_MODE.DEVELOPMENT) return true;
-  if (mode === MESSAGE_STORAGE_MODE.PRODUCTION) return contentType >= CONTENT_TYPE.ERROR;
-  if (mode === MESSAGE_STORAGE_MODE.RAW) return contentType === CONTENT_TYPE.RAW || contentType >= CONTENT_TYPE.ERROR;
+  if (mode === MESSAGE_STORAGE_MODE.PRODUCTION) return PRODUCTION_CONTENT_TYPES.has(contentType);
+  if (mode === MESSAGE_STORAGE_MODE.RAW) return RAW_CONTENT_TYPES.has(contentType);
   // METADATA, DISABLED: no content stored
   return false;
+}
+
+/**
+ * A storage mode stores enough content to deliver a queued message and recover it
+ * after a crash (needs RAW + SENT). METADATA/DISABLED store neither, so a queued
+ * destination on such a channel would lose 100% of messages. Used to reject the
+ * combination at deploy time.
+ */
+export function storageModeSupportsQueue(mode: MessageStorageMode): boolean {
+  return shouldStoreContent(mode, CONTENT_TYPE.SENT) && shouldStoreContent(mode, CONTENT_TYPE.RAW);
 }
 
 // ----- Message Store Adapter -----
@@ -228,12 +263,25 @@ export class EngineManager {
       );
     }
 
+    // Fail loud, never silent: a queued destination needs stored RAW+SENT content
+    // to deliver and to recover after a crash. On METADATA/DISABLED storage that
+    // content is never written, so every queued message would error on delivery.
+    const storageMode = channel.messageStorageMode as MessageStorageMode;
+    const hasQueuedDestination = channel.destinations.some((d) => d.queueMode !== 'NEVER');
+    if (hasQueuedDestination && !storageModeSupportsQueue(storageMode)) {
+      throw new Error(
+        `Channel ${channel.id} has a queued destination but message storage mode is ${storageMode}, ` +
+        'which does not persist the RAW/SENT content required to deliver and recover queued messages. ' +
+        'Use DEVELOPMENT, PRODUCTION, or RAW storage, or set every destination queue mode to NEVER.',
+      );
+    }
+
     const runtime = new ChannelRuntime();
     const gcm = new GlobalChannelMap();
 
     // Create per-channel message store adapter with storage policy
     const store = createMessageStoreAdapter({
-      messageStorageMode: channel.messageStorageMode as MessageStorageMode,
+      messageStorageMode: storageMode,
       removeContentOnCompletion: channel.removeContentOnCompletion,
       removeAttachmentsOnCompletion: channel.removeAttachmentsOnCompletion,
       encryptData: channel.encryptData,
