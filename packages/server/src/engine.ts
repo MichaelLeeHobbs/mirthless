@@ -583,9 +583,15 @@ export class EngineManager {
         return { ok: false, value: null, error: new Error('Raw content unavailable for recovery') } as Result<void>;
       }
       const processed = await processMessage(raw.value);
-      // Mark the original message processed so it is not recovered again on the next deploy.
+      if (!processed.ok) {
+        // Do NOT mark processed on failure — the original still holds recoverable
+        // raw content and must remain eligible for recovery on the next deploy.
+        // Marking it here would silently lose the message forever.
+        return { ok: false, value: null, error: processed.error } as Result<void>;
+      }
+      // Reprocess succeeded (a new message row was created and run through the
+      // pipeline). Mark the original processed so it is not recovered again.
       await MessageService.markProcessed(channelId, messageId);
-      if (!processed.ok) return { ok: false, value: null, error: processed.error } as Result<void>;
       return OK_VOID;
     };
 
@@ -594,7 +600,7 @@ export class EngineManager {
       if (!sent.ok || sent.value === null) {
         return { ok: false, value: null, error: new Error('Sent content unavailable for recovery') } as Result<void>;
       }
-      const sendResult = await sendFn(metaDataId, sent.value, AbortSignal.timeout(30_000));
+      const sendResult = await sendFn(metaDataId, messageId, sent.value, AbortSignal.timeout(30_000));
       const success = sendResult.ok && sendResult.value.status === 'SENT';
       await store.updateConnectorMessageStatus(channelId, messageId, metaDataId, success ? 'SENT' : 'ERROR');
       await store.incrementStats(channelId, metaDataId, this.serverId, success ? 'sent' : 'errored');

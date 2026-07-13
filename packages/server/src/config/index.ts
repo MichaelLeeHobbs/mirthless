@@ -58,7 +58,34 @@ const configSchema = z.object({
     .transform((v) => (v === undefined ? undefined : v === 'true')),
 });
 
-const result = configSchema.safeParse(process.env);
+/**
+ * A JWT secret is unusable in production if it is a shipped placeholder or an
+ * obviously low-entropy value. `min(32)` alone passes the 45-char placeholder in
+ * .env.production.example, which would give every un-edited deployment the same
+ * publicly-known signing key (admin-token forgery). We reject those in production.
+ */
+export function isWeakJwtSecret(secret: string): boolean {
+  const lower = secret.toLowerCase();
+  const placeholderMarkers = ['change_me', 'changeme', 'change-me', 'your-secret', 'your_secret', 'replace', 'example', 'insecure', 'placeholder'];
+  if (placeholderMarkers.some((m) => lower.includes(m))) return true;
+  // Fewer than 16 distinct characters => very low entropy for a 32+ char secret.
+  if (new Set(secret).size < 16) return true;
+  return false;
+}
+
+const refinedSchema = configSchema.superRefine((data, ctx) => {
+  if (data.NODE_ENV === 'production' && isWeakJwtSecret(data.JWT_SECRET)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['JWT_SECRET'],
+      message:
+        'JWT_SECRET looks like a placeholder or low-entropy value. Set a strong, random secret in production ' +
+        '(e.g. `openssl rand -hex 32`). Refusing to start with a guessable signing key.',
+    });
+  }
+});
+
+const result = refinedSchema.safeParse(process.env);
 
 if (!result.success) {
   // eslint-disable-next-line no-console

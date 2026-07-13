@@ -22,10 +22,23 @@ declare global {
         role: string;
         isActive: boolean;
         permissions: readonly string[];
+        mustChangePassword: boolean;
       };
       sessionId?: string;
     }
   }
+}
+
+/**
+ * Endpoints an authenticated user may still call while `mustChangePassword` is set:
+ * changing their own password (the whole point) and logging out. Everything else
+ * is blocked until the password is changed.
+ */
+function isPasswordChangeExempt(req: Request): boolean {
+  const url = req.originalUrl.split('?')[0] ?? '';
+  if (req.method === 'POST' && url.endsWith('/users/me/password')) return true;
+  if (req.method === 'POST' && url.endsWith('/auth/logout')) return true;
+  return false;
 }
 
 /**
@@ -68,6 +81,7 @@ export async function authenticate(
         email: users.email,
         role: users.role,
         enabled: users.enabled,
+        mustChangePassword: users.mustChangePassword,
       })
       .from(users)
       .where(eq(users.id, payload.userId));
@@ -82,6 +96,18 @@ export async function authenticate(
       return;
     }
 
+    // Enforce forced password change server-side. Until the user changes their
+    // password, every endpoint except the change-password/logout calls is blocked
+    // — otherwise the flag is cosmetic (UI-only) and a known default credential
+    // (e.g. the seeded admin) grants full API access indefinitely.
+    if (user.mustChangePassword && !isPasswordChangeExempt(req)) {
+      res.status(403).json({
+        success: false,
+        error: { code: 'PASSWORD_CHANGE_REQUIRED', message: 'You must change your password before continuing.' },
+      });
+      return;
+    }
+
     // Load permissions from user_permissions table
     const permissions = await loadUserPermissions(user.id);
 
@@ -92,6 +118,7 @@ export async function authenticate(
       role: user.role,
       isActive: user.enabled,
       permissions,
+      mustChangePassword: user.mustChangePassword,
     };
     if (payload.sessionId) {
       req.sessionId = payload.sessionId;
@@ -130,6 +157,7 @@ export async function optionalAuth(
         email: users.email,
         role: users.role,
         enabled: users.enabled,
+        mustChangePassword: users.mustChangePassword,
       })
       .from(users)
       .where(eq(users.id, payload.userId));
@@ -144,6 +172,7 @@ export async function optionalAuth(
         role: user.role,
         isActive: user.enabled,
         permissions,
+        mustChangePassword: user.mustChangePassword,
       };
       if (payload.sessionId) {
         req.sessionId = payload.sessionId;
