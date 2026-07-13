@@ -6,6 +6,10 @@
 
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { withTimeoutSignal } from '../timeout.js';
+
+/** Default SMTP send timeout — nodemailer has no native cancellation. */
+const SEND_TIMEOUT_MS = 30_000;
 
 // ----- Config -----
 
@@ -13,7 +17,13 @@ export interface SmtpDispatcherConfig {
   readonly host: string;
   readonly port: number;
   readonly secure: boolean;
-  readonly auth: SmtpAuth;
+  /**
+   * Require STARTTLS upgrade before authenticating on a non-secure port.
+   * Prevents credentials from being sent over a plaintext connection.
+   */
+  readonly requireTLS: boolean;
+  /** Credentials. Omitted/empty for anonymous relays — no auth is sent. */
+  readonly auth?: SmtpAuth | undefined;
   readonly from: string;
   readonly to: string;
   readonly cc: string;
@@ -131,9 +141,23 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
 
       const transport = this.createTransport(this.config);
       try {
-        const result = await transport.sendMail(mailOptions);
+        // nodemailer sendMail has no AbortSignal support, so race it against the
+        // caller's signal AND a hard timeout; a hung SMTP server surfaces as a
+        // Result error (via the enclosing tryCatch) instead of an unbounded wait.
+        const result = await withTimeoutSignal(
+          transport.sendMail(mailOptions), SEND_TIMEOUT_MS, 'SMTP sendMail', signal,
+        );
         const accepted = result.accepted.length;
         const rejected = result.rejected.length;
+        // Every recipient rejected = nothing delivered. Reporting SENT here would
+        // silently lose the message (e.g. an alert/result email the server refused).
+        if (accepted === 0) {
+          return {
+            status: 'ERROR' as const,
+            content: `SMTP delivery failed: all ${String(rejected)} recipient(s) rejected (messageId=${String(result.messageId)})`,
+            errorMessage: 'All recipients rejected',
+          };
+        }
         return {
           status: 'SENT' as const,
           content: `messageId=${result.messageId}, accepted=${String(accepted)}, rejected=${String(rejected)}`,
@@ -165,16 +189,28 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
 
 // ----- Default transport factory (nodemailer) -----
 
+/**
+ * Build nodemailer transport options from connector config.
+ * Auth is included ONLY when credentials are present — never an empty auth
+ * object — and requireTLS is always forwarded so credentials are not sent
+ * over a plaintext connection.
+ */
+export function buildNodemailerOptions(config: SmtpDispatcherConfig): Record<string, unknown> {
+  const hasCreds = !!config.auth && !!config.auth.user;
+  return {
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    requireTLS: config.requireTLS,
+    ...(hasCreds ? { auth: { user: config.auth!.user, pass: config.auth!.pass } } : {}),
+  };
+}
+
 /** Create a nodemailer-based transport. Requires nodemailer to be installed. */
 export function createNodemailerTransport(config: SmtpDispatcherConfig): SmtpTransport {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const nodemailer = require('nodemailer') as { createTransport: (opts: Record<string, unknown>) => { sendMail: (opts: SmtpMailOptions) => Promise<SmtpSendResult>; close: () => void } };
-  const transporter = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
-    auth: { user: config.auth.user, pass: config.auth.pass },
-  });
+  const transporter = nodemailer.createTransport(buildNodemailerOptions(config));
   return {
     sendMail: async (options) => transporter.sendMail(options),
     close: () => transporter.close(),

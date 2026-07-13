@@ -9,6 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { normalizeEncoding } from '../encoding.js';
 
 // ----- Config -----
 
@@ -128,7 +129,7 @@ export class FileDispatcher implements DestinationConnectorRuntime {
     const data = this.config.binary
       ? Buffer.from(content, 'base64')
       : content;
-    await fs.appendFile(outputPath, data, this.config.binary ? undefined : { encoding: this.config.charset });
+    await fs.appendFile(outputPath, data, this.config.binary ? undefined : { encoding: normalizeEncoding(this.config.charset) });
   }
 
   /** Write content directly to a file. */
@@ -136,6 +137,6 @@ export class FileDispatcher implements DestinationConnectorRuntime {
     const data = this.config.binary
       ? Buffer.from(content, 'base64')
       : content;
-    await fs.writeFile(outputPath, data, this.config.binary ? undefined : { encoding: this.config.charset });
+    await fs.writeFile(outputPath, data, this.config.binary ? undefined : { encoding: normalizeEncoding(this.config.charset) });
   }
 }

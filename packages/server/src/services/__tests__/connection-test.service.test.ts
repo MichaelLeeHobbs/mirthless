@@ -13,10 +13,18 @@ import {
 
 // ----- Mocks -----
 
-// Mock node:net for TCP tests
+// Mock node:net for TCP tests. isIP is needed by the SSRF guard's host check.
 const mockConnect = vi.fn();
 vi.mock('node:net', () => ({
   connect: (...args: unknown[]) => mockConnect(...args),
+  isIP: (value: string) => (/^\d{1,3}(\.\d{1,3}){3}$/.test(value) ? 4 : 0),
+}));
+
+// Mock DNS so the SSRF guard resolves test hostnames to a public IP (allowed)
+// without real network I/O.
+const mockDnsLookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]);
+vi.mock('node:dns/promises', () => ({
+  lookup: (...args: unknown[]) => mockDnsLookup(...args),
 }));
 
 // Mock node:fs/promises for File tests
@@ -688,6 +696,47 @@ describe('ConnectionTestService', () => {
   describe('timeout configuration', () => {
     it('has a 10-second default timeout', () => {
       expect(_testing.TEST_TIMEOUT_MS).toBe(10_000);
+    });
+  });
+
+  // ----- SSRF Guard (DNS-aware) -----
+
+  describe('SSRF guard', () => {
+    it('classifies private/reserved IPs as blocked', () => {
+      expect(_testing.isBlockedIp('127.0.0.1')).toBe(true);
+      expect(_testing.isBlockedIp('10.0.0.5')).toBe(true);
+      expect(_testing.isBlockedIp('192.168.1.1')).toBe(true);
+      expect(_testing.isBlockedIp('172.16.0.1')).toBe(true);
+      expect(_testing.isBlockedIp('169.254.0.1')).toBe(true);
+      expect(_testing.isBlockedIp('::ffff:127.0.0.1')).toBe(true);
+    });
+
+    it('classifies public IPs as allowed', () => {
+      expect(_testing.isBlockedIp('93.184.216.34')).toBe(false);
+      expect(_testing.isBlockedIp('8.8.8.8')).toBe(false);
+    });
+
+    it('blocks a literal loopback hostname', async () => {
+      await expect(_testing.assertHostAllowed('localhost')).rejects.toBeTruthy();
+    });
+
+    it('blocks a literal private IP', async () => {
+      await expect(_testing.assertHostAllowed('127.0.0.1')).rejects.toBeTruthy();
+    });
+
+    it('blocks a DNS name that RESOLVES to a private IP (rebinding defense)', async () => {
+      mockDnsLookup.mockResolvedValueOnce([{ address: '10.1.2.3', family: 4 }]);
+      await expect(_testing.assertHostAllowed('evil.example.com')).rejects.toBeTruthy();
+    });
+
+    it('allows a DNS name that resolves to a public IP', async () => {
+      mockDnsLookup.mockResolvedValueOnce([{ address: '93.184.216.34', family: 4 }]);
+      await expect(_testing.assertHostAllowed('good.example.com')).resolves.toBeUndefined();
+    });
+
+    it('allows an unresolvable host (the connection will fail loudly instead)', async () => {
+      mockDnsLookup.mockRejectedValueOnce(new Error('ENOTFOUND'));
+      await expect(_testing.assertHostAllowed('nope.invalid')).resolves.toBeUndefined();
     });
   });
 });

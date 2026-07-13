@@ -19,7 +19,7 @@ Mirthless keeps what works (channels, transformers, filters, the pipeline model)
 
 - **TypeScript/Node.js** — not Java. Fast startup, npm ecosystem, familiar to web developers
 - **Web-based admin** — React + Material UI. No client install. Works on any device with a browser
-- **Everything is free** — RBAC, MFA, channel history, cross-channel search, alerting — all built-in, no tiers
+- **Everything is free** — RBAC, channel history, message search, alerting — all built-in, no tiers (MFA is on the roadmap, not yet shipped)
 - **TypeScript in transformers** — write channel scripts in TypeScript with full Monaco editor + autocomplete
 - **13ms message processing** — batched CTE queries on native Postgres. Mirth does ~70ms for comparable workloads
 - **Real-time dashboard** — WebSocket-driven updates, not polling
@@ -27,7 +27,7 @@ Mirthless keeps what works (channels, transformers, filters, the pipeline model)
 ## Quick Start
 
 ```bash
-# Prerequisites: Node.js 22+, PostgreSQL 18, pnpm 9+
+# Prerequisites: Node.js 22+, PostgreSQL 17, pnpm 9+
 
 # Clone and install
 git clone https://github.com/MichaelLeeHobbs/mirthless.git
@@ -46,6 +46,40 @@ pnpm dev                    # starts server (:3000) + web UI (:5173)
 # Login: admin / Admin123!
 ```
 
+### Docker (production)
+
+The production stack (Postgres + server + nginx-served web) is defined in
+[`docker/docker-compose.prod.yml`](docker/docker-compose.prod.yml). The server image runs
+database migrations and an idempotent seed on start before booting.
+
+```bash
+cp .env.production.example .env   # set POSTGRES_PASSWORD, JWT_SECRET, etc.
+docker compose -f docker/docker-compose.prod.yml up -d --build
+```
+
+The API is served behind nginx on port 80; interactive API docs (Swagger UI) are at
+**`/api-docs`** (served by the server at `:3000/api-docs`).
+
+### Documentation
+
+- [Quickstart: create your first channel](docs/user/quickstart-first-channel.md)
+- [Connector reference](docs/user/connector-reference.md) — all 10 connector types and their settings
+- [Transformer scripting API](docs/user/scripting-api.md) — the sandbox surface for filters/transformers
+
+### Operations
+
+Running Mirthless in production? See the operator guides in [`docs/ops/`](docs/ops/):
+
+- [Backup & restore](docs/ops/backup-restore.md) — Postgres `pg_dump`/`pg_restore` plus the config backup API
+- [Upgrade procedure](docs/ops/upgrade.md) — migrations, downtime, and rollback
+- [TLS & PHI-in-transit](docs/ops/tls-and-phi.md) — edge TLS and connector-level TLS
+- [Resource sizing & observability](docs/ops/resource-and-observability.md) — health, `/metrics`, logging, sizing
+- [Throughput benchmark](docs/ops/throughput-benchmark.md) — how to measure msgs/sec, with a baseline
+
+### Contributing & Security
+
+- [Contributing guide](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security policy](SECURITY.md)
+
 ## Architecture
 
 ```
@@ -63,7 +97,7 @@ packages/
 
 ## Current State
 
-This is a working system with ~1,640 automated tests. You can create channels, write transformers in TypeScript, deploy them, send messages, and watch them flow through the pipeline. The 10 seeded example channels demonstrate HL7v2, JSON, XML, channel-to-channel routing, filtering, error handling, and more.
+This is a working system with ~2,200 automated tests. You can create channels, write transformers in TypeScript, deploy them, send messages, and watch them flow through the pipeline. The 10 seeded example channels demonstrate HL7v2, JSON, XML, channel-to-channel routing, filtering, error handling, and more.
 
 What works: channels, pipeline, sandbox, 10 connector types, RBAC, audit logging, message browser, code templates, alerts, groups, tags, dark mode, CLI.
 

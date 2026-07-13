@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import type { MessageSearchQuery } from '@mirthless/core-models';
 import { MessageQueryService } from '../services/message-query.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { emitEvent } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
@@ -38,6 +39,14 @@ export class MessageController {
       return;
     }
 
+    // HIPAA audit: searching messages (esp. contentSearch) touches PHI.
+    emitEvent({
+      level: 'INFO', name: 'MESSAGE_SEARCHED', outcome: 'SUCCESS',
+      userId: req.user?.id ?? null, channelId,
+      serverId: null, ipAddress: req.ip ?? null,
+      attributes: { contentSearch: filters.contentSearch !== undefined && filters.contentSearch.length > 0, resultCount: result.value.total },
+    });
+
     res.json({ success: true, data: result.value });
   }
 
@@ -52,6 +61,14 @@ export class MessageController {
       res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
       return;
     }
+
+    // HIPAA audit: message detail returns raw/transformed/sent content (PHI).
+    emitEvent({
+      level: 'INFO', name: 'MESSAGE_CONTENT_VIEWED', outcome: 'SUCCESS',
+      userId: req.user?.id ?? null, channelId,
+      serverId: null, ipAddress: req.ip ?? null,
+      attributes: { messageId: msgId },
+    });
 
     res.json({ success: true, data: result.value });
   }
@@ -68,6 +85,15 @@ export class MessageController {
       res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
       return;
     }
+
+    // HIPAA audit: deleting a message destroys PHI and must be recorded, like
+    // content view/search/export.
+    emitEvent({
+      level: 'WARN', name: 'MESSAGE_DELETED', outcome: 'SUCCESS',
+      userId: req.user?.id ?? null, channelId,
+      serverId: null, ipAddress: req.ip ?? null,
+      attributes: { messageId: msgId },
+    });
 
     logger.info({ channelId, msgId }, 'Message deleted');
     res.status(204).send();

@@ -23,6 +23,7 @@ import { AlertService } from './alert.service.js';
 import { GlobalScriptService } from './global-script.service.js';
 import { UserService } from './user.service.js';
 import { SettingsService } from './settings.service.js';
+import { REDACTED } from '../lib/secret-redaction.js';
 import { ResourceService } from './resource.service.js';
 import { ChannelGroupService } from './channel-group.service.js';
 import { TagService } from './tag.service.js';
@@ -295,12 +296,17 @@ async function restoreSettings(
   for (const item of items) {
     try {
       const existing = await SettingsService.getByKey(item.key);
+      // A backup masks secret values as REDACTED. Never write that marker back as
+      // a live secret: if the setting already exists keep its current (real) value
+      // untouched; if it is new, store empty so the operator must re-enter it.
+      const isRedacted = item.value === REDACTED;
       if (existing.ok) {
         if (mode === 'SKIP') { skipped++; continue; }
+        if (isRedacted) { skipped++; continue; }
         await SettingsService.upsert({ key: item.key, value: item.value ?? '', type: item.type as SettingType, description: item.description ?? '', category: item.category ?? '' });
         updated++;
       } else {
-        await SettingsService.upsert({ key: item.key, value: item.value ?? '', type: item.type as SettingType, description: item.description ?? '', category: item.category ?? '' });
+        await SettingsService.upsert({ key: item.key, value: isRedacted ? '' : (item.value ?? ''), type: item.type as SettingType, description: item.description ?? '', category: item.category ?? '' });
         created++;
       }
     } catch (err) {

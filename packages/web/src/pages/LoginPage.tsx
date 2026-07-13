@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -21,12 +21,15 @@ interface LoginResponseData {
     readonly email: string;
     readonly role: string;
     readonly permissions: ReadonlyArray<string>;
+    /** Server flag: user must change their password before using the app. */
+    readonly mustChangePassword?: boolean;
   };
 }
 
 export function LoginPage(): ReactNode {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const {
@@ -50,9 +53,14 @@ export function LoginPage(): ReactNode {
       return;
     }
 
-    setAuth(result.data.user, result.data.accessToken);
+    setAuth(result.data.user, result.data.accessToken, result.data.user.mustChangePassword === true);
     navigate('/');
   };
+
+  // Already signed in — skip the login form.
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <Box

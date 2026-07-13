@@ -169,6 +169,51 @@ describe('ChannelController', () => {
 
       expect(res.status).toHaveBeenCalledWith(404);
     });
+
+    it('redacts connector credentials for a read-only caller (no channels:write)', async () => {
+      const channel = makeChannelDetail({
+        sourceConnectorProperties: { host: 'db.local', password: 'super-secret' },
+        destinations: [{ name: 'D1', properties: { host: 'sftp.local', password: 'sftp-secret', apiKey: 'k' } }],
+      });
+      mockService.getById.mockResolvedValue({ ok: true, value: channel, error: null });
+
+      const req = makeReq({
+        params: { id: '00000000-0000-0000-0000-000000000001' } as Request['params'],
+        user: { id: 'u1', permissions: ['channels:read'] } as unknown as Request['user'],
+      });
+      const res = makeRes();
+
+      await ChannelController.getById(req, res);
+
+      const data = ((res.json as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>)['data'] as Record<string, unknown>;
+      const src = data['sourceConnectorProperties'] as Record<string, unknown>;
+      expect(src['password']).toBe('__REDACTED__');
+      expect(src['host']).toBe('db.local');
+      const dest = (data['destinations'] as Record<string, unknown>[])[0]!;
+      const dprops = dest['properties'] as Record<string, unknown>;
+      expect(dprops['password']).toBe('__REDACTED__');
+      expect(dprops['apiKey']).toBe('__REDACTED__');
+      expect(dprops['host']).toBe('sftp.local');
+    });
+
+    it('returns real connector credentials for a caller with channels:write', async () => {
+      const channel = makeChannelDetail({
+        sourceConnectorProperties: { host: 'db.local', password: 'super-secret' },
+      });
+      mockService.getById.mockResolvedValue({ ok: true, value: channel, error: null });
+
+      const req = makeReq({
+        params: { id: '00000000-0000-0000-0000-000000000001' } as Request['params'],
+        user: { id: 'u1', permissions: ['channels:read', 'channels:write'] } as unknown as Request['user'],
+      });
+      const res = makeRes();
+
+      await ChannelController.getById(req, res);
+
+      const data = ((res.json as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>)['data'] as Record<string, unknown>;
+      const src = data['sourceConnectorProperties'] as Record<string, unknown>;
+      expect(src['password']).toBe('super-secret');
+    });
   });
 
   // ========== CREATE ==========

@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm';
 import type { UpsertSettingInput } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import { redactSettingValue } from '../lib/secret-redaction.js';
 import { db } from '../lib/db.js';
 import { systemSettings } from '../db/schema/index.js';
 
@@ -40,6 +41,12 @@ function toDetail(row: typeof systemSettings.$inferSelect): SettingDetail {
   };
 }
 
+/** Read-path DTO with secret values masked (never leak secrets to settings:read). */
+function toReadDetail(row: typeof systemSettings.$inferSelect): SettingDetail {
+  const detail = toDetail(row);
+  return { ...detail, value: redactSettingValue(detail.key, detail.type, detail.value) };
+}
+
 // ----- Service -----
 
 export class SettingsService {
@@ -52,7 +59,7 @@ export class SettingsService {
         ? await q.where(eq(systemSettings.category, query.category))
         : await q;
 
-      return rows.map(toDetail);
+      return rows.map(toReadDetail);
     });
   }
 
@@ -68,7 +75,7 @@ export class SettingsService {
         throw new ServiceError('NOT_FOUND', `Setting "${key}" not found`);
       }
 
-      return toDetail(row);
+      return toReadDetail(row);
     });
   }
 

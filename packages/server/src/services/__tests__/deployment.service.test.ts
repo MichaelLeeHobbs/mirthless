@@ -247,6 +247,32 @@ describe('DeploymentService', () => {
     });
   });
 
+  describe('redeploy', () => {
+    it('re-applies config for a stopped deployed channel (undeploy then deploy)', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+      mockRuntime.getState.mockReturnValue('STOPPED');
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
+
+      const result = await DeploymentService.redeploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      expect(mockEngine.undeploy).toHaveBeenCalledWith(CHANNEL_ID);
+      expect(mockEngine.deploy).toHaveBeenCalledWith(CHANNEL_DETAIL);
+      // Stopped channel is not stopped again.
+      expect(mockRuntime.stop).not.toHaveBeenCalled();
+    });
+
+    it('deploys directly when the channel is not currently deployed', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+
+      const result = await DeploymentService.redeploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      expect(mockEngine.undeploy).not.toHaveBeenCalled();
+      expect(mockEngine.deploy).toHaveBeenCalledWith(CHANNEL_DETAIL);
+    });
+  });
+
   describe('getStatus', () => {
     it('returns current state of deployed channel', async () => {
       mockRuntime.getState.mockReturnValue('STARTED');

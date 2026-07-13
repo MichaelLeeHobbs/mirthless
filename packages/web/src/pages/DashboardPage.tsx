@@ -2,21 +2,21 @@
 // Dashboard Page
 // ===========================================
 // Live overview: summary cards, channel status table, quick actions.
-// Auto-refreshes via TanStack Query polling (5s interval) with
+// Auto-refreshes via TanStack Query polling (60s interval) with
 // WebSocket events for instant cache invalidation.
 // Supports tag filtering and grouped view toggle.
 
 import { useState, useMemo, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import CircularProgress from '@mui/material/CircularProgress';
-import Alert from '@mui/material/Alert';
+import Skeleton from '@mui/material/Skeleton';
 import Button from '@mui/material/Button';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAllChannelStatistics, STATS_KEYS, type ChannelStatisticsSummary } from '../hooks/use-statistics.js';
 import { useAllDeploymentStatuses, DEPLOYMENT_KEYS, type ChannelStatus } from '../hooks/use-deployment.js';
@@ -125,47 +125,54 @@ export function DashboardPage(): ReactNode {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
-          Dashboard
-        </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {(statsQuery.isFetching || deployQuery.isFetching) && !isLoading && (
-            <CircularProgress size={20} />
-          )}
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<CreateNewFolderIcon />}
-            onClick={() => { setCreateGroupOpen(true); }}
-          >
-            New Group
-          </Button>
-          <ToggleButtonGroup
-            value={viewMode}
-            exclusive
-            onChange={(_, v: ViewMode | null) => { if (v) setViewMode(v); }}
-            size="small"
-          >
-            <ToggleButton value="flat" aria-label="flat view">
-              <ViewListIcon fontSize="small" />
-            </ToggleButton>
-            <ToggleButton value="grouped" aria-label="grouped view">
-              <AccountTreeIcon fontSize="small" />
-            </ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
-      </Box>
+      <PageHeader
+        title="Dashboard"
+        description="Live channel health across the engine."
+        isFetching={(statsQuery.isFetching || deployQuery.isFetching) && !isLoading}
+        actions={
+          <>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<CreateNewFolderIcon />}
+              onClick={() => { setCreateGroupOpen(true); }}
+            >
+              New Group
+            </Button>
+            <ToggleButtonGroup
+              value={viewMode}
+              exclusive
+              onChange={(_, v: ViewMode | null) => { if (v) setViewMode(v); }}
+              size="small"
+            >
+              <ToggleButton value="flat" aria-label="flat view">
+                <ViewListIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="grouped" aria-label="grouped view">
+                <AccountTreeIcon fontSize="small" />
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </>
+        }
+      />
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Failed to load dashboard data: {error.message}
-        </Alert>
+        <ErrorState
+          title="Couldn't load dashboard data"
+          error={error}
+          onRetry={() => { void statsQuery.refetch(); void deployQuery.refetch(); }}
+          sx={{ mb: 2 }}
+        />
       )}
 
       {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
+        <Box>
+          <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} variant="rounded" height={92} sx={{ flex: '1 1 140px', minWidth: 132, borderRadius: 3 }} />
+            ))}
+          </Box>
+          <Skeleton variant="rounded" height={320} sx={{ borderRadius: 3 }} />
         </Box>
       ) : (
         <>

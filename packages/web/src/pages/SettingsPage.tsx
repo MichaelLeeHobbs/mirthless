@@ -3,20 +3,28 @@
 // ===========================================
 // System settings management with category tabs and type-aware inputs.
 
+import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 import Button from '@mui/material/Button';
+import Tooltip from '@mui/material/Tooltip';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import TextField from '@mui/material/TextField';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
-import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import SaveIcon from '@mui/icons-material/Save';
+import TuneIcon from '@mui/icons-material/Tune';
 import { useSettings, useBulkUpsertSettings } from '../hooks/use-settings.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { EmptyState } from '../components/common/states/EmptyState.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import type { SettingDetail } from '../api/client.js';
 
 const CATEGORIES = ['all', 'general', 'security', 'features', 'smtp'] as const;
@@ -31,8 +39,10 @@ interface EditableValue {
 
 export function SettingsPage(): ReactNode {
   const [activeTab, setActiveTab] = useState(0);
-  const { data: settings, isLoading, error, isFetching } = useSettings();
+  const { data: settings, isLoading, error, isFetching, refetch } = useSettings();
   const bulkUpsert = useBulkUpsertSettings();
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.SETTINGS_WRITE);
 
   const [editValues, setEditValues] = useState<Record<string, EditableValue>>({});
 
@@ -66,6 +76,7 @@ export function SettingsPage(): ReactNode {
     .map(([key]) => key);
 
   const hasDirtySettings = dirtySettings.length > 0;
+  useBeforeUnload(hasDirtySettings);
 
   const handleSave = (): void => {
     if (!settings) return;
@@ -150,31 +161,40 @@ export function SettingsPage(): ReactNode {
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Settings</Typography>
-          {isFetching && !isLoading && <CircularProgress size={20} />}
-        </Box>
-        <Button
-          variant="contained"
-          startIcon={<SaveIcon />}
-          disabled={!hasDirtySettings || bulkUpsert.isPending}
-          onClick={handleSave}
-        >
-          {bulkUpsert.isPending ? 'Saving...' : 'Save Changes'}
-        </Button>
-      </Box>
+      <PageHeader
+        title="Settings"
+        description="System configuration grouped by category. Changes apply after saving."
+        isFetching={isFetching && !isLoading}
+        actions={
+          <Tooltip title={canWrite ? '' : 'Requires settings:write permission'}>
+            <span>
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                disabled={!hasDirtySettings || bulkUpsert.isPending || !canWrite}
+                onClick={handleSave}
+              >
+                {bulkUpsert.isPending ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </span>
+          </Tooltip>
+        }
+      />
 
       {/* Error */}
-      {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load settings: {error.message}</Alert>}
+      {error ? (
+        <ErrorState
+          title="Couldn't load settings"
+          error={error}
+          onRetry={() => void refetch()}
+          sx={{ mb: 2 }}
+        />
+      ) : null}
       {bulkUpsert.isSuccess && <Alert severity="success" sx={{ mb: 2 }}>Settings saved successfully.</Alert>}
 
       {/* Loading */}
       {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
-        </Box>
+        <LoadingBlock label="Loading settings" />
       ) : (
         <Paper>
           {/* Category Tabs */}
@@ -210,9 +230,12 @@ export function SettingsPage(): ReactNode {
                 </Box>
               ))
             ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
-                No settings in this category
-              </Typography>
+              <EmptyState
+                dense
+                icon={<TuneIcon />}
+                title="No settings in this category"
+                description="Choose another category tab to view its settings."
+              />
             )}
           </Box>
         </Paper>

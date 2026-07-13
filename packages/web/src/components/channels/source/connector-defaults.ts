@@ -3,25 +3,23 @@
 // ===========================================
 // Default property objects for each source connector type.
 
+// Keys must match what packages/connectors/src/registry.ts reads for each type.
+// The TcpMllpReceiver only consumes host/port/maxConnections today. TLS/charset/
+// ackMode may be added by the connectors package later — do not add decorative
+// keys the receiver ignores (they mislead users into thinking they take effect).
 export const TCP_MLLP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: '0.0.0.0',
   port: 6661,
   maxConnections: 10,
-  receiveTimeout: 0,
-  bufferSize: 65536,
-  keepConnectionOpen: true,
-  charset: 'UTF-8',
-  transmissionMode: 'MLLP',
 };
 
 export const HTTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: '0.0.0.0',
   port: 8080,
-  contextPath: '/',
-  methods: ['POST'],
+  path: '/',
+  method: 'POST',
   responseStatusCode: 200,
   responseContentType: 'text/plain',
-  charset: 'UTF-8',
 };
 
 export const FILE_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
@@ -86,6 +84,27 @@ export const EMAIL_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   includeAttachments: false,
 };
 
+// Keys MUST match exactly what the SFTP source connector reads in
+// packages/connectors/src/sftp (host/port/username/password/privateKey/
+// passphrase/remoteDirectory/filePattern/pollingIntervalMs/afterProcessing/
+// moveToDirectory/minFileAgeMs/strictHostKey/hostKey).
+export const SFTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  host: '',
+  port: 22,
+  username: '',
+  password: '',
+  privateKey: '',
+  passphrase: '',
+  remoteDirectory: '',
+  filePattern: '*',
+  pollingIntervalMs: 5000,
+  afterProcessing: 'DELETE',
+  moveToDirectory: '',
+  minFileAgeMs: 1000,
+  strictHostKey: true,
+  hostKey: '',
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_SOURCE_DEFAULTS,
   HTTP: HTTP_SOURCE_DEFAULTS,
@@ -95,6 +114,7 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   CHANNEL: CHANNEL_SOURCE_DEFAULTS,
   DICOM: DICOM_SOURCE_DEFAULTS,
   EMAIL: EMAIL_SOURCE_DEFAULTS,
+  SFTP: SFTP_SOURCE_DEFAULTS,
 };
 
 /** Get default properties for a connector type. Returns empty object for unknown types. */

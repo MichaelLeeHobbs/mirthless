@@ -7,6 +7,11 @@
 
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+import { withTimeout } from '../timeout.js';
+
+/** Bound each IMAP operation — a hung mailbox must not wedge the poll loop. */
+const IMAP_OP_TIMEOUT_MS = 30_000;
 
 // ----- Constants -----
 
@@ -74,14 +79,16 @@ export type ImapClientFactory = (config: EmailReceiverConfig) => ImapClient;
 export class EmailReceiver implements SourceConnectorRuntime {
   private readonly config: EmailReceiverConfig;
   private readonly createClient: ImapClientFactory;
+  private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
   private client: ImapClient | null = null;
 
-  constructor(config: EmailReceiverConfig, createClient?: ImapClientFactory) {
+  constructor(config: EmailReceiverConfig, createClient?: ImapClientFactory, logger?: ConnectorLogger) {
     this.config = config;
     this.createClient = createClient ?? defaultImapClientFactory;
+    this.logger = logger ?? createConnectorLogger('EMAIL');
   }
 
   setDispatcher(dispatcher: MessageDispatcher): void {
@@ -90,6 +97,11 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   async onDeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
+      // Only IMAP is implemented. Previously a POP3 config was silently accepted and
+      // then used IMAP anyway — reject it so the misconfiguration is obvious.
+      if (this.config.protocol !== EMAIL_PROTOCOL.IMAP) {
+        throw new Error(`Unsupported email protocol: ${this.config.protocol}. Only IMAP is supported.`);
+      }
       if (!this.config.host) throw new Error('Host is required');
       if (this.config.port < 1 || this.config.port > 65535) {
         throw new Error('Port must be between 1 and 65535');
@@ -113,7 +125,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
       }
 
       this.client = this.createClient(this.config);
-      await this.client.connect();
+      await withTimeout(this.client.connect(), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
 
       this.pollTimer = setInterval(() => {
         void this.pollCycle();
@@ -144,19 +156,45 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   /** Execute one poll cycle: fetch unread, filter, dispatch, post-process. */
   private async pollCycle(): Promise<void> {
-    if (this.polling || !this.dispatcher || !this.client) return;
+    if (this.polling || !this.dispatcher) return;
     this.polling = true;
     try {
-      const messages = await this.client.fetchUnread(this.config.folder);
+      if (!this.client) await this.reconnect();
+      if (!this.client) return;
+      const messages = await withTimeout(
+        this.client.fetchUnread(this.config.folder), IMAP_OP_TIMEOUT_MS, 'IMAP fetchUnread',
+      );
       for (const msg of messages) {
         if (this.matchesSubjectFilter(msg)) {
           await this.processMessage(msg);
         }
       }
-    } catch {
-      // Poll cycle errors are non-fatal; next cycle will retry.
+    } catch (err) {
+      // A dropped IMAP connection otherwise leaves the channel STARTED yet
+      // silently idle. Surface it and drop the client so the next cycle
+      // reconnects.
+      this.logger.error(errorInfo(err), 'Email poll cycle failed; will reconnect');
+      await this.safeDisconnect();
+      this.client = null;
     } finally {
       this.polling = false;
+    }
+  }
+
+  /** (Re)establish the IMAP connection. Throws on failure (caught by caller). */
+  private async reconnect(): Promise<void> {
+    const client = this.createClient(this.config);
+    await withTimeout(client.connect(), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
+    this.client = client;
+  }
+
+  /** Disconnect the current client, ignoring errors. */
+  private async safeDisconnect(): Promise<void> {
+    if (!this.client) return;
+    try {
+      await this.client.disconnect();
+    } catch (err) {
+      this.logger.warn(errorInfo(err), 'Error disconnecting IMAP client during reconnect');
     }
   }
 
@@ -194,13 +232,13 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
     switch (this.config.postAction) {
       case EMAIL_POST_ACTION.DELETE:
-        await this.client.deleteMessage(uid);
+        await withTimeout(this.client.deleteMessage(uid), IMAP_OP_TIMEOUT_MS, 'IMAP deleteMessage');
         break;
       case EMAIL_POST_ACTION.MARK_READ:
-        await this.client.markRead(uid);
+        await withTimeout(this.client.markRead(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markRead');
         break;
       case EMAIL_POST_ACTION.MOVE:
-        await this.client.moveMessage(uid, this.config.moveToFolder);
+        await withTimeout(this.client.moveMessage(uid, this.config.moveToFolder), IMAP_OP_TIMEOUT_MS, 'IMAP moveMessage');
         break;
     }
   }
@@ -208,7 +246,7 @@ export class EmailReceiver implements SourceConnectorRuntime {
   /** Disconnect the IMAP client if connected. */
   private async disconnectClient(): Promise<void> {
     if (this.client) {
-      await this.client.disconnect();
+      await withTimeout(this.client.disconnect(), IMAP_OP_TIMEOUT_MS, 'IMAP disconnect');
     }
   }
 
@@ -234,6 +272,14 @@ function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
     secure: config.secure,
     auth: { user: config.username, pass: config.password },
     logger: false,
+  });
+
+  // ImapFlow is an EventEmitter that emits 'error' when the connection drops
+  // between polls. With no listener, Node treats it as an uncaughtException and
+  // kills the whole engine process. Swallow it here — the poll loop reconnects.
+  const factoryLogger = createConnectorLogger('EMAIL');
+  client.on('error', (err: unknown) => {
+    factoryLogger.warn(errorInfo(err), 'IMAP client error (will reconnect on next poll)');
   });
 
   return {
@@ -302,6 +348,7 @@ interface ImapFlowLock {
 
 interface ImapFlowInstance {
   connect(): Promise<void>;
+  on(event: string, listener: (arg: unknown) => void): void;
   getMailboxLock(folder: string): Promise<ImapFlowLock>;
   fetch(query: Record<string, unknown>, options: Record<string, unknown>): AsyncIterable<ImapFlowFetchMessage>;
   messageFlagsAdd(query: Record<string, unknown>, flags: readonly string[]): Promise<void>;

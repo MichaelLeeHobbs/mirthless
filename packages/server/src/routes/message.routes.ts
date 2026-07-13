@@ -4,8 +4,9 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
-import { messageSearchQuerySchema } from '@mirthless/core-models';
+import { messageSearchQuerySchema, messageExportQuerySchema } from '@mirthless/core-models';
 import { MessageController } from '../controllers/message.controller.js';
+import { MessageExportController } from '../controllers/message-export.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
@@ -25,21 +26,30 @@ router.use(authenticate);
 
 router.get(
   '/:id/messages',
-  requirePermission('channels:read'),
+  requirePermission('messages:read'),
   validate({ params: channelIdParamsSchema, query: messageSearchQuerySchema }),
   MessageController.search
 );
 
+// Declared before `/:id/messages/:msgId` so the literal `export` segment is
+// not captured as a message id.
+router.get(
+  '/:id/messages/export',
+  requirePermission('messages:read'),
+  validate({ params: channelIdParamsSchema, query: messageExportQuerySchema }),
+  MessageExportController.exportMessages
+);
+
 router.get(
   '/:id/messages/:msgId',
-  requirePermission('channels:read'),
+  requirePermission('messages:read'),
   validate({ params: messageParamsSchema }),
   MessageController.getDetail
 );
 
 router.delete(
   '/:id/messages/:msgId',
-  requirePermission('channels:delete'),
+  requirePermission('messages:delete'),
   validate({ params: messageParamsSchema }),
   MessageController.delete
 );

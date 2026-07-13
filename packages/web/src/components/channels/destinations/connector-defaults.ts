@@ -5,22 +5,19 @@
 import type { DestinationFormValues } from './types.js';
 import { createDefaultFilter, createDefaultTransformer } from '../source/types.js';
 
+// Keys must match what packages/connectors/src/registry.ts reads for each type.
 export const TCP_MLLP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: 'localhost',
   port: 6661,
-  sendTimeout: 10000,
-  keepConnectionOpen: true,
-  charset: 'UTF-8',
-  transmissionMode: 'MLLP',
-  bufferSize: 65536,
+  maxConnections: 5,
+  responseTimeout: 30000,
 };
 
 export const HTTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   url: 'http://localhost:8080',
   method: 'POST',
-  headers: '',
+  headers: {},
   contentType: 'text/plain',
-  charset: 'UTF-8',
   responseTimeout: 30000,
 };
 
@@ -81,7 +78,7 @@ export const FHIR_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   authApiKey: '',
   format: 'json',
   timeout: 30000,
-  headers: '',
+  headers: {},
 };
 
 export const DICOM_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
@@ -96,6 +93,23 @@ export const DICOM_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   timeoutMs: 30000,
 };
 
+// Keys MUST match exactly what the SFTP destination connector reads in
+// packages/connectors/src/sftp (host/port/username/password/privateKey/
+// passphrase/remoteDirectory/fileNameTemplate/appendMode/strictHostKey/hostKey).
+export const SFTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  host: '',
+  port: 22,
+  username: '',
+  password: '',
+  privateKey: '',
+  passphrase: '',
+  remoteDirectory: '',
+  fileNameTemplate: '${messageId}.dat',
+  appendMode: false,
+  strictHostKey: true,
+  hostKey: '',
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_DEST_DEFAULTS,
   HTTP: HTTP_DEST_DEFAULTS,
@@ -106,6 +120,7 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   CHANNEL: CHANNEL_DEST_DEFAULTS,
   FHIR: FHIR_DEST_DEFAULTS,
   DICOM: DICOM_DEST_DEFAULTS,
+  SFTP: SFTP_DEST_DEFAULTS,
 };
 
 /** Get default properties for a destination connector type. */
@@ -128,5 +143,6 @@ export function createDefaultDestination(index: number): DestinationFormValues {
     waitForPrevious: false,
     filter: createDefaultFilter(),
     transformer: createDefaultTransformer(),
+    responseTransformer: '',
   };
 }

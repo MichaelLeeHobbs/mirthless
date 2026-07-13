@@ -9,6 +9,8 @@ import { eq, and, sql } from 'drizzle-orm';
 import type { MessageSearchQuery } from '@mirthless/core-models';
 import { db } from '../lib/db.js';
 import { ServiceError } from '../lib/service-error.js';
+import { decryptIfEncrypted } from '../lib/content-crypto.js';
+import { deleteMessagesByIds } from './message-delete-helper.js';
 import {
   messages,
   connectorMessages,
@@ -97,6 +99,9 @@ export class MessageQueryService {
     return tryCatch(async () => {
       const conditions = [eq(messages.channelId, channelId)];
 
+      if (filters.messageId !== undefined) {
+        conditions.push(eq(messages.id, filters.messageId));
+      }
       if (filters.receivedFrom !== undefined) {
         conditions.push(sql`${messages.receivedAt} >= ${filters.receivedFrom.toISOString()}`);
       }
@@ -257,15 +262,18 @@ export class MessageQueryService {
           ),
         );
 
-      // Group content by metaDataId
+      // Group content by metaDataId, decrypting any at-rest encrypted rows.
       const contentMap = new Map<number, ConnectorContent>();
       for (const row of contentRows) {
         const typeName = CONTENT_TYPE_NAMES[row.contentType] ?? `type_${String(row.contentType)}`;
+        const decrypted = decryptIfEncrypted(row.content ?? null);
+        if (!decrypted.ok) throw decrypted.error;
+        const value = decrypted.value ?? undefined;
         const existing = contentMap.get(row.metaDataId);
         if (existing) {
-          (existing as Record<string, string | undefined>)[typeName] = row.content ?? undefined;
+          (existing as Record<string, string | undefined>)[typeName] = value;
         } else {
-          contentMap.set(row.metaDataId, { [typeName]: row.content ?? undefined });
+          contentMap.set(row.metaDataId, { [typeName]: value });
         }
       }
 
@@ -310,25 +318,11 @@ export class MessageQueryService {
         throw new ServiceError('NOT_FOUND', `Message not found: ${String(messageId)}`);
       }
 
-      // Delete in dependency order: content → connector_messages → messages
-      await db.delete(messageContent).where(
-        and(
-          eq(messageContent.channelId, channelId),
-          eq(messageContent.messageId, messageId),
-        ),
-      );
-      await db.delete(connectorMessages).where(
-        and(
-          eq(connectorMessages.channelId, channelId),
-          eq(connectorMessages.messageId, messageId),
-        ),
-      );
-      await db.delete(messages).where(
-        and(
-          eq(messages.channelId, channelId),
-          eq(messages.id, messageId),
-        ),
-      );
+      // Delete atomically and in full dependency order (attachments + custom
+      // metadata included). The previous inline delete ran three non-transactional
+      // statements and left message_attachments / message_custom_metadata rows
+      // orphaned — PHI that persisted after a "delete" and was unreachable via UI.
+      await deleteMessagesByIds(channelId, [messageId]);
     });
   }
 

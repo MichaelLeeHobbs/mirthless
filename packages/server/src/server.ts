@@ -14,6 +14,7 @@ import { LogStreamService } from './services/log-stream.service.js';
 import { PrunerSchedulerService } from './services/pruner-scheduler.service.js';
 import { DeploymentService } from './services/deployment.service.js';
 import { createShutdownHandler } from './lib/shutdown.js';
+import { warnIfDefaultAdminPassword } from './lib/security-checks.js';
 
 const PORT = config.PORT;
 
@@ -34,6 +35,7 @@ setLogCaptureStream(LogStreamService.createWritableStream());
 startQueue()
   .then(() => PrunerSchedulerService.start())
   .then(() => DeploymentService.autoDeployChannels())
+  .then(() => warnIfDefaultAdminPassword())
   .catch((err: unknown) => {
     const errMsg = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : undefined;
@@ -44,7 +46,15 @@ startQueue()
 const shutdown = createShutdownHandler({
   logger,
   stopAccepting: () => new Promise<void>((resolve, reject) => {
-    server.close((err) => (err ? reject(err) : resolve()));
+    server.close((err) => {
+      // Socket.IO shutdown runs first and closes the shared HTTP server, so by
+      // the time we get here the server may already be closed — that's success.
+      if (err && (err as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') {
+        reject(err);
+        return;
+      }
+      resolve();
+    });
   }),
   stopEngine: async () => {
     const { getEngine } = await import('./engine.js');

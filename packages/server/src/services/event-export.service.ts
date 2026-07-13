@@ -78,12 +78,18 @@ async function fetchRows(query: EventExportQuery): Promise<readonly EventRow[]> 
   return rows;
 }
 
-/** Escape a single CSV field per RFC 4180. */
+/**
+ * Escape a single CSV field per RFC 4180 and neutralize spreadsheet formula
+ * injection: a field starting with =, +, -, @, tab, or CR is prefixed with a
+ * single quote so Excel/Sheets treat it as text. Event fields (e.g. usernames in
+ * failed-login events) can be attacker-influenced.
+ */
 function escapeCsvField(value: string): string {
-  if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  if (guarded.includes('"') || guarded.includes(',') || guarded.includes('\n') || guarded.includes('\r')) {
+    return `"${guarded.replace(/"/g, '""')}"`;
   }
-  return value;
+  return guarded;
 }
 
 function rowToCsvFields(row: EventRow): string {

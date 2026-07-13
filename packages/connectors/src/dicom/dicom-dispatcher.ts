@@ -4,6 +4,7 @@
 // Wraps @ubercode/dcmtk DicomSender to send DICOM files via C-STORE.
 // Expects message content to be a file path.
 
+import * as path from 'node:path';
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 
@@ -19,6 +20,21 @@ export interface DicomDispatcherConfig {
   readonly maxRetries: number;
   readonly retryDelayMs: number;
   readonly timeoutMs: number;
+  /**
+   * When set, the file path in message content must resolve to a location inside
+   * this directory. Message content is transformer-controlled, so without this a
+   * malicious/misconfigured transform could exfiltrate any readable local file
+   * (e.g. /etc/passwd) to the remote AE. Set it to the receiver's storage dir.
+   */
+  readonly allowedBaseDir?: string | undefined;
+}
+
+/** True when `filePath` resolves to a location inside `baseDir`. */
+function isWithinBaseDir(filePath: string, baseDir: string): boolean {
+  const resolvedBase = path.resolve(baseDir);
+  const resolved = path.resolve(filePath);
+  const rel = path.relative(resolvedBase, resolved);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
 // ----- dcmtk abstraction (for testability) -----
@@ -113,6 +129,13 @@ export class DicomDispatcher implements DestinationConnectorRuntime {
       }
 
       const filePath = message.content.trim();
+      if (this.config.allowedBaseDir && !isWithinBaseDir(filePath, this.config.allowedBaseDir)) {
+        return {
+          status: 'ERROR' as const,
+          content: '',
+          errorMessage: `DICOM file path is outside the allowed directory: ${filePath}`,
+        };
+      }
       const sendResult = await this.sender.send([filePath]);
       if (!sendResult.ok) {
         return {

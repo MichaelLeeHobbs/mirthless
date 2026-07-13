@@ -183,12 +183,21 @@ export class EventService {
   }
 
   /** Purge events older than N days. Admin-only. */
-  static async purge(olderThanDays: number): Promise<Result<{ deleted: number }>> {
+  static async purge(olderThanDays: number, actor?: { userId?: string | null; ipAddress?: string | null }): Promise<Result<{ deleted: number }>> {
     return tryCatch(async () => {
       const result = await db
         .delete(events)
         .where(lte(events.createdAt, sql`now() - ${String(olderThanDays)} * interval '1 day'`))
         .returning({ id: events.id });
+
+      // Record the purge itself so erasing the audit trail is not invisible. This
+      // new event is created after the delete, so it survives the cutoff.
+      await EventService.create({
+        level: 'WARN', name: 'EVENTS_PURGED', outcome: 'SUCCESS',
+        userId: actor?.userId ?? null, channelId: null, serverId: null,
+        ipAddress: actor?.ipAddress ?? null,
+        attributes: { olderThanDays, deleted: result.length },
+      });
 
       return { deleted: result.length };
     });

@@ -18,9 +18,14 @@ const MockAlertManagerCtor = vi.fn().mockImplementation(() => mockAlertManager);
 
 const mockRuntimeDeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeUndeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
+const mockRuntimeStop = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
+const mockRuntimeHalt = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const MockChannelRuntime = vi.fn().mockImplementation(() => ({
   deploy: mockRuntimeDeploy,
   undeploy: mockRuntimeUndeploy,
+  stop: mockRuntimeStop,
+  halt: mockRuntimeHalt,
+  getState: vi.fn().mockReturnValue('STOPPED'),
 }));
 
 const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn() };
@@ -57,6 +62,9 @@ vi.mock('@mirthless/engine', () => ({
   compileTransformerStepsToScript: vi.fn().mockReturnValue(null),
   prependTemplates: vi.fn().mockImplementation((src: string) => src),
   AlertManager: MockAlertManagerCtor,
+  RecoveryManager: vi.fn().mockImplementation(() => ({
+    recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
+  })),
 }));
 
 vi.mock('@mirthless/connectors', () => ({
@@ -94,6 +102,9 @@ vi.mock('../message.service.js', () => ({
     release: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     deleteContent: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     deleteAttachments: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    resetPending: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
+    getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
   },
 }));
 

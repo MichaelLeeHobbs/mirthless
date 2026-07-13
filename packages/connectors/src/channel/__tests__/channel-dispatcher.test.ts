@@ -115,6 +115,34 @@ describe('ChannelDispatcher.send', () => {
     expect(received[0]?.content).toBe('test content');
   });
 
+  it('breaks a channel routing loop instead of recursing forever', async () => {
+    // The target channel re-dispatches back to itself, forming A -> A -> A ...
+    // The hop-depth guard must terminate it and surface a routing-loop error.
+    let calls = 0;
+    registerChannel('target-ch-001', async () => {
+      calls++;
+      const inner = new ChannelDispatcher(makeConfig());
+      await inner.onStart();
+      const r = await inner.send(makeMessage(), makeSignal());
+      if (r.ok && r.value.status === 'ERROR') {
+        return { ok: false as const, value: null, error: new Error(r.value.errorMessage ?? 'error') };
+      }
+      return { ok: true as const, value: { messageId: 1 }, error: null };
+    });
+
+    const dispatcher = new ChannelDispatcher(makeConfig());
+    await dispatcher.onStart();
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe('ERROR');
+      expect(result.value.errorMessage).toContain('routing loop');
+    }
+    // Bounded, not infinite.
+    expect(calls).toBeLessThanOrEqual(11);
+  });
+
   it('includes source metadata in sourceMap', async () => {
     const received: RawMessage[] = [];
     registerChannel('target-ch-001', async (raw) => {

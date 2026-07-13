@@ -68,7 +68,10 @@ vi.mock('drizzle-orm', () => ({
   isNull: vi.fn((_col: unknown) => ({ type: 'isNull' })),
   sql: Object.assign(
     (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values, type: 'sql' }),
-    { raw: (s: string) => ({ raw: s }) },
+    {
+      raw: (s: string) => ({ raw: s }),
+      join: (chunks: unknown[], sep: unknown) => ({ type: 'sql_join', chunks, sep }),
+    },
   ),
 }));
 

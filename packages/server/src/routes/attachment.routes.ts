@@ -19,14 +19,14 @@ router.use(authenticate);
 
 router.get(
   '/:id/messages/:msgId/attachments',
-  requirePermission('channels:read'),
+  requirePermission('messages:read'),
   validate({ params: attachmentListParamsSchema }),
   AttachmentController.list,
 );
 
 router.get(
   '/:id/messages/:msgId/attachments/:attachmentId',
-  requirePermission('channels:read'),
+  requirePermission('messages:read'),
   validate({ params: attachmentGetParamsSchema }),
   AttachmentController.getById,
 );

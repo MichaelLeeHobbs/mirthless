@@ -10,6 +10,8 @@ import {
   type CompiledScript,
 } from '../sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
+import { createHl7Proxy } from '../../pipeline/data-type-handler.js';
+import { Hl7Message } from '@mirthless/core-util';
 
 // ----- Helpers -----
 
@@ -206,6 +208,72 @@ describe('VmSandboxExecutor', () => {
       expect(result2.ok).toBe(true);
       if (!result2.ok) return;
       expect(result2.value.returnValue).toBeUndefined();
+    });
+  });
+
+  // ----- Sandbox escape hardening (CRITICAL: no host realm reachable) -----
+
+  describe('escape prevention', () => {
+    it('does not expose host process/require/module/globalThis', async () => {
+      const script = makeScript(
+        'return [typeof process, typeof require, typeof module, typeof global].join(",");',
+      );
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('undefined,undefined,undefined,undefined');
+    });
+
+    it('logger.info.constructor cannot reach host process (the reported RCE)', async () => {
+      const script = makeScript("return logger.info.constructor('return typeof process')();");
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Would be 'object' if it resolved to the host realm's Function.
+      expect(result.value.returnValue).toBe('undefined');
+    });
+
+    it('({}).constructor.constructor cannot reach host process', async () => {
+      const script = makeScript("return ({}).constructor.constructor('return typeof process')();");
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('undefined');
+    });
+
+    it('the HL7 message proxy method .constructor cannot reach host process', async () => {
+      const hl7 = 'MSH|^~\\&|S|F|R|F|20260329||ADT^A01|C1|P|2.5\rPID|||99999^^^MRN';
+      const context = makeContext({ msg: createHl7Proxy(Hl7Message.parse(hl7)) });
+      const script = makeScript("return msg.get.constructor('return typeof process')();");
+      const result = await executor.execute(script, context, makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('undefined');
+      // And the legitimate proxy still works.
+      const legit = await executor.execute(makeScript('return msg.get("PID.3");'), context, makeOptions());
+      expect(legit.ok).toBe(true);
+      if (!legit.ok) return;
+      expect(legit.value.returnValue).toBe('99999');
+    });
+
+    it('a thrown host-side IO error is re-thrown as a sandbox-realm Error (no host constructor leak)', async () => {
+      const ioExecutor = new VmSandboxExecutor({
+        httpFetch: () => Promise.reject(new Error('nope')),
+      });
+      const script = makeScript(
+        "try { await httpFetch('https://example.com'); return 'no-throw'; }" +
+        " catch (e) { return e.constructor.constructor('return typeof process')(); }",
+      );
+      const result = await ioExecutor.execute(script, makeContext(), makeOptions());
+      ioExecutor.dispose();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('undefined');
     });
   });
 });

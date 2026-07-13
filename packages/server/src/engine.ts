@@ -17,6 +17,8 @@ import {
   compileTransformerStepsToScript,
   prependTemplates,
   AlertManager,
+  RecoveryManager,
+  type RecoveryStore,
   type ChannelRuntimeConfig,
   type PipelineConfig,
   type ChannelScripts,
@@ -36,6 +38,8 @@ import {
   createDestinationConnector,
   JavaScriptReceiver,
   JavaScriptDispatcher,
+  DISPATCH_STATUS,
+  type DispatchStatus,
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@mirthless/connectors';
@@ -50,6 +54,7 @@ import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { db } from './lib/db.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
+import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
 import type { ChannelDetail } from './services/channel.service.js';
 
@@ -64,7 +69,25 @@ export interface DeployedChannel {
   readonly alertManager: AlertManager;
   readonly queueConsumers: readonly QueueConsumer[];
   readonly scripts: ChannelScripts;
-  readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>;
+  readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<SourceDispatchOutcome>>;
+}
+
+/**
+ * What the source connector learns about a dispatched message. `status` lets a
+ * source connector build the right response (e.g. an MLLP receiver returns an AA
+ * ACK for SENT, AE for ERROR, AR for FILTERED).
+ */
+export interface SourceDispatchOutcome {
+  readonly messageId: number;
+  readonly status: DispatchStatus;
+  readonly response?: string;
+}
+
+/** Map the pipeline's message status to the source-connector dispatch status. */
+function toDispatchStatus(status: 'SENT' | 'FILTERED' | 'ERROR'): DispatchStatus {
+  if (status === 'FILTERED') return DISPATCH_STATUS.FILTERED;
+  if (status === 'ERROR') return DISPATCH_STATUS.ERROR;
+  return DISPATCH_STATUS.PROCESSED;
 }
 
 // ----- Storage Policy -----
@@ -74,20 +97,62 @@ export interface StorageConfig {
   readonly messageStorageMode: MessageStorageMode;
   readonly removeContentOnCompletion: boolean;
   readonly removeAttachmentsOnCompletion: boolean;
+  /** When true, encrypt content at rest (AES-256-GCM) before persisting. */
+  readonly encryptData: boolean;
 }
 
 const OK_VOID = { ok: true as const, value: undefined, error: null } as Result<void>;
 
+/** Build a failure Result carrying the given error. */
+function fail<T>(error: Result<T>['error'] & object): Result<T> {
+  return { ok: false, value: null, error } as Result<T>;
+}
+
+/** Error content types (always stored except in METADATA/DISABLED). */
+const ERROR_CONTENT_TYPES: ReadonlySet<number> = new Set([
+  CONTENT_TYPE.ERROR, CONTENT_TYPE.RESPONSE_ERROR, CONTENT_TYPE.PROCESSING_ERROR,
+]);
+
+/**
+ * PRODUCTION stores everything needed to deliver, view, recover, and reprocess a
+ * message — RAW (reprocess), SENT (queued delivery + crash recovery), the
+ * transformed/encoded/response bodies (message browser), and all errors. It omits
+ * only the debug-only PROCESSED copy and the map snapshots (Mirth's "Production"
+ * semantics). RAW must be present or crash recovery and reprocess break; SENT must
+ * be present or queued destinations reload null content and error 100% of messages.
+ */
+const PRODUCTION_CONTENT_TYPES: ReadonlySet<number> = new Set([
+  CONTENT_TYPE.RAW, CONTENT_TYPE.TRANSFORMED, CONTENT_TYPE.ENCODED,
+  CONTENT_TYPE.SENT, CONTENT_TYPE.RESPONSE, CONTENT_TYPE.RESPONSE_TRANSFORMED,
+  CONTENT_TYPE.RESPONSE_SENT,
+  ...ERROR_CONTENT_TYPES,
+]);
+
+/** RAW mode keeps only the raw inbound content (enough to reprocess) plus errors. */
+const RAW_CONTENT_TYPES: ReadonlySet<number> = new Set([
+  CONTENT_TYPE.RAW, ...ERROR_CONTENT_TYPES,
+]);
+
 /**
  * Determines whether a given content type should be stored based on the storage mode.
- * Error content types (11-13) are stored in DEVELOPMENT, PRODUCTION, and RAW modes.
+ * Error content types are stored in every mode except METADATA/DISABLED.
  */
 export function shouldStoreContent(mode: MessageStorageMode, contentType: number): boolean {
   if (mode === MESSAGE_STORAGE_MODE.DEVELOPMENT) return true;
-  if (mode === MESSAGE_STORAGE_MODE.PRODUCTION) return contentType >= CONTENT_TYPE.ERROR;
-  if (mode === MESSAGE_STORAGE_MODE.RAW) return contentType === CONTENT_TYPE.RAW || contentType >= CONTENT_TYPE.ERROR;
+  if (mode === MESSAGE_STORAGE_MODE.PRODUCTION) return PRODUCTION_CONTENT_TYPES.has(contentType);
+  if (mode === MESSAGE_STORAGE_MODE.RAW) return RAW_CONTENT_TYPES.has(contentType);
   // METADATA, DISABLED: no content stored
   return false;
+}
+
+/**
+ * A storage mode stores enough content to deliver a queued message and recover it
+ * after a crash (needs RAW + SENT). METADATA/DISABLED store neither, so a queued
+ * destination on such a channel would lose 100% of messages. Used to reject the
+ * combination at deploy time.
+ */
+export function storageModeSupportsQueue(mode: MessageStorageMode): boolean {
+  return shouldStoreContent(mode, CONTENT_TYPE.SENT) && shouldStoreContent(mode, CONTENT_TYPE.RAW);
 }
 
 // ----- Message Store Adapter -----
@@ -97,8 +162,9 @@ export function shouldStoreContent(mode: MessageStorageMode, contentType: number
  * When a StorageConfig is provided, filters storeContent calls by storage mode
  * and handles content/attachment cleanup on completion.
  */
-function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
+export function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
   const mode = config?.messageStorageMode ?? MESSAGE_STORAGE_MODE.DEVELOPMENT;
+  const encrypt = config?.encryptData ?? false;
   return {
     createMessage: (channelId, serverId, correlationId) =>
       MessageService.createMessage(channelId, serverId, correlationId),
@@ -110,21 +176,35 @@ function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
       if (!shouldStoreContent(mode, contentType)) {
         return Promise.resolve(OK_VOID);
       }
-      return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], content, dataType);
-    },
-    markProcessed: async (channelId, messageId) => {
-      const result = await MessageService.markProcessed(channelId, messageId);
-      if (result.ok && (config?.removeContentOnCompletion || config?.removeAttachmentsOnCompletion)) {
-        const deletes: Promise<Result<void>>[] = [];
-        if (config?.removeContentOnCompletion) {
-          deletes.push(MessageService.deleteContent(channelId, messageId));
-        }
-        if (config?.removeAttachmentsOnCompletion) {
-          deletes.push(MessageService.deleteAttachments(channelId, messageId));
-        }
-        await Promise.all(deletes);
+      let toStore = content;
+      if (encrypt) {
+        const enc = encryptContent(content);
+        // Fail loud: never fall back to storing plaintext when encryption is on.
+        if (!enc.ok) return Promise.resolve(fail<void>(enc.error));
+        toStore = enc.value;
       }
-      return result;
+      return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], toStore, dataType, encrypt);
+    },
+    // markProcessed is used on both success and error/recovery paths, so it must
+    // NOT delete content (error content is needed for investigation, and a message
+    // with a still-queued destination must keep its content to deliver). Content
+    // removal happens via removeCompletedContent, called by the pipeline only on
+    // full successful completion.
+    markProcessed: (channelId, messageId) => MessageService.markProcessed(channelId, messageId),
+    removeCompletedContent: async (channelId, messageId) => {
+      if (!config?.removeContentOnCompletion && !config?.removeAttachmentsOnCompletion) {
+        return OK_VOID;
+      }
+      const deletes: Promise<Result<void>>[] = [];
+      if (config?.removeContentOnCompletion) {
+        deletes.push(MessageService.deleteContent(channelId, messageId));
+      }
+      if (config?.removeAttachmentsOnCompletion) {
+        deletes.push(MessageService.deleteAttachments(channelId, messageId));
+      }
+      const results = await Promise.all(deletes);
+      const failed = results.find((r) => !r.ok);
+      return failed ?? OK_VOID;
     },
     enqueue: (channelId, messageId, metaDataId) =>
       MessageService.enqueue(channelId, messageId, metaDataId),
@@ -141,7 +221,21 @@ function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
     initializeMessage: (channelId, serverId, connectorName, contentRows, correlationId) => {
       // Filter content rows by storage policy before sending to batch
       const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType));
-      return MessageService.initializeMessage(channelId, serverId, connectorName, filtered, correlationId);
+      if (!encrypt) {
+        return MessageService.initializeMessage(channelId, serverId, connectorName, filtered, correlationId, false);
+      }
+      // Encrypt each surviving content row before it is persisted. Fail loud on
+      // any encryption error so the whole message init fails rather than storing
+      // PHI in plaintext under an encryptData channel.
+      const encRows: { metaDataId: number; contentType: number; content: string; dataType: string }[] = [];
+      for (const r of filtered) {
+        const enc = encryptContent(r.content);
+        if (!enc.ok) {
+          return Promise.resolve(fail<{ messageId: number; correlationId: string }>(enc.error));
+        }
+        encRows.push({ ...r, content: enc.value });
+      }
+      return MessageService.initializeMessage(channelId, serverId, connectorName, encRows, correlationId, true);
     },
     finalizeMessage: (channelId, messageId, serverId) =>
       MessageService.finalizeMessage(channelId, messageId, serverId),
@@ -166,14 +260,38 @@ export class EngineManager {
       throw new Error(`Channel ${channel.id} is already deployed`);
     }
 
+    // Fail loud, never silent: a channel that asks for at-rest encryption must
+    // not deploy (and store PHI as plaintext) when no key is configured.
+    if (channel.encryptData && !isContentEncryptionConfigured()) {
+      throw new Error(
+        `Channel ${channel.id} has encryptData enabled but CONTENT_ENCRYPTION_KEY is not configured. ` +
+        'Refusing to deploy — message content would be stored in plaintext. ' +
+        'Set CONTENT_ENCRYPTION_KEY (64 hex chars) or disable encryptData on the channel.',
+      );
+    }
+
+    // Fail loud, never silent: a queued destination needs stored RAW+SENT content
+    // to deliver and to recover after a crash. On METADATA/DISABLED storage that
+    // content is never written, so every queued message would error on delivery.
+    const storageMode = channel.messageStorageMode as MessageStorageMode;
+    const hasQueuedDestination = channel.destinations.some((d) => d.queueMode !== 'NEVER');
+    if (hasQueuedDestination && !storageModeSupportsQueue(storageMode)) {
+      throw new Error(
+        `Channel ${channel.id} has a queued destination but message storage mode is ${storageMode}, ` +
+        'which does not persist the RAW/SENT content required to deliver and recover queued messages. ' +
+        'Use DEVELOPMENT, PRODUCTION, or RAW storage, or set every destination queue mode to NEVER.',
+      );
+    }
+
     const runtime = new ChannelRuntime();
     const gcm = new GlobalChannelMap();
 
     // Create per-channel message store adapter with storage policy
     const store = createMessageStoreAdapter({
-      messageStorageMode: channel.messageStorageMode as MessageStorageMode,
+      messageStorageMode: storageMode,
       removeContentOnCompletion: channel.removeContentOnCompletion,
       removeAttachmentsOnCompletion: channel.removeAttachmentsOnCompletion,
+      encryptData: channel.encryptData,
     });
 
     // Create source connector
@@ -283,13 +401,13 @@ export class EngineManager {
     };
 
     // Build send function
-    const sendFn: SendToDestination = async (metaDataId, content, signal, correlationId) => {
+    const sendFn: SendToDestination = async (metaDataId, messageId, content, signal, correlationId) => {
       const connector = destinations.get(metaDataId);
       if (!connector) {
         return tryCatch(() => { throw new Error(`Destination ${String(metaDataId)} not found`); });
       }
       return connector.send({
-        channelId: channel.id, messageId: 0, metaDataId, content,
+        channelId: channel.id, messageId, metaDataId, content,
         dataType: channel.inboundDataType, correlationId,
       }, signal);
     };
@@ -319,15 +437,21 @@ export class EngineManager {
     const scriptTimeoutMs = channel.scriptTimeoutSeconds
       ? channel.scriptTimeoutSeconds * 1000
       : 30_000;
-    const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<{ messageId: number }>> => {
+    const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
       // Extract correlationId from sourceMap if present (channel-to-channel routing)
       const correlationId = typeof sourceMap?.['correlationId'] === 'string'
         ? sourceMap['correlationId'] as string
         : undefined;
-      return processor.processMessage(
+      const result = await processor.processMessage(
         { rawContent, sourceMap: sourceMap ?? {}, correlationId },
         AbortSignal.timeout(scriptTimeoutMs),
       );
+      if (!result.ok) return result;
+      // Surface the pipeline's final status so the source connector can build the
+      // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AR).
+      const { messageId, response } = result.value;
+      const status = toDispatchStatus(result.value.status);
+      return { ok: true, value: response === undefined ? { messageId, status } : { messageId, status, response }, error: null };
     };
 
     // Build runtime config
@@ -344,6 +468,10 @@ export class EngineManager {
     }
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage });
+
+    // Recover any messages left unprocessed by a prior crash/restart. Best-effort:
+    // recovery failures are logged, never allowed to abort a deploy.
+    await this.recoverChannel(channel, store, processMessage, sendFn);
   }
 
   /** Get a deployed channel runtime. */
@@ -382,6 +510,19 @@ export class EngineManager {
       throw new Error(`Channel ${channelId} is not deployed`);
     }
 
+    // Stop the running channel first — runtime.undeploy() requires STOPPED, and
+    // shutdown/undeploy must never throw on a STARTED channel (that would sever
+    // in-flight messages and skip the rest of the teardown). Stopping first
+    // drains the source connector cleanly. Idempotent for already-STOPPED channels.
+    const state = deployed.runtime.getState();
+    if (state === 'STARTED' || state === 'PAUSED') {
+      const stopResult = await deployed.runtime.stop();
+      if (!stopResult.ok) {
+        // Fall back to a force-halt so teardown can still proceed.
+        await deployed.runtime.halt();
+      }
+    }
+
     // Stop all queue consumers before cleanup
     await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
 
@@ -405,6 +546,84 @@ export class EngineManager {
     }
 
     this.runtimes.delete(channelId);
+  }
+
+  /**
+   * Recover unprocessed messages for a freshly deployed channel.
+   *
+   * - Stale PENDING claims (in-flight dispatches interrupted by a crash) are reset
+   *   to QUEUED so the queue consumers redeliver them.
+   * - RECEIVED source messages are reprocessed from their stored raw content.
+   * - RECEIVED destination messages are re-dispatched from their stored SENT content.
+   * QUEUED messages are left for the queue consumers. All failures are logged only.
+   */
+  private async recoverChannel(
+    channel: ChannelDetail,
+    store: MessageStore,
+    processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>,
+    sendFn: SendToDestination,
+  ): Promise<void> {
+    // Reset stale PENDING claims for every queued destination.
+    for (const dest of channel.destinations) {
+      if (dest.queueMode === 'NEVER') continue;
+      const reset = await MessageService.resetPending(channel.id, dest.metaDataId);
+      if (!reset.ok) {
+        logger.error({ channelId: channel.id, metaDataId: dest.metaDataId, errMsg: reset.error.message }, 'Failed to reset PENDING messages');
+      }
+    }
+
+    const recoveryStore: RecoveryStore = {
+      getUnprocessedMessages: async (channelId) => {
+        const r = await MessageService.getUnprocessedMessages(channelId);
+        if (!r.ok) return r;
+        return { ok: true, value: r.value.map((m) => ({ messageId: m.id, channelId: m.channelId })), error: null };
+      },
+      getConnectorMessages: (channelId, messageId) => MessageService.getConnectorMessages(channelId, messageId),
+    };
+
+    const CT_RAW = 1;
+    const CT_SENT = 5;
+
+    const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
+      const raw = await store.loadContent(channelId, messageId, 0, CT_RAW);
+      if (!raw.ok || raw.value === null) {
+        return { ok: false, value: null, error: new Error('Raw content unavailable for recovery') } as Result<void>;
+      }
+      const processed = await processMessage(raw.value);
+      if (!processed.ok) {
+        // Do NOT mark processed on failure — the original still holds recoverable
+        // raw content and must remain eligible for recovery on the next deploy.
+        // Marking it here would silently lose the message forever.
+        return { ok: false, value: null, error: processed.error } as Result<void>;
+      }
+      // Reprocess succeeded (a new message row was created and run through the
+      // pipeline). Mark the original processed so it is not recovered again.
+      await MessageService.markProcessed(channelId, messageId);
+      return OK_VOID;
+    };
+
+    const redispatchDestination = async (channelId: string, messageId: number, metaDataId: number): Promise<Result<void>> => {
+      const sent = await store.loadContent(channelId, messageId, metaDataId, CT_SENT);
+      if (!sent.ok || sent.value === null) {
+        return { ok: false, value: null, error: new Error('Sent content unavailable for recovery') } as Result<void>;
+      }
+      const sendResult = await sendFn(metaDataId, messageId, sent.value, AbortSignal.timeout(30_000));
+      const success = sendResult.ok && sendResult.value.status === 'SENT';
+      await store.updateConnectorMessageStatus(channelId, messageId, metaDataId, success ? 'SENT' : 'ERROR');
+      await store.incrementStats(channelId, metaDataId, this.serverId, success ? 'sent' : 'errored');
+      return success ? OK_VOID : ({ ok: false, value: null, error: new Error('Redispatch send failed') } as Result<void>);
+    };
+
+    const manager = new RecoveryManager(recoveryStore, reprocessSource, redispatchDestination);
+    const recovered = await manager.recover(channel.id);
+    if (!recovered.ok) {
+      logger.error({ channelId: channel.id, errMsg: recovered.error.message }, 'Channel recovery failed');
+      return;
+    }
+    const summary = recovered.value;
+    if (summary.recovered > 0 || summary.errors > 0) {
+      logger.info({ channelId: channel.id, ...summary }, 'Channel recovery complete');
+    }
   }
 
   /** Compile a script with optional template prepending. */
@@ -521,6 +740,13 @@ export class EngineManager {
         }
       }
 
+      // Destination response transformer (runs on the send response)
+      if (d.responseTransformer && d.responseTransformer.trim().length > 0) {
+        destScripts['responseTransformer'] = await this.compileWithTemplates(
+          d.responseTransformer, 'destinationResponseTransformer', templates, `${channel.name}/${d.name}/response-transformer.ts`,
+        );
+      }
+
       // Remove undefined entries
       const cleanScripts: Record<string, CompiledScript> = {};
       for (const [key, value] of Object.entries(destScripts)) {
@@ -532,7 +758,7 @@ export class EngineManager {
         name: d.name,
         enabled: d.enabled,
         scripts: cleanScripts as DestinationScripts,
-        queueEnabled: d.queueMode !== 'NEVER',
+        queueMode: (d.queueMode ?? 'NEVER') as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
       });
     }
 

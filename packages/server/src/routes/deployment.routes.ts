@@ -22,6 +22,7 @@ router.use(authenticate);
 // Channel-specific actions
 router.post('/:id/deploy', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.deploy);
 router.post('/:id/undeploy', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.undeploy);
+router.post('/:id/redeploy', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.redeploy);
 router.post('/:id/start', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.start);
 router.post('/:id/stop', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.stop);
 router.post('/:id/halt', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.halt);

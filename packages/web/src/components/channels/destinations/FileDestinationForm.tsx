@@ -14,7 +14,14 @@ import type { DestConnectorFormProps } from './types.js';
 import { FILE_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
-const CHARSETS = ['UTF-8', 'ISO-8859-1', 'US-ASCII'] as const;
+// Values must be valid Node Buffer encodings (passed straight to fs.writeFile) —
+// 'ISO-8859-1'/'US-ASCII' are NOT and throw ERR_UNKNOWN_ENCODING at runtime.
+const CHARSETS: readonly { value: string; label: string }[] = [
+  { value: 'utf-8', label: 'UTF-8' },
+  { value: 'latin1', label: 'ISO-8859-1 (Latin-1)' },
+  { value: 'ascii', label: 'US-ASCII' },
+  { value: 'utf16le', label: 'UTF-16 LE' },
+];
 
 function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
   const val = props[key];
@@ -78,14 +85,14 @@ export function FileDestinationForm({ properties, onChange }: DestConnectorFormP
 
         <TextField
           label="Charset"
-          value={getStr(properties, 'charset', 'UTF-8')}
+          value={getStr(properties, 'charset', 'utf-8')}
           onChange={handleText('charset')}
           select
           fullWidth
           sx={{ mb: 2 }}
         >
           {CHARSETS.map((c) => (
-            <MenuItem key={c} value={c}>{c}</MenuItem>
+            <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>
           ))}
         </TextField>
       </Grid>

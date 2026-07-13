@@ -44,6 +44,11 @@ vi.mock('../../lib/db.js', () => ({
   default: mockDb,
 }));
 
+const mockDeleteMessagesByIds = vi.fn().mockResolvedValue(undefined);
+vi.mock('../message-delete-helper.js', () => ({
+  deleteMessagesByIds: mockDeleteMessagesByIds,
+}));
+
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
@@ -61,6 +66,7 @@ vi.mock('drizzle-orm', () => ({
 
 // Must import after mocks
 const { MessageQueryService } = await import('../message-query.service.js');
+const { eq: mockEq } = await import('drizzle-orm');
 
 // ----- Fixtures -----
 
@@ -95,6 +101,7 @@ beforeEach(() => {
   resetSelectState();
   mockExecute.mockResolvedValue({ rows: [] });
   mockDeleteWhere.mockResolvedValue(undefined);
+  mockDeleteMessagesByIds.mockResolvedValue(undefined);
 });
 
 // ----- Tests -----
@@ -163,6 +170,28 @@ describe('MessageQueryService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.items).toHaveLength(1);
+    });
+
+    it('applies exact messageId filter', async () => {
+      mockExecute
+        .mockResolvedValueOnce({ rows: [{ count: '1' }] })
+        .mockResolvedValueOnce({ rows: [makeMessageRow({ id: 42 })] });
+      pushSelectResponse([makeConnectorRow({ messageId: 42 })]);
+
+      const result = await MessageQueryService.searchMessages(CHANNEL_ID, {
+        messageId: 42,
+        limit: 25,
+        offset: 0,
+        sort: 'receivedAt',
+        sortDir: 'desc',
+      } as never);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.items).toHaveLength(1);
+      expect(result.value.items[0]!.messageId).toBe(42);
+      // The messageId condition was added via eq(messages.id, 42).
+      expect(vi.mocked(mockEq)).toHaveBeenCalledWith(expect.anything(), 42);
     });
 
     it('applies date range filter', async () => {
@@ -356,14 +385,15 @@ describe('MessageQueryService', () => {
 
   // ========== DELETE MESSAGE ==========
   describe('deleteMessage', () => {
-    it('deletes message and all related data', async () => {
+    it('deletes message and all related data atomically (incl. attachments + metadata)', async () => {
       pushSelectResponse([{ id: MESSAGE_ID }]);
 
       const result = await MessageQueryService.deleteMessage(CHANNEL_ID, MESSAGE_ID);
 
       expect(result.ok).toBe(true);
-      // Verify delete was called 3 times (content, connector_messages, messages)
-      expect(mockDelete).toHaveBeenCalledTimes(3);
+      // Routes through the transactional helper that also removes attachments and
+      // custom metadata — not three loose, non-transactional db.delete() calls.
+      expect(mockDeleteMessagesByIds).toHaveBeenCalledWith(CHANNEL_ID, [MESSAGE_ID]);
     });
 
     it('returns NOT_FOUND when message does not exist', async () => {
@@ -378,7 +408,7 @@ describe('MessageQueryService', () => {
 
     it('returns error on DB failure', async () => {
       pushSelectResponse([{ id: MESSAGE_ID }]);
-      mockDeleteWhere.mockRejectedValueOnce(new Error('DB error'));
+      mockDeleteMessagesByIds.mockRejectedValueOnce(new Error('DB error'));
 
       const result = await MessageQueryService.deleteMessage(CHANNEL_ID, MESSAGE_ID);
 

@@ -46,6 +46,13 @@ export interface TransformerFormValues {
   readonly inboundDataType: string;
   readonly outboundDataType: string;
   readonly steps: readonly TransformerStepFormValues[];
+  // Serialization templates/properties are not edited in the UI yet, but a channel
+  // can gain them via Mirth XML import. Carry them through load→save unchanged so
+  // saving from the editor does not silently strip them.
+  readonly inboundTemplate: string | null;
+  readonly outboundTemplate: string | null;
+  readonly inboundProperties: Record<string, unknown>;
+  readonly outboundProperties: Record<string, unknown>;
 }
 
 /** Default empty filter rule. */
@@ -83,7 +90,11 @@ export function createDefaultFilter(): FilterFormValues {
 
 /** Default empty transformer. */
 export function createDefaultTransformer(): TransformerFormValues {
-  return { inboundDataType: 'HL7V2', outboundDataType: 'HL7V2', steps: [] };
+  return {
+    inboundDataType: 'HL7V2', outboundDataType: 'HL7V2', steps: [],
+    inboundTemplate: null, outboundTemplate: null,
+    inboundProperties: {}, outboundProperties: {},
+  };
 }
 
 /** Props for the top-level SourceTab component. */

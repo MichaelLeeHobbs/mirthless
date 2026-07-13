@@ -17,16 +17,20 @@ import { DestinationConnectorSettings } from './DestinationConnectorSettings.js'
 import { QueueSettingsSection } from './QueueSettingsSection.js';
 import { DestinationFilterSection } from './DestinationFilterSection.js';
 import { DestinationTransformerSection } from './DestinationTransformerSection.js';
+import { ResponseTransformerSection } from './ResponseTransformerSection.js';
 
+// Must match the destination factories in packages/connectors/src/registry.ts.
 const CONNECTOR_TYPES = [
   { value: 'TCP_MLLP', label: 'TCP / MLLP' },
   { value: 'HTTP', label: 'HTTP' },
   { value: 'FILE', label: 'File' },
   { value: 'DATABASE', label: 'Database' },
   { value: 'JAVASCRIPT', label: 'JavaScript' },
+  { value: 'SMTP', label: 'SMTP (Email)' },
   { value: 'CHANNEL', label: 'Channel' },
-  { value: 'DICOM', label: 'DICOM' },
   { value: 'FHIR', label: 'FHIR' },
+  { value: 'DICOM', label: 'DICOM' },
+  { value: 'SFTP', label: 'SFTP' },
 ] as const;
 
 interface DestinationSettingsPanelProps {
@@ -107,6 +111,14 @@ export function DestinationSettingsPanel({ destination, onChange }: DestinationS
       <DestinationTransformerSection
         transformer={destination.transformer}
         onChange={(transformer) => { onChange({ transformer }); }}
+      />
+
+      <Divider sx={{ my: 3 }} />
+
+      {/* Response transformer (single script) */}
+      <ResponseTransformerSection
+        value={destination.responseTransformer}
+        onChange={(responseTransformer) => { onChange({ responseTransformer }); }}
       />
 
       <Divider sx={{ my: 3 }} />

@@ -17,7 +17,6 @@ import TableRow from '@mui/material/TableRow';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Chip from '@mui/material/Chip';
-import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -27,6 +26,7 @@ import TextField from '@mui/material/TextField';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import {
   useTags,
   useCreateTag,
@@ -34,9 +34,16 @@ import {
   useDeleteTag,
   type TagSummary,
 } from '../hooks/use-tags.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { EmptyState } from '../components/common/states/EmptyState.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { TableSkeleton } from '../components/common/states/LoadingState.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 export function TagsPage(): ReactNode {
-  const { data: tags, isLoading, error, isFetching } = useTags();
+  const { data: tags, isLoading, error, isFetching, refetch } = useTags();
   const createTag = useCreateTag();
   const updateTag = useUpdateTag();
   const deleteTag = useDeleteTag();
@@ -46,6 +53,9 @@ export function TagsPage(): ReactNode {
   const [name, setName] = useState('');
   const [color, setColor] = useState('#2196F3');
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TagSummary | null>(null);
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.SETTINGS_WRITE);
 
   const handleOpenCreate = (): void => {
     setEditing(null);
@@ -89,42 +99,48 @@ export function TagsPage(): ReactNode {
     }
   };
 
-  const handleDelete = (tag: TagSummary): void => {
-    deleteTag.mutate(tag.id);
+  const handleConfirmDelete = (): void => {
+    if (!deleteTarget) return;
+    deleteTag.mutate(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Tags</Typography>
-          {isFetching && !isLoading && <CircularProgress size={20} />}
-        </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-          Create Tag
-        </Button>
-      </Box>
+      <PageHeader
+        title="Tags"
+        description="Label channels with color-coded tags for quick filtering."
+        isFetching={isFetching && !isLoading}
+        actions={
+          <Tooltip title={canWrite ? '' : 'Requires settings:write permission'}>
+            <span>
+              <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
+                Create Tag
+              </Button>
+            </span>
+          </Tooltip>
+        }
+      />
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load tags: {error.message}</Alert>}
+      {error && (
+        <ErrorState title="Couldn't load tags" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
+      )}
 
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Tag</TableCell>
-                <TableCell>Color</TableCell>
-                <TableCell align="center">Channels</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {tags && tags.length > 0 ? (
-                tags.map((tag) => (
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Tag</TableCell>
+              <TableCell>Color</TableCell>
+              <TableCell align="center">Channels</TableCell>
+              <TableCell align="right">Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {isLoading ? (
+              <TableSkeleton rows={6} columns={4} />
+            ) : tags && tags.length > 0 ? (
+              tags.map((tag) => (
                   <TableRow key={tag.id} hover>
                     <TableCell>
                       <Chip
@@ -150,32 +166,38 @@ export function TagsPage(): ReactNode {
                     </TableCell>
                     <TableCell align="center">{tag.assignmentCount}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Edit">
-                        <IconButton size="small" onClick={() => { handleOpenEdit(tag); }}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Edit' : 'Requires settings:write permission'}>
+                        <span>
+                          <IconButton aria-label="Edit tag" size="small" onClick={() => { handleOpenEdit(tag); }} disabled={!canWrite}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton size="small" onClick={() => { handleDelete(tag); }}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Delete' : 'Requires settings:write permission'}>
+                        <span>
+                          <IconButton aria-label="Delete tag" size="small" onClick={() => { setDeleteTarget(tag); }} disabled={!canWrite}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={4} align="center">
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
-                      No tags found
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+            ) : (
+              <TableRow>
+                <TableCell colSpan={4}>
+                  <EmptyState
+                    dense
+                    icon={<LocalOfferIcon />}
+                    title="No tags yet"
+                    description="Create a tag to organize and filter your channels."
+                  />
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       <Dialog open={dialogOpen} onClose={handleClose} maxWidth="sm" fullWidth>
         <DialogTitle>{editing ? 'Edit Tag' : 'Create Tag'}</DialogTitle>
@@ -215,6 +237,17 @@ export function TagsPage(): ReactNode {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete Tag"
+        message={`Delete tag "${deleteTarget?.name ?? ''}"? It will be removed from all channels.`}
+        confirmLabel="Delete"
+        severity="error"
+        isPending={deleteTag.isPending}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => { setDeleteTarget(null); }}
+      />
     </Box>
   );
 }

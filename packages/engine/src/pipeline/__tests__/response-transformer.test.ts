@@ -62,7 +62,7 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
       name: 'Dest 1',
       enabled: true,
       scripts: {},
-      queueEnabled: false,
+      queueMode: 'NEVER',
     }],
     ...overrides,
   };
@@ -108,7 +108,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: responseTransformerScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -137,7 +137,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: responseTransformerScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -160,7 +160,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: responseTransformerScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -175,6 +175,39 @@ describe('Response Transformer', () => {
     expect(transformedStores).toHaveLength(0);
   });
 
+  it('surfaces a response transformer script error (error content + alert), keeps dest SENT with untransformed response', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn({ status: 'SENT', content: 'original response' });
+    const onError = vi.fn().mockResolvedValue(undefined);
+    const responseTransformerScript = makeScript('thisFunctionDoesNotExist();');
+    const config = makeConfig({
+      onError,
+      destinations: [{
+        metaDataId: 1,
+        name: 'Dest 1',
+        enabled: true,
+        scripts: { responseTransformer: responseTransformerScript },
+        queueMode: 'NEVER',
+      }],
+    } as Partial<PipelineConfig>);
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), new AbortController().signal);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Message was delivered — stays SENT, response falls back to the raw response.
+    expect(result.value.destinationResults[0]!.status).toBe('SENT');
+    expect(result.value.destinationResults[0]!.response).toBe('original response');
+    // The error was surfaced, not swallowed: error content (CT 13) + alert.
+    const storeContentCalls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
+    const errorStores = storeContentCalls.filter((c: unknown[]) => c[3] === 13);
+    expect(errorStores).toHaveLength(1);
+    expect(onError).toHaveBeenCalledOnce();
+    // No CT_RESPONSE_TRANSFORMED (7) was stored.
+    expect(storeContentCalls.filter((c: unknown[]) => c[3] === 7)).toHaveLength(0);
+  });
+
   it('does not run response transformer on queued destinations', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
@@ -185,7 +218,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: responseTransformerScript },
-        queueEnabled: true,
+        queueMode: 'ALWAYS',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -215,8 +248,8 @@ describe('Response Transformer', () => {
     const rtScript = makeScript('return "TX:" + msg;');
     const config = makeConfig({
       destinations: [
-        { metaDataId: 1, name: 'D1', enabled: true, scripts: { responseTransformer: rtScript }, queueEnabled: false },
-        { metaDataId: 2, name: 'D2', enabled: true, scripts: { responseTransformer: rtScript }, queueEnabled: false },
+        { metaDataId: 1, name: 'D1', enabled: true, scripts: { responseTransformer: rtScript }, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'D2', enabled: true, scripts: { responseTransformer: rtScript }, queueMode: 'NEVER' },
       ],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -241,7 +274,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: rtScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -264,7 +297,7 @@ describe('Response Transformer', () => {
         name: 'Dest 1',
         enabled: true,
         scripts: { responseTransformer: rtScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
@@ -287,7 +320,7 @@ describe('Response Transformer', () => {
         name: 'Dest 3',
         enabled: true,
         scripts: { responseTransformer: rtScript },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);

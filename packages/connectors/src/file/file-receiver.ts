@@ -9,6 +9,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { normalizeEncoding } from '../encoding.js';
+import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Constants -----
 
@@ -25,6 +27,12 @@ const FILE_POST_ACTION = {
   NONE: 'NONE',
 } as const;
 type FilePostAction = typeof FILE_POST_ACTION[keyof typeof FILE_POST_ACTION];
+
+/**
+ * Sidecar ledger file (in the watched directory) that persists the quarantine
+ * set across restarts. Excluded from polling so it is never dispatched.
+ */
+const QUARANTINE_LEDGER = '.mirthless-quarantine.json';
 
 // ----- Config -----
 
@@ -51,7 +59,9 @@ export type { FileSortBy, FilePostAction };
  * Does NOT support ** or character classes.
  */
 export function matchGlob(pattern: string, filename: string): boolean {
-  // Convert glob pattern to regex
+  // Convert glob pattern to regex. Every non-wildcard character is escaped, so a
+  // filter like `report(1)*.hl7` or `data[0]*.txt` produces a valid regex instead
+  // of throwing on `new RegExp` every poll cycle (which silently wedged the channel).
   let regex = '^';
   for (let i = 0; i < pattern.length; i++) {
     const ch = pattern[i]!;
@@ -59,8 +69,8 @@ export function matchGlob(pattern: string, filename: string): boolean {
       regex += '.*';
     } else if (ch === '?') {
       regex += '.';
-    } else if (ch === '.') {
-      regex += '\\.';
+    } else if (/[.\\+^$(){}|[\]]/.test(ch)) {
+      regex += `\\${ch}`;
     } else {
       regex += ch;
     }
@@ -82,12 +92,25 @@ interface FileEntry {
 
 export class FileReceiver implements SourceConnectorRuntime {
   private readonly config: FileReceiverConfig;
+  private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
+  /**
+   * Files that dispatched successfully but whose post-action (delete/move)
+   * failed. Tracked by name+mtime so they are NOT re-dispatched next cycle,
+   * preventing duplicate message delivery. Requires operator intervention.
+   * Persisted to a sidecar ledger in the watched directory so a restart does
+   * not re-dispatch an already-dispatched-but-post-action-failed file.
+   */
+  private readonly quarantined = new Set<string>();
+  /** Absolute path to the on-disk quarantine ledger. */
+  private readonly ledgerPath: string;
 
-  constructor(config: FileReceiverConfig) {
+  constructor(config: FileReceiverConfig, logger?: ConnectorLogger) {
     this.config = config;
+    this.logger = logger ?? createConnectorLogger('FILE');
+    this.ledgerPath = path.join(config.directory, QUARANTINE_LEDGER);
   }
 
   setDispatcher(dispatcher: MessageDispatcher): void {
@@ -116,6 +139,10 @@ export class FileReceiver implements SourceConnectorRuntime {
       if (!this.dispatcher) {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
+
+      // Restore the quarantine ledger so files quarantined before a restart are
+      // still skipped (never re-dispatched).
+      await this.loadQuarantine();
 
       this.pollTimer = setInterval(() => {
         void this.pollCycle();
@@ -151,8 +178,14 @@ export class FileReceiver implements SourceConnectorRuntime {
       for (const entry of sorted) {
         await this.processFile(entry);
       }
-    } catch {
-      // Poll cycle errors are non-fatal; next cycle will retry.
+    } catch (err) {
+      // Non-fatal (next cycle retries) but MUST be visible: a vanished
+      // directory or permission change otherwise leaves the channel STARTED
+      // yet silently processing nothing.
+      this.logger.error(
+        { ...errorInfo(err), directory: this.config.directory },
+        'File poll cycle failed',
+      );
     } finally {
       this.polling = false;
     }
@@ -166,6 +199,7 @@ export class FileReceiver implements SourceConnectorRuntime {
 
     for (const entry of dirEntries) {
       if (!entry.isFile()) continue;
+      if (entry.name === QUARANTINE_LEDGER) continue; // never dispatch the ledger
       if (!matchGlob(this.config.fileFilter, entry.name)) continue;
 
       const fullPath = path.join(this.config.directory, entry.name);
@@ -203,9 +237,20 @@ export class FileReceiver implements SourceConnectorRuntime {
   private async processFile(entry: FileEntry): Promise<void> {
     if (!this.dispatcher) return;
 
+    const key = `${entry.name}:${String(entry.mtime)}`;
+    if (this.quarantined.has(key)) {
+      // Already dispatched; post-action failed previously. Skip to avoid a
+      // duplicate delivery. Surface loudly until an operator resolves it.
+      this.logger.error(
+        { file: entry.fullPath },
+        'File quarantined after post-action failure; skipping to avoid duplicate delivery',
+      );
+      return;
+    }
+
     const content = this.config.binary
       ? (await fs.readFile(entry.fullPath)).toString('base64')
-      : await fs.readFile(entry.fullPath, { encoding: this.config.charset });
+      : await fs.readFile(entry.fullPath, { encoding: normalizeEncoding(this.config.charset) });
 
     const raw: RawMessage = {
       content,
@@ -220,7 +265,64 @@ export class FileReceiver implements SourceConnectorRuntime {
     const result = await this.dispatcher(raw);
 
     if (result.ok) {
-      await this.postProcess(entry);
+      try {
+        await this.postProcess(entry);
+      } catch (err) {
+        this.quarantined.add(key);
+        await this.persistQuarantine();
+        this.logger.error(
+          { ...errorInfo(err), file: entry.fullPath },
+          'Post-action failed after successful dispatch; quarantining file',
+        );
+      }
+    }
+  }
+
+  /**
+   * Load the quarantine ledger from disk into memory. Resilient: a missing
+   * ledger means an empty set; a corrupt ledger is logged and treated as empty
+   * (a startup read must never crash the connector).
+   */
+  private async loadQuarantine(): Promise<void> {
+    let raw: unknown;
+    try {
+      raw = await fs.readFile(this.ledgerPath, { encoding: 'utf8' });
+    } catch {
+      return; // no ledger yet — nothing quarantined
+    }
+    if (typeof raw !== 'string') return;
+    const trimmed = raw.trim();
+    // The ledger is always a JSON array. Anything else is either absent or not
+    // ours — do not treat it as corruption.
+    if (!trimmed.startsWith('[')) return;
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        for (const key of parsed) {
+          if (typeof key === 'string') this.quarantined.add(key);
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        { ...errorInfo(err), file: this.ledgerPath },
+        'Quarantine ledger is corrupt; ignoring it (files may be re-dispatched)',
+      );
+    }
+  }
+
+  /**
+   * Persist the quarantine set to the sidecar ledger. A write failure is logged
+   * loudly: the in-memory guard still holds this session, but a restart could
+   * re-dispatch, so an operator must know.
+   */
+  private async persistQuarantine(): Promise<void> {
+    try {
+      await fs.writeFile(this.ledgerPath, JSON.stringify([...this.quarantined]), { encoding: 'utf8' });
+    } catch (err) {
+      this.logger.error(
+        { ...errorInfo(err), file: this.ledgerPath },
+        'Failed to persist quarantine ledger; quarantine will not survive a restart',
+      );
     }
   }
 

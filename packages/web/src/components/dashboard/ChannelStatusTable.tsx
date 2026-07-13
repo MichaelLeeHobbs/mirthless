@@ -14,12 +14,10 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import TableSortLabel from '@mui/material/TableSortLabel';
 import Paper from '@mui/material/Paper';
-import Chip from '@mui/material/Chip';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import Link from '@mui/material/Link';
 import SearchIcon from '@mui/icons-material/Search';
-import CircleIcon from '@mui/icons-material/Circle';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import Tooltip from '@mui/material/Tooltip';
 import IconButton from '@mui/material/IconButton';
@@ -29,6 +27,8 @@ import { ChannelActions } from './ChannelActions.js';
 import Checkbox from '@mui/material/Checkbox';
 import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
 import { AssignGroupDialog } from '../common/AssignGroupDialog.js';
+import { ChannelStateChip, StatusDot } from '../common/StatusChip.js';
+import { channelStateLevel } from '../../lib/status.js';
 import { useContextMenu } from '../../hooks/use-context-menu.js';
 
 interface ChannelStatusTableProps {
@@ -54,24 +54,6 @@ interface ChannelRow {
   readonly sent: number;
   readonly errored: number;
   readonly queued: number;
-}
-
-export function getStateColor(state: string): 'success' | 'warning' | 'error' | 'default' {
-  switch (state) {
-    case 'STARTED': return 'success';
-    case 'PAUSED': return 'warning';
-    case 'STOPPED': return 'error';
-    default: return 'default';
-  }
-}
-
-export function getStatusDotColor(state: string): string {
-  switch (state) {
-    case 'STARTED': return 'success.main';
-    case 'PAUSED': return 'warning.main';
-    case 'STOPPED': return 'error.main';
-    default: return 'text.disabled';
-  }
 }
 
 export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds, onToggleSelect, onSelectAll, isAllSelected, onSendMessage }: ChannelStatusTableProps): ReactNode {
@@ -260,7 +242,7 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
                     </TableCell>
                   ) : null}
                   <TableCell>
-                    <CircleIcon sx={{ fontSize: 12, color: getStatusDotColor(row.state) }} />
+                    <StatusDot level={channelStateLevel(row.state)} title={row.state} />
                   </TableCell>
                   <TableCell>
                     <Link
@@ -274,18 +256,28 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={row.state}
-                      size="small"
-                      color={getStateColor(row.state)}
-                      variant="outlined"
-                    />
+                    <ChannelStateChip state={row.state} />
                   </TableCell>
                   <TableCell align="right">{row.received.toLocaleString()}</TableCell>
                   <TableCell align="right">{row.filtered.toLocaleString()}</TableCell>
                   <TableCell align="right">{row.sent.toLocaleString()}</TableCell>
                   <TableCell align="right" sx={{ color: row.errored > 0 ? 'error.main' : undefined }}>
-                    {row.errored.toLocaleString()}
+                    {row.errored > 0 ? (
+                      <Tooltip title="View errored messages">
+                        <Link
+                          component="button"
+                          variant="body2"
+                          underline="hover"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/channels/${row.channelId}/messages?status=ERROR`); }}
+                          aria-label={`View ${String(row.errored)} errored messages for ${row.channelName}`}
+                          sx={{ color: 'error.main', fontWeight: 600 }}
+                        >
+                          {row.errored.toLocaleString()}
+                        </Link>
+                      </Tooltip>
+                    ) : (
+                      row.errored.toLocaleString()
+                    )}
                   </TableCell>
                   <TableCell align="right" sx={{ color: row.queued > 0 ? 'warning.main' : undefined }}>
                     {row.queued.toLocaleString()}
@@ -293,7 +285,7 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       <Tooltip title="Statistics">
-                        <IconButton size="small" onClick={() => navigate(`/channels/${row.channelId}/statistics`)}>
+                        <IconButton size="small" aria-label={`View statistics for ${row.channelName}`} onClick={() => navigate(`/channels/${row.channelId}/statistics`)}>
                           <BarChartIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>

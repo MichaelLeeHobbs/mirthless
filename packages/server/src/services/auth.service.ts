@@ -38,6 +38,8 @@ export interface UserResponse {
   email: string;
   role: string;
   permissions: readonly string[];
+  /** True when the user must change their password before proceeding. */
+  mustChangePassword: boolean;
 }
 
 export interface LoginResult {
@@ -150,6 +152,7 @@ export class AuthService {
           email: user.email,
           role: user.role,
           permissions,
+          mustChangePassword: user.mustChangePassword,
         },
         ...tokens,
       };
@@ -158,8 +161,9 @@ export class AuthService {
 
   static async refreshSession(refreshToken: string): Promise<Result<AuthTokens>> {
     return tryCatch(async () => {
-      // Verify token signature
-      const payload = verifyRefreshToken(refreshToken);
+      // Verify token signature (throws on tamper/expiry). We rely on the DB
+      // session + a fresh user check below rather than the token's own claims.
+      verifyRefreshToken(refreshToken);
 
       // Find session in database by hashed token
       const hashedToken = hashToken(refreshToken);
@@ -172,11 +176,23 @@ export class AuthService {
         throw new Error('Invalid refresh token');
       }
 
+      // Re-validate the user on every refresh: a disabled or deleted user must not
+      // be able to keep rotating tokens. Drop the session and fail loudly.
+      const [user] = await db
+        .select({ id: users.id, enabled: users.enabled })
+        .from(users)
+        .where(eq(users.id, session.userId));
+
+      if (!user || !user.enabled) {
+        await db.delete(sessions).where(eq(sessions.id, session.id));
+        throw new Error('Invalid refresh token');
+      }
+
       // Delete old session (rotate tokens)
       await db.delete(sessions).where(eq(sessions.id, session.id));
 
       // Create new tokens
-      return await this.createTokens(payload.userId);
+      return await this.createTokens(session.userId);
     });
   }
 

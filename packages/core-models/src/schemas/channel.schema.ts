@@ -8,6 +8,13 @@ import { transformerInputSchema } from './transformer.schema.js';
 
 // ----- Shared Enums -----
 
+// Union of all source and destination connector types. Source-valid:
+// TCP_MLLP, HTTP, FILE, DATABASE, JAVASCRIPT, CHANNEL, DICOM, EMAIL.
+// Destination-valid: TCP_MLLP, HTTP, FILE, DATABASE, JAVASCRIPT, SMTP, CHANNEL,
+// FHIR, DICOM. The UI dropdowns enforce the source/destination split; the
+// connector registry (packages/connectors) is the runtime source of truth.
+// SMTP and EMAIL were previously absent — an SMTP destination or EMAIL source
+// therefore failed channel validation despite the connectors existing.
 export const CONNECTOR_TYPES = [
   'TCP_MLLP',
   'HTTP',
@@ -17,6 +24,9 @@ export const CONNECTOR_TYPES = [
   'CHANNEL',
   'DICOM',
   'FHIR',
+  'SMTP',
+  'EMAIL',
+  'SFTP',
 ] as const;
 
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);
@@ -50,6 +60,8 @@ export const destinationInputSchema = z.object({
   rotateQueue: z.boolean().default(false),
   queueThreadCount: z.number().int().positive().default(1),
   waitForPrevious: z.boolean().default(false),
+  /** Optional per-destination response transformer script (JS/TS source). */
+  responseTransformer: z.string().nullish(),
 });
 
 export type DestinationInput = z.infer<typeof destinationInputSchema>;

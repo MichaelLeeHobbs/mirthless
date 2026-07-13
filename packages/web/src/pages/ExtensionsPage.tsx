@@ -15,39 +15,46 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Switch from '@mui/material/Switch';
 import Chip from '@mui/material/Chip';
-import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import { useExtensions, useToggleExtension } from '../hooks/use-extensions.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { TableSkeleton } from '../components/common/states/LoadingState.js';
 
 function typeColor(type: string): 'primary' | 'secondary' {
   return type === 'CONNECTOR' ? 'primary' : 'secondary';
 }
 
 export function ExtensionsPage(): ReactNode {
-  const { data: extensions, isLoading, error } = useExtensions();
+  const { data: extensions, isLoading, isFetching, error, refetch } = useExtensions();
   const toggleMutation = useToggleExtension();
 
   const handleToggle = (id: string, currentEnabled: boolean): void => {
     toggleMutation.mutate({ id, enabled: !currentEnabled });
   };
 
-  if (isLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (error) {
-    return <Alert severity="error">{error.message}</Alert>;
-  }
-
   return (
     <Box>
-      <Typography variant="h5" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
-        Extensions
-      </Typography>
+      <PageHeader
+        title="Extensions"
+        description="Built-in connectors and data types. Toggle to enable or disable each extension."
+        isFetching={isFetching && !isLoading}
+      />
+
+      <Alert severity="info" sx={{ mb: 2 }}>
+        This is a read-only inventory of the built-in connectors and data types. The
+        enable/disable toggle is not yet enforced by the engine — every built-in
+        extension is always available regardless of the switch.
+      </Alert>
+
+      {error ? (
+        <ErrorState
+          title="Couldn't load extensions"
+          error={error}
+          onRetry={() => void refetch()}
+          sx={{ mb: 2 }}
+        />
+      ) : null}
 
       <Paper>
         <TableContainer>
@@ -63,6 +70,7 @@ export function ExtensionsPage(): ReactNode {
               </TableRow>
             </TableHead>
             <TableBody>
+              {isLoading ? <TableSkeleton rows={5} columns={6} /> : null}
               {extensions?.map((ext) => (
                 <TableRow key={ext.id}>
                   <TableCell>

@@ -10,14 +10,40 @@ export type {
   MessageDispatcher,
   RawMessage,
   DispatchResult,
+  DispatchStatus,
   ConnectorMessage,
   ConnectorResponse,
 } from './base.js';
+export { DISPATCH_STATUS } from './base.js';
 
-export { wrapMllp, MllpParser } from './transmission/mllp-mode.js';
-export { TcpMllpReceiver, type TcpMllpReceiverConfig } from './tcp-mllp/tcp-mllp-receiver.js';
+export { createConnectorLogger, errorInfo, type ConnectorLogger } from './logger.js';
+export {
+  readTlsServerOptions,
+  readTlsClientOptions,
+  type TlsServerOptions,
+  type TlsClientOptions,
+} from './tls.js';
+
+export { wrapMllp, MllpParser, DEFAULT_MAX_FRAME_BYTES } from './transmission/mllp-mode.js';
+export {
+  buildAck,
+  classifyAckResponse,
+  type AckCode,
+  type AckClassification,
+} from './tcp-mllp/ack-builder.js';
+export {
+  TcpMllpReceiver,
+  MLLP_RESPONSE_MODE,
+  type TcpMllpReceiverConfig,
+  type MllpResponseMode,
+} from './tcp-mllp/tcp-mllp-receiver.js';
 export { TcpMllpDispatcher, type TcpMllpDispatcherConfig } from './tcp-mllp/tcp-mllp-dispatcher.js';
-export { HttpReceiver, type HttpReceiverConfig } from './http/http-receiver.js';
+export {
+  HttpReceiver,
+  DEFAULT_MAX_BODY_BYTES,
+  type HttpReceiverConfig,
+  type HttpAuthConfig,
+} from './http/http-receiver.js';
 export { HttpDispatcher, type HttpDispatcherConfig } from './http/http-dispatcher.js';
 export {
   FileReceiver,
@@ -83,6 +109,7 @@ export {
   FhirDispatcher,
   buildFhirUrl,
   buildHeaders,
+  extractResourceId,
   FHIR_AUTH_TYPE,
   type FhirDispatcherConfig,
   type FhirAuthConfig,
@@ -116,4 +143,20 @@ export {
   type ImapClient,
   type ImapClientFactory,
 } from './email/index.js';
+export {
+  SftpReceiver,
+  SftpDispatcher,
+  joinRemote,
+  validateAuth,
+  makeHostVerifier,
+  buildConnectOptions,
+  SFTP_POST_ACTION,
+  type SftpReceiverConfig,
+  type SftpDispatcherConfig,
+  type SftpPostAction,
+  type SftpClient,
+  type SftpClientFactory,
+  type SftpConnectionOptions,
+  type SftpFileInfo,
+} from './sftp/index.js';
 export { createSourceConnector, createDestinationConnector } from './registry.js';

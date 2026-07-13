@@ -20,6 +20,12 @@ const configSchema = z.object({
   // Database
   DATABASE_URL: z.string().url(),
   DATABASE_SSL: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  // PEM contents of a private CA bundle to verify the Postgres server cert against
+  // (for hospital/internal CAs). When set, TLS still verifies the certificate.
+  DATABASE_SSL_CA: z.string().optional(),
+  // Escape hatch to disable cert verification (INSECURE — MITM-able PHI link).
+  // Defaults to verifying. Only set 'false' for a throwaway/self-signed dev setup.
+  DATABASE_SSL_REJECT_UNAUTHORIZED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
 
   // Authentication
   JWT_SECRET: z.string().min(32),
@@ -39,9 +45,53 @@ const configSchema = z.object({
   // Logging
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   LOG_HTTP_HEADERS: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+
+  // At-rest content encryption key (AES-256-GCM). 64 hex chars = 32 bytes.
+  // Optional; required only for channels with encryptData enabled.
+  CONTENT_ENCRYPTION_KEY: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, 'CONTENT_ENCRYPTION_KEY must be 64 hex characters (32 bytes)')
+    .optional(),
+
+  // Observability exposure — default to protected/off in production.
+  // METRICS_PUBLIC=true exposes /metrics without auth (for a network-isolated
+  // Prometheus scraper). Otherwise /metrics requires auth.
+  METRICS_PUBLIC: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  // Serve the Swagger UI at /api-docs. Defaults on outside production.
+  API_DOCS_ENABLED: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
 });
 
-const result = configSchema.safeParse(process.env);
+/**
+ * A JWT secret is unusable in production if it is a shipped placeholder or an
+ * obviously low-entropy value. `min(32)` alone passes the 45-char placeholder in
+ * .env.production.example, which would give every un-edited deployment the same
+ * publicly-known signing key (admin-token forgery). We reject those in production.
+ */
+export function isWeakJwtSecret(secret: string): boolean {
+  const lower = secret.toLowerCase();
+  const placeholderMarkers = ['change_me', 'changeme', 'change-me', 'your-secret', 'your_secret', 'replace', 'example', 'insecure', 'placeholder'];
+  if (placeholderMarkers.some((m) => lower.includes(m))) return true;
+  // Fewer than 16 distinct characters => very low entropy for a 32+ char secret.
+  if (new Set(secret).size < 16) return true;
+  return false;
+}
+
+const refinedSchema = configSchema.superRefine((data, ctx) => {
+  if (data.NODE_ENV === 'production' && isWeakJwtSecret(data.JWT_SECRET)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['JWT_SECRET'],
+      message:
+        'JWT_SECRET looks like a placeholder or low-entropy value. Set a strong, random secret in production ' +
+        '(e.g. `openssl rand -hex 32`). Refusing to start with a guessable signing key.',
+    });
+  }
+});
+
+const result = refinedSchema.safeParse(process.env);
 
 if (!result.success) {
   // eslint-disable-next-line no-console

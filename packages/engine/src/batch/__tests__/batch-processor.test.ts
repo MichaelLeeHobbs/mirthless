@@ -26,7 +26,6 @@ function makeSandbox(returnValue: unknown): SandboxExecutor {
 
 const EXEC_OPTIONS: ExecutionOptions = {
   timeout: 5000,
-  memoryLimit: 128,
   signal: new AbortController().signal,
 };
 

@@ -3,6 +3,7 @@
 // ===========================================
 // Container for editing/creating channels with tabbed interface.
 
+import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useRef, useCallback, type ReactNode, type SyntheticEvent } from 'react';
 import { useParams, useNavigate, useBlocker } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
@@ -27,6 +28,8 @@ import SaveIcon from '@mui/icons-material/Save';
 import HistoryIcon from '@mui/icons-material/History';
 import type { CreateChannelInput, UpdateChannelInput } from '@mirthless/core-models';
 import { useChannel, useCreateChannel, useUpdateChannel } from '../hooks/use-channels.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 import { SummaryTab } from '../components/channels/SummaryTab.js';
 import { SourceTab } from '../components/channels/SourceTab.js';
 import { DestinationsTab } from '../components/channels/DestinationsTab.js';
@@ -125,6 +128,8 @@ export function ChannelEditorPage(): ReactNode {
   const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
   const isSaving = createChannel.isPending || updateChannel.isPending;
+  const { has: hasPermission } = usePermissions();
+  const canWrite = hasPermission(PERMISSION.CHANNELS_WRITE);
 
   // Form
   const {
@@ -199,6 +204,10 @@ export function ChannelEditorPage(): ReactNode {
             ? {
                 inboundDataType: dTransformer.inboundDataType,
                 outboundDataType: dTransformer.outboundDataType,
+                inboundTemplate: dTransformer.inboundTemplate ?? null,
+                outboundTemplate: dTransformer.outboundTemplate ?? null,
+                inboundProperties: (dTransformer.inboundProperties as Record<string, unknown> | undefined) ?? {},
+                outboundProperties: (dTransformer.outboundProperties as Record<string, unknown> | undefined) ?? {},
                 steps: dTransformer.steps.map((s) => ({
                   enabled: s.enabled,
                   name: s.name ?? '',
@@ -211,6 +220,7 @@ export function ChannelEditorPage(): ReactNode {
                 })),
               }
             : createDefaultTransformer(),
+          responseTransformer: d.responseTransformer ?? '',
         };
       }));
 
@@ -266,6 +276,10 @@ export function ChannelEditorPage(): ReactNode {
         setSourceTransformer({
           inboundDataType: srcTransformer.inboundDataType,
           outboundDataType: srcTransformer.outboundDataType,
+          inboundTemplate: srcTransformer.inboundTemplate ?? null,
+          outboundTemplate: srcTransformer.outboundTemplate ?? null,
+          inboundProperties: (srcTransformer.inboundProperties as Record<string, unknown> | undefined) ?? {},
+          outboundProperties: (srcTransformer.outboundProperties as Record<string, unknown> | undefined) ?? {},
           steps: srcTransformer.steps.map((s) => ({
             enabled: s.enabled,
             name: s.name ?? '',
@@ -299,6 +313,7 @@ export function ChannelEditorPage(): ReactNode {
 
   // Navigation guard for unsaved changes
   const blocker = useBlocker(isDirty && !isSaving);
+  useBeforeUnload(isDirty && !isSaving);
 
   // Clear success message after 3 seconds
   useEffect(() => {
@@ -351,6 +366,9 @@ export function ChannelEditorPage(): ReactNode {
     rotateQueue: boolean;
     queueThreadCount: number;
     waitForPrevious: boolean;
+    // Per-destination response transformer (CT_RESPONSE_TRANSFORMED). Sent as a
+    // single script; null when empty. Round-trips via the destination object.
+    responseTransformer: string | null;
   }> => {
     return destinations.map((d) => ({
       name: d.name,
@@ -363,6 +381,7 @@ export function ChannelEditorPage(): ReactNode {
       rotateQueue: d.rotateQueue,
       queueThreadCount: d.queueThreadCount,
       waitForPrevious: d.waitForPrevious,
+      responseTransformer: d.responseTransformer.trim() ? d.responseTransformer : null,
     }));
   };
 
@@ -461,10 +480,10 @@ export function ChannelEditorPage(): ReactNode {
         metaDataId: null,
         inboundDataType: sourceTransformer.inboundDataType,
         outboundDataType: sourceTransformer.outboundDataType,
-        inboundProperties: {},
-        outboundProperties: {},
-        inboundTemplate: null,
-        outboundTemplate: null,
+        inboundProperties: sourceTransformer.inboundProperties,
+        outboundProperties: sourceTransformer.outboundProperties,
+        inboundTemplate: sourceTransformer.inboundTemplate,
+        outboundTemplate: sourceTransformer.outboundTemplate,
         steps: mapStepsToPayload(sourceTransformer.steps),
       });
     }
@@ -479,10 +498,10 @@ export function ChannelEditorPage(): ReactNode {
           metaDataId: i + 1,
           inboundDataType: t.inboundDataType,
           outboundDataType: t.outboundDataType,
-          inboundProperties: {},
-          outboundProperties: {},
-          inboundTemplate: null,
-          outboundTemplate: null,
+          inboundProperties: t.inboundProperties,
+          outboundProperties: t.outboundProperties,
+          inboundTemplate: t.inboundTemplate,
+          outboundTemplate: t.outboundTemplate,
           steps: mapStepsToPayload(t.steps),
         });
       }
@@ -629,15 +648,19 @@ export function ChannelEditorPage(): ReactNode {
             </IconButton>
           </Tooltip>
         ) : null}
-        <Button
-          variant="contained"
-          startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
-          disabled={isSaving || (!isDirty && isEditMode)}
-          onClick={handleSubmit(onSubmit)}
-          sx={{ flexShrink: 0 }}
-        >
-          {isEditMode ? 'Save' : 'Create'}
-        </Button>
+        <Tooltip title={canWrite ? '' : 'Requires channels:write permission'}>
+          <span>
+            <Button
+              variant="contained"
+              startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
+              disabled={isSaving || (!isDirty && isEditMode) || !canWrite}
+              onClick={handleSubmit(onSubmit)}
+              sx={{ flexShrink: 0 }}
+            >
+              {isEditMode ? 'Save' : 'Create'}
+            </Button>
+          </span>
+        </Tooltip>
       </Box>
 
       {/* Status messages */}

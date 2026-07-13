@@ -187,6 +187,34 @@ describe('SettingsService', () => {
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
     });
+
+    it('masks a secret setting value on read (finding 5b)', async () => {
+      pushResponse([makeSettingRow({ key: 'smtp.auth_pass', type: 'password', value: 'hunter2', category: 'smtp' })]);
+
+      const result = await SettingsService.getByKey('smtp.auth_pass');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.value).not.toBe('hunter2');
+      expect(result.value.value).toBe('__REDACTED__');
+    });
+  });
+
+  describe('list — secret redaction', () => {
+    it('masks secret values but leaves non-secret values intact', async () => {
+      pushResponse([
+        makeSettingRow({ key: 'smtp.host', value: 'mail.example.com' }),
+        makeSettingRow({ key: 'smtp.auth_pass', type: 'password', value: 'hunter2', category: 'smtp' }),
+      ]);
+
+      const result = await SettingsService.list();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const byKey = new Map(result.value.map((s) => [s.key, s.value]));
+      expect(byKey.get('smtp.host')).toBe('mail.example.com');
+      expect(byKey.get('smtp.auth_pass')).toBe('__REDACTED__');
+    });
   });
 
   // ===== upsert =====

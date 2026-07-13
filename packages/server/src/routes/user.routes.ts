@@ -7,6 +7,7 @@ import {
   createUserSchema,
   updateUserSchema,
   changePasswordSchema,
+  changeOwnPasswordSchema,
   userIdParamSchema,
 } from '@mirthless/core-models';
 import { UserController } from '../controllers/user.controller.js';
@@ -18,6 +19,15 @@ const router: IRouter = Router();
 
 // All user routes require authentication
 router.use(authenticate);
+
+// Self-service password change — every authenticated user must be able to change
+// their OWN password without the users:write permission. Registered BEFORE the
+// greedy `/:id/password` route so `me` is not treated as an id.
+router.post(
+  '/me/password',
+  validate({ body: changeOwnPasswordSchema }),
+  UserController.changeOwnPassword,
+);
 
 router.get(
   '/',
@@ -37,6 +47,13 @@ router.get(
   requirePermission('users:read'),
   validate({ params: userIdParamSchema }),
   UserController.getById,
+);
+
+router.get(
+  '/:id/permissions',
+  requirePermission('users:read'),
+  validate({ params: userIdParamSchema }),
+  UserController.getPermissions,
 );
 
 router.put(

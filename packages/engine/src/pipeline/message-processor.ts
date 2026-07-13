@@ -43,12 +43,18 @@ export interface DestinationConfig {
   readonly name: string;
   readonly enabled: boolean;
   readonly scripts: DestinationScripts;
-  readonly queueEnabled: boolean;
+  /**
+   * NEVER — send directly, mark ERROR on failure.
+   * ALWAYS — always enqueue (the queue consumer delivers + retries).
+   * ON_FAILURE — try a direct send; only enqueue for retry if that send fails.
+   */
+  readonly queueMode: 'NEVER' | 'ON_FAILURE' | 'ALWAYS';
 }
 
 /** Callback to send a message to a destination connector. */
 export type SendToDestination = (
   metaDataId: number,
+  messageId: number,
   content: string,
   signal: AbortSignal,
   correlationId?: string,
@@ -98,6 +104,14 @@ export interface MessageStore {
   finalizeMessage?(
     channelId: string, messageId: number, serverId: string,
   ): Promise<Result<void>>;
+
+  /**
+   * Optional: apply the channel's removeContentOnCompletion / removeAttachmentsOnCompletion
+   * policy for a message that has fully and successfully completed. The pipeline only
+   * calls this when there are no errored or still-queued destinations, so it never
+   * races the queue consumer or destroys content needed to investigate a failure.
+   */
+  removeCompletedContent?(channelId: string, messageId: number): Promise<Result<void>>;
 }
 
 /** Input to the pipeline. */
@@ -172,6 +186,17 @@ const CT_RESPONSE = 6;
 const CT_RESPONSE_TRANSFORMED = 7;
 const CT_SOURCE_MAP = 9;
 const CT_PROCESSING_ERROR = 13;
+
+/**
+ * Resolve a preprocessor's replacement message. A preprocessor returns the new
+ * message content; a boolean return (e.g. the filter-style `return true`) is a
+ * common mistake that must NOT overwrite the message with the string "true".
+ * Boolean returns fall back to the (possibly mutated) `msg` variable.
+ */
+function preprocessorReplacement(returnValue: unknown, msg: unknown): unknown {
+  if (returnValue != null && typeof returnValue !== 'boolean') return returnValue;
+  return msg;
+}
 
 // ----- Pipeline -----
 
@@ -299,7 +324,7 @@ export class MessageProcessor {
           this.config.scripts.globalPreprocessor, content, input, signal, mapState,
         );
         if (!gpreResult.ok) return errorOut('globalPreprocessor', gpreResult.error.message);
-        const gpreVal = gpreResult.value.returnValue ?? gpreResult.value.msg;
+        const gpreVal = preprocessorReplacement(gpreResult.value.returnValue, gpreResult.value.msg);
         if (gpreVal != null) {
           content = serializeFromSandbox(gpreVal, dataType);
         }
@@ -312,7 +337,7 @@ export class MessageProcessor {
           this.config.scripts.preprocessor, content, input, signal, mapState,
         );
         if (!preResult.ok) return errorOut('preprocessor', preResult.error.message);
-        const preVal = preResult.value.returnValue ?? preResult.value.msg;
+        const preVal = preprocessorReplacement(preResult.value.returnValue, preResult.value.msg);
         if (preVal != null) {
           content = serializeFromSandbox(preVal, dataType);
         }
@@ -373,24 +398,46 @@ export class MessageProcessor {
       );
       mark('destinations');
 
+      const destHasError = destResults.some((r) => r.status === 'ERROR');
+      let postprocessorFailed = false;
+
       // Stage 7a: Channel postprocessor (receives responseMap populated with dest responses)
       if (this.config.scripts.postprocessor) {
-        await this.runScript(
+        const postResult = await this.runScript(
           this.config.scripts.postprocessor, content, input, signal, mapState,
         );
+        if (!postResult.ok) {
+          postprocessorFailed = true;
+          await this.storeAndAlertPostError(messageId, 'postprocessor', postResult.error.message);
+        }
         mark('postprocessor');
       }
 
       // Stage 7b: Global postprocessor
       if (this.config.scripts.globalPostprocessor) {
-        await this.runScript(
+        const gpostResult = await this.runScript(
           this.config.scripts.globalPostprocessor, content, input, signal, mapState,
         );
+        if (!gpostResult.ok) {
+          postprocessorFailed = true;
+          await this.storeAndAlertPostError(messageId, 'globalPostprocessor', gpostResult.error.message);
+        }
         mark('globalPostprocessor');
       }
 
-      // Stage 8: Mark processed
-      if (this.store.finalizeMessage) {
+      const hasError = destHasError || postprocessorFailed;
+
+      // Stage 8: Finalize source connector. Do NOT record the source as SENT when a
+      // destination or postprocessor failed — that would overcount throughput and
+      // hide failures. Mark the source ERRORed instead so stats stay truthful.
+      const hasQueued = destResults.some((r) => r.status === 'QUEUED');
+      if (hasError) {
+        await Promise.all([
+          this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+          this.store.incrementStats(channelId, 0, serverId, 'errored'),
+          this.store.markProcessed(channelId, messageId),
+        ]);
+      } else if (this.store.finalizeMessage) {
         await this.store.finalizeMessage(channelId, messageId, serverId);
       } else {
         await Promise.all([
@@ -399,6 +446,13 @@ export class MessageProcessor {
           this.store.markProcessed(channelId, messageId),
         ]);
       }
+
+      // Apply removeContentOnCompletion only when the message is fully done — no
+      // errors and nothing still queued (a queued destination needs the stored
+      // content to deliver later, and error content must be kept for investigation).
+      if (!hasError && !hasQueued && this.store.removeCompletedContent) {
+        await this.store.removeCompletedContent(channelId, messageId);
+      }
       mark('finalize');
 
       // Emit timing data
@@ -406,10 +460,8 @@ export class MessageProcessor {
         timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
       }
 
-      const hasError = destResults.some((r) => r.status === 'ERROR');
-
-      // Notify alert system of errors
-      if (hasError && this.config.onError) {
+      // Notify alert system of destination errors
+      if (destHasError && this.config.onError) {
         await this.config.onError({
           channelId,
           errorType: 'DESTINATION_CONNECTOR',
@@ -449,18 +501,29 @@ export class MessageProcessor {
     const promises = this.config.destinations
       .filter((d) => d.enabled && (!activeDestinations || activeDestinations.has(d.metaDataId)))
       .map(async (dest): Promise<DestinationResult> => {
-        await this.store.createConnectorMessage(
+        // A persistence failure here must fail the destination loudly (ERROR +
+        // alert), never be ignored — otherwise the message is silently lost with
+        // no dest row, no recovery, and a SENT source status.
+        const createResult = await this.store.createConnectorMessage(
           channelId, messageId, dest.metaDataId, dest.name, 'RECEIVED',
         );
+        if (!createResult.ok) {
+          return this.destErrorOut(messageId, dest, 'createConnectorMessage', createResult.error.message);
+        }
 
         let destContent = content;
 
-        // Destination filter — fresh connectorMap per destination
+        // Destination filter — fresh connectorMap per destination.
+        // A script error must fail the destination loudly, never fall through as
+        // if the filter passed (which would send unfiltered PHI downstream).
         if (dest.scripts.filter) {
           const filterResult = await this.runScript(
             dest.scripts.filter, destContent, input, signal, mapState,
           );
-          if (filterResult.ok && filterResult.value.returnValue === false) {
+          if (!filterResult.ok) {
+            return this.destErrorOut(messageId, dest, 'destinationFilter', filterResult.error.message);
+          }
+          if (filterResult.value.returnValue === false) {
             await Promise.all([
               this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'FILTERED'),
               this.store.incrementStats(channelId, dest.metaDataId, serverId, 'filtered'),
@@ -469,31 +532,43 @@ export class MessageProcessor {
           }
         }
 
-        // Destination transformer
+        // Destination transformer — a script error must fail the destination.
+        // Never send untransformed content downstream on a transformer failure.
         if (dest.scripts.transformer) {
           const txResult = await this.runScript(
             dest.scripts.transformer, destContent, input, signal, mapState,
           );
-          if (txResult.ok) {
-            const transformed = txResult.value.returnValue ?? txResult.value.msg;
-            destContent = serializeFromSandbox(transformed, dataType);
+          if (!txResult.ok) {
+            return this.destErrorOut(messageId, dest, 'destinationTransformer', txResult.error.message);
           }
+          const transformed = txResult.value.returnValue ?? txResult.value.msg;
+          destContent = serializeFromSandbox(transformed, dataType);
         }
 
-        await this.store.storeContent(
+        // Persist the outbound (SENT) content BEFORE queuing/sending. A queued
+        // destination reloads exactly this row to deliver, and crash recovery
+        // redispatches from it — if the write fails we must error now (before any
+        // send) rather than silently lose the message or deliver un-persisted PHI.
+        const storeSentResult = await this.store.storeContent(
           channelId, messageId, dest.metaDataId, CT_SENT, destContent, dataType,
         );
-
-        // Queue or send directly
-        if (dest.queueEnabled) {
-          await this.store.enqueue(channelId, messageId, dest.metaDataId);
-          return { metaDataId: dest.metaDataId, status: 'QUEUED' as const };
+        if (!storeSentResult.ok) {
+          return this.destErrorOut(messageId, dest, 'storeSentContent', storeSentResult.error.message);
         }
 
-        // Send to destination
-        const sendResult = await this.sendFn(dest.metaDataId, destContent, signal, correlationId);
+        // ALWAYS: hand straight to the queue (the consumer delivers + retries).
+        if (dest.queueMode === 'ALWAYS') {
+          return this.enqueueDestination(messageId, dest);
+        }
+
+        // NEVER / ON_FAILURE: attempt a direct send first.
+        const sendResult = await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId);
 
         if (!sendResult.ok) {
+          // ON_FAILURE: fall back to the queue for retry instead of a hard ERROR.
+          if (dest.queueMode === 'ON_FAILURE') {
+            return this.enqueueDestination(messageId, dest);
+          }
           await Promise.all([
             this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'ERROR'),
             this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored'),
@@ -511,7 +586,11 @@ export class MessageProcessor {
           // Populate responseMap with destination response
           mapState.responseMap[dest.name] = { status: response.status, content: response.content };
 
-          // Response transformer (if configured)
+          // Response transformer (if configured). A script error here must be
+          // surfaced loudly (error content + alert), never swallowed — but the
+          // message was already delivered to the destination, so we keep the
+          // destination SENT and fall back to the untransformed response rather
+          // than flip to ERROR (which could trigger a duplicate redelivery).
           let responseContent = response.content;
           if (dest.scripts.responseTransformer) {
             const rtResult = await this.runScript(
@@ -523,6 +602,18 @@ export class MessageProcessor {
               await this.store.storeContent(
                 channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
               );
+            } else {
+              await this.store.storeContent(
+                channelId, messageId, dest.metaDataId, CT_PROCESSING_ERROR,
+                `Script error in responseTransformer: ${rtResult.error.message}`, 'TEXT',
+              );
+              if (this.config.onError) {
+                await this.config.onError({
+                  channelId, errorType: 'DESTINATION_CONNECTOR',
+                  errorMessage: `Response transformer error in message ${String(messageId)}: ${rtResult.error.message}`,
+                  timestamp: Date.now(),
+                });
+              }
             }
           }
 
@@ -537,6 +628,11 @@ export class MessageProcessor {
           };
         }
 
+        // Destination responded but not SENT (e.g. remote NAK). ON_FAILURE queues
+        // it for retry; otherwise mark ERROR.
+        if (dest.queueMode === 'ON_FAILURE') {
+          return this.enqueueDestination(messageId, dest);
+        }
         await this.store.updateConnectorMessageStatus(
           channelId, messageId, dest.metaDataId, 'ERROR',
         );
@@ -547,6 +643,53 @@ export class MessageProcessor {
     const settled = await Promise.all(promises);
     results.push(...settled);
     return results;
+  }
+
+  /** Enqueue a destination for (retried) delivery by the queue consumer. */
+  private async enqueueDestination(
+    messageId: number,
+    dest: DestinationConfig,
+  ): Promise<DestinationResult> {
+    const enqueueResult = await this.store.enqueue(this.config.channelId, messageId, dest.metaDataId);
+    if (!enqueueResult.ok) {
+      // Enqueue failed — the message would otherwise be marked QUEUED but sit
+      // undelivered forever (queue consumer never sees it, recovery skips
+      // processed rows). Fail loud so it is retried/alerted, not lost.
+      return this.destErrorOut(messageId, dest, 'enqueue', enqueueResult.error.message);
+    }
+    return { metaDataId: dest.metaDataId, status: 'QUEUED' as const };
+  }
+
+  /** Mark a destination ERRORed after a filter/transformer script failure (stores error content + errored stat). */
+  private async destErrorOut(
+    messageId: number,
+    dest: DestinationConfig,
+    stage: string,
+    errMsg: string,
+  ): Promise<DestinationResult> {
+    const { channelId, serverId } = this.config;
+    await Promise.all([
+      this.store.storeContent(channelId, messageId, dest.metaDataId, CT_PROCESSING_ERROR, `Script error in ${stage}: ${errMsg}`, 'TEXT'),
+      this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'ERROR'),
+      this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored'),
+    ]);
+    return { metaDataId: dest.metaDataId, status: 'ERROR' as const };
+  }
+
+  /** Store a postprocessor script error against the source connector and raise an alert event. */
+  private async storeAndAlertPostError(
+    messageId: number,
+    stage: string,
+    errMsg: string,
+  ): Promise<void> {
+    const { channelId } = this.config;
+    await this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, `Script error in ${stage}: ${errMsg}`, 'TEXT');
+    if (this.config.onError) {
+      await this.config.onError({
+        channelId, errorType: 'SOURCE_CONNECTOR',
+        errorMessage: `Script error in ${stage}: ${errMsg}`, timestamp: Date.now(),
+      });
+    }
   }
 
   /** Run a script in the sandbox with the current message context and map state. */

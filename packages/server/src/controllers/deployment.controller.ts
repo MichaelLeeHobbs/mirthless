@@ -40,6 +40,22 @@ export class DeploymentController {
     res.json({ success: true, data: result.value });
   }
 
+  static async redeploy(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await DeploymentService.redeploy(id, context);
+
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to redeploy channel');
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
+      return;
+    }
+
+    logger.info({ channelId: id }, 'Channel redeployed');
+    res.json({ success: true, data: result.value });
+  }
+
   static async start(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };

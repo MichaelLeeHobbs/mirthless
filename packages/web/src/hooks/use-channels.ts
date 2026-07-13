@@ -53,6 +53,9 @@ export interface ChannelDetail extends ChannelSummary {
     readonly rotateQueue: boolean;
     readonly queueThreadCount: number;
     readonly waitForPrevious: boolean;
+    // Per-destination response transformer script (CT_RESPONSE_TRANSFORMED).
+    // Optional until the server projects it; read defensively.
+    readonly responseTransformer?: string | null;
   }>;
   readonly metadataColumns: ReadonlyArray<{
     readonly id: string;

@@ -3,12 +3,13 @@
 // ===========================================
 // Two-panel page: library tree (left) + template editor (right).
 
+import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useCallback, type ReactNode } from 'react';
+import { useBlocker } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import Stack from '@mui/material/Stack';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -20,6 +21,9 @@ import { LibraryTree } from '../components/code-templates/LibraryTree.js';
 import { TemplateEditor } from '../components/code-templates/TemplateEditor.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import {
   useCodeTemplateLibraries,
   useCodeTemplates,
@@ -44,8 +48,21 @@ interface ConfirmState {
 const CLOSED_CONFIRM: ConfirmState = { open: false, title: '', message: '', onConfirm: () => {} };
 
 export function CodeTemplatePage(): ReactNode {
-  const { data: libraries = [], isLoading: libLoading } = useCodeTemplateLibraries();
-  const { data: templates = [], isLoading: tmplLoading } = useCodeTemplates();
+  const {
+    data: libraries = [],
+    isLoading: libLoading,
+    isFetching: libFetching,
+    error: libError,
+    refetch: refetchLibraries,
+  } = useCodeTemplateLibraries();
+  const {
+    data: templates = [],
+    isLoading: tmplLoading,
+    isFetching: tmplFetching,
+    error: tmplError,
+    refetch: refetchTemplates,
+  } = useCodeTemplates();
+  const loadError = libError ?? tmplError;
 
   const createLibrary = useCreateLibrary();
   const updateLibrary = useUpdateLibrary();
@@ -62,10 +79,52 @@ export function CodeTemplatePage(): ReactNode {
   const [dialogName, setDialogName] = useState('');
   const [dialogDescription, setDialogDescription] = useState('');
   const [confirm, setConfirm] = useState<ConfirmState>(CLOSED_CONFIRM);
+  const [editorDirty, setEditorDirty] = useState(false);
+  // undefined = no pending in-page switch; a value = switch target once confirmed.
+  const [pendingSwitch, setPendingSwitch] = useState<CodeTemplateDetail | null | undefined>(undefined);
+
+  const handleDirtyChange = useCallback((dirty: boolean): void => {
+    setEditorDirty(dirty);
+  }, []);
+
+  // Guard in-page template switch / close when there are unsaved edits.
+  const requestSelectTemplate = useCallback((next: CodeTemplateDetail | null): void => {
+    setSelectedTemplate((current) => {
+      if (current && current.id !== next?.id && editorDirty) {
+        setPendingSwitch(next);
+        return current;
+      }
+      return next;
+    });
+  }, [editorDirty]);
 
   const handleDeselectTemplate = useCallback((): void => {
-    setSelectedTemplate(null);
-  }, []);
+    requestSelectTemplate(null);
+  }, [requestSelectTemplate]);
+
+  // Route-level navigation guard (consistent with the channel editor).
+  const blocker = useBlocker(editorDirty);
+  useBeforeUnload(editorDirty);
+
+  const unsavedOpen = pendingSwitch !== undefined || blocker.state === 'blocked';
+
+  const handleUnsavedConfirm = useCallback((): void => {
+    setEditorDirty(false);
+    if (blocker.state === 'blocked') {
+      blocker.proceed?.();
+    }
+    if (pendingSwitch !== undefined) {
+      setSelectedTemplate(pendingSwitch);
+      setPendingSwitch(undefined);
+    }
+  }, [blocker, pendingSwitch]);
+
+  const handleUnsavedCancel = useCallback((): void => {
+    if (blocker.state === 'blocked') {
+      blocker.reset?.();
+    }
+    setPendingSwitch(undefined);
+  }, [blocker]);
 
   const handleCreateLibrary = async (): Promise<void> => {
     try {
@@ -198,35 +257,45 @@ export function CodeTemplatePage(): ReactNode {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 100px)' }}>
-      {/* Header */}
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>
-          Code Templates
-        </Typography>
-        <Stack direction="row" spacing={1}>
-          <Button
-            variant="outlined"
-            startIcon={<CreateNewFolderIcon />}
-            onClick={openCreateLibraryDialog}
-            size="small"
-          >
-            Library
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => {
-              const targetId = selectedTemplate?.libraryId ?? libraries[0]?.id;
-              if (targetId) { void handleCreateTemplate(targetId); }
-              else { notify('Create a library first', 'warning'); }
-            }}
-            disabled={libraries.length === 0}
-            size="small"
-          >
-            Template
-          </Button>
-        </Stack>
-      </Stack>
+      <PageHeader
+        title="Code Templates"
+        description="Reusable JavaScript functions and code blocks shared across channels, organized into libraries."
+        isFetching={(libFetching || tmplFetching) && !isLoading}
+        actions={
+          <>
+            <Button
+              variant="outlined"
+              startIcon={<CreateNewFolderIcon />}
+              onClick={openCreateLibraryDialog}
+              size="small"
+            >
+              Library
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                const targetId = selectedTemplate?.libraryId ?? libraries[0]?.id;
+                if (targetId) { void handleCreateTemplate(targetId); }
+                else { notify('Create a library first', 'warning'); }
+              }}
+              disabled={libraries.length === 0}
+              size="small"
+            >
+              Template
+            </Button>
+          </>
+        }
+      />
+
+      {loadError ? (
+        <ErrorState
+          title="Couldn't load code templates"
+          error={loadError}
+          onRetry={() => { void refetchLibraries(); void refetchTemplates(); }}
+          sx={{ mb: 2 }}
+        />
+      ) : null}
 
       {/* Two-panel layout */}
       <Box sx={{ display: 'flex', flexGrow: 1, gap: 2, minHeight: 0 }}>
@@ -240,13 +309,13 @@ export function CodeTemplatePage(): ReactNode {
           }}
         >
           {isLoading ? (
-            <Typography sx={{ p: 2 }} color="text.secondary">Loading...</Typography>
+            <LoadingBlock label="Loading templates" />
           ) : (
             <LibraryTree
               libraries={libraries}
               templates={templates}
               selectedTemplateId={selectedTemplate?.id ?? null}
-              onSelectTemplate={setSelectedTemplate}
+              onSelectTemplate={requestSelectTemplate}
               onCreateTemplate={(id) => { void handleCreateTemplate(id); }}
               onEditLibrary={openEditLibraryDialog}
               onDeleteLibrary={handleDeleteLibrary}
@@ -271,6 +340,7 @@ export function CodeTemplatePage(): ReactNode {
               onDelete={handleDeleteTemplate}
               onClose={handleDeselectTemplate}
               saving={updateTemplate.isPending}
+              onDirtyChange={handleDirtyChange}
             />
           ) : (
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
@@ -331,6 +401,18 @@ export function CodeTemplatePage(): ReactNode {
         severity="error"
         onConfirm={confirm.onConfirm}
         onCancel={() => { setConfirm(CLOSED_CONFIRM); }}
+      />
+
+      {/* Unsaved-changes guard (template switch / close / route navigation) */}
+      <ConfirmDialog
+        open={unsavedOpen}
+        title="Unsaved Changes"
+        message="You have unsaved template changes. Discard them?"
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        severity="warning"
+        onConfirm={handleUnsavedConfirm}
+        onCancel={handleUnsavedCancel}
       />
     </Box>
   );

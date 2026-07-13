@@ -20,6 +20,8 @@ import { useCreateChannel } from '../../hooks/use-channels.js';
 
 const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR'] as const;
 
+// Must match the source factories in packages/connectors/src/registry.ts
+// (FHIR is destination-only; EMAIL/IMAP is a valid source).
 const SOURCE_CONNECTOR_TYPES = [
   'TCP_MLLP',
   'HTTP',
@@ -28,7 +30,7 @@ const SOURCE_CONNECTOR_TYPES = [
   'JAVASCRIPT',
   'CHANNEL',
   'DICOM',
-  'FHIR',
+  'EMAIL',
 ] as const;
 
 interface NewChannelFormData {
@@ -71,19 +73,24 @@ export function NewChannelDialog({ open, onClose }: NewChannelDialogProps): Reac
   };
 
   const onSubmit = async (data: NewChannelFormData): Promise<void> => {
-    const created = await createChannel.mutateAsync({
-      name: data.name,
-      description: data.description,
-      enabled: false,
-      inboundDataType: data.inboundDataType as typeof DATA_TYPES[number],
-      outboundDataType: data.outboundDataType as typeof DATA_TYPES[number],
-      sourceConnectorType: data.sourceConnectorType as typeof SOURCE_CONNECTOR_TYPES[number],
-      sourceConnectorProperties: {},
-      responseMode: 'AUTO_AFTER_DESTINATIONS',
-    });
-    reset();
-    onClose();
-    navigate(`/channels/${created.id}`);
+    try {
+      const created = await createChannel.mutateAsync({
+        name: data.name,
+        description: data.description,
+        enabled: false,
+        inboundDataType: data.inboundDataType as typeof DATA_TYPES[number],
+        outboundDataType: data.outboundDataType as typeof DATA_TYPES[number],
+        sourceConnectorType: data.sourceConnectorType as typeof SOURCE_CONNECTOR_TYPES[number],
+        sourceConnectorProperties: {},
+        responseMode: 'AUTO_AFTER_DESTINATIONS',
+      });
+      reset();
+      onClose();
+      navigate(`/channels/${created.id}`);
+    } catch {
+      // Failure is surfaced by the inline Alert (createChannel.isError) and the
+      // global mutation error toast; keep the dialog open for a retry.
+    }
   };
 
   return (

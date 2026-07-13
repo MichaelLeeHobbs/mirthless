@@ -21,11 +21,15 @@ interface MessageSearchBarProps {
   readonly receivedTo: string;
   readonly statuses: readonly string[];
   readonly metaDataId: string;
+  readonly messageId: string;
   readonly contentSearch: string;
+  /** Actual destination connectors (metaDataId + name) to populate the filter. */
+  readonly connectors?: readonly { readonly metaDataId: number; readonly name: string }[];
   readonly onReceivedFromChange: (value: string) => void;
   readonly onReceivedToChange: (value: string) => void;
   readonly onStatusesChange: (value: readonly string[]) => void;
   readonly onMetaDataIdChange: (value: string) => void;
+  readonly onMessageIdChange: (value: string) => void;
   readonly onContentSearchChange: (value: string) => void;
 }
 
@@ -34,11 +38,14 @@ export function MessageSearchBar({
   receivedTo,
   statuses,
   metaDataId,
+  messageId,
   contentSearch,
+  connectors,
   onReceivedFromChange,
   onReceivedToChange,
   onStatusesChange,
   onMetaDataIdChange,
+  onMessageIdChange,
   onContentSearchChange,
 }: MessageSearchBarProps): ReactNode {
   const handleStatusChange = (event: SelectChangeEvent<string[]>): void => {
@@ -92,11 +99,20 @@ export function MessageSearchBar({
         >
           <MenuItem value="">All</MenuItem>
           <MenuItem value="0">Source</MenuItem>
-          <MenuItem value="1">Dest 1</MenuItem>
-          <MenuItem value="2">Dest 2</MenuItem>
-          <MenuItem value="3">Dest 3</MenuItem>
+          {(connectors ?? []).map((c) => (
+            <MenuItem key={c.metaDataId} value={String(c.metaDataId)}>{c.name}</MenuItem>
+          ))}
         </Select>
       </FormControl>
+      <TextField
+        label="Message ID"
+        size="small"
+        type="number"
+        value={messageId}
+        onChange={(e) => onMessageIdChange(e.target.value)}
+        slotProps={{ htmlInput: { min: 1, 'aria-label': 'Search by message ID' } }}
+        sx={{ width: 140 }}
+      />
       <TextField
         label="Search content"
         size="small"

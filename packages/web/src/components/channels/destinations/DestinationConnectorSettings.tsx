@@ -16,6 +16,7 @@ import { SmtpDestinationForm } from './SmtpDestinationForm.js';
 import { ChannelDestinationForm } from './ChannelDestinationForm.js';
 import { FhirDestinationForm } from './FhirDestinationForm.js';
 import { DicomDestinationForm } from './DicomDestinationForm.js';
+import { SftpDestinationForm } from './SftpDestinationForm.js';
 
 const DEST_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<DestConnectorFormProps> | undefined>> = {
   TCP_MLLP: TcpMllpDestinationForm,
@@ -27,6 +28,7 @@ const DEST_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<DestConnectorF
   CHANNEL: ChannelDestinationForm,
   FHIR: FhirDestinationForm,
   DICOM: DicomDestinationForm,
+  SFTP: SftpDestinationForm,
 };
 
 interface DestinationConnectorSettingsProps {

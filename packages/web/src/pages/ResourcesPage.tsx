@@ -16,7 +16,6 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -26,6 +25,7 @@ import TextField from '@mui/material/TextField';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import FolderIcon from '@mui/icons-material/Folder';
 import {
   useResources,
   useResource,
@@ -34,6 +34,13 @@ import {
   useDeleteResource,
   type ResourceSummary,
 } from '../hooks/use-resources.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import { EmptyState } from '../components/common/states/EmptyState.js';
+import { ErrorState } from '../components/common/states/ErrorState.js';
+import { TableSkeleton } from '../components/common/states/LoadingState.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${String(bytes)} B`;
@@ -42,7 +49,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function ResourcesPage(): ReactNode {
-  const { data: resources, isLoading, error, isFetching } = useResources();
+  const { data: resources, isLoading, error, isFetching, refetch } = useResources();
   const createResource = useCreateResource();
   const updateResource = useUpdateResource();
   const deleteResource = useDeleteResource();
@@ -54,6 +61,12 @@ export function ResourcesPage(): ReactNode {
   const [mimeType, setMimeType] = useState('text/plain');
   const [content, setContent] = useState('');
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ResourceSummary | null>(null);
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.RESOURCES_WRITE);
+  const canDelete = has(PERMISSION.RESOURCES_DELETE);
 
   const { data: editingDetail, isLoading: isDetailLoading } = useResource(editingId ?? '');
 
@@ -71,6 +84,7 @@ export function ResourcesPage(): ReactNode {
     setMimeType('text/plain');
     setContent('');
     setDialogError(null);
+    setDirty(false);
     setDialogOpen(true);
   };
 
@@ -81,6 +95,7 @@ export function ResourcesPage(): ReactNode {
     setMimeType(resource.mimeType ?? 'text/plain');
     setContent('');
     setDialogError(null);
+    setDirty(false);
     setDialogOpen(true);
   };
 
@@ -88,6 +103,16 @@ export function ResourcesPage(): ReactNode {
     setDialogOpen(false);
     setEditingId(null);
     setDialogError(null);
+    setDirty(false);
+  };
+
+  // Guard against losing unsaved edits when closing/cancelling the dialog.
+  const handleRequestClose = (): void => {
+    if (dirty) {
+      setConfirmDiscardOpen(true);
+      return;
+    }
+    handleClose();
   };
 
   const handleSave = (): void => {
@@ -110,43 +135,54 @@ export function ResourcesPage(): ReactNode {
     }
   };
 
-  const handleDelete = (resource: ResourceSummary): void => {
-    deleteResource.mutate(resource.id);
+  const handleConfirmDelete = (): void => {
+    if (!deleteTarget) return;
+    deleteResource.mutate(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>Resources</Typography>
-          {isFetching && !isLoading && <CircularProgress size={20} />}
-        </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-          Create Resource
-        </Button>
-      </Box>
+      <PageHeader
+        title="Resources"
+        description="Shared files and libraries available to channel scripts."
+        isFetching={isFetching && !isLoading}
+        actions={
+          <Tooltip title={canWrite ? '' : 'Requires resources:write permission'}>
+            <span>
+              <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} disabled={!canWrite}>
+                Create Resource
+              </Button>
+            </span>
+          </Tooltip>
+        }
+      />
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>Failed to load resources: {error.message}</Alert>}
+      <Alert severity="info" sx={{ mb: 2 }}>
+        Resources can be stored and managed here, but channel scripts cannot read them
+        yet — the <code>getResource()</code> script bridge is not wired into the engine.
+      </Alert>
 
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Description</TableCell>
-                <TableCell>MIME Type</TableCell>
-                <TableCell align="right">Size</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {resources && resources.length > 0 ? (
-                resources.map((resource) => (
+      {error && (
+        <ErrorState title="Couldn't load resources" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
+      )}
+
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Name</TableCell>
+              <TableCell>Description</TableCell>
+              <TableCell>MIME Type</TableCell>
+              <TableCell align="right">Size</TableCell>
+              <TableCell align="right">Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {isLoading ? (
+              <TableSkeleton rows={6} columns={5} />
+            ) : resources && resources.length > 0 ? (
+              resources.map((resource) => (
                   <TableRow key={resource.id} hover>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>{resource.name}</Typography>
@@ -155,34 +191,40 @@ export function ResourcesPage(): ReactNode {
                     <TableCell>{resource.mimeType || '-'}</TableCell>
                     <TableCell align="right">{formatBytes(resource.sizeBytes)}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Edit">
-                        <IconButton size="small" onClick={() => { handleOpenEdit(resource); }}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canWrite ? 'Edit' : 'Requires resources:write permission'}>
+                        <span>
+                          <IconButton aria-label="Edit resource" size="small" onClick={() => { handleOpenEdit(resource); }} disabled={!canWrite}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton size="small" onClick={() => { handleDelete(resource); }}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                      <Tooltip title={canDelete ? 'Delete' : 'Requires resources:delete permission'}>
+                        <span>
+                          <IconButton aria-label="Delete resource" size="small" onClick={() => { setDeleteTarget(resource); }} disabled={!canDelete}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5} align="center">
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
-                      No resources found
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+            ) : (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <EmptyState
+                    dense
+                    icon={<FolderIcon />}
+                    title="No resources yet"
+                    description="Create a resource to share files or libraries with your channel scripts."
+                  />
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
-      <Dialog open={dialogOpen} onClose={handleClose} maxWidth="md" fullWidth>
+      <Dialog open={dialogOpen} onClose={handleRequestClose} maxWidth="md" fullWidth>
         <DialogTitle>{editingId ? 'Edit Resource' : 'Create Resource'}</DialogTitle>
         <DialogContent>
           {dialogError && <Alert severity="error" sx={{ mb: 2 }}>{dialogError}</Alert>}
@@ -192,21 +234,21 @@ export function ResourcesPage(): ReactNode {
             label="Name"
             fullWidth
             value={name}
-            onChange={(e) => { setName(e.target.value); }}
+            onChange={(e) => { setName(e.target.value); setDirty(true); }}
           />
           <TextField
             margin="dense"
             label="Description"
             fullWidth
             value={description}
-            onChange={(e) => { setDescription(e.target.value); }}
+            onChange={(e) => { setDescription(e.target.value); setDirty(true); }}
           />
           <TextField
             margin="dense"
             label="MIME Type"
             fullWidth
             value={mimeType}
-            onChange={(e) => { setMimeType(e.target.value); }}
+            onChange={(e) => { setMimeType(e.target.value); setDirty(true); }}
           />
           <TextField
             margin="dense"
@@ -215,23 +257,45 @@ export function ResourcesPage(): ReactNode {
             multiline
             rows={12}
             value={content}
-            onChange={(e) => { setContent(e.target.value); }}
+            onChange={(e) => { setContent(e.target.value); setDirty(true); }}
             disabled={editingId != null && isDetailLoading}
             placeholder={editingId != null && isDetailLoading ? 'Loading content...' : ''}
             sx={{ fontFamily: 'monospace' }}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleRequestClose}>Cancel</Button>
           <Button
             onClick={handleSave}
             variant="contained"
-            disabled={!name.trim() || createResource.isPending || updateResource.isPending}
+            disabled={!name.trim() || !canWrite || createResource.isPending || updateResource.isPending}
           >
             {editingId ? 'Update' : 'Create'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDiscardOpen}
+        title="Unsaved Changes"
+        message="You have unsaved changes to this resource. Discard them?"
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        severity="warning"
+        onConfirm={() => { setConfirmDiscardOpen(false); handleClose(); }}
+        onCancel={() => { setConfirmDiscardOpen(false); }}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete Resource"
+        message={`Delete resource "${deleteTarget?.name ?? ''}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        severity="error"
+        isPending={deleteResource.isPending}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => { setDeleteTarget(null); }}
+      />
     </Box>
   );
 }

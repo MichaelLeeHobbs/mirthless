@@ -33,6 +33,7 @@ function makeStore(): MessageStore {
     incrementStats: vi.fn().mockResolvedValue(ok(undefined)),
     dequeue: vi.fn().mockResolvedValue(ok([])),
     release: vi.fn().mockResolvedValue(ok(undefined)),
+    removeCompletedContent: vi.fn().mockResolvedValue(ok(undefined)),
   };
 }
 
@@ -61,7 +62,7 @@ function makeConfig(overrides?: Partial<PipelineConfig>): PipelineConfig {
       name: 'Dest 1',
       enabled: true,
       scripts: {},
-      queueEnabled: false,
+      queueMode: 'NEVER',
     }],
     ...overrides,
   };
@@ -186,7 +187,7 @@ describe('MessageProcessor', () => {
       expect.any(String), 1, 0, 3, 'test', 'RAW',
     );
     // Destination receives transformed content
-    expect(sendFn).toHaveBeenCalledWith(1, 'test', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'test', expect.any(AbortSignal), expect.any(String));
   });
 
   it('destination transformer modifies content via msg assignment (no return)', async () => {
@@ -196,7 +197,7 @@ describe('MessageProcessor', () => {
       destinations: [{
         metaDataId: 1, name: 'Dest 1', enabled: true,
         scripts: { transformer: { code: 'msg = "dest_modified";' } },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(
@@ -206,7 +207,7 @@ describe('MessageProcessor', () => {
     await processor.processMessage(makeInput('original'), AbortSignal.timeout(5_000));
 
     // Destination receives msg-assigned content
-    expect(sendFn).toHaveBeenCalledWith(1, 'dest_modified', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'dest_modified', expect.any(AbortSignal), expect.any(String));
   });
 
   it('routes to 2 destinations in parallel', async () => {
@@ -214,8 +215,8 @@ describe('MessageProcessor', () => {
     const sendFn = makeSendFn();
     const config = makeConfig({
       destinations: [
-        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueEnabled: false },
-        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER' },
       ],
     });
     const processor = new MessageProcessor(
@@ -370,12 +371,12 @@ describe('MessageProcessor', () => {
         {
           metaDataId: 1, name: 'Dest 1', enabled: true,
           scripts: { filter: { code: 'return false;' } },
-          queueEnabled: false,
+          queueMode: 'NEVER',
         },
         {
           metaDataId: 2, name: 'Dest 2', enabled: true,
           scripts: {},
-          queueEnabled: false,
+          queueMode: 'NEVER',
         },
       ],
     });
@@ -402,7 +403,7 @@ describe('MessageProcessor', () => {
       destinations: [{
         metaDataId: 1, name: 'Dest 1', enabled: true,
         scripts: {},
-        queueEnabled: true,
+        queueMode: 'ALWAYS',
       }],
     });
     const processor = new MessageProcessor(
@@ -415,6 +416,124 @@ describe('MessageProcessor', () => {
     if (!result.ok) return;
     expect(result.value.destinationResults[0]!.status).toBe('QUEUED');
     expect(store.enqueue).toHaveBeenCalledOnce();
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('errors the destination (never QUEUED) when enqueue fails — no silent loss', async () => {
+    const store = makeStore();
+    (store.enqueue as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false, value: null, error: new Error('db down'),
+    });
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ALWAYS' }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
+    expect(store.incrementStats).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('ON_FAILURE: attempts a direct send first, then queues on failure (not ERROR)', async () => {
+    const store = makeStore();
+    // Direct send fails.
+    const sendFn = vi.fn().mockResolvedValue({ ok: false, value: null, error: new Error('conn refused') }) as SendToDestination;
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ON_FAILURE' }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // A direct send WAS attempted (unlike ALWAYS), and on failure it was queued.
+    expect(sendFn).toHaveBeenCalledOnce();
+    expect(result.value.destinationResults[0]!.status).toBe('QUEUED');
+    expect(store.enqueue).toHaveBeenCalledOnce();
+    // Not marked ERROR.
+    expect(store.incrementStats).not.toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
+  });
+
+  it('runs removeCompletedContent on full success', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(store.removeCompletedContent).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1);
+  });
+
+  it('does NOT run removeCompletedContent when a destination is still queued', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ALWAYS' }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    // Queued destination still needs the stored content — cleanup must not run.
+    expect(store.removeCompletedContent).not.toHaveBeenCalled();
+  });
+
+  it('ALWAYS: queues without attempting a direct send', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ALWAYS' }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults[0]!.status).toBe('QUEUED');
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('errors the destination when the SENT content write fails (before send)', async () => {
+    const store = makeStore();
+    // Fail only the CT_SENT (5) write; other content writes succeed.
+    (store.storeContent as ReturnType<typeof vi.fn>).mockImplementation(
+      (_c: string, _m: number, _md: number, contentType: number) =>
+        contentType === 5
+          ? Promise.resolve({ ok: false, value: null, error: new Error('disk full') })
+          : Promise.resolve(ok(undefined)),
+    );
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
+    // Must error before sending — never deliver un-persisted PHI.
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('errors the destination when createConnectorMessage fails', async () => {
+    const store = makeStore();
+    (store.createConnectorMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false, value: null, error: new Error('no row'),
+    });
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
     expect(sendFn).not.toHaveBeenCalled();
   });
 
@@ -443,8 +562,8 @@ describe('MessageProcessor', () => {
     const sendFn = makeSendFn();
     const config = makeConfig({
       destinations: [
-        { metaDataId: 1, name: 'Dest 1', enabled: false, scripts: {}, queueEnabled: false },
-        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 1, name: 'Dest 1', enabled: false, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER' },
       ],
     });
     const processor = new MessageProcessor(
@@ -508,6 +627,109 @@ describe('MessageProcessor', () => {
     );
   });
 
+  it('destination filter script error marks the destination ERROR and does not send', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{
+        metaDataId: 1, name: 'Dest 1', enabled: true,
+        scripts: { filter: { code: 'throw new Error("filter boom");' } },
+        queueMode: 'NEVER',
+      }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
+    // Never sent; error content stored against the destination.
+    expect(sendFn).not.toHaveBeenCalled();
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 1, 13, expect.stringContaining('filter boom'), 'TEXT',
+    );
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 1, expect.any(String), 'errored');
+  });
+
+  it('destination transformer script error marks ERROR and never sends untransformed data', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{
+        metaDataId: 1, name: 'Dest 1', enabled: true,
+        scripts: { transformer: { code: 'throw new Error("transform boom");' } },
+        queueMode: 'NEVER',
+      }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
+    expect(sendFn).not.toHaveBeenCalled();
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 1, 13, expect.stringContaining('transform boom'), 'TEXT',
+    );
+  });
+
+  it('preprocessor returning boolean true does not corrupt the message to "true"', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: { preprocessor: { code: 'return true;' } },
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
+
+    // Destination must receive the original message, not the string "true".
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+  });
+
+  it('does not count the source as SENT when the only destination errors (stats overcount)', async () => {
+    const store = makeStore();
+    const sendFn: SendToDestination = vi.fn().mockResolvedValue({
+      ok: false, value: null, error: { message: 'Connection refused' },
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    // Source (metaDataId 0) must be counted errored, never sent.
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
+    expect(store.incrementStats).not.toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'sent');
+  });
+
+  it('postprocessor script error surfaces as ERROR, stores error content, and alerts', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const onError = vi.fn().mockResolvedValue(undefined);
+    const config = makeConfig({
+      scripts: { postprocessor: { code: 'throw new Error("post fail");' } },
+      onError,
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(store.storeContent).toHaveBeenCalledWith(
+      expect.any(String), 1, 0, 13, expect.stringContaining('post fail'), 'TEXT',
+    );
+    expect(store.incrementStats).toHaveBeenCalledWith(expect.any(String), 0, expect.any(String), 'errored');
+    expect(onError).toHaveBeenCalled();
+  });
+
   it('destination transformer modifies content before send', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
@@ -515,7 +737,7 @@ describe('MessageProcessor', () => {
       destinations: [{
         metaDataId: 1, name: 'Dest 1', enabled: true,
         scripts: { transformer: { code: 'return "DEST_TRANSFORMED";' } },
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     });
     const processor = new MessageProcessor(
@@ -525,7 +747,7 @@ describe('MessageProcessor', () => {
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
     // Transformed content should be sent
-    expect(sendFn).toHaveBeenCalledWith(1, 'DEST_TRANSFORMED', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'DEST_TRANSFORMED', expect.any(AbortSignal), expect.any(String));
   });
 
   // ----- Global Scripts -----
@@ -549,7 +771,7 @@ describe('MessageProcessor', () => {
     // Channel preprocessor gets rawData (still original "MSG") and returns "MSG_CHANNEL"
     // But preprocessor reads rawData which is the ORIGINAL input
     // The content flows through, so destination gets channel preprocessor output
-    expect(sendFn).toHaveBeenCalledWith(1, expect.any(String), expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,expect.any(String), expect.any(AbortSignal), expect.any(String));
   });
 
   it('global postprocessor runs after channel postprocessor', async () => {
@@ -607,7 +829,7 @@ describe('MessageProcessor', () => {
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
     // Destination receives the globally-modified content
-    expect(sendFn).toHaveBeenCalledWith(1, 'GLOBAL_MODIFIED', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'GLOBAL_MODIFIED', expect.any(AbortSignal), expect.any(String));
   });
 
   // ----- globalChannelMap -----
@@ -650,7 +872,7 @@ describe('MessageProcessor', () => {
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
     // Preprocessor returned the value from globalChannelMap
-    expect(sendFn).toHaveBeenCalledWith(1, 'hello', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'hello', expect.any(AbortSignal), expect.any(String));
   });
 
   // ----- destinationSet -----
@@ -663,8 +885,8 @@ describe('MessageProcessor', () => {
         sourceTransformer: { code: 'destinationSet.remove("Dest 2"); return rawData;' },
       },
       destinations: [
-        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueEnabled: false },
-        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER' },
       ],
     });
     const processor = new MessageProcessor(
@@ -689,9 +911,9 @@ describe('MessageProcessor', () => {
         sourceTransformer: { code: 'destinationSet.removeAllExcept("Dest 2"); return rawData;' },
       },
       destinations: [
-        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueEnabled: false },
-        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueEnabled: false },
-        { metaDataId: 3, name: 'Dest 3', enabled: true, scripts: {}, queueEnabled: false },
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 3, name: 'Dest 3', enabled: true, scripts: {}, queueMode: 'NEVER' },
       ],
     });
     const processor = new MessageProcessor(

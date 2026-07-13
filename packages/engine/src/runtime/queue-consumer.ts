@@ -103,6 +103,7 @@ export class QueueConsumer {
 
     const sendResult: Result<DestinationResponse> = await this.sendFn(
       msg.metaDataId,
+      msg.messageId,
       contentResult.value,
       signal,
     );
@@ -125,7 +126,9 @@ export class QueueConsumer {
       return;
     }
 
-    // Re-queue for retry (stays QUEUED, attempt count incremented by DB)
+    // Re-queue for retry. Transitioning back to QUEUED persists an incremented
+    // send_attempts (see MessageService.updateConnectorMessageStatus) so the
+    // retry cap above eventually trips and a poison message is not retried forever.
     await this.store.updateConnectorMessageStatus(
       this.config.channelId, msg.messageId, msg.metaDataId, 'QUEUED',
     );

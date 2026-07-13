@@ -16,6 +16,8 @@ import apiDocsRoutes from './routes/api-docs.routes.js';
 import { requestId } from './middleware/request-id.middleware.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import { apiRateLimiter } from './middleware/rate-limit.middleware.js';
+import { authenticate } from './middleware/auth.middleware.js';
+import { requirePermission } from './middleware/permission.middleware.js';
 import { checkDatabase, getHealthStatus } from './services/health.service.js';
 import { registry } from './lib/metrics.js';
 import { metricsMiddleware } from './middleware/metrics.middleware.js';
@@ -47,7 +49,7 @@ app.use(cookieParser());
 
 // Request parsing
 app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Request ID tracking (before logging so requestId appears in logs)
 app.use(requestId);
@@ -92,22 +94,43 @@ app.get('/health/ready', async (_req: Request, res: Response) => {
 });
 
 app.get('/health', async (_req: Request, res: Response) => {
+  // Unauthenticated liveness only — do NOT leak memory usage / engine deployment
+  // counts to the public. Detailed health is available on the authenticated
+  // /health/full endpoint.
+  const health = await getHealthStatus();
+  const status = health.status === 'ok' ? 200 : 503;
+  res.status(status).json({ status: health.status });
+});
+
+// Full health detail (memory, engine deployment counts, dependency checks) — behind
+// auth so it isn't exposed to the public.
+app.get('/health/full', authenticate, requirePermission('system:info'), async (_req: Request, res: Response) => {
   const health = await getHealthStatus();
   const status = health.status === 'ok' ? 200 : 503;
   res.status(status).json(health);
 });
 
-// Prometheus metrics endpoint (no auth required)
-app.get('/metrics', async (_req: Request, res: Response) => {
+// Prometheus metrics endpoint. Protected by default; set METRICS_PUBLIC=true to
+// expose without auth for a network-isolated scraper.
+const metricsHandler = async (_req: Request, res: Response): Promise<void> => {
   res.set('Content-Type', registry.contentType);
   res.send(await registry.metrics());
-});
+};
+
+if (config.METRICS_PUBLIC) {
+  app.get('/metrics', metricsHandler);
+} else {
+  app.get('/metrics', authenticate, requirePermission('system:info'), metricsHandler);
+}
 
 // Metrics collection middleware (after /metrics route to skip self-recording)
 app.use(metricsMiddleware);
 
-// API documentation (no auth required)
-app.use('/api-docs', apiDocsRoutes);
+// API documentation. Off in production unless API_DOCS_ENABLED=true.
+const apiDocsEnabled = config.API_DOCS_ENABLED ?? config.NODE_ENV !== 'production';
+if (apiDocsEnabled) {
+  app.use('/api-docs', apiDocsRoutes);
+}
 
 // Global API rate limiter (100 req/min per IP)
 app.use('/api/v1', apiRateLimiter);

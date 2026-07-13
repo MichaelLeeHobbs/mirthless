@@ -17,6 +17,7 @@ import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
+import Alert from '@mui/material/Alert';
 import RadioGroup from '@mui/material/RadioGroup';
 import Radio from '@mui/material/Radio';
 import FormControl from '@mui/material/FormControl';
@@ -40,6 +41,9 @@ import { useNotification } from '../../stores/notification.store.js';
 
 const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR'] as const;
 
+// Must match the source factories in packages/connectors/src/registry.ts.
+// FHIR is a destination-only connector (no receiver/factory) and EMAIL (IMAP)
+// is a valid source, so it belongs here.
 const SOURCE_CONNECTOR_TYPES = [
   'TCP_MLLP',
   'HTTP',
@@ -48,17 +52,18 @@ const SOURCE_CONNECTOR_TYPES = [
   'JAVASCRIPT',
   'CHANNEL',
   'DICOM',
-  'FHIR',
+  'EMAIL',
+  'SFTP',
 ] as const;
 
 const INITIAL_STATES = ['STARTED', 'STOPPED', 'PAUSED'] as const;
 
 const STORAGE_MODES = [
-  { value: 'DEVELOPMENT', label: 'Development', description: 'Store everything (messages, maps, response)' },
-  { value: 'PRODUCTION', label: 'Production', description: 'Store processed messages only' },
-  { value: 'RAW', label: 'Raw', description: 'Store raw message data only' },
-  { value: 'METADATA', label: 'Metadata', description: 'Store metadata only (no message content)' },
-  { value: 'DISABLED', label: 'Disabled', description: 'No message storage' },
+  { value: 'DEVELOPMENT', label: 'Development', description: 'Store everything (incl. maps + debug content)' },
+  { value: 'PRODUCTION', label: 'Production', description: 'Store raw, sent, response + errors (supports queuing)' },
+  { value: 'RAW', label: 'Raw', description: 'Store raw message + errors only (no queued destinations)' },
+  { value: 'METADATA', label: 'Metadata', description: 'Metadata only — no content, no queued destinations' },
+  { value: 'DISABLED', label: 'Disabled', description: 'No message storage — no queued destinations' },
 ] as const;
 
 const METADATA_DATA_TYPES = ['STRING', 'NUMBER', 'BOOLEAN', 'TIMESTAMP'] as const;
@@ -99,15 +104,20 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
     if (!channelId) return;
     if (channelMemberships.length > 0 && channelMemberships[0]?.channelGroupId === newGroupId) return;
 
-    // Remove from ALL current groups (handles multi-membership cleanup)
-    for (const m of channelMemberships) {
-      removeMember.mutate({ groupId: m.channelGroupId, channelId });
+    try {
+      // Remove from ALL current groups first (handles multi-membership cleanup),
+      // then add to the new one. Await both so the success toast reflects reality
+      // — the previous fire-and-forget path reported success even on failure.
+      for (const m of channelMemberships) {
+        await removeMember.mutateAsync({ groupId: m.channelGroupId, channelId });
+      }
+      if (newGroupId !== NONE_GROUP) {
+        await addMember.mutateAsync({ groupId: newGroupId, channelId });
+      }
+      notify('Channel group updated', 'success');
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to update channel group', 'error');
     }
-    // Add to new group
-    if (newGroupId !== NONE_GROUP) {
-      addMember.mutate({ groupId: newGroupId, channelId });
-    }
-    notify('Channel group updated', 'success');
   }, [channelId, channelMemberships, removeMember, addMember, notify]);
 
   // ----- Metadata column helpers -----
@@ -361,11 +371,12 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
                     slotProps={{ htmlInput: { min: 1 } }}
                   />
                 </Grid>
-                <Grid item xs={12} md={6}>
-                  <FormControlLabel
-                    control={<Switch checked={advancedValues.pruningArchiveEnabled} onChange={(_e, checked) => { onAdvancedChange({ pruningArchiveEnabled: checked }); }} />}
-                    label="Archive before pruning"
-                  />
+                <Grid item xs={12}>
+                  <Alert severity="warning" sx={{ mt: 1 }}>
+                    Pruning <strong>permanently deletes</strong> messages older than the age above,
+                    including message content (PHI). There is no archive step — export any messages
+                    you need to retain before they are pruned.
+                  </Alert>
                 </Grid>
               </Grid>
             ) : null}

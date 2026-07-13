@@ -136,6 +136,49 @@ export class DeploymentService {
     });
   }
 
+  /**
+   * Redeploy a channel: apply its latest saved configuration to the running engine.
+   * Editing a deployed channel does not affect the live runtime until it is
+   * redeployed, so without this the running channel silently keeps executing the
+   * old config. Preserves the prior runtime state (a STARTED channel comes back
+   * STARTED, a PAUSED one PAUSED).
+   */
+  static async redeploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
+    return tryCatch(async () => {
+      const engine = getEngine();
+      const existing = engine.getRuntime(channelId);
+      const priorState: ChannelState = (existing?.runtime.getState() ?? 'UNDEPLOYED') as ChannelState;
+
+      if (existing) {
+        if (priorState === 'STARTED' || priorState === 'PAUSED') {
+          const stopResult = await DeploymentService.stop(channelId, context);
+          if (!stopResult.ok) throw stopResult.error;
+        }
+        const undeployResult = await DeploymentService.undeploy(channelId, context);
+        if (!undeployResult.ok) throw undeployResult.error;
+      }
+
+      const deployResult = await DeploymentService.deploy(channelId, context);
+      if (!deployResult.ok) throw deployResult.error;
+
+      // Restore the prior runtime state if deploy() (which follows initialState)
+      // did not already land there.
+      let state = deployResult.value.state;
+      if (priorState === 'STARTED' && state !== 'STARTED') {
+        const r = await DeploymentService.start(channelId, context);
+        if (r.ok) state = r.value.state;
+      } else if (priorState === 'PAUSED' && state !== 'PAUSED') {
+        const started = state === 'STARTED' ? { ok: true as const } : await DeploymentService.start(channelId, context);
+        if (started.ok) {
+          const p = await DeploymentService.pause(channelId, context);
+          if (p.ok) state = p.value.state;
+        }
+      }
+
+      return { channelId, state };
+    });
+  }
+
   /** Start a deployed channel. */
   static async start(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {

@@ -75,7 +75,15 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
       if (!this.started) throw new Error('Dispatcher not started');
       if (signal.aborted) throw new Error('Send aborted');
 
-      const url = buildFhirUrl(this.config.baseUrl, this.config.resourceType);
+      // FHIR update (PUT) targets a specific instance: PUT /{type}/{id}.
+      // A bare `PUT /{type}` is rejected by R4 servers, so require the id.
+      const resourceId = this.config.method === 'PUT'
+        ? extractResourceId(message.content, this.config.format)
+        : undefined;
+      if (this.config.method === 'PUT' && !resourceId) {
+        throw new Error('FHIR PUT requires a resource id in the message body');
+      }
+      const url = buildFhirUrl(this.config.baseUrl, this.config.resourceType, resourceId);
       const headers = buildHeaders(this.config);
 
       const timeoutSignal = AbortSignal.timeout(this.config.timeout);
@@ -122,10 +130,37 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
 
 // ----- Helpers -----
 
-/** Build FHIR endpoint URL. */
-export function buildFhirUrl(baseUrl: string, resourceType: string): string {
+/** FHIR resource logical id: `[A-Za-z0-9-.]{1,64}` (FHIR spec). */
+const FHIR_ID_RE = /^[A-Za-z0-9\-.]{1,64}$/;
+
+/**
+ * Build FHIR endpoint URL. Appends the resource id for instance-level ops. The id
+ * comes from message content, so it is validated against the FHIR id grammar — an
+ * id containing `/`, `?`, or `..` would otherwise rewrite the request path.
+ */
+export function buildFhirUrl(baseUrl: string, resourceType: string, resourceId?: string): string {
   const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  if (resourceId !== undefined) {
+    if (!FHIR_ID_RE.test(resourceId)) {
+      throw new Error(`Invalid FHIR resource id: ${resourceId}`);
+    }
+    return `${base}/${resourceType}/${resourceId}`;
+  }
   return `${base}/${resourceType}`;
+}
+
+/** Extract the resource id from a serialized FHIR resource (json or xml). */
+export function extractResourceId(content: string, format: 'json' | 'xml'): string | undefined {
+  if (format === 'json') {
+    try {
+      const parsed = JSON.parse(content) as { id?: unknown };
+      return typeof parsed.id === 'string' && parsed.id.length > 0 ? parsed.id : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  const match = /<id\b[^>]*\bvalue\s*=\s*"([^"]+)"/.exec(content);
+  return match?.[1];
 }
 
 /** Build HTTP headers including auth and content type. */

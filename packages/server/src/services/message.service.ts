@@ -10,6 +10,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import { SOCKET_EVENT, type ContentType, type MessageStatus } from '@mirthless/core-models';
 import { db } from '../lib/db.js';
 import { emitToRoom } from '../lib/socket.js';
+import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import {
   messages,
   connectorMessages,
@@ -92,6 +93,12 @@ export class MessageService {
       if (status === 'SENT') {
         updates['sendDate'] = new Date();
       }
+      // Requeue-after-failure path: transitioning back to QUEUED means an attempt
+      // was just made. Persist the increment so the retry cap can trip and a
+      // poison message cannot be retried forever.
+      if (status === 'QUEUED') {
+        updates['sendAttempts'] = sql`${connectorMessages.sendAttempts} + 1`;
+      }
       if (errorCode !== undefined) {
         updates['errorCode'] = errorCode;
       }
@@ -173,8 +180,13 @@ export class MessageService {
   }
 
   /**
-   * Dequeue messages for processing. Uses FOR UPDATE SKIP LOCKED
-   * to allow concurrent consumers without conflicts.
+   * Atomically claim queued messages for processing.
+   *
+   * Transitions the selected rows from QUEUED to PENDING in the same statement
+   * so a concurrent poll cannot re-dequeue an in-flight message (which would
+   * double-dispatch it). FOR UPDATE SKIP LOCKED lets multiple consumers claim
+   * disjoint batches without blocking each other. Columns are aliased to
+   * camelCase so the returned rows match the QueuedMessage shape the consumer reads.
    * @see QueueManagerService for advanced queue operations (requeueFailed, getQueueDepth).
    */
   static async dequeue(
@@ -183,17 +195,57 @@ export class MessageService {
     batchSize: number,
   ): Promise<Result<readonly ConnectorMessage[]>> {
     return tryCatch(async () => {
-      const result = await db.execute<ConnectorMessage>(sql`
-        SELECT *
-        FROM connector_messages
-        WHERE channel_id = ${channelId}
-          AND meta_data_id = ${metaDataId}
-          AND status = 'QUEUED'
-        ORDER BY message_id ASC
-        LIMIT ${batchSize}
-        FOR UPDATE SKIP LOCKED
+      const result = await db.execute<{
+        channelId: string; messageId: number; metaDataId: number;
+        connectorName: string | null; status: string; sendAttempts: number; errorCode: number;
+      }>(sql`
+        UPDATE connector_messages
+        SET status = 'PENDING'
+        WHERE (channel_id, message_id, meta_data_id) IN (
+          SELECT channel_id, message_id, meta_data_id
+          FROM connector_messages
+          WHERE channel_id = ${channelId}
+            AND meta_data_id = ${metaDataId}
+            AND status = 'QUEUED'
+          ORDER BY message_id ASC
+          LIMIT ${batchSize}
+          FOR UPDATE SKIP LOCKED
+        )
+        RETURNING
+          channel_id AS "channelId",
+          message_id AS "messageId",
+          meta_data_id AS "metaDataId",
+          connector_name AS "connectorName",
+          status,
+          send_attempts AS "sendAttempts",
+          error_code AS "errorCode"
       `);
-      return result.rows;
+      return result.rows as unknown as readonly ConnectorMessage[];
+    });
+  }
+
+  /**
+   * Reset any messages stuck in PENDING back to QUEUED for a destination.
+   *
+   * PENDING rows are claimed-but-not-finished dispatches. After a crash or
+   * restart they would otherwise be stranded (no consumer owns them), so they
+   * must be re-queued for redelivery — a message must never be silently lost.
+   */
+  static async resetPending(
+    channelId: string,
+    metaDataId: number,
+  ): Promise<Result<void>> {
+    return tryCatch(async () => {
+      await db
+        .update(connectorMessages)
+        .set({ status: 'QUEUED' })
+        .where(
+          and(
+            eq(connectorMessages.channelId, channelId),
+            eq(connectorMessages.metaDataId, metaDataId),
+            eq(connectorMessages.status, 'PENDING'),
+          ),
+        );
     });
   }
 
@@ -267,7 +319,11 @@ export class MessageService {
           ),
         );
 
-      return row?.content ?? null;
+      // Decrypt if the stored value is an encryption envelope; plaintext (mixed
+      // legacy rows / non-encrypted channels) passes through unchanged.
+      const decrypted = decryptIfEncrypted(row?.content ?? null);
+      if (!decrypted.ok) throw decrypted.error;
+      return decrypted.value;
     });
   }
 
@@ -297,6 +353,29 @@ export class MessageService {
           and(
             eq(messages.channelId, channelId),
             eq(messages.processed, false),
+          ),
+        );
+      return rows;
+    });
+  }
+
+  /** Get all connector messages for a single message (used by recovery to decide per-connector action). */
+  static async getConnectorMessages(
+    channelId: string,
+    messageId: number,
+  ): Promise<Result<readonly { messageId: number; metaDataId: number; status: string }[]>> {
+    return tryCatch(async () => {
+      const rows = await db
+        .select({
+          messageId: connectorMessages.messageId,
+          metaDataId: connectorMessages.metaDataId,
+          status: connectorMessages.status,
+        })
+        .from(connectorMessages)
+        .where(
+          and(
+            eq(connectorMessages.channelId, channelId),
+            eq(connectorMessages.messageId, messageId),
           ),
         );
       return rows;
@@ -381,8 +460,42 @@ export class MessageService {
   }
 
   /**
-   * Batch: create message + source connector + content rows + received stat in one round-trip.
-   * Uses raw SQL with multiple statements in a single query to minimize latency.
+   * Build the content-insert CTE body. Binds each content row's message_id to
+   * the new message via `CROSS JOIN new_msg` (not currval), so the id always
+   * belongs to this message. The first VALUES row carries explicit casts to fix
+   * the column types of the VALUES construct.
+   */
+  private static buildContentInsert(
+    channelId: string,
+    contentRows: ReadonlyArray<{ metaDataId: number; contentType: number; content: string; dataType: string }>,
+    encrypted: boolean,
+  ): ReturnType<typeof sql> {
+    const valuesRows = contentRows.map((row, i) =>
+      i === 0
+        ? sql`(${row.metaDataId}::int, ${row.contentType}::int, ${row.content}::text, ${row.dataType}::text)`
+        : sql`(${row.metaDataId}, ${row.contentType}, ${row.content}, ${row.dataType})`,
+    );
+    return sql`
+      INSERT INTO message_content (meta_data_id, content_type, content, data_type, message_id, channel_id, is_encrypted)
+      SELECT c.meta_data_id, c.content_type, c.content, c.data_type, new_msg.id, ${channelId}, ${encrypted}
+      FROM new_msg
+      CROSS JOIN (VALUES ${sql.join(valuesRows, sql`, `)}) AS c(meta_data_id, content_type, content, data_type)
+    `;
+  }
+
+  /**
+   * Batch: create message + source connector + received stat (+ optional content rows)
+   * in one round-trip. Uses a single CTE query to minimize latency.
+   *
+   * The message, source connector, and received-stat rows are ALWAYS written,
+   * regardless of the channel's storage mode. Only the content rows are subject
+   * to the storage policy: when `contentRows` is empty the content INSERT is
+   * skipped entirely (an empty VALUES list is invalid SQL and, previously, threw
+   * — silently losing the whole message in PRODUCTION/METADATA/DISABLED modes).
+   *
+   * `encrypted` marks the content rows as encrypted (is_encrypted = true). The
+   * caller (message store adapter) is responsible for having already encrypted
+   * each row's content when the channel has encryptData enabled.
    */
   static async initializeMessage(
     channelId: string,
@@ -390,16 +503,19 @@ export class MessageService {
     connectorName: string,
     contentRows: ReadonlyArray<{ metaDataId: number; contentType: number; content: string; dataType: string }>,
     correlationId?: string,
+    encrypted = false,
   ): Promise<Result<{ messageId: number; correlationId: string }>> {
     return tryCatch(async () => {
-      // Build content VALUES clause
-      const contentValues = contentRows.map((row) =>
-        sql`(${channelId}, currval('messages_id_seq'), ${row.metaDataId}, ${row.contentType}, ${row.content}, ${row.dataType}, false)`
-      );
-
       const correlationInsert = correlationId
         ? sql`INSERT INTO messages (channel_id, server_id, correlation_id) VALUES (${channelId}, ${serverId}, ${correlationId})`
         : sql`INSERT INTO messages (channel_id, server_id) VALUES (${channelId}, ${serverId})`;
+
+      // Content is inserted via a CTE that binds message_id to THIS message's id
+      // (new_msg.id) rather than currval() — currval on a pooled connection can
+      // read a previous message's id and misattribute PHI content.
+      const contentCte = contentRows.length > 0
+        ? sql`, new_content AS (${MessageService.buildContentInsert(channelId, contentRows, encrypted)})`
+        : sql``;
 
       const result = await db.execute<{ message_id: number; correlation_id: string }>(sql`
         WITH new_msg AS (
@@ -410,10 +526,6 @@ export class MessageService {
           INSERT INTO connector_messages (channel_id, message_id, meta_data_id, connector_name, status)
           SELECT ${channelId}, id, 0, ${connectorName}, 'RECEIVED' FROM new_msg
         ),
-        new_content AS (
-          INSERT INTO message_content (channel_id, message_id, meta_data_id, content_type, content, data_type, is_encrypted)
-          VALUES ${sql.join(contentValues, sql`, `)}
-        ),
         new_stats AS (
           INSERT INTO message_statistics (channel_id, meta_data_id, server_id, received, received_lifetime)
           VALUES (${channelId}, 0, ${serverId}, 1, 1)
@@ -421,7 +533,7 @@ export class MessageService {
           DO UPDATE SET
             received = message_statistics.received + 1,
             received_lifetime = message_statistics.received_lifetime + 1
-        )
+        )${contentCte}
         SELECT id AS message_id, correlation_id FROM new_msg
       `);
 

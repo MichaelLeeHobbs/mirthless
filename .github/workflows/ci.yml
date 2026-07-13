@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Allow other workflows (e.g. docker-build on a tag) to gate on CI passing.
+  workflow_call:
 
 jobs:
   build-lint-test:
@@ -53,8 +55,26 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Test
-        run: pnpm test
+      # Fail on newly-introduced high/critical vulns in production deps. One known
+      # high (drizzle-orm) is tracked for a coordinated major bump and is not
+      # reachable in our code, so this is informational until that lands — flip
+      # continue-on-error to false once drizzle-orm is upgraded to gate on it.
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high
+        continue-on-error: true
+
+      - name: Test (unit / mock-DB) with coverage
+        run: pnpm test:coverage
+
+      # Apply real Drizzle migrations to the CI Postgres, then run the
+      # integration lane that exercises real SQL (queue, partitions, pruner,
+      # channel + message round trip). These catch schema/SQL drift that the
+      # mock-DB unit tests cannot.
+      - name: Run database migrations
+        run: pnpm db:migrate
+
+      - name: Integration tests (real Postgres)
+        run: pnpm test:integration
 
       - name: Upload coverage
         if: always()
@@ -62,4 +82,69 @@ jobs:
         with:
           name: coverage-reports
           path: packages/*/coverage/
+          retention-days: 14
+
+  e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: mirthless_test
+          POSTGRES_USER: mirthless
+          POSTGRES_PASSWORD: mirthless_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mirthless -d mirthless_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://mirthless:mirthless_test@localhost:5432/mirthless_test
+      JWT_SECRET: ci-test-secret-that-is-at-least-32-characters-long
+      NODE_ENV: test
+      LOG_LEVEL: error
+      FRONTEND_URL: http://localhost:5173
+      CI: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # Playwright's webServer starts dev:server + dev:web; the specs log in as
+      # the seeded admin, so the DB must be migrated and seeded first.
+      - name: Migrate and seed database
+        run: |
+          pnpm db:migrate
+          pnpm db:seed
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E
+        run: pnpm exec playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
           retention-days: 14

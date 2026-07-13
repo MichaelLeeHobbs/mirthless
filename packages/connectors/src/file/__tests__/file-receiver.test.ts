@@ -6,12 +6,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import type { Result } from '@mirthless/core-util';
 import { FileReceiver, matchGlob, FILE_SORT_BY, FILE_POST_ACTION, type FileReceiverConfig } from '../file-receiver.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 // ----- Mock node:fs/promises -----
 
 vi.mock('node:fs/promises', () => ({
   readdir: vi.fn(),
   readFile: vi.fn(),
+  writeFile: vi.fn(),
   stat: vi.fn(),
   unlink: vi.fn(),
   rename: vi.fn(),
@@ -22,10 +24,13 @@ import * as fs from 'node:fs/promises';
 
 const mockReaddir = vi.mocked(fs.readdir);
 const mockReadFile = vi.mocked(fs.readFile);
+const mockWriteFile = vi.mocked(fs.writeFile);
 const mockStat = vi.mocked(fs.stat);
 const mockUnlink = vi.mocked(fs.unlink);
 const mockRename = vi.mocked(fs.rename);
 const mockMkdir = vi.mocked(fs.mkdir);
+
+const QUARANTINE_LEDGER = '.mirthless-quarantine.json';
 
 // ----- Helpers -----
 
@@ -72,6 +77,9 @@ let receiver: FileReceiver | null = null;
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
+  // Default: no ledger on disk (readFile rejects), writes succeed.
+  mockReadFile.mockRejectedValue(new Error('ENOENT'));
+  mockWriteFile.mockResolvedValue(undefined as never);
 });
 
 afterEach(async () => {
@@ -104,6 +112,15 @@ describe('matchGlob', () => {
   it('is case insensitive', () => {
     expect(matchGlob('*.HL7', 'patient.hl7')).toBe(true);
     expect(matchGlob('*.hl7', 'PATIENT.HL7')).toBe(true);
+  });
+
+  it('treats regex metacharacters as literals instead of throwing', () => {
+    // These patterns previously produced an invalid regex -> threw every poll.
+    expect(() => matchGlob('report(1)*.hl7', 'report(1)_a.hl7')).not.toThrow();
+    expect(matchGlob('report(1)*.hl7', 'report(1)_a.hl7')).toBe(true);
+    expect(matchGlob('data[0]*.txt', 'data[0]_x.txt')).toBe(true);
+    expect(matchGlob('data[0]*.txt', 'data0_x.txt')).toBe(false);
+    expect(matchGlob('a+b*.dat', 'a+b_c.dat')).toBe(true);
   });
 
   it('matches all files with *', () => {
@@ -569,6 +586,92 @@ describe('FileReceiver', () => {
       // Second poll succeeds
       await vi.advanceTimersByTimeAsync(5_000);
       expect(captured).toHaveLength(1);
+    });
+  });
+
+  describe('failure visibility & post-action safety', () => {
+    it('logs an error when the poll cycle throws (vanished directory)', async () => {
+      const { logger, errors } = makeMockLogger();
+      mockReaddir.mockRejectedValue(new Error('ENOENT: no such directory'));
+
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.msg).toContain('poll cycle failed');
+    });
+
+    it('quarantines a file whose post-action fails, preventing re-dispatch', async () => {
+      const { logger, errors } = makeMockLogger();
+      const now = Date.now();
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7', true)] as never);
+      mockStat.mockResolvedValue(makeStatResult(now - 5_000, 100) as never);
+      mockReadFile.mockResolvedValue('MSH|^~\\&|X');
+      mockUnlink.mockRejectedValue(new Error('EPERM: unlink failed'));
+
+      let dispatchCount = 0;
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: dispatchCount }; }));
+      await receiver.onStart();
+
+      // Cycle 1: dispatched once, post-action fails → quarantined.
+      await vi.advanceTimersByTimeAsync(5_000);
+      // Cycle 2: same file present; must NOT dispatch again.
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(dispatchCount).toBe(1);
+      expect(errors.some((e) => e.msg.includes('quarantining'))).toBe(true);
+    });
+
+    it('persists the quarantine to the sidecar ledger on quarantine', async () => {
+      const { logger } = makeMockLogger();
+      const now = Date.now();
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7', true)] as never);
+      mockStat.mockResolvedValue(makeStatResult(now - 5_000, 100) as never);
+      mockReadFile.mockResolvedValue('MSH|^~\\&|X');
+      mockUnlink.mockRejectedValue(new Error('EPERM: unlink failed'));
+
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      // The ledger was written with this file's key (name:mtime) in the watched dir.
+      const writeCall = mockWriteFile.mock.calls.find(
+        (c) => typeof c[0] === 'string' && (c[0] as string).endsWith(QUARANTINE_LEDGER),
+      );
+      expect(writeCall).toBeDefined();
+      expect(String(writeCall![1])).toContain('a.hl7:');
+    });
+
+    it('durable quarantine survives a restart: a new receiver loads the ledger and does not re-dispatch', async () => {
+      const { logger } = makeMockLogger();
+      const now = Date.now();
+      const mtime = now - 5_000;
+      const key = `a.hl7:${String(mtime)}`;
+
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7', true)] as never);
+      mockStat.mockResolvedValue(makeStatResult(mtime, 100) as never);
+      // Ledger read returns the previously-quarantined key; data reads return content.
+      mockReadFile.mockImplementation((p: unknown) =>
+        (typeof p === 'string' && p.endsWith(QUARANTINE_LEDGER)
+          ? Promise.resolve(JSON.stringify([key]))
+          : Promise.resolve('MSH|^~\\&|X')) as never,
+      );
+
+      let dispatchCount = 0;
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: dispatchCount }; }));
+      await receiver.onStart(); // loads the ledger → key is already quarantined
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      // The file is the same (same name+mtime) and was quarantined before the
+      // "restart": it must NOT be re-dispatched.
+      expect(dispatchCount).toBe(0);
     });
   });
 });

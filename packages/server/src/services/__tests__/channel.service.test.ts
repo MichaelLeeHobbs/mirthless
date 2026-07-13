@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PartitionManagerService } from '../partition-manager.service.js';
 
 // ----- Mock DB -----
 // We mock at the db module boundary per CLAUDE.md rules.
@@ -210,7 +211,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
   mockSet.mockReturnValue({ where: mockUpdateWhere });
-  mockUpdateWhere.mockResolvedValue(undefined);
+  // update().set().where() is awaited directly (delete/setEnabled) AND chained with
+  // .returning() (the atomic optimistic-lock update in update()). Support both.
+  mockUpdateWhere.mockImplementation(() =>
+    Object.assign(Promise.resolve(undefined), {
+      returning: vi.fn().mockResolvedValue([{ id: CHANNEL_ID }]),
+    }),
+  );
+  // By default a transaction just runs its callback against the shared mockDb.
+  // Individual create tests override this with a bespoke tx.
+  mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb));
   mockDeleteWhere.mockResolvedValue(undefined);
   mockDelete.mockReturnValue({ where: mockDeleteWhere });
   mockInsertReturning.mockResolvedValue([]);
@@ -468,6 +478,8 @@ describe('ChannelService', () => {
       expect(mockSet).toHaveBeenCalledWith(
         expect.objectContaining({ deletedAt: expect.any(Date) })
       );
+      // A soft delete must NOT destroy message history (HIPAA retention).
+      expect(PartitionManagerService.dropPartitions).not.toHaveBeenCalled();
     });
 
     it('returns NOT_FOUND for missing channel', async () => {
@@ -583,6 +595,127 @@ describe('ChannelService', () => {
       if (!result.ok) return;
       expect(result.value.destinations).toHaveLength(0);
       expect(mockDelete).toHaveBeenCalled();
+    });
+  });
+
+  // ========== TRANSACTION & OPTIMISTIC LOCK ==========
+  describe('update — transaction & atomic optimistic lock', () => {
+    it('returns CONFLICT when the atomic UPDATE affects 0 rows (concurrent writer won)', async () => {
+      const channel = makeChannel({ revision: 1 });
+      // findChannel passes and the pre-check matches revision 1...
+      pushResponse([channel]);
+      // ...but the atomic UPDATE ... WHERE revision = 1 affects 0 rows (race lost).
+      mockUpdateWhere.mockImplementationOnce(() =>
+        Object.assign(Promise.resolve(undefined), {
+          returning: vi.fn().mockResolvedValue([]),
+        }),
+      );
+
+      const result = await ChannelService.update(CHANNEL_ID, { revision: 1, enabled: true });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+    });
+
+    it('wraps mutations in a transaction and fails the whole update if one step throws (rollback)', async () => {
+      const channel = makeChannel({ revision: 1 });
+      pushResponse([channel]);
+      // Simulate the DB rolling back the transaction on a mid-way failure.
+      mockTransaction.mockImplementationOnce(async () => {
+        throw new Error('insert failed mid-update');
+      });
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        destinations: [],
+      });
+
+      expect(result.ok).toBe(false);
+      expect(mockTransaction).toHaveBeenCalled();
+    });
+  });
+
+  // ========== ENCRYPT DATA (now a real, working toggle) ==========
+  describe('encryptData is accepted and persisted', () => {
+    it('accepts create with encryptData enabled and writes the flag', async () => {
+      const channel = makeChannel();
+      let channelInsertValues: Record<string, unknown> | null = null;
+
+      // Uniqueness check → no duplicate
+      pushResponse([]);
+      // fetchChannelRelations after transaction
+      pushResponse(DEFAULT_SCRIPTS);
+      pushResponse([], { orderable: true });
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+      pushResponse([]);
+
+      mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        let insertCallCount = 0;
+        const tx = {
+          insert: vi.fn().mockImplementation(() => {
+            insertCallCount++;
+            if (insertCallCount === 1) {
+              return {
+                values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+                  channelInsertValues = v;
+                  return { returning: vi.fn().mockResolvedValue([channel]) };
+                }),
+              };
+            }
+            return { values: vi.fn().mockResolvedValue(undefined) };
+          }),
+        };
+        return fn(tx);
+      });
+
+      const result = await ChannelService.create({
+        ...CREATE_INPUT,
+        properties: {
+          initialState: 'STOPPED',
+          messageStorageMode: 'DEVELOPMENT',
+          encryptData: true,
+          removeContentOnCompletion: false,
+          removeAttachmentsOnCompletion: false,
+          pruningEnabled: false,
+          pruningMaxAgeDays: null,
+          pruningArchiveEnabled: false,
+        },
+      } as unknown as Parameters<typeof ChannelService.create>[0]);
+
+      expect(result.ok).toBe(true);
+      expect(channelInsertValues).not.toBeNull();
+      expect(channelInsertValues!['encryptData']).toBe(true);
+    });
+
+    it('accepts update with encryptData enabled and writes the flag', async () => {
+      const channel = makeChannel();
+      // findChannel (revision check)
+      pushResponse([{ ...channel, revision: 1 }]);
+      // getById after update: findChannel + relations
+      setupGetByIdMocks({ ...channel, encryptData: true });
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        properties: {
+          initialState: 'STOPPED',
+          messageStorageMode: 'DEVELOPMENT',
+          encryptData: true,
+          removeContentOnCompletion: false,
+          removeAttachmentsOnCompletion: false,
+          pruningEnabled: false,
+          pruningMaxAgeDays: null,
+          pruningArchiveEnabled: false,
+        },
+      } as unknown as Parameters<typeof ChannelService.update>[1]);
+
+      expect(result.ok).toBe(true);
+      const setArg = mockSet.mock.calls.find((c) => (c[0] as Record<string, unknown>)['encryptData'] === true);
+      expect(setArg).toBeDefined();
     });
   });
 

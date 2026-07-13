@@ -75,6 +75,8 @@ async function seed(): Promise<void> {
             passwordHash,
             role: 'admin',
             enabled: true,
+            // Force the default admin to set a new password on first login.
+            mustChangePassword: true,
           })
           .returning({ id: schema.users.id });
 

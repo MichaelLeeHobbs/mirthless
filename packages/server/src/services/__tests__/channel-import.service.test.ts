@@ -49,7 +49,23 @@ vi.mock('../../db/schema/index.js', () => ({
   transformerSteps: { transformerId: 'transformerId' },
 }));
 
-import { ChannelImportService } from '../channel-import.service.js';
+import { ChannelImportService, stripRedactedProperties } from '../channel-import.service.js';
+
+describe('stripRedactedProperties', () => {
+  it('drops redacted credential values but keeps everything else', () => {
+    const out = stripRedactedProperties({
+      host: 'db.local', port: 5432, password: '__REDACTED__', apiKey: '__REDACTED__', username: 'svc',
+    });
+    expect(out).toEqual({ host: 'db.local', port: 5432, username: 'svc' });
+    expect('password' in out).toBe(false);
+    expect('apiKey' in out).toBe(false);
+  });
+
+  it('returns an empty object for null/non-object input', () => {
+    expect(stripRedactedProperties(null)).toEqual({});
+    expect(stripRedactedProperties(undefined)).toEqual({});
+  });
+});
 
 // ----- Helpers -----
 

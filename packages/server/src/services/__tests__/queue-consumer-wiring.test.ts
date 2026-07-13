@@ -36,6 +36,9 @@ const mockRuntimeUndeploy = vi.fn().mockResolvedValue({ ok: true, value: undefin
 const mockChannelRuntime = {
   deploy: mockRuntimeDeploy,
   undeploy: mockRuntimeUndeploy,
+  stop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+  halt: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+  getState: vi.fn().mockReturnValue('STOPPED'),
 };
 const MockChannelRuntime = vi.fn().mockImplementation(() => mockChannelRuntime);
 
@@ -70,6 +73,9 @@ vi.mock('@mirthless/engine', () => ({
   compileTransformerStepsToScript: vi.fn().mockReturnValue(null),
   prependTemplates: vi.fn().mockImplementation((src: string) => src),
   AlertManager: MockAlertManagerCtor,
+  RecoveryManager: vi.fn().mockImplementation(() => ({
+    recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
+  })),
 }));
 
 vi.mock('@mirthless/connectors', () => ({
@@ -108,6 +114,9 @@ vi.mock('../message.service.js', () => ({
     release: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     deleteContent: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     deleteAttachments: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    resetPending: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
+    getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
   },
 }));
 
@@ -219,6 +228,7 @@ function makeChannel(overrides: Record<string, unknown> = {}): Record<string, un
     sourceConnectorProperties: { port: 6661 },
     inboundDataType: 'HL7V2',
     outboundDataType: 'HL7V2',
+    messageStorageMode: 'DEVELOPMENT',
     destinations: [],
     scripts: [],
     ...overrides,
@@ -326,6 +336,29 @@ describe('QueueConsumer wiring', () => {
 
       expect(MockQueueConsumerCtor).not.toHaveBeenCalled();
       expect(engine.getRuntime(CHANNEL_ID)!.queueConsumers).toEqual([]);
+    });
+
+    it('refuses to deploy a queued destination on a non-storing storage mode', async () => {
+      // METADATA/DISABLED/RAW never persist CT_SENT, so a queued destination would
+      // reload null content and error 100% of messages. Reject loudly at deploy.
+      for (const mode of ['METADATA', 'DISABLED', 'RAW']) {
+        const channel = makeChannel({
+          messageStorageMode: mode,
+          destinations: [makeDest({ id: 'dest-1', metaDataId: 1, queueMode: 'ALWAYS' })],
+        });
+        const engine = new EngineManager('test-server');
+        await expect(engine.deploy(channel as never)).rejects.toThrow(/queued destination/);
+        expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
+      }
+    });
+
+    it('allows a non-storing storage mode when no destination is queued', async () => {
+      const channel = makeChannel({
+        messageStorageMode: 'METADATA',
+        destinations: [makeDest({ id: 'dest-1', metaDataId: 1, queueMode: 'NEVER' })],
+      });
+      const engine = new EngineManager('test-server');
+      await expect(engine.deploy(channel as never)).resolves.toBeUndefined();
     });
   });
 

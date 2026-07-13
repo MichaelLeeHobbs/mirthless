@@ -36,14 +36,21 @@ import BuildIcon from '@mui/icons-material/Build';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import SecurityIcon from '@mui/icons-material/Security';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import LockResetIcon from '@mui/icons-material/LockReset';
+import InfoIcon from '@mui/icons-material/Info';
 import LogoutIcon from '@mui/icons-material/Logout';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import { useAuthStore } from '../../stores/auth.store.js';
 import { useUiStore } from '../../stores/ui.store.js';
 import { useSocketConnection } from '../../hooks/use-socket.js';
 import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts.js';
+import { usePermissions } from '../../hooks/use-permissions.js';
+import { PERMISSION, type PermissionString } from '../../lib/permissions.js';
 import { KeyboardShortcutHelp } from '../common/KeyboardShortcutHelp.js';
+import { ChangePasswordDialog } from '../account/ChangePasswordDialog.js';
+import { AboutDialog } from '../account/AboutDialog.js';
 
 const DRAWER_WIDTH = 240;
 const COLLAPSED_DRAWER_WIDTH = 64;
@@ -52,6 +59,8 @@ interface NavItem {
   readonly label: string;
   readonly path: string;
   readonly icon: ReactNode;
+  /** If set, the item is shown only when the user holds one of these permissions. */
+  readonly anyOf?: readonly PermissionString[];
 }
 
 interface NavSection {
@@ -72,34 +81,34 @@ const NAV_SECTIONS: readonly NavSection[] = [
     heading: 'Channels',
     items: [
       { label: 'Tags', path: '/tags', icon: <LocalOfferIcon /> },
-      { label: 'Code Templates', path: '/code-templates', icon: <CodeIcon /> },
-      { label: 'Global Scripts', path: '/global-scripts', icon: <JavascriptIcon /> },
-      { label: 'Resources', path: '/resources', icon: <FolderIcon /> },
+      { label: 'Code Templates', path: '/code-templates', icon: <CodeIcon />, anyOf: [PERMISSION.CODE_TEMPLATES_READ] },
+      { label: 'Global Scripts', path: '/global-scripts', icon: <JavascriptIcon />, anyOf: [PERMISSION.GLOBAL_SCRIPTS_READ] },
+      { label: 'Resources', path: '/resources', icon: <FolderIcon />, anyOf: [PERMISSION.RESOURCES_READ] },
     ],
   },
   {
     heading: 'Configuration',
     items: [
-      { label: 'Alerts', path: '/alerts', icon: <NotificationsIcon /> },
-      { label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
-      { label: 'Global Map', path: '/global-map', icon: <StorageIcon /> },
-      { label: 'Config Map', path: '/config-map', icon: <TuneIcon /> },
-      { label: 'Certificates', path: '/certificates', icon: <SecurityIcon /> },
+      { label: 'Alerts', path: '/alerts', icon: <NotificationsIcon />, anyOf: [PERMISSION.ALERTS_READ] },
+      { label: 'Settings', path: '/settings', icon: <SettingsIcon />, anyOf: [PERMISSION.SETTINGS_READ, PERMISSION.SETTINGS_WRITE] },
+      { label: 'Global Map', path: '/global-map', icon: <StorageIcon />, anyOf: [PERMISSION.GLOBAL_MAP_READ] },
+      { label: 'Config Map', path: '/config-map', icon: <TuneIcon />, anyOf: [PERMISSION.CONFIG_MAP_READ] },
+      { label: 'Certificates', path: '/certificates', icon: <SecurityIcon />, anyOf: [PERMISSION.SETTINGS_READ, PERMISSION.SETTINGS_WRITE] },
     ],
   },
   {
     heading: 'Administration',
     items: [
-      { label: 'Users', path: '/users', icon: <PeopleIcon /> },
-      { label: 'Events', path: '/events', icon: <EventIcon /> },
+      { label: 'Users', path: '/users', icon: <PeopleIcon />, anyOf: [PERMISSION.USERS_READ] },
+      { label: 'Events', path: '/events', icon: <EventIcon />, anyOf: [PERMISSION.EVENTS_READ] },
     ],
   },
   {
     heading: 'System',
     items: [
-      { label: 'System Info', path: '/system', icon: <InfoOutlinedIcon /> },
+      { label: 'System Info', path: '/system', icon: <InfoOutlinedIcon />, anyOf: [PERMISSION.SYSTEM_INFO] },
       { label: 'Tools', path: '/tools/message-generator', icon: <BuildIcon /> },
-      { label: 'Extensions', path: '/extensions', icon: <ExtensionIcon /> },
+      { label: 'Extensions', path: '/extensions', icon: <ExtensionIcon />, anyOf: [PERMISSION.SETTINGS_READ, PERMISSION.SETTINGS_WRITE] },
     ],
   },
 ];
@@ -113,6 +122,8 @@ export function AppLayout(): ReactNode {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const user = useAuthStore((state) => state.user);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+  const mustChangePassword = useAuthStore((state) => state.mustChangePassword);
+  const { hasAny } = usePermissions();
   const sidebarOpen = useUiStore((state) => state.sidebarOpen);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
@@ -122,6 +133,8 @@ export function AppLayout(): ReactNode {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const userMenuOpen = Boolean(anchorEl);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const handleHelpOpen = useCallback(() => { setShortcutHelpOpen(true); }, []);
   useKeyboardShortcuts({ onHelpOpen: handleHelpOpen });
 
@@ -149,11 +162,18 @@ export function AppLayout(): ReactNode {
   const drawerWidth = sidebarOpen ? DRAWER_WIDTH : COLLAPSED_DRAWER_WIDTH;
   const drawerVariant = isMobile ? 'temporary' as const : 'permanent' as const;
 
+  const visibleSections = NAV_SECTIONS
+    .map((section) => ({
+      heading: section.heading,
+      items: section.items.filter((item) => (item.anyOf ? hasAny(item.anyOf) : true)),
+    }))
+    .filter((section) => section.items.length > 0);
+
   const drawerContent = (
     <>
       <Toolbar />
       <List sx={{ pt: 1 }}>
-        {NAV_SECTIONS.map((section) => (
+        {visibleSections.map((section) => (
           <Box key={section.heading}>
             {sidebarOpen ? (
               <ListSubheader
@@ -185,26 +205,38 @@ export function AppLayout(): ReactNode {
                   onClick={handleNavClick}
                   sx={{
                     minHeight: 40,
+                    mx: 1,
+                    mb: 0.25,
+                    borderRadius: 1.5,
                     justifyContent: sidebarOpen ? 'initial' : 'center',
-                    px: 2.5,
+                    px: sidebarOpen ? 1.5 : 1.25,
                     '&.Mui-selected': {
                       backgroundColor: 'action.selected',
-                      borderRight: 3,
-                      borderColor: 'primary.main',
+                      '&:hover': { backgroundColor: 'action.selected' },
                     },
                   }}
                 >
                   <ListItemIcon
                     sx={{
                       minWidth: 0,
-                      mr: sidebarOpen ? 2 : 'auto',
+                      mr: sidebarOpen ? 1.75 : 'auto',
                       justifyContent: 'center',
                       color: isActive ? 'primary.main' : 'text.secondary',
                     }}
                   >
                     {item.icon}
                   </ListItemIcon>
-                  {sidebarOpen ? <ListItemText primary={item.label} /> : null}
+                  {sidebarOpen ? (
+                    <ListItemText
+                      primary={item.label}
+                      primaryTypographyProps={{
+                        fontSize: '0.875rem',
+                        fontWeight: isActive ? 600 : 500,
+                        color: isActive ? 'text.primary' : 'text.secondary',
+                        noWrap: true,
+                      }}
+                    />
+                  ) : null}
                 </ListItemButton>
               );
               return sidebarOpen ? button : (
@@ -242,13 +274,29 @@ export function AppLayout(): ReactNode {
           >
             <MenuIcon />
           </IconButton>
-          <Typography
-            variant="h6"
-            component="div"
-            sx={{ flexGrow: 1, fontWeight: 700, color: 'primary.main' }}
-          >
-            Mirthless
-          </Typography>
+          <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <Box
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 30,
+                height: 30,
+                borderRadius: 1.5,
+                color: 'primary.contrastText',
+                bgcolor: 'primary.main',
+              }}
+            >
+              <MonitorHeartIcon sx={{ fontSize: 20 }} />
+            </Box>
+            <Typography
+              variant="h6"
+              component="div"
+              sx={{ fontWeight: 700, letterSpacing: '-0.01em', color: 'text.primary' }}
+            >
+              Mirthless
+            </Typography>
+          </Box>
           <Tooltip title={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             <IconButton color="inherit" onClick={toggleThemeMode} aria-label="toggle theme" sx={{ mr: 1 }}>
               {themeMode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
@@ -271,6 +319,19 @@ export function AppLayout(): ReactNode {
                 </Typography>
               </MenuItem>
             ) : null}
+            <Divider />
+            <MenuItem onClick={() => { handleUserMenuClose(); setChangePasswordOpen(true); }}>
+              <ListItemIcon>
+                <LockResetIcon fontSize="small" />
+              </ListItemIcon>
+              Change Password
+            </MenuItem>
+            <MenuItem onClick={() => { handleUserMenuClose(); setAboutOpen(true); }}>
+              <ListItemIcon>
+                <InfoIcon fontSize="small" />
+              </ListItemIcon>
+              About
+            </MenuItem>
             <Divider />
             <MenuItem onClick={handleLogout}>
               <ListItemIcon>
@@ -319,6 +380,10 @@ export function AppLayout(): ReactNode {
         <Outlet />
       </Box>
       <KeyboardShortcutHelp open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
+      <ChangePasswordDialog open={changePasswordOpen && !mustChangePassword} onClose={() => setChangePasswordOpen(false)} />
+      {/* Mandatory password change blocks the app until completed. */}
+      <ChangePasswordDialog forced open={mustChangePassword} onClose={() => { /* cleared via store on success */ }} />
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </Box>
   );
 }

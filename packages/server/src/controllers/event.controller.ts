@@ -49,7 +49,7 @@ export class EventController {
 
   static async purge(req: Request, res: Response): Promise<void> {
     const { olderThanDays } = req.query as unknown as PurgeEventsQuery;
-    const result = await EventService.purge(olderThanDays);
+    const result = await EventService.purge(olderThanDays, { userId: req.user?.id ?? null, ipAddress: req.ip ?? null });
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to purge events');

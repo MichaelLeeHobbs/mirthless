@@ -3,6 +3,7 @@
 // ===========================================
 // Create/edit alert configuration with trigger, channels, actions, and templates.
 
+import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useParams, useNavigate, useBlocker } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
@@ -138,6 +139,7 @@ export function AlertEditorPage(): ReactNode {
 
   // Navigation guard
   const blocker = useBlocker(isDirty && !isSaving);
+  useBeforeUnload(isDirty && !isSaving);
 
   // Clear success after 3s
   useEffect(() => {

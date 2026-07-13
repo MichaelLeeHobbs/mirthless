@@ -8,6 +8,7 @@ import {
   FhirDispatcher,
   buildFhirUrl,
   buildHeaders,
+  extractResourceId,
   type FhirDispatcherConfig,
 } from '../fhir-dispatcher.js';
 
@@ -65,6 +66,41 @@ describe('buildFhirUrl', () => {
 
   it('strips trailing slash from base URL', () => {
     expect(buildFhirUrl('https://fhir.example.com/r4/', 'Observation')).toBe('https://fhir.example.com/r4/Observation');
+  });
+
+  it('appends the resource id for instance-level operations', () => {
+    expect(buildFhirUrl('https://fhir.example.com/r4', 'Patient', 'p1')).toBe('https://fhir.example.com/r4/Patient/p1');
+  });
+
+  it('rejects a resource id that would rewrite the request path', () => {
+    // Id comes from message content — must match the FHIR id grammar.
+    expect(() => buildFhirUrl('https://fhir.example.com/r4', 'Patient', '../../admin')).toThrow(/Invalid FHIR resource id/);
+    expect(() => buildFhirUrl('https://fhir.example.com/r4', 'Patient', 'p1?evil=1')).toThrow(/Invalid FHIR resource id/);
+    expect(() => buildFhirUrl('https://fhir.example.com/r4', 'Patient', 'a/b')).toThrow(/Invalid FHIR resource id/);
+  });
+});
+
+// ----- extractResourceId -----
+
+describe('extractResourceId', () => {
+  it('reads id from a JSON resource', () => {
+    expect(extractResourceId('{"resourceType":"Patient","id":"abc"}', 'json')).toBe('abc');
+  });
+
+  it('returns undefined for JSON without an id', () => {
+    expect(extractResourceId('{"resourceType":"Patient"}', 'json')).toBeUndefined();
+  });
+
+  it('returns undefined for invalid JSON', () => {
+    expect(extractResourceId('not json', 'json')).toBeUndefined();
+  });
+
+  it('reads id from an XML resource', () => {
+    expect(extractResourceId('<Patient><id value="xyz"/></Patient>', 'xml')).toBe('xyz');
+  });
+
+  it('returns undefined for XML without an id', () => {
+    expect(extractResourceId('<Patient><name>Doe</name></Patient>', 'xml')).toBeUndefined();
   });
 });
 
@@ -295,7 +331,7 @@ describe('FhirDispatcher.send', () => {
     expect(headers['Authorization']).toBe('Bearer my-jwt-token');
   });
 
-  it('uses PUT method when configured', async () => {
+  it('uses PUT method against the instance URL (id from body) when configured', async () => {
     mockFetch.mockResolvedValue({
       ok: true, status: 200, statusText: 'OK',
       text: async () => '{}',
@@ -303,9 +339,20 @@ describe('FhirDispatcher.send', () => {
 
     const dispatcher = new FhirDispatcher(makeConfig({ method: 'PUT' }));
     await dispatcher.onStart();
-    await dispatcher.send(makeMessage(), makeSignal());
+    const body = '{"resourceType":"Patient","id":"pat-42","name":[{"family":"Doe"}]}';
+    await dispatcher.send(makeMessage({ content: body }), makeSignal());
 
-    const [, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(opts.method).toBe('PUT');
+    expect(url).toContain('/Patient/pat-42');
+  });
+
+  it('errors on PUT when the resource body has no id', async () => {
+    const dispatcher = new FhirDispatcher(makeConfig({ method: 'PUT' }));
+    await dispatcher.onStart();
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok).toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });

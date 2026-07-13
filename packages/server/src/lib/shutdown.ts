@@ -26,9 +26,10 @@ const DRAIN_TIMEOUT_MS = 30_000;
  * process terminates even if a step hangs.
  *
  * Shutdown order:
- * 1. Stop accepting new HTTP connections
- * 2. Stop engine (undeploy channels, flush global maps)
- * 3. Shutdown Socket.IO
+ * 1. Shutdown Socket.IO (disconnect clients) -- BEFORE the HTTP close, because
+ *    open websockets keep server.close() from resolving.
+ * 2. Stop accepting new HTTP connections
+ * 3. Stop engine (undeploy channels, flush global maps)
  * 4. Stop pruner scheduler
  * 5. Stop job queue (pgboss)
  * 6. Close DB pool (last -- engine/queue may need DB)
@@ -53,14 +54,14 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string) => v
 
     void (async (): Promise<void> => {
       try {
+        deps.logger.info({ phase: 'shutdown', step: 'socketio' }, 'Shutting down Socket.IO');
+        await deps.stopSocketIO();
+
         deps.logger.info({ phase: 'shutdown', step: 'http' }, 'Closing HTTP server');
         await deps.stopAccepting();
 
         deps.logger.info({ phase: 'shutdown', step: 'engine' }, 'Stopping engine');
         await deps.stopEngine();
-
-        deps.logger.info({ phase: 'shutdown', step: 'socketio' }, 'Shutting down Socket.IO');
-        await deps.stopSocketIO();
 
         deps.logger.info({ phase: 'shutdown', step: 'pruner' }, 'Stopping pruner scheduler');
         await deps.stopPrunerScheduler();

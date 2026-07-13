@@ -61,13 +61,18 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
       const timeoutSignal = AbortSignal.timeout(this.config.responseTimeout);
       const combinedSignal = AbortSignal.any([signal, timeoutSignal]);
 
+      // fetch() throws a TypeError if a body is supplied with GET/HEAD, so only
+      // attach the body for methods that accept one.
+      const methodUpper = this.config.method.toUpperCase();
+      const bodyAllowed = methodUpper !== 'GET' && methodUpper !== 'HEAD';
+
       const response = await fetch(this.config.url, {
         method: this.config.method,
         headers: {
           'Content-Type': this.config.contentType,
           ...this.config.headers,
         },
-        body: message.content,
+        ...(bodyAllowed ? { body: message.content } : {}),
         signal: combinedSignal,
       });
 
