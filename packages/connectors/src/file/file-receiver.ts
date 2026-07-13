@@ -59,7 +59,9 @@ export type { FileSortBy, FilePostAction };
  * Does NOT support ** or character classes.
  */
 export function matchGlob(pattern: string, filename: string): boolean {
-  // Convert glob pattern to regex
+  // Convert glob pattern to regex. Every non-wildcard character is escaped, so a
+  // filter like `report(1)*.hl7` or `data[0]*.txt` produces a valid regex instead
+  // of throwing on `new RegExp` every poll cycle (which silently wedged the channel).
   let regex = '^';
   for (let i = 0; i < pattern.length; i++) {
     const ch = pattern[i]!;
@@ -67,8 +69,8 @@ export function matchGlob(pattern: string, filename: string): boolean {
       regex += '.*';
     } else if (ch === '?') {
       regex += '.';
-    } else if (ch === '.') {
-      regex += '\\.';
+    } else if (/[.\\+^$(){}|[\]]/.test(ch)) {
+      regex += `\\${ch}`;
     } else {
       regex += ch;
     }

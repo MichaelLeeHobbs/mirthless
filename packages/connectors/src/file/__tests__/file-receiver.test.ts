@@ -114,6 +114,15 @@ describe('matchGlob', () => {
     expect(matchGlob('*.hl7', 'PATIENT.HL7')).toBe(true);
   });
 
+  it('treats regex metacharacters as literals instead of throwing', () => {
+    // These patterns previously produced an invalid regex -> threw every poll.
+    expect(() => matchGlob('report(1)*.hl7', 'report(1)_a.hl7')).not.toThrow();
+    expect(matchGlob('report(1)*.hl7', 'report(1)_a.hl7')).toBe(true);
+    expect(matchGlob('data[0]*.txt', 'data[0]_x.txt')).toBe(true);
+    expect(matchGlob('data[0]*.txt', 'data0_x.txt')).toBe(false);
+    expect(matchGlob('a+b*.dat', 'a+b_c.dat')).toBe(true);
+  });
+
   it('matches all files with *', () => {
     expect(matchGlob('*', 'anything.txt')).toBe(true);
     expect(matchGlob('*', 'file')).toBe(true);

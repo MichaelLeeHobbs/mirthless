@@ -118,7 +118,14 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
     }
 
     const result = await this.scriptRunner(this.config.script);
-    if (!result.ok) return [];
+    if (!result.ok) {
+      // A script Result error was previously swallowed silently, leaving the
+      // channel STARTED but producing nothing with no signal. Log it (thrown
+      // errors are already logged by the caller) so a broken source script is
+      // visible instead of an invisible dead channel.
+      this.logger.error(errorInfo(result.error), 'JavaScript source script returned an error');
+      return [];
+    }
     return normalizeScriptResult(result.value);
   }
 

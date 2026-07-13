@@ -7,10 +7,22 @@
 
 import * as http from 'node:http';
 import * as https from 'node:https';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import type { TlsServerOptions } from '../tls.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+
+/**
+ * Constant-time string comparison for credentials. Comparing SHA-256 digests keeps
+ * the comparison fixed-length (so neither the value nor its length leaks via timing)
+ * and satisfies timingSafeEqual's equal-length requirement.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  const da = createHash('sha256').update(a).digest();
+  const db = createHash('sha256').update(b).digest();
+  return timingSafeEqual(da, db);
+}
 
 // ----- Config -----
 
@@ -235,14 +247,14 @@ export class HttpReceiver implements SourceConnectorRuntime {
     if (!auth) return true;
     const header = req.headers['authorization'] ?? '';
     if (auth.type === 'TOKEN') {
-      return !!auth.token && header === `Bearer ${auth.token}`;
+      return !!auth.token && constantTimeEqual(header, `Bearer ${auth.token}`);
     }
     if (!header.startsWith('Basic ')) return false;
     const decoded = Buffer.from(header.slice(6), 'base64').toString('utf-8');
     const sep = decoded.indexOf(':');
     if (sep === -1) return false;
-    return decoded.slice(0, sep) === (auth.username ?? '')
-      && decoded.slice(sep + 1) === (auth.password ?? '');
+    return constantTimeEqual(decoded.slice(0, sep), auth.username ?? '')
+      && constantTimeEqual(decoded.slice(sep + 1), auth.password ?? '');
   }
 
   private writePlain(res: http.ServerResponse, status: number, message: string): void {
