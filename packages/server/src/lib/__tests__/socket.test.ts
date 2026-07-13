@@ -27,6 +27,21 @@ vi.mock('../logger.js', () => ({
   },
 }));
 
+// db.select().from().where() — first call returns the user row, second the
+// permission rows. Controlled per-test via `userRow` / `permRows`.
+let userRow: Record<string, unknown> | undefined = { id: 'user-1', enabled: true };
+let permRows: { resource: string; action: string }[] = [];
+let dbSelectCall = 0;
+const mockWhere = vi.fn(() => {
+  dbSelectCall += 1;
+  return Promise.resolve(dbSelectCall === 1 ? (userRow ? [userRow] : []) : permRows);
+});
+vi.mock('../db.js', () => ({
+  db: { select: () => ({ from: () => ({ where: mockWhere }) }) },
+}));
+vi.mock('../../db/schema/index.js', () => ({ users: {}, userPermissions: {} }));
+vi.mock('drizzle-orm', () => ({ eq: vi.fn() }));
+
 // ----- Import after mocks -----
 
 import { authMiddleware, emitToRoom, emitToAll, _resetIO } from '../socket.js';
@@ -56,6 +71,9 @@ describe('Socket.IO Auth & Room Management', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _resetIO(null);
+    userRow = { id: 'user-1', enabled: true };
+    permRows = [];
+    dbSelectCall = 0;
   });
 
   // ----- Auth Middleware -----
@@ -131,29 +149,44 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(err.message).toBe('Authentication required');
     });
 
-    it('accepts connection with valid JWT', () => {
+    it('accepts connection with valid JWT', async () => {
       const token = createValidToken({ userId: 'user-1', type: 'access' });
       const socket = createMockSocket(token);
       const next = vi.fn();
 
-      authMiddleware(socket, next);
+      await authMiddleware(socket, next);
 
       expect(next).toHaveBeenCalledTimes(1);
       expect(next).toHaveBeenCalledWith();
     });
 
-    it('stores user data on socket after successful auth', () => {
+    it('rejects connection when the user is disabled', async () => {
+      userRow = { id: 'user-1', enabled: false };
+      const token = createValidToken({ userId: 'user-1', type: 'access' });
+      const socket = createMockSocket(token);
+      const next = vi.fn();
+
+      await authMiddleware(socket, next);
+
+      const err = next.mock.calls[0]![0] as Error;
+      expect(err.message).toBe('Authentication required');
+    });
+
+    it('stores user data and permissions on socket after successful auth', async () => {
+      userRow = { id: 'user-42', enabled: true };
+      permRows = [{ resource: 'channels', action: 'read' }, { resource: 'system', action: 'info' }];
       const token = createValidToken({ userId: 'user-42', sessionId: 'sess-7', type: 'access' });
       const socket = createMockSocket(token);
       const next = vi.fn();
 
-      authMiddleware(socket, next);
+      await authMiddleware(socket, next);
 
       expect(next).toHaveBeenCalledWith();
-      const userData = socket.data['user'] as { userId: string; sessionId: string; type: string };
+      const userData = socket.data['user'] as { userId: string; sessionId: string; type: string; permissions: string[] };
       expect(userData.userId).toBe('user-42');
       expect(userData.sessionId).toBe('sess-7');
       expect(userData.type).toBe('access');
+      expect(userData.permissions).toEqual(['channels:read', 'system:info']);
     });
   });
 

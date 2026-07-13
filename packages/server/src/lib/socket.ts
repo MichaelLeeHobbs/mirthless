@@ -6,7 +6,10 @@
 
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
+import { eq } from 'drizzle-orm';
 import { config } from '../config/index.js';
+import { db } from './db.js';
+import { users, userPermissions } from '../db/schema/index.js';
 import logger from './logger.js';
 import { verifyAccessToken } from './jwt.js';
 
@@ -15,18 +18,35 @@ export interface SocketUserData {
   readonly userId: string;
   readonly sessionId?: string | undefined;
   readonly type: string;
+  readonly permissions: readonly string[];
 }
+
+/** Permission required to join each server-pushed room. */
+const ROOM_PERMISSIONS = {
+  channel: 'channels:read',
+  dashboard: 'channels:read',
+  logs: 'system:info',
+} as const;
 
 let io: SocketIOServer | null = null;
 
+/** True when the authenticated socket holds the given `resource:action` permission. */
+function socketHasPermission(socket: { data: Record<string, unknown> }, permission: string): boolean {
+  const user = socket.data['user'] as SocketUserData | undefined;
+  return user?.permissions.includes(permission) ?? false;
+}
+
 /**
  * Socket.IO authentication middleware.
- * Validates JWT from the `auth.token` handshake parameter.
+ * Validates the JWT from the `auth.token` handshake parameter, re-checks that the
+ * user still exists and is enabled, and loads their permissions so the room-join
+ * handlers can enforce RBAC (the REST API's guards must not be bypassable over the
+ * websocket — e.g. streaming logs requires system:info).
  */
-export function authMiddleware(
+export async function authMiddleware(
   socket: { data: Record<string, unknown>; handshake: { auth: Record<string, unknown> } },
   next: (err?: Error) => void,
-): void {
+): Promise<void> {
   const token = socket.handshake.auth['token'];
   if (typeof token !== 'string' || token.length === 0) {
     next(new Error('Authentication required'));
@@ -35,10 +55,26 @@ export function authMiddleware(
 
   try {
     const decoded = verifyAccessToken(token);
+
+    const [user] = await db
+      .select({ id: users.id, enabled: users.enabled })
+      .from(users)
+      .where(eq(users.id, decoded.userId));
+    if (!user || !user.enabled) {
+      next(new Error('Authentication required'));
+      return;
+    }
+
+    const permRows = await db
+      .select({ resource: userPermissions.resource, action: userPermissions.action })
+      .from(userPermissions)
+      .where(eq(userPermissions.userId, decoded.userId));
+
     const userData: SocketUserData = {
       userId: decoded.userId,
       sessionId: decoded.sessionId,
       type: decoded.type,
+      permissions: permRows.map((r) => `${r.resource}:${r.action}`),
     };
     socket.data['user'] = userData;
     next();
@@ -58,6 +94,11 @@ function registerConnectionHandlers(server: SocketIOServer): void {
       if (typeof channelId !== 'string' || channelId.length === 0) {
         return;
       }
+      if (!socketHasPermission(socket, ROOM_PERMISSIONS.channel)) {
+        socket.emit('error:forbidden', { room: `channel:${channelId}` });
+        logger.warn({ socketId: socket.id, room: `channel:${channelId}` }, 'Denied room join (missing permission)');
+        return;
+      }
       const room = `channel:${channelId}`;
       void socket.join(room);
       logger.debug({ socketId: socket.id, room }, 'Joined room');
@@ -73,6 +114,11 @@ function registerConnectionHandlers(server: SocketIOServer): void {
     });
 
     socket.on('join:dashboard', () => {
+      if (!socketHasPermission(socket, ROOM_PERMISSIONS.dashboard)) {
+        socket.emit('error:forbidden', { room: 'dashboard' });
+        logger.warn({ socketId: socket.id, room: 'dashboard' }, 'Denied room join (missing permission)');
+        return;
+      }
       void socket.join('dashboard');
       logger.debug({ socketId: socket.id, room: 'dashboard' }, 'Joined room');
     });
@@ -83,6 +129,13 @@ function registerConnectionHandlers(server: SocketIOServer): void {
     });
 
     socket.on('join:logs', () => {
+      // Live server logs can contain error payloads / PHI fragments — same bar as
+      // the REST /logs endpoint (system:info), which only admin holds by default.
+      if (!socketHasPermission(socket, ROOM_PERMISSIONS.logs)) {
+        socket.emit('error:forbidden', { room: 'logs' });
+        logger.warn({ socketId: socket.id, room: 'logs' }, 'Denied logs stream (missing permission)');
+        return;
+      }
       void socket.join('logs');
       logger.debug({ socketId: socket.id, room: 'logs' }, 'Joined room');
     });
