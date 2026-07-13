@@ -35,8 +35,26 @@ Build + lint (`--max-warnings 0`) clean; ~2,240 unit tests green across all pack
 - H11 — publish connector listener ports in prod compose. H12 — CI runs `pnpm audit` + real coverage.
   M4 — `TRUST_PROXY=1` default. M10 — documented 0007 data-loss on upgrade.
 
-**Deferred (documented):** drizzle-orm major bump (not reachable; needs real-DB validation), H18
-registry Zod validation, and the MEDIUM/LOW triage list in the review doc.
+**Then (H18 + medium/low sweep):**
+- H18 — numeric registry config coercion (num()); JWT pinned to HS256; XML DOCTYPE rejected +
+  processEntities:false; DB TLS verifies by default (+CA/opt-out env); event-CSV formula guard;
+  urlencoded body limit.
+- Audit: PASSWORD_CHANGED, role/enabled on USER_UPDATED, self-logged EVENTS_PURGED; access tokens
+  invalidated on logout via session check.
+- RBAC: message routes realigned to messages:* (read/delete/reprocess); last-ENABLED-admin protection.
+- Engine: ON_FAILURE queue mode now distinct from ALWAYS (direct-send-then-queue); removeContentOnCompletion
+  runs on success only (never on error, never while queued).
+- Connectors: matchGlob regex-injection fix; channel routing-loop guard (AsyncLocalStorage);
+  JS-receiver error visibility; constant-time HTTP auth; FHIR resource-id validation; DICOM
+  allowedBaseDir; SMTP all-rejected→ERROR; HTTP GET/HEAD no body; MLLP idle timeout + fast-fail on
+  remote close; POP3 rejected at deploy.
+- Web: beforeunload guard on all editors; real connector filter; honest group-change result.
+- Ops: API rate limit tuned for prod (600/min, configurable); public /health trimmed to liveness.
+
+**Deferred (documented):** drizzle-orm major bump (not reachable; needs real-DB validation), plus a
+few LOW items with poor risk/value (content-search statement-timeout/pg_trgm, batch-processor
+wiring, queued-send response handling, ${originalFilename} plumbing, global-toast opt-out) — all in
+the review doc's triage list.
 
 ## 2026-07-12 — SFTP connector (source + destination) (branch `w2/sftp`)
 
