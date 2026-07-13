@@ -38,7 +38,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] HL7v2 bridge functions (parseHL7, createACK)
 - [x] I/O bridges implemented in the sandbox (httpFetch, dbQuery, routeMessage, getResource, getCollection)
 - [x] **getCollection / getResource / httpFetch / routeMessage** wired end-to-end into the production engine (`engine.ts`); routeMessage has a hop-depth loop guard
-- [ ] Wire **dbQuery** — deferred pending design: driver registry, URL-keyed connection pooling, and a security model for script-supplied connection URLs
+- [ ] Wire **dbQuery** — design done (`docs/design/11-datasources.md`, D-178): named admin-managed **Data Sources** (encrypted creds, read-only default, Postgres v1), `dbQuery(dataSourceName, sql, params)`; implementation pending
 - [x] Map system (channelMap, connectorMap, globalMap, configMap, responseMap, sourceMap)
 - [x] Map shortcuts ($, $r, $g, $gc)
 - [x] Code template injection (FUNCTION type prepended to scripts)
