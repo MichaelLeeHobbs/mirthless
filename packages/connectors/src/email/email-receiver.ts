@@ -97,6 +97,11 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   async onDeploy(): Promise<Result<void>> {
     return tryCatch(async () => {
+      // Only IMAP is implemented. Previously a POP3 config was silently accepted and
+      // then used IMAP anyway — reject it so the misconfiguration is obvious.
+      if (this.config.protocol !== EMAIL_PROTOCOL.IMAP) {
+        throw new Error(`Unsupported email protocol: ${this.config.protocol}. Only IMAP is supported.`);
+      }
       if (!this.config.host) throw new Error('Host is required');
       if (this.config.port < 1 || this.config.port > 65535) {
         throw new Error('Port must be between 1 and 65535');

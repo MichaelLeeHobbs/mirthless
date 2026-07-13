@@ -248,16 +248,25 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
         reject(err);
       };
 
+      // A clean remote FIN before an ACK arrives should fail fast, not wait out the
+      // full responseTimeout.
+      const onClose = (): void => {
+        cleanup();
+        reject(new Error('MLLP connection closed before an acknowledgement was received'));
+      };
+
       const cleanup = (): void => {
         clearTimeout(timer);
         signal.removeEventListener('abort', onAbort);
         socket.removeListener('data', onData);
         socket.removeListener('error', onError);
+        socket.removeListener('close', onClose);
       };
 
       signal.addEventListener('abort', onAbort, { once: true });
       socket.on('data', onData);
       socket.once('error', onError);
+      socket.once('close', onClose);
 
       socket.write(wrapMllp(content, this.config.charset));
     });
