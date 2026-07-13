@@ -36,7 +36,9 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] VM-based sandbox (node:vm) with strict mode IIFE wrapping
 - [x] TypeScript support via esbuild transpilation
 - [x] HL7v2 bridge functions (parseHL7, createACK)
-- [x] I/O bridges (httpFetch, dbQuery, routeMessage, getResource)
+- [x] I/O bridges implemented in the sandbox (httpFetch, dbQuery, routeMessage, getResource, getCollection)
+- [x] **getCollection** wired end-to-end into the production engine (Collections feature; see `docs/design/10-collections.md`) — first live IO bridge
+- [ ] Wire remaining IO bridges into the engine (httpFetch, dbQuery, routeMessage, getResource are sandbox-only today)
 - [x] Map system (channelMap, connectorMap, globalMap, configMap, responseMap, sourceMap)
 - [x] Map shortcuts ($, $r, $g, $gc)
 - [x] Code template injection (FUNCTION type prepended to scripts)

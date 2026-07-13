@@ -97,6 +97,50 @@ subject to SSRF protection: requests to private/loopback address ranges are bloc
 | `dbQuery` | `dbQuery(driver, connectionUrl, sql, params?)` → rows | Parameterized query. Never string-interpolate values into `sql`. |
 | `routeMessage` | `routeMessage(channelName, rawData)` → `{ success, response? }` | Route a message to another channel. |
 | `getResource` | `getResource(name)` → `string \| null` | Load a configured resource by name. |
+| `getCollection` | `getCollection(name)` → `{ store, find }` | Read/write a durable keyed record store. See [Collections](#collections). |
+
+> Wiring status: `getCollection` is wired into the production engine today. The other
+> bridges above are not yet wired — calling them throws a `ReferenceError` — so guard with
+> `typeof` and treat them as forthcoming.
+
+## Collections
+
+A **collection** is a durable, queryable, TTL-pruned keyed record store, shared across
+channels. Define one under **Collections** in the admin UI (a name, the field names records
+are indexed by, and a default TTL). Then `getCollection(name)` returns a handle:
+
+- `await store(fields, payload, options?)` — append a record. `fields` keys must be among the
+  collection's indexed fields; `payload` is your value (HL7/JSON/text — you parse it).
+  `options` may override the TTL with `{ expireAt }` (ISO) or `{ ttlSeconds }`; otherwise the
+  collection default applies. Records are **append-only** (no upsert).
+- `await find(match, options?)` — query. `match` is equality on indexed fields; `options.filter`
+  adds more field predicates (a scalar is equality, an array is `IN`, multiple fields are AND'd);
+  `options.latest` returns only the single newest match; `options.limit`/`options.order` page and
+  order by creation time (default newest-first). Returns an array of
+  `{ id, fields, payload, expireAt, createdAt }`.
+
+Reads/writes hit the database directly (no caching). Collections are not a secret store — any
+channel script can read any collection by name.
+
+**Order/report matching** — an orders channel stashes each order; a reports channel later pulls
+the newest matching order to build the outbound report:
+
+```js
+// Orders channel — store each inbound order
+await getCollection('orders').store(
+  { accessionNumber: msg.get('OBR.3.1'), institutionName: channelMap.institution, orderControl: msg.get('ORC.1') },
+  msg.toString(),
+);
+
+// Reports channel — grab the newest NW/SC/XO order for this accession
+const [order] = await getCollection('orders').find(
+  { accessionNumber: msg.get('OBR.3.1'), institutionName: channelMap.institution },
+  { filter: { orderControl: ['XO', 'NW', 'SC'] }, latest: true },
+);
+if (order) {
+  channelMap.orderPayload = order.payload;
+}
+```
 
 ## Code templates
 
