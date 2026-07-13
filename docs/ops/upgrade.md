@@ -21,6 +21,19 @@ Migrations use `drizzle-orm`'s migrator reading the `.sql` files and
 `packages/server/migrations` in the image). Applied migrations are tracked in Postgres,
 so re-running is a no-op — safe and idempotent.
 
+## ⚠️ Migration 0007 is data-destructive (pre-1.0 only)
+
+Migration `0007_partition_message_tables.sql` **drops and recreates all six message
+tables** (`messages`, `message_content`, `connector_messages`, `message_attachments`,
+`message_custom_metadata`, and the stats table) to convert them to LIST-partitioned
+tables. **It does not copy existing rows** — any message history present before 0007
+is permanently lost when it runs.
+
+This is intentional for the pre-1.0 phase (there is no production data to preserve yet).
+If you are upgrading an install that predates 0007 and has message history you care
+about, **export it first** (per-channel message export or a full `pg_dump`), because the
+migration will not migrate it for you. From 1.0 onward, migrations will be data-preserving.
+
 ## Standard upgrade (Docker)
 
 ```bash
