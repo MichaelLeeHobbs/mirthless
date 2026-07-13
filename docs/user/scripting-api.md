@@ -99,9 +99,10 @@ subject to SSRF protection: requests to private/loopback address ranges are bloc
 | `getResource` | `getResource(name)` → `string \| null` | Load a configured resource by name. |
 | `getCollection` | `getCollection(name)` → `{ store, find }` | Read/write a durable keyed record store. See [Collections](#collections). |
 
-> Wiring status: `getCollection` is wired into the production engine today. The other
-> bridges above are not yet wired — calling them throws a `ReferenceError` — so guard with
-> `typeof` and treat them as forthcoming.
+> Wiring status: `getResource`, `httpFetch`, `routeMessage`, and `getCollection` are wired into
+> the production engine. `dbQuery` is **not** yet wired — calling it throws a `ReferenceError`
+> (it needs a driver registry + connection pooling + a security model for script-supplied
+> connection URLs). Guard `dbQuery` with `typeof`.
 
 ## Collections
 

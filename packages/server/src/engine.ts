@@ -52,6 +52,7 @@ import { GlobalMapService } from './services/global-map.service.js';
 import { ConfigMapService } from './services/config-map.service.js';
 import { CodeTemplateService } from './services/code-template.service.js';
 import { CollectionService, type CollectionRecordResult } from './services/collection.service.js';
+import { ResourceService } from './services/resource.service.js';
 import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { db } from './lib/db.js';
@@ -285,16 +286,96 @@ function createCollectionBridge(): NonNullable<BridgeDependencies['collections']
   };
 }
 
+/** getResource() script bridge: read a resource's content by name (null if absent). */
+function createResourceBridge(): NonNullable<BridgeDependencies['getResource']> {
+  return async (name) => {
+    const result = await ResourceService.getByName(name);
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  };
+}
+
+/**
+ * httpFetch() script bridge: outbound HTTP via global fetch. SSRF host-blocking is
+ * already applied in the sandbox bridge layer before this runs; here we just perform
+ * the request, enforce a per-request timeout, and shape the response.
+ */
+export function createHttpFetchBridge(): NonNullable<BridgeDependencies['httpFetch']> {
+  return async (url, options) => {
+    const res = await fetch(url, {
+      method: options.method ?? 'GET',
+      ...(options.headers ? { headers: { ...options.headers } } : {}),
+      ...(options.body !== undefined ? { body: options.body } : {}),
+      signal: AbortSignal.timeout(options.timeout ?? 30_000),
+    });
+    const headers: Record<string, string> = {};
+    res.headers.forEach((value, key) => { headers[key] = value; });
+    return { status: res.status, statusText: res.statusText, headers, body: await res.text() };
+  };
+}
+
 // ----- Engine Manager -----
+
+/** Max routeMessage hops in a single message's processing chain (loop guard). */
+const MAX_ROUTE_DEPTH = 25;
 
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
   private readonly sandbox: SandboxExecutor;
   private readonly serverId: string;
+  /** Current routeMessage nesting depth (one process chain); guards against routing loops. */
+  private routeDepth = 0;
 
   constructor(serverId?: string) {
-    this.sandbox = new VmSandboxExecutor({ collections: createCollectionBridge() });
+    this.sandbox = new VmSandboxExecutor({
+      collections: createCollectionBridge(),
+      getResource: createResourceBridge(),
+      httpFetch: createHttpFetchBridge(),
+      routeMessage: this.createRouteMessageBridge(),
+    });
     this.serverId = serverId ?? 'server-01';
+  }
+
+  /** Resolve a deployed channel's id by its name (in-memory; deployed channels only). */
+  private resolveChannelIdByName(name: string): string | undefined {
+    for (const [id, deployed] of this.runtimes) {
+      if (deployed.config.name === name) return id;
+    }
+    return undefined;
+  }
+
+  /**
+   * Route a raw message into another deployed, STARTED channel by name. Enforces a
+   * hop-depth cap so a routing cycle (A→B→A) fails loud instead of recursing until
+   * timeout on every hop.
+   */
+  async routeMessage(channelName: string, rawData: string): Promise<Result<{ messageId: number }>> {
+    return tryCatch(async () => {
+      if (this.routeDepth >= MAX_ROUTE_DEPTH) {
+        throw new Error(`routeMessage exceeded max hop depth (${String(MAX_ROUTE_DEPTH)}) — possible routing loop`);
+      }
+      const targetId = this.resolveChannelIdByName(channelName);
+      if (!targetId) {
+        throw new Error(`routeMessage: no deployed channel named "${channelName}"`);
+      }
+      this.routeDepth++;
+      try {
+        const result = await this.sendMessage(targetId, rawData);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.value;
+      } finally {
+        this.routeDepth--;
+      }
+    });
+  }
+
+  /** routeMessage() script bridge: cross-channel routing with a loop guard. */
+  private createRouteMessageBridge(): NonNullable<BridgeDependencies['routeMessage']> {
+    return async (channelName, rawData) => {
+      const result = await this.routeMessage(channelName, rawData);
+      if (!result.ok) throw new Error(result.error.message);
+      return { success: true };
+    };
   }
 
   /** Deploy a channel from its stored configuration. */

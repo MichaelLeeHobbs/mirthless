@@ -1823,3 +1823,13 @@ New feature: a durable, queryable, TTL-pruned keyed record store that channel sc
 - **docs** — `docs/user/scripting-api.md` (getCollection + order/report example), `docs/testing/66-collections.md`, `e2e/collections.spec.ts`.
 
 Engine 359, server 979, core-models 243, web tests green; full build + `pnpm lint --max-warnings 0` green.
+
+### 2026-07-13 (cont.) — Wire the remaining sound IO bridges
+
+Migration 0009 applied to the dev DB; full real-Postgres integration suite green (16 tests) incl. all 7 collection tests. Then wired the tractable IO bridges into `EngineManager` (they were sandbox-only):
+
+- **getResource** — `ResourceService.getByName(name)` (content-by-name, null if absent) + a one-line bridge closure; removed the ResourcesPage "not wired" banner; restored the `getResource` editor IntelliSense decl.
+- **httpFetch** — host closure over Node global `fetch` (method default, header/status/body mapping, per-request `AbortSignal.timeout`); SSRF host-blocking already enforced in the sandbox bridge layer.
+- **routeMessage** — cross-channel routing via existing `sendMessage`/`processMessage`, with a name→id resolver and a `MAX_ROUTE_DEPTH=25` hop-depth loop guard (`EngineManager.routeMessage`).
+- IntelliSense restored for all three; **`dbQuery` deliberately left unwired** — needs a driver registry, URL-keyed connection pooling, and a security model for script-supplied connection URLs (flagged in ROADMAP/scripting-api).
+- Tests: `resource.service` getByName (content/null), `engine-bridges.test.ts` (httpFetch mapping/forwarding + routeMessage happy/unknown/loop-guard). Server 984, engine 359, all green.

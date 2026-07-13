@@ -163,9 +163,37 @@ interface CollectionHandle {
  */
 declare function getCollection(name: string): CollectionHandle;
 
-// NOTE: The remaining IO bridges (httpFetch, dbQuery, routeMessage, getResource)
-// are intentionally NOT declared here. They are not wired into the production
-// sandbox runtime, so calling them throws a ReferenceError at message time.
-// Do not add them to the editor's IntelliSense until wired end-to-end in the
-// engine. (getCollection IS wired — see packages/server/src/engine.ts.)
+/**
+ * Load a configured resource's content by name.
+ * @param name - The resource name (defined under Resources in the admin UI).
+ * @returns The resource content, or null if no resource has that name.
+ */
+declare function getResource(name: string): Promise<string | null>;
+
+/** The result of an httpFetch call. */
+interface HttpFetchResult {
+  readonly status: number;
+  readonly statusText: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: string;
+}
+
+/**
+ * Perform an outbound HTTP request. Requests to private/loopback address ranges
+ * are blocked (SSRF protection).
+ */
+declare function httpFetch(
+  url: string,
+  options?: { method?: string; headers?: Record<string, string>; body?: string; timeout?: number },
+): Promise<HttpFetchResult>;
+
+/**
+ * Route a raw message into another deployed, started channel by name. Guarded
+ * against routing loops by a hop-depth cap.
+ */
+declare function routeMessage(channelName: string, rawData: string): Promise<{ success: boolean; response?: string }>;
+
+// NOTE: dbQuery is intentionally NOT declared — it is not wired into the engine
+// yet (needs a driver registry + URL-keyed connection pooling + a security model
+// for script-supplied connection URLs). Calling it throws a ReferenceError.
 `;
