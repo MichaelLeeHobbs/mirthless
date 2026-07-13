@@ -185,19 +185,26 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
       }
       return MessageService.storeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.storeContent>[3], toStore, dataType, encrypt);
     },
-    markProcessed: async (channelId, messageId) => {
-      const result = await MessageService.markProcessed(channelId, messageId);
-      if (result.ok && (config?.removeContentOnCompletion || config?.removeAttachmentsOnCompletion)) {
-        const deletes: Promise<Result<void>>[] = [];
-        if (config?.removeContentOnCompletion) {
-          deletes.push(MessageService.deleteContent(channelId, messageId));
-        }
-        if (config?.removeAttachmentsOnCompletion) {
-          deletes.push(MessageService.deleteAttachments(channelId, messageId));
-        }
-        await Promise.all(deletes);
+    // markProcessed is used on both success and error/recovery paths, so it must
+    // NOT delete content (error content is needed for investigation, and a message
+    // with a still-queued destination must keep its content to deliver). Content
+    // removal happens via removeCompletedContent, called by the pipeline only on
+    // full successful completion.
+    markProcessed: (channelId, messageId) => MessageService.markProcessed(channelId, messageId),
+    removeCompletedContent: async (channelId, messageId) => {
+      if (!config?.removeContentOnCompletion && !config?.removeAttachmentsOnCompletion) {
+        return OK_VOID;
       }
-      return result;
+      const deletes: Promise<Result<void>>[] = [];
+      if (config?.removeContentOnCompletion) {
+        deletes.push(MessageService.deleteContent(channelId, messageId));
+      }
+      if (config?.removeAttachmentsOnCompletion) {
+        deletes.push(MessageService.deleteAttachments(channelId, messageId));
+      }
+      const results = await Promise.all(deletes);
+      const failed = results.find((r) => !r.ok);
+      return failed ?? OK_VOID;
     },
     enqueue: (channelId, messageId, metaDataId) =>
       MessageService.enqueue(channelId, messageId, metaDataId),

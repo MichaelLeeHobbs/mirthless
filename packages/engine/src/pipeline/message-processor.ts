@@ -104,6 +104,14 @@ export interface MessageStore {
   finalizeMessage?(
     channelId: string, messageId: number, serverId: string,
   ): Promise<Result<void>>;
+
+  /**
+   * Optional: apply the channel's removeContentOnCompletion / removeAttachmentsOnCompletion
+   * policy for a message that has fully and successfully completed. The pipeline only
+   * calls this when there are no errored or still-queued destinations, so it never
+   * races the queue consumer or destroys content needed to investigate a failure.
+   */
+  removeCompletedContent?(channelId: string, messageId: number): Promise<Result<void>>;
 }
 
 /** Input to the pipeline. */
@@ -422,6 +430,7 @@ export class MessageProcessor {
       // Stage 8: Finalize source connector. Do NOT record the source as SENT when a
       // destination or postprocessor failed — that would overcount throughput and
       // hide failures. Mark the source ERRORed instead so stats stay truthful.
+      const hasQueued = destResults.some((r) => r.status === 'QUEUED');
       if (hasError) {
         await Promise.all([
           this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
@@ -436,6 +445,13 @@ export class MessageProcessor {
           this.store.incrementStats(channelId, 0, serverId, 'sent'),
           this.store.markProcessed(channelId, messageId),
         ]);
+      }
+
+      // Apply removeContentOnCompletion only when the message is fully done — no
+      // errors and nothing still queued (a queued destination needs the stored
+      // content to deliver later, and error content must be kept for investigation).
+      if (!hasError && !hasQueued && this.store.removeCompletedContent) {
+        await this.store.removeCompletedContent(channelId, messageId);
       }
       mark('finalize');
 

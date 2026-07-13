@@ -33,6 +33,7 @@ function makeStore(): MessageStore {
     incrementStats: vi.fn().mockResolvedValue(ok(undefined)),
     dequeue: vi.fn().mockResolvedValue(ok([])),
     release: vi.fn().mockResolvedValue(ok(undefined)),
+    removeCompletedContent: vi.fn().mockResolvedValue(ok(undefined)),
   };
 }
 
@@ -457,6 +458,30 @@ describe('MessageProcessor', () => {
     expect(store.enqueue).toHaveBeenCalledOnce();
     // Not marked ERROR.
     expect(store.incrementStats).not.toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
+  });
+
+  it('runs removeCompletedContent on full success', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(store.removeCompletedContent).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1);
+  });
+
+  it('does NOT run removeCompletedContent when a destination is still queued', async () => {
+    const store = makeStore();
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'ALWAYS' }],
+    });
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    // Queued destination still needs the stored content — cleanup must not run.
+    expect(store.removeCompletedContent).not.toHaveBeenCalled();
   });
 
   it('ALWAYS: queues without attempting a direct send', async () => {
