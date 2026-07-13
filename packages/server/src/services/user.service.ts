@@ -239,10 +239,17 @@ export class UserService {
       if (!result.ok) throw result.error;
 
       emitEvent({
-        level: 'INFO', name: 'USER_UPDATED', outcome: 'SUCCESS',
+        // A privilege (role) or enabled change is security-relevant — log it at WARN
+        // with the before/after so the audit trail records who escalated whom.
+        level: roleChanged || input.enabled !== undefined ? 'WARN' : 'INFO',
+        name: 'USER_UPDATED', outcome: 'SUCCESS',
         userId: context?.userId ?? null, channelId: null,
         serverId: null, ipAddress: context?.ipAddress ?? null,
-        attributes: { updatedUserId: id },
+        attributes: {
+          updatedUserId: id,
+          ...(roleChanged ? { oldRole: existing.role, newRole: input.role } : {}),
+          ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+        },
       });
 
       return result.value;
@@ -322,6 +329,12 @@ export class UserService {
           .where(eq(users.id, id));
         await revokeSessions(tx, id);
       });
+
+      emitEvent({
+        level: 'WARN', name: 'PASSWORD_CHANGED', outcome: 'SUCCESS',
+        userId: actorId, channelId: null, serverId: null, ipAddress: null,
+        attributes: { targetUserId: id, adminReset: id !== actorId },
+      });
     });
   }
 
@@ -367,6 +380,12 @@ export class UserService {
         } else {
           await revokeSessions(tx, userId);
         }
+      });
+
+      emitEvent({
+        level: 'INFO', name: 'PASSWORD_CHANGED', outcome: 'SUCCESS',
+        userId, channelId: null, serverId: null, ipAddress: null,
+        attributes: { self: true },
       });
     });
   }

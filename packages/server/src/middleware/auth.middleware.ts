@@ -6,9 +6,24 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../lib/jwt.js';
 import { db } from '../lib/db.js';
-import { users, userPermissions } from '../db/schema/index.js';
-import { eq } from 'drizzle-orm';
+import { users, userPermissions, sessions } from '../db/schema/index.js';
+import { eq, and, gt } from 'drizzle-orm';
 import logger from '../lib/logger.js';
+
+/**
+ * True when the token's session still exists and has not expired. Logout and
+ * admin password-reset delete the session row, so this makes an access token stop
+ * working immediately on logout instead of lingering until its 15-minute TTL.
+ * Tokens minted without a sessionId (should not happen for access tokens) pass.
+ */
+async function isSessionLive(sessionId: string | undefined, userId: string): Promise<boolean> {
+  if (sessionId === undefined) return true;
+  const [row] = await db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId), gt(sessions.expiresAt, new Date())));
+  return row !== undefined;
+}
 
 // Extend Express Request type
 declare global {
@@ -93,6 +108,12 @@ export async function authenticate(
 
     if (!user.enabled) {
       res.status(403).json({ success: false, error: { code: 'ACCOUNT_DEACTIVATED', message: 'Account is deactivated' } });
+      return;
+    }
+
+    // Reject tokens whose session was revoked (logout / password reset).
+    if (!(await isSessionLive(payload.sessionId, user.id))) {
+      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Session expired or revoked' } });
       return;
     }
 
