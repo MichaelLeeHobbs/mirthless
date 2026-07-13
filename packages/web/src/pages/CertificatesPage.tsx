@@ -196,6 +196,12 @@ export function CertificatesPage(): ReactNode {
         }
       />
 
+      <Alert severity="info" sx={{ mb: 2 }}>
+        This is a certificate store for tracking and expiry monitoring. Connectors
+        do not yet reference certificates by ID — TLS is configured by pasting the
+        PEM material directly into each connector's TLS settings.
+      </Alert>
+
       {error && (
         <ErrorState title="Couldn't load certificates" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
       )}

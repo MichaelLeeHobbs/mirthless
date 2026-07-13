@@ -15,6 +15,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Switch from '@mui/material/Switch';
 import Chip from '@mui/material/Chip';
+import Alert from '@mui/material/Alert';
 import { useExtensions, useToggleExtension } from '../hooks/use-extensions.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
@@ -39,6 +40,12 @@ export function ExtensionsPage(): ReactNode {
         description="Built-in connectors and data types. Toggle to enable or disable each extension."
         isFetching={isFetching && !isLoading}
       />
+
+      <Alert severity="info" sx={{ mb: 2 }}>
+        This is a read-only inventory of the built-in connectors and data types. The
+        enable/disable toggle is not yet enforced by the engine — every built-in
+        extension is always available regardless of the switch.
+      </Alert>
 
       {error ? (
         <ErrorState
