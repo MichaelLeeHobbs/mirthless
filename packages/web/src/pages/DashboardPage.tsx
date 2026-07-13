@@ -94,6 +94,20 @@ export function DashboardPage(): ReactNode {
 
   useSocketEvent('stats:update', handleStatsUpdate);
 
+  // --- Tags per channel (for inline chips) ---
+  const tagsByChannel = useMemo(() => {
+    const tagMap = new Map(tags.map((t) => [t.id, t]));
+    const byChannel = new Map<string, TagSummary[]>();
+    for (const a of assignments) {
+      const tag = tagMap.get(a.tagId);
+      if (!tag) continue;
+      const list = byChannel.get(a.channelId);
+      if (list) list.push(tag);
+      else byChannel.set(a.channelId, [tag]);
+    }
+    return byChannel;
+  }, [tags, assignments]);
+
   // --- Client-side tag filtering ---
   const filteredStatistics = useMemo(() => {
     if (selectedTagIds.length === 0) return statistics;
@@ -232,6 +246,7 @@ export function DashboardPage(): ReactNode {
               groups={groups}
               memberships={memberships}
               onSendMessage={handleSendMessage}
+              tagsByChannel={tagsByChannel}
               onClone={crud.onClone}
               onDelete={crud.onDelete}
               onExport={crud.onExport}
@@ -248,6 +263,7 @@ export function DashboardPage(): ReactNode {
               }}
               isAllSelected={selection.isAllSelected(filteredStatistics.map((s) => s.channelId))}
               onSendMessage={handleSendMessage}
+              tagsByChannel={tagsByChannel}
               onClone={crud.onClone}
               onDelete={crud.onDelete}
               onExport={crud.onExport}

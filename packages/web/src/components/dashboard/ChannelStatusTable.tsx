@@ -23,6 +23,8 @@ import Tooltip from '@mui/material/Tooltip';
 import IconButton from '@mui/material/IconButton';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
 import type { ChannelStatus } from '../../hooks/use-deployment.js';
+import type { TagSummary } from '../../hooks/use-tags.js';
+import { TagChips } from '../common/TagChips.js';
 import { ChannelActions } from './ChannelActions.js';
 import Checkbox from '@mui/material/Checkbox';
 import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
@@ -42,6 +44,7 @@ interface ChannelStatusTableProps {
   readonly onClone?: ((channelId: string, channelName: string) => void) | undefined;
   readonly onDelete?: ((channelId: string, channelName: string) => void) | undefined;
   readonly onExport?: ((channelId: string) => void) | undefined;
+  readonly tagsByChannel?: ReadonlyMap<string, readonly TagSummary[]> | undefined;
 }
 
 type SortField = 'channelName' | 'state' | 'received' | 'filtered' | 'sent' | 'errored' | 'queued';
@@ -59,7 +62,7 @@ interface ChannelRow {
   readonly queued: number;
 }
 
-export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds, onToggleSelect, onSelectAll, isAllSelected, onSendMessage, onClone, onDelete, onExport }: ChannelStatusTableProps): ReactNode {
+export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds, onToggleSelect, onSelectAll, isAllSelected, onSendMessage, onClone, onDelete, onExport, tagsByChannel }: ChannelStatusTableProps): ReactNode {
   const showCheckboxes = Boolean(onToggleSelect);
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
@@ -248,15 +251,18 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
                     <StatusDot level={channelStateLevel(row.state)} title={row.state} />
                   </TableCell>
                   <TableCell>
-                    <Link
-                      component="button"
-                      variant="body2"
-                      underline="hover"
-                      onClick={() => navigate(`/channels/${row.channelId}/messages`)}
-                      sx={{ fontWeight: 500 }}
-                    >
-                      {row.channelName}
-                    </Link>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <Link
+                        component="button"
+                        variant="body2"
+                        underline="hover"
+                        onClick={() => navigate(`/channels/${row.channelId}/messages`)}
+                        sx={{ fontWeight: 500 }}
+                      >
+                        {row.channelName}
+                      </Link>
+                      <TagChips tags={tagsByChannel?.get(row.channelId) ?? []} />
+                    </Box>
                   </TableCell>
                   <TableCell>
                     <ChannelStateChip state={row.state} />

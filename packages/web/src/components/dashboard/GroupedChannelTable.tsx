@@ -37,6 +37,8 @@ import Tooltip from '@mui/material/Tooltip';
 import { DEFAULT_GROUP_NAME } from '@mirthless/core-models';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
 import type { ChannelStatus } from '../../hooks/use-deployment.js';
+import type { TagSummary } from '../../hooks/use-tags.js';
+import { TagChips } from '../common/TagChips.js';
 import type { ChannelGroupSummary } from '../../hooks/use-channel-groups.js';
 import type { GroupMembership } from '../../hooks/use-channel-groups.js';
 import { useUpdateChannelGroup, useDeleteChannelGroup } from '../../hooks/use-channel-groups.js';
@@ -58,6 +60,7 @@ interface GroupedChannelTableProps {
   readonly onClone?: ((channelId: string, channelName: string) => void) | undefined;
   readonly onDelete?: ((channelId: string, channelName: string) => void) | undefined;
   readonly onExport?: ((channelId: string) => void) | undefined;
+  readonly tagsByChannel?: ReadonlyMap<string, readonly TagSummary[]> | undefined;
 }
 
 interface ChannelRow {
@@ -91,7 +94,7 @@ function sumTotals(channels: readonly ChannelRow[]): { received: number; filtere
   return { received, filtered, sent, errored, queued };
 }
 
-export function GroupedChannelTable({ statistics, deploymentStatuses, groups, memberships, onSendMessage, onClone, onDelete, onExport }: GroupedChannelTableProps): ReactNode {
+export function GroupedChannelTable({ statistics, deploymentStatuses, groups, memberships, onSendMessage, onClone, onDelete, onExport, tagsByChannel }: GroupedChannelTableProps): ReactNode {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const { menuState, menuTarget, handleContextMenu, handleClose } = useContextMenu<ChannelRow>();
@@ -339,15 +342,18 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                           <StatusDot level={channelStateLevel(row.state)} title={row.state} />
                         </TableCell>
                         <TableCell>
-                          <Link
-                            component="button"
-                            variant="body2"
-                            underline="hover"
-                            onClick={() => navigate(`/channels/${row.channelId}`)}
-                            sx={{ fontWeight: 500 }}
-                          >
-                            {row.channelName}
-                          </Link>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                            <Link
+                              component="button"
+                              variant="body2"
+                              underline="hover"
+                              onClick={() => navigate(`/channels/${row.channelId}`)}
+                              sx={{ fontWeight: 500 }}
+                            >
+                              {row.channelName}
+                            </Link>
+                            <TagChips tags={tagsByChannel?.get(row.channelId) ?? []} />
+                          </Box>
                         </TableCell>
                         <TableCell>
                           <ChannelStateChip state={row.state} />
