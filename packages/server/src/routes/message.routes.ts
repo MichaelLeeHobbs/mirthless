@@ -26,7 +26,7 @@ router.use(authenticate);
 
 router.get(
   '/:id/messages',
-  requirePermission('channels:read'),
+  requirePermission('messages:read'),
   validate({ params: channelIdParamsSchema, query: messageSearchQuerySchema }),
   MessageController.search
 );
@@ -42,14 +42,14 @@ router.get(
 
 router.get(
   '/:id/messages/:msgId',
-  requirePermission('channels:read'),
+  requirePermission('messages:read'),
   validate({ params: messageParamsSchema }),
   MessageController.getDetail
 );
 
 router.delete(
   '/:id/messages/:msgId',
-  requirePermission('channels:delete'),
+  requirePermission('messages:delete'),
   validate({ params: messageParamsSchema }),
   MessageController.delete
 );

@@ -30,14 +30,14 @@ router.post(
 
 router.delete(
   '/:id/messages/bulk',
-  requirePermission('channels:delete'),
+  requirePermission('messages:delete'),
   validate({ params: bulkDeleteParamsSchema, body: bulkDeleteInputSchema }),
   MessageReprocessController.bulkDelete,
 );
 
 router.post(
   '/:id/messages/:msgId/reprocess',
-  requirePermission('channels:deploy'),
+  requirePermission('messages:reprocess'),
   validate({ params: reprocessParamsSchema }),
   MessageReprocessController.reprocess,
 );

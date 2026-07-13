@@ -219,6 +219,17 @@ export class UserService {
       const roleChanged = input.role !== undefined && input.role !== existing.role;
       const beingDisabled = input.enabled === false;
 
+      // Disabling (or demoting) the last enabled admin would lock everyone out.
+      if (existing.role === 'admin' && (beingDisabled || (roleChanged && input.role !== 'admin'))) {
+        const otherEnabledAdmins = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.role, 'admin'), eq(users.enabled, true), ne(users.id, id)));
+        if (otherEnabledAdmins.length === 0) {
+          throw new ServiceError('CONFLICT', 'Cannot disable or demote the last enabled admin user');
+        }
+      }
+
       await db.transaction(async (tx) => {
         await tx.update(users).set(updates).where(eq(users.id, id));
 
@@ -272,15 +283,16 @@ export class UserService {
         throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
       }
 
-      // Check if deleting last admin
+      // Cannot remove the last ENABLED admin — count only enabled admins other
+      // than this one, so a disabled admin row cannot mask a lockout.
       if (user.role === 'admin') {
-        const adminRows = await db
+        const otherEnabledAdmins = await db
           .select({ id: users.id })
           .from(users)
-          .where(eq(users.role, 'admin'));
+          .where(and(eq(users.role, 'admin'), eq(users.enabled, true), ne(users.id, id)));
 
-        if (adminRows.length <= 1) {
-          throw new ServiceError('CONFLICT', 'Cannot delete the last admin user');
+        if (otherEnabledAdmins.length === 0) {
+          throw new ServiceError('CONFLICT', 'Cannot delete the last enabled admin user');
         }
       }
 

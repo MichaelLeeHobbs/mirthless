@@ -280,15 +280,24 @@ describe('UserService', () => {
       expect(result.error).toHaveProperty('code', 'SELF_ACTION');
     });
 
-    it('returns CONFLICT when deleting last admin', async () => {
+    it('returns CONFLICT when deleting the last enabled admin', async () => {
       pushResponse([{ id: ADMIN_ID, role: 'admin' }]); // User lookup
-      pushResponse([{ id: ADMIN_ID }]); // Admin count (only 1)
+      pushResponse([]); // No OTHER enabled admins
 
       const result = await UserService.deleteUser(ADMIN_ID, OTHER_ID);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'CONFLICT');
+    });
+
+    it('allows deleting an admin when another enabled admin exists', async () => {
+      pushResponse([{ id: ADMIN_ID, role: 'admin' }]); // User lookup
+      pushResponse([{ id: OTHER_ID }]); // Another enabled admin exists
+
+      const result = await UserService.deleteUser(ADMIN_ID, OTHER_ID);
+
+      expect(result.ok).toBe(true);
     });
 
     it('returns NOT_FOUND for missing user', async () => {
