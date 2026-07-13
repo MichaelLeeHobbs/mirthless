@@ -28,7 +28,6 @@ function page<T extends Record<string, ComponentType>>(
 
 const LoginPage = page(() => import('./pages/LoginPage.js'), 'LoginPage');
 const DashboardPage = page(() => import('./pages/DashboardPage.js'), 'DashboardPage');
-const ChannelsPage = page(() => import('./pages/ChannelsPage.js'), 'ChannelsPage');
 const ChannelEditorPage = page(() => import('./pages/ChannelEditorPage.js'), 'ChannelEditorPage');
 const MessageBrowserPage = page(() => import('./pages/MessageBrowserPage.js'), 'MessageBrowserPage');
 const CodeTemplatePage = page(() => import('./pages/CodeTemplatePage.js'), 'CodeTemplatePage');
@@ -66,7 +65,9 @@ const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: lazyRoute(<DashboardPage />) },
-          { path: 'channels', element: lazyRoute(<ChannelsPage />) },
+          // The channel list lives on the Dashboard now; keep the path as a
+          // redirect so old bookmarks/links don't 404.
+          { path: 'channels', element: <Navigate to="/" replace /> },
           { path: 'channels/new', element: lazyRoute(<ChannelEditorPage />) },
           { path: 'channels/:id', element: lazyRoute(<ChannelEditorPage />) },
           { path: 'channels/:id/messages', element: lazyRoute(<MessageBrowserPage />) },

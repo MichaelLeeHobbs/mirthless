@@ -302,8 +302,8 @@ test.describe('Message Flow', () => {
 
     expect([200, 204].includes(deleteRes.status())).toBeTruthy();
 
-    // Verify it's gone from the UI
-    await page.goto('/channels');
+    // Verify it's gone from the UI (channel list lives on the Dashboard now)
+    await page.goto('/');
     await page.waitForTimeout(1_000);
     await expect(page.getByText(TEST_CHANNEL.name)).not.toBeVisible({ timeout: 10_000 });
 
