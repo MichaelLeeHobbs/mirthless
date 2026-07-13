@@ -11,6 +11,7 @@ import type { ChannelExportEntry, CollisionMode, ImportResult } from '@mirthless
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
+import { REDACTED } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
 import {
   channels,
@@ -22,6 +23,23 @@ import {
   channelTransformers,
   transformerSteps,
 } from '../db/schema/index.js';
+
+/**
+ * Exports mask connector credentials as REDACTED. Importing that marker verbatim
+ * would write the literal "__REDACTED__" over (or in place of) a real password.
+ * Strip any redacted-valued keys so the secret is simply absent and must be
+ * re-entered — the connector fails loud at deploy if a required credential is
+ * missing, rather than silently authenticating with a bogus value.
+ */
+export function stripRedactedProperties(props: unknown): Record<string, unknown> {
+  if (props === null || typeof props !== 'object') return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(props as Record<string, unknown>)) {
+    if (value === REDACTED) continue;
+    out[key] = value;
+  }
+  return out;
+}
 
 // ----- Service -----
 
@@ -109,7 +127,7 @@ async function createChannel(
       inboundDataType: entry.inboundDataType,
       outboundDataType: entry.outboundDataType,
       sourceConnectorType: entry.sourceConnectorType,
-      sourceConnectorProperties: entry.sourceConnectorProperties,
+      sourceConnectorProperties: stripRedactedProperties(entry.sourceConnectorProperties),
       responseMode: entry.responseMode,
       responseConnectorName: entry.responseConnectorName,
       initialState: entry.initialState,
@@ -148,7 +166,7 @@ async function overwriteChannel(entry: ChannelExportEntry): Promise<void> {
       inboundDataType: entry.inboundDataType,
       outboundDataType: entry.outboundDataType,
       sourceConnectorType: entry.sourceConnectorType,
-      sourceConnectorProperties: entry.sourceConnectorProperties,
+      sourceConnectorProperties: stripRedactedProperties(entry.sourceConnectorProperties),
       responseMode: entry.responseMode,
       responseConnectorName: entry.responseConnectorName,
       initialState: entry.initialState,
@@ -198,7 +216,7 @@ async function insertRelations(
         name: d.name,
         enabled: d.enabled,
         connectorType: d.connectorType,
-        properties: d.properties,
+        properties: stripRedactedProperties(d.properties),
         queueMode: d.queueMode,
         retryCount: d.retryCount,
         retryIntervalMs: d.retryIntervalMs,
