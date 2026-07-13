@@ -12,6 +12,11 @@ export interface ChannelStatisticsSummary {
   readonly channelId: string;
   readonly channelName: string;
   readonly enabled: boolean;
+  readonly sourceConnectorType: string;
+  readonly inboundDataType: string;
+  readonly outboundDataType: string;
+  readonly revision: number;
+  readonly updatedAt: string;
   readonly received: number;
   readonly filtered: number;
   readonly sent: number;

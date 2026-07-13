@@ -38,8 +38,10 @@ import { GroupedChannelTable } from '../components/dashboard/GroupedChannelTable
 import { BulkActionsToolbar } from '../components/dashboard/BulkActionsToolbar.js';
 import { SendMessageDialog } from '../components/common/SendMessageDialog.js';
 import { CreateGroupDialog } from '../components/dashboard/CreateGroupDialog.js';
+import { ColumnsButton } from '../components/dashboard/ColumnsButton.js';
 import { useChannelSelection } from '../hooks/use-channel-selection.js';
 import { useChannelCrud } from '../hooks/use-channel-crud.js';
+import { useDashboardColumns } from '../hooks/use-dashboard-columns.js';
 
 const EMPTY_STATS: readonly ChannelStatisticsSummary[] = [];
 const EMPTY_STATUSES: readonly ChannelStatus[] = [];
@@ -67,6 +69,7 @@ export function DashboardPage(): ReactNode {
   const [importOpen, setImportOpen] = useState(false);
   const selection = useChannelSelection();
   const crud = useChannelCrud();
+  const columns = useDashboardColumns();
   const { has } = usePermissions();
   const canWrite = has(PERMISSION.CHANNELS_WRITE);
 
@@ -159,6 +162,7 @@ export function DashboardPage(): ReactNode {
         isFetching={(statsQuery.isFetching || deployQuery.isFetching) && !isLoading}
         actions={
           <>
+            <ColumnsButton columns={columns} />
             <ExportButton />
             <Button
               variant="outlined"
@@ -247,6 +251,7 @@ export function DashboardPage(): ReactNode {
               memberships={memberships}
               onSendMessage={handleSendMessage}
               tagsByChannel={tagsByChannel}
+              visibleColumns={columns.visible}
               onClone={crud.onClone}
               onDelete={crud.onDelete}
               onExport={crud.onExport}
@@ -264,6 +269,7 @@ export function DashboardPage(): ReactNode {
               isAllSelected={selection.isAllSelected(filteredStatistics.map((s) => s.channelId))}
               onSendMessage={handleSendMessage}
               tagsByChannel={tagsByChannel}
+              visibleColumns={columns.visible}
               onClone={crud.onClone}
               onDelete={crud.onDelete}
               onExport={crud.onExport}

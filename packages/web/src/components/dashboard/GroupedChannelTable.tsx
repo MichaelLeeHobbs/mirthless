@@ -50,6 +50,8 @@ import { useContextMenu } from '../../hooks/use-context-menu.js';
 import { useNotification } from '../../stores/notification.store.js';
 import { ChannelStateChip, StatusDot } from '../common/StatusChip.js';
 import { channelStateLevel } from '../../lib/status.js';
+import { DASHBOARD_COLUMNS, DEFAULT_VISIBLE_COLUMNS, type DashboardColumnId } from '../../lib/dashboard-columns.js';
+import { ChannelBodyCells, GroupTotalCells } from './ChannelColumnCells.js';
 
 interface GroupedChannelTableProps {
   readonly statistics: readonly ChannelStatisticsSummary[];
@@ -61,6 +63,7 @@ interface GroupedChannelTableProps {
   readonly onDelete?: ((channelId: string, channelName: string) => void) | undefined;
   readonly onExport?: ((channelId: string) => void) | undefined;
   readonly tagsByChannel?: ReadonlyMap<string, readonly TagSummary[]> | undefined;
+  readonly visibleColumns?: ReadonlySet<DashboardColumnId> | undefined;
 }
 
 interface ChannelRow {
@@ -68,12 +71,19 @@ interface ChannelRow {
   readonly channelName: string;
   readonly enabled: boolean;
   readonly state: string;
+  readonly sourceConnectorType: string;
+  readonly inboundDataType: string;
+  readonly outboundDataType: string;
+  readonly revision: number;
+  readonly updatedAt: string;
   readonly received: number;
   readonly filtered: number;
   readonly sent: number;
   readonly errored: number;
   readonly queued: number;
 }
+
+const DEFAULT_VISIBLE = new Set<DashboardColumnId>(DEFAULT_VISIBLE_COLUMNS);
 
 interface GroupSection {
   readonly groupId: string;
@@ -94,7 +104,9 @@ function sumTotals(channels: readonly ChannelRow[]): { received: number; filtere
   return { received, filtered, sent, errored, queued };
 }
 
-export function GroupedChannelTable({ statistics, deploymentStatuses, groups, memberships, onSendMessage, onClone, onDelete, onExport, tagsByChannel }: GroupedChannelTableProps): ReactNode {
+export function GroupedChannelTable({ statistics, deploymentStatuses, groups, memberships, onSendMessage, onClone, onDelete, onExport, tagsByChannel, visibleColumns }: GroupedChannelTableProps): ReactNode {
+  const visible = visibleColumns ?? DEFAULT_VISIBLE;
+  const shownColumns = DASHBOARD_COLUMNS.filter((c) => visible.has(c.id));
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const { menuState, menuTarget, handleContextMenu, handleClose } = useContextMenu<ChannelRow>();
@@ -204,6 +216,11 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
       channelName: s.channelName,
       enabled: s.enabled,
       state: deploymentMap.get(s.channelId) ?? 'UNDEPLOYED',
+      sourceConnectorType: s.sourceConnectorType,
+      inboundDataType: s.inboundDataType,
+      outboundDataType: s.outboundDataType,
+      revision: s.revision,
+      updatedAt: s.updatedAt,
       received: s.received,
       filtered: s.filtered,
       sent: s.sent,
@@ -270,18 +287,16 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
               <TableCell width={40} />
               <TableCell>Channel Name</TableCell>
               <TableCell>State</TableCell>
-              <TableCell align="right">Received</TableCell>
-              <TableCell align="right">Filtered</TableCell>
-              <TableCell align="right">Sent</TableCell>
-              <TableCell align="right">Errored</TableCell>
-              <TableCell align="right">Queued</TableCell>
+              {shownColumns.map((c) => (
+                <TableCell key={c.id} align={c.align}>{c.label}</TableCell>
+              ))}
               <TableCell width={48} />
             </TableRow>
           </TableHead>
           <TableBody>
             {sections.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                <TableCell colSpan={5 + shownColumns.length} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                   No channels configured.
                 </TableCell>
               </TableRow>
@@ -323,15 +338,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                           ) : null}
                         </Box>
                       </TableCell>
-                      <TableCell align="right">{section.totals.received.toLocaleString()}</TableCell>
-                      <TableCell align="right">{section.totals.filtered.toLocaleString()}</TableCell>
-                      <TableCell align="right">{section.totals.sent.toLocaleString()}</TableCell>
-                      <TableCell align="right" sx={{ color: section.totals.errored > 0 ? 'error.main' : undefined }}>
-                        {section.totals.errored.toLocaleString()}
-                      </TableCell>
-                      <TableCell align="right" sx={{ color: section.totals.queued > 0 ? 'warning.main' : undefined }}>
-                        {section.totals.queued.toLocaleString()}
-                      </TableCell>
+                      <GroupTotalCells totals={section.totals} visible={visible} />
                       <TableCell />
                     </TableRow>
                     {/* Channel rows — flat in same table body for aligned columns */}
@@ -358,30 +365,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                         <TableCell>
                           <ChannelStateChip state={row.state} />
                         </TableCell>
-                        <TableCell align="right">{row.received.toLocaleString()}</TableCell>
-                        <TableCell align="right">{row.filtered.toLocaleString()}</TableCell>
-                        <TableCell align="right">{row.sent.toLocaleString()}</TableCell>
-                        <TableCell align="right" sx={{ color: row.errored > 0 ? 'error.main' : undefined }}>
-                          {row.errored > 0 ? (
-                            <Tooltip title="View errored messages">
-                              <Link
-                                component="button"
-                                variant="body2"
-                                underline="hover"
-                                onClick={(e) => { e.stopPropagation(); navigate(`/channels/${row.channelId}/messages?status=ERROR`); }}
-                                aria-label={`View ${String(row.errored)} errored messages for ${row.channelName}`}
-                                sx={{ color: 'error.main', fontWeight: 600 }}
-                              >
-                                {row.errored.toLocaleString()}
-                              </Link>
-                            </Tooltip>
-                          ) : (
-                            row.errored.toLocaleString()
-                          )}
-                        </TableCell>
-                        <TableCell align="right" sx={{ color: row.queued > 0 ? 'warning.main' : undefined }}>
-                          {row.queued.toLocaleString()}
-                        </TableCell>
+                        <ChannelBodyCells row={row} visible={visible} />
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                             <Tooltip title="Statistics">
