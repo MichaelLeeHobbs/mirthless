@@ -3,6 +3,7 @@
 // ===========================================
 // Two-panel page: library tree (left) + template editor (right).
 
+import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useCallback, type ReactNode } from 'react';
 import { useBlocker } from 'react-router-dom';
 import Box from '@mui/material/Box';
@@ -103,6 +104,7 @@ export function CodeTemplatePage(): ReactNode {
 
   // Route-level navigation guard (consistent with the channel editor).
   const blocker = useBlocker(editorDirty);
+  useBeforeUnload(editorDirty);
 
   const unsavedOpen = pendingSwitch !== undefined || blocker.state === 'blocked';
 

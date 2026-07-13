@@ -4,6 +4,7 @@
 // 4-tab Monaco editor page for global scripts (deploy, undeploy, preprocessor, postprocessor).
 // Modeled after ScriptsTab.tsx.
 
+import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Tab from '@mui/material/Tab';
@@ -64,6 +65,7 @@ export function GlobalScriptsPage(): ReactNode {
 
   // Dirty tracking — block navigation
   const blocker = useBlocker(dirty);
+  useBeforeUnload(dirty);
 
   useEffect(() => {
     if (blocker.state === 'blocked') {

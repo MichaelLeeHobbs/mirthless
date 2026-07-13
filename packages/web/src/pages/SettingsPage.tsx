@@ -3,6 +3,7 @@
 // ===========================================
 // System settings management with category tabs and type-aware inputs.
 
+import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -75,6 +76,7 @@ export function SettingsPage(): ReactNode {
     .map(([key]) => key);
 
   const hasDirtySettings = dirtySettings.length > 0;
+  useBeforeUnload(hasDirtySettings);
 
   const handleSave = (): void => {
     if (!settings) return;

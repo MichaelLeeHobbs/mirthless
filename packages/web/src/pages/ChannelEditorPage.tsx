@@ -3,6 +3,7 @@
 // ===========================================
 // Container for editing/creating channels with tabbed interface.
 
+import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useRef, useCallback, type ReactNode, type SyntheticEvent } from 'react';
 import { useParams, useNavigate, useBlocker } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
@@ -312,6 +313,7 @@ export function ChannelEditorPage(): ReactNode {
 
   // Navigation guard for unsaved changes
   const blocker = useBlocker(isDirty && !isSaving);
+  useBeforeUnload(isDirty && !isSaving);
 
   // Clear success message after 3 seconds
   useEffect(() => {
