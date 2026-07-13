@@ -41,11 +41,27 @@ test.describe('Channel CRUD (Dashboard)', () => {
     await expect(page.getByLabel('Name')).toBeVisible();
   });
 
-  test('open a channel in the editor from the dashboard', async ({ page }) => {
+  test('channel name navigates to the message browser (not the editor)', async ({ page }) => {
     await page.goto('/');
-    // Channel names are clickable buttons in the grouped table.
+    // Channel names are clickable buttons; clicking one opens that channel's messages.
     await page.getByRole('button', { name: /^Example:/ }).first().click();
-    await expect(page).toHaveURL(/\/channels\//);
+    await expect(page).toHaveURL(/\/channels\/[^/]+\/messages/);
+  });
+
+  test('Edit from the context menu opens the editor', async ({ page }) => {
+    await page.goto('/');
+    const row = page.locator('tr', { hasText: 'Example: Echo (RAW)' }).first();
+    await row.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Edit' }).click();
+    await expect(page).toHaveURL(/\/channels\/[^/]+$/);
+  });
+
+  test('context menu no longer offers Statistics', async ({ page }) => {
+    await page.goto('/');
+    const row = page.locator('tr', { hasText: 'Example: Echo (RAW)' }).first();
+    await row.click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'Messages' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Statistics' })).toHaveCount(0);
   });
 
   test('enable/disable from the context menu', async ({ page }) => {
@@ -81,6 +97,23 @@ test.describe('Channel CRUD (Dashboard)', () => {
     const search = page.getByPlaceholder(/search/i);
     await search.fill('nonexistent_channel_xyz');
     await expect(page.getByText('No channels match your search.')).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('group header right-click opens the group menu (not the channel menu)', async ({ page }) => {
+    await page.goto('/');
+    // Grouped view is the default; a non-Ungrouped group header carries the group menu.
+    const groupHeader = page.locator('tr', { hasText: /\((\d+)\)$/ })
+      .filter({ hasNot: page.getByText('Ungrouped') })
+      .first();
+    if (!(await groupHeader.isVisible().catch(() => false))) {
+      test.skip(true, 'No non-Ungrouped group present to exercise the group menu');
+      return;
+    }
+    await groupHeader.click({ button: 'right' });
+    // Group menu exposes bulk lifecycle actions; the channel menu never does.
+    await expect(page.getByRole('menuitem', { name: 'Deploy all' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Rename' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Edit' })).toHaveCount(0);
   });
 
   test('configurable columns: toggle the Source column', async ({ page }) => {

@@ -19,15 +19,11 @@ import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import Link from '@mui/material/Link';
 import SearchIcon from '@mui/icons-material/Search';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import Tooltip from '@mui/material/Tooltip';
-import IconButton from '@mui/material/IconButton';
 import Checkbox from '@mui/material/Checkbox';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
 import type { ChannelStatus } from '../../hooks/use-deployment.js';
 import type { TagSummary } from '../../hooks/use-tags.js';
 import { TagChips } from '../common/TagChips.js';
-import { ChannelActions } from './ChannelActions.js';
 import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
 import { AssignGroupDialog } from '../common/AssignGroupDialog.js';
 import { ChannelStateChip, StatusDot } from '../common/StatusChip.js';
@@ -147,7 +143,7 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
     else { setSortField(field); setSortDir('asc'); }
   };
 
-  const totalCols = (showCheckboxes ? 1 : 0) + 3 + shownColumns.length + 1;
+  const totalCols = (showCheckboxes ? 1 : 0) + 3 + shownColumns.length;
 
   return (
     <Paper>
@@ -193,7 +189,6 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
                   </TableSortLabel>
                 </TableCell>
               ))}
-              <TableCell width={48} />
             </TableRow>
           </TableHead>
           <TableBody>
@@ -226,16 +221,6 @@ export function ChannelStatusTable({ statistics, deploymentStatuses, selectedIds
                     <ChannelStateChip state={row.state} />
                   </TableCell>
                   <ChannelBodyCells row={row} visible={visible} />
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <Tooltip title="Statistics">
-                        <IconButton size="small" aria-label={`View statistics for ${row.channelName}`} onClick={() => navigate(`/channels/${row.channelId}/statistics`)}>
-                          <BarChartIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <ChannelActions channelId={row.channelId} channelName={row.channelName} state={row.state === 'UNDEPLOYED' ? undefined : row.state} onSendMessage={onSendMessage} />
-                    </Box>
-                  </TableCell>
                 </TableRow>
               ))
             )}

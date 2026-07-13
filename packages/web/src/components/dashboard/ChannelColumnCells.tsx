@@ -56,6 +56,12 @@ function visibleCols(visible: ReadonlySet<DashboardColumnId>): readonly typeof D
   return DASHBOARD_COLUMNS.filter((c) => visible.has(c.id));
 }
 
+/** Errored-as-a-percent-of-received, e.g. "2.5%". Guards divide-by-zero. */
+function errorRate(errored: number, received: number): string {
+  if (received <= 0) return errored > 0 ? '100%' : '0%';
+  return `${((errored / received) * 100).toFixed(1)}%`;
+}
+
 /** Body cells for a single channel row (config + stat columns). */
 export function ChannelBodyCells({ row, visible }: { row: ChannelCellRow; visible: ReadonlySet<DashboardColumnId> }): ReactNode {
   const navigate = useNavigate();
@@ -75,7 +81,7 @@ export function ChannelBodyCells({ row, visible }: { row: ChannelCellRow; visibl
       case 'sent': return row.sent.toLocaleString();
       case 'errored':
         return row.errored > 0 ? (
-          <Tooltip title="View errored messages">
+          <Tooltip title={`${errorRate(row.errored, row.received)} error rate (${row.errored.toLocaleString()} of ${row.received.toLocaleString()} received) — click to view`}>
             <Link
               component="button"
               variant="body2"

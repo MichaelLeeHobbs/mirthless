@@ -36,7 +36,6 @@ import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import BarChartIcon from '@mui/icons-material/BarChart';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -44,7 +43,6 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
-import Tooltip from '@mui/material/Tooltip';
 import { DEFAULT_GROUP_NAME } from '@mirthless/core-models';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
 import type { ChannelStatus } from '../../hooks/use-deployment.js';
@@ -54,7 +52,6 @@ import type { ChannelGroupSummary } from '../../hooks/use-channel-groups.js';
 import type { GroupMembership } from '../../hooks/use-channel-groups.js';
 import { useUpdateChannelGroup, useDeleteChannelGroup, useAddGroupMember, useRemoveGroupMember } from '../../hooks/use-channel-groups.js';
 import { useDeploymentAction } from '../../hooks/use-deployment.js';
-import { ChannelActions } from './ChannelActions.js';
 import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
 import { AssignGroupDialog } from '../common/AssignGroupDialog.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
@@ -424,13 +421,12 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
               {shownColumns.map((c) => (
                 <TableCell key={c.id} align={c.align}>{c.label}</TableCell>
               ))}
-              <TableCell width={48} />
             </TableRow>
           </TableHead>
           <TableBody>
             {sections.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5 + shownColumns.length} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                <TableCell colSpan={4 + shownColumns.length} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                   No channels configured.
                 </TableCell>
               </TableRow>
@@ -470,7 +466,6 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                         </Box>
                       </TableCell>
                       <GroupTotalCells totals={section.totals} visible={visible} />
-                      <TableCell />
                     </DroppableGroupRow>
                     {/* Channel rows — flat in same table body for aligned columns */}
                     {isOpen && section.channels.map((row) => (
@@ -489,7 +484,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                               component="button"
                               variant="body2"
                               underline="hover"
-                              onClick={() => navigate(`/channels/${row.channelId}`)}
+                              onClick={() => navigate(`/channels/${row.channelId}/messages`)}
                               sx={{ fontWeight: 500 }}
                             >
                               {row.channelName}
@@ -501,16 +496,6 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                           <ChannelStateChip state={row.state} />
                         </TableCell>
                         <ChannelBodyCells row={row} visible={visible} />
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <Tooltip title="Statistics">
-                              <IconButton size="small" aria-label={`View statistics for ${row.channelName}`} onClick={() => navigate(`/channels/${row.channelId}/statistics`)}>
-                                <BarChartIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <ChannelActions channelId={row.channelId} channelName={row.channelName} state={row.state === 'UNDEPLOYED' ? undefined : row.state} onSendMessage={onSendMessage} />
-                          </Box>
-                        </TableCell>
                       </DraggableChannelRow>
                     ))}
                   </Fragment>

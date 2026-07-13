@@ -12,7 +12,6 @@ import ListItemText from '@mui/material/ListItemText';
 import Divider from '@mui/material/Divider';
 import EditIcon from '@mui/icons-material/Edit';
 import MessageIcon from '@mui/icons-material/Message';
-import BarChartIcon from '@mui/icons-material/BarChart';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import PauseIcon from '@mui/icons-material/Pause';
@@ -106,10 +105,6 @@ export function ChannelContextMenu({
       <MenuItem onClick={() => handleNav(`/channels/${channelId}/messages`)}>
         <ListItemIcon><MessageIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Messages</ListItemText>
-      </MenuItem>
-      <MenuItem onClick={() => handleNav(`/channels/${channelId}/statistics`)}>
-        <ListItemIcon><BarChartIcon fontSize="small" /></ListItemIcon>
-        <ListItemText>Statistics</ListItemText>
       </MenuItem>
       {canWrite && enabled !== undefined ? (
         <MenuItem onClick={handleToggleEnabled}>

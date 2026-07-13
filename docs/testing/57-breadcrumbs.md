@@ -11,10 +11,6 @@
 - [ ] "Channels" link navigates to channels list
 - [ ] "{Channel Name}" link navigates to channel editor
 
-## Channel Statistics
-- [ ] Breadcrumb shows "Dashboard > Channel Statistics"
-- [ ] "Dashboard" link navigates to dashboard
-
 ## Alert Editor
 - [ ] New alert: breadcrumb shows "Alerts > New Alert"
 - [ ] Edit alert: breadcrumb shows "Alerts > {Alert Name}"
