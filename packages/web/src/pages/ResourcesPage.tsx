@@ -158,11 +158,6 @@ export function ResourcesPage(): ReactNode {
         }
       />
 
-      <Alert severity="info" sx={{ mb: 2 }}>
-        Resources can be stored and managed here, but channel scripts cannot read them
-        yet — the <code>getResource()</code> script bridge is not wired into the engine.
-      </Alert>
-
       {error && (
         <ErrorState title="Couldn't load resources" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
       )}

@@ -1811,3 +1811,40 @@ Fixed six verified release-blocking bugs plus three cheaper related issues in th
 
 ### Security
 - **Sandbox RCE closed** — hardened `VmSandboxExecutor` so no host-realm object/function is reachable from user scripts; `logger.info.constructor('return process')()` and friends can no longer reach host `process`/env. Added escape-attempt tests, an async wall-clock timeout, and removed the dead `memoryLimit` knob. See `packages/engine/src/sandbox/README.md`. (D-129)
+
+## 2026-07-13 — Collections: keyed record store + getCollection bridge (branch: feature/collections)
+
+New feature: a durable, queryable, TTL-pruned keyed record store that channel scripts read/write via `getCollection()`. Motivated by the user's live Mirth prod order/report matching (~100K msgs/day; `portalApi.hl7message.store/find`). Design in `docs/design/10-collections.md`; rationale in D-177.
+
+- **core-models** — `collection.schema.ts` (create/update/store/find + params), branded `CollectionId`, `COLLECTION_UPDATED` event (22 schema tests).
+- **server** — `collections` + `collection_records` tables (JSONB `fields` with GIN + newest-wins + partial-expiry indexes, FK cascade); migration 0009. `CollectionService`: define/list/get/update/delete + `store`/`find` (parameterized `@>` match + multi-field `->>` filter, newest-wins, limit) + `listRecords` + `pruneExpired`; field-value string coercion for GIN consistency; unknown-field + 1 MiB payload guards. Controller/routes at `/collections`; RBAC `collections:read/write/delete` (deployer RWD, developer RW, viewer R). Real-Postgres integration suite (`collection.itest.ts`).
+- **engine** — `getCollection(name)` → `{ store, find }` sandbox bridge (new `collections` BridgeDependency). Fixed `hasAsyncBridges` omitting `collections` (a script using only getCollection was wrapped sync and `await` threw). Wired `createCollectionBridge()` into `VmSandboxExecutor` at `engine.ts` — **the first IO bridge to go live in production** (the executor was constructed with no deps); Zod-validates store/find at the script boundary.
+- **web** — Collections page (define name/indexed-fields/TTL, browse records), `use-collections` hook, `/collections` route + nav, `formatTtl`/`parseFields` lib (6 tests). Restored `getCollection` in the channel-script editor IntelliSense (`sandbox-types.ts`).
+- **docs** — `docs/user/scripting-api.md` (getCollection + order/report example), `docs/testing/66-collections.md`, `e2e/collections.spec.ts`.
+
+Engine 359, server 979, core-models 243, web tests green; full build + `pnpm lint --max-warnings 0` green.
+
+### 2026-07-13 (cont.) — Wire the remaining sound IO bridges
+
+Migration 0009 applied to the dev DB; full real-Postgres integration suite green (16 tests) incl. all 7 collection tests. Then wired the tractable IO bridges into `EngineManager` (they were sandbox-only):
+
+- **getResource** — `ResourceService.getByName(name)` (content-by-name, null if absent) + a one-line bridge closure; removed the ResourcesPage "not wired" banner; restored the `getResource` editor IntelliSense decl.
+- **httpFetch** — host closure over Node global `fetch` (method default, header/status/body mapping, per-request `AbortSignal.timeout`); SSRF host-blocking already enforced in the sandbox bridge layer.
+- **routeMessage** — cross-channel routing via existing `sendMessage`/`processMessage`, with a name→id resolver and a `MAX_ROUTE_DEPTH=25` hop-depth loop guard (`EngineManager.routeMessage`).
+- IntelliSense restored for all three; **`dbQuery` deliberately left unwired** — needs a driver registry, URL-keyed connection pooling, and a security model for script-supplied connection URLs (flagged in ROADMAP/scripting-api).
+- Tests: `resource.service` getByName (content/null), `engine-bridges.test.ts` (httpFetch mapping/forwarding + routeMessage happy/unknown/loop-guard). Server 984, engine 359, all green.
+
+## 2026-07-13 (cont.) — Data Sources: dbQuery wired (branch: feature/collections)
+
+Implemented the dbQuery bridge per D-178 / `docs/design/11-datasources.md` — the last IO bridge, so all five are now live. Also applied migration 0009 (collections) + 0010 (data_sources) and ran the real-Postgres integration suites.
+
+- **core-models** — `datasource.schema.ts` (create/update/test/query; read-only default, pool/row bounds), branded `DataSourceId`, `DATASOURCE_UPDATED` event (13 schema tests).
+- **server** — `data_sources` table (password stored as a content-crypto envelope) + migration 0010; `DataSourceService` (CRUD + `runQuery` + `testConnection`; encrypt-before-insert fail-loud without `CONTENT_ENCRYPTION_KEY`; password never returned); `DataSourcePoolManager` (one `ConnectionPool` per source keyed by id, read-only enforced via `SET TRANSACTION READ ONLY`, `maxRows` cap, invalidation on edit/delete, shutdown teardown wired into the graceful-shutdown sequence); routes + `datasources:*` RBAC (deployer RWD, developer/viewer R).
+- **engine/sandbox** — changed the `dbQuery` bridge signature from `(driver, connectionUrl, sql, params)` to `(dataSourceName, sql, params)`; wired `createDbQueryBridge()` into `EngineManager`; restored the `dbQuery` editor IntelliSense decl.
+- **web** — Data Sources page (connection form, Test Connection, read-only toggle, write-only password), `use-datasources` hook, `/datasources` route + nav.
+- **tests** — schema (13), pool-manager unit (7, mocked ConnectionPool), service unit (2, encryption guard + redaction), real-Postgres integration (6: encrypted round-trip, params, read-only-blocks-writes, read-write-allows, row cap, NOT_FOUND-after-delete); dbQuery sandbox bridge test updated to the new signature.
+- **docs** — `docs/design/11-datasources.md`, D-178, `scripting-api.md` (dbQuery + Data Sources section), `docs/testing/67-datasources.md`, `e2e/datasources.spec.ts`.
+
+All 5 unit suites green; both integration suites green (12 tests on `mirthless_test`); full build + `pnpm lint --max-warnings 0` clean.
+
+> Infra note: `drizzle-kit migrate`'s config loads `../../.env` via dotenv, which took precedence over a `DATABASE_URL` env override — migrations meant for `mirthless_test` hit the dev DB. To migrate a non-`.env` database, apply the migration SQL directly (or point `.env` at it). Applied 0010 to `mirthless_test` directly for the integration run.

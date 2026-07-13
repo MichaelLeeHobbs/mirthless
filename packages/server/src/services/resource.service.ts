@@ -51,6 +51,17 @@ export class ResourceService {
     });
   }
 
+  /** Get a resource's content by name (for the getResource script bridge). Null if absent. */
+  static async getByName(name: string): Promise<Result<string | null>> {
+    return tryCatch(async () => {
+      const [row] = await db
+        .select({ content: resources.content })
+        .from(resources)
+        .where(eq(resources.name, name));
+      return row ? row.content : null;
+    });
+  }
+
   /** Get a single resource by ID (with content). */
   static async getById(id: string): Promise<Result<ResourceDetail>> {
     return tryCatch(async () => {

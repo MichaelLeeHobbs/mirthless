@@ -27,6 +27,8 @@ export * from './global-scripts.js';
 export * from './configuration.js';
 export * from './global-map-entries.js';
 export * from './resources.js';
+export * from './collections.js';
+export * from './data-sources.js';
 export * from './events.js';
 export * from './settings.js';
 export * from './channel-revisions.js';

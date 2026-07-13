@@ -14,6 +14,8 @@ export * from './channel-group.schema.js';
 export * from './tag.schema.js';
 export * from './channel-dependency.schema.js';
 export * from './resource.schema.js';
+export * from './collection.schema.js';
+export * from './datasource.schema.js';
 export * from './global-map.schema.js';
 export * from './config-map.schema.js';
 export * from './server-backup.schema.js';

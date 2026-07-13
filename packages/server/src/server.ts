@@ -14,6 +14,7 @@ import { LogStreamService } from './services/log-stream.service.js';
 import { PrunerSchedulerService } from './services/pruner-scheduler.service.js';
 import { DeploymentService } from './services/deployment.service.js';
 import { createShutdownHandler } from './lib/shutdown.js';
+import { dataSourcePoolManager } from './services/data-source-pool-manager.js';
 import { warnIfDefaultAdminPassword } from './lib/security-checks.js';
 
 const PORT = config.PORT;
@@ -69,6 +70,7 @@ const shutdown = createShutdownHandler({
   stopSocketIO: shutdownSocketIO,
   stopPrunerScheduler: async () => { await PrunerSchedulerService.stop(); },
   stopQueue,
+  stopDataSourcePools: () => dataSourcePoolManager.shutdown(),
   closePool: () => pool.end(),
 });
 

@@ -129,7 +129,7 @@ describe('Bridge IO Functions', () => {
         { id: 2, name: 'Bob' },
       ]);
 
-      const script = makeScript('return await dbQuery("postgresql", "postgres://localhost/test", "SELECT * FROM users WHERE id = $1", [1]);');
+      const script = makeScript('return await dbQuery("reporting-db", "SELECT * FROM users WHERE id = $1", [1]);');
       const result = await executor.execute(script, makeContext(), makeOptions());
 
       expect(result.ok).toBe(true);
@@ -142,17 +142,17 @@ describe('Bridge IO Functions', () => {
     it('passes empty params when none provided', async () => {
       mockDbQuery.mockResolvedValue([]);
 
-      const script = makeScript('return await dbQuery("postgresql", "postgres://localhost/test", "SELECT 1");');
+      const script = makeScript('return await dbQuery("reporting-db", "SELECT 1");');
       const result = await executor.execute(script, makeContext(), makeOptions());
 
       expect(result.ok).toBe(true);
-      expect(mockDbQuery).toHaveBeenCalledWith('postgresql', 'postgres://localhost/test', 'SELECT 1', []);
+      expect(mockDbQuery).toHaveBeenCalledWith('reporting-db', 'SELECT 1', []);
     });
 
     it('propagates query errors', async () => {
       mockDbQuery.mockRejectedValue(new Error('Connection refused'));
 
-      const script = makeScript('return await dbQuery("postgresql", "postgres://bad-host/test", "SELECT 1");');
+      const script = makeScript('return await dbQuery("reporting-db", "SELECT 1");');
       const result = await executor.execute(script, makeContext(), makeOptions());
 
       expect(result.ok).toBe(false);
@@ -235,6 +235,74 @@ describe('Bridge IO Functions', () => {
     });
   });
 
+  describe('getCollection', () => {
+    let executor: VmSandboxExecutor;
+    const mockStore = vi.fn();
+    const mockFind = vi.fn();
+
+    beforeEach(() => {
+      mockStore.mockReset();
+      mockFind.mockReset();
+      executor = new VmSandboxExecutor({ collections: { store: mockStore, find: mockFind } });
+    });
+
+    afterEach(() => {
+      executor.dispose();
+    });
+
+    it('stores a record with fields, payload, and options', async () => {
+      mockStore.mockResolvedValue({ id: 'r1', fields: { a: '1' }, payload: 'p', expireAt: null, createdAt: '2026-07-13T00:00:00.000Z' });
+
+      const script = makeScript(
+        'return await getCollection("orders").store({ accessionNumber: "A1", institutionName: "Valor" }, "ORDER-MSG", { ttlSeconds: 3600 });',
+      );
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(mockStore).toHaveBeenCalledWith(
+        'orders',
+        { accessionNumber: 'A1', institutionName: 'Valor' },
+        'ORDER-MSG',
+        { ttlSeconds: 3600 },
+      );
+      expect((result.value.returnValue as Record<string, unknown>)['id']).toBe('r1');
+    });
+
+    it('finds the newest matching record with a multi-field filter', async () => {
+      mockFind.mockResolvedValue([
+        { id: 'r2', fields: { accessionNumber: 'A1', orderControl: 'SC' }, payload: 'ORDER-SC', expireAt: null, createdAt: '2026-07-13T00:00:00.000Z' },
+      ]);
+
+      const script = makeScript(
+        'var rows = await getCollection("orders").find({ accessionNumber: "A1" }, { filter: { orderControl: ["XO", "NW", "SC"] }, latest: true }); return rows[0].payload;',
+      );
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(mockFind).toHaveBeenCalledWith(
+        'orders',
+        { accessionNumber: 'A1' },
+        { filter: { orderControl: ['XO', 'NW', 'SC'] }, latest: true },
+      );
+      expect(result.value.returnValue).toBe('ORDER-SC');
+    });
+
+    it('propagates a store error as a thrown error in the script', async () => {
+      mockStore.mockRejectedValue(new Error('unknown field'));
+
+      const script = makeScript(
+        'try { await getCollection("orders").store({ bad: "x" }, "p", {}); return "no-throw"; } catch (e) { return "caught:" + e.message; }',
+      );
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('caught:unknown field');
+    });
+  });
+
   describe('no deps provided', () => {
     let executor: VmSandboxExecutor;
 
@@ -275,6 +343,15 @@ describe('Bridge IO Functions', () => {
 
     it('does not expose getResource when no deps provided', async () => {
       const script = makeScript('return typeof getResource;');
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('undefined');
+    });
+
+    it('does not expose getCollection when no deps provided', async () => {
+      const script = makeScript('return typeof getCollection;');
       const result = await executor.execute(script, makeContext(), makeOptions());
 
       expect(result.ok).toBe(true);
