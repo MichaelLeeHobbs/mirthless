@@ -121,7 +121,7 @@ const sourceFactories = new Map<string, SourceFactory>([
     afterProcessing: (props['afterProcessing'] as SftpPostAction | undefined) ?? SFTP_POST_ACTION.DELETE,
     moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
     minFileAgeMs: (props['minFileAgeMs'] as number | undefined) ?? 1_000,
-    strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? false,
+    strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
     hostKey: props['hostKey'] as string | undefined,
   })],
 ]);
@@ -227,7 +227,7 @@ const destinationFactories = new Map<string, DestinationFactory>([
     remoteDirectory: props['remoteDirectory'] as string,
     fileNameTemplate: (props['fileNameTemplate'] as string | undefined) ?? '${messageId}.dat',
     appendMode: (props['appendMode'] as boolean | undefined) ?? false,
-    strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? false,
+    strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
     hostKey: props['hostKey'] as string | undefined,
   })],
 ]);

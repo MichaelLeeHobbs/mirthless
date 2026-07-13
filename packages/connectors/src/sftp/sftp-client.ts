@@ -90,11 +90,13 @@ function normalizeHostKey(key: string): string {
 }
 
 /**
- * Build the ssh2 `hostVerifier` for strict host-key checking. Returns undefined
- * when strict checking is disabled (lenient default — many internal SFTP hosts
- * use self-signed keys). When enabled, the presented key is accepted only if it
- * matches the configured {@link SftpConnectionOptions.hostKey} (compared as
- * base64 or as the raw provided string). A missing hostKey rejects everything.
+ * Build the ssh2 `hostVerifier` for strict host-key checking. Strict checking is
+ * ON by default (verify-by-default) so PHI is never sent over an unauthenticated
+ * SFTP connection that an ARP/DNS attacker could MITM; it can be explicitly
+ * disabled per channel. When enabled, the presented key is accepted only if it
+ * matches the configured {@link SftpConnectionOptions.hostKey} (compared as base64
+ * or as the raw provided string). A missing hostKey rejects everything — the
+ * operator must paste the server's public key fingerprint.
  */
 export function makeHostVerifier(
   options: SftpConnectionOptions,

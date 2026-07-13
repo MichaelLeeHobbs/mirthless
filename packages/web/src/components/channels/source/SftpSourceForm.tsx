@@ -209,7 +209,7 @@ export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProp
         <FormControlLabel
           control={
             <Switch
-              checked={getBool(properties, 'strictHostKey', false)}
+              checked={getBool(properties, 'strictHostKey', true)}
               onChange={handleBool('strictHostKey')}
             />
           }
@@ -217,7 +217,7 @@ export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProp
           sx={{ mb: 1, display: 'block' }}
         />
 
-        {getBool(properties, 'strictHostKey', false) && (
+        {getBool(properties, 'strictHostKey', true) && (
           <TextField
             label="Host Key"
             value={getStr(properties, 'hostKey', '')}

@@ -106,7 +106,7 @@ export const SFTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   remoteDirectory: '',
   fileNameTemplate: '${messageId}.dat',
   appendMode: false,
-  strictHostKey: false,
+  strictHostKey: true,
   hostKey: '',
 };
 

@@ -101,7 +101,7 @@ export const SFTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   afterProcessing: 'DELETE',
   moveToDirectory: '',
   minFileAgeMs: 1000,
-  strictHostKey: false,
+  strictHostKey: true,
   hostKey: '',
 };
 

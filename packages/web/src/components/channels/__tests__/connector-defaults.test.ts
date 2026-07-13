@@ -36,7 +36,7 @@ describe('SFTP source defaults', () => {
     expect(SFTP_SOURCE_DEFAULTS['pollingIntervalMs']).toBe(5000);
     expect(SFTP_SOURCE_DEFAULTS['afterProcessing']).toBe('DELETE');
     expect(SFTP_SOURCE_DEFAULTS['minFileAgeMs']).toBe(1000);
-    expect(SFTP_SOURCE_DEFAULTS['strictHostKey']).toBe(false);
+    expect(SFTP_SOURCE_DEFAULTS['strictHostKey']).toBe(true);
   });
 
   it('is resolvable via getDefaultProperties', () => {
@@ -53,7 +53,7 @@ describe('SFTP destination defaults', () => {
     expect(SFTP_DEST_DEFAULTS['port']).toBe(22);
     expect(SFTP_DEST_DEFAULTS['fileNameTemplate']).toBe('${messageId}.dat');
     expect(SFTP_DEST_DEFAULTS['appendMode']).toBe(false);
-    expect(SFTP_DEST_DEFAULTS['strictHostKey']).toBe(false);
+    expect(SFTP_DEST_DEFAULTS['strictHostKey']).toBe(true);
   });
 
   it('is resolvable via getDestDefaultProperties', () => {
