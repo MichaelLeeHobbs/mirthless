@@ -13,7 +13,34 @@ import type {
 } from '@mirthless/core-models';
 import { ChannelService } from '../services/channel.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { redactConnectorProperties } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
+
+/**
+ * Mask connector credentials (DB/SFTP passwords, API keys, private keys) in a
+ * channel detail for read-only callers. Only a caller who can already edit the
+ * channel (`channels:write`) sees the real values; everyone else — notably the
+ * `viewer` role — gets the redacted marker.
+ */
+function redactChannelDetail(detail: Record<string, unknown>): Record<string, unknown> {
+  const source = detail['sourceConnectorProperties'];
+  const destinations = detail['destinations'];
+  return {
+    ...detail,
+    sourceConnectorProperties:
+      source && typeof source === 'object'
+        ? redactConnectorProperties(source as Record<string, unknown>)
+        : source,
+    destinations: Array.isArray(destinations)
+      ? destinations.map((d: Record<string, unknown>) => {
+          const props = d['properties'];
+          return props && typeof props === 'object'
+            ? { ...d, properties: redactConnectorProperties(props as Record<string, unknown>) }
+            : d;
+        })
+      : destinations,
+  };
+}
 
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
@@ -52,7 +79,12 @@ export class ChannelController {
       return;
     }
 
-    res.json({ success: true, data: result.value });
+    const canWrite = req.user?.permissions.includes('channels:write') ?? false;
+    const data = canWrite
+      ? result.value
+      : redactChannelDetail(result.value as unknown as Record<string, unknown>);
+
+    res.json({ success: true, data });
   }
 
   static async create(req: Request, res: Response): Promise<void> {
