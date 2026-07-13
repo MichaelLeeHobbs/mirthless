@@ -56,5 +56,21 @@
     "node": ">=22.0.0",
     "pnpm": ">=9.0.0"
   },
-  "packageManager": "pnpm@9.15.1"
+  "packageManager": "pnpm@9.15.1",
+  "pnpm": {
+    "comment": "Security overrides — bounded to the current major so we only take the patch. drizzle-orm SQLi (advisory needs >=0.45.2, a coordinated drizzle-kit major bump) is deferred: it is not reachable in our code (identifiers are static from schema; sql.raw is whitelisted) and needs real-DB integration validation.",
+    "overrides": {
+      "express-rate-limit@8": ">=8.2.2 <9",
+      "socket.io-parser@4": ">=4.2.6 <5",
+      "fast-xml-parser@5": ">=5.5.6 <6",
+      "path-to-regexp@<1": "0.1.13",
+      "ws@8": ">=8.20.1 <9",
+      "yaml@1": ">=1.10.3 <2",
+      "dompurify@3": ">=3.3.2 <4",
+      "qs@6": ">=6.14.2 <7",
+      "nodemailer": ">=9.0.1",
+      "react-router@6": ">=6.30.4 <7",
+      "react-router-dom@6": ">=6.30.4 <7"
+    }
+  }
 }
