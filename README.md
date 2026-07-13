@@ -19,7 +19,7 @@ Mirthless keeps what works (channels, transformers, filters, the pipeline model)
 
 - **TypeScript/Node.js** — not Java. Fast startup, npm ecosystem, familiar to web developers
 - **Web-based admin** — React + Material UI. No client install. Works on any device with a browser
-- **Everything is free** — RBAC, MFA, channel history, cross-channel search, alerting — all built-in, no tiers
+- **Everything is free** — RBAC, channel history, message search, alerting — all built-in, no tiers (MFA is on the roadmap, not yet shipped)
 - **TypeScript in transformers** — write channel scripts in TypeScript with full Monaco editor + autocomplete
 - **13ms message processing** — batched CTE queries on native Postgres. Mirth does ~70ms for comparable workloads
 - **Real-time dashboard** — WebSocket-driven updates, not polling
@@ -27,7 +27,7 @@ Mirthless keeps what works (channels, transformers, filters, the pipeline model)
 ## Quick Start
 
 ```bash
-# Prerequisites: Node.js 22+, PostgreSQL 18, pnpm 9+
+# Prerequisites: Node.js 22+, PostgreSQL 17, pnpm 9+
 
 # Clone and install
 git clone https://github.com/MichaelLeeHobbs/mirthless.git
@@ -97,7 +97,7 @@ packages/
 
 ## Current State
 
-This is a working system with ~1,640 automated tests. You can create channels, write transformers in TypeScript, deploy them, send messages, and watch them flow through the pipeline. The 10 seeded example channels demonstrate HL7v2, JSON, XML, channel-to-channel routing, filtering, error handling, and more.
+This is a working system with ~2,200 automated tests. You can create channels, write transformers in TypeScript, deploy them, send messages, and watch them flow through the pipeline. The 10 seeded example channels demonstrate HL7v2, JSON, XML, channel-to-channel routing, filtering, error handling, and more.
 
 What works: channels, pipeline, sandbox, 10 connector types, RBAC, audit logging, message browser, code templates, alerts, groups, tags, dark mode, CLI.
 
