@@ -2,6 +2,42 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-12 — Release-readiness fixes (branch `fix/release-readiness-blockers`)
+
+Deep re-review (see `RELEASE-READINESS-REVIEW-2026-07-12.md`) found the prior program had not
+reached release-ready. This branch fixes all 9 blockers and 17 of 18 highs, each with tests.
+Build + lint (`--max-warnings 0`) clean; ~2,240 unit tests green across all packages.
+
+**Data integrity (engine/server):**
+- B1 — thread real `messageId` through `SendToDestination` (File/SFTP no longer overwrite `0.txt`).
+- B2 — graceful shutdown: stop channels before undeploy; shut down Socket.IO before HTTP close.
+- B3 — corrected `shouldStoreContent` (PRODUCTION stores raw/sent/response+errors); reject queued
+  destinations on non-storing storage modes at deploy.
+- B4 — check pipeline store Results (createConnectorMessage / CT_SENT storeContent / enqueue) →
+  ERROR + alert instead of silent loss. H1 — response-transformer errors surfaced (not swallowed).
+- H2 — recovery marks processed only on success; real messageId in redispatch.
+- H3 — soft-delete no longer drops message partitions. H4 — single delete is transactional (via
+  `deleteMessagesByIds`) + audited.
+
+**Security:**
+- B7 — redact connector credentials from channel reads for non-writers.
+- H5 — backup/restore no longer writes `__REDACTED__` over live secrets.
+- H6 — enforce `mustChangePassword` server-side. H7 — reject placeholder/low-entropy JWT secret in prod.
+- H8 — RBAC on Socket.IO room joins. H9 — SFTP host-key verification on by default.
+- B8 — patched 8 of 9 high-severity deps via bounded `pnpm.overrides` (drizzle-orm deferred).
+
+**Connectors / UI / ops:**
+- H10 — email/DICOM `error` listeners (no more engine-killing uncaughtException) + DICOM dispatch
+  logging. H17 — File charset dropdown emits Node-valid encodings (+ `normalizeEncoding`).
+- B9 — removed unwired IO-bridge IntelliSense. H13 — editor preserves transformer templates on save.
+- H14 — added `POST /channels/:id/redeploy` + Redeploy menu action. H16 — pruning UI no longer
+  promises a non-existent archive. H15 — honest notices on Certificates/Resources/Extensions.
+- H11 — publish connector listener ports in prod compose. H12 — CI runs `pnpm audit` + real coverage.
+  M4 — `TRUST_PROXY=1` default. M10 — documented 0007 data-loss on upgrade.
+
+**Deferred (documented):** drizzle-orm major bump (not reachable; needs real-DB validation), H18
+registry Zod validation, and the MEDIUM/LOW triage list in the review doc.
+
 ## 2026-07-12 — SFTP connector (source + destination) (branch `w2/sftp`)
 
 Scope: `packages/connectors` + `packages/core-models` (connector-type enums only). New `SFTP`
