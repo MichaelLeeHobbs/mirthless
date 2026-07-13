@@ -25,7 +25,7 @@ import * as vm from 'node:vm';
 import type { Result } from '@mirthless/core-util';
 import { tryCatch } from '@mirthless/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
-import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions } from './bridge-functions.js';
+import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions } from './bridge-functions.js';
 import { isHl7MessageProxy } from '../pipeline/data-type-handler.js';
 
 // ----- Types -----
@@ -160,6 +160,17 @@ function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown
       case 'dbQuery': return ioDispatch(() => bridges.dbQuery!(args[0] as string, args[1] as string, args[2] as string, args[3] as readonly unknown[]));
       case 'routeMessage': return ioDispatch(() => bridges.routeMessage!(args[0] as string, args[1] as string));
       case 'getResource': return ioDispatch(() => bridges.getResource!(args[0] as string));
+      case 'collectionStore': return ioDispatch(() => bridges.collections!.store(
+        args[0] as string,
+        args[1] as Record<string, CollectionScalar>,
+        args[2] as string,
+        args[3] as CollectionStoreOptions,
+      ));
+      case 'collectionFind': return ioDispatch(() => bridges.collections!.find(
+        args[0] as string,
+        args[1] as Record<string, CollectionScalar>,
+        args[2] as CollectionFindOptions,
+      ));
       default: return undefined;
     }
   };
@@ -183,7 +194,7 @@ interface SandboxPayload {
   readonly configMap: Record<string, unknown>;
   readonly extrasData: Record<string, unknown>;
   readonly hasDestinationSet: boolean;
-  readonly bridges: { httpFetch: boolean; dbQuery: boolean; routeMessage: boolean; getResource: boolean };
+  readonly bridges: { httpFetch: boolean; dbQuery: boolean; routeMessage: boolean; getResource: boolean; getCollection: boolean };
 }
 
 function buildPayload(state: HostBridgeState, context: SandboxContext, deps: BridgeDependencies | undefined): SandboxPayload {
@@ -213,6 +224,7 @@ function buildPayload(state: HostBridgeState, context: SandboxContext, deps: Bri
       dbQuery: Boolean(deps?.dbQuery),
       routeMessage: Boolean(deps?.routeMessage),
       getResource: Boolean(deps?.getResource),
+      getCollection: Boolean(deps?.collections),
     },
   };
 }
@@ -298,6 +310,22 @@ globalThis.__build = function (dispatch, payload) {
       var r = JSON.parse(await dispatch('getResource', name));
       if (!r.ok) { throw new Error(r.e); }
       return r.v;
+    };
+  }
+  if (payload.bridges.getCollection) {
+    globalThis.getCollection = function (name) {
+      return {
+        store: async function (fields, payload, options) {
+          var r = JSON.parse(await dispatch('collectionStore', name, fields || {}, String(payload == null ? '' : payload), options || {}));
+          if (!r.ok) { throw new Error(r.e); }
+          return r.v;
+        },
+        find: async function (match, options) {
+          var r = JSON.parse(await dispatch('collectionFind', name, match || {}, options || {}));
+          if (!r.ok) { throw new Error(r.e); }
+          return r.v;
+        }
+      };
     };
   }
   if (payload.hasDestinationSet) {
@@ -391,7 +419,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
       vm.runInContext(INVOKE_SRC, contextObj, { timeout: options.timeout });
 
       const hasAsyncBridges = Boolean(
-        this.deps?.httpFetch || this.deps?.dbQuery || this.deps?.routeMessage || this.deps?.getResource,
+        this.deps?.httpFetch || this.deps?.dbQuery || this.deps?.routeMessage || this.deps?.getResource || this.deps?.collections,
       );
       const wrappedCode = hasAsyncBridges
         ? `'use strict'; __result = (async function() {\n${script.code}\n})();`

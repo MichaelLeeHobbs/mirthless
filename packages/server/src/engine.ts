@@ -25,6 +25,7 @@ import {
   type DestinationConfig,
   type DestinationScripts,
   type SandboxExecutor,
+  type BridgeDependencies,
   type MessageStore,
   type SendToDestination,
   type CompiledScript,
@@ -43,13 +44,14 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@mirthless/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode } from '@mirthless/core-models';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema } from '@mirthless/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
 import { GlobalMapService } from './services/global-map.service.js';
 import { ConfigMapService } from './services/config-map.service.js';
 import { CodeTemplateService } from './services/code-template.service.js';
+import { CollectionService, type CollectionRecordResult } from './services/collection.service.js';
 import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { db } from './lib/db.js';
@@ -242,6 +244,47 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
   };
 }
 
+// ----- Sandbox bridges -----
+
+/** Shape a service record for the sandbox bridge (dates as ISO strings). */
+function toBridgeRecord(v: CollectionRecordResult): {
+  id: string; fields: Record<string, string>; payload: string | null; expireAt: string | null; createdAt: string;
+} {
+  return {
+    id: v.id,
+    fields: v.fields,
+    payload: v.payload,
+    expireAt: v.expireAt ? v.expireAt.toISOString() : null,
+    createdAt: v.createdAt.toISOString(),
+  };
+}
+
+/**
+ * getCollection() script bridge: store/find against CollectionService. Inputs
+ * from user scripts are Zod-validated at this boundary (fail loud on bad input);
+ * service errors surface as thrown errors inside the script.
+ */
+function createCollectionBridge(): NonNullable<BridgeDependencies['collections']> {
+  return {
+    store: async (name, fields, payload, options) => {
+      const input = storeRecordSchema.parse({
+        fields, payload, expireAt: options.expireAt, ttlSeconds: options.ttlSeconds,
+      });
+      const result = await CollectionService.store(name, input);
+      if (!result.ok) throw new Error(result.error.message);
+      return toBridgeRecord(result.value);
+    },
+    find: async (name, match, options) => {
+      const query = findRecordsSchema.parse({
+        match, filter: options.filter, latest: options.latest, limit: options.limit, order: options.order,
+      });
+      const result = await CollectionService.find(name, query);
+      if (!result.ok) throw new Error(result.error.message);
+      return result.value.map(toBridgeRecord);
+    },
+  };
+}
+
 // ----- Engine Manager -----
 
 export class EngineManager {
@@ -250,7 +293,7 @@ export class EngineManager {
   private readonly serverId: string;
 
   constructor(serverId?: string) {
-    this.sandbox = new VmSandboxExecutor();
+    this.sandbox = new VmSandboxExecutor({ collections: createCollectionBridge() });
     this.serverId = serverId ?? 'server-01';
   }
 
