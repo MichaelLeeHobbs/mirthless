@@ -238,7 +238,7 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
               )}
               <Box sx={{ flexGrow: 1 }} />
               {activeConnector.metaDataId > 0 && (
-                <Tooltip title={canResend ? 'Resend to this destination' : 'Requires messages:reprocess permission'}>
+                <Tooltip title={canResend ? 'Resend to this destination (queue-enabled destinations only; use Reprocess for others)' : 'Requires messages:reprocess permission'}>
                   <span>
                     <Button
                       size="small"
