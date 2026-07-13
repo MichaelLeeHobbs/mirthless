@@ -44,7 +44,7 @@ const ConfigMapPage = page(() => import('./pages/ConfigMapPage.js'), 'ConfigMapP
 const SystemInfoPage = page(() => import('./pages/SystemInfoPage.js'), 'SystemInfoPage');
 const MessageGeneratorPage = page(() => import('./pages/MessageGeneratorPage.js'), 'MessageGeneratorPage');
 const ExtensionsPage = page(() => import('./pages/ExtensionsPage.js'), 'ExtensionsPage');
-const CrossChannelSearchPage = page(() => import('./pages/CrossChannelSearchPage.js'), 'CrossChannelSearchPage');
+const TrafficPage = page(() => import('./pages/TrafficPage.js'), 'TrafficPage');
 const ChannelStatisticsPage = page(() => import('./pages/ChannelStatisticsPage.js'), 'ChannelStatisticsPage');
 const CertificatesPage = page(() => import('./pages/CertificatesPage.js'), 'CertificatesPage');
 
@@ -72,7 +72,7 @@ const router = createBrowserRouter([
           { path: 'channels/:id', element: lazyRoute(<ChannelEditorPage />) },
           { path: 'channels/:id/messages', element: lazyRoute(<MessageBrowserPage />) },
           { path: 'channels/:id/statistics', element: lazyRoute(<ChannelStatisticsPage />) },
-          { path: 'messages', element: lazyRoute(<CrossChannelSearchPage />) },
+          { path: 'messages', element: lazyRoute(<TrafficPage />) },
           { path: 'alerts', element: lazyRoute(<AlertsPage />) },
           { path: 'alerts/new', element: lazyRoute(<AlertEditorPage />) },
           { path: 'alerts/:id', element: lazyRoute(<AlertEditorPage />) },

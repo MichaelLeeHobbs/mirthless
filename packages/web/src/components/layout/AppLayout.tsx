@@ -72,7 +72,7 @@ const NAV_SECTIONS: readonly NavSection[] = [
     heading: 'Overview',
     items: [
       { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
-      { label: 'Messages', path: '/messages', icon: <MessageIcon /> },
+      { label: 'Traffic', path: '/messages', icon: <MessageIcon /> },
     ],
   },
   {
