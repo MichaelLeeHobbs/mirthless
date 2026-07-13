@@ -20,6 +20,9 @@ import type { TlsServerOptions } from '../tls.js';
 import { buildAck, type AckCode } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
+/** Close an inbound MLLP connection after this long with no traffic. */
+const IDLE_SOCKET_TIMEOUT_MS = 300_000;
+
 // ----- Config -----
 
 /**
@@ -171,6 +174,15 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
   /** Handle an incoming TCP connection. */
   private handleConnection(socket: net.Socket): void {
     this.connections.add(socket);
+
+    // Close idle connections so dead/half-open sockets don't accumulate and fill
+    // maxConnections, after which new senders would be silently refused.
+    socket.setTimeout(IDLE_SOCKET_TIMEOUT_MS);
+    socket.on('timeout', () => {
+      this.logger.warn({ remoteAddress: socket.remoteAddress }, 'MLLP connection idle timeout; closing');
+      socket.destroy();
+    });
+
     const parser = new MllpParser({
       maxFrameBytes: this.config.maxFrameBytes,
       charset: this.config.charset,
