@@ -269,6 +269,14 @@ function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
     logger: false,
   });
 
+  // ImapFlow is an EventEmitter that emits 'error' when the connection drops
+  // between polls. With no listener, Node treats it as an uncaughtException and
+  // kills the whole engine process. Swallow it here — the poll loop reconnects.
+  const factoryLogger = createConnectorLogger('EMAIL');
+  client.on('error', (err: unknown) => {
+    factoryLogger.warn(errorInfo(err), 'IMAP client error (will reconnect on next poll)');
+  });
+
   return {
     async connect(): Promise<void> {
       await client.connect();
@@ -335,6 +343,7 @@ interface ImapFlowLock {
 
 interface ImapFlowInstance {
   connect(): Promise<void>;
+  on(event: string, listener: (arg: unknown) => void): void;
   getMailboxLock(folder: string): Promise<ImapFlowLock>;
   fetch(query: Record<string, unknown>, options: Record<string, unknown>): AsyncIterable<ImapFlowFetchMessage>;
   messageFlagsAdd(query: Record<string, unknown>, flags: readonly string[]): Promise<void>;
