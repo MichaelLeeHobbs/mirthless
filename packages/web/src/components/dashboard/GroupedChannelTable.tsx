@@ -18,6 +18,7 @@ import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
+import Divider from '@mui/material/Divider';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Dialog from '@mui/material/Dialog';
@@ -33,6 +34,10 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import CloudOffIcon from '@mui/icons-material/CloudOff';
 import Tooltip from '@mui/material/Tooltip';
 import { DEFAULT_GROUP_NAME } from '@mirthless/core-models';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
@@ -42,6 +47,7 @@ import { TagChips } from '../common/TagChips.js';
 import type { ChannelGroupSummary } from '../../hooks/use-channel-groups.js';
 import type { GroupMembership } from '../../hooks/use-channel-groups.js';
 import { useUpdateChannelGroup, useDeleteChannelGroup } from '../../hooks/use-channel-groups.js';
+import { useDeploymentAction } from '../../hooks/use-deployment.js';
 import { ChannelActions } from './ChannelActions.js';
 import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
 import { AssignGroupDialog } from '../common/AssignGroupDialog.js';
@@ -112,9 +118,10 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
   const { menuState, menuTarget, handleContextMenu, handleClose } = useContextMenu<ChannelRow>();
   const { notify } = useNotification();
 
-  // --- Group kebab menu state ---
-  const [groupMenuAnchor, setGroupMenuAnchor] = useState<HTMLElement | null>(null);
+  // --- Group menu state (opens on right-click or the kebab, anchored at the pointer) ---
+  const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [groupMenuTarget, setGroupMenuTarget] = useState<GroupSection | null>(null);
+  const deployAction = useDeploymentAction();
 
   // --- Rename dialog state ---
   const [renameTarget, setRenameTarget] = useState<GroupSection | null>(null);
@@ -130,13 +137,41 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
   const [assignGroupTarget, setAssignGroupTarget] = useState<string | null>(null);
 
   const handleGroupMenuOpen = useCallback((e: React.MouseEvent<HTMLElement>, section: GroupSection): void => {
+    e.preventDefault();
     e.stopPropagation();
-    setGroupMenuAnchor(e.currentTarget);
+    setGroupMenuPos({ top: e.clientY, left: e.clientX });
     setGroupMenuTarget(section);
   }, []);
 
+  // Fire a deployment action for every channel in the group that is in an
+  // applicable state (avoids error toasts for channels already in the target state).
+  const handleGroupBulk = useCallback((action: 'deploy' | 'start' | 'stop' | 'undeploy'): void => {
+    const section = groupMenuTarget;
+    setGroupMenuPos(null);
+    setGroupMenuTarget(null);
+    if (!section) return;
+    const applies = (state: string): boolean => {
+      switch (action) {
+        case 'deploy': return state === 'UNDEPLOYED';
+        case 'start': return state === 'STOPPED';
+        case 'stop': return state === 'STARTED' || state === 'PAUSED';
+        case 'undeploy': return state === 'STOPPED';
+        default: return false;
+      }
+    };
+    const targets = section.channels.filter((c) => applies(c.state));
+    if (targets.length === 0) {
+      notify(`No channels in "${section.groupName}" to ${action}`, 'info');
+      return;
+    }
+    for (const c of targets) {
+      deployAction.mutate({ channelId: c.channelId, action });
+    }
+    notify(`${action.charAt(0).toUpperCase() + action.slice(1)} sent to ${String(targets.length)} channel(s)`, 'success');
+  }, [groupMenuTarget, deployAction, notify]);
+
   const handleGroupMenuClose = useCallback((): void => {
-    setGroupMenuAnchor(null);
+    setGroupMenuPos(null);
     setGroupMenuTarget(null);
   }, []);
 
@@ -313,6 +348,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                         '&:hover .group-menu-btn': { opacity: 1 },
                       }}
                       onClick={() => toggleGroup(section.groupId)}
+                      onContextMenu={section.groupId !== '__ungrouped__' ? (e) => handleGroupMenuOpen(e, section) : undefined}
                     >
                       <TableCell>
                         <IconButton size="small" aria-label={isOpen ? `Collapse ${section.groupName}` : `Expand ${section.groupName}`}>
@@ -398,12 +434,37 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
         onDelete={onDelete}
         onExport={onExport}
       />
-      {/* Group kebab menu */}
+      {/* Group menu (right-click header or kebab) */}
       <Menu
-        open={groupMenuAnchor !== null}
-        anchorEl={groupMenuAnchor}
+        open={groupMenuPos !== null}
         onClose={handleGroupMenuClose}
+        anchorReference="anchorPosition"
+        anchorPosition={groupMenuPos ?? { top: 0, left: 0 }}
+        slotProps={{ root: { onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); handleGroupMenuClose(); } } }}
       >
+        <MenuItem disabled sx={{ opacity: '1 !important' }}>
+          <ListItemText primaryTypographyProps={{ variant: 'subtitle2', fontWeight: 600 }}>
+            {groupMenuTarget?.groupName}
+          </ListItemText>
+        </MenuItem>
+        <Divider />
+        <MenuItem onClick={() => handleGroupBulk('deploy')}>
+          <ListItemIcon><CloudUploadIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Deploy all</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => handleGroupBulk('start')}>
+          <ListItemIcon><PlayArrowIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Start all</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => handleGroupBulk('stop')}>
+          <ListItemIcon><StopIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Stop all</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => handleGroupBulk('undeploy')}>
+          <ListItemIcon><CloudOffIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Undeploy all</ListItemText>
+        </MenuItem>
+        <Divider />
         <MenuItem onClick={handleRenameOpen}>
           <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Rename</ListItemText>
