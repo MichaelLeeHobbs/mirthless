@@ -5,6 +5,12 @@
 
 import { Fragment, useState, useMemo, useCallback, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  DndContext, DragOverlay, useDraggable, useDroppable,
+  PointerSensor, useSensor, useSensors,
+  type DragEndEvent, type DragStartEvent,
+} from '@dnd-kit/core';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import Box from '@mui/material/Box';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -46,7 +52,7 @@ import type { TagSummary } from '../../hooks/use-tags.js';
 import { TagChips } from '../common/TagChips.js';
 import type { ChannelGroupSummary } from '../../hooks/use-channel-groups.js';
 import type { GroupMembership } from '../../hooks/use-channel-groups.js';
-import { useUpdateChannelGroup, useDeleteChannelGroup } from '../../hooks/use-channel-groups.js';
+import { useUpdateChannelGroup, useDeleteChannelGroup, useAddGroupMember, useRemoveGroupMember } from '../../hooks/use-channel-groups.js';
 import { useDeploymentAction } from '../../hooks/use-deployment.js';
 import { ChannelActions } from './ChannelActions.js';
 import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
@@ -110,6 +116,52 @@ function sumTotals(channels: readonly ChannelRow[]): { received: number; filtere
   return { received, filtered, sent, errored, queued };
 }
 
+/** A channel row that can be dragged (by its handle) into another group. */
+function DraggableChannelRow({ channelId, fromGroupId, onContextMenu, children }: {
+  readonly channelId: string;
+  readonly fromGroupId: string;
+  readonly onContextMenu: (e: React.MouseEvent) => void;
+  readonly children: ReactNode;
+}): ReactNode {
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: channelId, data: { fromGroupId } });
+  return (
+    <TableRow ref={setNodeRef} hover onContextMenu={onContextMenu} sx={{ opacity: isDragging ? 0.4 : 1 }}>
+      <TableCell width={40} sx={{ px: 0.5 }}>
+        <IconButton size="small" aria-label="Drag to change group" {...listeners} {...attributes} sx={{ cursor: 'grab', touchAction: 'none' }}>
+          <DragIndicatorIcon fontSize="small" sx={{ color: 'text.disabled' }} />
+        </IconButton>
+      </TableCell>
+      {children}
+    </TableRow>
+  );
+}
+
+/** A group header row that accepts a dropped channel. */
+function DroppableGroupRow({ groupId, onClick, onContextMenu, children }: {
+  readonly groupId: string;
+  readonly onClick: () => void;
+  readonly onContextMenu?: ((e: React.MouseEvent) => void) | undefined;
+  readonly children: ReactNode;
+}): ReactNode {
+  const { setNodeRef, isOver } = useDroppable({ id: groupId });
+  return (
+    <TableRow
+      ref={setNodeRef}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      sx={{
+        backgroundColor: isOver ? 'primary.dark' : 'action.hover',
+        outline: isOver ? (theme) => `2px dashed ${theme.palette.primary.main}` : 'none',
+        outlineOffset: '-2px',
+        cursor: 'pointer',
+        '&:hover .group-menu-btn': { opacity: 1 },
+      }}
+    >
+      {children}
+    </TableRow>
+  );
+}
+
 export function GroupedChannelTable({ statistics, deploymentStatuses, groups, memberships, onSendMessage, onClone, onDelete, onExport, tagsByChannel, visibleColumns }: GroupedChannelTableProps): ReactNode {
   const visible = visibleColumns ?? DEFAULT_VISIBLE;
   const shownColumns = DASHBOARD_COLUMNS.filter((c) => visible.has(c.id));
@@ -122,6 +174,13 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
   const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [groupMenuTarget, setGroupMenuTarget] = useState<GroupSection | null>(null);
   const deployAction = useDeploymentAction();
+
+  // --- Drag-to-regroup ---
+  const addMember = useAddGroupMember();
+  const removeMember = useRemoveGroupMember();
+  const [dragOverride, setDragOverride] = useState<ReadonlyMap<string, string | null>>(new Map());
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   // --- Rename dialog state ---
   const [renameTarget, setRenameTarget] = useState<GroupSection | null>(null);
@@ -136,7 +195,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
   // --- Assign group dialog state ---
   const [assignGroupTarget, setAssignGroupTarget] = useState<string | null>(null);
 
-  const handleGroupMenuOpen = useCallback((e: React.MouseEvent<HTMLElement>, section: GroupSection): void => {
+  const handleGroupMenuOpen = useCallback((e: React.MouseEvent, section: GroupSection): void => {
     e.preventDefault();
     e.stopPropagation();
     setGroupMenuPos({ top: e.clientY, left: e.clientX });
@@ -226,6 +285,40 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     setAssignGroupTarget(channelId);
   }, []);
 
+  const handleDragStart = useCallback((e: DragStartEvent): void => {
+    setActiveDragId(String(e.active.id));
+  }, []);
+
+  const handleDragEnd = useCallback((e: DragEndEvent): void => {
+    setActiveDragId(null);
+    const channelId = String(e.active.id);
+    const overId = e.over ? String(e.over.id) : null;
+    if (!overId) return;
+    const fromGroupId = (e.active.data.current?.['fromGroupId'] as string | undefined) ?? '__ungrouped__';
+    if (overId === fromGroupId) return;
+    const targetGroupId = overId === '__ungrouped__' ? null : overId;
+
+    // Optimistically move the row; revert if persistence fails.
+    const prevOverride = dragOverride;
+    const next = new Map(dragOverride);
+    next.set(channelId, targetGroupId);
+    setDragOverride(next);
+
+    void (async () => {
+      try {
+        if (fromGroupId !== '__ungrouped__') {
+          await removeMember.mutateAsync({ groupId: fromGroupId, channelId });
+        }
+        if (targetGroupId !== null) {
+          await addMember.mutateAsync({ groupId: targetGroupId, channelId });
+        }
+      } catch (err) {
+        setDragOverride(prevOverride);
+        notify(err instanceof Error ? err.message : 'Failed to move channel', 'error');
+      }
+    })();
+  }, [dragOverride, removeMember, addMember, notify]);
+
   const toggleGroup = (groupId: string): void => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -264,14 +357,19 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     }));
   }, [statistics, deploymentMap]);
 
-  // Build membership map: channelId -> groupId
+  // Build membership map: channelId -> groupId, with optimistic drag overrides
+  // (a null override means "moved to Ungrouped").
   const channelGroupMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of memberships) {
       map.set(m.channelId, m.channelGroupId);
     }
+    for (const [channelId, groupId] of dragOverride) {
+      if (groupId === null) map.delete(channelId);
+      else map.set(channelId, groupId);
+    }
     return map;
-  }, [memberships]);
+  }, [memberships, dragOverride]);
 
   // Build group sections
   const sections = useMemo((): readonly GroupSection[] => {
@@ -314,6 +412,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
 
   return (
     <Paper>
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <TableContainer>
         <Table size="small">
           <TableHead>
@@ -340,13 +439,9 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                 const isOpen = !collapsed.has(section.groupId);
                 return (
                   <Fragment key={section.groupId}>
-                    {/* Group header row */}
-                    <TableRow
-                      sx={{
-                        backgroundColor: 'action.hover',
-                        cursor: 'pointer',
-                        '&:hover .group-menu-btn': { opacity: 1 },
-                      }}
+                    {/* Group header row (also the drop target for drag-to-regroup) */}
+                    <DroppableGroupRow
+                      groupId={section.groupId}
                       onClick={() => toggleGroup(section.groupId)}
                       onContextMenu={section.groupId !== '__ungrouped__' ? (e) => handleGroupMenuOpen(e, section) : undefined}
                     >
@@ -376,11 +471,15 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                       </TableCell>
                       <GroupTotalCells totals={section.totals} visible={visible} />
                       <TableCell />
-                    </TableRow>
+                    </DroppableGroupRow>
                     {/* Channel rows — flat in same table body for aligned columns */}
                     {isOpen && section.channels.map((row) => (
-                      <TableRow key={row.channelId} hover onContextMenu={(e) => handleContextMenu(e, row)}>
-                        <TableCell width={40} />
+                      <DraggableChannelRow
+                        key={row.channelId}
+                        channelId={row.channelId}
+                        fromGroupId={section.groupId}
+                        onContextMenu={(e) => handleContextMenu(e, row)}
+                      >
                         <TableCell width={40}>
                           <StatusDot level={channelStateLevel(row.state)} title={row.state} />
                         </TableCell>
@@ -412,7 +511,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                             <ChannelActions channelId={row.channelId} channelName={row.channelName} state={row.state === 'UNDEPLOYED' ? undefined : row.state} onSendMessage={onSendMessage} />
                           </Box>
                         </TableCell>
-                      </TableRow>
+                      </DraggableChannelRow>
                     ))}
                   </Fragment>
                 );
@@ -421,6 +520,14 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
           </TableBody>
         </Table>
       </TableContainer>
+        <DragOverlay>
+          {activeDragId ? (
+            <Box sx={{ px: 1.5, py: 0.5, borderRadius: 1, bgcolor: 'primary.main', color: 'primary.contrastText', fontSize: '0.8rem', fontWeight: 600, boxShadow: 3 }}>
+              {allRows.find((r) => r.channelId === activeDragId)?.channelName ?? 'Channel'}
+            </Box>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
       <ChannelContextMenu
         menuState={menuState}
         channelId={menuTarget?.channelId ?? null}
