@@ -28,6 +28,7 @@ export type ChannelGroupId = BrandedString<'ChannelGroupId'>;
 export type TagId = BrandedString<'TagId'>;
 export type ServerId = BrandedString<'ServerId'>;
 export type CollectionId = BrandedString<'CollectionId'>;
+export type DataSourceId = BrandedString<'DataSourceId'>;
 
 // --- Branded Number Types ---
 
@@ -78,6 +79,7 @@ export const createChannelGroupId = makeStringFactory('ChannelGroupId');
 export const createTagId = makeStringFactory('TagId');
 export const createServerId = makeStringFactory('ServerId');
 export const createCollectionId = makeStringFactory('CollectionId');
+export const createDataSourceId = makeStringFactory('DataSourceId');
 
 /** Creates a MetaDataId (0 = source, 1+ = destination) */
 export function createMetaDataId(value: number): MetaDataId {
