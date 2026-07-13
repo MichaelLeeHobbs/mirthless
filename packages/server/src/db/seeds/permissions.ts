@@ -42,6 +42,11 @@ export const PERMISSIONS = {
   RESOURCES_WRITE: 'resources:write',
   RESOURCES_DELETE: 'resources:delete',
 
+  // Collections
+  COLLECTIONS_READ: 'collections:read',
+  COLLECTIONS_WRITE: 'collections:write',
+  COLLECTIONS_DELETE: 'collections:delete',
+
   // Global Scripts
   GLOBAL_SCRIPTS_READ: 'global_scripts:read',
   GLOBAL_SCRIPTS_WRITE: 'global_scripts:write',
@@ -106,6 +111,11 @@ export const defaultPermissions: readonly PermissionDefinition[] = [
   { name: PERMISSIONS.RESOURCES_READ, resource: 'resources', action: 'read' },
   { name: PERMISSIONS.RESOURCES_WRITE, resource: 'resources', action: 'write' },
   { name: PERMISSIONS.RESOURCES_DELETE, resource: 'resources', action: 'delete' },
+
+  // Collections
+  { name: PERMISSIONS.COLLECTIONS_READ, resource: 'collections', action: 'read' },
+  { name: PERMISSIONS.COLLECTIONS_WRITE, resource: 'collections', action: 'write' },
+  { name: PERMISSIONS.COLLECTIONS_DELETE, resource: 'collections', action: 'delete' },
 
   // Global Scripts
   { name: PERMISSIONS.GLOBAL_SCRIPTS_READ, resource: 'global_scripts', action: 'read' },
