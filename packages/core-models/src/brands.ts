@@ -27,6 +27,7 @@ export type CodeTemplateLibraryId = BrandedString<'CodeTemplateLibraryId'>;
 export type ChannelGroupId = BrandedString<'ChannelGroupId'>;
 export type TagId = BrandedString<'TagId'>;
 export type ServerId = BrandedString<'ServerId'>;
+export type CollectionId = BrandedString<'CollectionId'>;
 
 // --- Branded Number Types ---
 
@@ -76,6 +77,7 @@ export const createCodeTemplateLibraryId = makeStringFactory('CodeTemplateLibrar
 export const createChannelGroupId = makeStringFactory('ChannelGroupId');
 export const createTagId = makeStringFactory('TagId');
 export const createServerId = makeStringFactory('ServerId');
+export const createCollectionId = makeStringFactory('CollectionId');
 
 /** Creates a MetaDataId (0 = source, 1+ = destination) */
 export function createMetaDataId(value: number): MetaDataId {
