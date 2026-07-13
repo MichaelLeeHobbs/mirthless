@@ -262,6 +262,7 @@ export function MessageBrowserPage(): ReactNode {
         metaDataId={metaDataId}
         messageId={messageIdSearch}
         contentSearch={contentSearch}
+        connectors={(channel?.destinations ?? []).map((d, i) => ({ metaDataId: i + 1, name: d.name }))}
         onReceivedFromChange={setReceivedFrom}
         onReceivedToChange={setReceivedTo}
         onStatusesChange={setStatuses}

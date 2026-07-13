@@ -23,6 +23,8 @@ interface MessageSearchBarProps {
   readonly metaDataId: string;
   readonly messageId: string;
   readonly contentSearch: string;
+  /** Actual destination connectors (metaDataId + name) to populate the filter. */
+  readonly connectors?: readonly { readonly metaDataId: number; readonly name: string }[];
   readonly onReceivedFromChange: (value: string) => void;
   readonly onReceivedToChange: (value: string) => void;
   readonly onStatusesChange: (value: readonly string[]) => void;
@@ -38,6 +40,7 @@ export function MessageSearchBar({
   metaDataId,
   messageId,
   contentSearch,
+  connectors,
   onReceivedFromChange,
   onReceivedToChange,
   onStatusesChange,
@@ -96,9 +99,9 @@ export function MessageSearchBar({
         >
           <MenuItem value="">All</MenuItem>
           <MenuItem value="0">Source</MenuItem>
-          <MenuItem value="1">Dest 1</MenuItem>
-          <MenuItem value="2">Dest 2</MenuItem>
-          <MenuItem value="3">Dest 3</MenuItem>
+          {(connectors ?? []).map((c) => (
+            <MenuItem key={c.metaDataId} value={String(c.metaDataId)}>{c.name}</MenuItem>
+          ))}
         </Select>
       </FormControl>
       <TextField

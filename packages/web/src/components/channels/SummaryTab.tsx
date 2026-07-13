@@ -104,15 +104,20 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
     if (!channelId) return;
     if (channelMemberships.length > 0 && channelMemberships[0]?.channelGroupId === newGroupId) return;
 
-    // Remove from ALL current groups (handles multi-membership cleanup)
-    for (const m of channelMemberships) {
-      removeMember.mutate({ groupId: m.channelGroupId, channelId });
+    try {
+      // Remove from ALL current groups first (handles multi-membership cleanup),
+      // then add to the new one. Await both so the success toast reflects reality
+      // — the previous fire-and-forget path reported success even on failure.
+      for (const m of channelMemberships) {
+        await removeMember.mutateAsync({ groupId: m.channelGroupId, channelId });
+      }
+      if (newGroupId !== NONE_GROUP) {
+        await addMember.mutateAsync({ groupId: newGroupId, channelId });
+      }
+      notify('Channel group updated', 'success');
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to update channel group', 'error');
     }
-    // Add to new group
-    if (newGroupId !== NONE_GROUP) {
-      addMember.mutate({ groupId: newGroupId, channelId });
-    }
-    notify('Channel group updated', 'success');
   }, [channelId, channelMemberships, removeMember, addMember, notify]);
 
   // ----- Metadata column helpers -----
