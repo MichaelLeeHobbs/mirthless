@@ -26,6 +26,19 @@ import { EmailReceiver, EMAIL_POST_ACTION, type EmailPostAction, type EmailProto
 import { SftpReceiver, SFTP_POST_ACTION, type SftpPostAction } from './sftp/sftp-receiver.js';
 import { SftpDispatcher } from './sftp/sftp-dispatcher.js';
 
+/**
+ * Coerce a config property to a finite number, tolerating string values (a UI/JSON
+ * config can deliver `"6661"` for a port). Returns the fallback for missing/empty/
+ * non-numeric values so a bad type never masquerades as a number and later breaks
+ * arithmetic/comparisons or throws deep inside a connector.
+ */
+export function num(props: Record<string, unknown>, key: string, fallback: number): number {
+  const v = props[key];
+  if (v === undefined || v === null || v === '') return fallback;
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 // ----- Source Factories -----
 
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
@@ -33,76 +46,76 @@ type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRun
 const sourceFactories = new Map<string, SourceFactory>([
   ['TCP_MLLP', (props): SourceConnectorRuntime => new TcpMllpReceiver({
     host: (props['host'] as string | undefined) ?? '0.0.0.0',
-    port: props['port'] as number,
-    maxConnections: (props['maxConnections'] as number | undefined) ?? 10,
+    port: num(props, 'port', 0),
+    maxConnections: num(props, 'maxConnections', 10),
     responseMode: (props['responseMode'] as MllpResponseMode | undefined) ?? MLLP_RESPONSE_MODE.AUTO_ACK,
     charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
-    maxFrameBytes: (props['maxFrameBytes'] as number | undefined) ?? DEFAULT_MAX_FRAME_BYTES,
+    maxFrameBytes: num(props, 'maxFrameBytes', DEFAULT_MAX_FRAME_BYTES),
     tls: readTlsServerOptions(props),
   })],
   ['HTTP', (props): SourceConnectorRuntime => new HttpReceiver({
     host: (props['host'] as string | undefined) ?? '0.0.0.0',
-    port: props['port'] as number,
+    port: num(props, 'port', 0),
     path: (props['path'] as string | undefined) ?? '/',
     method: (props['method'] as string | undefined) ?? 'POST',
     responseContentType: (props['responseContentType'] as string | undefined) ?? 'text/plain',
-    responseStatusCode: (props['responseStatusCode'] as number | undefined) ?? 200,
-    errorStatusCode: (props['errorStatusCode'] as number | undefined) ?? 500,
-    maxBodyBytes: (props['maxBodyBytes'] as number | undefined) ?? DEFAULT_MAX_BODY_BYTES,
+    responseStatusCode: num(props, 'responseStatusCode', 200),
+    errorStatusCode: num(props, 'errorStatusCode', 500),
+    maxBodyBytes: num(props, 'maxBodyBytes', DEFAULT_MAX_BODY_BYTES),
     auth: props['auth'] as HttpAuthConfig | undefined,
     tls: readTlsServerOptions(props),
   })],
   ['FILE', (props): SourceConnectorRuntime => new FileReceiver({
     directory: props['directory'] as string,
     fileFilter: (props['fileFilter'] as string | undefined) ?? '*',
-    pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 5_000,
+    pollingIntervalMs: num(props, 'pollingIntervalMs', 5_000),
     sortBy: (props['sortBy'] as FileSortBy | undefined) ?? FILE_SORT_BY.NAME,
     charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
     binary: (props['binary'] as boolean | undefined) ?? false,
     checkFileAge: (props['checkFileAge'] as boolean | undefined) ?? true,
-    fileAgeMs: (props['fileAgeMs'] as number | undefined) ?? 1_000,
+    fileAgeMs: num(props, 'fileAgeMs', 1_000),
     postAction: (props['postAction'] as FilePostAction | undefined) ?? FILE_POST_ACTION.DELETE,
     moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
   })],
   ['DATABASE', (props): SourceConnectorRuntime => new DatabaseReceiver({
     host: props['host'] as string,
-    port: (props['port'] as number | undefined) ?? 5432,
+    port: num(props, 'port', 5432),
     database: props['database'] as string,
     username: props['username'] as string,
     password: props['password'] as string,
     selectQuery: props['selectQuery'] as string,
     updateQuery: (props['updateQuery'] as string | undefined) ?? '',
     updateMode: (props['updateMode'] as UpdateMode | undefined) ?? UPDATE_MODE.NEVER,
-    pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 5_000,
+    pollingIntervalMs: num(props, 'pollingIntervalMs', 5_000),
     rowFormat: (props['rowFormat'] as RowFormat | undefined) ?? ROW_FORMAT.JSON,
   })],
   ['JAVASCRIPT', (props): SourceConnectorRuntime => new JavaScriptReceiver({
     script: (props['script'] as string | undefined) ?? '',
-    pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 5_000,
+    pollingIntervalMs: num(props, 'pollingIntervalMs', 5_000),
   })],
   ['CHANNEL', (props): SourceConnectorRuntime => new ChannelReceiver({
     channelId: props['channelId'] as string,
   })],
   ['DICOM', (props): SourceConnectorRuntime => new DicomReceiver({
-    port: props['port'] as number,
+    port: num(props, 'port', 0),
     storageDir: props['storageDir'] as string,
     aeTitle: (props['aeTitle'] as string | undefined) ?? 'MIRTHLESS',
-    minPoolSize: (props['minPoolSize'] as number | undefined) ?? 2,
-    maxPoolSize: (props['maxPoolSize'] as number | undefined) ?? 10,
-    connectionTimeoutMs: (props['connectionTimeoutMs'] as number | undefined) ?? 10_000,
+    minPoolSize: num(props, 'minPoolSize', 2),
+    maxPoolSize: num(props, 'maxPoolSize', 10),
+    connectionTimeoutMs: num(props, 'connectionTimeoutMs', 10_000),
     dispatchMode: (props['dispatchMode'] as 'PER_FILE' | 'PER_ASSOCIATION' | undefined) ?? 'PER_FILE',
     postAction: (props['postAction'] as 'DELETE' | 'MOVE' | 'NONE' | undefined) ?? 'DELETE',
     moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
   })],
   ['EMAIL', (props): SourceConnectorRuntime => new EmailReceiver({
     host: props['host'] as string,
-    port: (props['port'] as number | undefined) ?? 993,
+    port: num(props, 'port', 993),
     secure: (props['secure'] as boolean | undefined) ?? true,
     username: (props['username'] as string | undefined) ?? '',
     password: (props['password'] as string | undefined) ?? '',
     protocol: (props['protocol'] as EmailProtocol | undefined) ?? 'IMAP',
     folder: (props['folder'] as string | undefined) ?? 'INBOX',
-    pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 60_000,
+    pollingIntervalMs: num(props, 'pollingIntervalMs', 60_000),
     postAction: (props['postAction'] as EmailPostAction | undefined) ?? EMAIL_POST_ACTION.MARK_READ,
     moveToFolder: (props['moveToFolder'] as string | undefined) ?? '',
     subjectFilter: (props['subjectFilter'] as string | undefined) ?? '',
@@ -110,17 +123,17 @@ const sourceFactories = new Map<string, SourceFactory>([
   })],
   ['SFTP', (props): SourceConnectorRuntime => new SftpReceiver({
     host: props['host'] as string,
-    port: (props['port'] as number | undefined) ?? 22,
+    port: num(props, 'port', 22),
     username: props['username'] as string,
     password: props['password'] as string | undefined,
     privateKey: props['privateKey'] as string | undefined,
     passphrase: props['passphrase'] as string | undefined,
     remoteDirectory: props['remoteDirectory'] as string,
     filePattern: (props['filePattern'] as string | undefined) ?? '*',
-    pollingIntervalMs: (props['pollingIntervalMs'] as number | undefined) ?? 5_000,
+    pollingIntervalMs: num(props, 'pollingIntervalMs', 5_000),
     afterProcessing: (props['afterProcessing'] as SftpPostAction | undefined) ?? SFTP_POST_ACTION.DELETE,
     moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
-    minFileAgeMs: (props['minFileAgeMs'] as number | undefined) ?? 1_000,
+    minFileAgeMs: num(props, 'minFileAgeMs', 1_000),
     strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
     hostKey: props['hostKey'] as string | undefined,
   })],
@@ -133,10 +146,10 @@ type DestinationFactory = (properties: Record<string, unknown>) => DestinationCo
 const destinationFactories = new Map<string, DestinationFactory>([
   ['TCP_MLLP', (props): DestinationConnectorRuntime => new TcpMllpDispatcher({
     host: props['host'] as string,
-    port: props['port'] as number,
-    maxConnections: (props['maxConnections'] as number | undefined) ?? 5,
-    responseTimeout: (props['responseTimeout'] as number | undefined) ?? 30_000,
-    acquireTimeoutMs: (props['acquireTimeoutMs'] as number | undefined) ?? 30_000,
+    port: num(props, 'port', 0),
+    maxConnections: num(props, 'maxConnections', 5),
+    responseTimeout: num(props, 'responseTimeout', 30_000),
+    acquireTimeoutMs: num(props, 'acquireTimeoutMs', 30_000),
     charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
     tls: readTlsClientOptions(props),
   })],
@@ -145,7 +158,7 @@ const destinationFactories = new Map<string, DestinationFactory>([
     method: (props['method'] as string | undefined) ?? 'POST',
     headers: (props['headers'] as Record<string, string> | undefined) ?? {},
     contentType: (props['contentType'] as string | undefined) ?? 'text/plain',
-    responseTimeout: (props['responseTimeout'] as number | undefined) ?? 30_000,
+    responseTimeout: num(props, 'responseTimeout', 30_000),
   })],
   ['FILE', (props): DestinationConnectorRuntime => new FileDispatcher({
     directory: props['directory'] as string,
@@ -157,7 +170,7 @@ const destinationFactories = new Map<string, DestinationFactory>([
   })],
   ['DATABASE', (props): DestinationConnectorRuntime => new DatabaseDispatcher({
     host: props['host'] as string,
-    port: (props['port'] as number | undefined) ?? 5432,
+    port: num(props, 'port', 5432),
     database: props['database'] as string,
     username: props['username'] as string,
     password: props['password'] as string,
@@ -170,7 +183,7 @@ const destinationFactories = new Map<string, DestinationFactory>([
   })],
   ['SMTP', (props): DestinationConnectorRuntime => new SmtpDispatcher({
     host: (props['host'] as string | undefined) ?? '',
-    port: (props['port'] as number | undefined) ?? 587,
+    port: num(props, 'port', 587),
     secure: (props['secure'] as boolean | undefined) ?? false,
     requireTLS: (props['requireTLS'] as boolean | undefined) ?? false,
     // Only attach auth when a username is configured (anonymous relay otherwise).
@@ -203,23 +216,23 @@ const destinationFactories = new Map<string, DestinationFactory>([
       apiKey: (props['authApiKey'] as string | undefined),
     },
     format: (props['format'] as 'json' | 'xml' | undefined) ?? 'json',
-    timeout: (props['timeout'] as number | undefined) ?? 30_000,
+    timeout: num(props, 'timeout', 30_000),
     headers: (props['headers'] as Record<string, string> | undefined) ?? {},
   })],
   ['DICOM', (props): DestinationConnectorRuntime => new DicomDispatcher({
     host: props['host'] as string,
-    port: props['port'] as number,
+    port: num(props, 'port', 0),
     calledAETitle: (props['calledAETitle'] as string | undefined) ?? 'PACS',
     callingAETitle: (props['callingAETitle'] as string | undefined) ?? 'MIRTHLESS',
     mode: (props['mode'] as 'single' | 'multiple' | undefined) ?? 'multiple',
-    maxAssociations: (props['maxAssociations'] as number | undefined) ?? 4,
-    maxRetries: (props['maxRetries'] as number | undefined) ?? 3,
-    retryDelayMs: (props['retryDelayMs'] as number | undefined) ?? 1_000,
-    timeoutMs: (props['timeoutMs'] as number | undefined) ?? 30_000,
+    maxAssociations: num(props, 'maxAssociations', 4),
+    maxRetries: num(props, 'maxRetries', 3),
+    retryDelayMs: num(props, 'retryDelayMs', 1_000),
+    timeoutMs: num(props, 'timeoutMs', 30_000),
   })],
   ['SFTP', (props): DestinationConnectorRuntime => new SftpDispatcher({
     host: props['host'] as string,
-    port: (props['port'] as number | undefined) ?? 22,
+    port: num(props, 'port', 22),
     username: props['username'] as string,
     password: props['password'] as string | undefined,
     privateKey: props['privateKey'] as string | undefined,
