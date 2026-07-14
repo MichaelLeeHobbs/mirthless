@@ -12,7 +12,7 @@ import Editor, { type BeforeMount } from '@monaco-editor/react';
 import { SANDBOX_TYPE_DEFS } from '../../lib/sandbox-types.js';
 import { useUiStore } from '../../stores/ui.store.js';
 
-type ScriptLanguage = 'javascript' | 'typescript';
+export type ScriptLanguage = 'javascript' | 'typescript';
 
 interface ScriptEditorProps {
   readonly height: string;
@@ -20,6 +20,8 @@ interface ScriptEditorProps {
   readonly onChange: (value: string | undefined) => void;
   readonly language?: ScriptLanguage;
   readonly showLanguageToggle?: boolean;
+  /** Fired when the user toggles JS/TS, so the parent can persist the choice. */
+  readonly onLanguageChange?: (language: ScriptLanguage) => void;
 }
 
 let jsTypesRegistered = false;
@@ -76,6 +78,7 @@ export function ScriptEditor({
   onChange,
   language: languageProp,
   showLanguageToggle = false,
+  onLanguageChange,
 }: ScriptEditorProps): ReactNode {
   const themeMode = useUiStore((state) => state.themeMode);
   const monacoTheme = themeMode === 'dark' ? 'vs-dark' : 'vs';
@@ -96,7 +99,10 @@ export function ScriptEditor({
             value={language}
             exclusive
             onChange={(_e, val: ScriptLanguage | null) => {
-              if (val) setInternalLang(val);
+              if (val) {
+                setInternalLang(val);
+                onLanguageChange?.(val);
+              }
             }}
             size="small"
           >

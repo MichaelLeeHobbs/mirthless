@@ -106,6 +106,7 @@ function makeTmplRow(overrides?: Partial<Record<string, unknown>>): Record<strin
     name: 'myHelper',
     description: 'A helper function',
     type: 'FUNCTION',
+    language: 'JAVASCRIPT',
     code: 'return 42;',
     contexts: ['SOURCE_FILTER_TRANSFORMER'],
     revision: 1,
@@ -324,6 +325,7 @@ describe('CodeTemplateService', () => {
         name: 'myHelper',
         description: 'A helper function',
         type: 'FUNCTION',
+        language: 'TYPESCRIPT',
         code: 'return 42;',
         contexts: ['SOURCE_FILTER_TRANSFORMER'],
       });
@@ -332,6 +334,8 @@ describe('CodeTemplateService', () => {
       if (!result.ok) return;
       expect(result.value.name).toBe('myHelper');
       expect(result.value.type).toBe('FUNCTION');
+      // The chosen language is persisted (threaded into the insert).
+      expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ language: 'TYPESCRIPT' }));
     });
 
     it('returns NOT_FOUND when library does not exist', async () => {

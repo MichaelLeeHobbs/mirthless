@@ -118,6 +118,6 @@ describe('GlobalScriptsPage', () => {
     await act(async () => { fireEvent.click(save); });
     // mutateAsync is called with the full scripts object including the edit.
     expect(updateMutateAsync).toHaveBeenCalledTimes(1);
-    expect(updateMutateAsync.mock.calls[0][0]).toMatchObject({ deploy: 'deploy-src // edited' });
+    expect(updateMutateAsync.mock.calls[0]?.[0]).toMatchObject({ deploy: 'deploy-src // edited' });
   });
 });

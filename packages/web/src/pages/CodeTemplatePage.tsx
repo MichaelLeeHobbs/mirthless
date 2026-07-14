@@ -182,6 +182,7 @@ export function CodeTemplatePage(): ReactNode {
         name: 'New Template',
         description: '',
         type: 'FUNCTION',
+        language: 'JAVASCRIPT',
         code: '// Enter your code here\n',
         contexts: [],
       });
@@ -196,6 +197,7 @@ export function CodeTemplatePage(): ReactNode {
     name: string;
     description: string;
     type: string;
+    language: string;
     code: string;
     contexts: readonly string[];
     revision: number;
@@ -208,6 +210,7 @@ export function CodeTemplatePage(): ReactNode {
           name: updates.name,
           description: updates.description,
           type: updates.type as 'FUNCTION' | 'CODE_BLOCK',
+          language: updates.language as 'JAVASCRIPT' | 'TYPESCRIPT',
           code: updates.code,
           contexts: updates.contexts as Array<typeof import('@mirthless/core-models').CODE_TEMPLATE_CONTEXTS[number]>,
           revision: updates.revision,

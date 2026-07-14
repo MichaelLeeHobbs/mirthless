@@ -76,6 +76,19 @@ describe('createCodeTemplateSchema', () => {
     expect(result.data.name).toBe('myHelper');
     expect(result.data.type).toBe('FUNCTION');
     expect(result.data.contexts).toHaveLength(2);
+    // Language defaults to JAVASCRIPT when omitted (backfill-safe).
+    expect(result.data.language).toBe('JAVASCRIPT');
+  });
+
+  it('accepts TYPESCRIPT language and rejects an unknown language', () => {
+    const base = {
+      libraryId: '550e8400-e29b-41d4-a716-446655440000',
+      name: 'tsHelper', type: 'FUNCTION', code: 'const x: number = 1;', contexts: [],
+    };
+    const ts = createCodeTemplateSchema.safeParse({ ...base, language: 'TYPESCRIPT' });
+    expect(ts.success).toBe(true);
+    if (ts.success) expect(ts.data.language).toBe('TYPESCRIPT');
+    expect(createCodeTemplateSchema.safeParse({ ...base, language: 'PYTHON' }).success).toBe(false);
   });
 
   it('accepts CODE_BLOCK type', () => {

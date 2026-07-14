@@ -21,6 +21,7 @@ export const codeTemplates = pgTable('code_templates', {
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description').default(''),
   type: varchar('type', { length: 20 }).notNull(),
+  language: varchar('language', { length: 20 }).notNull().default('JAVASCRIPT'),
   code: text('code').notNull().default(''),
   contexts: jsonb('contexts').notNull().$type<ReadonlyArray<string>>(),
   revision: integer('revision').notNull().default(1),
