@@ -172,6 +172,7 @@ export interface CodeTemplateDetail {
   readonly name: string;
   readonly description: string | null;
   readonly type: string;
+  readonly language: string;
   readonly code: string;
   readonly contexts: ReadonlyArray<string>;
   readonly revision: number;

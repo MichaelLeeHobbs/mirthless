@@ -35,6 +35,7 @@ export interface TemplateDetail {
   readonly name: string;
   readonly description: string | null;
   readonly type: string;
+  readonly language: string;
   readonly code: string;
   readonly contexts: ReadonlyArray<string>;
   readonly revision: number;
@@ -239,6 +240,7 @@ export class CodeTemplateService {
         name: r.name,
         description: r.description,
         type: r.type,
+        language: r.language,
         code: r.code,
         contexts: r.contexts,
         revision: r.revision,
@@ -266,6 +268,7 @@ export class CodeTemplateService {
         name: row.name,
         description: row.description,
         type: row.type,
+        language: row.language,
         code: row.code,
         contexts: row.contexts,
         revision: row.revision,
@@ -298,6 +301,7 @@ export class CodeTemplateService {
           name: input.name,
           description: input.description,
           type: input.type,
+          language: input.language,
           code: input.code,
           contexts: input.contexts,
         })
@@ -316,6 +320,7 @@ export class CodeTemplateService {
         name: row!.name,
         description: row!.description,
         type: row!.type,
+        language: row!.language,
         code: row!.code,
         contexts: row!.contexts,
         revision: row!.revision,
@@ -352,6 +357,7 @@ export class CodeTemplateService {
       if (input.name !== undefined) updates['name'] = input.name;
       if (input.description !== undefined) updates['description'] = input.description;
       if (input.type !== undefined) updates['type'] = input.type;
+      if (input.language !== undefined) updates['language'] = input.language;
       if (input.code !== undefined) updates['code'] = input.code;
       if (input.contexts !== undefined) updates['contexts'] = input.contexts;
 
@@ -374,6 +380,7 @@ export class CodeTemplateService {
         name: row!.name,
         description: row!.description,
         type: row!.type,
+        language: row!.language,
         code: row!.code,
         contexts: row!.contexts,
         revision: row!.revision,

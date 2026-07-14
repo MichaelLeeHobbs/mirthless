@@ -30,6 +30,14 @@ export const CODE_TEMPLATE_TYPES = ['FUNCTION', 'CODE_BLOCK'] as const;
 
 export const codeTemplateTypeSchema = z.enum(CODE_TEMPLATE_TYPES);
 
+// ----- Language (editor authoring mode; the engine transpiles TS→JS regardless) -----
+
+export const CODE_TEMPLATE_LANGUAGES = ['JAVASCRIPT', 'TYPESCRIPT'] as const;
+
+export const codeTemplateLanguageSchema = z.enum(CODE_TEMPLATE_LANGUAGES);
+
+export type CodeTemplateLanguage = (typeof CODE_TEMPLATE_LANGUAGES)[number];
+
 // ----- Library Schemas -----
 
 export const createCodeTemplateLibrarySchema = z.object({
@@ -54,6 +62,7 @@ export const createCodeTemplateSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().default(''),
   type: codeTemplateTypeSchema,
+  language: codeTemplateLanguageSchema.default('JAVASCRIPT'),
   code: z.string().default(''),
   contexts: z.array(codeTemplateContextSchema),
 });
@@ -64,6 +73,7 @@ export const updateCodeTemplateSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
   type: codeTemplateTypeSchema.optional(),
+  language: codeTemplateLanguageSchema.optional(),
   code: z.string().optional(),
   contexts: z.array(codeTemplateContextSchema).optional(),
   revision: z.number().int().positive(),

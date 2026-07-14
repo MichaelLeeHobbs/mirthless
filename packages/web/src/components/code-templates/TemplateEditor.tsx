@@ -46,6 +46,7 @@ interface TemplateEditorProps {
     name: string;
     description: string;
     type: string;
+    language: string;
     code: string;
     contexts: readonly string[];
     revision: number;
@@ -66,6 +67,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, on
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? '');
   const [type, setType] = useState(template.type);
+  const [language, setLanguage] = useState(template.language);
   const [code, setCode] = useState(template.code);
   const [contexts, setContexts] = useState<ReadonlySet<string>>(new Set(template.contexts));
 
@@ -74,14 +76,16 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, on
     setName(template.name);
     setDescription(template.description ?? '');
     setType(template.type);
+    setLanguage(template.language);
     setCode(template.code);
     setContexts(new Set(template.contexts));
-  }, [template.id, template.revision, template.name, template.description, template.type, template.code, template.contexts]);
+  }, [template.id, template.revision, template.name, template.description, template.type, template.language, template.code, template.contexts]);
 
   const isDirty =
     name !== template.name ||
     description !== (template.description ?? '') ||
     type !== template.type ||
+    language !== template.language ||
     code !== template.code ||
     !contextsEqual(contexts, template.contexts);
 
@@ -109,6 +113,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, on
       name,
       description,
       type,
+      language,
       code,
       contexts: [...contexts],
       revision: template.revision,
@@ -181,6 +186,9 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, on
           height="100%"
           value={code}
           onChange={(value) => { setCode(value ?? ''); }}
+          showLanguageToggle
+          language={language === 'TYPESCRIPT' ? 'typescript' : 'javascript'}
+          onLanguageChange={(lang) => { setLanguage(lang === 'typescript' ? 'TYPESCRIPT' : 'JAVASCRIPT'); }}
         />
       </Box>
 

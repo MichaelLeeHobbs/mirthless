@@ -1,0 +1,1 @@
+ALTER TABLE "code_templates" ADD COLUMN "language" varchar(20) DEFAULT 'JAVASCRIPT' NOT NULL;
