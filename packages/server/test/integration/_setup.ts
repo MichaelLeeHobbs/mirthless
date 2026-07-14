@@ -56,6 +56,7 @@ export async function loadServerModules() {
       import('../../src/services/data-source.service.js'),
       import('../../src/services/data-source-pool-manager.js'),
     ]);
+  const crossChannelMod = await import('../../src/services/cross-channel-search.service.js');
 
   return {
     db: dbMod.db,
@@ -72,6 +73,7 @@ export async function loadServerModules() {
     CollectionService: collectionMod.CollectionService,
     DataSourceService: dataSourceMod.DataSourceService,
     dataSourcePoolManager: poolMgrMod.dataSourcePoolManager,
+    CrossChannelSearchService: crossChannelMod.CrossChannelSearchService,
   };
 }
 

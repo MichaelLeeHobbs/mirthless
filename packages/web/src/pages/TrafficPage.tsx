@@ -25,6 +25,8 @@ import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TrafficSummary } from '../components/traffic/TrafficSummary.js';
 import { MessageResultsTable } from '../components/traffic/MessageResultsTable.js';
 import { useNotification } from '../stores/notification.store.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 const STATUS_OPTIONS = Object.values(MESSAGE_STATUS);
 
@@ -56,6 +58,10 @@ export function TrafficPage(): ReactNode {
   // --- Reprocess ---
   const reprocess = useReprocessMessage();
   const [reprocessingKey, setReprocessingKey] = useState<string | null>(null);
+  const { has } = usePermissions();
+  // Reprocess re-runs a message through the pipeline — gate it on channels:deploy,
+  // matching the per-channel message browser (the server rejects it otherwise).
+  const canReprocess = has(PERMISSION.CHANNELS_DEPLOY);
   const handleReprocess = useCallback(async (channelId: string, messageId: number): Promise<void> => {
     const key = `${channelId}-${String(messageId)}`;
     setReprocessingKey(key);
@@ -104,7 +110,7 @@ export function TrafficPage(): ReactNode {
             emptyDescription="No errored messages across any channel. Nice."
             onPageChange={(page) => { setTriageOffset(page * triageLimit); }}
             onRowsPerPageChange={(rows) => { setTriageLimit(rows); setTriageOffset(0); }}
-            onReprocess={(channelId, messageId) => { void handleReprocess(channelId, messageId); }}
+            onReprocess={canReprocess ? (channelId, messageId) => { void handleReprocess(channelId, messageId); } : undefined}
             reprocessingKey={reprocessingKey}
           />
         </>

@@ -29,7 +29,7 @@ vi.mock('../logger.js', () => ({
 
 // db.select().from().where() — first call returns the user row, second the
 // permission rows. Controlled per-test via `userRow` / `permRows`.
-let userRow: Record<string, unknown> | undefined = { id: 'user-1', enabled: true };
+let userRow: Record<string, unknown> | undefined = { id: 'user-1', enabled: true, role: 'viewer' };
 let permRows: { resource: string; action: string }[] = [];
 let dbSelectCall = 0;
 const mockWhere = vi.fn(() => {
@@ -45,6 +45,7 @@ vi.mock('drizzle-orm', () => ({ eq: vi.fn() }));
 // ----- Import after mocks -----
 
 import { authMiddleware, emitToRoom, emitToAll, _resetIO } from '../socket.js';
+import { permissionNamesForRole } from '../role-permissions.js';
 import type { Server as SocketIOServer } from 'socket.io';
 
 // ----- Helpers -----
@@ -172,9 +173,10 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(err.message).toBe('Authentication required');
     });
 
-    it('stores user data and permissions on socket after successful auth', async () => {
-      userRow = { id: 'user-42', enabled: true };
-      permRows = [{ resource: 'channels', action: 'read' }, { resource: 'system', action: 'info' }];
+    it('stores user data and permissions resolved live from the role after successful auth', async () => {
+      // Permissions are resolved from the user's role (single source of truth),
+      // not a per-user snapshot — a viewer gets exactly the viewer role's set.
+      userRow = { id: 'user-42', enabled: true, role: 'viewer' };
       const token = createValidToken({ userId: 'user-42', sessionId: 'sess-7', type: 'access' });
       const socket = createMockSocket(token);
       const next = vi.fn();
@@ -186,7 +188,9 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(userData.userId).toBe('user-42');
       expect(userData.sessionId).toBe('sess-7');
       expect(userData.type).toBe('access');
-      expect(userData.permissions).toEqual(['channels:read', 'system:info']);
+      expect(userData.permissions).toEqual(permissionNamesForRole('viewer'));
+      expect(userData.permissions).toContain('channels:read');
+      expect(userData.permissions).not.toContain('users:delete');
     });
   });
 

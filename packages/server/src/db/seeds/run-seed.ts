@@ -150,6 +150,10 @@ async function seed(): Promise<void> {
     const { seedExampleChannels } = await import('./seed-examples.js');
     const exampleDb = drizzle(pool, { schema });
     await seedExampleChannels(exampleDb);
+
+    // Seed showcase example data for otherwise-empty feature pages
+    const { seedShowcase } = await import('./seed-showcase.js');
+    await seedShowcase(exampleDb);
   } finally {
     await pool.end();
   }

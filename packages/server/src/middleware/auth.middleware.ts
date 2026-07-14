@@ -6,8 +6,9 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../lib/jwt.js';
 import { db } from '../lib/db.js';
-import { users, userPermissions, sessions } from '../db/schema/index.js';
+import { users, sessions } from '../db/schema/index.js';
 import { eq, and, gt } from 'drizzle-orm';
+import { permissionNamesForRole } from '../lib/role-permissions.js';
 import logger from '../lib/logger.js';
 
 /**
@@ -54,21 +55,6 @@ function isPasswordChangeExempt(req: Request): boolean {
   if (req.method === 'POST' && url.endsWith('/users/me/password')) return true;
   if (req.method === 'POST' && url.endsWith('/auth/logout')) return true;
   return false;
-}
-
-/**
- * Build permissions array from user_permissions table rows.
- */
-async function loadUserPermissions(userId: string): Promise<readonly string[]> {
-  const rows = await db
-    .select({
-      resource: userPermissions.resource,
-      action: userPermissions.action,
-    })
-    .from(userPermissions)
-    .where(eq(userPermissions.userId, userId));
-
-  return rows.map((r) => `${r.resource}:${r.action}`);
 }
 
 export async function authenticate(
@@ -129,8 +115,9 @@ export async function authenticate(
       return;
     }
 
-    // Load permissions from user_permissions table
-    const permissions = await loadUserPermissions(user.id);
+    // Resolve permissions live from the user's role (single source of truth —
+    // adding a permission to a role reaches existing users without a re-sync).
+    const permissions = permissionNamesForRole(user.role);
 
     req.user = {
       id: user.id,
@@ -184,7 +171,7 @@ export async function optionalAuth(
       .where(eq(users.id, payload.userId));
 
     if (user && user.enabled) {
-      const permissions = await loadUserPermissions(user.id);
+      const permissions = permissionNamesForRole(user.role);
 
       req.user = {
         id: user.id,

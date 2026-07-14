@@ -9,7 +9,8 @@ import bcrypt from 'bcryptjs';
 import { tryCatch, type Result } from 'stderr-lib';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
-import { users, sessions, userPermissions } from '../db/schema/index.js';
+import { users, sessions } from '../db/schema/index.js';
+import { permissionNamesForRole } from '../lib/role-permissions.js';
 import { eq } from 'drizzle-orm';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../lib/jwt.js';
 import { emitEvent } from '../lib/event-emitter.js';
@@ -48,14 +49,6 @@ export interface LoginResult {
   refreshToken: string;
 }
 
-async function loadPermissions(userId: string): Promise<readonly string[]> {
-  const rows = await db
-    .select({ resource: userPermissions.resource, action: userPermissions.action })
-    .from(userPermissions)
-    .where(eq(userPermissions.userId, userId));
-
-  return rows.map((r) => `${r.resource}:${r.action}`);
-}
 
 export class AuthService {
   static async login(
@@ -135,8 +128,8 @@ export class AuthService {
       // Create session and tokens
       const tokens = await this.createTokens(user.id, metadata);
 
-      // Load permissions
-      const permissions = await loadPermissions(user.id);
+      // Resolve permissions live from the user's role (single source of truth).
+      const permissions = permissionNamesForRole(user.role);
 
       emitEvent({
         level: 'INFO', name: 'USER_LOGIN', outcome: 'SUCCESS',

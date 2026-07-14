@@ -9,7 +9,8 @@ import type { Server as HttpServer } from 'http';
 import { eq } from 'drizzle-orm';
 import { config } from '../config/index.js';
 import { db } from './db.js';
-import { users, userPermissions } from '../db/schema/index.js';
+import { users } from '../db/schema/index.js';
+import { permissionNamesForRole } from './role-permissions.js';
 import logger from './logger.js';
 import { verifyAccessToken } from './jwt.js';
 
@@ -57,7 +58,7 @@ export async function authMiddleware(
     const decoded = verifyAccessToken(token);
 
     const [user] = await db
-      .select({ id: users.id, enabled: users.enabled })
+      .select({ id: users.id, enabled: users.enabled, role: users.role })
       .from(users)
       .where(eq(users.id, decoded.userId));
     if (!user || !user.enabled) {
@@ -65,16 +66,11 @@ export async function authMiddleware(
       return;
     }
 
-    const permRows = await db
-      .select({ resource: userPermissions.resource, action: userPermissions.action })
-      .from(userPermissions)
-      .where(eq(userPermissions.userId, decoded.userId));
-
     const userData: SocketUserData = {
       userId: decoded.userId,
       sessionId: decoded.sessionId,
       type: decoded.type,
-      permissions: permRows.map((r) => `${r.resource}:${r.action}`),
+      permissions: permissionNamesForRole(user.role),
     };
     socket.data['user'] = userData;
     next();
