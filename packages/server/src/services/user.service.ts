@@ -10,30 +10,14 @@ import { eq, and, ne, asc } from 'drizzle-orm';
 import type { CreateUserInput, UpdateUserInput } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
-import { permissionRowsForRole, permissionNamesForRole } from '../lib/role-permissions.js';
+import { permissionNamesForRole } from '../lib/role-permissions.js';
 import { db } from '../lib/db.js';
-import { users, userPermissions, sessions } from '../db/schema/index.js';
+import { users, sessions } from '../db/schema/index.js';
 
 const BCRYPT_ROUNDS = 12;
 
 /** Drizzle transaction/executor type (db and tx both satisfy this). */
 type DbExecutor = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-/**
- * Replace a user's stored permissions with the set granted by their role. This
- * is the single write path that keeps user_permissions in sync with role — used
- * on create and whenever a role changes. Without it, API-created users have zero
- * permissions and are 403'd on every guarded route.
- */
-async function syncPermissionsForRole(tx: DbExecutor, userId: string, role: string): Promise<void> {
-  await tx.delete(userPermissions).where(eq(userPermissions.userId, userId));
-  const rows = permissionRowsForRole(role);
-  if (rows.length > 0) {
-    await tx.insert(userPermissions).values(
-      rows.map((r) => ({ userId, resource: r.resource, action: r.action, scope: 'all' as const })),
-    );
-  }
-}
 
 /** Revoke every active session for a user (forces re-login). */
 async function revokeSessions(tx: DbExecutor, userId: string): Promise<void> {
@@ -175,7 +159,6 @@ export class UserService {
           throw new ServiceError('INTERNAL', 'Failed to create user');
         }
 
-        await syncPermissionsForRole(tx, row.id, role);
         return row;
       });
 
@@ -233,10 +216,8 @@ export class UserService {
       await db.transaction(async (tx) => {
         await tx.update(users).set(updates).where(eq(users.id, id));
 
-        // Re-sync permissions whenever the role changes so access matches the role.
-        if (roleChanged && input.role !== undefined) {
-          await syncPermissionsForRole(tx, id, input.role);
-        }
+        // Permissions are resolved live from the role at request time (single
+        // source of truth), so a role change needs no permission re-sync here.
 
         // Disabling a user must revoke their sessions — otherwise a disabled user
         // keeps a valid refresh token and can rotate indefinitely.

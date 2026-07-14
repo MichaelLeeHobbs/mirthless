@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import bcrypt from 'bcryptjs';
+import { permissionNamesForRole } from '../../lib/role-permissions.js';
 
 // ----- Mock DB -----
 
@@ -349,7 +350,7 @@ describe('UserService', () => {
   });
 
   // ----- RBAC: role → permission assignment (finding 1) -----
-  describe('role permission assignment', () => {
+  describe('role-derived permissions (live resolution)', () => {
     function permissionCalls(): unknown[][] {
       // Calls to insert().values() whose argument is an array of permission rows.
       return mockInsertValues.mock.calls.filter(
@@ -358,7 +359,7 @@ describe('UserService', () => {
       );
     }
 
-    it('grants the role permission set when creating a user', async () => {
+    it('does NOT snapshot permissions when creating a user (authz resolves live from the role)', async () => {
       pushResponse([]); // username
       pushResponse([]); // email
       mockInsertReturning.mockResolvedValueOnce([makeUser({ id: USER_ID, role: 'developer' })]);
@@ -368,27 +369,24 @@ describe('UserService', () => {
       });
 
       expect(result.ok).toBe(true);
-      const permCall = permissionCalls()[0];
-      expect(permCall).toBeDefined();
-      const rows = permCall![0] as Record<string, unknown>[];
-      expect(rows).toContainEqual({ userId: USER_ID, resource: 'channels', action: 'write', scope: 'all' });
-      expect(rows).not.toContainEqual(expect.objectContaining({ resource: 'users', action: 'write' }));
+      // No per-user permission rows are written — the role is the single source of truth.
+      expect(permissionCalls()).toHaveLength(0);
+      // The developer role is what actually grants access at request time.
+      expect(permissionNamesForRole('developer')).toContain('channels:write');
+      expect(permissionNamesForRole('developer')).not.toContain('users:write');
     });
 
-    it('re-syncs permissions and clears sessions cache path when role changes', async () => {
+    it('does NOT re-sync a permission snapshot when a role changes (resolved live from the new role)', async () => {
       pushResponse([{ id: USER_ID, role: 'developer' }]); // existing
       pushResponse([makeUser({ role: 'viewer' })]);        // getUser after update
 
       const result = await UserService.updateUser(USER_ID, { role: 'viewer' }, ADMIN_ID);
 
       expect(result.ok).toBe(true);
-      // Old permissions deleted then viewer set re-inserted.
-      expect(mockDelete).toHaveBeenCalled();
-      const permCall = permissionCalls()[0];
-      expect(permCall).toBeDefined();
-      const rows = permCall![0] as Record<string, unknown>[];
-      expect(rows).toContainEqual({ userId: USER_ID, resource: 'channels', action: 'read', scope: 'all' });
-      expect(rows).not.toContainEqual(expect.objectContaining({ resource: 'channels', action: 'write' }));
+      // No permission-table writes; the next request resolves the viewer set from the role.
+      expect(permissionCalls()).toHaveLength(0);
+      expect(permissionNamesForRole('viewer')).toContain('channels:read');
+      expect(permissionNamesForRole('viewer')).not.toContain('channels:write');
     });
   });
 
