@@ -59,6 +59,18 @@ describe('DataSourceService.create — credential encryption guard', () => {
     expect(mockDb.insert).not.toHaveBeenCalled(); // never wrote a row
   });
 
+  it('returns ALREADY_EXISTS when a data source with the same name already exists', async () => {
+    mockIsConfigured.mockReturnValue(true);
+    selectWhere.mockResolvedValue([{ id: 'existing-id' }]); // dup-check select finds a row
+
+    const result = await DataSourceService.create(input);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toHaveProperty('code', 'ALREADY_EXISTS');
+    expect(mockDb.insert).not.toHaveBeenCalled(); // never wrote a row
+  });
+
   it('encrypts the password before inserting when a key is configured', async () => {
     mockIsConfigured.mockReturnValue(true);
     const returning = vi.fn().mockResolvedValue([{

@@ -223,7 +223,7 @@ describe('E2E Pipeline', () => {
         name: 'Lab Destination',
         enabled: true,
         scripts: {},
-        queueEnabled: false,
+        queueMode: 'NEVER',
       }],
     };
 
