@@ -3,7 +3,7 @@
 // ===========================================
 // Audit log browser with filters, pagination, and detail expansion.
 
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
@@ -163,7 +163,8 @@ export function EventsPage(): ReactNode {
               <TableSkeleton rows={6} columns={7} />
             ) : data && data.data.length > 0 ? (
               data.data.map((event) => (
-                  <TableRow key={event.id} hover sx={{ '& > *': { borderBottom: expandedId === event.id ? 'unset' : undefined } }}>
+                <Fragment key={event.id}>
+                  <TableRow hover sx={{ '& > *': { borderBottom: expandedId === event.id ? 'unset' : undefined } }}>
                     <TableCell padding="checkbox">
                       <IconButton
                         aria-label={expandedId === event.id ? 'Collapse event details' : 'Expand event details'}
@@ -209,6 +210,14 @@ export function EventsPage(): ReactNode {
                       </Typography>
                     </TableCell>
                   </TableRow>
+                  <TableRow>
+                    <TableCell colSpan={7} sx={{ py: 0, borderBottom: expandedId === event.id ? undefined : 'none' }}>
+                      <Collapse in={expandedId === event.id} timeout="auto" unmountOnExit>
+                        <EventDetailPanel eventId={event.id} />
+                      </Collapse>
+                    </TableCell>
+                  </TableRow>
+                </Fragment>
                 ))
             ) : (
               <TableRow>
@@ -222,17 +231,6 @@ export function EventsPage(): ReactNode {
                 </TableCell>
               </TableRow>
             )}
-
-            {/* Expanded Detail Row */}
-            {!isLoading && data?.data.map((event) => (
-              <TableRow key={`detail-${String(event.id)}`}>
-                <TableCell colSpan={7} sx={{ py: 0, borderBottom: expandedId === event.id ? undefined : 'none' }}>
-                  <Collapse in={expandedId === event.id} timeout="auto" unmountOnExit>
-                    <EventDetailPanel eventId={event.id} />
-                  </Collapse>
-                </TableCell>
-              </TableRow>
-            ))}
           </TableBody>
         </Table>
         {data && data.pagination.total > 0 ? (
