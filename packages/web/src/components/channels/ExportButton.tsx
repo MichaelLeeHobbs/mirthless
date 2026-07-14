@@ -6,7 +6,8 @@
 import { useState, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import DownloadIcon from '@mui/icons-material/Download';
-import { api } from '../../api/client.js';
+import { downloadChannelExport } from '../../lib/channel-export.js';
+import { useNotification } from '../../stores/notification.store.js';
 
 interface ExportButtonProps {
   /** If provided, export single channel; otherwise export all. */
@@ -15,24 +16,14 @@ interface ExportButtonProps {
 
 export function ExportButton({ channelId }: ExportButtonProps): ReactNode {
   const [loading, setLoading] = useState(false);
+  const { notify } = useNotification();
 
   const handleExport = async (): Promise<void> => {
     setLoading(true);
     try {
-      const path = channelId
-        ? `/channels/${channelId}/export`
-        : '/channels/export';
-
-      const response = await api.get<unknown>(path);
-      if (!response.success) return;
-
-      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = channelId ? `channel-${channelId}.json` : 'channels-export.json';
-      anchor.click();
-      URL.revokeObjectURL(url);
+      await downloadChannelExport(channelId);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Export failed', 'error');
     } finally {
       setLoading(false);
     }

@@ -2,6 +2,30 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-13 — Dashboard/Channels/Messages overhaul (branch `feature/dashboard-overhaul`)
+
+Reworked the three main views so everything happens from the Dashboard; the standalone
+Channels list is retired and Messages becomes an ops view. 7 phases, each shippable, all
+on green build + lint; web tests 68 → 84, +1 server metadata field. ~2,235 tests total.
+
+- **P1** Full channel right-click context menu on the dashboard (enable/disable + clone/
+  export/delete wired via a shared `useChannelCrud`).
+- **P2** New Channel / Import / Export moved into the Dashboard header.
+- **P3** Tags inline (luminance-aware chips) + per-user configurable columns (source/types/
+  rev/updated + show-hide of every column), persisted via the previously-unused user-prefs
+  API; channel metadata added to the stats summary query.
+- **P4** Group right-click menu + Deploy/Start/Stop/Undeploy-all bulk ops.
+- **P5** Drag channels between groups (@dnd-kit, optimistic + revert), persisted via memberships.
+- **P6** Retired the Channels view: `/channels` → Dashboard redirect, nav item + ChannelsPage
+  removed; Playwright specs (channel-crud, statistics) rewritten to drive the Dashboard;
+  `02-channels-list.md` deprecated → `09-dashboard.md` gains the overhaul scenarios.
+- **P7** Messages → **Traffic & Triage**: engine-wide error feed with one-click reprocess +
+  badge, traffic summary strip, and the existing cross-channel search under a Search tab.
+
+**Requires a dev API-server restart** for the new dashboard column *values* (Source/Rev/Updated)
+to populate (P3 changed the stats query). **Deferred (its own future branch):** cross-channel
+message *flow tracing* (a message splitting across multiple channels).
+
 ## 2026-07-12 — Release-readiness fixes (branch `fix/release-readiness-blockers`)
 
 Deep re-review (see `RELEASE-READINESS-REVIEW-2026-07-12.md`) found the prior program had not

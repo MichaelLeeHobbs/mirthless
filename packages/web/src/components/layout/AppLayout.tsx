@@ -19,7 +19,6 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import MenuIcon from '@mui/icons-material/Menu';
 import DashboardIcon from '@mui/icons-material/Dashboard';
-import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import MessageIcon from '@mui/icons-material/Message';
 import CodeIcon from '@mui/icons-material/Code';
 import NotificationsIcon from '@mui/icons-material/Notifications';
@@ -74,8 +73,7 @@ const NAV_SECTIONS: readonly NavSection[] = [
     heading: 'Overview',
     items: [
       { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
-      { label: 'Channels', path: '/channels', icon: <SyncAltIcon /> },
-      { label: 'Messages', path: '/messages', icon: <MessageIcon /> },
+      { label: 'Traffic', path: '/messages', icon: <MessageIcon /> },
     ],
   },
   {

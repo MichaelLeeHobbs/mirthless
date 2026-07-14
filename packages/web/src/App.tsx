@@ -28,7 +28,6 @@ function page<T extends Record<string, ComponentType>>(
 
 const LoginPage = page(() => import('./pages/LoginPage.js'), 'LoginPage');
 const DashboardPage = page(() => import('./pages/DashboardPage.js'), 'DashboardPage');
-const ChannelsPage = page(() => import('./pages/ChannelsPage.js'), 'ChannelsPage');
 const ChannelEditorPage = page(() => import('./pages/ChannelEditorPage.js'), 'ChannelEditorPage');
 const MessageBrowserPage = page(() => import('./pages/MessageBrowserPage.js'), 'MessageBrowserPage');
 const CodeTemplatePage = page(() => import('./pages/CodeTemplatePage.js'), 'CodeTemplatePage');
@@ -47,8 +46,7 @@ const ConfigMapPage = page(() => import('./pages/ConfigMapPage.js'), 'ConfigMapP
 const SystemInfoPage = page(() => import('./pages/SystemInfoPage.js'), 'SystemInfoPage');
 const MessageGeneratorPage = page(() => import('./pages/MessageGeneratorPage.js'), 'MessageGeneratorPage');
 const ExtensionsPage = page(() => import('./pages/ExtensionsPage.js'), 'ExtensionsPage');
-const CrossChannelSearchPage = page(() => import('./pages/CrossChannelSearchPage.js'), 'CrossChannelSearchPage');
-const ChannelStatisticsPage = page(() => import('./pages/ChannelStatisticsPage.js'), 'ChannelStatisticsPage');
+const TrafficPage = page(() => import('./pages/TrafficPage.js'), 'TrafficPage');
 const CertificatesPage = page(() => import('./pages/CertificatesPage.js'), 'CertificatesPage');
 
 /** Wrap a lazily-loaded page in Suspense with a consistent loading fallback. */
@@ -68,12 +66,13 @@ const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: lazyRoute(<DashboardPage />) },
-          { path: 'channels', element: lazyRoute(<ChannelsPage />) },
+          // The channel list lives on the Dashboard now; keep the path as a
+          // redirect so old bookmarks/links don't 404.
+          { path: 'channels', element: <Navigate to="/" replace /> },
           { path: 'channels/new', element: lazyRoute(<ChannelEditorPage />) },
           { path: 'channels/:id', element: lazyRoute(<ChannelEditorPage />) },
           { path: 'channels/:id/messages', element: lazyRoute(<MessageBrowserPage />) },
-          { path: 'channels/:id/statistics', element: lazyRoute(<ChannelStatisticsPage />) },
-          { path: 'messages', element: lazyRoute(<CrossChannelSearchPage />) },
+          { path: 'messages', element: lazyRoute(<TrafficPage />) },
           { path: 'alerts', element: lazyRoute(<AlertsPage />) },
           { path: 'alerts/new', element: lazyRoute(<AlertEditorPage />) },
           { path: 'alerts/:id', element: lazyRoute(<AlertEditorPage />) },

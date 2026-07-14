@@ -1,5 +1,12 @@
 # 02 — Channel List Page
 
+> **⚠️ Retired.** The standalone Channels list view was removed in the Dashboard
+> overhaul — all channel listing and CRUD now happen on the **Dashboard** (`/`).
+> `/channels` redirects there. The scenarios below have moved to
+> [`09-dashboard.md`](09-dashboard.md) (list/CRUD from the header + right-click
+> context menu, configurable columns, tags, groups, drag-to-regroup). This file is
+> kept only as a redirect marker.
+
 > Channel list display, search, and CRUD actions from the list view.
 
 ## List Display

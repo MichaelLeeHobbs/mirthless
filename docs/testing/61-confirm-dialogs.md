@@ -17,12 +17,6 @@
 - [ ] Cancel delete template — dialog closes, template not deleted
 - [ ] Confirm delete template — template deleted, notification shown
 
-## ChannelStatisticsPage
-
-- [ ] Click "Reset Statistics" — MUI ConfirmDialog appears
-- [ ] Cancel reset — dialog closes, stats unchanged
-- [ ] Confirm reset — statistics reset, notification shown
-
 ## GlobalScriptsPage
 
 - [ ] Edit script, then navigate away — MUI ConfirmDialog appears (unsaved changes)

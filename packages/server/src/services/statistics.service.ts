@@ -34,6 +34,11 @@ export interface ChannelStatisticsSummary {
   readonly channelId: string;
   readonly channelName: string;
   readonly enabled: boolean;
+  readonly sourceConnectorType: string;
+  readonly inboundDataType: string;
+  readonly outboundDataType: string;
+  readonly revision: number;
+  readonly updatedAt: string;
   readonly received: number;
   readonly filtered: number;
   readonly sent: number;
@@ -78,6 +83,11 @@ export class StatisticsService {
         channel_id: string;
         channel_name: string;
         enabled: boolean;
+        source_connector_type: string;
+        inbound_data_type: string;
+        outbound_data_type: string;
+        revision: number;
+        updated_at: Date;
         received: string;
         filtered: string;
         sent: string;
@@ -88,6 +98,11 @@ export class StatisticsService {
           c.id as channel_id,
           c.name as channel_name,
           c.enabled,
+          c.source_connector_type,
+          c.inbound_data_type,
+          c.outbound_data_type,
+          c.revision,
+          c.updated_at,
           COALESCE(SUM(ms.received), 0) as received,
           COALESCE(SUM(ms.filtered), 0) as filtered,
           COALESCE(SUM(ms.sent), 0) as sent,
@@ -102,7 +117,8 @@ export class StatisticsService {
           GROUP BY channel_id
         ) q ON q.channel_id = c.id
         WHERE c.deleted_at IS NULL
-        GROUP BY c.id, c.name, c.enabled, q.queued
+        GROUP BY c.id, c.name, c.enabled, c.source_connector_type,
+          c.inbound_data_type, c.outbound_data_type, c.revision, c.updated_at, q.queued
         ORDER BY c.name ASC
       `);
 
@@ -110,6 +126,11 @@ export class StatisticsService {
         channelId: row.channel_id,
         channelName: row.channel_name,
         enabled: row.enabled,
+        sourceConnectorType: row.source_connector_type,
+        inboundDataType: row.inbound_data_type,
+        outboundDataType: row.outbound_data_type,
+        revision: Number(row.revision),
+        updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
         received: Number(row.received),
         filtered: Number(row.filtered),
         sent: Number(row.sent),

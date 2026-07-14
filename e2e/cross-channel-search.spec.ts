@@ -1,23 +1,26 @@
 // ===========================================
-// Cross-Channel Message Search E2E Tests
+// Traffic & Triage E2E Tests (cross-channel)
 // ===========================================
 
 import { test, expect } from '@playwright/test';
 import { login } from './fixtures/auth.js';
 
-test.describe('Cross-Channel Message Search', () => {
+test.describe('Traffic & Triage', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
   });
 
-  test('navigate to messages page and verify heading', async ({ page }) => {
+  test('navigate to the Traffic page and verify heading + tabs', async ({ page }) => {
     await page.goto('/messages');
-    await expect(page.getByRole('heading', { name: /messages/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Traffic' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('tab', { name: /Needs Attention/ })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Search' })).toBeVisible();
   });
 
-  test('filter controls are visible', async ({ page }) => {
+  test('search filter controls are visible on the Search tab', async ({ page }) => {
     await page.goto('/messages');
-    await page.waitForTimeout(2_000);
+    await page.getByRole('tab', { name: 'Search' }).click();
+    await page.waitForTimeout(1_000);
 
     // Expect at least one filter control to exist: a date picker, status selector, channel selector, or search input
     const filterSelectors = [

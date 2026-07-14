@@ -12,10 +12,18 @@ import Skeleton from '@mui/material/Skeleton';
 import Button from '@mui/material/Button';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Tooltip from '@mui/material/Tooltip';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
+import AddIcon from '@mui/icons-material/Add';
+import UploadIcon from '@mui/icons-material/Upload';
 import { PageHeader } from '../components/common/PageHeader.js';
+import { NewChannelDialog } from '../components/channels/NewChannelDialog.js';
+import { ImportDialog } from '../components/channels/ImportDialog.js';
+import { ExportButton } from '../components/channels/ExportButton.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAllChannelStatistics, STATS_KEYS, type ChannelStatisticsSummary } from '../hooks/use-statistics.js';
@@ -30,7 +38,10 @@ import { GroupedChannelTable } from '../components/dashboard/GroupedChannelTable
 import { BulkActionsToolbar } from '../components/dashboard/BulkActionsToolbar.js';
 import { SendMessageDialog } from '../components/common/SendMessageDialog.js';
 import { CreateGroupDialog } from '../components/dashboard/CreateGroupDialog.js';
+import { ColumnsButton } from '../components/dashboard/ColumnsButton.js';
 import { useChannelSelection } from '../hooks/use-channel-selection.js';
+import { useChannelCrud } from '../hooks/use-channel-crud.js';
+import { useDashboardColumns } from '../hooks/use-dashboard-columns.js';
 
 const EMPTY_STATS: readonly ChannelStatisticsSummary[] = [];
 const EMPTY_STATUSES: readonly ChannelStatus[] = [];
@@ -54,7 +65,13 @@ export function DashboardPage(): ReactNode {
   const [viewMode, setViewMode] = useState<ViewMode>('grouped');
   const [sendMessageTarget, setSendMessageTarget] = useState<{ id: string; name: string } | null>(null);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [newChannelOpen, setNewChannelOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const selection = useChannelSelection();
+  const crud = useChannelCrud();
+  const columns = useDashboardColumns();
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.CHANNELS_WRITE);
 
   const statistics = statsQuery.data ?? EMPTY_STATS;
   const deploymentStatuses = deployQuery.data ?? EMPTY_STATUSES;
@@ -79,6 +96,20 @@ export function DashboardPage(): ReactNode {
   }, [queryClient]);
 
   useSocketEvent('stats:update', handleStatsUpdate);
+
+  // --- Tags per channel (for inline chips) ---
+  const tagsByChannel = useMemo(() => {
+    const tagMap = new Map(tags.map((t) => [t.id, t]));
+    const byChannel = new Map<string, TagSummary[]>();
+    for (const a of assignments) {
+      const tag = tagMap.get(a.tagId);
+      if (!tag) continue;
+      const list = byChannel.get(a.channelId);
+      if (list) list.push(tag);
+      else byChannel.set(a.channelId, [tag]);
+    }
+    return byChannel;
+  }, [tags, assignments]);
 
   // --- Client-side tag filtering ---
   const filteredStatistics = useMemo(() => {
@@ -131,6 +162,16 @@ export function DashboardPage(): ReactNode {
         isFetching={(statsQuery.isFetching || deployQuery.isFetching) && !isLoading}
         actions={
           <>
+            <ColumnsButton columns={columns} />
+            <ExportButton />
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<UploadIcon />}
+              onClick={() => { setImportOpen(true); }}
+            >
+              Import
+            </Button>
             <Button
               variant="outlined"
               size="small"
@@ -139,6 +180,19 @@ export function DashboardPage(): ReactNode {
             >
               New Group
             </Button>
+            <Tooltip title={canWrite ? '' : 'Requires channels:write permission'}>
+              <span>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<AddIcon />}
+                  onClick={() => { setNewChannelOpen(true); }}
+                  disabled={!canWrite}
+                >
+                  New Channel
+                </Button>
+              </span>
+            </Tooltip>
             <ToggleButtonGroup
               value={viewMode}
               exclusive
@@ -196,6 +250,11 @@ export function DashboardPage(): ReactNode {
               groups={groups}
               memberships={memberships}
               onSendMessage={handleSendMessage}
+              tagsByChannel={tagsByChannel}
+              visibleColumns={columns.visible}
+              onClone={crud.onClone}
+              onDelete={crud.onDelete}
+              onExport={crud.onExport}
             />
           ) : (
             <ChannelStatusTable
@@ -209,6 +268,11 @@ export function DashboardPage(): ReactNode {
               }}
               isAllSelected={selection.isAllSelected(filteredStatistics.map((s) => s.channelId))}
               onSendMessage={handleSendMessage}
+              tagsByChannel={tagsByChannel}
+              visibleColumns={columns.visible}
+              onClone={crud.onClone}
+              onDelete={crud.onDelete}
+              onExport={crud.onExport}
             />
           )}
         </>
@@ -226,6 +290,9 @@ export function DashboardPage(): ReactNode {
         open={createGroupOpen}
         onClose={() => { setCreateGroupOpen(false); }}
       />
+      <NewChannelDialog open={newChannelOpen} onClose={() => { setNewChannelOpen(false); }} />
+      <ImportDialog open={importOpen} onClose={() => { setImportOpen(false); }} onSuccess={() => { /* TanStack Query auto-refetches */ }} />
+      {crud.dialogs}
     </Box>
   );
 }
