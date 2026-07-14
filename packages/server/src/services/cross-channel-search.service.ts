@@ -60,30 +60,44 @@ export class CrossChannelSearchService {
         }
       }
 
+      // A message matches the status filter if ANY of its connector messages
+      // (source OR destination) has that status — so destination send failures,
+      // the dominant healthcare failure mode, surface in the triage feed instead
+      // of being hidden behind a source-only (metaDataId=0) join.
       if (filters.status) {
-        conditions.push(eq(connectorMessages.status, filters.status));
+        conditions.push(sql`exists (
+          select 1 from ${connectorMessages} cm
+          where cm.channel_id = ${messages.channelId}
+            and cm.message_id = ${messages.id}
+            and cm.status = ${filters.status}
+        )`);
       }
 
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-      // Count
-      const countQuery = db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(messages)
-        .leftJoin(
-          connectorMessages,
-          and(
-            eq(connectorMessages.channelId, messages.channelId),
-            eq(connectorMessages.messageId, messages.id),
-            eq(connectorMessages.metaDataId, 0),
-          ),
-        );
-
+      // Count — one row per message (no connector fan-out).
+      const countQuery = db.select({ total: sql<number>`count(*)::int` }).from(messages);
       const countResult = whereClause
         ? await countQuery.where(whereClause)
         : await countQuery;
 
       const total = countResult[0]?.total ?? 0;
+
+      // Display the most relevant connector for the message: the one matching the
+      // status filter (so a QUEUED search shows the queued connector, an ERROR
+      // search shows the failed destination), else the errored one, else the
+      // source (lowest metaDataId). Scalar subqueries keep one row per message.
+      const displayStatus = filters.status ?? 'ERROR';
+      const pickStatus = sql<string | null>`(
+        select cm.status from ${connectorMessages} cm
+        where cm.channel_id = ${messages.channelId} and cm.message_id = ${messages.id}
+        order by (cm.status = ${displayStatus}) desc, (cm.status = 'ERROR') desc, cm.meta_data_id asc limit 1
+      )`;
+      const pickConnector = sql<string | null>`(
+        select cm.connector_name from ${connectorMessages} cm
+        where cm.channel_id = ${messages.channelId} and cm.message_id = ${messages.id}
+        order by (cm.status = ${displayStatus}) desc, (cm.status = 'ERROR') desc, cm.meta_data_id asc limit 1
+      )`;
 
       // Data
       const dataQuery = db
@@ -93,19 +107,11 @@ export class CrossChannelSearchService {
           channelName: sql<string>`coalesce(${channels.name}, 'Unknown')`,
           receivedAt: messages.receivedAt,
           processed: messages.processed,
-          status: connectorMessages.status,
-          connectorName: connectorMessages.connectorName,
+          status: pickStatus,
+          connectorName: pickConnector,
         })
         .from(messages)
         .leftJoin(channels, eq(channels.id, messages.channelId))
-        .leftJoin(
-          connectorMessages,
-          and(
-            eq(connectorMessages.channelId, messages.channelId),
-            eq(connectorMessages.messageId, messages.id),
-            eq(connectorMessages.metaDataId, 0),
-          ),
-        )
         .orderBy(desc(messages.receivedAt))
         .limit(filters.limit)
         .offset(filters.offset);
