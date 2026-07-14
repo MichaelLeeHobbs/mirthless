@@ -19,6 +19,10 @@ export const HTTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   headers: {},
   contentType: 'text/plain',
   responseTimeout: 30000,
+  // Client TLS for HTTPS destinations. Nested under `tls` to match what the
+  // connector reads via readTlsClientOptions (ca/cert/key/rejectUnauthorized).
+  // Empty PEMs + rejectUnauthorized:true = default fetch behavior (system CAs).
+  tls: { ca: '', cert: '', key: '', rejectUnauthorized: true },
 };
 
 export const FILE_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {

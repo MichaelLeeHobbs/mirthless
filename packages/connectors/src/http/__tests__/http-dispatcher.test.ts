@@ -4,12 +4,15 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import * as http from 'node:http';
+import * as https from 'node:https';
 import { HttpDispatcher, type HttpDispatcherConfig } from '../http-dispatcher.js';
+import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 import type { ConnectorMessage } from '../../base.js';
 
 // ----- Helpers -----
 
 const DEST_PORT = 18662;
+const DEST_HTTPS_PORT = 18663;
 
 function makeConfig(overrides?: Partial<HttpDispatcherConfig>): HttpDispatcherConfig {
   return {
@@ -73,10 +76,34 @@ function createMockServer(
   };
 }
 
+/**
+ * A mock HTTPS server using the self-signed test cert (CN=localhost,
+ * SAN 127.0.0.1). Always replies 200 "SECURE-OK".
+ */
+function createMockHttpsServer(port: number): { server: https.Server; close: () => Promise<void> } {
+  const server = https.createServer(
+    { cert: TEST_CERT_PEM, key: TEST_KEY_PEM },
+    (req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => { chunks.push(chunk); });
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('SECURE-OK');
+      });
+    },
+  );
+  server.listen(port, '127.0.0.1');
+  return {
+    server,
+    close: () => new Promise<void>((resolve) => { server.close(() => { resolve(); }); }),
+  };
+}
+
 // ----- Lifecycle -----
 
 let dispatcher: HttpDispatcher | null = null;
 let mockServer: MockServer | null = null;
+let mockHttpsServer: { server: https.Server; close: () => Promise<void> } | null = null;
 
 afterEach(async () => {
   if (dispatcher) {
@@ -87,6 +114,10 @@ afterEach(async () => {
   if (mockServer) {
     await mockServer.close();
     mockServer = null;
+  }
+  if (mockHttpsServer) {
+    await mockHttpsServer.close();
+    mockHttpsServer = null;
   }
 });
 
@@ -239,5 +270,111 @@ describe('HttpDispatcher', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.content).toBe('Response payload here');
+  });
+
+  // ----- TLS / HTTPS -----
+
+  const httpsUrl = `https://127.0.0.1:${String(DEST_HTTPS_PORT)}/receive`;
+
+  async function startHttpsServer(): Promise<void> {
+    mockHttpsServer = createMockHttpsServer(DEST_HTTPS_PORT);
+    await new Promise<void>((resolve) => {
+      mockHttpsServer!.server.once('listening', resolve);
+    });
+  }
+
+  it('sends over HTTPS when the server CA is trusted via tls.ca', async () => {
+    await startHttpsServer();
+
+    dispatcher = new HttpDispatcher(makeConfig({
+      url: httpsUrl,
+      tls: { ca: TEST_CERT_PEM },
+    }));
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('SENT');
+    expect(result.value.content).toBe('SECURE-OK');
+  });
+
+  it('accepts a self-signed cert when rejectUnauthorized is false (no CA)', async () => {
+    await startHttpsServer();
+
+    dispatcher = new HttpDispatcher(makeConfig({
+      url: httpsUrl,
+      tls: { rejectUnauthorized: false },
+    }));
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('SENT');
+    expect(result.value.content).toBe('SECURE-OK');
+  });
+
+  it('rejects a self-signed HTTPS server when no TLS options are provided', async () => {
+    await startHttpsServer();
+
+    // No tls options → routed through fetch, which rejects the untrusted cert.
+    dispatcher = new HttpDispatcher(makeConfig({ url: httpsUrl }));
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(false);
+  });
+
+  it('surfaces a TLS verification failure over node:https as a failed Result', async () => {
+    await startHttpsServer();
+
+    // Client cert activates the node:https path; with verification ON and the
+    // server's self-signed cert NOT in the trust store, verification must fail.
+    dispatcher = new HttpDispatcher(makeConfig({
+      url: httpsUrl,
+      tls: { cert: TEST_CERT_PEM, key: TEST_KEY_PEM, rejectUnauthorized: true },
+    }));
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(false);
+  });
+
+  it('sends the request body over HTTPS for non-GET methods', async () => {
+    let received = '';
+    mockHttpsServer = {
+      server: https.createServer({ cert: TEST_CERT_PEM, key: TEST_KEY_PEM }, (req, res) => {
+        const chunks: Buffer[] = [];
+        req.on('data', (c: Buffer) => { chunks.push(c); });
+        req.on('end', () => {
+          received = Buffer.concat(chunks).toString('utf-8');
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          res.end('OK');
+        });
+      }),
+      close: () => new Promise<void>((resolve) => { mockHttpsServer!.server.close(() => { resolve(); }); }),
+    };
+    mockHttpsServer.server.listen(DEST_HTTPS_PORT, '127.0.0.1');
+    await new Promise<void>((resolve) => { mockHttpsServer!.server.once('listening', resolve); });
+
+    dispatcher = new HttpDispatcher(makeConfig({
+      url: httpsUrl,
+      tls: { ca: TEST_CERT_PEM },
+    }));
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    await dispatcher.send(makeMessage({ content: 'PAYLOAD-42' }), AbortSignal.timeout(5_000));
+
+    expect(received).toBe('PAYLOAD-42');
   });
 });
