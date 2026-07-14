@@ -15,6 +15,7 @@ export interface ShutdownDeps {
   readonly stopSocketIO: () => Promise<void>;
   readonly stopPrunerScheduler: () => Promise<void>;
   readonly stopQueue: () => Promise<void>;
+  readonly stopDataSourcePools: () => Promise<void>;
   readonly closePool: () => Promise<void>;
 }
 
@@ -68,6 +69,9 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string) => v
 
         deps.logger.info({ phase: 'shutdown', step: 'queue' }, 'Stopping job queue');
         await deps.stopQueue();
+
+        deps.logger.info({ phase: 'shutdown', step: 'datasource-pools' }, 'Closing data source pools');
+        await deps.stopDataSourcePools();
 
         deps.logger.info({ phase: 'shutdown', step: 'database' }, 'Closing database pool');
         await deps.closePool();

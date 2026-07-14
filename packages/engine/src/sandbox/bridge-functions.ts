@@ -44,12 +44,54 @@ export interface RouteMessageResult {
   readonly response?: string;
 }
 
+/** A scalar value for a collection field / filter. */
+export type CollectionScalar = string | number | boolean;
+
+/** A record returned from a collection query/store (dates are ISO strings across the bridge). */
+export interface CollectionRecordData {
+  readonly id: string;
+  readonly fields: Readonly<Record<string, string>>;
+  readonly payload: string | null;
+  readonly expireAt: string | null;
+  readonly createdAt: string;
+}
+
+/** Options for getCollection(...).store(). */
+export interface CollectionStoreOptions {
+  readonly expireAt?: string;
+  readonly ttlSeconds?: number;
+}
+
+/** Options for getCollection(...).find(). */
+export interface CollectionFindOptions {
+  readonly filter?: Readonly<Record<string, CollectionScalar | ReadonlyArray<CollectionScalar>>>;
+  readonly latest?: boolean;
+  readonly limit?: number;
+  readonly order?: 'asc' | 'desc';
+}
+
+/** Host-side collection store/find, backed by CollectionService. */
+export interface CollectionBridge {
+  readonly store: (
+    name: string,
+    fields: Readonly<Record<string, CollectionScalar>>,
+    payload: string,
+    options: CollectionStoreOptions,
+  ) => Promise<CollectionRecordData>;
+  readonly find: (
+    name: string,
+    match: Readonly<Record<string, CollectionScalar>>,
+    options: CollectionFindOptions,
+  ) => Promise<readonly CollectionRecordData[]>;
+}
+
 /** Host-side dependency callbacks for IO bridge functions. */
 export interface BridgeDependencies {
   readonly httpFetch?: (url: string, options: HttpFetchOptions) => Promise<HttpFetchResult>;
-  readonly dbQuery?: (driver: string, connectionUrl: string, sql: string, params: readonly unknown[]) => Promise<readonly Record<string, unknown>[]>;
+  readonly dbQuery?: (dataSourceName: string, sql: string, params: readonly unknown[]) => Promise<readonly Record<string, unknown>[]>;
   readonly routeMessage?: (channelName: string, rawData: string) => Promise<RouteMessageResult>;
   readonly getResource?: (name: string) => Promise<string | null>;
+  readonly collections?: CollectionBridge;
 }
 
 /** Bridge functions available in the sandbox. */
@@ -57,9 +99,10 @@ export interface BridgeFunctions {
   readonly parseHL7: (raw: string) => Hl7MessageProxy;
   readonly createACK: (originalRaw: string, ackCode: string, textMessage?: string) => string;
   readonly httpFetch?: (url: string, options?: HttpFetchOptions) => Promise<HttpFetchResult>;
-  readonly dbQuery?: (driver: string, connectionUrl: string, sql: string, params?: readonly unknown[]) => Promise<readonly Record<string, unknown>[]>;
+  readonly dbQuery?: (dataSourceName: string, sql: string, params?: readonly unknown[]) => Promise<readonly Record<string, unknown>[]>;
   readonly routeMessage?: (channelName: string, rawData: string) => Promise<RouteMessageResult>;
   readonly getResource?: (name: string) => Promise<string | null>;
+  readonly collections?: CollectionBridge;
 }
 
 // ----- SSRF Protection -----
@@ -119,8 +162,8 @@ export function createBridgeFunctions(deps?: BridgeDependencies): BridgeFunction
     } : {}),
 
     ...(deps?.dbQuery ? {
-      dbQuery: async (driver: string, connectionUrl: string, sql: string, params?: readonly unknown[]): Promise<readonly Record<string, unknown>[]> => {
-        return deps.dbQuery!(driver, connectionUrl, sql, params ?? []);
+      dbQuery: async (dataSourceName: string, sql: string, params?: readonly unknown[]): Promise<readonly Record<string, unknown>[]> => {
+        return deps.dbQuery!(dataSourceName, sql, params ?? []);
       },
     } : {}),
 
@@ -135,6 +178,8 @@ export function createBridgeFunctions(deps?: BridgeDependencies): BridgeFunction
         return deps.getResource!(name);
       },
     } : {}),
+
+    ...(deps?.collections ? { collections: deps.collections } : {}),
   };
 
   return bridges;

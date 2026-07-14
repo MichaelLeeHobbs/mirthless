@@ -114,10 +114,96 @@ declare function parseHL7(raw: string): Hl7MessageProxy;
  */
 declare function createACK(originalRaw: string, ackCode: string, textMessage?: string): string;
 
-// NOTE: The IO bridge functions (httpFetch, dbQuery, routeMessage, getResource)
-// are intentionally NOT declared here. They are not wired into the production
-// sandbox runtime, so calling them throws a ReferenceError at message time.
-// Do not add them back to the editor's IntelliSense until the bridges are actually
-// wired end-to-end in the engine (packages/server/src/engine.ts builds the sandbox
-// executor with no bridge dependencies today).
+/** A record stored in / returned from a collection. */
+interface CollectionRecord {
+  /** Unique record id. */
+  readonly id: string;
+  /** The indexed field values this record was stored with. */
+  readonly fields: Readonly<Record<string, string>>;
+  /** The stored value (parse it yourself). */
+  readonly payload: string | null;
+  /** ISO 8601 expiry, or null if it never expires. */
+  readonly expireAt: string | null;
+  /** ISO 8601 creation time. */
+  readonly createdAt: string;
+}
+
+/** Handle returned by getCollection(name) for reading/writing records. */
+interface CollectionHandle {
+  /**
+   * Append a record. Field keys must be in the collection's indexed fields.
+   * @param fields - Indexed field values (strings/numbers/booleans).
+   * @param payload - The value to store.
+   * @param options - Optional per-write TTL override (expireAt ISO or ttlSeconds); else the collection default applies.
+   */
+  store(
+    fields: Record<string, string | number | boolean>,
+    payload: string,
+    options?: { expireAt?: string; ttlSeconds?: number },
+  ): Promise<CollectionRecord>;
+  /**
+   * Query records. "match" is equality on indexed fields; "filter" adds
+   * per-field equality (scalar) or IN (array); "latest" returns only the newest.
+   */
+  find(
+    match: Record<string, string | number | boolean>,
+    options?: {
+      filter?: Record<string, string | number | boolean | ReadonlyArray<string | number | boolean>>;
+      latest?: boolean;
+      limit?: number;
+      order?: 'asc' | 'desc';
+    },
+  ): Promise<CollectionRecord[]>;
+}
+
+/**
+ * Access a durable, keyed record store shared across channels. Records are
+ * append-only; newest-wins is a query result. Reads/writes hit the database.
+ * @param name - The collection name (defined under Collections in the admin UI).
+ */
+declare function getCollection(name: string): CollectionHandle;
+
+/**
+ * Load a configured resource's content by name.
+ * @param name - The resource name (defined under Resources in the admin UI).
+ * @returns The resource content, or null if no resource has that name.
+ */
+declare function getResource(name: string): Promise<string | null>;
+
+/** The result of an httpFetch call. */
+interface HttpFetchResult {
+  readonly status: number;
+  readonly statusText: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: string;
+}
+
+/**
+ * Perform an outbound HTTP request. Requests to private/loopback address ranges
+ * are blocked (SSRF protection).
+ */
+declare function httpFetch(
+  url: string,
+  options?: { method?: string; headers?: Record<string, string>; body?: string; timeout?: number },
+): Promise<HttpFetchResult>;
+
+/**
+ * Route a raw message into another deployed, started channel by name. Guarded
+ * against routing loops by a hop-depth cap.
+ */
+declare function routeMessage(channelName: string, rawData: string): Promise<{ success: boolean; response?: string }>;
+
+/**
+ * Run a parameterized query against a named Data Source (defined under Data
+ * Sources in the admin UI). Data sources are read-only unless configured
+ * otherwise. Never string-interpolate values into sql — use params ($1, $2, …).
+ * @param dataSourceName - The data source name.
+ * @param sql - Parameterized SQL.
+ * @param params - Positional query parameters.
+ */
+declare function dbQuery(
+  dataSourceName: string,
+  sql: string,
+  params?: readonly unknown[],
+): Promise<readonly Record<string, unknown>[]>;
 `;

@@ -155,6 +155,28 @@ describe('ResourceService', () => {
     });
   });
 
+  describe('getByName (getResource bridge)', () => {
+    it('returns the content when a resource with that name exists', async () => {
+      pushResponse([{ content: 'lookup-table-contents' }]);
+
+      const result = await ResourceService.getByName('facility-codes');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe('lookup-table-contents');
+    });
+
+    it('returns null (not an error) when no resource has that name', async () => {
+      pushResponse([]);
+
+      const result = await ResourceService.getByName('missing');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBeNull();
+    });
+  });
+
   describe('create', () => {
     it('succeeds with valid input', async () => {
       const created = makeResourceRow();

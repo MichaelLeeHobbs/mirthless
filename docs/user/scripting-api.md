@@ -94,9 +94,71 @@ subject to SSRF protection: requests to private/loopback address ranges are bloc
 | Function | Signature | Description |
 |---|---|---|
 | `httpFetch` | `httpFetch(url, { method, headers, body, timeout }?)` → `{ status, statusText, headers, body }` | Outbound HTTP request. |
-| `dbQuery` | `dbQuery(driver, connectionUrl, sql, params?)` → rows | Parameterized query. Never string-interpolate values into `sql`. |
+| `dbQuery` | `dbQuery(dataSourceName, sql, params?)` → rows | Parameterized query against a named [Data Source](#data-sources). Never string-interpolate values into `sql`. |
 | `routeMessage` | `routeMessage(channelName, rawData)` → `{ success, response? }` | Route a message to another channel. |
 | `getResource` | `getResource(name)` → `string \| null` | Load a configured resource by name. |
+| `getCollection` | `getCollection(name)` → `{ store, find }` | Read/write a durable keyed record store. See [Collections](#collections). |
+
+> Wiring status: all bridges above (`getResource`, `httpFetch`, `routeMessage`, `getCollection`,
+> `dbQuery`) are wired into the production engine.
+
+## Data Sources
+
+`dbQuery(dataSourceName, sql, params?)` runs a parameterized query against a **Data Source** —
+a database connection profile an admin defines under **Data Sources** in the admin UI (host,
+port, database, user, password). Credentials live server-side, encrypted at rest; scripts never
+see them and can only reach configured sources.
+
+```js
+const [order] = await dbQuery('reporting-db',
+  'SELECT report FROM reports WHERE accession = $1 ORDER BY created_at DESC LIMIT 1',
+  [accession]);
+```
+
+- **Parameterized only** — pass values as `params` (`$1, $2, …`); never build SQL by string
+  concatenation.
+- **Read-only by default** — a data source rejects writes unless an admin marks it read-write.
+- Bounded by a per-source statement timeout and a max-rows cap (a larger result set fails loud).
+- PostgreSQL only in v1.
+
+## Collections
+
+A **collection** is a durable, queryable, TTL-pruned keyed record store, shared across
+channels. Define one under **Collections** in the admin UI (a name, the field names records
+are indexed by, and a default TTL). Then `getCollection(name)` returns a handle:
+
+- `await store(fields, payload, options?)` — append a record. `fields` keys must be among the
+  collection's indexed fields; `payload` is your value (HL7/JSON/text — you parse it).
+  `options` may override the TTL with `{ expireAt }` (ISO) or `{ ttlSeconds }`; otherwise the
+  collection default applies. Records are **append-only** (no upsert).
+- `await find(match, options?)` — query. `match` is equality on indexed fields; `options.filter`
+  adds more field predicates (a scalar is equality, an array is `IN`, multiple fields are AND'd);
+  `options.latest` returns only the single newest match; `options.limit`/`options.order` page and
+  order by creation time (default newest-first). Returns an array of
+  `{ id, fields, payload, expireAt, createdAt }`.
+
+Reads/writes hit the database directly (no caching). Collections are not a secret store — any
+channel script can read any collection by name.
+
+**Order/report matching** — an orders channel stashes each order; a reports channel later pulls
+the newest matching order to build the outbound report:
+
+```js
+// Orders channel — store each inbound order
+await getCollection('orders').store(
+  { accessionNumber: msg.get('OBR.3.1'), institutionName: channelMap.institution, orderControl: msg.get('ORC.1') },
+  msg.toString(),
+);
+
+// Reports channel — grab the newest NW/SC/XO order for this accession
+const [order] = await getCollection('orders').find(
+  { accessionNumber: msg.get('OBR.3.1'), institutionName: channelMap.institution },
+  { filter: { orderControl: ['XO', 'NW', 'SC'] }, latest: true },
+);
+if (order) {
+  channelMap.orderPayload = order.payload;
+}
+```
 
 ## Code templates
 

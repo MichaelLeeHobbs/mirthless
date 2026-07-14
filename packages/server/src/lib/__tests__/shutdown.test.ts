@@ -31,6 +31,7 @@ function createMockDeps(overrides?: Partial<ShutdownDeps>): ShutdownDeps {
     stopSocketIO: vi.fn().mockResolvedValue(undefined),
     stopPrunerScheduler: vi.fn().mockResolvedValue(undefined),
     stopQueue: vi.fn().mockResolvedValue(undefined),
+    stopDataSourcePools: vi.fn().mockResolvedValue(undefined),
     closePool: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -56,6 +57,7 @@ describe('createShutdownHandler', () => {
       stopSocketIO: vi.fn().mockImplementation(async () => { callOrder.push('stopSocketIO'); }),
       stopPrunerScheduler: vi.fn().mockImplementation(async () => { callOrder.push('stopPrunerScheduler'); }),
       stopQueue: vi.fn().mockImplementation(async () => { callOrder.push('stopQueue'); }),
+      stopDataSourcePools: vi.fn().mockImplementation(async () => { callOrder.push('stopDataSourcePools'); }),
       closePool: vi.fn().mockImplementation(async () => { callOrder.push('closePool'); }),
     });
 
@@ -71,6 +73,7 @@ describe('createShutdownHandler', () => {
       'stopEngine',
       'stopPrunerScheduler',
       'stopQueue',
+      'stopDataSourcePools',
       'closePool',
     ]);
   });

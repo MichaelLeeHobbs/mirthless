@@ -25,6 +25,7 @@ import {
   type DestinationConfig,
   type DestinationScripts,
   type SandboxExecutor,
+  type BridgeDependencies,
   type MessageStore,
   type SendToDestination,
   type CompiledScript,
@@ -43,13 +44,16 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@mirthless/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode } from '@mirthless/core-models';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema } from '@mirthless/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
 import { GlobalMapService } from './services/global-map.service.js';
 import { ConfigMapService } from './services/config-map.service.js';
 import { CodeTemplateService } from './services/code-template.service.js';
+import { CollectionService, type CollectionRecordResult } from './services/collection.service.js';
+import { ResourceService } from './services/resource.service.js';
+import { DataSourceService } from './services/data-source.service.js';
 import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { db } from './lib/db.js';
@@ -242,16 +246,147 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
   };
 }
 
+// ----- Sandbox bridges -----
+
+/** Shape a service record for the sandbox bridge (dates as ISO strings). */
+function toBridgeRecord(v: CollectionRecordResult): {
+  id: string; fields: Record<string, string>; payload: string | null; expireAt: string | null; createdAt: string;
+} {
+  return {
+    id: v.id,
+    fields: v.fields,
+    payload: v.payload,
+    expireAt: v.expireAt ? v.expireAt.toISOString() : null,
+    createdAt: v.createdAt.toISOString(),
+  };
+}
+
+/**
+ * getCollection() script bridge: store/find against CollectionService. Inputs
+ * from user scripts are Zod-validated at this boundary (fail loud on bad input);
+ * service errors surface as thrown errors inside the script.
+ */
+function createCollectionBridge(): NonNullable<BridgeDependencies['collections']> {
+  return {
+    store: async (name, fields, payload, options) => {
+      const input = storeRecordSchema.parse({
+        fields, payload, expireAt: options.expireAt, ttlSeconds: options.ttlSeconds,
+      });
+      const result = await CollectionService.store(name, input);
+      if (!result.ok) throw new Error(result.error.message);
+      return toBridgeRecord(result.value);
+    },
+    find: async (name, match, options) => {
+      const query = findRecordsSchema.parse({
+        match, filter: options.filter, latest: options.latest, limit: options.limit, order: options.order,
+      });
+      const result = await CollectionService.find(name, query);
+      if (!result.ok) throw new Error(result.error.message);
+      return result.value.map(toBridgeRecord);
+    },
+  };
+}
+
+/** getResource() script bridge: read a resource's content by name (null if absent). */
+function createResourceBridge(): NonNullable<BridgeDependencies['getResource']> {
+  return async (name) => {
+    const result = await ResourceService.getByName(name);
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  };
+}
+
+/** dbQuery() script bridge: parameterized query against a named Data Source (read-only by default). */
+function createDbQueryBridge(): NonNullable<BridgeDependencies['dbQuery']> {
+  return async (dataSourceName, sql, params) => {
+    const result = await DataSourceService.runQuery(dataSourceName, sql, params);
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  };
+}
+
+/**
+ * httpFetch() script bridge: outbound HTTP via global fetch. SSRF host-blocking is
+ * already applied in the sandbox bridge layer before this runs; here we just perform
+ * the request, enforce a per-request timeout, and shape the response.
+ */
+export function createHttpFetchBridge(): NonNullable<BridgeDependencies['httpFetch']> {
+  return async (url, options) => {
+    const res = await fetch(url, {
+      method: options.method ?? 'GET',
+      ...(options.headers ? { headers: { ...options.headers } } : {}),
+      ...(options.body !== undefined ? { body: options.body } : {}),
+      signal: AbortSignal.timeout(options.timeout ?? 30_000),
+    });
+    const headers: Record<string, string> = {};
+    res.headers.forEach((value, key) => { headers[key] = value; });
+    return { status: res.status, statusText: res.statusText, headers, body: await res.text() };
+  };
+}
+
 // ----- Engine Manager -----
+
+/** Max routeMessage hops in a single message's processing chain (loop guard). */
+const MAX_ROUTE_DEPTH = 25;
 
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
   private readonly sandbox: SandboxExecutor;
   private readonly serverId: string;
+  /** Current routeMessage nesting depth (one process chain); guards against routing loops. */
+  private routeDepth = 0;
 
   constructor(serverId?: string) {
-    this.sandbox = new VmSandboxExecutor();
+    this.sandbox = new VmSandboxExecutor({
+      collections: createCollectionBridge(),
+      getResource: createResourceBridge(),
+      httpFetch: createHttpFetchBridge(),
+      dbQuery: createDbQueryBridge(),
+      routeMessage: this.createRouteMessageBridge(),
+    });
     this.serverId = serverId ?? 'server-01';
+  }
+
+  /** Resolve a deployed channel's id by its name (in-memory; deployed channels only). */
+  private resolveChannelIdByName(name: string): string | undefined {
+    for (const [id, deployed] of this.runtimes) {
+      if (deployed.config.name === name) return id;
+    }
+    return undefined;
+  }
+
+  /**
+   * Route a raw message into another deployed, STARTED channel by name. Enforces a
+   * hop-depth cap so a routing cycle (A→B→A) fails loud instead of recursing until
+   * timeout on every hop.
+   */
+  async routeMessage(channelName: string, rawData: string): Promise<Result<{ messageId: number }>> {
+    return tryCatch(async () => {
+      if (this.routeDepth >= MAX_ROUTE_DEPTH) {
+        throw new Error(`routeMessage exceeded max hop depth (${String(MAX_ROUTE_DEPTH)}) — possible routing loop`);
+      }
+      const targetId = this.resolveChannelIdByName(channelName);
+      if (!targetId) {
+        throw new Error(`routeMessage: no deployed channel named "${channelName}"`);
+      }
+      this.routeDepth++;
+      try {
+        const result = await this.sendMessage(targetId, rawData);
+        if (!result.ok) throw new Error(result.error.message);
+        return result.value;
+      } finally {
+        this.routeDepth--;
+      }
+    });
+  }
+
+  /** routeMessage() script bridge: cross-channel routing with a loop guard. */
+  private createRouteMessageBridge(): NonNullable<BridgeDependencies['routeMessage']> {
+    return async (channelName, rawData) => {
+      const result = await this.routeMessage(channelName, rawData);
+      if (!result.ok) throw new Error(result.error.message);
+      return { success: true };
+    };
   }
 
   /** Deploy a channel from its stored configuration. */
