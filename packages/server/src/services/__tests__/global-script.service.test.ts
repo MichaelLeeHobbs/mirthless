@@ -123,6 +123,16 @@ describe('GlobalScriptService', () => {
       expect(result.value.postprocessor).toBe('');
     });
 
+    it('surfaces a DB failure as a Result.error', async () => {
+      mockSelect.mockImplementationOnce(() => {
+        throw new Error('connection refused');
+      });
+
+      const result = await GlobalScriptService.getAll();
+
+      expect(result.ok).toBe(false);
+    });
+
     it('returns partial data when only some scripts exist', async () => {
       pushFromResponse([
         { scriptType: 'DEPLOY', script: 'logger.info("deploy")', updatedAt: new Date() },
