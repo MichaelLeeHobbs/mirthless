@@ -14,7 +14,9 @@
   "scripts": {
     "dev": "tsc --watch",
     "build": "tsc",
+    "typecheck:scripts": "tsc -p tsconfig.sandbox.json",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "clean": "rimraf dist"

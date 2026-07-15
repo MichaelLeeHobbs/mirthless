@@ -1,12 +1,13 @@
 // ===========================================
 // DICOM Dispatcher (Destination Connector)
 // ===========================================
-// Wraps @ubercode/dcmtk DicomSender to send DICOM files via C-STORE.
+// A dcmjs-dimse DICOM SCU that sends DICOM files via C-STORE.
 // Expects message content to be a file path.
 
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { createDimseSender } from './dcmjs-dimse-adapter.js';
 
 // ----- Config -----
 
@@ -75,7 +76,7 @@ export class DicomDispatcher implements DestinationConnectorRuntime {
 
   constructor(config: DicomDispatcherConfig, createSender?: SenderFactory) {
     this.config = config;
-    this.createSender = createSender ?? defaultSenderFactory;
+    this.createSender = createSender ?? createDimseSender;
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -178,34 +179,4 @@ export class DicomDispatcher implements DestinationConnectorRuntime {
   }
 }
 
-// ----- Default factory (uses @ubercode/dcmtk) -----
 
-function defaultSenderFactory(options: {
-  readonly host: string;
-  readonly port: number;
-  readonly calledAETitle: string;
-  readonly callingAETitle: string;
-  readonly mode: 'single' | 'multiple';
-  readonly maxAssociations: number;
-  readonly maxRetries: number;
-  readonly retryDelayMs: number;
-  readonly timeoutMs: number;
-}): Result<DcmtkSender> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DicomSender: DcmtkDicomSender } = require('@ubercode/dcmtk') as {
-    DicomSender: {
-      create(opts: Record<string, unknown>): Result<DcmtkSender>;
-    };
-  };
-  return DcmtkDicomSender.create({
-    host: options.host,
-    port: options.port,
-    calledAETitle: options.calledAETitle,
-    callingAETitle: options.callingAETitle,
-    mode: options.mode,
-    maxAssociations: options.maxAssociations,
-    maxRetries: options.maxRetries,
-    retryDelayMs: options.retryDelayMs,
-    timeoutMs: options.timeoutMs,
-  });
-}

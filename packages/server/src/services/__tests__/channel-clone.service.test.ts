@@ -219,15 +219,18 @@ function setupCreateMocks(channel: Record<string, unknown>): void {
     const tx = {
       insert: vi.fn().mockImplementation(() => {
         insertCallCount++;
-        if (insertCallCount === 1) {
-          return {
-            values: vi.fn().mockReturnValue({
-              returning: vi.fn().mockResolvedValue([channel]),
+        // Channel insert (call 1) returns the created row; later inserts return
+        // []. Every .values() supports both `.returning()` and direct await.
+        const rows = insertCallCount === 1 ? [channel] : [];
+        return {
+          values: vi.fn().mockReturnValue(
+            Object.assign(Promise.resolve(rows), {
+              returning: vi.fn().mockResolvedValue(rows),
             }),
-          };
-        }
-        return { values: vi.fn().mockResolvedValue(undefined) };
+          ),
+        };
       }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
     };
     return fn(tx);
   });

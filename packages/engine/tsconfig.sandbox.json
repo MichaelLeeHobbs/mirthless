@@ -1,0 +1,12 @@
+{
+  "//": "Type-checks example channel scripts against the shipped sandbox ambient types (sandbox-globals.d.ts). Not part of the build. Run: pnpm --filter @mirthless/engine typecheck:scripts",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "composite": false
+  },
+  "include": ["sandbox-globals.d.ts", "examples/**/*.ts"]
+}

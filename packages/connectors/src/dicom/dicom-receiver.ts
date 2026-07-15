@@ -1,8 +1,8 @@
 // ===========================================
 // DICOM Receiver (Source Connector)
 // ===========================================
-// Wraps @ubercode/dcmtk DicomReceiver to receive DICOM C-STORE
-// associations and dispatch each file as a message into the pipeline.
+// A dcmjs-dimse DICOM SCP that receives C-STORE associations and dispatches each
+// received instance as a message into the pipeline.
 // Content = file path; metadata goes into sourceMap.
 
 import * as fs from 'node:fs/promises';
@@ -10,6 +10,7 @@ import * as path from 'node:path';
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
+import { createDimseReceiver } from './dcmjs-dimse-adapter.js';
 
 // ----- Constants -----
 
@@ -99,7 +100,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
 
   constructor(config: DicomReceiverConfig, createReceiver?: ReceiverFactory) {
     this.config = config;
-    this.createReceiver = createReceiver ?? defaultReceiverFactory;
+    this.createReceiver = createReceiver ?? createDimseReceiver;
   }
 
   setDispatcher(dispatcher: MessageDispatcher): void {
@@ -275,29 +276,3 @@ export class DicomReceiver implements SourceConnectorRuntime {
   }
 }
 
-// ----- Default factory (uses @ubercode/dcmtk) -----
-
-function defaultReceiverFactory(options: {
-  readonly port: number;
-  readonly storageDir: string;
-  readonly aeTitle: string;
-  readonly minPoolSize: number;
-  readonly maxPoolSize: number;
-  readonly connectionTimeoutMs: number;
-}): Result<DcmtkReceiver> {
-  // Dynamic import-style require to avoid bundling issues
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DicomReceiver: DcmtkDicomReceiver } = require('@ubercode/dcmtk') as {
-    DicomReceiver: {
-      create(opts: Record<string, unknown>): Result<DcmtkReceiver>;
-    };
-  };
-  return DcmtkDicomReceiver.create({
-    port: options.port,
-    storageDir: options.storageDir,
-    aeTitle: options.aeTitle,
-    minPoolSize: options.minPoolSize,
-    maxPoolSize: options.maxPoolSize,
-    connectionTimeoutMs: options.connectionTimeoutMs,
-  });
-}
