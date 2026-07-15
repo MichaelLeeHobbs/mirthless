@@ -3,17 +3,20 @@
 // ===========================================
 // Configuration form for TCP/MLLP listener source connectors.
 // Property keys mirror packages/connectors/src/registry.ts (TcpMllpReceiver):
-// host, port, maxConnections. Decorative fields the receiver never reads
-// (charset/transmissionMode/receiveTimeout/bufferSize/keepConnectionOpen) were
-// removed so the form cannot promise behavior the runtime does not honor.
-// TODO(connectors): expose TLS/charset/ackMode here once the receiver consumes them.
+// host, port, maxConnections, responseMode, charset, maxFrameBytes.
+// TLS is intentionally NOT surfaced here: TCP TLS needs the same server-side
+// cert-store resolution HTTP has (engine.ts resolves only for connectorType
+// === 'HTTP'), so a form-only tls bag would be silently ignored at deploy.
+// That is a separate workstream — see docs/design connector-parity notes.
 
 import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
+import MenuItem from '@mui/material/MenuItem';
 import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { TCP_MLLP_SOURCE_DEFAULTS } from './connector-defaults.js';
+import { MLLP_CHARSETS, MLLP_RESPONSE_MODES } from './tcp-mllp-options.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
@@ -89,6 +92,52 @@ export function TcpMllpSourceForm({ properties, onChange }: SourceConnectorFormP
           fullWidth
           sx={{ mb: 2 }}
           slotProps={{ htmlInput: { min: 1, max: 1000 } }}
+        />
+      </Grid>
+
+      {/* MLLP settings */}
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+          MLLP
+        </Typography>
+
+        <TextField
+          label="Response Mode"
+          value={getStr(properties, 'responseMode', 'AUTO_ACK')}
+          onChange={handleText('responseMode')}
+          select
+          helperText="AUTO_ACK builds an HL7 ACK/NAK from the inbound message; PASSTHROUGH relays the downstream response"
+          fullWidth
+          sx={{ mb: 2 }}
+        >
+          {MLLP_RESPONSE_MODES.map((o) => (
+            <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+          ))}
+        </TextField>
+
+        <TextField
+          label="Charset"
+          value={getStr(properties, 'charset', 'utf-8')}
+          onChange={handleText('charset')}
+          select
+          helperText="Payload encoding for MLLP framing/parsing"
+          fullWidth
+          sx={{ mb: 2 }}
+        >
+          {MLLP_CHARSETS.map((o) => (
+            <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+          ))}
+        </TextField>
+
+        <TextField
+          label="Max Frame Bytes"
+          type="number"
+          value={getNum(properties, 'maxFrameBytes', 52428800)}
+          onChange={handleNumber('maxFrameBytes')}
+          helperText="Per-connection buffer cap in bytes (default 52428800 = 50 MiB)"
+          fullWidth
+          sx={{ mb: 2 }}
+          slotProps={{ htmlInput: { min: 1 } }}
         />
       </Grid>
 

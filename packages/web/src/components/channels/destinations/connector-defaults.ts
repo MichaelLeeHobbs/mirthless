@@ -6,11 +6,17 @@ import type { DestinationFormValues } from './types.js';
 import { createDefaultFilter, createDefaultTransformer } from '../source/types.js';
 
 // Keys must match what packages/connectors/src/registry.ts reads for each type.
+// The TcpMllpDispatcher consumes host/port/maxConnections/responseTimeout/
+// acquireTimeoutMs/charset (TLS is resolved server-side and not surfaced here yet).
+// charset must be a valid Node BufferEncoding token: the registry casts it
+// straight to BufferEncoding with no normalization.
 export const TCP_MLLP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: 'localhost',
   port: 6661,
   maxConnections: 5,
   responseTimeout: 30000,
+  acquireTimeoutMs: 30000,
+  charset: 'utf-8',
 };
 
 export const HTTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
@@ -54,6 +60,7 @@ export const SMTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: '',
   port: 587,
   secure: false,
+  requireTLS: false,
   authUser: '',
   authPass: '',
   from: '',

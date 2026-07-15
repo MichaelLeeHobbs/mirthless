@@ -98,6 +98,21 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
           sx={{ mb: 2, display: 'block' }}
         />
 
+        <FormControlLabel
+          control={
+            <Switch
+              checked={getBool(properties, 'requireTLS', false)}
+              onChange={handleBool('requireTLS')}
+              disabled={getBool(properties, 'secure', false)}
+            />
+          }
+          label="Require STARTTLS"
+          sx={{ mb: 0, display: 'block' }}
+        />
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+          Forces a STARTTLS upgrade before auth on a non-secure port, so credentials are never sent in plaintext. Not needed when Use TLS/SSL is on (already implicit TLS).
+        </Typography>
+
         <TextField
           label="Username"
           value={getStr(properties, 'authUser', '')}

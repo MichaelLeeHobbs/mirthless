@@ -63,7 +63,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[1] Multi-vendor Database connector** — driver abstraction (pg/mysql2/tedious/oracledb) + JS mode. 🔴 Postgres-only today; Oracle/SQL Server/MySQL DB channels **cannot migrate**.
 - [ ] **[2] File scheme abstraction** — FTP/FTPS, SMB, S3; fold standalone SFTP in as a scheme. 🔴 Local-disk-only today.
 - [ ] **[3] Configurable TCP framing + Basic mode** — 🔴 start/end bytes hardcoded VT/FS+CR; no non-standard/delimited framing.
-- [ ] **[4] Surface hidden runtime options in forms** — TCP TLS/charset/responseMode exist in runtime but not the UI; audit all connectors. 🟡 cheapest wins.
+- [x] **[4] Surface hidden runtime options in forms** — surfaced TCP responseMode/charset/maxFrameBytes/acquireTimeoutMs, HTTP-source errorStatusCode/maxBodyBytes, SMTP requireTLS (2026-07-15). TCP TLS deferred to the rank-8 cert-resolver work (not surfacing-only); HTTP inbound auth folded into rank 5. 🟡 cheapest wins.
 - [ ] **[5] HTTP outbound auth (Basic/Digest) + query-parameters table + `${}` substitution** — 🟡 common REST requirement.
 - [ ] **[6] Web Service / SOAP connector** (source + dispatcher) — 🔴 blocks brownfield SOAP hospital installs.
 - [ ] **[7] Document Writer** (PDF/RTF destination) — 🟡 no workaround for rendered clinical docs.

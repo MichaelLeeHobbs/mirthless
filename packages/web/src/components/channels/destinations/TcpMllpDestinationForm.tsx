@@ -3,16 +3,19 @@
 // ===========================================
 // Configuration form for TCP/MLLP client destination connectors.
 // Property keys mirror packages/connectors/src/registry.ts (TcpMllpDispatcher):
-// host, port, maxConnections, responseTimeout. Decorative fields the dispatcher
-// never reads (charset/transmissionMode/bufferSize/keepConnectionOpen) were removed.
-// TODO(connectors): expose TLS/charset here once the dispatcher consumes them.
+// host, port, maxConnections, responseTimeout, acquireTimeoutMs, charset.
+// TLS is intentionally NOT surfaced here: TCP TLS needs the same server-side
+// cert-store resolution HTTP has (engine.ts resolves only for connectorType
+// === 'HTTP'), so a form-only tls bag would be silently ignored at deploy.
 
 import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
+import MenuItem from '@mui/material/MenuItem';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { TCP_MLLP_DEST_DEFAULTS } from './connector-defaults.js';
+import { MLLP_CHARSETS } from '../source/tcp-mllp-options.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
@@ -106,6 +109,31 @@ export function TcpMllpDestinationForm({ properties, onChange }: DestConnectorFo
           sx={{ mb: 2 }}
           slotProps={{ htmlInput: { min: 0 } }}
         />
+
+        <TextField
+          label="Acquire Timeout (ms)"
+          type="number"
+          value={getNum(properties, 'acquireTimeoutMs', 30000)}
+          onChange={handleNumber('acquireTimeoutMs')}
+          helperText="Max wait for a pooled socket before the send fails"
+          fullWidth
+          sx={{ mb: 2 }}
+          slotProps={{ htmlInput: { min: 0 } }}
+        />
+
+        <TextField
+          label="Charset"
+          value={getStr(properties, 'charset', 'utf-8')}
+          onChange={handleText('charset')}
+          select
+          helperText="Payload encoding for MLLP framing"
+          fullWidth
+          sx={{ mb: 2 }}
+        >
+          {MLLP_CHARSETS.map((o) => (
+            <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+          ))}
+        </TextField>
       </Grid>
 
       <Grid item xs={12}>
