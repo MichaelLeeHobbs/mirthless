@@ -82,8 +82,11 @@ export interface TestMailConfig {
   readonly host: string;
   readonly smtpPort: number;
   readonly imapPort: number;
+  /** IMAP/SMTP login (GreenMail user login — e.g. "mirth"). */
   readonly username: string;
   readonly password: string;
+  /** Mailbox email address (e.g. "mirth@example.com") — the SMTP envelope. */
+  readonly address: string;
 }
 
 function readMailConfig(): TestMailConfig | null {
@@ -93,8 +96,9 @@ function readMailConfig(): TestMailConfig | null {
     host,
     smtpPort: process.env.SMTP_TEST_PORT ? Number(process.env.SMTP_TEST_PORT) : 3025,
     imapPort: process.env.IMAP_TEST_PORT ? Number(process.env.IMAP_TEST_PORT) : 3143,
-    username: process.env.MAIL_TEST_USER ?? 'mirth@example.com',
+    username: process.env.MAIL_TEST_USER ?? 'mirth',
     password: process.env.MAIL_TEST_PASSWORD ?? 'mirthpw',
+    address: process.env.MAIL_TEST_ADDRESS ?? 'mirth@example.com',
   };
 }
 
