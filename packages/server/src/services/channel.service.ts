@@ -447,6 +447,104 @@ function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelI
   };
 }
 
+// ----- Filter / transformer persistence (shared by create + update) -----
+
+/** Drizzle transaction handle, as passed to `db.transaction(async (tx) => …)`. */
+type ChannelTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Replace a channel's filters (and their rules) with the provided set.
+ * Delete-and-reinsert; a source filter has `metaDataId: null`, a destination
+ * filter is mapped to its connector row via `destIdByMetaDataId`.
+ */
+async function syncFilters(
+  tx: ChannelTx,
+  channelId: string,
+  filters: NonNullable<CreateChannelInput['filters']>,
+  destIdByMetaDataId: ReadonlyMap<number, string>,
+): Promise<void> {
+  await tx.delete(channelFilters).where(eq(channelFilters.channelId, channelId));
+
+  for (const filter of filters) {
+    let resolvedConnectorId: string | null = filter.connectorId ?? null;
+    if (resolvedConnectorId === null && filter.metaDataId !== undefined && filter.metaDataId !== null) {
+      resolvedConnectorId = destIdByMetaDataId.get(filter.metaDataId) ?? null;
+    }
+
+    const [inserted] = await tx
+      .insert(channelFilters)
+      .values({ channelId, connectorId: resolvedConnectorId })
+      .returning({ id: channelFilters.id });
+
+    if (inserted && filter.rules.length > 0) {
+      const ruleValues = filter.rules.map((rule, idx) => ({
+        filterId: inserted.id,
+        sequenceNumber: idx,
+        enabled: rule.enabled,
+        name: rule.name ?? null,
+        operator: rule.operator,
+        type: rule.type,
+        script: rule.script ?? null,
+        field: rule.field ?? null,
+        condition: rule.condition ?? null,
+        values: rule.values ?? null,
+      }));
+      await tx.insert(filterRules).values(ruleValues);
+    }
+  }
+}
+
+/**
+ * Replace a channel's transformers (and their steps) with the provided set.
+ * Delete-and-reinsert; a source transformer has `metaDataId: null`, a
+ * destination transformer is mapped to its connector row via `destIdByMetaDataId`.
+ */
+async function syncTransformers(
+  tx: ChannelTx,
+  channelId: string,
+  transformers: NonNullable<CreateChannelInput['transformers']>,
+  destIdByMetaDataId: ReadonlyMap<number, string>,
+): Promise<void> {
+  await tx.delete(channelTransformers).where(eq(channelTransformers.channelId, channelId));
+
+  for (const transformer of transformers) {
+    let resolvedConnectorId: string | null = transformer.connectorId ?? null;
+    if (resolvedConnectorId === null && transformer.metaDataId !== undefined && transformer.metaDataId !== null) {
+      resolvedConnectorId = destIdByMetaDataId.get(transformer.metaDataId) ?? null;
+    }
+
+    const [inserted] = await tx
+      .insert(channelTransformers)
+      .values({
+        channelId,
+        connectorId: resolvedConnectorId,
+        inboundDataType: transformer.inboundDataType,
+        outboundDataType: transformer.outboundDataType,
+        inboundProperties: transformer.inboundProperties,
+        outboundProperties: transformer.outboundProperties,
+        inboundTemplate: transformer.inboundTemplate ?? null,
+        outboundTemplate: transformer.outboundTemplate ?? null,
+      })
+      .returning({ id: channelTransformers.id });
+
+    if (inserted && transformer.steps.length > 0) {
+      const stepValues = transformer.steps.map((step, idx) => ({
+        transformerId: inserted.id,
+        sequenceNumber: idx,
+        enabled: step.enabled,
+        name: step.name ?? null,
+        type: step.type,
+        script: step.script ?? null,
+        sourceField: step.sourceField ?? null,
+        targetField: step.targetField ?? null,
+        defaultValue: step.defaultValue ?? null,
+        mapping: step.mapping ?? null,
+      }));
+      await tx.insert(transformerSteps).values(stepValues);
+    }
+  }
+}
+
 // ----- Service -----
 
 export class ChannelService {
@@ -565,7 +663,9 @@ export class ChannelService {
 
         await tx.insert(channelScripts).values(scriptValues);
 
-        // Insert destinations if provided
+        // Insert destinations if provided, tracking new IDs by metaDataId so
+        // source/destination filters + transformers can be mapped to them.
+        const destIdByMetaDataId = new Map<number, string>();
         if (input.destinations && input.destinations.length > 0) {
           const destValues = input.destinations.map((dest, index) => ({
             channelId,
@@ -582,7 +682,13 @@ export class ChannelService {
             waitForPrevious: dest.waitForPrevious,
             responseTransformer: dest.responseTransformer ?? null,
           }));
-          await tx.insert(channelConnectors).values(destValues);
+          const insertedDests = await tx.insert(channelConnectors).values(destValues).returning({
+            id: channelConnectors.id,
+            metaDataId: channelConnectors.metaDataId,
+          });
+          for (const d of insertedDests) {
+            destIdByMetaDataId.set(d.metaDataId, d.id);
+          }
         }
 
         // Insert metadata columns if provided
@@ -594,6 +700,14 @@ export class ChannelService {
             mappingExpression: col.mappingExpression,
           }));
           await tx.insert(channelMetadataColumns).values(metaValues);
+        }
+
+        // Persist filters + transformers (previously dropped on create — data loss).
+        if (input.filters && input.filters.length > 0) {
+          await syncFilters(tx, channelId, input.filters, destIdByMetaDataId);
+        }
+        if (input.transformers && input.transformers.length > 0) {
+          await syncTransformers(tx, channelId, input.transformers, destIdByMetaDataId);
         }
 
         return inserted;
@@ -769,80 +883,9 @@ export class ChannelService {
           }
         }
 
-        // Sync filters if provided (delete-and-reinsert, cascade deletes rules)
-        if (input.filters) {
-          await tx.delete(channelFilters).where(eq(channelFilters.channelId, id));
-
-          for (const filter of input.filters) {
-            let resolvedConnectorId: string | null = filter.connectorId ?? null;
-            if (resolvedConnectorId === null && filter.metaDataId !== undefined && filter.metaDataId !== null) {
-              resolvedConnectorId = destIdByMetaDataId.get(filter.metaDataId) ?? null;
-            }
-
-            const [inserted] = await tx
-              .insert(channelFilters)
-              .values({ channelId: id, connectorId: resolvedConnectorId })
-              .returning({ id: channelFilters.id });
-
-            if (inserted && filter.rules.length > 0) {
-              const ruleValues = filter.rules.map((rule, idx) => ({
-                filterId: inserted.id,
-                sequenceNumber: idx,
-                enabled: rule.enabled,
-                name: rule.name ?? null,
-                operator: rule.operator,
-                type: rule.type,
-                script: rule.script ?? null,
-                field: rule.field ?? null,
-                condition: rule.condition ?? null,
-                values: rule.values ?? null,
-              }));
-              await tx.insert(filterRules).values(ruleValues);
-            }
-          }
-        }
-
-        // Sync transformers if provided (delete-and-reinsert, cascade deletes steps)
-        if (input.transformers) {
-          await tx.delete(channelTransformers).where(eq(channelTransformers.channelId, id));
-
-          for (const transformer of input.transformers) {
-            let resolvedConnectorId: string | null = transformer.connectorId ?? null;
-            if (resolvedConnectorId === null && transformer.metaDataId !== undefined && transformer.metaDataId !== null) {
-              resolvedConnectorId = destIdByMetaDataId.get(transformer.metaDataId) ?? null;
-            }
-
-            const [inserted] = await tx
-              .insert(channelTransformers)
-              .values({
-                channelId: id,
-                connectorId: resolvedConnectorId,
-                inboundDataType: transformer.inboundDataType,
-                outboundDataType: transformer.outboundDataType,
-                inboundProperties: transformer.inboundProperties,
-                outboundProperties: transformer.outboundProperties,
-                inboundTemplate: transformer.inboundTemplate ?? null,
-                outboundTemplate: transformer.outboundTemplate ?? null,
-              })
-              .returning({ id: channelTransformers.id });
-
-            if (inserted && transformer.steps.length > 0) {
-              const stepValues = transformer.steps.map((step, idx) => ({
-                transformerId: inserted.id,
-                sequenceNumber: idx,
-                enabled: step.enabled,
-                name: step.name ?? null,
-                type: step.type,
-                script: step.script ?? null,
-                sourceField: step.sourceField ?? null,
-                targetField: step.targetField ?? null,
-                defaultValue: step.defaultValue ?? null,
-                mapping: step.mapping ?? null,
-              }));
-              await tx.insert(transformerSteps).values(stepValues);
-            }
-          }
-        }
+        // Sync filters + transformers if provided (delete-and-reinsert).
+        if (input.filters) await syncFilters(tx, id, input.filters, destIdByMetaDataId);
+        if (input.transformers) await syncTransformers(tx, id, input.transformers, destIdByMetaDataId);
       });
 
       const channel = await findChannel(id);

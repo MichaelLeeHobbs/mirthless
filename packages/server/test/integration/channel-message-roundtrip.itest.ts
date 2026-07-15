@@ -9,6 +9,7 @@
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { CreateChannelInput } from '@mirthless/core-models';
+import { createChannelSchema } from '@mirthless/core-models';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('Channel CRUD + message round trip (real Postgres)', () => {
@@ -71,5 +72,36 @@ describeIntegration('Channel CRUD + message round trip (real Postgres)', () => {
     unwrap(await ChannelService.create(input));
     const dup = await ChannelService.create({ ...input });
     expect(dup.ok).toBe(false);
+  });
+
+  it('persists source filter + transformer on CREATE (regression: they were silently dropped)', async () => {
+    const { ChannelService } = mods;
+    const input = createChannelSchema.parse({
+      name: `itest-ft-${randomUUID()}`,
+      description: 'filter+transformer create',
+      enabled: false,
+      inboundDataType: 'RAW',
+      outboundDataType: 'RAW',
+      sourceConnectorType: 'JAVASCRIPT',
+      sourceConnectorProperties: {},
+      responseMode: 'AUTO_AFTER_DESTINATIONS',
+      filters: [{ rules: [{ type: 'JAVASCRIPT', script: 'return true;' }] }],
+      transformers: [{ steps: [{ type: 'JAVASCRIPT', script: "msg = String(msg) + '::x';" }] }],
+    });
+
+    const created = unwrap(await ChannelService.create(input));
+    const detail = unwrap(await ChannelService.getById(created.id));
+
+    expect(detail.transformers).toHaveLength(1);
+    const transformer = detail.transformers[0];
+    expect(transformer?.steps).toHaveLength(1);
+    expect(transformer?.steps[0]?.script).toContain('::x');
+
+    expect(detail.filters).toHaveLength(1);
+    const filter = detail.filters[0];
+    expect(filter?.rules).toHaveLength(1);
+    expect(filter?.rules[0]?.type).toBe('JAVASCRIPT');
+
+    unwrap(await ChannelService.delete(created.id));
   });
 });
