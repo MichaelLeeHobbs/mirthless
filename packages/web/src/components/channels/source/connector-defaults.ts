@@ -4,13 +4,17 @@
 // Default property objects for each source connector type.
 
 // Keys must match what packages/connectors/src/registry.ts reads for each type.
-// The TcpMllpReceiver only consumes host/port/maxConnections today. TLS/charset/
-// ackMode may be added by the connectors package later — do not add decorative
-// keys the receiver ignores (they mislead users into thinking they take effect).
+// The TcpMllpReceiver consumes host/port/maxConnections/responseMode/charset/
+// maxFrameBytes (TLS is resolved server-side and not surfaced here yet — see the
+// form comment). charset must be a valid Node BufferEncoding token: the registry
+// casts it straight to BufferEncoding with no normalization.
 export const TCP_MLLP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: '0.0.0.0',
   port: 6661,
   maxConnections: 10,
+  responseMode: 'AUTO_ACK',
+  charset: 'utf-8',
+  maxFrameBytes: 52428800,
 };
 
 export const HTTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
@@ -20,6 +24,8 @@ export const HTTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   method: 'POST',
   responseStatusCode: 200,
   responseContentType: 'text/plain',
+  errorStatusCode: 500,
+  maxBodyBytes: 52428800,
   // Transport mode. HTTPS makes the listener terminate TLS using a server
   // certificate selected from the certificate store by ID; the server resolves
   // IDs -> PEM at deploy time (readTlsServerOptions consumes the resolved

@@ -254,6 +254,80 @@ describe('SmtpDispatcher.send', () => {
     expect(opts.attachments?.[0]?.content).toBe('file data');
   });
 
+  it('omits the attachments key entirely when nothing is configured', async () => {
+    const transport = makeMockTransport();
+    const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));
+    await dispatcher.onStart();
+
+    await dispatcher.send(makeMessage(), makeSignal());
+
+    const sendMail = transport.sendMail as ReturnType<typeof vi.fn>;
+    const opts = sendMail.mock.calls[0]?.[0] as SmtpMailOptions;
+    expect(opts.attachments).toBeUndefined();
+    expect('attachments' in opts).toBe(false);
+  });
+
+  it('sends a single configured attachment with substituted filename/content', async () => {
+    const transport = makeMockTransport();
+    const config = makeConfig({
+      attachments: [{ filename: 'result-${messageId}.txt', content: 'body: ${msg}', mimeType: 'text/csv' }],
+    });
+    const dispatcher = new SmtpDispatcher(config, makeFactory(transport));
+    await dispatcher.onStart();
+
+    await dispatcher.send(makeMessage({ content: 'DATA', messageId: 7 }), makeSignal());
+
+    const sendMail = transport.sendMail as ReturnType<typeof vi.fn>;
+    const opts = sendMail.mock.calls[0]?.[0] as SmtpMailOptions;
+    expect(opts.attachments).toHaveLength(1);
+    expect(opts.attachments?.[0]).toEqual({
+      filename: 'result-7.txt',
+      content: 'body: DATA',
+      contentType: 'text/csv',
+    });
+  });
+
+  it('sends N configured attachments in order', async () => {
+    const transport = makeMockTransport();
+    const config = makeConfig({
+      attachments: [
+        { filename: 'a.txt', content: 'first' },
+        { filename: 'b.txt', content: 'second', mimeType: 'application/json' },
+        { filename: 'c-${channelId}.txt', content: 'third' },
+      ],
+    });
+    const dispatcher = new SmtpDispatcher(config, makeFactory(transport));
+    await dispatcher.onStart();
+
+    await dispatcher.send(makeMessage(), makeSignal());
+
+    const sendMail = transport.sendMail as ReturnType<typeof vi.fn>;
+    const opts = sendMail.mock.calls[0]?.[0] as SmtpMailOptions;
+    expect(opts.attachments).toHaveLength(3);
+    expect(opts.attachments?.map((a) => a.filename)).toEqual(['a.txt', 'b.txt', 'c-ch-1.txt']);
+    // No mimeType => no contentType key emitted.
+    expect(opts.attachments?.[0]?.contentType).toBeUndefined();
+    expect(opts.attachments?.[1]?.contentType).toBe('application/json');
+  });
+
+  it('prepends message.txt then appends configured attachments when attachContent is true', async () => {
+    const transport = makeMockTransport();
+    const config = makeConfig({
+      attachContent: true,
+      attachments: [{ filename: 'extra.txt', content: 'x' }],
+    });
+    const dispatcher = new SmtpDispatcher(config, makeFactory(transport));
+    await dispatcher.onStart();
+
+    await dispatcher.send(makeMessage({ content: 'PAYLOAD' }), makeSignal());
+
+    const sendMail = transport.sendMail as ReturnType<typeof vi.fn>;
+    const opts = sendMail.mock.calls[0]?.[0] as SmtpMailOptions;
+    expect(opts.attachments).toHaveLength(2);
+    expect(opts.attachments?.[0]).toEqual({ filename: 'message.txt', content: 'PAYLOAD' });
+    expect(opts.attachments?.[1]?.filename).toBe('extra.txt');
+  });
+
   it('includes cc and bcc when provided', async () => {
     const transport = makeMockTransport();
     const config = makeConfig({ cc: 'cc@test.com', bcc: 'bcc@test.com' });

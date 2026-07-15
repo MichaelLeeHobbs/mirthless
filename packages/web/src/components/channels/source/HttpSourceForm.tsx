@@ -3,7 +3,8 @@
 // ===========================================
 // Configuration form for HTTP listener source connectors.
 // Property keys mirror packages/connectors/src/registry.ts (HttpReceiver):
-// host, port, path, method, responseStatusCode, responseContentType.
+// host, port, path, method, responseStatusCode, responseContentType,
+// errorStatusCode, maxBodyBytes.
 
 import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
 import Grid from '@mui/material/Grid';
@@ -157,6 +158,28 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
           helperText="Content-Type header of the response"
           fullWidth
           sx={{ mb: 2 }}
+        />
+
+        <TextField
+          label="Error Status Code"
+          type="number"
+          value={getNum(properties, 'errorStatusCode', 500)}
+          onChange={handleNumber('errorStatusCode')}
+          helperText="HTTP status returned when pipeline dispatch fails"
+          fullWidth
+          sx={{ mb: 2 }}
+          slotProps={{ htmlInput: { min: 400, max: 599 } }}
+        />
+
+        <TextField
+          label="Max Body Bytes"
+          type="number"
+          value={getNum(properties, 'maxBodyBytes', 52428800)}
+          onChange={handleNumber('maxBodyBytes')}
+          helperText="Inbound request body cap in bytes (default 52428800 = 50 MiB)"
+          fullWidth
+          sx={{ mb: 2 }}
+          slotProps={{ htmlInput: { min: 1 } }}
         />
       </Grid>
 

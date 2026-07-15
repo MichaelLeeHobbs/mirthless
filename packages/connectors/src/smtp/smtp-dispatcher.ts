@@ -32,6 +32,13 @@ export interface SmtpDispatcherConfig {
   readonly bodyTemplate: string;
   readonly contentType: 'text/plain' | 'text/html';
   readonly attachContent: boolean;
+  /**
+   * Config-driven attachments. Each item's `filename` and `content` run through
+   * `substituteTemplate` (so `${msg}`/`${messageId}`/etc. work); `mimeType` maps
+   * to nodemailer's `contentType`. This is Mirth's config-driven model — content
+   * is a template string, not a reference into the message attachment table.
+   */
+  readonly attachments?: readonly SmtpAttachment[] | undefined;
 }
 
 export interface SmtpAuth {
@@ -55,12 +62,21 @@ export interface SmtpMailOptions {
   readonly subject: string;
   readonly text?: string;
   readonly html?: string;
-  readonly attachments?: readonly SmtpAttachment[];
+  readonly attachments?: readonly SmtpMailAttachment[];
 }
 
+/** Config-level attachment: template strings + optional MIME type. */
 export interface SmtpAttachment {
   readonly filename: string;
   readonly content: string;
+  readonly mimeType?: string;
+}
+
+/** Nodemailer-facing attachment: substituted values + nodemailer's `contentType`. */
+export interface SmtpMailAttachment {
+  readonly filename: string;
+  readonly content: string;
+  readonly contentType?: string;
 }
 
 export interface SmtpSendResult {
@@ -126,6 +142,7 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
 
       const subject = substituteTemplate(this.config.subject, message.content, message);
       const body = substituteTemplate(this.config.bodyTemplate, message.content, message);
+      const attachments = this.buildAttachments(message);
 
       const mailOptions: SmtpMailOptions = {
         from: this.config.from,
@@ -134,9 +151,7 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
         ...(this.config.bcc ? { bcc: this.config.bcc } : {}),
         subject,
         ...(this.config.contentType === 'text/html' ? { html: body } : { text: body }),
-        ...(this.config.attachContent ? {
-          attachments: [{ filename: 'message.txt', content: message.content }],
-        } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
       };
 
       const transport = this.createTransport(this.config);
@@ -166,6 +181,28 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
         transport.close();
       }
     });
+  }
+
+  /**
+   * Build the outbound attachment list: the optional `message.txt` body
+   * attachment (when `attachContent`) followed by each config attachment with
+   * its filename/content template-substituted and `mimeType` mapped to
+   * `contentType`. Returns an empty array when nothing is configured so the
+   * caller can omit the `attachments` key entirely.
+   */
+  private buildAttachments(message: ConnectorMessage): readonly SmtpMailAttachment[] {
+    const result: SmtpMailAttachment[] = [];
+    if (this.config.attachContent) {
+      result.push({ filename: 'message.txt', content: message.content });
+    }
+    for (const att of this.config.attachments ?? []) {
+      result.push({
+        filename: substituteTemplate(att.filename, message.content, message),
+        content: substituteTemplate(att.content, message.content, message),
+        ...(att.mimeType ? { contentType: att.mimeType } : {}),
+      });
+    }
+    return result;
   }
 
   async onStop(): Promise<Result<void>> {

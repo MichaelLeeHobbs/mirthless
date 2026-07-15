@@ -6,11 +6,14 @@ import { describe, it, expect } from 'vitest';
 import {
   SFTP_SOURCE_DEFAULTS,
   HTTP_SOURCE_DEFAULTS,
+  TCP_MLLP_SOURCE_DEFAULTS,
   getDefaultProperties,
 } from '../source/connector-defaults.js';
 import {
   SFTP_DEST_DEFAULTS,
   HTTP_DEST_DEFAULTS,
+  TCP_MLLP_DEST_DEFAULTS,
+  SMTP_DEST_DEFAULTS,
   getDestDefaultProperties,
   createDefaultDestination,
 } from '../destinations/connector-defaults.js';
@@ -82,6 +85,41 @@ describe('HTTP TLS defaults (id-based, no raw PEM)', () => {
     expect(tls['requireClientCert']).toBe(false);
     expect(tls['cert']).toBeUndefined();
     expect(tls['key']).toBeUndefined();
+  });
+});
+
+describe('TCP/MLLP runtime option defaults (rank-4 surfacing)', () => {
+  it('source surfaces responseMode/charset/maxFrameBytes with safe defaults', () => {
+    expect(TCP_MLLP_SOURCE_DEFAULTS['responseMode']).toBe('AUTO_ACK');
+    expect(TCP_MLLP_SOURCE_DEFAULTS['charset']).toBe('utf-8');
+    expect(TCP_MLLP_SOURCE_DEFAULTS['maxFrameBytes']).toBe(52428800);
+  });
+
+  it('source charset is a valid Node BufferEncoding token (registry casts verbatim)', () => {
+    // The registry does not normalize — a human label like "ISO-8859-1" would throw.
+    expect(Buffer.from('x', TCP_MLLP_SOURCE_DEFAULTS['charset'] as BufferEncoding)).toBeInstanceOf(Buffer);
+  });
+
+  it('dest surfaces acquireTimeoutMs/charset with safe defaults', () => {
+    expect(TCP_MLLP_DEST_DEFAULTS['acquireTimeoutMs']).toBe(30000);
+    expect(TCP_MLLP_DEST_DEFAULTS['charset']).toBe('utf-8');
+  });
+});
+
+describe('HTTP source runtime option defaults (rank-4 surfacing)', () => {
+  it('surfaces errorStatusCode/maxBodyBytes with safe defaults', () => {
+    expect(HTTP_SOURCE_DEFAULTS['errorStatusCode']).toBe(500);
+    expect(HTTP_SOURCE_DEFAULTS['maxBodyBytes']).toBe(52428800);
+  });
+});
+
+describe('SMTP dest runtime option defaults (rank-4 surfacing)', () => {
+  it('surfaces requireTLS defaulting to false', () => {
+    expect(SMTP_DEST_DEFAULTS['requireTLS']).toBe(false);
+  });
+
+  it('defaults attachments to an empty array (rank-9 multi-attachment)', () => {
+    expect(SMTP_DEST_DEFAULTS['attachments']).toEqual([]);
   });
 });
 
