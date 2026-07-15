@@ -21,8 +21,11 @@ import {
   FILE_POST_ACTION,
   HttpReceiver,
   HttpDispatcher,
+  FhirDispatcher,
+  TcpMllpReceiver,
 } from '@mirthless/connectors';
 import { deployChannel, teardownAll, type DeployedChannel } from './support/e2e-harness.js';
+import { sendMllp } from './support/tcp-helpers.js';
 
 let deployed: DeployedChannel[] = [];
 const tempDirs: string[] = [];
@@ -141,10 +144,73 @@ describe('HTTP connector (POST in → transform → POST out to a downstream ser
   }, 15_000);
 });
 
+// ----- FHIR connector (destination) -----
+
+describe('FHIR connector (POST a resource in → transform to FHIR → POST to a FHIR server)', () => {
+  it('transforms the message into a FHIR Patient and POSTs it to a FHIR endpoint', async () => {
+    const received: { path: string; contentType: string; body: string }[] = [];
+    const fhirServer = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => { body += String(chunk); });
+      req.on('end', () => {
+        received.push({ path: req.url ?? '', contentType: req.headers['content-type'] ?? '', body });
+        res.writeHead(201, { 'Content-Type': 'application/fhir+json', Location: '/Patient/123' });
+        res.end(body);
+      });
+    });
+    await listen(fhirServer, FHIR_PORT);
+    servers.push(fhirServer);
+
+    const channel = await deployChannel({
+      channelId: '00000000-0000-0000-0000-connfhir0001',
+      dataType: 'RAW',
+      source: new TcpMllpReceiver({ host: '127.0.0.1', port: FHIR_SRC_PORT, maxConnections: 10 }),
+      // Build a FHIR Patient from the HL7 PID-5 name.
+      transformer: [
+        "const pid = String(msg).split(String.fromCharCode(13)).find((l) => l.indexOf('PID') === 0) || '';",
+        "const name = (pid.split('|')[5] || '').split('^');",
+        'const patient = { resourceType: "Patient", name: [{ family: name[0] || "", given: [name[1] || ""] }] };',
+        'return JSON.stringify(patient);',
+      ].join('\n'),
+      destinations: [{
+        metaDataId: 1,
+        name: 'FHIR Out',
+        connector: new FhirDispatcher({
+          baseUrl: `http://127.0.0.1:${String(FHIR_PORT)}`,
+          resourceType: 'Patient',
+          method: 'POST',
+          authType: 'NONE',
+          authConfig: {},
+          format: 'json',
+          timeout: 5_000,
+          headers: {},
+        }),
+      }],
+    });
+    deployed.push(channel);
+
+    await sendMllp(FHIR_SRC_PORT, [
+      'MSH|^~\\&|S|F|R|F|20260101||ADT^A01|1|P|2.5',
+      'PID|||1^^^MRN||DOE^JOHN',
+    ].join('\r'));
+
+    await waitForSync(() => received.length === 1);
+    const posted = received[0];
+    expect(posted?.path).toBe('/Patient');
+    expect(posted?.contentType).toContain('application/fhir+json');
+    const resource = JSON.parse(posted?.body ?? '{}') as { resourceType: string; name: { family: string; given: string[] }[] };
+    expect(resource.resourceType).toBe('Patient');
+    expect(resource.name[0]?.family).toBe('DOE');
+    expect(resource.name[0]?.given[0]).toBe('JOHN');
+  });
+});
+
 // ----- ports + helpers -----
 
 const HTTP_SRC_PORT = 17701;
 const DOWNSTREAM_PORT = 17702;
+const FHIR_PORT = 17703;
+const FHIR_SRC_PORT = 17704;
 
 async function listen(server: http.Server, port: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
