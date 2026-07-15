@@ -108,3 +108,11 @@ export function requireMail(): TestMailConfig {
   if (!mailConfig) throw new Error('SMTP_TEST_HOST is not set');
   return mailConfig;
 }
+
+// ----- DICOM (native @ubercode/dcmtk; opt-in via DICOM_TEST_ENABLED) -----
+// The DICOM connectors spawn real dcmtk storescp/storescu binaries. Gated behind
+// an explicit flag because native DICOM associations are heavier and slower than
+// the other suites.
+
+export const dicomEnabled = process.env.DICOM_TEST_ENABLED === '1';
+export const describeDicom = dicomEnabled ? describe : describe.skip;
