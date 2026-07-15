@@ -109,10 +109,5 @@ export function requireMail(): TestMailConfig {
   return mailConfig;
 }
 
-// ----- DICOM (native @ubercode/dcmtk; opt-in via DICOM_TEST_ENABLED) -----
-// The DICOM connectors spawn real dcmtk storescp/storescu binaries. Gated behind
-// an explicit flag because native DICOM associations are heavier and slower than
-// the other suites.
-
-export const dicomEnabled = process.env.DICOM_TEST_ENABLED === '1';
-export const describeDicom = dicomEnabled ? describe : describe.skip;
+// (DICOM needs no gate: the dcmjs-dimse connector runs in-process, so its cascade
+// test lives in the default lane — packages/engine/src/__tests__/connector-dicom.e2e.test.ts.)

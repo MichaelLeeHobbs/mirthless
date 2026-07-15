@@ -2,6 +2,33 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-07-14 — Real-message E2E testing + DICOM dcmjs-dimse port (branch `feature/real-e2e-testing`)
+
+Replaced mock-heavy connector tests with a harness that actually pushes messages through real
+connectors and asserts what lands on the other side. **All 11 connector types now covered by a
+passing real-message E2E.**
+
+- **E2E harness** (`packages/engine/src/__tests__/support/`) — `deployChannel(spec)` assembles a
+  live channel (sandbox + 8-stage pipeline + real source/dest connectors) over an in-memory store;
+  filter/transformer/response-transformer scripts compile through the real esbuild+template path.
+  `CaptureDestination` sink + MLLP TCP helpers. Two lanes: default `pnpm test` (no infra) and
+  `test:integration` (`*.itest.ts`, env-gated via `integration/gates.ts`; docker `--profile test`
+  adds atmoz/sftp + GreenMail).
+- **Coverage**: TCP/MLLP + Channel (A→B→C HL7→JSON→XML cascade), File, HTTP, JavaScript (src+dest),
+  Database (real `_test` PG), SFTP (listen↔dest cascade), SMTP+IMAP (GreenMail cascade), FHIR (dest),
+  DICOM (SCU→SCP cascade).
+- **DICOM connector ported to `dcmjs-dimse`** (pure JS) from `@ubercode/dcmtk` (native binaries).
+  Root cause of the prior association rejection: the dcmtk wrapper created the SCP with no accepted
+  presentation contexts. New `dcmjs-dimse-adapter.ts` negotiates contexts (accept all StorageClass
+  SOP classes + Verification + common transfer syntaxes) — pattern lifted from the production
+  MedFusion DIMSE service. Drop-in behind the existing `DcmtkReceiver`/`DcmtkSender` factory seams;
+  no connector API change. DICOM cascade now runs in the default lane, in-process, no binaries. (D-181)
+- **TypeScript channel scripts** compiled+run end-to-end; shipped ambient types
+  `packages/engine/sandbox-globals.d.ts` (drift-guarded against the web Monaco string).
+- **Bug fix** (`4c6af8f`): `ChannelService.create` silently dropped `input.transformers`/`filters`
+  (only `update` persisted them) — data loss on clone/import/programmatic create. Extracted shared
+  `syncFilters`/`syncTransformers`, wired into both paths; real-Postgres regression test.
+
 ## 2026-07-13 — Dashboard/Channels/Messages overhaul (branch `feature/dashboard-overhaul`)
 
 Reworked the three main views so everything happens from the Dashboard; the standalone
