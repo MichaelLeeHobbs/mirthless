@@ -17,5 +17,33 @@ services:
       timeout: 5s
       retries: 5
 
+  # --- Integration-test services (only start with: docker compose --profile test up) ---
+  # Back the engine's connector integration lane (packages/engine *.itest.ts).
+  # Match the env the gates expect (packages/engine/src/__tests__/integration/gates.ts).
+
+  sftp-test:
+    image: atmoz/sftp:alpine
+    container_name: mirthless-sftp-test
+    profiles: ["test"]
+    # user:password:::dir  → creates /home/mirth/upload, writable, chrooted.
+    command: mirth:mirthpw:::upload
+    ports:
+      - "2222:22"
+
+  mail-test:
+    # GreenMail: SMTP (3025) + IMAP (3143) in one container for mail connectors.
+    image: greenmail/standalone:2.1.0
+    container_name: mirthless-mail-test
+    profiles: ["test"]
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.all
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=mirth:mirthpw@example.com
+        -Dgreenmail.auth.disabled
+    ports:
+      - "3025:3025"
+      - "3143:3143"
+
 volumes:
   postgres_data:
