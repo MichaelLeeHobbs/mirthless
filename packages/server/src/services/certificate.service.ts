@@ -6,7 +6,7 @@
 
 import { X509Certificate } from 'node:crypto';
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, asc, lte, ilike, and, type SQL } from 'drizzle-orm';
+import { eq, asc, lte, ilike, and, sql, type SQL } from 'drizzle-orm';
 import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -27,16 +27,26 @@ export interface CertificateSummary {
   readonly notAfter: Date;
   readonly createdAt: Date;
   readonly updatedAt: Date;
+  /**
+   * Whether a private key is stored server-side. Computed in SQL as a boolean so
+   * the key material itself is NEVER selected or returned — a `settings:read`
+   * caller must not be able to exfiltrate private keys. The raw key stays in the
+   * DB for server-side use (e.g. TLS resolution at channel deploy time).
+   */
+  readonly hasPrivateKey: boolean;
 }
 
 export interface CertificateDetail extends CertificateSummary {
   readonly certificatePem: string;
-  /**
-   * Whether a private key is stored server-side. The key material itself is
-   * NEVER returned in read responses — a `settings:read` caller must not be able
-   * to exfiltrate private keys. The raw key stays in the DB for server-side use.
-   */
-  readonly hasPrivateKey: boolean;
+}
+
+/**
+ * SQL boolean projecting whether a private key exists, WITHOUT selecting the key
+ * bytes. Reused by every list-shaped query so key material never leaves the DB.
+ * Built lazily (not at module load) so the `sql` tag runs only at query time.
+ */
+function hasPrivateKeyExpr(): SQL.Aliased<boolean> {
+  return sql<boolean>`(${certificates.privateKeyPem} IS NOT NULL AND length(${certificates.privateKeyPem}) > 0)`.as('hasPrivateKey');
 }
 
 // ----- Helpers -----
@@ -75,6 +85,7 @@ function toSummary(row: typeof certificates.$inferSelect): CertificateSummary {
     notAfter: row.notAfter,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    hasPrivateKey: row.privateKeyPem !== null && row.privateKeyPem.length > 0,
   };
 }
 
@@ -82,7 +93,6 @@ function toDetail(row: typeof certificates.$inferSelect): CertificateDetail {
   return {
     ...toSummary(row),
     certificatePem: row.certificatePem,
-    hasPrivateKey: row.privateKeyPem !== null && row.privateKeyPem.length > 0,
   };
 }
 
@@ -121,6 +131,7 @@ export class CertificateService {
           notAfter: certificates.notAfter,
           createdAt: certificates.createdAt,
           updatedAt: certificates.updatedAt,
+          hasPrivateKey: hasPrivateKeyExpr(),
         })
         .from(certificates);
 
@@ -309,12 +320,39 @@ export class CertificateService {
           notAfter: certificates.notAfter,
           createdAt: certificates.createdAt,
           updatedAt: certificates.updatedAt,
+          hasPrivateKey: hasPrivateKeyExpr(),
         })
         .from(certificates)
         .where(lte(certificates.notAfter, threshold))
         .orderBy(asc(certificates.notAfter));
 
       return rows;
+    });
+  }
+
+  /**
+   * SERVER-INTERNAL: fetch a certificate's PEM material INCLUDING its private key.
+   * Used only by deploy-time / connection-test TLS resolution — this is the one
+   * path that returns key bytes, so it MUST NEVER be wired to an HTTP controller
+   * or route. Returns NOT_FOUND when the id does not exist.
+   */
+  static async getMaterialById(
+    id: string,
+  ): Promise<Result<{ certificatePem: string; privateKeyPem: string | null }>> {
+    return tryCatch(async () => {
+      const [row] = await db
+        .select({
+          certificatePem: certificates.certificatePem,
+          privateKeyPem: certificates.privateKeyPem,
+        })
+        .from(certificates)
+        .where(eq(certificates.id, id));
+
+      if (!row) {
+        throw new ServiceError('NOT_FOUND', `Certificate ${id} not found`);
+      }
+
+      return { certificatePem: row.certificatePem, privateKeyPem: row.privateKeyPem };
     });
   }
 }

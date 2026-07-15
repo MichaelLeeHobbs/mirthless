@@ -164,7 +164,7 @@ interface GlobalScriptSeed {
 
 async function seedGlobalScripts(db: Db): Promise<void> {
   const seeds: ReadonlyArray<GlobalScriptSeed> = [
-    { scriptType: 'PREPROCESSOR', script: ["// Runs for every message before channel processing.", "logger.info('Global preprocessor: message received');", 'return message;'].join('\n') },
+    { scriptType: 'PREPROCESSOR', script: ["// Runs for every message before channel processing.", "// Sandbox globals: msg (parsed), rawData (original string), channelMap, logger, httpFetch, etc.", "logger.info('Global preprocessor: message received');", 'return msg;'].join('\n') },
     { scriptType: 'DEPLOY', script: ["// Runs once when the server deploys channels.", "logger.info('Global deploy script executed');"].join('\n') },
   ];
   for (const seed of seeds) {

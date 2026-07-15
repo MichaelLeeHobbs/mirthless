@@ -154,6 +154,11 @@ async function seed(): Promise<void> {
     // Seed showcase example data for otherwise-empty feature pages
     const { seedShowcase } = await import('./seed-showcase.js');
     await seedShowcase(exampleDb);
+
+    // Seed browsable example messages for the example channels (uses the
+    // MessageService write-path via the server db singleton — no db argument).
+    const { seedExampleMessages } = await import('./seed-example-messages.js');
+    await seedExampleMessages();
   } finally {
     await pool.end();
   }

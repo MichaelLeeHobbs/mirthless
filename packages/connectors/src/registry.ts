@@ -159,6 +159,7 @@ const destinationFactories = new Map<string, DestinationFactory>([
     headers: (props['headers'] as Record<string, string> | undefined) ?? {},
     contentType: (props['contentType'] as string | undefined) ?? 'text/plain',
     responseTimeout: num(props, 'responseTimeout', 30_000),
+    scheme: props['scheme'] as string | undefined,
     tls: readTlsClientOptions(props),
   })],
   ['FILE', (props): DestinationConnectorRuntime => new FileDispatcher({

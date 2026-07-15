@@ -192,17 +192,17 @@ export function MessageBrowserPage(): ReactNode {
   return (
     <Box>
       <PageBreadcrumbs items={[
-        { label: 'Channels', href: '/channels' },
-        { label: channel?.name ?? 'Channel', href: `/channels/${channelId}` },
+        { label: 'Dashboard', href: '/' },
+        { label: channel?.name ?? 'Channel' },
         { label: 'Messages' },
       ]} />
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
         <Button
           startIcon={<ArrowBackIcon />}
-          onClick={() => navigate(`/channels/${channelId}`)}
+          onClick={() => navigate('/')}
           size="small"
         >
-          Back to Channel
+          Back to Dashboard
         </Button>
         <Typography variant="h5" component="h1" sx={{ fontWeight: 600, flexGrow: 1 }}>
           Messages: {channel?.name ?? 'Loading...'}

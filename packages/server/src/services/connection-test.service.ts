@@ -7,6 +7,7 @@
 // Returns Result<ConnectionTestResult> — never throws.
 
 import * as net from 'node:net';
+import * as https from 'node:https';
 import * as dns from 'node:dns/promises';
 import { type LookupAddress } from 'node:dns';
 import * as fs from 'node:fs/promises';
@@ -15,6 +16,7 @@ import { createRequire } from 'node:module';
 import { stderr, type Result } from 'stderr-lib';
 import type { ConnectionTestResult } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { resolveHttpDestinationTls, resolveHttpSourceTls } from './connector-tls-resolver.js';
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -211,11 +213,124 @@ const testTcpMllp: Tester = async (_mode, props) => {
   return testTcpConnect(host, port);
 };
 
-/** HTTP tester — sends HEAD request to URL. */
-const testHttp: Tester = async (_mode, props) => {
+/**
+ * HTTPS tester — resolves the selected certificates and performs a REAL TLS (or
+ * mTLS) handshake with a HEAD request, so a passing test reflects the actual
+ * ca/cert/key/rejectUnauthorized the connector will deploy with. Fails loud when
+ * a referenced certificate cannot be resolved.
+ */
+async function testHttpsWithTls(
+  url: string,
+  props: Readonly<Record<string, unknown>>,
+): Promise<ConnectionTestResult> {
+  const resolved = await resolveHttpDestinationTls(props);
+  if (!resolved.ok) {
+    throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
+  }
+  const tls = (resolved.value['tls'] as Record<string, unknown> | undefined) ?? {};
+  const start = performance.now();
+
+  return new Promise<ConnectionTestResult>((resolve) => {
+    const req = https.request(
+      url,
+      {
+        method: 'HEAD',
+        timeout: TEST_TIMEOUT_MS,
+        rejectUnauthorized: tls['rejectUnauthorized'] !== false,
+        ...(tls['ca'] ? { ca: tls['ca'] as string } : {}),
+        ...(tls['cert'] ? { cert: tls['cert'] as string } : {}),
+        ...(tls['key'] ? { key: tls['key'] as string } : {}),
+      },
+      (res) => {
+        const latency = performance.now() - start;
+        res.resume();
+        resolve(successResult(`HTTPS ${String(res.statusCode)} ${res.statusMessage ?? ''}`.trim(), latency));
+      },
+    );
+    req.on('timeout', () => { req.destroy(new Error('Connection timed out')); });
+    req.on('error', (err: Error) => {
+      resolve(failureResult(`HTTPS request failed: ${err.message}`, performance.now() - start));
+    });
+    req.end();
+  });
+}
+
+/**
+ * HTTPS SOURCE tester — an HTTPS listener has no outbound URL to connect to, so
+ * "test connection" instead resolves the selected server certificate and runs a
+ * REAL loopback TLS handshake using the resolved cert/key. This fails loud when
+ * the certificate can't be resolved, lacks a private key, or the cert and key do
+ * not form a valid pair (caught by Node's secure-context creation) — i.e. exactly
+ * the failures that would otherwise only surface when the channel is deployed.
+ */
+async function testHttpsSourceHandshake(
+  props: Readonly<Record<string, unknown>>,
+): Promise<ConnectionTestResult> {
+  const resolved = await resolveHttpSourceTls(props);
+  if (!resolved.ok) {
+    throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
+  }
+  const tls = (resolved.value['tls'] as Record<string, unknown> | undefined) ?? {};
+  const cert = tls['cert'] as string;
+  const key = tls['key'] as string;
+  const start = performance.now();
+
+  return new Promise<ConnectionTestResult>((resolve) => {
+    let settled = false;
+    let server: https.Server | undefined;
+    const finish = (result: ConnectionTestResult): void => {
+      if (settled) return;
+      settled = true;
+      server?.close();
+      resolve(result);
+    };
+
+    // A mismatched cert/key throws here (X509_check_private_key) — fail loud.
+    try {
+      server = https.createServer({ cert, key }, (_req, res) => { res.end(); });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'invalid certificate/key';
+      resolve(failureResult(`TLS handshake failed: ${msg}`, performance.now() - start));
+      return;
+    }
+
+    server.on('error', (err: Error) => {
+      finish(failureResult(`TLS handshake failed: ${err.message}`, performance.now() - start));
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const address = server?.address();
+      const port = typeof address === 'object' && address !== null ? address.port : 0;
+      const req = https.request(
+        { host: '127.0.0.1', port, method: 'HEAD', rejectUnauthorized: false, timeout: TEST_TIMEOUT_MS },
+        (res) => {
+          res.resume();
+          finish(successResult('HTTPS listener TLS handshake succeeded (server certificate + key valid)', performance.now() - start));
+        },
+      );
+      req.on('timeout', () => { req.destroy(new Error('handshake timed out')); });
+      req.on('error', (err: Error) => {
+        finish(failureResult(`TLS handshake failed: ${err.message}`, performance.now() - start));
+      });
+      req.end();
+    });
+  });
+}
+
+/** HTTP tester — sends HEAD request to URL (plain fetch, or real TLS for HTTPS). */
+const testHttp: Tester = async (mode, props) => {
+  // HTTPS source listeners have no outbound URL — validate the server cert via a
+  // real loopback handshake instead of requiring a `url` they never carry.
+  if (mode === 'SOURCE' && props['scheme'] === 'HTTPS') {
+    return testHttpsSourceHandshake(props);
+  }
+
   const url = requireString(props, 'url');
   const parsed = new URL(url);
   await assertHostAllowed(parsed.hostname);
+
+  if (props['scheme'] === 'HTTPS') {
+    return testHttpsWithTls(url, props);
+  }
 
   const start = performance.now();
   const controller = new AbortController();

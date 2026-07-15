@@ -197,9 +197,9 @@ export function CertificatesPage(): ReactNode {
       />
 
       <Alert severity="info" sx={{ mb: 2 }}>
-        This is a certificate store for tracking and expiry monitoring. Connectors
-        do not yet reference certificates by ID — TLS is configured by pasting the
-        PEM material directly into each connector's TLS settings.
+        Certificates stored here are referenced by ID from HTTPS connectors (HTTP
+        source/destination). The server resolves the referenced material to PEM at
+        deploy time — no key material leaves this store through the API.
       </Alert>
 
       {error && (

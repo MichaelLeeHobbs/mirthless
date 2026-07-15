@@ -8,7 +8,10 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**'],
+    // Ambient declaration files legitimately use `declare var` for global
+    // (globalThis) augmentation — `no-var` is a false positive there — and are
+    // otherwise type-only, so exclude them from linting.
+    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/*.d.ts'],
   },
   {
     rules: {

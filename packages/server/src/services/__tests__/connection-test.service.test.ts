@@ -2,7 +2,17 @@
 // Connection Test Service Tests
 // ===========================================
 
+import { generateKeyPairSync } from 'node:crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// The HTTPS-source handshake tester resolves the selected server cert via
+// CertificateService.getMaterialById; mock it so no DB is touched. The real
+// source resolver (id -> PEM) still runs, so this exercises the full path.
+const mockGetMaterialById = vi.fn();
+vi.mock('../certificate.service.js', () => ({
+  CertificateService: { getMaterialById: (...args: unknown[]) => mockGetMaterialById(...args) },
+}));
+
 import {
   ConnectionTestService,
   setPoolFactory,
@@ -10,6 +20,66 @@ import {
   resetFactories,
   _testing,
 } from '../connection-test.service.js';
+
+// ----- TLS fixtures (self-signed CN=localhost pair; test-only) -----
+
+const TEST_CERT_PEM = `-----BEGIN CERTIFICATE-----
+MIIDJTCCAg2gAwIBAgIUfbslPxwZsvZjSNfAld+jrNGfqKEwDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDcxMjE5NDk0M1oXDTM2MDcw
+OTE5NDk0M1owFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEAxcTrIpuHQubX02oTolebOWAmS51uYFrPk4hjSCIb3yAt
+TCz7apPZNRWpTS/+OM2o9599hbniWWg4IYXydoyHFpiv59hq/xGerr3qyfkWIOA+
++JNyhYCOrvFviA5MRe/gVpYNivUUx0sW/8m469JQRd3Tf7RNZw1eInYsbWFhSJr2
+ZlorZ7rqn3Y9REtD4KGlxq3TGVbqi54FySKg2Nk+cqHlNphghDsd4Ym4eej/gWCC
+oernK4jApb8VybqBDL9Wvn1JjNalQIGB5ReAQxAWV89UJyzCotKS+vKC3sbBYD9m
+Ta9V+fGKzIoD/bP0abFuH8Td47fiSFo3oNCyOX5KWwIDAQABo28wbTAdBgNVHQ4E
+FgQUm+fBUl1pyhE95Nd98phW1yapAPcwHwYDVR0jBBgwFoAUm+fBUl1pyhE95Nd9
+8phW1yapAPcwDwYDVR0TAQH/BAUwAwEB/zAaBgNVHREEEzARgglsb2NhbGhvc3SH
+BH8AAAEwDQYJKoZIhvcNAQELBQADggEBABv4jQaqtIjBSh38V0xEO35691x/t7PB
+dmiGV1VasI9tS6qIIKumbTHmHIo0qGUS08kGGBFHvlhk0SRwevq8EC+fHIh6bQgk
+0i3ubTpnT4qu/g0+de8nOkk+F1ZfjjVzS4/sNlZ3sc3mEpFxLqF4i4praCr8kkMH
+SxRN0sAXGvYTPFr2ZR9p+V6nkZzNGGU3lmh/Y3cBtINSprO8qd0Zk5iwFuuKES0o
+Efge++UoPlPxI7VbGWrTFp36oTdiMOFi24bqom60x+xLHwbUaOQe4DupFTlEppu7
+Rk4CjgfP0xG1s1r+qO2YlGOscRMFgl7niNrPiZOIZSiDOcSDB9ZVszM=
+-----END CERTIFICATE-----
+`;
+
+const TEST_KEY_PEM = `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDFxOsim4dC5tfT
+ahOiV5s5YCZLnW5gWs+TiGNIIhvfIC1MLPtqk9k1FalNL/44zaj3n32FueJZaDgh
+hfJ2jIcWmK/n2Gr/EZ6uverJ+RYg4D74k3KFgI6u8W+IDkxF7+BWlg2K9RTHSxb/
+ybjr0lBF3dN/tE1nDV4idixtYWFImvZmWitnuuqfdj1ES0PgoaXGrdMZVuqLngXJ
+IqDY2T5yoeU2mGCEOx3hibh56P+BYIKh6ucriMClvxXJuoEMv1a+fUmM1qVAgYHl
+F4BDEBZXz1QnLMKi0pL68oLexsFgP2ZNr1X58YrMigP9s/RpsW4fxN3jt+JIWjeg
+0LI5fkpbAgMBAAECggEAU59rCQwYSmqPcb5VpPxEDyOfrbNYm3dqc+hkiniZrmPN
+o3sVp7/yRObu2ktjxCL5whJ3IdcyZTmTGmGn3waWjDBtmKvCui16GksFfvdKqwYG
+ulamQtrT+hbuYOoiyCOgiRwTh+EPMyGGDQv/m/8moBQmvMXBQMS/O/UZ3foiB292
+0Bcle+5OnvuItBTP6t1yMyJm1RPZCmraqZKx/SznaZb1tFMv3/plnCadscDhJhcV
+VdENU/ICBeO30lXRkPeEZoyt4TQVeH5S3Ftus3GlESbX3OTRWIPUAFXOM0K4kk5V
+xJlFkmjwkVSEb1isTGXagMmkX8Az4MRdtBpAkEIiIQKBgQD/p2dufRxH6YBMav6g
+KnFs/R/oE+4po8KnO587hshKkROJ29kNdSDE9q5XN9Vkxw19gGXFYt2ZbB2zd0LG
+4hofA6n+pto13RPa0IaKG0TvB6Kty7tryOVOODknGyqpw+q/pZg6gnJUcDQBhq9S
+2yU6wLmqK6gkYb4hdEp5PuTgSwKBgQDGCXRozUfyyO8++ttlxcBbEv4ZEbVM3LK4
+ciMcJ7ghjzjDGy4k50Pnk/gyAFKsr+uAghVd5ZvYhpioGQvagvPgrXKcWk4AlHnT
+ScHUxQsMrmoJn8o6IscZzSycAYi/vJBKzTyahdbRiEpj37RYV+b56bU60c2UyCYq
+cC9zf4yUMQKBgCEsX8d+hITwT62a1J+D4mP6FIHQ1D6i+Ucp/WeD/clvOdHRrUCJ
+yk7Ek6rNm+sPyThXyNzsD0UxOklnWErmW+1aVFyu2fHTVhg2pr6U+0TpALr8jL1X
+vCmCMihY5hhRS8zCeBZfhuZeCOGJ0IY32YTeLTlfoNnXtQwyQteoyZoxAoGADfB6
+bioM52z3UiKMMOSzfnWexxr0/P0H4229RO0Sy+Ht5+XQ4K4anIFQ1gwpxZf4ZqpB
+YMOZrasDsclZiT7wdZ8f0xuUI/xPeuzVJOndtj3MnvLNZDwwcYN8oVqGSqC2M12w
+51uGXGdQfSkw44sEahDmPcaoxtEzxobxABs5RPECgYEAi5/+vzGFU9ILSnKAtyrl
+z8TUGLdfPd3GIW0L25VlWaF7mXgJwASllxVdUNA7uamUhYkTcZDzzTZlLSVmyqCG
+3w551Ct0uJJOcoExBq2PoC9fXq5Sd/VOVl8HqA/JRjdc0ny7ZS3+Q3sATaa/3/3g
+5SMI9cA5l/ywszdyKLM6TZU=
+-----END PRIVATE KEY-----
+`;
+
+// A different, valid key that does NOT match TEST_CERT_PEM (generated per run).
+const MISMATCHED_KEY_PEM = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+}).privateKey;
 
 // ----- Mocks -----
 
@@ -188,6 +258,59 @@ describe('ConnectionTestService', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.message).toContain('url');
+    });
+
+    it('resolves the server cert and does a real TLS handshake for an HTTPS SOURCE', async () => {
+      // scheme HTTPS + mode SOURCE resolves the selected server cert (by id) and
+      // handshakes over loopback — a listener has no outbound url, so requiring
+      // one (the old behavior) was wrong.
+      mockGetMaterialById.mockResolvedValueOnce({
+        ok: true, value: { certificatePem: TEST_CERT_PEM, privateKeyPem: TEST_KEY_PEM }, error: null,
+      });
+
+      const result = await ConnectionTestService.testConnection('HTTP', 'SOURCE', {
+        scheme: 'HTTPS',
+        port: 8443,
+        tls: { serverCertId: 'srv-1', requireClientCert: false },
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(true);
+      expect(result.value.message).toContain('handshake succeeded');
+    });
+
+    it('fails loud for an HTTPS SOURCE when the cert and key do not match', async () => {
+      mockGetMaterialById.mockResolvedValueOnce({
+        ok: true, value: { certificatePem: TEST_CERT_PEM, privateKeyPem: MISMATCHED_KEY_PEM }, error: null,
+      });
+
+      const result = await ConnectionTestService.testConnection('HTTP', 'SOURCE', {
+        scheme: 'HTTPS',
+        port: 8443,
+        tls: { serverCertId: 'srv-1', requireClientCert: false },
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toContain('TLS handshake failed');
+    });
+
+    it('fails loud for an HTTPS SOURCE when the referenced cert cannot be resolved', async () => {
+      mockGetMaterialById.mockResolvedValueOnce({
+        ok: false, value: null, error: { message: 'Certificate srv-1 not found' },
+      });
+
+      const result = await ConnectionTestService.testConnection('HTTP', 'SOURCE', {
+        scheme: 'HTTPS',
+        port: 8443,
+        tls: { serverCertId: 'srv-1', requireClientCert: false },
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('resolution failed');
     });
   });
 

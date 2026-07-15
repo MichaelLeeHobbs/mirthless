@@ -56,6 +56,7 @@ import { ResourceService } from './services/resource.service.js';
 import { DataSourceService } from './services/data-source.service.js';
 import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
+import { resolveHttpSourceTls, resolveHttpDestinationTls } from './services/connector-tls-resolver.js';
 import { db } from './lib/db.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
@@ -429,18 +430,36 @@ export class EngineManager {
       encryptData: channel.encryptData,
     });
 
-    // Create source connector
+    // Create source connector. For HTTP, resolve any HTTPS cert-ID references to
+    // PEM material server-side (connectors have no DB access). Fail loud so a
+    // channel never deploys silently without the TLS it was configured for.
+    let sourceProperties: Record<string, unknown> = channel.sourceConnectorProperties;
+    if (channel.sourceConnectorType === 'HTTP') {
+      const resolved = await resolveHttpSourceTls(sourceProperties);
+      if (!resolved.ok) {
+        throw new Error(`Channel ${channel.id} source TLS resolution failed: ${resolved.error.message}`);
+      }
+      sourceProperties = resolved.value;
+    }
     const source = createSourceConnector(
       channel.sourceConnectorType,
-      channel.sourceConnectorProperties,
+      sourceProperties,
     ) as SourceConnectorRuntime;
 
-    // Create destination connectors
+    // Create destination connectors (HTTP destinations resolve HTTPS cert-IDs too).
     const destinations = new Map<number, DestinationConnectorRuntime>();
     for (const dest of channel.destinations) {
+      let destProperties: Record<string, unknown> = dest.properties;
+      if (dest.connectorType === 'HTTP') {
+        const resolved = await resolveHttpDestinationTls(destProperties);
+        if (!resolved.ok) {
+          throw new Error(`Channel ${channel.id} destination ${dest.metaDataId} TLS resolution failed: ${resolved.error.message}`);
+        }
+        destProperties = resolved.value;
+      }
       const connector = createDestinationConnector(
         dest.connectorType,
-        dest.properties,
+        destProperties,
       );
       destinations.set(dest.metaDataId, connector);
     }
