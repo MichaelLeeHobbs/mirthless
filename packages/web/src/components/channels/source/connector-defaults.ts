@@ -20,6 +20,12 @@ export const HTTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   method: 'POST',
   responseStatusCode: 200,
   responseContentType: 'text/plain',
+  // Transport mode. HTTPS makes the listener terminate TLS using a server
+  // certificate selected from the certificate store by ID; the server resolves
+  // IDs -> PEM at deploy time (readTlsServerOptions consumes the resolved
+  // cert/key/ca/requireClientCert bag). No raw PEM is stored here.
+  scheme: 'HTTP',
+  tls: { serverCertId: '', caCertId: '', requireClientCert: false },
 };
 
 export const FILE_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {

@@ -19,6 +19,7 @@ export interface CertificateSummary {
   readonly subject: string;
   readonly notBefore: string;
   readonly notAfter: string;
+  readonly hasPrivateKey: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

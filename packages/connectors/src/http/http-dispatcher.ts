@@ -22,6 +22,12 @@ export interface HttpDispatcherConfig {
   readonly contentType: string;
   readonly responseTimeout: number;
   /**
+   * Explicit transport scheme. When 'HTTPS' the node:https path is authoritative
+   * (rather than inferring purely from the URL), so a configured HTTPS
+   * destination always applies its TLS options. Absent → legacy URL inference.
+   */
+  readonly scheme?: string | undefined;
+  /**
    * Optional client-side TLS material for HTTPS destinations: a custom/internal
    * CA to trust, a client certificate + key for mutual TLS, and verification
    * control. Applied only for https:// URLs. Verification defaults to ON.
@@ -91,8 +97,13 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
 
       // HTTPS with custom TLS material can't go through fetch (needs an undici
       // Agent we don't depend on) — use node:https so ca/cert/key/reject apply.
-      const isHttps = new URL(this.config.url).protocol === 'https:';
-      if (isHttps && hasActiveTlsOptions(this.config.tls)) {
+      // scheme==='HTTPS' is authoritative: a configured HTTPS destination always
+      // takes the node:https path so its TLS options are honored, even when the
+      // material alone (e.g. a public-CA server with default verification) would
+      // otherwise have fallen back to fetch. Absent scheme → legacy URL inference.
+      const schemeHttps = this.config.scheme === 'HTTPS';
+      const isHttps = schemeHttps || new URL(this.config.url).protocol === 'https:';
+      if (isHttps && (schemeHttps || hasActiveTlsOptions(this.config.tls))) {
         return this.sendViaHttps(message, combinedSignal, bodyAllowed);
       }
 

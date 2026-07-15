@@ -87,6 +87,7 @@ vi.mock('drizzle-orm', () => ({
   lte: vi.fn((_col: unknown, val: unknown) => ({ type: 'lte', val })),
   ilike: vi.fn((_col: unknown, val: unknown) => ({ type: 'ilike', val })),
   and: vi.fn((...args: unknown[]) => ({ type: 'and', conditions: args })),
+  sql: vi.fn(() => ({ as: vi.fn((name: string) => ({ type: 'sql', name })) })),
 }));
 
 vi.mock('../../lib/event-emitter.js', () => ({
@@ -433,6 +434,45 @@ describe('CertificateService', () => {
       pushResponse([]);
 
       const result = await CertificateService.delete(CERT_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('message', expect.stringContaining('not found'));
+    });
+  });
+
+  describe('getMaterialById', () => {
+    it('returns cert + private key material for an existing id', async () => {
+      pushResponse([{
+        certificatePem: '-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----',
+        privateKeyPem: '-----BEGIN PRIVATE KEY-----\nSECRET\n-----END PRIVATE KEY-----',
+      }]);
+
+      const result = await CertificateService.getMaterialById(CERT_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.certificatePem).toContain('BEGIN CERTIFICATE');
+      expect(result.value.privateKeyPem).toContain('SECRET');
+    });
+
+    it('returns null privateKeyPem when the cert has no key', async () => {
+      pushResponse([{
+        certificatePem: '-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----',
+        privateKeyPem: null,
+      }]);
+
+      const result = await CertificateService.getMaterialById(CERT_ID);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.privateKeyPem).toBeNull();
+    });
+
+    it('returns NOT_FOUND for missing id', async () => {
+      pushResponse([]);
+
+      const result = await CertificateService.getMaterialById(CERT_ID);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;

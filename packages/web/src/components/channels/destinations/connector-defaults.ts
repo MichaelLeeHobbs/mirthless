@@ -19,10 +19,11 @@ export const HTTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   headers: {},
   contentType: 'text/plain',
   responseTimeout: 30000,
-  // Client TLS for HTTPS destinations. Nested under `tls` to match what the
-  // connector reads via readTlsClientOptions (ca/cert/key/rejectUnauthorized).
-  // Empty PEMs + rejectUnauthorized:true = default fetch behavior (system CAs).
-  tls: { ca: '', cert: '', key: '', rejectUnauthorized: true },
+  // Transport mode. HTTPS selects TLS material from the certificate store by ID;
+  // the server resolves IDs -> PEM at deploy time (readTlsClientOptions consumes
+  // the resolved cert/key/ca/rejectUnauthorized bag). No raw PEM is stored here.
+  scheme: 'HTTP',
+  tls: { caCertId: '', clientCertId: '', rejectUnauthorized: true },
 };
 
 export const FILE_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {

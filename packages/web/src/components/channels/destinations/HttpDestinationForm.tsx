@@ -15,8 +15,10 @@ import type { DestConnectorFormProps } from './types.js';
 import { HTTP_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { HeadersEditor, coerceHeaders } from '../../common/HeadersEditor.js';
+import { CertificateSelect } from '../common/CertificateSelect.js';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
+const SCHEMES = ['HTTP', 'HTTPS'] as const;
 
 function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
   const val = props[key];
@@ -73,9 +75,8 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
     update('tls', { ...getTls(properties), [key]: value });
   };
 
-  const handleTlsText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    updateTls(key, e.target.value);
-  };
+  const scheme = getStr(properties, 'scheme', 'HTTP');
+  const isHttps = scheme === 'HTTPS';
 
   return (
     <Grid container spacing={3}>
@@ -141,61 +142,62 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
         />
       </Grid>
 
-      {/* TLS / client certificates — only used for https:// URLs */}
+      {/* Transport mode — HTTP or HTTPS (TLS material selected from the cert store) */}
       <Grid item xs={12}>
         <Divider sx={{ mb: 2 }} />
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-          TLS / Certificates
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-          Applied only for https:// URLs. Leave blank to use the system trust store.
+        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+          Transport
         </Typography>
 
         <TextField
-          label="CA Certificate (PEM)"
-          value={getTlsStr(properties, 'ca')}
-          onChange={handleTlsText('ca')}
-          helperText="Trust this custom/internal CA when verifying the server certificate"
-          fullWidth
-          multiline
-          minRows={3}
-          sx={{ mb: 2, '& textarea': { fontFamily: 'monospace' } }}
-        />
+          label="Mode"
+          value={scheme}
+          onChange={handleText('scheme')}
+          select
+          helperText="HTTPS selects TLS material from the Certificates store"
+          sx={{ mb: 2, minWidth: 220 }}
+        >
+          {SCHEMES.map((s) => (
+            <MenuItem key={s} value={s}>{s}</MenuItem>
+          ))}
+        </TextField>
 
-        <TextField
-          label="Client Certificate (PEM)"
-          value={getTlsStr(properties, 'cert')}
-          onChange={handleTlsText('cert')}
-          helperText="Client certificate chain for mutual TLS (optional)"
-          fullWidth
-          multiline
-          minRows={3}
-          sx={{ mb: 2, '& textarea': { fontFamily: 'monospace' } }}
-        />
+        {isHttps && (
+          <>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+              References certificates by ID. Material is resolved server-side at deploy time.
+            </Typography>
 
-        <TextField
-          label="Client Key (PEM)"
-          value={getTlsStr(properties, 'key')}
-          onChange={handleTlsText('key')}
-          helperText="Private key for the client certificate (optional)"
-          fullWidth
-          multiline
-          minRows={3}
-          sx={{ mb: 2, '& textarea': { fontFamily: 'monospace' } }}
-        />
-
-        <FormControlLabel
-          control={(
-            <Switch
-              checked={getTlsBool(properties, 'rejectUnauthorized', true)}
-              onChange={(e) => { updateTls('rejectUnauthorized', e.target.checked); }}
+            <CertificateSelect
+              label="Trust CA"
+              type="CA"
+              value={getTlsStr(properties, 'caCertId') || undefined}
+              onChange={(id) => { updateTls('caCertId', id ?? ''); }}
+              helperText="Trust this custom/internal CA when verifying the server certificate (optional)"
             />
-          )}
-          label="Reject unauthorized certificates"
-        />
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, mb: 1 }}>
-          Keep enabled. Disabling skips server certificate verification (insecure — audited exceptions only).
-        </Typography>
+
+            <CertificateSelect
+              label="Client certificate (mTLS)"
+              requirePrivateKey
+              value={getTlsStr(properties, 'clientCertId') || undefined}
+              onChange={(id) => { updateTls('clientCertId', id ?? ''); }}
+              helperText="Client certificate + key for mutual TLS (optional)"
+            />
+
+            <FormControlLabel
+              control={(
+                <Switch
+                  checked={getTlsBool(properties, 'rejectUnauthorized', true)}
+                  onChange={(e) => { updateTls('rejectUnauthorized', e.target.checked); }}
+                />
+              )}
+              label="Reject unauthorized certificates"
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, mb: 1 }}>
+              Keep enabled. Disabling skips server certificate verification (insecure — audited exceptions only).
+            </Typography>
+          </>
+        )}
       </Grid>
 
       <Grid item xs={12}>

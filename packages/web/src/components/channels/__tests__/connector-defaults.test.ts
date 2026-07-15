@@ -5,10 +5,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   SFTP_SOURCE_DEFAULTS,
+  HTTP_SOURCE_DEFAULTS,
   getDefaultProperties,
 } from '../source/connector-defaults.js';
 import {
   SFTP_DEST_DEFAULTS,
+  HTTP_DEST_DEFAULTS,
   getDestDefaultProperties,
   createDefaultDestination,
 } from '../destinations/connector-defaults.js';
@@ -58,6 +60,28 @@ describe('SFTP destination defaults', () => {
 
   it('is resolvable via getDestDefaultProperties', () => {
     expect(getDestDefaultProperties('SFTP')).toEqual(SFTP_DEST_DEFAULTS);
+  });
+});
+
+describe('HTTP TLS defaults (id-based, no raw PEM)', () => {
+  it('destination defaults to HTTP with an id-based client tls bag', () => {
+    expect(HTTP_DEST_DEFAULTS['scheme']).toBe('HTTP');
+    const tls = HTTP_DEST_DEFAULTS['tls'] as Record<string, unknown>;
+    expect(Object.keys(tls).sort()).toEqual(['caCertId', 'clientCertId', 'rejectUnauthorized']);
+    expect(tls['rejectUnauthorized']).toBe(true);
+    // Hard cut — no raw PEM keys leak into defaults.
+    expect(tls['ca']).toBeUndefined();
+    expect(tls['cert']).toBeUndefined();
+    expect(tls['key']).toBeUndefined();
+  });
+
+  it('source defaults to HTTP with an id-based server tls bag', () => {
+    expect(HTTP_SOURCE_DEFAULTS['scheme']).toBe('HTTP');
+    const tls = HTTP_SOURCE_DEFAULTS['tls'] as Record<string, unknown>;
+    expect(Object.keys(tls).sort()).toEqual(['caCertId', 'requireClientCert', 'serverCertId']);
+    expect(tls['requireClientCert']).toBe(false);
+    expect(tls['cert']).toBeUndefined();
+    expect(tls['key']).toBeUndefined();
   });
 });
 
