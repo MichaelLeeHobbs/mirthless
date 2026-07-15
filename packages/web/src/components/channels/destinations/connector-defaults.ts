@@ -71,6 +71,7 @@ export const SMTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   bodyTemplate: '${msg}',
   contentType: 'text/plain',
   attachContent: false,
+  attachments: [],
 };
 
 export const CHANNEL_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {

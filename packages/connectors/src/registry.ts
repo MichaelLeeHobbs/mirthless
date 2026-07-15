@@ -16,7 +16,7 @@ import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, type UpdateMode, type RowFor
 import { DatabaseDispatcher } from './database/database-dispatcher.js';
 import { JavaScriptReceiver } from './javascript/javascript-receiver.js';
 import { JavaScriptDispatcher } from './javascript/javascript-dispatcher.js';
-import { SmtpDispatcher } from './smtp/smtp-dispatcher.js';
+import { SmtpDispatcher, type SmtpAttachment } from './smtp/smtp-dispatcher.js';
 import { ChannelReceiver } from './channel/channel-receiver.js';
 import { ChannelDispatcher } from './channel/channel-dispatcher.js';
 import { FhirDispatcher, FHIR_AUTH_TYPE } from './fhir/fhir-dispatcher.js';
@@ -37,6 +37,27 @@ export function num(props: Record<string, unknown>, key: string, fallback: numbe
   if (v === undefined || v === null || v === '') return fallback;
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * Read config-driven SMTP attachments from a raw prop bag. Tolerates malformed
+ * input from a UI/JSON config: non-array values yield `[]`, and any entry missing
+ * a string `filename`/`content` is skipped rather than propagating a bad shape
+ * into the dispatcher. `mimeType` is optional and only carried when a string.
+ */
+export function readSmtpAttachments(value: unknown): readonly SmtpAttachment[] {
+  if (!Array.isArray(value)) return [];
+  const result: SmtpAttachment[] = [];
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue;
+    const rec = item as Record<string, unknown>;
+    const filename = rec['filename'];
+    const content = rec['content'];
+    if (typeof filename !== 'string' || typeof content !== 'string') continue;
+    const mimeType = rec['mimeType'];
+    result.push({ filename, content, ...(typeof mimeType === 'string' ? { mimeType } : {}) });
+  }
+  return result;
 }
 
 // ----- Source Factories -----
@@ -200,6 +221,7 @@ const destinationFactories = new Map<string, DestinationFactory>([
     bodyTemplate: (props['bodyTemplate'] as string | undefined) ?? '${msg}',
     contentType: (props['contentType'] as 'text/plain' | 'text/html' | undefined) ?? 'text/plain',
     attachContent: (props['attachContent'] as boolean | undefined) ?? false,
+    attachments: readSmtpAttachments(props['attachments']),
   })],
   ['CHANNEL', (props): DestinationConnectorRuntime => new ChannelDispatcher({
     targetChannelId: (props['targetChannelId'] as string | undefined) ?? '',

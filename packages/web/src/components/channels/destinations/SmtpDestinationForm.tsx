@@ -10,11 +10,34 @@ import MenuItem from '@mui/material/MenuItem';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import type { DestConnectorFormProps } from './types.js';
 import { SMTP_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const CONTENT_TYPES = ['text/plain', 'text/html'] as const;
+const DEFAULT_MIME_TYPE = 'text/plain';
+
+interface AttachmentRow {
+  readonly filename: string;
+  readonly mimeType: string;
+  readonly content: string;
+}
+
+/** Read `properties.attachments` into a normalized row list (tolerant of junk). */
+function getAttachments(props: Record<string, unknown>): readonly AttachmentRow[] {
+  const val = props['attachments'];
+  if (!Array.isArray(val)) return [];
+  return val.map((item): AttachmentRow => {
+    const rec = (typeof item === 'object' && item !== null ? item : {}) as Record<string, unknown>;
+    return {
+      filename: typeof rec['filename'] === 'string' ? rec['filename'] : '',
+      mimeType: typeof rec['mimeType'] === 'string' ? rec['mimeType'] : DEFAULT_MIME_TYPE,
+      content: typeof rec['content'] === 'string' ? rec['content'] : '',
+    };
+  });
+}
 
 function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
   const val = props[key];
@@ -29,6 +52,65 @@ function getNum(props: Record<string, unknown>, key: string, fallback: number): 
 function getBool(props: Record<string, unknown>, key: string, fallback: boolean): boolean {
   const val = props[key];
   return typeof val === 'boolean' ? val : fallback;
+}
+
+interface AttachmentsEditorProps {
+  readonly value: readonly AttachmentRow[];
+  readonly onChange: (next: readonly AttachmentRow[]) => void;
+}
+
+/** Editable list of config-driven attachments (filename / MIME type / content). */
+function AttachmentsEditor({ value, onChange }: AttachmentsEditorProps): ReactNode {
+  const setRow = (index: number, key: keyof AttachmentRow, v: string): void => {
+    onChange(value.map((row, i) => (i === index ? { ...row, [key]: v } : row)));
+  };
+  const addRow = (): void => {
+    onChange([...value, { filename: '', mimeType: DEFAULT_MIME_TYPE, content: '' }]);
+  };
+  const removeRow = (index: number): void => {
+    onChange(value.filter((_, i) => i !== index));
+  };
+
+  return (
+    <>
+      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+        Attachments
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        Each attachment is added in addition to any message content above. Filename and content support ${'{msg}'}, ${'{messageId}'}, ${'{channelId}'}, ${'{metaDataId}'}.
+      </Typography>
+
+      {value.map((row, index) => (
+        <Box key={index} sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', mb: 2 }}>
+          <TextField
+            label="Filename"
+            value={row.filename}
+            onChange={(e) => { setRow(index, 'filename', e.target.value); }}
+            sx={{ flex: 1 }}
+          />
+          <TextField
+            label="MIME Type"
+            value={row.mimeType}
+            onChange={(e) => { setRow(index, 'mimeType', e.target.value); }}
+            sx={{ flex: 1 }}
+          />
+          <TextField
+            label="Content"
+            value={row.content}
+            onChange={(e) => { setRow(index, 'content', e.target.value); }}
+            multiline
+            minRows={1}
+            sx={{ flex: 2, '& .MuiInputBase-input': { fontFamily: 'monospace', fontSize: '0.875rem' } }}
+          />
+          <Button color="error" onClick={() => { removeRow(index); }} sx={{ mt: 1 }}>
+            Remove
+          </Button>
+        </Box>
+      ))}
+
+      <Button variant="outlined" onClick={addRow}>Add Attachment</Button>
+    </>
+  );
 }
 
 export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
@@ -213,6 +295,13 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
           }
           label="Attach Message Content"
           sx={{ mb: 2, display: 'block' }}
+        />
+      </Grid>
+
+      <Grid item xs={12}>
+        <AttachmentsEditor
+          value={getAttachments(properties)}
+          onChange={(next) => { update('attachments', next); }}
         />
       </Grid>
 

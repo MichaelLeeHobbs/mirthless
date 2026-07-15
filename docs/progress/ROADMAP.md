@@ -68,7 +68,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[6] Web Service / SOAP connector** (source + dispatcher) — 🔴 blocks brownfield SOAP hospital installs.
 - [ ] **[7] Document Writer** (PDF/RTF destination) — 🟡 no workaround for rendered clinical docs.
 - [ ] **[8] DICOM TLS** (cert/key/trust) — 🟡 secured PACS. (Assoc-rejection bug already fixed, D-181.)
-- [ ] **[9] SMTP multi-attachment** — 🟡 replace single hardcoded `message.txt`.
+- [x] **[9] SMTP multi-attachment** — config-driven attachments array (filename/mimeType/content, `${msg}` substitution) alongside the `attachContent` body attachment; dispatcher + registry + web form + tests.
 - [ ] **[10] Binary data type** across TCP/HTTP — 🟡 imaging/PDF/non-text feeds.
 - [ ] **[11] JMS connector** — 🟡 defer unless a customer needs it.
 - [ ] **[12] WebDAV File scheme** — 🟢 rare; do last alongside File schemes.

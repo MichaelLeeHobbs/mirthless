@@ -117,6 +117,10 @@ describe('SMTP dest runtime option defaults (rank-4 surfacing)', () => {
   it('surfaces requireTLS defaulting to false', () => {
     expect(SMTP_DEST_DEFAULTS['requireTLS']).toBe(false);
   });
+
+  it('defaults attachments to an empty array (rank-9 multi-attachment)', () => {
+    expect(SMTP_DEST_DEFAULTS['attachments']).toEqual([]);
+  });
 });
 
 describe('createDefaultDestination', () => {
