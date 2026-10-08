@@ -12,7 +12,9 @@ Mirthless applies schema changes through **Drizzle migrations**. The golden rule
   (`docker/server-entrypoint.sh`) runs `node packages/server/migrate.mjs` on every
   start, *before* the server boots. Migrations are **fail-loud** — if a migration
   errors, the container exits and the server never serves against a half-migrated
-  schema. It then runs an idempotent seed unless `SEED_ON_START=false`.
+  schema. It then runs an idempotent seed unless `SEED_ON_START=false`. The seed creates the admin user,
+  roles, permissions and default settings only; demo channels and data are seeded only when
+  `SEED_DEMO_DATA=true`.
 - **Local / non-Docker:** run `pnpm db:migrate` yourself before `pnpm start` /
   `pnpm dev`.
 
