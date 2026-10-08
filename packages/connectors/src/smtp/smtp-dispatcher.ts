@@ -6,7 +6,12 @@
 
 import { tryCatch, type Result } from '@mirthless/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { createRequire } from 'node:module';
 import { withTimeoutSignal } from '../timeout.js';
+
+// The package is ESM, so a bare `require` is undefined at runtime (vitest
+// injects one, which hid this). Load the CJS client library through createRequire.
+const require = createRequire(import.meta.url);
 
 /** Default SMTP send timeout — nodemailer has no native cancellation. */
 const SEND_TIMEOUT_MS = 30_000;
@@ -245,7 +250,6 @@ export function buildNodemailerOptions(config: SmtpDispatcherConfig): Record<str
 
 /** Create a nodemailer-based transport. Requires nodemailer to be installed. */
 export function createNodemailerTransport(config: SmtpDispatcherConfig): SmtpTransport {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const nodemailer = require('nodemailer') as { createTransport: (opts: Record<string, unknown>) => { sendMail: (opts: SmtpMailOptions) => Promise<SmtpSendResult>; close: () => void } };
   const transporter = nodemailer.createTransport(buildNodemailerOptions(config));
   return {

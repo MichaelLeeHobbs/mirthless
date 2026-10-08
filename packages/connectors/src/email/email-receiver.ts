@@ -9,6 +9,11 @@ import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
+import { createRequire } from 'node:module';
+
+// The package is ESM, so a bare `require` is undefined at runtime (vitest
+// injects one, which hid this). Load the CJS client library through createRequire.
+const require = createRequire(import.meta.url);
 
 /** Bound each IMAP operation — a hung mailbox must not wedge the poll loop. */
 const IMAP_OP_TIMEOUT_MS = 30_000;
@@ -263,7 +268,6 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
 /** Create an imapflow-based IMAP client. Requires imapflow to be installed. */
 function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ImapFlow } = require('imapflow') as { ImapFlow: new (opts: Record<string, unknown>) => ImapFlowInstance };
 
   const client = new ImapFlow({
