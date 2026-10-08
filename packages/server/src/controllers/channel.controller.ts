@@ -15,6 +15,7 @@ import { ChannelService } from '../services/channel.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import { redactChannelDetail } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
+import { getEngine } from '../engine.js';
 
 /**
  * Mask connector credentials (DB/SFTP passwords, API keys, private keys) in a
@@ -103,6 +104,12 @@ export class ChannelController {
   static async delete(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    // A deployed channel keeps receiving and routing messages after its row is
+    // soft-deleted, with nothing left in the UI to stop it. Require undeploy first.
+    if (getEngine().getRuntime(id)) {
+      res.status(409).json({ success: false, error: { code: 'CONFLICT', message: 'Cannot delete a deployed channel. Stop and undeploy it first.' } });
+      return;
+    }
     const result = await ChannelService.delete(id, context);
 
     if (!result.ok) {
