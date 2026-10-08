@@ -5,6 +5,11 @@
 // rejects every other API call until that password is changed. Complete the
 // forced change once (re-setting the same password) so the specs can use the
 // seeded credentials. Runs after the webServers are up.
+//
+// Only in CI, where Playwright always starts its own servers against a
+// throwaway database. Locally it may reuse a developer's running server, and
+// clearing the flag there would leave a real admin on the public default
+// password, so a local run fails loudly instead.
 
 import { request } from '@playwright/test';
 import { ADMIN_USER } from './fixtures/test-data.js';
@@ -20,6 +25,9 @@ export default async function globalSetup(): Promise<void> {
     }
     const body = await loginRes.json() as { data: { accessToken: string; user: { mustChangePassword: boolean } } };
     if (!body.data.user.mustChangePassword) return;
+    if (!process.env.CI) {
+      throw new Error('The seeded admin must change its password first. E2E only completes that automatically in CI.');
+    }
 
     const changeRes = await ctx.post('users/me/password', {
       headers: { Authorization: `Bearer ${body.data.accessToken}` },
