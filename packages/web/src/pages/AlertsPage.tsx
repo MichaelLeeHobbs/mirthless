@@ -29,6 +29,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import { useAlerts, useDeleteAlert, useToggleAlertEnabled } from '../hooks/use-alerts.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
@@ -42,6 +44,9 @@ export function AlertsPage(): ReactNode {
   const { data, isLoading, error, isFetching, refetch } = useAlerts(page + 1, pageSize);
   const deleteAlert = useDeleteAlert();
   const toggleEnabled = useToggleAlertEnabled();
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.ALERTS_WRITE);
+  const canDelete = has(PERMISSION.ALERTS_DELETE);
 
   const [deleteTarget, setDeleteTarget] = useState<AlertSummary | null>(null);
 
@@ -62,7 +67,7 @@ export function AlertsPage(): ReactNode {
         title="Alerts"
         description="Configure notifications for channel errors and events."
         isFetching={isFetching && !isLoading}
-        actions={
+        actions={canWrite ? (
           <Button
             variant="contained"
             startIcon={<AddIcon />}
@@ -70,7 +75,7 @@ export function AlertsPage(): ReactNode {
           >
             Create Alert
           </Button>
-        }
+        ) : null}
       />
 
       {/* Error */}
@@ -112,8 +117,8 @@ export function AlertsPage(): ReactNode {
                         label={alert.enabled ? 'Enabled' : 'Disabled'}
                         color={alert.enabled ? 'success' : 'default'}
                         size="small"
-                        onClick={() => { handleToggleEnabled(alert); }}
-                        sx={{ cursor: 'pointer' }}
+                        {...(canWrite ? { onClick: () => { handleToggleEnabled(alert); } } : {})}
+                        sx={{ cursor: canWrite ? 'pointer' : 'default' }}
                       />
                     </TableCell>
                     <TableCell align="right">
@@ -122,11 +127,13 @@ export function AlertsPage(): ReactNode {
                           <EditIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton aria-label="Delete alert" size="small" onClick={() => { setDeleteTarget(alert); }}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      {canDelete ? (
+                        <Tooltip title="Delete">
+                          <IconButton aria-label="Delete alert" size="small" onClick={() => { setDeleteTarget(alert); }}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))

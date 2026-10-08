@@ -54,6 +54,8 @@ interface TemplateEditorProps {
   readonly onDelete: (id: string) => void;
   readonly onClose: () => void;
   readonly saving: boolean;
+  /** Hide Delete and Save for users without code_templates:write. */
+  readonly readOnly: boolean;
   /** Reports unsaved-changes state up so the page can guard navigation/switching. */
   readonly onDirtyChange?: (dirty: boolean) => void;
 }
@@ -63,7 +65,7 @@ function contextsEqual(a: ReadonlySet<string>, b: readonly string[]): boolean {
   return b.every((c) => a.has(c));
 }
 
-export function TemplateEditor({ template, onSave, onDelete, onClose, saving, onDirtyChange }: TemplateEditorProps): ReactNode {
+export function TemplateEditor({ template, onSave, onDelete, onClose, saving, readOnly, onDirtyChange }: TemplateEditorProps): ReactNode {
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? '');
   const [type, setType] = useState(template.type);
@@ -192,22 +194,24 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, on
         />
       </Box>
 
-      <Stack direction="row" spacing={1} justifyContent="flex-end">
-        <Button
-          variant="outlined"
-          color="error"
-          onClick={() => { onDelete(template.id); }}
-        >
-          Delete
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleSave}
-          disabled={saving || !name.trim()}
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </Button>
-      </Stack>
+      {readOnly ? null : (
+        <Stack direction="row" spacing={1} justifyContent="flex-end">
+          <Button
+            variant="outlined"
+            color="error"
+            onClick={() => { onDelete(template.id); }}
+          >
+            Delete
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            disabled={saving || !name.trim()}
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </Stack>
+      )}
     </Box>
   );
 }

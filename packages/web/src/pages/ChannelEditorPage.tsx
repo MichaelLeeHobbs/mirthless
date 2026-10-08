@@ -37,7 +37,7 @@ import { ScriptsTab } from '../components/channels/ScriptsTab.js';
 import type { AdvancedFormValues } from '../components/channels/AdvancedTab.js';
 import type { DestinationFormValues } from '../components/channels/destinations/types.js';
 import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, TransformerStepFormValues } from '../components/channels/source/types.js';
-import { createDefaultFilter, createDefaultTransformer } from '../components/channels/source/types.js';
+import { createDefaultFilter, createDefaultTransformer, transformerHasContent } from '../components/channels/source/types.js';
 import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 // ChannelGroupChips now rendered inside SummaryTab
@@ -474,7 +474,7 @@ export function ChannelEditorPage(): ReactNode {
     const result: unknown[] = [];
 
     // Source transformer
-    if (sourceTransformer.steps.length > 0 || sourceTransformer.inboundDataType !== 'HL7V2' || sourceTransformer.outboundDataType !== 'HL7V2') {
+    if (transformerHasContent(sourceTransformer)) {
       result.push({
         connectorId: null,
         metaDataId: null,
@@ -492,7 +492,7 @@ export function ChannelEditorPage(): ReactNode {
     for (let i = 0; i < destinations.length; i++) {
       const dest = destinations[i]!;
       const t = dest.transformer;
-      if (t.steps.length > 0 || t.inboundDataType !== 'HL7V2' || t.outboundDataType !== 'HL7V2') {
+      if (transformerHasContent(t)) {
         result.push({
           connectorId: null,
           metaDataId: i + 1,

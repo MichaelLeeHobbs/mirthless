@@ -35,6 +35,8 @@ import {
   useDeleteTemplate,
 } from '../hooks/use-code-templates.js';
 import type { CodeTemplateLibrary, CodeTemplateDetail } from '../api/client.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 
 type DialogMode = 'create-library' | 'edit-library' | 'create-template' | null;
 
@@ -70,6 +72,8 @@ export function CodeTemplatePage(): ReactNode {
   const createTemplate = useCreateTemplate();
   const updateTemplate = useUpdateTemplate();
   const deleteTemplate = useDeleteTemplate();
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.CODE_TEMPLATES_WRITE);
 
   const { notify } = useNotification();
 
@@ -264,7 +268,7 @@ export function CodeTemplatePage(): ReactNode {
         title="Code Templates"
         description="Reusable JavaScript functions and code blocks shared across channels, organized into libraries."
         isFetching={(libFetching || tmplFetching) && !isLoading}
-        actions={
+        actions={canWrite ? (
           <>
             <Button
               variant="outlined"
@@ -288,7 +292,7 @@ export function CodeTemplatePage(): ReactNode {
               Template
             </Button>
           </>
-        }
+        ) : null}
       />
 
       {loadError ? (
@@ -322,6 +326,7 @@ export function CodeTemplatePage(): ReactNode {
               onCreateTemplate={(id) => { void handleCreateTemplate(id); }}
               onEditLibrary={openEditLibraryDialog}
               onDeleteLibrary={handleDeleteLibrary}
+              readOnly={!canWrite}
             />
           )}
         </Paper>
@@ -343,6 +348,7 @@ export function CodeTemplatePage(): ReactNode {
               onDelete={handleDeleteTemplate}
               onClose={handleDeselectTemplate}
               saving={updateTemplate.isPending}
+              readOnly={!canWrite}
               onDirtyChange={handleDirtyChange}
             />
           ) : (

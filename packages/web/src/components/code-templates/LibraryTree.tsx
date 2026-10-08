@@ -31,6 +31,8 @@ interface LibraryTreeProps {
   readonly onCreateTemplate: (libraryId: string) => void;
   readonly onEditLibrary: (library: CodeTemplateLibrary) => void;
   readonly onDeleteLibrary: (library: CodeTemplateLibrary) => void;
+  /** Hide add/edit/delete buttons for users without code_templates:write. */
+  readonly readOnly: boolean;
 }
 
 export function LibraryTree({
@@ -41,6 +43,7 @@ export function LibraryTree({
   onCreateTemplate,
   onEditLibrary,
   onDeleteLibrary,
+  readOnly,
 }: LibraryTreeProps): ReactNode {
   const [expandedLibraries, setExpandedLibraries] = useState<ReadonlySet<string>>(
     new Set(libraries.map((l) => l.id)),
@@ -90,31 +93,33 @@ export function LibraryTree({
                   sx: { fontWeight: 600 },
                 }}
               />
-              <Tooltip title="Add template">
-                <IconButton
-                  size="small"
-                  onClick={(e) => { e.stopPropagation(); onCreateTemplate(lib.id); }}
-                  aria-label="Add template"
-                >
-                  <AddIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Edit library">
-                <IconButton
-                  size="small"
-                  onClick={(e) => { e.stopPropagation(); onEditLibrary(lib); }}
-                >
-                  <EditIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Delete library">
-                <IconButton
-                  size="small"
-                  onClick={(e) => { e.stopPropagation(); onDeleteLibrary(lib); }}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+              {readOnly ? null : (<>
+                <Tooltip title="Add template">
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); onCreateTemplate(lib.id); }}
+                    aria-label="Add template"
+                  >
+                    <AddIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Edit library">
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); onEditLibrary(lib); }}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Delete library">
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); onDeleteLibrary(lib); }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </>)}
               {isExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
             </ListItemButton>
             <Collapse in={isExpanded} timeout="auto" unmountOnExit>

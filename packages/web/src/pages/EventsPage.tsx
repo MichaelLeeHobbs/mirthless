@@ -36,6 +36,8 @@ import EventIcon from '@mui/icons-material/Event';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import { useEvents, usePurgeEvents } from '../hooks/use-events.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 import { useEventExport } from '../hooks/use-event-export.js';
 import { EventFilterBar, type EventFilters } from '../components/events/EventFilterBar.js';
 import { EventDetailPanel } from '../components/events/EventDetailPanel.js';
@@ -76,6 +78,8 @@ export function EventsPage(): ReactNode {
 
   const { data, isLoading, error, isFetching, refetch } = useEvents(queryParams);
   const purgeEvents = usePurgeEvents();
+  const { has } = usePermissions();
+  const canPurge = has(PERMISSION.SETTINGS_WRITE);
   const { isExporting, error: exportError, exportEvents } = useEventExport();
 
   const handleToggleExpand = (event: EventSummary): void => {
@@ -122,16 +126,18 @@ export function EventsPage(): ReactNode {
                 {isExporting ? 'Exporting...' : 'Export'}
               </Button>
             </Tooltip>
-            <Tooltip title="Purge old events">
-              <Button
-                variant="outlined"
-                color="error"
-                startIcon={<DeleteSweepIcon />}
-                onClick={() => { setPurgeDialogOpen(true); }}
-              >
-                Purge
-              </Button>
-            </Tooltip>
+            {canPurge ? (
+              <Tooltip title="Purge old events">
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteSweepIcon />}
+                  onClick={() => { setPurgeDialogOpen(true); }}
+                >
+                  Purge
+                </Button>
+              </Tooltip>
+            ) : null}
           </>
         }
       />
