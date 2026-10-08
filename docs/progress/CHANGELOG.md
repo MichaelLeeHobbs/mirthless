@@ -2,6 +2,44 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-08 — Release-readiness pass (branch `claude/project-thread-yr28t9`)
+
+Worked the findings of the 2026-10-08 release-readiness review, one fix per commit.
+
+- **Docker:** images build again (root `tsconfig.json` copied, tests excluded); `migrate.mjs`
+  verifies database TLS unless `DATABASE_SSL_REJECT_UNAUTHORIZED=false`.
+- **Sandbox:** code after an `await` could spin forever and freeze the event loop. Contexts now
+  use `microtaskMode: 'afterEvaluate'` and IO bridges settle inside the script timeout. (D-184)
+- **Credentials:** connector secrets are redacted deeply (nested auth, inline TLS keys, auth
+  headers), including in channel revision snapshots for read-only users.
+- **Dependencies:** every high/critical production advisory cleared (drizzle-orm 0.45, nodemailer
+  10, imapflow 2, overrides for proxy-addr, engine.io, adm-zip and others); the CI audit gates.
+  Email, SMTP and SFTP clients now load via `createRequire` (bare `require` in ESM).
+- **dbQuery:** read-only sources run on the extended protocol, so `COMMIT; DELETE …` is rejected. (D-186)
+- **httpFetch SSRF:** private/loopback/link-local addresses are blocked at DNS-lookup time and the
+  connection is pinned to the checked address; no redirects; 10 MB body cap. (D-185)
+- **Recovery:** runs after the channel's destinations start, reprocesses TRANSFORMED messages and
+  keeps the source map. (D-187)
+- **Queue:** a message that exhausts its retries stores error content and raises an alert.
+- **XML:** entity expansion is bounded on inbound messages.
+- **Seed:** demo content needs `SEED_DEMO_DATA=true`. (D-188)
+- **Socket.IO:** connections are revalidated (logout, disabled user, forced password change,
+  permissions) on join and every 60s.
+- **Email receiver:** a failed post-action no longer re-dispatches the email.
+- **routeMessage:** the loop guard counts hops per message chain (AsyncLocalStorage), not engine-wide.
+- **UI honesty:** removed controls the engine ignores (remove attachments on completion, custom
+  metadata columns, Attachments tab, extension enable toggle, queue thread count, rotate queue). (D-189)
+- **Wait for Previous Destination** was stored but ignored; destinations now run in Mirth-style
+  chains. (D-189)
+- **Permissions:** Events purge, Alerts create/toggle/delete and Code Template edits are hidden
+  from users the server would refuse.
+- **Editor:** a zero-step HL7V2→HL7V2 transformer with properties or templates survives save.
+- **E2E:** `message-flow.spec.ts` no longer skips itself; it really sends a message and checks
+  the ACK, storage and the message browser. It exposed that deleting a deployed channel left it
+  running invisibly; that now returns 409. (D-190)
+- **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
+  limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
+
 ## 2026-07-14 — Real-message E2E testing + DICOM dcmjs-dimse port (branch `feature/real-e2e-testing`)
 
 Replaced mock-heavy connector tests with a harness that actually pushes messages through real

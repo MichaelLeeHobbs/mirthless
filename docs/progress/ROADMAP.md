@@ -82,9 +82,9 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[N2] Finish declared-but-pass-through datatypes** — Delimited, HL7v3, DICOM→XML. 🔴 `msg` mapping impossible on them today.
 - [ ] **[N3] Fix `$gc` map-shortcut collision** (means configMap; Mirth = globalChannelMap) + add `$cfg`/`$c`/`$co`/`$s` — 🔴 silent-wrong-map footgun for ported scripts.
 - [ ] **[N4] Message search operators** — metadata-column search, regex, error, send-attempt filters. 🔴 daily-use triage gap.
-- [ ] **[N5] Populate custom metadata columns + make searchable** — 🔴 currently stored but never populated (half-built).
+- [ ] **[N5] Populate custom metadata columns + make searchable** — 🔴 currently stored but never populated (half-built). Editor UI removed until built (D-189).
 - [ ] **[N6] Dependency-ordered deploy** (topological sort in `autoDeployChannels`) — 🔴 graph stored/validated but not applied; channel can start before its dependency.
-- [ ] **[N7] Destination-queue threading** (threadCount/groupBy/rotate) or remove dead schema fields — 🔴 throughput/ordering at volume.
+- [ ] **[N7] Destination-queue threading** (threadCount/groupBy/rotate) — 🔴 throughput/ordering at volume. Thread count and rotate controls removed from the UI until built; `waitForPrevious` chains now work (D-189).
 - [ ] **[N8] Pruner archiver + content/metadata-day split** — 🟡 `pruningArchiveEnabled` flag has no archiver (half-built); HIPAA retention.
 - [ ] **[N9] JS API breadth** — DateUtil, ChannelUtil, AttachmentUtil, SerializerFactory, getArrayOrXmlLength, etc. (~10 of Mirth's ~40 userutil objects). 🟡
 - [ ] **[N10] Per-connector connection monitoring** (Mirth dashboardstatus) + per-channel Prometheus labels — 🔴 ops triage visibility.
@@ -150,7 +150,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] ~~Example channels seeded (10 channels in Examples group)~~
 - [x] ~~Connection testing — "Test Connection" button per connector type~~
 - [ ] Load testing — throughput benchmarks with realistic message volumes
-- [ ] E2E test suite refresh — 19 specs may need updates after recent UI changes
+- [ ] E2E test suite refresh — 19 specs may need updates after recent UI changes (`message-flow.spec.ts` rewritten to assert real delivery, 2026-10-08)
 - [ ] Security review — HIPAA compliance checklist, penetration testing
 
 ---

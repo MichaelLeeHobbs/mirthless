@@ -42,8 +42,8 @@ migration will not migrate it for you. From 1.0 onward, migrations will be data-
 # 1. BACK UP FIRST (see docs/ops/backup-restore.md)
 docker exec -t mirthless-db-prod pg_dump -U mirthless -d mirthless -F c > pre-upgrade.dump
 
-# 2. Pull the new images / new code
-git pull                # or: docker compose pull  (if using published tags)
+# 2. Pull the new code
+git pull                # there are no published images; the stack builds from source
 
 # 3. Rebuild & restart — the server container migrates on start
 docker compose -f docker/docker-compose.prod.yml up -d --build
