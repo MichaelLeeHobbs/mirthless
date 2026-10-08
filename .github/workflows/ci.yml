@@ -113,6 +113,8 @@ jobs:
       LOG_LEVEL: error
       FRONTEND_URL: http://localhost:5173
       CI: 'true'
+      # Data source specs store encrypted credentials. Test-only value.
+      CONTENT_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 
     steps:
       - uses: actions/checkout@v4

@@ -14,6 +14,12 @@
   sends `Connection: close`.
 - CI integration step now sets a test-only `CONTENT_ENCRYPTION_KEY`; `data-source.itest.ts` stores
   encrypted credentials and failed all 6 tests without it.
+- Playwright E2E (not run since the build broke) was blocked by the forced first-login password
+  change added in July: `e2e/global-setup.ts` completes it for the seeded admin. Updated selectors that
+  had drifted from the UI (page-title headings, dialog-scoped buttons, Channel Groups now on the
+  Dashboard) and gave the e2e job a test `CONTENT_ENCRYPTION_KEY`.
+- Fixed: deleting a channel from the Dashboard left it listed until the 60s stats poll;
+  `useDeleteChannel` now also invalidates the statistics query.
 
 ## 2026-07-14 — Real-message E2E testing + DICOM dcmjs-dimse port (branch `feature/real-e2e-testing`)
 
