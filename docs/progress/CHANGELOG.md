@@ -37,6 +37,9 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
 - **E2E:** `message-flow.spec.ts` no longer skips itself; it really sends a message and checks
   the ACK, storage and the message browser. It exposed that deleting a deployed channel left it
   running invisibly; that now returns 409. (D-190)
+- **Map shortcuts:** `$gc` now reads/writes `globalChannelMap` as in Mirth (it read `configMap`);
+  added `$cfg`, `$c`, `$co`, `$s`. The shipped typings declared `$c`/`$g`/`$gc` as maps, so typed
+  scripts compiled against shortcuts that did not exist; they are now functions. (D-191)
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
 

@@ -28,7 +28,7 @@ host-`globalThis`):
 1. **Data** (`msg`, `tmp`, all maps, `sourceMap`, `configMap`) is injected by
    `JSON.stringify` on the host and `JSON.parse` **inside** the context. Plain data
    crosses as a string; the objects are rebuilt in-realm.
-2. **Bridge functions** (`logger`, `parseHL7`, `createACK`, `$`, `$r`, `$g`, `$gc`,
+2. **Bridge functions** (`logger`, `parseHL7`, `createACK`, `$`, `$c`, `$co`, `$r`, `$g`, `$gc`, `$s`, `$cfg`,
    `httpFetch`/`dbQuery`/`routeMessage`/`getResource`, `destinationSet`, and the HL7
    message proxy) are re-implemented as sandbox-realm functions by a bootstrap
    script run with `vm.runInContext`. They call a single host `dispatch` closure

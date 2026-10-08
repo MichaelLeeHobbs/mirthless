@@ -32,7 +32,7 @@ carried to later pipeline stages.
 | `channelMap` | read/write | Shared across all connectors for this message. |
 | `connectorMap` | read/write | Per-destination scope. |
 | `responseMap` | read/write | Response values (available in the postprocessor). |
-| `globalChannelMap` | read-only in script | Per-channel, persists across messages within a deployment. |
+| `globalChannelMap` | read/write | Per-channel, persists across messages within a deployment. |
 | `globalMap` | read/write | Global across all channels; flushed to the database. |
 | `configMap` | read-only (frozen) | Configuration values loaded at deploy time. Writing throws (strict mode). |
 
@@ -41,9 +41,16 @@ carried to later pipeline stages.
 | Function | Behavior |
 |---|---|
 | `$(key)` | Looks up `key` across maps in order: `responseMap`, `connectorMap`, `channelMap`, `globalChannelMap`, `globalMap`, `configMap`, `sourceMap`. Returns the first defined value. |
+| `$c(key)` / `$c(key, value)` | Get / set a `channelMap` entry. |
+| `$co(key)` / `$co(key, value)` | Get / set a `connectorMap` entry. |
 | `$r(key)` / `$r(key, value)` | Get / set a `responseMap` entry. |
 | `$g(key)` / `$g(key, value)` | Get / set a `globalMap` entry. |
-| `$gc(key)` | Get a `configMap` entry. |
+| `$gc(key)` / `$gc(key, value)` | Get / set a `globalChannelMap` entry. |
+| `$s(key)` | Get a `sourceMap` entry. |
+| `$cfg(key)` | Get a `configMap` entry. |
+
+These match Mirth Connect's shortcuts, so ported scripts read the same maps. Before
+2026-10, `$gc` read `configMap`; scripts written against that must use `$cfg`.
 
 ## Logging
 

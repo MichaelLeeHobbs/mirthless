@@ -39,7 +39,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] I/O bridges implemented in the sandbox (httpFetch, dbQuery, routeMessage, getResource, getCollection)
 - [x] **All IO bridges wired** end-to-end into the production engine (`engine.ts`): getCollection, getResource, httpFetch, routeMessage (hop-depth loop guard), and **dbQuery** via named **Data Sources** (`docs/design/11-datasources.md`, D-178 — encrypted creds, read-only default, statement timeout + row cap, Postgres v1)
 - [x] Map system (channelMap, connectorMap, globalMap, configMap, responseMap, sourceMap)
-- [x] Map shortcuts ($, $r, $g, $gc)
+- [x] Map shortcuts ($, $c, $co, $r, $g, $gc, $s, $cfg — Mirth-compatible, D-191)
 - [x] Code template injection (FUNCTION type prepended to scripts)
 - [x] Per-channel script timeout (1-300s configurable)
 
@@ -80,7 +80,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 
 - [ ] **[N1] EDI/X12 + NCPDP serializers** (+ enum entries) — 🔴 blocks X12 billing/eligibility + pharmacy channels.
 - [ ] **[N2] Finish declared-but-pass-through datatypes** — Delimited, HL7v3, DICOM→XML. 🔴 `msg` mapping impossible on them today.
-- [ ] **[N3] Fix `$gc` map-shortcut collision** (means configMap; Mirth = globalChannelMap) + add `$cfg`/`$c`/`$co`/`$s` — 🔴 silent-wrong-map footgun for ported scripts.
+- [x] **[N3] Fix `$gc` map-shortcut collision** (means configMap; Mirth = globalChannelMap) + add `$cfg`/`$c`/`$co`/`$s` — 🔴 silent-wrong-map footgun for ported scripts.
 - [ ] **[N4] Message search operators** — metadata-column search, regex, error, send-attempt filters. 🔴 daily-use triage gap.
 - [ ] **[N5] Populate custom metadata columns + make searchable** — 🔴 currently stored but never populated (half-built). Editor UI removed until built (D-189).
 - [ ] **[N6] Dependency-ordered deploy** (topological sort in `autoDeployChannels`) — 🔴 graph stored/validated but not applied; channel can start before its dependency.

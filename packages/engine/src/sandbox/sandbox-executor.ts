@@ -304,7 +304,22 @@ globalThis.__build = function (dispatch, payload) {
     if (arguments.length >= 2) { globalMap[key] = value; return undefined; }
     return globalMap[key];
   };
-  globalThis.$gc = function (key) { return configMap[key]; };
+  // Mirth-compatible shortcuts: $c channelMap, $co connectorMap, $s sourceMap,
+  // $gc globalChannelMap, $cfg configMap.
+  globalThis.$c = function (key, value) {
+    if (arguments.length >= 2) { channelMap[key] = value; return undefined; }
+    return channelMap[key];
+  };
+  globalThis.$co = function (key, value) {
+    if (arguments.length >= 2) { connectorMap[key] = value; return undefined; }
+    return connectorMap[key];
+  };
+  globalThis.$s = function (key) { return sourceMap[key]; };
+  globalThis.$gc = function (key, value) {
+    if (arguments.length >= 2) { globalChannelMap[key] = value; return undefined; }
+    return globalChannelMap[key];
+  };
+  globalThis.$cfg = function (key) { return configMap[key]; };
   if (payload.bridges.httpFetch) {
     globalThis.httpFetch = async function (url, options) {
       var r = JSON.parse(await io('httpFetch', url, options || {}));
