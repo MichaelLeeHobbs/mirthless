@@ -61,6 +61,9 @@ Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside th
 - Upgrades: [Upgrade procedure](upgrade.md). Always back up first.
 - Health, metrics and logs: [Resource sizing & observability](resource-and-observability.md).
 - Backups: [Backup & restore](backup-restore.md).
+- Silent interfaces: add an alert with the trigger **A started channel receives no messages**
+  for each inbound interface, set to a window longer than its normal quiet periods. A feed that
+  stops sending is otherwise invisible until someone notices missing results.
 
 ## Known limitations in this release
 

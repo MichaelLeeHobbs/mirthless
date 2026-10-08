@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ServerBackup } from '@mirthless/core-models';
+import type { ServerBackup, RestoreSectionResult } from '@mirthless/core-models';
 
 // ----- Mock Dependencies -----
 
@@ -272,6 +272,69 @@ describe('ServerBackupService', () => {
       if (!result.ok) return;
       expect(result.value.totalCreated).toBe(0);
       expect(result.value.totalErrors).toBe(0);
+    });
+
+    describe('alerts', () => {
+      const CH = '11111111-1111-4111-8111-111111111111';
+      const alertItem = (trigger: ServerBackup['alerts'][number]['trigger'], actions: ServerBackup['alerts'][number]['actions'] = []): ServerBackup['alerts'][number] => ({
+        id: '22222222-2222-4222-8222-222222222222', name: 'A', description: null, enabled: true,
+        trigger, channelIds: [], actions,
+        subjectTemplate: null, bodyTemplate: null, reAlertIntervalMs: null, maxAlerts: null,
+      });
+
+      async function restoreAlert(item: ServerBackup['alerts'][number]): Promise<RestoreSectionResult | undefined> {
+        mockAlertGetById.mockResolvedValue(errResult('NOT_FOUND'));
+        mockAlertCreate.mockResolvedValue(okResult({ id: item.id }));
+        mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+        mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+        const result = await ServerBackupService.restoreBackup(makeMinimalBackup({ alerts: [item] }), 'SKIP');
+        if (!result.ok) throw new Error('restore failed');
+        return result.value.sections.find((sec) => sec.section === 'alerts');
+      }
+
+      it('restores a NO_MESSAGES trigger with its window', async () => {
+        await restoreAlert(alertItem({ type: 'NO_MESSAGES', errorTypes: [], regex: null, windowMinutes: 45 }));
+        expect(mockAlertCreate).toHaveBeenCalledWith(
+          expect.objectContaining({ trigger: { type: 'NO_MESSAGES', windowMinutes: 45 } }),
+        );
+      });
+
+      it('restores a CHANNEL_ERROR trigger from a backup made before windowMinutes existed', async () => {
+        await restoreAlert(alertItem({ type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: 'x' }));
+        expect(mockAlertCreate).toHaveBeenCalledWith(
+          expect.objectContaining({ trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: 'x' } }),
+        );
+      });
+
+      it('keeps the target channel of a CHANNEL action', async () => {
+        await restoreAlert(alertItem(
+          { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null },
+          [{ actionType: 'CHANNEL', recipients: [], properties: { channelId: CH } }],
+        ));
+        expect(mockAlertCreate).toHaveBeenCalledWith(
+          expect.objectContaining({ actions: [{ type: 'CHANNEL', channelId: CH, recipients: [] }] }),
+        );
+      });
+
+      it('reports a failed create as an error, not as created', async () => {
+        mockAlertGetById.mockResolvedValue(errResult('NOT_FOUND'));
+        mockAlertCreate.mockResolvedValue({ ok: false, value: null, error: new Error('name taken') });
+        mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+        mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+        const result = await ServerBackupService.restoreBackup(
+          makeMinimalBackup({ alerts: [alertItem({ type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null })] }), 'SKIP',
+        );
+        if (!result.ok) throw new Error('restore failed');
+        const section = result.value.sections.find((sec) => sec.section === 'alerts');
+        expect(section?.created).toBe(0);
+        expect(section?.errors[0]).toContain('name taken');
+      });
+
+      it('reports an invalid trigger as an error instead of saving it', async () => {
+        const section = await restoreAlert(alertItem({ type: 'NO_MESSAGES', errorTypes: [], regex: null, windowMinutes: null }));
+        expect(mockAlertCreate).not.toHaveBeenCalled();
+        expect(section?.errors).toHaveLength(1);
+      });
     });
 
     it('restores settings in SKIP mode', async () => {

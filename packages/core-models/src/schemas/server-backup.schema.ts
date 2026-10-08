@@ -71,6 +71,8 @@ const backupAlertSchema = z.object({
     type: z.string(),
     errorTypes: z.array(z.string()),
     regex: z.string().nullable(),
+    // NO_MESSAGES triggers; absent in backups made before that trigger existed.
+    windowMinutes: z.number().int().nullable().optional(),
   }),
   channelIds: z.array(z.string().uuid()),
   actions: z.array(backupAlertActionSchema),

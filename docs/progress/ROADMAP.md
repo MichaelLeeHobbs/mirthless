@@ -100,7 +100,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 > Full analysis + pursue/consider/partner/non-goal calls: [`docs/design/14-beyond-mirth-competitive-gaps.md`](../design/14-beyond-mirth-competitive-gaps.md).
 > These are **platform expansions beyond Mirth** (Mirth lacks most of them too), NOT parity gaps. A strategy menu, not a defect list — act only after the doc 12/13 blockers clear. Top PURSUE picks:
 
-- [ ] **[B1] Silent-interface / SLA / heartbeat alerting** — 🟢 "no message in N min" + throughput/queue-depth thresholds. Deadliest failure mode; alert engine currently fires only on CHANNEL_ERROR.
+- [ ] **[B1] Silent-interface / SLA / heartbeat alerting** — 🟢 "no message in N min" (✅ NO_MESSAGES trigger, D-192) + throughput/queue-depth thresholds (open). Deadliest failure mode; alert engine currently fires only on CHANNEL_ERROR.
 - [ ] **[B2] HA / clustering / automatic failover** — 🟢 genuine production gap; multi-node today duplicates inbound on singleton sources.
 - [ ] **[B3] Keyed partitioning / per-key ordering + scale** — 🟢 per-patient order + horizontal scale; the real fix for doc 13 N7 (dead threadCount/groupBy).
 - [ ] **[B4] End-to-end lineage + OpenTelemetry tracing** — 🟢 cross-channel message journeys.

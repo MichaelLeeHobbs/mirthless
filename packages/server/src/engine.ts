@@ -84,6 +84,8 @@ export interface DeployedChannel {
    * marked every pending destination ERROR. Later calls are no-ops.
    */
   readonly recoverOnce: () => Promise<void>;
+  /** When the channel last received a message (or last (re)started); drives NO_MESSAGES alerts. */
+  readonly activity: { lastAt: number };
 }
 
 /**
@@ -332,11 +334,15 @@ const MAX_ROUTE_DEPTH = 25;
 /** routeMessage hop depth of the message chain currently executing. */
 const routeDepthStore = new AsyncLocalStorage<number>();
 
+/** How often deployed channels are checked for NO_MESSAGES alerts. */
+const SILENCE_CHECK_INTERVAL_MS = 30_000;
+
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
   private readonly sandbox: SandboxExecutor;
   private readonly serverId: string;
-  /** Current routeMessage nesting depth (one process chain); guards against routing loops. */
+  /** Periodic NO_MESSAGES alert check; started on first deploy, cleared on dispose. */
+  private silenceTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(serverId?: string) {
     this.sandbox = new VmSandboxExecutor({
@@ -592,7 +598,9 @@ export class EngineManager {
     const scriptTimeoutMs = channel.scriptTimeoutSeconds
       ? channel.scriptTimeoutSeconds * 1000
       : 30_000;
+    const activity = { lastAt: Date.now() };
     const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
+      activity.lastAt = Date.now();
       // Extract correlationId from sourceMap if present (channel-to-channel routing)
       const correlationId = typeof sourceMap?.['correlationId'] === 'string'
         ? sourceMap['correlationId'] as string
@@ -631,7 +639,27 @@ export class EngineManager {
       await this.recoverChannel(channel, store, processMessage, sendFn);
     };
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage, recoverOnce });
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage, recoverOnce, activity });
+    this.silenceTimer ??= setInterval(() => { void this.checkSilentChannels(); }, SILENCE_CHECK_INTERVAL_MS).unref();
+  }
+
+  /**
+   * Fire NO_MESSAGES alerts for started channels that have gone quiet. A channel
+   * that is not STARTED restarts its silence clock, so stopping it never alerts
+   * and a restart gets a full window before the first alert.
+   */
+  async checkSilentChannels(now: number = Date.now()): Promise<void> {
+    for (const deployed of this.runtimes.values()) {
+      if (deployed.runtime.getState() !== 'STARTED') {
+        deployed.activity.lastAt = now;
+        continue;
+      }
+      try {
+        await deployed.alertManager.checkSilence(deployed.channelId, deployed.activity.lastAt, now);
+      } catch (err) {
+        logger.error({ errMsg: err instanceof Error ? err.message : String(err), channelId: deployed.channelId }, 'NO_MESSAGES alert check failed');
+      }
+    }
   }
 
   /** Get a deployed channel runtime. */
@@ -1146,6 +1174,8 @@ export class EngineManager {
 
   /** Dispose all resources. */
   async dispose(): Promise<void> {
+    if (this.silenceTimer) clearInterval(this.silenceTimer);
+    this.silenceTimer = undefined;
     this.sandbox.dispose();
   }
 }
