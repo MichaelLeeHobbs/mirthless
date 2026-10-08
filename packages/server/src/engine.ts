@@ -935,6 +935,7 @@ export class EngineManager {
         enabled: d.enabled,
         scripts: cleanScripts as DestinationScripts,
         queueMode: (d.queueMode ?? 'NEVER') as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
+        waitForPrevious: d.waitForPrevious,
       });
     }
 

@@ -24,7 +24,6 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import { useMessageDetail, useDeleteMessage, type ConnectorDetail } from '../../hooks/use-messages.js';
 import { useResendDestination } from '../../hooks/use-message-actions.js';
 import { ContentViewer } from './ContentViewer.js';
-import { AttachmentTab } from './AttachmentTab.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
 import { useNotification } from '../../stores/notification.store.js';
 import { usePermissions } from '../../hooks/use-permissions.js';
@@ -103,7 +102,6 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
   const resendMutation = useResendDestination();
   const { notify } = useNotification();
   const [connectorTab, setConnectorTab] = useState(0);
-  const [showAttachments, setShowAttachments] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [resendTarget, setResendTarget] = useState<number | null>(null);
   const { has } = usePermissions();
@@ -212,49 +210,36 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
         </Tabs>
       )}
 
-      <Tabs
-        value={showAttachments ? 1 : 0}
-        onChange={(_e, val: number) => setShowAttachments(val === 1)}
-        sx={{ mb: 1, borderBottom: 1, borderColor: 'divider' }}
-      >
-        <Tab label="Content" />
-        <Tab label="Attachments" />
-      </Tabs>
-
-      {showAttachments ? (
-        <AttachmentTab channelId={channelId} messageId={messageId} />
-      ) : (
-        activeConnector && (
-          <Box>
-            <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
+      {activeConnector && (
+        <Box>
+          <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              {activeConnector.connectorName ?? (activeConnector.metaDataId === 0 ? 'Source' : `Destination ${String(activeConnector.metaDataId)}`)}
+            </Typography>
+            <Chip label={activeConnector.status} size="small" variant="outlined" />
+            {activeConnector.sendAttempts > 0 && (
               <Typography variant="body2" color="text.secondary">
-                {activeConnector.connectorName ?? (activeConnector.metaDataId === 0 ? 'Source' : `Destination ${String(activeConnector.metaDataId)}`)}
+                {String(activeConnector.sendAttempts)} attempt{activeConnector.sendAttempts !== 1 ? 's' : ''}
               </Typography>
-              <Chip label={activeConnector.status} size="small" variant="outlined" />
-              {activeConnector.sendAttempts > 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  {String(activeConnector.sendAttempts)} attempt{activeConnector.sendAttempts !== 1 ? 's' : ''}
-                </Typography>
-              )}
-              <Box sx={{ flexGrow: 1 }} />
-              {activeConnector.metaDataId > 0 && (
-                <Tooltip title={canResend ? 'Resend to this destination (queue-enabled destinations only; use Reprocess for others)' : 'Requires messages:reprocess permission'}>
-                  <span>
-                    <Button
-                      size="small"
-                      startIcon={<ReplayIcon />}
-                      disabled={resendMutation.isPending || !canResend}
-                      onClick={() => { setResendTarget(activeConnector.metaDataId); }}
-                    >
-                      Resend
-                    </Button>
-                  </span>
-                </Tooltip>
-              )}
-            </Box>
-            <ConnectorContentTabs connector={activeConnector} />
+            )}
+            <Box sx={{ flexGrow: 1 }} />
+            {activeConnector.metaDataId > 0 && (
+              <Tooltip title={canResend ? 'Resend to this destination (queue-enabled destinations only; use Reprocess for others)' : 'Requires messages:reprocess permission'}>
+                <span>
+                  <Button
+                    size="small"
+                    startIcon={<ReplayIcon />}
+                    disabled={resendMutation.isPending || !canResend}
+                    onClick={() => { setResendTarget(activeConnector.metaDataId); }}
+                  >
+                    Resend
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
           </Box>
-        )
+          <ConnectorContentTabs connector={activeConnector} />
+        </Box>
       )}
 
       <ConfirmDialog
