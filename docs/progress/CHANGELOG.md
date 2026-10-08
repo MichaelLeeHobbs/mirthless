@@ -12,6 +12,8 @@
 - `http-receiver.test.ts` "sends empty response…" failed deterministically: fetch reused a pooled
   keep-alive socket left by the previous test's stopped server on the same port. Test helper now
   sends `Connection: close`.
+- CI integration step now sets a test-only `CONTENT_ENCRYPTION_KEY`; `data-source.itest.ts` stores
+  encrypted credentials and failed all 6 tests without it.
 
 ## 2026-07-14 — Real-message E2E testing + DICOM dcmjs-dimse port (branch `feature/real-e2e-testing`)
 
