@@ -25,12 +25,17 @@ if (!databaseUrl) {
 }
 
 const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url));
+// Mirrors buildDbSslConfig() in packages/server/src/lib/db.ts: verify the server
+// certificate by default; opt out only with DATABASE_SSL_REJECT_UNAUTHORIZED=false.
 const useSsl = process.env.DATABASE_SSL === 'true';
+const ssl = useSsl
+  ? {
+      rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false',
+      ...(process.env.DATABASE_SSL_CA ? { ca: process.env.DATABASE_SSL_CA } : {}),
+    }
+  : false;
 
-const pool = new pg.Pool({
-  connectionString: databaseUrl,
-  ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
-});
+const pool = new pg.Pool({ connectionString: databaseUrl, ssl });
 const db = drizzle(pool);
 
 try {
