@@ -76,6 +76,13 @@ export interface DeployedChannel {
   readonly queueConsumers: readonly QueueConsumer[];
   readonly scripts: ChannelScripts;
   readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<SourceDispatchOutcome>>;
+  /**
+   * Recover messages a prior crash left unprocessed. Runs once, on the first
+   * start after deploy (call it after the runtime has started): destination
+   * dispatchers only accept sends once started, so recovering at deploy time
+   * marked every pending destination ERROR. Later calls are no-ops.
+   */
+  readonly recoverOnce: () => Promise<void>;
 }
 
 /**
@@ -612,11 +619,16 @@ export class EngineManager {
       throw new Error('Failed to deploy channel runtime');
     }
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage });
+    // Recover messages left unprocessed by a prior crash/restart on the first
+    // start. Best-effort: failures are logged, never allowed to abort a start.
+    let recovered = false;
+    const recoverOnce = async (): Promise<void> => {
+      if (recovered) return;
+      recovered = true;
+      await this.recoverChannel(channel, store, processMessage, sendFn);
+    };
 
-    // Recover any messages left unprocessed by a prior crash/restart. Best-effort:
-    // recovery failures are logged, never allowed to abort a deploy.
-    await this.recoverChannel(channel, store, processMessage, sendFn);
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage, recoverOnce });
   }
 
   /** Get a deployed channel runtime. */
@@ -724,17 +736,33 @@ export class EngineManager {
         return { ok: true, value: r.value.map((m) => ({ messageId: m.id, channelId: m.channelId })), error: null };
       },
       getConnectorMessages: (channelId, messageId) => MessageService.getConnectorMessages(channelId, messageId),
+      markProcessed: (channelId, messageId) => MessageService.markProcessed(channelId, messageId),
     };
 
     const CT_RAW = 1;
     const CT_SENT = 5;
+    const CT_SOURCE_MAP = 9;
+
+    // The original sourceMap (e.g. correlationId from an upstream channel) is
+    // stored with the message; carry it into the reprocess. It may be absent
+    // under storage modes that do not keep it, in which case it starts empty.
+    const loadSourceMap = async (channelId: string, messageId: number): Promise<Record<string, unknown>> => {
+      const stored = await store.loadContent(channelId, messageId, 0, CT_SOURCE_MAP);
+      if (!stored.ok || stored.value === null) return {};
+      try {
+        const parsed: unknown = JSON.parse(stored.value);
+        return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+      } catch {
+        return {};
+      }
+    };
 
     const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
       const raw = await store.loadContent(channelId, messageId, 0, CT_RAW);
       if (!raw.ok || raw.value === null) {
         return { ok: false, value: null, error: new Error('Raw content unavailable for recovery') } as Result<void>;
       }
-      const processed = await processMessage(raw.value);
+      const processed = await processMessage(raw.value, await loadSourceMap(channelId, messageId));
       if (!processed.ok) {
         // Do NOT mark processed on failure — the original still holds recoverable
         // raw content and must remain eligible for recovery on the next deploy.

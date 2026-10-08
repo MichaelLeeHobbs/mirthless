@@ -26,6 +26,8 @@ export interface ConnectorMessageRecord {
 export interface RecoveryStore {
   getUnprocessedMessages(channelId: string): Promise<Result<readonly UnprocessedMessage[]>>;
   getConnectorMessages(channelId: string, messageId: number): Promise<Result<readonly ConnectorMessageRecord[]>>;
+  /** Mark a message processed once nothing in it is left to recover. */
+  markProcessed(channelId: string, messageId: number): Promise<Result<void>>;
 }
 
 /** Callback to reprocess a message from source. */
@@ -86,7 +88,17 @@ export class RecoveryManager {
     });
   }
 
-  /** Recover a single message's connectors. */
+  /**
+   * Recover a single message.
+   *
+   * - Source RECEIVED or TRANSFORMED with no destination rows: the crash hit
+   *   before routing, so the message is reprocessed from its raw content
+   *   (reprocessSource marks the original processed on success).
+   * - Destination RECEIVED: re-dispatched. QUEUED: left to the queue consumer.
+   * - When nothing was left to do and nothing failed (every connector already
+   *   reached a final status, e.g. a crash between the last send and finalize),
+   *   the message is marked processed so it is not rescanned on every deploy.
+   */
   private async recoverMessage(
     channelId: string,
     messageId: number,
@@ -97,43 +109,52 @@ export class RecoveryManager {
     }
 
     const connectors = connResult.value;
+    const hasDestinations = connectors.some((c) => c.metaDataId > 0);
+    let reprocessed = false;
     let messageRecovered = false;
+    let pending = false;
     let errors = 0;
     let skipped = 0;
 
     for (const conn of connectors) {
-      // QUEUED messages are handled by QueueConsumer — skip
-      if (conn.status === 'QUEUED') {
-        skipped++;
-        continue;
-      }
+      const outcome = await this.recoverConnector(channelId, messageId, conn, hasDestinations);
+      if (outcome === 'reprocessed') { reprocessed = true; messageRecovered = true; }
+      else if (outcome === 'recovered') messageRecovered = true;
+      else if (outcome === 'error') errors++;
+      else if (outcome === 'queued') { pending = true; skipped++; }
+      else skipped++;
+    }
 
-      // Source connector (metaDataId=0) with RECEIVED status — full reprocess
-      if (conn.metaDataId === 0 && conn.status === 'RECEIVED') {
-        const rpResult = await this.reprocessSource(channelId, messageId);
-        if (rpResult.ok) {
-          messageRecovered = true;
-        } else {
-          errors++;
-        }
-        continue;
-      }
-
-      // Destination connector with RECEIVED status — re-dispatch
-      if (conn.metaDataId > 0 && conn.status === 'RECEIVED') {
-        const rdResult = await this.redispatchDestination(channelId, messageId, conn.metaDataId);
-        if (rdResult.ok) {
-          messageRecovered = true;
-        } else {
-          errors++;
-        }
-        continue;
-      }
-
-      // Other statuses (SENT, FILTERED, ERROR, TRANSFORMED) — skip
-      skipped++;
+    if (!reprocessed && !pending && errors === 0) {
+      const marked = await this.store.markProcessed(channelId, messageId);
+      if (!marked.ok) errors++;
     }
 
     return { recovered: messageRecovered ? 1 : 0, errors, skipped };
+  }
+
+  private async recoverConnector(
+    channelId: string,
+    messageId: number,
+    conn: ConnectorMessageRecord,
+    hasDestinations: boolean,
+  ): Promise<'reprocessed' | 'recovered' | 'error' | 'queued' | 'skipped'> {
+    // QUEUED messages are handled by QueueConsumer
+    if (conn.status === 'QUEUED') return 'queued';
+
+    if (conn.metaDataId === 0) {
+      const beforeRouting = conn.status === 'RECEIVED' || (conn.status === 'TRANSFORMED' && !hasDestinations);
+      if (!beforeRouting) return 'skipped';
+      const rpResult = await this.reprocessSource(channelId, messageId);
+      return rpResult.ok ? 'reprocessed' : 'error';
+    }
+
+    if (conn.status === 'RECEIVED') {
+      const rdResult = await this.redispatchDestination(channelId, messageId, conn.metaDataId);
+      return rdResult.ok ? 'recovered' : 'error';
+    }
+
+    // SENT, FILTERED, ERROR, ... — final
+    return 'skipped';
   }
 }

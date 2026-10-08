@@ -191,6 +191,10 @@ export class DeploymentService {
       // Start queue consumers after runtime starts
       deployed.queueConsumers.forEach((c) => c.start());
 
+      // Crash recovery needs started destination dispatchers, so it runs here
+      // (once per deploy), not at deploy time.
+      await deployed.recoverOnce();
+
       emitEvent({
         level: 'INFO', name: 'CHANNEL_STARTED', outcome: 'SUCCESS',
         userId: context?.userId ?? null, channelId,

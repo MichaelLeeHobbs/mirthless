@@ -402,6 +402,7 @@ describe('QueueConsumer wiring', () => {
         channelId: CHANNEL_ID,
         runtime: mockRuntime,
         queueConsumers: [mockConsumer],
+        recoverOnce: async () => {},
       });
 
       const { getEngine: getEngineFn } = await import('../../engine.js');
@@ -433,6 +434,7 @@ describe('QueueConsumer wiring', () => {
         channelId: CHANNEL_ID,
         runtime: mockRuntime,
         queueConsumers: [mockConsumer],
+        recoverOnce: async () => {},
       });
 
       const { getEngine: getEngineFn } = await import('../../engine.js');
