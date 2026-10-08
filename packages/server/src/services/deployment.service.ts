@@ -10,6 +10,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { emitToAll } from '../lib/socket.js';
 import { ChannelService } from './channel.service.js';
+import { ChannelDependencyService, orderByDependencies } from './channel-dependency.service.js';
 import { validateConnectorProperties } from './connector-validation.service.js';
 import { getEngine } from '../engine.js';
 import type { DeployedChannel } from '../engine.js';
@@ -329,6 +330,7 @@ export class DeploymentService {
    * Channels with initialState STARTED are deployed and started.
    * Channels with initialState PAUSED are deployed and started then paused.
    * Channels with initialState STOPPED are deployed only.
+   * Channels deploy after the channels they depend on.
    */
   static async autoDeployChannels(): Promise<void> {
     const listResult = await ChannelService.list({ page: 1, pageSize: 1000 });
@@ -338,7 +340,7 @@ export class DeploymentService {
     }
 
     const allChannels = listResult.value.data;
-    const channels = allChannels.filter((ch) => ch.enabled);
+    const channels = await orderForDeploy(allChannels.filter((ch) => ch.enabled));
     logger.info({
       total: allChannels.length,
       enabled: channels.length,
@@ -376,6 +378,19 @@ export class DeploymentService {
 }
 
 // ----- Helper -----
+
+/** Sort channels so dependencies deploy first. Falls back to list order, loudly, if edges can't load. */
+async function orderForDeploy<T extends { readonly id: string }>(channels: readonly T[]): Promise<readonly T[]> {
+  const edgesResult = await ChannelDependencyService.listAll();
+  if (!edgesResult.ok) {
+    logger.error({ errMsg: edgesResult.error.message }, 'Failed to load channel dependencies; deploying in list order');
+    return channels;
+  }
+  const byId = new Map(channels.map((ch) => [ch.id, ch]));
+  return orderByDependencies(channels.map((ch) => ch.id), edgesResult.value)
+    .map((id) => byId.get(id))
+    .filter((ch): ch is T => ch !== undefined);
+}
 
 function getDeployed(channelId: string): DeployedChannel {
   const engine = getEngine();

@@ -40,6 +40,8 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
 - **Map shortcuts:** `$gc` now reads/writes `globalChannelMap` as in Mirth (it read `configMap`);
   added `$cfg`, `$c`, `$co`, `$s`. The shipped typings declared `$c`/`$g`/`$gc` as maps, so typed
   scripts compiled against shortcuts that did not exist; they are now functions. (D-191)
+- **Startup order:** `autoDeployChannels` deploys channels after the channels they depend on
+  (topological sort of `channel_dependencies`); it was list order.
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
 

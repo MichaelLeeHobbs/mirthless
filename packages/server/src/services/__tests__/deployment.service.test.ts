@@ -37,7 +37,14 @@ vi.mock('../../engine.js', () => ({
 
 const mockChannelService = {
   getById: vi.fn(),
+  list: vi.fn(),
 };
+
+const mockListAllDependencies = vi.fn();
+vi.mock('../channel-dependency.service.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../channel-dependency.service.js')>();
+  return { ...actual, ChannelDependencyService: { listAll: mockListAllDependencies } };
+});
 
 vi.mock('../channel.service.js', () => ({
   ChannelService: mockChannelService,
@@ -410,6 +417,49 @@ describe('DeploymentService', () => {
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'CONFLICT');
       expect(result.error.message).toContain('Processing failed');
+    });
+  });
+
+  describe('autoDeployChannels', () => {
+    const summary = (id: string, enabled = true): { id: string; name: string; enabled: boolean } =>
+      ({ id, name: `ch-${id}`, enabled });
+
+    function deployedOrder(): string[] {
+      return mockChannelService.getById.mock.calls.map((c) => c[0] as string);
+    }
+
+    beforeEach(() => {
+      mockChannelService.getById.mockImplementation(async (id: string) => ok({ ...CHANNEL_DETAIL, id }));
+    });
+
+    it('deploys dependencies before the channels that depend on them', async () => {
+      mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b'), summary('c')] }));
+      mockListAllDependencies.mockResolvedValue(ok([
+        { channelId: 'a', dependsOnChannelId: 'b' },
+        { channelId: 'b', dependsOnChannelId: 'c' },
+      ]));
+
+      await DeploymentService.autoDeployChannels();
+
+      expect(deployedOrder()).toEqual(['c', 'b', 'a']);
+    });
+
+    it('skips disabled channels', async () => {
+      mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b', false)] }));
+      mockListAllDependencies.mockResolvedValue(ok([{ channelId: 'a', dependsOnChannelId: 'b' }]));
+
+      await DeploymentService.autoDeployChannels();
+
+      expect(deployedOrder()).toEqual(['a']);
+    });
+
+    it('still deploys every channel, in list order, when dependencies fail to load', async () => {
+      mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b')] }));
+      mockListAllDependencies.mockResolvedValue({ ok: false, value: null, error: new Error('db down') });
+
+      await DeploymentService.autoDeployChannels();
+
+      expect(deployedOrder()).toEqual(['a', 'b']);
     });
   });
 });
