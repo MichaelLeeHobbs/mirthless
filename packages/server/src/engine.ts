@@ -576,6 +576,7 @@ export class EngineManager {
         retryIntervalMs: dest.retryIntervalMs ?? 10_000,
         batchSize: 10,
         pollIntervalMs: 1_000,
+        onError: async (event) => alertManager.handleEvent(event),
       };
       queueConsumers.push(new QueueConsumer(queueConfig, store, sendFn));
     }
