@@ -89,7 +89,11 @@ $r('ack', ack); // expose it to the response
 
 These globals exist **only when the host enables them** for the channel (they are absent
 otherwise, so guard with `typeof`). They are `async` — `await` them. Outbound HTTP is
-subject to SSRF protection: requests to private/loopback address ranges are blocked.
+subject to SSRF protection: requests to loopback, private, link-local (including cloud
+metadata at 169.254.169.254), CGNAT and other reserved addresses are blocked, both as IP
+literals and when a DNS name resolves to one. Redirects are **not** followed (the 3xx response
+is returned to your script), and response bodies are capped at 10 MB. To reach an internal
+system, use a destination connector rather than `httpFetch`.
 
 | Function | Signature | Description |
 |---|---|---|

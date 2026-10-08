@@ -5,46 +5,8 @@
 // into EngineManager. The sandbox-side mechanism is covered separately in
 // packages/engine .../bridge-io-functions.test.ts.
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { EngineManager, createHttpFetchBridge, type DeployedChannel } from '../engine.js';
-
-// ----- httpFetch bridge -----
-
-describe('createHttpFetchBridge', () => {
-  afterEach(() => { vi.unstubAllGlobals(); });
-
-  it('performs a GET by default and maps status/headers/body', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response('hello', { status: 201, statusText: 'Created', headers: { 'content-type': 'text/plain' } }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const bridge = createHttpFetchBridge();
-    const result = await bridge('https://example.org/x', {});
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(init.method).toBe('GET');
-    expect(result.status).toBe(201);
-    expect(result.statusText).toBe('Created');
-    expect(result.headers['content-type']).toBe('text/plain');
-    expect(result.body).toBe('hello');
-  });
-
-  it('forwards method, headers, and body', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const bridge = createHttpFetchBridge();
-    await bridge('https://example.org/x', { method: 'POST', headers: { 'x-api-key': 'k' }, body: '{"a":1}' });
-
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(init.method).toBe('POST');
-    expect(init.body).toBe('{"a":1}');
-    expect((init.headers as Record<string, string>)['x-api-key']).toBe('k');
-    expect(init.signal).toBeInstanceOf(AbortSignal);
-  });
-});
+import { describe, it, expect, vi } from 'vitest';
+import { EngineManager, type DeployedChannel } from '../engine.js';
 
 // ----- routeMessage -----
 

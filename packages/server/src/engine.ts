@@ -58,6 +58,7 @@ import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { resolveHttpSourceTls, resolveHttpDestinationTls } from './services/connector-tls-resolver.js';
 import { db } from './lib/db.js';
+import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
@@ -307,22 +308,12 @@ function createDbQueryBridge(): NonNullable<BridgeDependencies['dbQuery']> {
 }
 
 /**
- * httpFetch() script bridge: outbound HTTP via global fetch. SSRF host-blocking is
- * already applied in the sandbox bridge layer before this runs; here we just perform
- * the request, enforce a per-request timeout, and shape the response.
+ * httpFetch() script bridge. The transport (safeHttpFetch) re-checks every
+ * resolved address, never follows redirects and caps the response size, so a
+ * DNS name or redirect cannot reach a blocked address the hostname check missed.
  */
 export function createHttpFetchBridge(): NonNullable<BridgeDependencies['httpFetch']> {
-  return async (url, options) => {
-    const res = await fetch(url, {
-      method: options.method ?? 'GET',
-      ...(options.headers ? { headers: { ...options.headers } } : {}),
-      ...(options.body !== undefined ? { body: options.body } : {}),
-      signal: AbortSignal.timeout(options.timeout ?? 30_000),
-    });
-    const headers: Record<string, string> = {};
-    res.headers.forEach((value, key) => { headers[key] = value; });
-    return { status: res.status, statusText: res.statusText, headers, body: await res.text() };
-  };
+  return (url, options) => safeHttpFetch(url, options);
 }
 
 // ----- Engine Manager -----

@@ -10,5 +10,6 @@ export type { CompileOptions, FilterRuleInput, TransformerStepInput } from './sc
 export { compileScript, clearScriptCache, compileFilterRulesToScript, compileTransformerStepsToScript } from './script-compiler.js';
 export type { BridgeFunctions, Hl7MessageProxy, BridgeDependencies, HttpFetchOptions, HttpFetchResult, RouteMessageResult } from './bridge-functions.js';
 export { createBridgeFunctions } from './bridge-functions.js';
+export { isBlockedAddress, isBlockedHostname } from './ssrf.js';
 export type { CodeTemplateData } from './template-injector.js';
 export { prependTemplates } from './template-injector.js';
