@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import { ChannelRevisionService } from '../services/channel-revision.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';
+import { redactChannelDetail } from '../lib/secret-redaction.js';
 
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
@@ -44,6 +45,13 @@ export class ChannelRevisionController {
       return;
     }
 
-    res.json({ success: true, data: result.value });
+    // A snapshot carries the full connector config; readers without
+    // channels:write get credentials masked exactly as on GET /channels/:id.
+    const canWrite = req.user?.permissions.includes('channels:write') ?? false;
+    const data = canWrite
+      ? result.value
+      : { ...result.value, snapshot: redactChannelDetail(result.value.snapshot) };
+
+    res.json({ success: true, data });
   }
 }

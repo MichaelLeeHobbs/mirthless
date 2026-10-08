@@ -13,7 +13,7 @@ import type {
 } from '@mirthless/core-models';
 import { ChannelService } from '../services/channel.service.js';
 import { isServiceError } from '../lib/service-error.js';
-import { redactConnectorProperties } from '../lib/secret-redaction.js';
+import { redactChannelDetail } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
 
 /**
@@ -22,26 +22,6 @@ import logger from '../lib/logger.js';
  * channel (`channels:write`) sees the real values; everyone else — notably the
  * `viewer` role — gets the redacted marker.
  */
-function redactChannelDetail(detail: Record<string, unknown>): Record<string, unknown> {
-  const source = detail['sourceConnectorProperties'];
-  const destinations = detail['destinations'];
-  return {
-    ...detail,
-    sourceConnectorProperties:
-      source && typeof source === 'object'
-        ? redactConnectorProperties(source as Record<string, unknown>)
-        : source,
-    destinations: Array.isArray(destinations)
-      ? destinations.map((d: Record<string, unknown>) => {
-          const props = d['properties'];
-          return props && typeof props === 'object'
-            ? { ...d, properties: redactConnectorProperties(props as Record<string, unknown>) }
-            : d;
-        })
-      : destinations,
-  };
-}
-
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
   if (isServiceError(error, 'ALREADY_EXISTS')) return 409;
