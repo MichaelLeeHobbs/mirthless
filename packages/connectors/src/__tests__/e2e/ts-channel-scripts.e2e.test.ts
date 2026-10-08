@@ -7,7 +7,7 @@
 // against ship in packages/engine/sandbox-globals.d.ts.
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { TcpMllpReceiver, clearChannelRegistry } from '@mirthless/connectors';
+import { TcpMllpReceiver, clearChannelRegistry } from '../../index.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
 import { sendMllp } from './support/tcp-helpers.js';
 

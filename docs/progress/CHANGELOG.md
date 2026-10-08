@@ -48,6 +48,24 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
   and reports failed alert/setting/map writes instead of counting them as restored. (D-192)
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
+## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle
+
+- Moved the real-message E2E harness, its 7 suites, the `*.itest.ts` integration lane and the DICOM
+  fixture from `packages/engine/src/__tests__/` to `packages/connectors/src/__tests__/e2e/`; dropped
+  engine's `@mirthless/connectors` devDependency. A clean checkout now builds. (D-183)
+- `@mirthless/cli` was missing `@vitest/coverage-v8`, so `pnpm test:coverage` failed there once the
+  build got far enough to reach it; added it.
+- `http-receiver.test.ts` "sends empty response…" failed deterministically: fetch reused a pooled
+  keep-alive socket left by the previous test's stopped server on the same port. Test helper now
+  sends `Connection: close`.
+- CI integration step now sets a test-only `CONTENT_ENCRYPTION_KEY`; `data-source.itest.ts` stores
+  encrypted credentials and failed all 6 tests without it.
+- Playwright E2E (not run since the build broke) was blocked by the forced first-login password
+  change added in July: `e2e/global-setup.ts` completes it for the seeded admin. Updated selectors that
+  had drifted from the UI (page-title headings, dialog-scoped buttons, Channel Groups now on the
+  Dashboard) and gave the e2e job a test `CONTENT_ENCRYPTION_KEY`.
+- Fixed: deleting a channel from the Dashboard left it listed until the 60s stats poll;
+  `useDeleteChannel` now also invalidates the statistics query.
 
 ## 2026-07-14 — Real-message E2E testing + DICOM dcmjs-dimse port (branch `feature/real-e2e-testing`)
 

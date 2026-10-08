@@ -12,7 +12,7 @@ import {
   SmtpDispatcher,
   EmailReceiver,
   clearChannelRegistry,
-} from '@mirthless/connectors';
+} from '../../../index.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from '../support/e2e-harness.js';
 import { sendMllp } from '../support/tcp-helpers.js';
 import { describeMail, requireMail } from './gates.js';

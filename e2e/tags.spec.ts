@@ -51,12 +51,12 @@ test.describe('Tags', () => {
 
   test('navigate to tags page', async ({ page }) => {
     await page.goto('/tags');
-    await expect(page.getByRole('heading', { name: /tags/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Tags' })).toBeVisible({ timeout: 10_000 });
   });
 
   test('create a new tag', async ({ page }) => {
     await page.goto('/tags');
-    await expect(page.getByRole('heading', { name: /tags/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Tags' })).toBeVisible({ timeout: 10_000 });
 
     // Click the New / Create button
     await page.getByRole('button', { name: /new|create/i }).click();
@@ -105,7 +105,7 @@ test.describe('Tags', () => {
         await nameField.clear();
         await nameField.fill(TEST_TAG_NAME + ' Updated');
 
-        await page.getByRole('button', { name: /save/i }).click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Update' }).click();
         await page.waitForTimeout(1_000);
 
         await expect(page.getByText(TEST_TAG_NAME + ' Updated')).toBeVisible({ timeout: 10_000 });

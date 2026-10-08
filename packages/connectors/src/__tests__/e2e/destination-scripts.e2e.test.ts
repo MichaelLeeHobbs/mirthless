@@ -25,19 +25,19 @@ import {
   MLLP_RESPONSE_MODE,
   wrapMllp,
   MllpParser,
-} from '@mirthless/connectors';
+} from '../../index.js';
 import {
   VmSandboxExecutor,
   MessageProcessor,
   ChannelRuntime,
   DEFAULT_EXECUTION_OPTIONS,
-} from '../index.js';
+} from '@mirthless/engine';
 import type {
   CompiledScript,
   MessageStore,
   PipelineConfig,
   ChannelRuntimeConfig,
-} from '../index.js';
+} from '@mirthless/engine';
 
 // ----- In-Memory Message Store -----
 

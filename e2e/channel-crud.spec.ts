@@ -29,8 +29,8 @@ test.describe('Channel CRUD (Dashboard)', () => {
     }
     await page.getByRole('button', { name: /create|save/i }).click();
 
-    // Lands in the editor or shows in the dashboard table.
-    await expect(page.getByText('E2E CRUD Channel')).toBeVisible({ timeout: 10_000 });
+    // Lands in the channel editor, titled with the new channel's name.
+    await expect(page.getByRole('heading', { name: 'E2E CRUD Channel' })).toBeVisible({ timeout: 10_000 });
   });
 
   test('empty name fails validation', async ({ page }) => {
@@ -85,10 +85,10 @@ test.describe('Channel CRUD (Dashboard)', () => {
 
     const row = page.locator('tr', { hasText: 'E2E Delete Channel' }).first();
     await row.click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Delete' }).click();
+    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
     // MUI confirm dialog (not a native dialog).
-    await page.getByRole('button', { name: 'Delete' }).click();
-    await expect(page.getByText('E2E Delete Channel')).not.toBeVisible({ timeout: 10_000 });
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+    await expect(page.locator('tr', { hasText: 'E2E Delete Channel' })).toHaveCount(0, { timeout: 10_000 });
   });
 
   test('search filters channels in the flat view', async ({ page }) => {
@@ -120,6 +120,8 @@ test.describe('Channel CRUD (Dashboard)', () => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Columns' }).click();
     await page.getByRole('menuitem', { name: 'Source' }).click();
+    // The open menu hides the page from the accessibility tree; close it first.
+    await page.keyboard.press('Escape');
     // Header now includes a Source column.
     await expect(page.getByRole('columnheader', { name: 'Source' })).toBeVisible();
   });
