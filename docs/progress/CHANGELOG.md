@@ -2,6 +2,17 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle
+
+- Moved the real-message E2E harness, its 7 suites, the `*.itest.ts` integration lane and the DICOM
+  fixture from `packages/engine/src/__tests__/` to `packages/connectors/src/__tests__/e2e/`; dropped
+  engine's `@mirthless/connectors` devDependency. A clean checkout now builds. (D-183)
+- `@mirthless/cli` was missing `@vitest/coverage-v8`, so `pnpm test:coverage` failed there once the
+  build got far enough to reach it; added it.
+- `http-receiver.test.ts` "sends empty response…" failed deterministically: fetch reused a pooled
+  keep-alive socket left by the previous test's stopped server on the same port. Test helper now
+  sends `Connection: close`.
+
 ## 2026-07-14 — Real-message E2E testing + DICOM dcmjs-dimse port (branch `feature/real-e2e-testing`)
 
 Replaced mock-heavy connector tests with a harness that actually pushes messages through real
