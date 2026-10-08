@@ -6,6 +6,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateChannelInput, UpdateChannelInput } from '@mirthless/core-models';
 import { api } from '../api/client.js';
+import { STATS_KEYS } from './use-statistics.js';
 
 // ----- Response Types (mirror server's ChannelSummary/ChannelDetail) -----
 
@@ -216,7 +217,11 @@ export function useDeleteChannel(): ReturnType<typeof useMutation<void, Error, s
       }
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: CHANNEL_KEYS.lists() });
+      // The dashboard lists channels from the statistics query, so refresh it too.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: CHANNEL_KEYS.lists() }),
+        queryClient.invalidateQueries({ queryKey: STATS_KEYS.all }),
+      ]);
     },
   });
 }

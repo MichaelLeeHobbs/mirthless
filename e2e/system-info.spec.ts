@@ -12,7 +12,7 @@ test.describe('System Info', () => {
 
   test('navigate to system info page', async ({ page }) => {
     await page.goto('/system');
-    await expect(page.getByRole('heading', { name: /system/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'System Information' })).toBeVisible({ timeout: 10_000 });
   });
 
   test('key sections are visible', async ({ page }) => {

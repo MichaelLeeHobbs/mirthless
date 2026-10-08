@@ -40,12 +40,12 @@ test.describe('Config Map', () => {
 
   test('navigate to config map page', async ({ page }) => {
     await page.goto('/config-map');
-    await expect(page.getByRole('heading', { name: /config map/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Configuration Map' })).toBeVisible({ timeout: 10_000 });
   });
 
   test('add a new config entry', async ({ page }) => {
     await page.goto('/config-map');
-    await expect(page.getByRole('heading', { name: /config map/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Configuration Map' })).toBeVisible({ timeout: 10_000 });
 
     // Click Add / New button
     const addBtn = page.getByRole('button', { name: /add|new|create/i });
@@ -71,7 +71,7 @@ test.describe('Config Map', () => {
     await page.getByRole('button', { name: /save|add|create/i }).click();
 
     // Entry should appear in the table
-    await expect(page.getByText(TEST_CATEGORY)).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('tbody').getByText(TEST_CATEGORY)).toBeVisible({ timeout: 10_000 });
   });
 
   test('new entry appears in the list', async ({ page }) => {

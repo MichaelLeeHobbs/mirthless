@@ -19,7 +19,7 @@ import {
   DEFAULT_EXECUTION_OPTIONS,
   compileScript,
   prependTemplates,
-} from '../../index.js';
+} from '@mirthless/engine';
 import type {
   MessageStore,
   PipelineConfig,
@@ -31,13 +31,13 @@ import type {
   DestinationResponse,
   CompiledScript,
   CodeTemplateData,
-} from '../../index.js';
+} from '@mirthless/engine';
 import type {
   SourceConnectorRuntime,
   DestinationConnectorRuntime,
   ConnectorMessage,
   ConnectorResponse,
-} from '@mirthless/connectors';
+} from '../../../index.js';
 import type { Result } from '@mirthless/core-util';
 
 // ----- Result helper -----

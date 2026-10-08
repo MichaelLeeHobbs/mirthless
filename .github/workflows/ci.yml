@@ -73,8 +73,12 @@ jobs:
       - name: Run database migrations
         run: pnpm db:migrate
 
+      # data-source.itest.ts stores encrypted credentials, so it needs a
+      # content key. Test-only value (64 hex chars), scoped to this step.
       - name: Integration tests (real Postgres)
         run: pnpm test:integration
+        env:
+          CONTENT_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 
       - name: Upload coverage
         if: always()
@@ -109,6 +113,8 @@ jobs:
       LOG_LEVEL: error
       FRONTEND_URL: http://localhost:5173
       CI: 'true'
+      # Data source specs store encrypted credentials. Test-only value.
+      CONTENT_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 
     steps:
       - uses: actions/checkout@v4
