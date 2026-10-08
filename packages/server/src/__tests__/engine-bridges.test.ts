@@ -21,9 +21,9 @@ function fakeDeployed(name: string, state = 'STARTED'): { deployed: DeployedChan
   return { deployed, processMessage };
 }
 
-/** Access the private runtimes map / routeDepth for test setup. */
-function internals(engine: EngineManager): { runtimes: Map<string, DeployedChannel>; routeDepth: number } {
-  return engine as unknown as { runtimes: Map<string, DeployedChannel>; routeDepth: number };
+/** Access the private runtimes map for test setup. */
+function internals(engine: EngineManager): { runtimes: Map<string, DeployedChannel> } {
+  return engine as unknown as { runtimes: Map<string, DeployedChannel> };
 }
 
 describe('EngineManager.routeMessage', () => {
@@ -48,16 +48,44 @@ describe('EngineManager.routeMessage', () => {
     expect(result.error.message).toContain('no deployed channel');
   });
 
-  it('trips the loop guard at max hop depth', async () => {
+  it('trips the loop guard when a message routes back to itself', async () => {
     const engine = new EngineManager();
-    const { deployed } = fakeDeployed('Target');
-    internals(engine).runtimes.set('id-Target', deployed);
-    internals(engine).routeDepth = 25; // MAX_ROUTE_DEPTH
+    let hops = 0;
+    const processMessage = vi.fn(async () => {
+      hops++;
+      // Each hop's script routes the message on again: a loop A -> A -> A ...
+      const next = await engine.routeMessage('Loop', 'x');
+      if (!next.ok) throw new Error(next.error.message);
+      return { ok: true, value: { messageId: hops }, error: null };
+    });
+    internals(engine).runtimes.set('id-Loop', {
+      channelId: 'id-Loop', config: { name: 'Loop' }, runtime: { getState: () => 'STARTED' }, processMessage,
+    } as unknown as DeployedChannel);
 
-    const result = await engine.routeMessage('Target', 'x');
+    const result = await engine.routeMessage('Loop', 'x');
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.message).toContain('max hop depth');
+    expect(hops).toBe(25); // MAX_ROUTE_DEPTH
+  });
+
+  it('does not count concurrent, unrelated routeMessage calls against each other', async () => {
+    const engine = new EngineManager();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const processMessage = vi.fn(async () => {
+      await gate; // keep every call in flight at once
+      return { ok: true, value: { messageId: 1 }, error: null };
+    });
+    internals(engine).runtimes.set('id-Target', {
+      channelId: 'id-Target', config: { name: 'Target' }, runtime: { getState: () => 'STARTED' }, processMessage,
+    } as unknown as DeployedChannel);
+
+    const calls = Array.from({ length: 40 }, () => engine.routeMessage('Target', 'x'));
+    release();
+    const results = await Promise.all(calls);
+
+    expect(results.every((r) => r.ok)).toBe(true);
   });
 });

@@ -33,6 +33,7 @@ import {
   type QueueConsumerConfig,
   type LoadedAlert,
 } from '@mirthless/engine';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { tryCatch, type Result } from 'stderr-lib';
 import {
   createSourceConnector,
@@ -328,12 +329,14 @@ export function createHttpFetchBridge(): NonNullable<BridgeDependencies['httpFet
 /** Max routeMessage hops in a single message's processing chain (loop guard). */
 const MAX_ROUTE_DEPTH = 25;
 
+/** routeMessage hop depth of the message chain currently executing. */
+const routeDepthStore = new AsyncLocalStorage<number>();
+
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
   private readonly sandbox: SandboxExecutor;
   private readonly serverId: string;
   /** Current routeMessage nesting depth (one process chain); guards against routing loops. */
-  private routeDepth = 0;
 
   constructor(serverId?: string) {
     this.sandbox = new VmSandboxExecutor({
@@ -361,21 +364,20 @@ export class EngineManager {
    */
   async routeMessage(channelName: string, rawData: string): Promise<Result<{ messageId: number }>> {
     return tryCatch(async () => {
-      if (this.routeDepth >= MAX_ROUTE_DEPTH) {
+      // Depth is tracked per message chain (AsyncLocalStorage follows the awaited
+      // routeMessage -> processMessage -> script -> routeMessage path), so
+      // concurrent unrelated messages never count against each other.
+      const depth = routeDepthStore.getStore() ?? 0;
+      if (depth >= MAX_ROUTE_DEPTH) {
         throw new Error(`routeMessage exceeded max hop depth (${String(MAX_ROUTE_DEPTH)}) — possible routing loop`);
       }
       const targetId = this.resolveChannelIdByName(channelName);
       if (!targetId) {
         throw new Error(`routeMessage: no deployed channel named "${channelName}"`);
       }
-      this.routeDepth++;
-      try {
-        const result = await this.sendMessage(targetId, rawData);
-        if (!result.ok) throw new Error(result.error.message);
-        return result.value;
-      } finally {
-        this.routeDepth--;
-      }
+      const result = await routeDepthStore.run(depth + 1, () => this.sendMessage(targetId, rawData));
+      if (!result.ok) throw new Error(result.error.message);
+      return result.value;
     });
   }
 
