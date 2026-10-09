@@ -16,13 +16,17 @@ function makeScript(code: string): CompiledScript {
 
 const OPTIONS = { timeout: 100 };
 
-/** Resolves true if the host event loop gets a turn while `work` is pending. */
-async function hostStaysResponsive(work: Promise<unknown>): Promise<boolean> {
+/**
+ * Runs the work and reports whether the host event loop got a turn while it was pending.
+ * The ticker is scheduled before the work starts, so its 5ms timer always
+ * expires ahead of any longer timer the work schedules, however loaded the machine.
+ */
+async function runWatchingHost<T>(start: () => Promise<T>): Promise<{ readonly ticked: boolean; readonly result: T }> {
   let ticked = false;
   const timer = setInterval(() => { ticked = true; }, 5);
-  await work;
+  const result = await start();
   clearInterval(timer);
-  return ticked;
+  return { ticked, result };
 }
 
 describe('VmSandboxExecutor async isolation', () => {
@@ -36,12 +40,12 @@ describe('VmSandboxExecutor async isolation', () => {
   });
 
   it('times out an infinite loop that runs after an IO bridge resolves', async () => {
-    const getResource = vi.fn().mockImplementation(() => new Promise((r) => setTimeout(() => r('x'), 10)));
+    const getResource = vi.fn().mockImplementation(() => new Promise((r) => setTimeout(() => r('x'), 20)));
     const executor = new VmSandboxExecutor({ getResource });
-    const work = executor.execute(makeScript('await getResource("a"); while (true) {}'), createSandboxContext('m', 'r'), OPTIONS);
+    const { ticked, result } = await runWatchingHost(() =>
+      executor.execute(makeScript('await getResource("a"); while (true) {}'), createSandboxContext('m', 'r'), OPTIONS));
 
-    expect(await hostStaysResponsive(work)).toBe(true);
-    const result = await work;
+    expect(ticked).toBe(true);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.message).toMatch(/timed out/);

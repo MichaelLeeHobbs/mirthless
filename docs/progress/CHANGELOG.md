@@ -49,6 +49,8 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
 - **Login:** two logins by the same user within one second failed with "Invalid username or
   password": both refresh tokens were byte-identical and the second session insert hit the
   unique index. Refresh tokens now carry a random `jti`.
+- **CI:** coverage minimums are enforced in every package, set just under today's numbers (D-193).
+  A sandbox isolation test that could fail under heavy parallel load is now deterministic.
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
 ## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle
