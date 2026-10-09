@@ -59,6 +59,9 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
   silently dropped to plaintext).
 - **HIPAA checklist:** new `docs/ops/hipaa-security-checklist.md` with an operator checklist,
   the 164.312 safeguards and the remaining gaps.
+- **Soak test:** `pnpm soak` drives a real server for hours and checks exactly-once delivery.
+  Baseline: 3 h at 100 msg/s, 1,080,004 messages, none lost or duplicated, memory flat after
+  an early step (`docs/ops/soak-test.md`).
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
 ## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle

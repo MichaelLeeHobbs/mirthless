@@ -43,6 +43,7 @@ function parseArgs(argv) {
     else if (a === '--api') args.api = argv[++i];
     else if (a === '--server-pid') args.serverPid = Number(argv[++i]);
     else if (a === '--keep') args.keep = true;
+    else if (a === '--') continue;
     else throw new Error(`Unknown argument: ${a}`);
   }
   return args;

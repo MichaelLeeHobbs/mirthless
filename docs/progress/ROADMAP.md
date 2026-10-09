@@ -149,7 +149,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] ~~Dashboard: replace polling with WebSocket-driven query invalidation~~
 - [x] ~~Example channels seeded (10 channels in Examples group)~~
 - [x] ~~Connection testing — "Test Connection" button per connector type~~
-- [ ] Load testing — throughput benchmarks with realistic message volumes
+- [x] ~~Load testing — throughput benchmarks with realistic message volumes~~ (3-hour soak, 1.08M messages, 0 lost: `docs/ops/soak-test.md`, 2026-10-09)
 - [ ] E2E test suite refresh — 19 specs may need updates after recent UI changes (`message-flow.spec.ts` rewritten to assert real delivery, 2026-10-08)
 - [ ] Security review — HIPAA checklist written (`docs/ops/hipaa-security-checklist.md`, 2026-10-09, lists the open gaps); penetration testing not done
 

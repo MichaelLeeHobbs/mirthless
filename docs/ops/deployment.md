@@ -60,6 +60,7 @@ Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside th
 
 - Upgrades: [Upgrade procedure](upgrade.md). Always back up first.
 - Health, metrics and logs: [Resource sizing & observability](resource-and-observability.md).
+- Capacity: [Soak test](soak-test.md) baseline (memory, latency, database growth at 100 msg/s).
 - Backups: [Backup & restore](backup-restore.md).
 - Before carrying PHI: work through the operator checklist in
   [HIPAA / security checklist](hipaa-security-checklist.md) and set up TLS per
