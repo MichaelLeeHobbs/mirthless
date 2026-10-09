@@ -51,6 +51,14 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
   unique index. Refresh tokens now carry a random `jti`.
 - **CI:** coverage minimums are enforced in every package, set just under today's numbers (D-193).
   A sandbox isolation test that could fail under heavy parallel load is now deterministic.
+- **Rate limits:** in production, token refreshes and successful logins shared the 5-per-15-min
+  login limit, so a few users behind one proxy were logged out with 429s. Only failed logins
+  count now, and refresh has its own limit.
+- **Audit:** every rejected login (unknown user, locked, disabled, wrong password, lockout),
+  logout and server backup export is recorded. A cloned encrypted channel stays encrypted (it
+  silently dropped to plaintext).
+- **HIPAA checklist:** new `docs/ops/hipaa-security-checklist.md` with an operator checklist,
+  the 164.312 safeguards and the remaining gaps.
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
 ## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle

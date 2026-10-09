@@ -151,7 +151,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] ~~Connection testing — "Test Connection" button per connector type~~
 - [ ] Load testing — throughput benchmarks with realistic message volumes
 - [ ] E2E test suite refresh — 19 specs may need updates after recent UI changes (`message-flow.spec.ts` rewritten to assert real delivery, 2026-10-08)
-- [ ] Security review — HIPAA compliance checklist, penetration testing
+- [ ] Security review — HIPAA checklist written (`docs/ops/hipaa-security-checklist.md`, 2026-10-09, lists the open gaps); penetration testing not done
 
 ---
 
