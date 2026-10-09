@@ -46,7 +46,7 @@ const program = new Command();
 program
   .name('mirthless')
   .description('Mirthless CLI — Healthcare Integration Engine')
-  .version('0.0.1')
+  .version('0.1.0')
   .option('--url <url>', 'Server URL')
   .option('--token <token>', 'Auth token');
 

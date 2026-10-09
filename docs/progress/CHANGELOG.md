@@ -62,6 +62,9 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
 - **Soak test:** `pnpm soak` drives a real server for hours and checks exactly-once delivery.
   Baseline: 3 h at 100 msg/s, 1,080,004 messages, none lost or duplicated, memory flat after
   an early step (`docs/ops/soak-test.md`).
+- **Version 0.1.0:** all packages, the CLI `--version` and the OpenAPI spec are now 0.1.0 (tests
+  keep the last two in step with `package.json`). Release notes: `docs/ops/release-notes-v0.1.0.md`.
+  Not tagged yet.
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
 ## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle
