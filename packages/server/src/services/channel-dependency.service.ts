@@ -19,9 +19,61 @@ export interface DependencyInfo {
   readonly channelName: string;
 }
 
+export interface DependencyEdge {
+  readonly channelId: string;
+  readonly dependsOnChannelId: string;
+}
+
+/**
+ * Order channel ids so every channel comes after the channels it depends on
+ * (Kahn's algorithm, iterative). Ties keep the input order. Edges to ids outside
+ * the list are ignored. Any ids left by a cycle (prevented by validateDAG, but the
+ * table could be edited directly) are appended in input order so none is dropped.
+ */
+export function orderByDependencies(
+  ids: readonly string[],
+  edges: readonly DependencyEdge[],
+): readonly string[] {
+  const included = new Set(ids);
+  const pending = new Map<string, number>(ids.map((id) => [id, 0]));
+  const dependents = new Map<string, string[]>();
+  for (const { channelId, dependsOnChannelId } of edges) {
+    if (!included.has(channelId) || !included.has(dependsOnChannelId)) continue;
+    pending.set(channelId, (pending.get(channelId) ?? 0) + 1);
+    dependents.set(dependsOnChannelId, [...(dependents.get(dependsOnChannelId) ?? []), channelId]);
+  }
+
+  const ordered: string[] = [];
+  const placed = new Set<string>();
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const id of ids) {
+      if (placed.has(id) || pending.get(id) !== 0) continue;
+      ordered.push(id);
+      placed.add(id);
+      progressed = true;
+      for (const dependent of dependents.get(id) ?? []) {
+        pending.set(dependent, (pending.get(dependent) ?? 0) - 1);
+      }
+    }
+  }
+  return [...ordered, ...ids.filter((id) => !placed.has(id))];
+}
+
 // ----- Service -----
 
 export class ChannelDependencyService {
+  /** Every dependency edge, for ordering deploys. */
+  static async listAll(): Promise<Result<readonly DependencyEdge[]>> {
+    return tryCatch(async () => db
+      .select({
+        channelId: channelDependencies.channelId,
+        dependsOnChannelId: channelDependencies.dependsOnChannelId,
+      })
+      .from(channelDependencies));
+  }
+
   /** Get channels that this channel depends on. */
   static async getDependencies(channelId: string): Promise<Result<readonly DependencyInfo[]>> {
     return tryCatch(async () => {

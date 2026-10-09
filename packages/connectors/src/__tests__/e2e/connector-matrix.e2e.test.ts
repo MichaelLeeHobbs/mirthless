@@ -23,7 +23,7 @@ import {
   HttpDispatcher,
   FhirDispatcher,
   TcpMllpReceiver,
-} from '@mirthless/connectors';
+} from '../../index.js';
 import { deployChannel, teardownAll, type DeployedChannel } from './support/e2e-harness.js';
 import { sendMllp } from './support/tcp-helpers.js';
 

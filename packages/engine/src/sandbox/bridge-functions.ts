@@ -7,6 +7,7 @@
 
 import { Hl7Message, createAck, type AckOptions } from '@mirthless/core-util';
 import { isHl7MessageProxy, createHl7Proxy } from '../pipeline/data-type-handler.js';
+import { isBlockedHostname } from './ssrf.js';
 
 // ----- Types -----
 
@@ -105,28 +106,6 @@ export interface BridgeFunctions {
   readonly collections?: CollectionBridge;
 }
 
-// ----- SSRF Protection -----
-
-/** Private/reserved IP ranges that should be blocked for SSRF prevention. */
-const BLOCKED_IP_PATTERNS = [
-  /^127\./,
-  /^10\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.168\./,
-  /^0\./,
-  /^169\.254\./,
-  /^::1$/,
-  /^fc00:/i,
-  /^fd/i,
-  /^fe80:/i,
-  /^localhost$/i,
-] as const;
-
-/** Check if a hostname resolves to a private IP range. */
-function isBlockedHost(hostname: string): boolean {
-  return BLOCKED_IP_PATTERNS.some((pattern) => pattern.test(hostname));
-}
-
 // ----- Implementation -----
 
 /** Create bridge functions for sandbox injection. */
@@ -154,7 +133,7 @@ export function createBridgeFunctions(deps?: BridgeDependencies): BridgeFunction
     ...(deps?.httpFetch ? {
       httpFetch: async (url: string, options?: HttpFetchOptions): Promise<HttpFetchResult> => {
         const parsed = new URL(url);
-        if (isBlockedHost(parsed.hostname)) {
+        if (isBlockedHostname(parsed.hostname)) {
           throw new Error(`SSRF blocked: requests to ${parsed.hostname} are not allowed`);
         }
         return deps.httpFetch!(url, options ?? {});

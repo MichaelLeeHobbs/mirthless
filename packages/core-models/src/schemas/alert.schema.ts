@@ -6,7 +6,7 @@ import { z } from 'zod/v4';
 
 // ----- Trigger Types -----
 
-export const ALERT_TRIGGER_TYPES = ['CHANNEL_ERROR'] as const;
+export const ALERT_TRIGGER_TYPES = ['CHANNEL_ERROR', 'NO_MESSAGES'] as const;
 
 export const ERROR_EVENT_TYPES = [
   'ANY',
@@ -32,7 +32,16 @@ export const channelErrorTriggerSchema = z.object({
   regex: z.string().nullable().default(null),
 });
 
-export const alertTriggerSchema = channelErrorTriggerSchema;
+/** Fires when a started channel has received no message for `windowMinutes`. */
+export const noMessagesTriggerSchema = z.object({
+  type: z.literal('NO_MESSAGES'),
+  windowMinutes: z.number().int().min(1).max(10_080),
+});
+
+export const alertTriggerSchema = z.discriminatedUnion('type', [
+  channelErrorTriggerSchema,
+  noMessagesTriggerSchema,
+]);
 
 export type AlertTriggerInput = z.infer<typeof alertTriggerSchema>;
 

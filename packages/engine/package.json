@@ -1,6 +1,6 @@
 {
   "name": "@mirthless/engine",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -16,7 +16,6 @@
     "build": "tsc",
     "typecheck:scripts": "tsc -p tsconfig.sandbox.json",
     "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "clean": "rimraf dist"
@@ -25,11 +24,10 @@
     "@mirthless/core-models": "workspace:*",
     "@mirthless/core-util": "workspace:*",
     "esbuild": "^0.27.3",
-    "fast-xml-parser": "^5.4.2",
+    "fast-xml-parser": "^5.11.2",
     "isolated-vm": "^6.0.2"
   },
   "devDependencies": {
-    "@mirthless/connectors": "workspace:^",
     "@types/node": "22.10.2",
     "@vitest/coverage-v8": "2.1.8",
     "rimraf": "6.0.1",

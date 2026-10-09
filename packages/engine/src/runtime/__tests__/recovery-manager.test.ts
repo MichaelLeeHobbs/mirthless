@@ -30,6 +30,7 @@ function makeStore(
         return Promise.resolve(ok(conns));
       },
     ),
+    markProcessed: vi.fn().mockResolvedValue(ok(undefined)),
   };
 }
 
@@ -152,6 +153,7 @@ describe('RecoveryManager', () => {
     const store: RecoveryStore = {
       getUnprocessedMessages: vi.fn().mockResolvedValue(ok(msgs)),
       getConnectorMessages: vi.fn().mockResolvedValue(fail('db error')),
+      markProcessed: vi.fn().mockResolvedValue(ok(undefined)),
     };
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
@@ -196,6 +198,7 @@ describe('RecoveryManager', () => {
     const store: RecoveryStore = {
       getUnprocessedMessages: vi.fn().mockResolvedValue(fail('db down')),
       getConnectorMessages: vi.fn(),
+      markProcessed: vi.fn(),
     };
     const reprocess = vi.fn();
     const redispatch = vi.fn();
@@ -225,5 +228,73 @@ describe('RecoveryManager', () => {
     if (!result.ok) return;
     expect(result.value.errors).toBe(1);
     expect(result.value.recovered).toBe(0);
+  });
+
+  it('reprocesses a source left TRANSFORMED when the crash hit before routing', async () => {
+    const msgs: UnprocessedMessage[] = [{ messageId: 20, channelId: CHANNEL_ID }];
+    const conns = new Map<number, ConnectorMessageRecord[]>([
+      [20, [{ messageId: 20, metaDataId: 0, status: 'TRANSFORMED' }]],
+    ]);
+    const store = makeStore(msgs, conns);
+    const reprocess = vi.fn().mockResolvedValue(ok(undefined));
+    const mgr = new RecoveryManager(store, reprocess, vi.fn());
+
+    const result = await mgr.recover(CHANNEL_ID);
+
+    expect(reprocess).toHaveBeenCalledWith(CHANNEL_ID, 20);
+    expect(result.ok && result.value.recovered).toBe(1);
+    // reprocessSource marks the original itself; the manager must not double-mark it.
+    expect(store.markProcessed).not.toHaveBeenCalled();
+  });
+
+  it('does not reprocess a TRANSFORMED source once destinations exist (no duplicate sends)', async () => {
+    const msgs: UnprocessedMessage[] = [{ messageId: 21, channelId: CHANNEL_ID }];
+    const conns = new Map<number, ConnectorMessageRecord[]>([
+      [21, [
+        { messageId: 21, metaDataId: 0, status: 'TRANSFORMED' },
+        { messageId: 21, metaDataId: 1, status: 'SENT' },
+        { messageId: 21, metaDataId: 2, status: 'RECEIVED' },
+      ]],
+    ]);
+    const store = makeStore(msgs, conns);
+    const reprocess = vi.fn();
+    const redispatch = vi.fn().mockResolvedValue(ok(undefined));
+    const mgr = new RecoveryManager(store, reprocess, redispatch);
+
+    await mgr.recover(CHANNEL_ID);
+
+    expect(reprocess).not.toHaveBeenCalled();
+    expect(redispatch).toHaveBeenCalledWith(CHANNEL_ID, 21, 2);
+    expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 21);
+  });
+
+  it('marks a message processed when every connector is already final', async () => {
+    const msgs: UnprocessedMessage[] = [{ messageId: 22, channelId: CHANNEL_ID }];
+    const conns = new Map<number, ConnectorMessageRecord[]>([
+      [22, [{ messageId: 22, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 22, metaDataId: 1, status: 'SENT' }]],
+    ]);
+    const store = makeStore(msgs, conns);
+    const mgr = new RecoveryManager(store, vi.fn(), vi.fn());
+
+    await mgr.recover(CHANNEL_ID);
+
+    expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 22);
+  });
+
+  it('leaves a message unprocessed while a destination is still QUEUED or a step failed', async () => {
+    const msgs: UnprocessedMessage[] = [
+      { messageId: 23, channelId: CHANNEL_ID },
+      { messageId: 24, channelId: CHANNEL_ID },
+    ];
+    const conns = new Map<number, ConnectorMessageRecord[]>([
+      [23, [{ messageId: 23, metaDataId: 0, status: 'SENT' }, { messageId: 23, metaDataId: 1, status: 'QUEUED' }]],
+      [24, [{ messageId: 24, metaDataId: 0, status: 'SENT' }, { messageId: 24, metaDataId: 1, status: 'RECEIVED' }]],
+    ]);
+    const store = makeStore(msgs, conns);
+    const mgr = new RecoveryManager(store, vi.fn(), vi.fn().mockResolvedValue(fail('down')));
+
+    await mgr.recover(CHANNEL_ID);
+
+    expect(store.markProcessed).not.toHaveBeenCalled();
   });
 });

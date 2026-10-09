@@ -33,6 +33,7 @@ import {
   type QueueConsumerConfig,
   type LoadedAlert,
 } from '@mirthless/engine';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { tryCatch, type Result } from 'stderr-lib';
 import {
   createSourceConnector,
@@ -58,6 +59,7 @@ import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { resolveHttpSourceTls, resolveHttpDestinationTls } from './services/connector-tls-resolver.js';
 import { db } from './lib/db.js';
+import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
@@ -75,6 +77,15 @@ export interface DeployedChannel {
   readonly queueConsumers: readonly QueueConsumer[];
   readonly scripts: ChannelScripts;
   readonly processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<SourceDispatchOutcome>>;
+  /**
+   * Recover messages a prior crash left unprocessed. Runs once, on the first
+   * start after deploy (call it after the runtime has started): destination
+   * dispatchers only accept sends once started, so recovering at deploy time
+   * marked every pending destination ERROR. Later calls are no-ops.
+   */
+  readonly recoverOnce: () => Promise<void>;
+  /** When the channel last received a message (or last (re)started); drives NO_MESSAGES alerts. */
+  readonly activity: { lastAt: number };
 }
 
 /**
@@ -307,22 +318,12 @@ function createDbQueryBridge(): NonNullable<BridgeDependencies['dbQuery']> {
 }
 
 /**
- * httpFetch() script bridge: outbound HTTP via global fetch. SSRF host-blocking is
- * already applied in the sandbox bridge layer before this runs; here we just perform
- * the request, enforce a per-request timeout, and shape the response.
+ * httpFetch() script bridge. The transport (safeHttpFetch) re-checks every
+ * resolved address, never follows redirects and caps the response size, so a
+ * DNS name or redirect cannot reach a blocked address the hostname check missed.
  */
 export function createHttpFetchBridge(): NonNullable<BridgeDependencies['httpFetch']> {
-  return async (url, options) => {
-    const res = await fetch(url, {
-      method: options.method ?? 'GET',
-      ...(options.headers ? { headers: { ...options.headers } } : {}),
-      ...(options.body !== undefined ? { body: options.body } : {}),
-      signal: AbortSignal.timeout(options.timeout ?? 30_000),
-    });
-    const headers: Record<string, string> = {};
-    res.headers.forEach((value, key) => { headers[key] = value; });
-    return { status: res.status, statusText: res.statusText, headers, body: await res.text() };
-  };
+  return (url, options) => safeHttpFetch(url, options);
 }
 
 // ----- Engine Manager -----
@@ -330,12 +331,18 @@ export function createHttpFetchBridge(): NonNullable<BridgeDependencies['httpFet
 /** Max routeMessage hops in a single message's processing chain (loop guard). */
 const MAX_ROUTE_DEPTH = 25;
 
+/** routeMessage hop depth of the message chain currently executing. */
+const routeDepthStore = new AsyncLocalStorage<number>();
+
+/** How often deployed channels are checked for NO_MESSAGES alerts. */
+const SILENCE_CHECK_INTERVAL_MS = 30_000;
+
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
   private readonly sandbox: SandboxExecutor;
   private readonly serverId: string;
-  /** Current routeMessage nesting depth (one process chain); guards against routing loops. */
-  private routeDepth = 0;
+  /** Periodic NO_MESSAGES alert check; started on first deploy, cleared on dispose. */
+  private silenceTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(serverId?: string) {
     this.sandbox = new VmSandboxExecutor({
@@ -363,21 +370,20 @@ export class EngineManager {
    */
   async routeMessage(channelName: string, rawData: string): Promise<Result<{ messageId: number }>> {
     return tryCatch(async () => {
-      if (this.routeDepth >= MAX_ROUTE_DEPTH) {
+      // Depth is tracked per message chain (AsyncLocalStorage follows the awaited
+      // routeMessage -> processMessage -> script -> routeMessage path), so
+      // concurrent unrelated messages never count against each other.
+      const depth = routeDepthStore.getStore() ?? 0;
+      if (depth >= MAX_ROUTE_DEPTH) {
         throw new Error(`routeMessage exceeded max hop depth (${String(MAX_ROUTE_DEPTH)}) — possible routing loop`);
       }
       const targetId = this.resolveChannelIdByName(channelName);
       if (!targetId) {
         throw new Error(`routeMessage: no deployed channel named "${channelName}"`);
       }
-      this.routeDepth++;
-      try {
-        const result = await this.sendMessage(targetId, rawData);
-        if (!result.ok) throw new Error(result.error.message);
-        return result.value;
-      } finally {
-        this.routeDepth--;
-      }
+      const result = await routeDepthStore.run(depth + 1, () => this.sendMessage(targetId, rawData));
+      if (!result.ok) throw new Error(result.error.message);
+      return result.value;
     });
   }
 
@@ -578,6 +584,7 @@ export class EngineManager {
         retryIntervalMs: dest.retryIntervalMs ?? 10_000,
         batchSize: 10,
         pollIntervalMs: 1_000,
+        onError: async (event) => alertManager.handleEvent(event),
       };
       queueConsumers.push(new QueueConsumer(queueConfig, store, sendFn));
     }
@@ -591,7 +598,9 @@ export class EngineManager {
     const scriptTimeoutMs = channel.scriptTimeoutSeconds
       ? channel.scriptTimeoutSeconds * 1000
       : 30_000;
+    const activity = { lastAt: Date.now() };
     const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
+      activity.lastAt = Date.now();
       // Extract correlationId from sourceMap if present (channel-to-channel routing)
       const correlationId = typeof sourceMap?.['correlationId'] === 'string'
         ? sourceMap['correlationId'] as string
@@ -621,11 +630,36 @@ export class EngineManager {
       throw new Error('Failed to deploy channel runtime');
     }
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage });
+    // Recover messages left unprocessed by a prior crash/restart on the first
+    // start. Best-effort: failures are logged, never allowed to abort a start.
+    let recovered = false;
+    const recoverOnce = async (): Promise<void> => {
+      if (recovered) return;
+      recovered = true;
+      await this.recoverChannel(channel, store, processMessage, sendFn);
+    };
 
-    // Recover any messages left unprocessed by a prior crash/restart. Best-effort:
-    // recovery failures are logged, never allowed to abort a deploy.
-    await this.recoverChannel(channel, store, processMessage, sendFn);
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage, recoverOnce, activity });
+    this.silenceTimer ??= setInterval(() => { void this.checkSilentChannels(); }, SILENCE_CHECK_INTERVAL_MS).unref();
+  }
+
+  /**
+   * Fire NO_MESSAGES alerts for started channels that have gone quiet. A channel
+   * that is not STARTED restarts its silence clock, so stopping it never alerts
+   * and a restart gets a full window before the first alert.
+   */
+  async checkSilentChannels(now: number = Date.now()): Promise<void> {
+    for (const deployed of this.runtimes.values()) {
+      if (deployed.runtime.getState() !== 'STARTED') {
+        deployed.activity.lastAt = now;
+        continue;
+      }
+      try {
+        await deployed.alertManager.checkSilence(deployed.channelId, deployed.activity.lastAt, now);
+      } catch (err) {
+        logger.error({ errMsg: err instanceof Error ? err.message : String(err), channelId: deployed.channelId }, 'NO_MESSAGES alert check failed');
+      }
+    }
   }
 
   /** Get a deployed channel runtime. */
@@ -733,17 +767,33 @@ export class EngineManager {
         return { ok: true, value: r.value.map((m) => ({ messageId: m.id, channelId: m.channelId })), error: null };
       },
       getConnectorMessages: (channelId, messageId) => MessageService.getConnectorMessages(channelId, messageId),
+      markProcessed: (channelId, messageId) => MessageService.markProcessed(channelId, messageId),
     };
 
     const CT_RAW = 1;
     const CT_SENT = 5;
+    const CT_SOURCE_MAP = 9;
+
+    // The original sourceMap (e.g. correlationId from an upstream channel) is
+    // stored with the message; carry it into the reprocess. It may be absent
+    // under storage modes that do not keep it, in which case it starts empty.
+    const loadSourceMap = async (channelId: string, messageId: number): Promise<Record<string, unknown>> => {
+      const stored = await store.loadContent(channelId, messageId, 0, CT_SOURCE_MAP);
+      if (!stored.ok || stored.value === null) return {};
+      try {
+        const parsed: unknown = JSON.parse(stored.value);
+        return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+      } catch {
+        return {};
+      }
+    };
 
     const reprocessSource = async (channelId: string, messageId: number): Promise<Result<void>> => {
       const raw = await store.loadContent(channelId, messageId, 0, CT_RAW);
       if (!raw.ok || raw.value === null) {
         return { ok: false, value: null, error: new Error('Raw content unavailable for recovery') } as Result<void>;
       }
-      const processed = await processMessage(raw.value);
+      const processed = await processMessage(raw.value, await loadSourceMap(channelId, messageId));
       if (!processed.ok) {
         // Do NOT mark processed on failure — the original still holds recoverable
         // raw content and must remain eligible for recovery on the next deploy.
@@ -913,6 +963,7 @@ export class EngineManager {
         enabled: d.enabled,
         scripts: cleanScripts as DestinationScripts,
         queueMode: (d.queueMode ?? 'NEVER') as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
+        waitForPrevious: d.waitForPrevious,
       });
     }
 
@@ -1123,6 +1174,8 @@ export class EngineManager {
 
   /** Dispose all resources. */
   async dispose(): Promise<void> {
+    if (this.silenceTimer) clearInterval(this.silenceTimer);
+    this.silenceTimer = undefined;
     this.sandbox.dispose();
   }
 }

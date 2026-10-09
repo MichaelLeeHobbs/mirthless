@@ -29,6 +29,7 @@ import { ChannelGroupService } from './channel-group.service.js';
 import { TagService } from './tag.service.js';
 import { GlobalMapService } from './global-map.service.js';
 import { ConfigMapService } from './config-map.service.js';
+import { alertTriggerSchema, alertActionInputSchema, type AlertTriggerInput, type AlertActionInput } from '@mirthless/core-models';
 import {
   channelDependencies,
   channelGroupMembers,
@@ -44,7 +45,21 @@ import {
 
 export class ServerBackupService {
   /** Export full server configuration as a backup payload. */
-  static async exportBackup(): Promise<Result<ServerBackup>> {
+  /** Export the server configuration. A successful export is audit-logged: it can carry secrets. */
+  static async exportBackup(context?: AuditContext): Promise<Result<ServerBackup>> {
+    const result = await ServerBackupService.buildBackup();
+    if (result.ok) {
+      emitEvent({
+        level: 'INFO', name: 'SERVER_BACKUP_EXPORTED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { channels: result.value.channels.length },
+      });
+    }
+    return result;
+  }
+
+  private static async buildBackup(): Promise<Result<ServerBackup>> {
     return tryCatch(async () => {
       // Gather all entity data in parallel where possible
       const [
@@ -143,6 +158,7 @@ export class ServerBackupService {
             type: a.trigger.type,
             errorTypes: [...a.trigger.errorTypes],
             regex: a.trigger.regex,
+            windowMinutes: a.trigger.windowMinutes,
           },
           channelIds: [...a.channelIds],
           actions: a.actions.map((act) => ({
@@ -303,10 +319,12 @@ async function restoreSettings(
       if (existing.ok) {
         if (mode === 'SKIP') { skipped++; continue; }
         if (isRedacted) { skipped++; continue; }
-        await SettingsService.upsert({ key: item.key, value: item.value ?? '', type: item.type as SettingType, description: item.description ?? '', category: item.category ?? '' });
+        const res = await SettingsService.upsert({ key: item.key, value: item.value ?? '', type: item.type as SettingType, description: item.description ?? '', category: item.category ?? '' });
+        if (!res.ok) throw res.error;
         updated++;
       } else {
-        await SettingsService.upsert({ key: item.key, value: isRedacted ? '' : (item.value ?? ''), type: item.type as SettingType, description: item.description ?? '', category: item.category ?? '' });
+        const res = await SettingsService.upsert({ key: item.key, value: isRedacted ? '' : (item.value ?? ''), type: item.type as SettingType, description: item.description ?? '', category: item.category ?? '' });
+        if (!res.ok) throw res.error;
         created++;
       }
     } catch (err) {
@@ -491,6 +509,23 @@ async function restoreGlobalScripts(
   return { section: 'globalScripts', created: 0, updated: 1, skipped: 0, errors: [] };
 }
 
+/**
+ * Rebuild an alert trigger from a backup, validated so a malformed entry fails
+ * that alert's restore instead of saving a broken trigger.
+ */
+function restoreAlertTrigger(t: ServerBackup['alerts'][number]['trigger']): AlertTriggerInput {
+  return alertTriggerSchema.parse(t.type === 'NO_MESSAGES'
+    ? { type: 'NO_MESSAGES', windowMinutes: t.windowMinutes }
+    : { type: t.type, errorTypes: t.errorTypes, regex: t.regex });
+}
+
+/** Rebuild an alert action from a backup; CHANNEL actions keep their target channel. */
+function restoreAlertAction(a: ServerBackup['alerts'][number]['actions'][number]): AlertActionInput {
+  return alertActionInputSchema.parse(a.actionType === 'CHANNEL'
+    ? { type: 'CHANNEL', channelId: a.properties?.['channelId'], recipients: a.recipients }
+    : { type: a.actionType, recipients: a.recipients });
+}
+
 async function restoreAlerts(
   items: ServerBackup['alerts'],
   mode: BackupCollisionMode,
@@ -505,16 +540,9 @@ async function restoreAlerts(
         name: item.name,
         description: item.description ?? '',
         enabled: item.enabled,
-        trigger: {
-          type: item.trigger.type as 'CHANNEL_ERROR',
-          errorTypes: item.trigger.errorTypes as Array<'ANY'>,
-          regex: item.trigger.regex,
-        },
+        trigger: restoreAlertTrigger(item.trigger),
         channelIds: item.channelIds,
-        actions: item.actions.map((a) => ({
-          type: a.actionType as 'EMAIL',
-          recipients: a.recipients,
-        })),
+        actions: item.actions.map(restoreAlertAction),
         subjectTemplate: item.subjectTemplate,
         bodyTemplate: item.bodyTemplate,
         reAlertIntervalMs: item.reAlertIntervalMs,
@@ -523,10 +551,12 @@ async function restoreAlerts(
 
       if (existing.ok) {
         if (mode === 'SKIP') { skipped++; continue; }
-        await AlertService.update(item.id, { ...createInput, revision: existing.value.revision });
+        const res = await AlertService.update(item.id, { ...createInput, revision: existing.value.revision });
+        if (!res.ok) throw res.error;
         updated++;
       } else {
-        await AlertService.create(createInput);
+        const res = await AlertService.create(createInput);
+        if (!res.ok) throw res.error;
         created++;
       }
     } catch (err) {
@@ -584,10 +614,12 @@ async function restoreConfigMap(
       const existing = await ConfigMapService.getByKey(item.category, item.name);
       if (existing.ok) {
         if (mode === 'SKIP') { skipped++; continue; }
-        await ConfigMapService.upsert(item.category, item.name, item.value ?? '');
+        const res = await ConfigMapService.upsert(item.category, item.name, item.value ?? '');
+        if (!res.ok) throw res.error;
         updated++;
       } else {
-        await ConfigMapService.upsert(item.category, item.name, item.value ?? '');
+        const res = await ConfigMapService.upsert(item.category, item.name, item.value ?? '');
+        if (!res.ok) throw res.error;
         created++;
       }
     } catch (err) {
@@ -610,10 +642,12 @@ async function restoreGlobalMap(
       const existing = await GlobalMapService.getByKey(item.key);
       if (existing.ok) {
         if (mode === 'SKIP') { skipped++; continue; }
-        await GlobalMapService.upsert(item.key, item.value ?? '');
+        const res = await GlobalMapService.upsert(item.key, item.value ?? '');
+        if (!res.ok) throw res.error;
         updated++;
       } else {
-        await GlobalMapService.upsert(item.key, item.value ?? '');
+        const res = await GlobalMapService.upsert(item.key, item.value ?? '');
+        if (!res.ok) throw res.error;
         created++;
       }
     } catch (err) {

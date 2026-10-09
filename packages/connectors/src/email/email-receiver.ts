@@ -9,6 +9,11 @@ import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
+import { createRequire } from 'node:module';
+
+// The package is ESM, so a bare `require` is undefined at runtime (vitest
+// injects one, which hid this). Load the CJS client library through createRequire.
+const require = createRequire(import.meta.url);
 
 /** Bound each IMAP operation — a hung mailbox must not wedge the poll loop. */
 const IMAP_OP_TIMEOUT_MS = 30_000;
@@ -84,6 +89,12 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
   private client: ImapClient | null = null;
+  /**
+   * UIDs already dispatched whose post-action (mark read / move / delete) has
+   * not succeeded yet. The email is still unread on the server, so later polls
+   * only retry the post-action for these instead of dispatching them again.
+   */
+  private readonly awaitingPostAction = new Set<number>();
 
   constructor(config: EmailReceiverConfig, createClient?: ImapClientFactory, logger?: ConnectorLogger) {
     this.config = config;
@@ -208,21 +219,34 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private async processMessage(msg: EmailMessage): Promise<void> {
     if (!this.dispatcher || !this.client) return;
 
-    const raw: RawMessage = {
-      content: msg.body,
-      sourceMap: {
-        subject: msg.subject,
-        from: msg.from,
-        to: msg.to,
-        date: msg.date,
-        attachmentCount: msg.attachmentCount,
-      },
-    };
+    if (!this.awaitingPostAction.has(msg.uid)) {
+      const raw: RawMessage = {
+        content: msg.body,
+        sourceMap: {
+          subject: msg.subject,
+          from: msg.from,
+          to: msg.to,
+          date: msg.date,
+          attachmentCount: msg.attachmentCount,
+        },
+      };
 
-    const result = await this.dispatcher(raw);
+      const result = await this.dispatcher(raw);
+      if (!result.ok) {
+        // Left unread on the server, so the next poll retries it.
+        this.logger.error({ ...errorInfo(result.error), uid: msg.uid }, 'Email dispatch failed; message left unread for retry');
+        return;
+      }
+      this.awaitingPostAction.add(msg.uid);
+    }
 
-    if (result.ok) {
+    // A post-action failure must not cause a second dispatch: the UID stays in
+    // awaitingPostAction and only the post-action is retried on the next poll.
+    try {
       await this.postProcess(msg.uid);
+      this.awaitingPostAction.delete(msg.uid);
+    } catch (err) {
+      this.logger.error({ ...errorInfo(err), uid: msg.uid }, 'Email post-action failed after dispatch; will retry the post-action only');
     }
   }
 
@@ -263,7 +287,6 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
 /** Create an imapflow-based IMAP client. Requires imapflow to be installed. */
 function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ImapFlow } = require('imapflow') as { ImapFlow: new (opts: Record<string, unknown>) => ImapFlowInstance };
 
   const client = new ImapFlow({

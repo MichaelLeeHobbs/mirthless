@@ -54,9 +54,13 @@ export function connectSocket(token: string): Socket {
       socket
     ) {
       socket.auth = { token: state.accessToken };
-      // Reconnect with new token if currently connected
+      // Reconnect with the new token. A socket the server refused (e.g. while a
+      // password change was required) is not connected and does not retry on its
+      // own, so connect it too.
       if (socket.connected) {
         socket.disconnect().connect();
+      } else {
+        socket.connect();
       }
     }
   });

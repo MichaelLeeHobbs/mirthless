@@ -74,8 +74,14 @@ const router = createBrowserRouter([
           { path: 'channels/:id/messages', element: lazyRoute(<MessageBrowserPage />) },
           { path: 'messages', element: lazyRoute(<TrafficPage />) },
           { path: 'alerts', element: lazyRoute(<AlertsPage />) },
-          { path: 'alerts/new', element: lazyRoute(<AlertEditorPage />) },
-          { path: 'alerts/:id', element: lazyRoute(<AlertEditorPage />) },
+          {
+            // The editor is write-only UI; read-only users see alerts in the list.
+            element: <RequirePermission anyOf={[PERMISSION.ALERTS_WRITE]} />,
+            children: [
+              { path: 'alerts/new', element: lazyRoute(<AlertEditorPage />) },
+              { path: 'alerts/:id', element: lazyRoute(<AlertEditorPage />) },
+            ],
+          },
           { path: 'code-templates', element: lazyRoute(<CodeTemplatePage />) },
           { path: 'global-scripts', element: lazyRoute(<GlobalScriptsPage />) },
           { path: 'resources', element: lazyRoute(<ResourcesPage />) },

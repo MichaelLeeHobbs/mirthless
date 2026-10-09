@@ -22,8 +22,8 @@ import {
   ChannelReceiver,
   ChannelDispatcher,
   clearChannelRegistry,
-} from '@mirthless/connectors';
-import type { CodeTemplateData } from '../index.js';
+} from '../../index.js';
+import type { CodeTemplateData } from '@mirthless/engine';
 import {
   deployChannel,
   teardownAll,

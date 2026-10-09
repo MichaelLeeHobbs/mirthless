@@ -4,7 +4,7 @@
 // Real TCP servers/clients for exercising the TCP/MLLP connectors end to end.
 
 import * as net from 'node:net';
-import { wrapMllp, MllpParser } from '@mirthless/connectors';
+import { wrapMllp, MllpParser } from '../../../index.js';
 
 export interface MllpCaptureServer {
   /** Every framed message the server has received, in order. */

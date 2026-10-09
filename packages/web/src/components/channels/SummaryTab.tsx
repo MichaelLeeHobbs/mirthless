@@ -22,20 +22,10 @@ import RadioGroup from '@mui/material/RadioGroup';
 import Radio from '@mui/material/Radio';
 import FormControl from '@mui/material/FormControl';
 import FormLabel from '@mui/material/FormLabel';
-import Tooltip from '@mui/material/Tooltip';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
-import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
-import Paper from '@mui/material/Paper';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
 import type { ChannelFormData } from '../../pages/ChannelEditorPage.js';
-import type { AdvancedFormValues, MetadataColumnFormValues } from './AdvancedTab.js';
+import type { AdvancedFormValues } from './AdvancedTab.js';
 import { useChannelGroups, useGroupMemberships, useAddGroupMember, useRemoveGroupMember } from '../../hooks/use-channel-groups.js';
 import { useNotification } from '../../stores/notification.store.js';
 
@@ -65,8 +55,6 @@ const STORAGE_MODES = [
   { value: 'METADATA', label: 'Metadata', description: 'Metadata only — no content, no queued destinations' },
   { value: 'DISABLED', label: 'Disabled', description: 'No message storage — no queued destinations' },
 ] as const;
-
-const METADATA_DATA_TYPES = ['STRING', 'NUMBER', 'BOOLEAN', 'TIMESTAMP'] as const;
 
 interface SummaryTabProps {
   readonly control: Control<ChannelFormData>;
@@ -119,30 +107,6 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
       notify(e instanceof Error ? e.message : 'Failed to update channel group', 'error');
     }
   }, [channelId, channelMemberships, removeMember, addMember, notify]);
-
-  // ----- Metadata column helpers -----
-  const handleAddColumn = (): void => {
-    onAdvancedChange({
-      metadataColumns: [
-        ...advancedValues.metadataColumns,
-        { name: '', dataType: 'STRING', mappingExpression: null },
-      ],
-    });
-  };
-
-  const handleRemoveColumn = (index: number): void => {
-    onAdvancedChange({
-      metadataColumns: advancedValues.metadataColumns.filter((_, i) => i !== index),
-    });
-  };
-
-  const handleColumnChange = (index: number, field: keyof MetadataColumnFormValues, value: string | null): void => {
-    onAdvancedChange({
-      metadataColumns: advancedValues.metadataColumns.map((col, i) =>
-        i === index ? { ...col, [field]: value } : col,
-      ),
-    });
-  };
 
   return (
     <Box>
@@ -332,11 +296,6 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
                 <FormControlLabel
                   control={<Switch checked={advancedValues.removeContentOnCompletion} onChange={(_e, checked) => { onAdvancedChange({ removeContentOnCompletion: checked }); }} />}
                   label="Remove content on completion"
-                  sx={{ mb: 2, display: 'block' }}
-                />
-                <FormControlLabel
-                  control={<Switch checked={advancedValues.removeAttachmentsOnCompletion} onChange={(_e, checked) => { onAdvancedChange({ removeAttachmentsOnCompletion: checked }); }} />}
-                  label="Remove attachments on completion"
                   sx={{ display: 'block' }}
                 />
               </Grid>
@@ -407,93 +366,6 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
                 />
               </Grid>
             </Grid>
-          </AccordionDetails>
-        </Accordion>
-
-        {/* Custom Metadata Columns */}
-        <Accordion defaultExpanded={false}>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, flexGrow: 1 }}>Custom Metadata Columns</Typography>
-              <Tooltip title="Add column">
-                <IconButton
-                  size="small"
-                  onClick={(e) => { e.stopPropagation(); handleAddColumn(); }}
-                  aria-label="add metadata column"
-                >
-                  <AddIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-          </AccordionSummary>
-          <AccordionDetails>
-            {advancedValues.metadataColumns.length > 0 ? (
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Name</TableCell>
-                      <TableCell>Data Type</TableCell>
-                      <TableCell>Mapping Expression</TableCell>
-                      <TableCell width={48} />
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {advancedValues.metadataColumns.map((col, index) => (
-                      <TableRow key={index}>
-                        <TableCell>
-                          <TextField
-                            value={col.name}
-                            onChange={(e: ChangeEvent<HTMLInputElement>) => { handleColumnChange(index, 'name', e.target.value); }}
-                            size="small"
-                            fullWidth
-                            placeholder="Column name"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <TextField
-                            value={col.dataType}
-                            onChange={(e: ChangeEvent<HTMLInputElement>) => { handleColumnChange(index, 'dataType', e.target.value); }}
-                            size="small"
-                            select
-                            fullWidth
-                          >
-                            {METADATA_DATA_TYPES.map((dt) => (
-                              <MenuItem key={dt} value={dt}>{dt}</MenuItem>
-                            ))}
-                          </TextField>
-                        </TableCell>
-                        <TableCell>
-                          <TextField
-                            value={col.mappingExpression ?? ''}
-                            onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                              handleColumnChange(index, 'mappingExpression', e.target.value || null);
-                            }}
-                            size="small"
-                            fullWidth
-                            placeholder="e.g. msg['PID']['PID.3'].toString()"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() => { handleRemoveColumn(index); }}
-                            aria-label="remove column"
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-                No custom metadata columns. Click + to add one.
-              </Typography>
-            )}
           </AccordionDetails>
         </Accordion>
       </Box>

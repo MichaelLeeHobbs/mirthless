@@ -8,16 +8,38 @@ import rateLimit from 'express-rate-limit';
 // ===========================================
 // Auth Rate Limiter
 // ===========================================
-// Strict limit for login attempts
+// Strict limit for failed login attempts. Successful logins do not count:
+// behind a NAT or reverse proxy every user shares one bucket, and counting
+// them locked a whole site out after five ordinary sign-ins.
 
 const isProduction = process.env.NODE_ENV === 'production';
 
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: isProduction ? 5 : 1000, // strict in production, relaxed in dev/test (E2E runs ~60 logins)
+  skipSuccessfulRequests: true,
   message: {
     success: false,
     error: { code: 'RATE_LIMITED', message: 'Too many login attempts. Please try again in 15 minutes.' },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ===========================================
+// Refresh Rate Limiter
+// ===========================================
+// Every open tab refreshes at least once per access-token lifetime, so the
+// login limit (5 per 15 min per IP) logged users out once a handful shared an
+// IP. A refresh needs a valid httpOnly refresh token, which cannot be guessed,
+// so this limit only has to stop a runaway client.
+
+export const refreshRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isProduction ? 300 : 1000,
+  message: {
+    success: false,
+    error: { code: 'RATE_LIMITED', message: 'Too many token refreshes. Please slow down.' },
   },
   standardHeaders: true,
   legacyHeaders: false,

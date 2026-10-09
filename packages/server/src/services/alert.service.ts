@@ -6,7 +6,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, count, asc, inArray } from 'drizzle-orm';
-import type { CreateAlertInput, UpdateAlertInput } from '@mirthless/core-models';
+import type { AlertTriggerInput, CreateAlertInput, UpdateAlertInput } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
@@ -35,11 +35,7 @@ export interface AlertSummary {
 }
 
 export interface AlertDetail extends AlertSummary {
-  readonly trigger: {
-    readonly type: string;
-    readonly errorTypes: ReadonlyArray<string>;
-    readonly regex: string | null;
-  };
+  readonly trigger: AlertTriggerDetail;
   readonly channelIds: ReadonlyArray<string>;
   readonly actions: ReadonlyArray<AlertActionDetail>;
   readonly subjectTemplate: string | null;
@@ -58,17 +54,40 @@ export interface AlertListResult {
   };
 }
 
+/** Stored trigger. CHANNEL_ERROR uses errorTypes/regex; NO_MESSAGES uses windowMinutes. */
+export interface AlertTriggerDetail {
+  readonly type: string;
+  readonly errorTypes: ReadonlyArray<string>;
+  readonly regex: string | null;
+  readonly windowMinutes: number | null;
+}
+
 // ----- Helpers -----
 
-function parseTrigger(
-  triggerType: string,
-  triggerScript: string | null,
-): { readonly type: string; readonly errorTypes: ReadonlyArray<string>; readonly regex: string | null } {
-  if (triggerScript) {
-    const parsed = JSON.parse(triggerScript) as { errorTypes: string[]; regex: string | null };
-    return { type: triggerType, errorTypes: parsed.errorTypes, regex: parsed.regex };
+function parseTrigger(triggerType: string, triggerScript: string | null): AlertTriggerDetail {
+  const parsed = (triggerScript ? JSON.parse(triggerScript) : {}) as {
+    errorTypes?: string[]; regex?: string | null; windowMinutes?: number;
+  };
+  return {
+    type: triggerType,
+    errorTypes: parsed.errorTypes ?? [],
+    regex: parsed.regex ?? null,
+    windowMinutes: parsed.windowMinutes ?? null,
+  };
+}
+
+/** Serialize the type-specific part of a trigger into the trigger_script column. */
+function serializeTrigger(trigger: AlertTriggerInput): string {
+  switch (trigger.type) {
+    case 'CHANNEL_ERROR':
+      return JSON.stringify({ errorTypes: trigger.errorTypes, regex: trigger.regex });
+    case 'NO_MESSAGES':
+      return JSON.stringify({ windowMinutes: trigger.windowMinutes });
+    default: {
+      const unreachable: never = trigger;
+      throw new Error(`Unknown trigger type: ${String(unreachable)}`);
+    }
   }
-  return { type: triggerType, errorTypes: [], regex: null };
 }
 
 async function fetchAlertDetail(alertId: string): Promise<AlertDetail> {
@@ -275,10 +294,7 @@ export class AlertService {
         throw new ServiceError('ALREADY_EXISTS', `Alert "${input.name}" already exists`);
       }
 
-      const triggerScript = JSON.stringify({
-        errorTypes: input.trigger.errorTypes,
-        regex: input.trigger.regex,
-      });
+      const triggerScript = serializeTrigger(input.trigger);
 
       const [row] = await db.transaction(async (tx) => {
         const inserted = await tx
@@ -384,10 +400,7 @@ export class AlertService {
 
       if (input.trigger !== undefined) {
         updates['triggerType'] = input.trigger.type;
-        updates['triggerScript'] = JSON.stringify({
-          errorTypes: input.trigger.errorTypes,
-          regex: input.trigger.regex,
-        });
+        updates['triggerScript'] = serializeTrigger(input.trigger);
       }
 
       await db.transaction(async (tx) => {

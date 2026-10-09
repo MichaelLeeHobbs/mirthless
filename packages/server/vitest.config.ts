@@ -13,6 +13,8 @@ export default defineConfig({
       reporter: ['text', 'html'],
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/db/migrations/**'],
+      // Minimums set 1 point under coverage on 2026-10-09; raise toward the 95% target (D-193).
+      thresholds: { statements: 60, branches: 75, functions: 69, lines: 60 },
     },
   },
 });

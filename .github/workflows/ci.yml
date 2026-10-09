@@ -55,13 +55,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      # Fail on newly-introduced high/critical vulns in production deps. One known
-      # high (drizzle-orm) is tracked for a coordinated major bump and is not
-      # reachable in our code, so this is informational until that lands — flip
-      # continue-on-error to false once drizzle-orm is upgraded to gate on it.
+      # Fail on high/critical vulns in production deps.
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level high
-        continue-on-error: true
 
       - name: Test (unit / mock-DB) with coverage
         run: pnpm test:coverage
@@ -73,8 +69,12 @@ jobs:
       - name: Run database migrations
         run: pnpm db:migrate
 
+      # data-source.itest.ts stores encrypted credentials, so it needs a
+      # content key. Test-only value (64 hex chars), scoped to this step.
       - name: Integration tests (real Postgres)
         run: pnpm test:integration
+        env:
+          CONTENT_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 
       - name: Upload coverage
         if: always()
@@ -109,6 +109,8 @@ jobs:
       LOG_LEVEL: error
       FRONTEND_URL: http://localhost:5173
       CI: 'true'
+      # Data source specs store encrypted credentials. Test-only value.
+      CONTENT_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 
     steps:
       - uses: actions/checkout@v4

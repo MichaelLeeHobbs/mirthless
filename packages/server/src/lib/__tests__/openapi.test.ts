@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { generateOpenAPISpec } from '../openapi.js';
+
+const pkg = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')) as { version: string };
 
 describe('generateOpenAPISpec', () => {
   const spec = generateOpenAPISpec();
@@ -8,7 +11,7 @@ describe('generateOpenAPISpec', () => {
     expect(spec.openapi).toBe('3.1.0');
     expect(spec.info).toBeDefined();
     expect(spec.info.title).toBe('Mirthless API');
-    expect(spec.info.version).toBe('0.0.1');
+    expect(spec.info.version).toBe(pkg.version);
     expect(spec.paths).toBeDefined();
     expect(spec.components).toBeDefined();
   });

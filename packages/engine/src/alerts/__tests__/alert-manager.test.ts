@@ -204,3 +204,72 @@ describe('AlertManager.clearThrottleState', () => {
     expect(deps.logger.warn).toHaveBeenCalledTimes(4);
   });
 });
+
+// ----- checkSilence (NO_MESSAGES) -----
+
+describe('AlertManager.checkSilence', () => {
+  const MIN = 60_000;
+  const silenceAlert = (overrides?: Partial<LoadedAlert>): LoadedAlert => makeAlert({
+    id: 'silence-1',
+    trigger: { type: 'NO_MESSAGES', errorTypes: [], regex: null, windowMinutes: 10 },
+    ...overrides,
+  });
+  const fired = (): number => (deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls.length;
+
+  it('does not alert before the window has passed', async () => {
+    manager.loadAlerts([silenceAlert()]);
+    await manager.checkSilence('ch-001', 0, 9 * MIN);
+    expect(fired()).toBe(0);
+  });
+
+  it('alerts once the channel has been silent for the window', async () => {
+    manager.loadAlerts([silenceAlert()]);
+    await manager.checkSilence('ch-001', 0, 10 * MIN);
+    expect(fired()).toBe(1);
+    expect((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls[0]![1]).toContain('No messages received in the last 10 minutes');
+  });
+
+  it('alerts only once per silence without a re-alert interval', async () => {
+    manager.loadAlerts([silenceAlert()]);
+    await manager.checkSilence('ch-001', 0, 10 * MIN);
+    await manager.checkSilence('ch-001', 0, 60 * MIN);
+    expect(fired()).toBe(1);
+  });
+
+  it('alerts again for a new silence after a message arrives', async () => {
+    manager.loadAlerts([silenceAlert()]);
+    await manager.checkSilence('ch-001', 0, 10 * MIN);
+    await manager.checkSilence('ch-001', 20 * MIN, 30 * MIN);
+    expect(fired()).toBe(2);
+  });
+
+  it('repeats during one silence at the re-alert interval', async () => {
+    manager.loadAlerts([silenceAlert({ reAlertIntervalMs: 30 * MIN })]);
+    await manager.checkSilence('ch-001', 0, 10 * MIN);
+    await manager.checkSilence('ch-001', 0, 20 * MIN);
+    await manager.checkSilence('ch-001', 0, 40 * MIN);
+    expect(fired()).toBe(2);
+  });
+
+  it('stops at maxAlerts', async () => {
+    manager.loadAlerts([silenceAlert({ reAlertIntervalMs: MIN, maxAlerts: 2 })]);
+    for (let t = 10; t <= 15; t++) await manager.checkSilence('ch-001', 0, t * MIN);
+    expect(fired()).toBe(2);
+  });
+
+  it('ignores disabled alerts, other channels and CHANNEL_ERROR alerts', async () => {
+    manager.loadAlerts([
+      silenceAlert({ id: 's-disabled', enabled: false }),
+      silenceAlert({ id: 's-other', channelIds: ['ch-other'] }),
+      makeAlert({ id: 'errors' }),
+    ]);
+    await manager.checkSilence('ch-001', 0, 60 * MIN);
+    expect(fired()).toBe(0);
+  });
+
+  it('never fires a NO_MESSAGES alert for an error event', async () => {
+    manager.loadAlerts([silenceAlert()]);
+    await manager.handleEvent(makeEvent());
+    expect(fired()).toBe(0);
+  });
+});

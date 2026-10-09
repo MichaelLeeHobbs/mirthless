@@ -74,6 +74,15 @@ describeIntegration('DataSourceService (real Postgres)', () => {
     expect(result.error.message).toMatch(/read-only transaction/i);
   });
 
+  it('blocks a multi-statement write that tries to COMMIT out of the read-only transaction', async () => {
+    const name = await makeSource(true);
+    const table = `_ro_${Math.random().toString(36).slice(2)}`;
+    const result = await mods.DataSourceService.runQuery(name, `COMMIT; CREATE TABLE ${table}(i int)`, []);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/multiple commands/i);
+  });
+
   it('allows writes on a read-write data source', async () => {
     const name = await makeSource(false);
     const table = `_rw_${Math.random().toString(36).slice(2)}`;

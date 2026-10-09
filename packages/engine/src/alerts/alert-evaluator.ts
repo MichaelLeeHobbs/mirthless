@@ -19,6 +19,8 @@ export interface AlertTrigger {
   readonly type: string;
   readonly errorTypes: readonly string[];
   readonly regex: string | null;
+  /** NO_MESSAGES only: alert after this many minutes without an inbound message. */
+  readonly windowMinutes?: number | null | undefined;
 }
 
 /** Alert action configuration (from DB). */
