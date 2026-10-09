@@ -46,6 +46,9 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
   received nothing for N minutes (checked every 30s; once per silence, repeating at the re-alert
   interval). Backup/restore carries it, and restore now keeps CHANNEL alert actions' target channel
   and reports failed alert/setting/map writes instead of counting them as restored. (D-192)
+- **Login:** two logins by the same user within one second failed with "Invalid username or
+  password": both refresh tokens were byte-identical and the second session insert hit the
+  unique index. Refresh tokens now carry a random `jti`.
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
 ## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle
