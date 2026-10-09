@@ -38,7 +38,8 @@
 
     "------------ Performance ------------": "",
     "db:bench": "node scripts/bench-db.mjs",
-    "bench:throughput": "node scripts/bench-throughput.mjs"
+    "bench:throughput": "node scripts/bench-throughput.mjs",
+    "soak": "node scripts/soak.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.17.0",
