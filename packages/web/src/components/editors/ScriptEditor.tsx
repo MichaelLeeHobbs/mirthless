@@ -22,6 +22,8 @@ interface ScriptEditorProps {
   readonly showLanguageToggle?: boolean;
   /** Fired when the user toggles JS/TS, so the parent can persist the choice. */
   readonly onLanguageChange?: (language: ScriptLanguage) => void;
+  /** View-only: the code and the JS/TS toggle cannot be changed. */
+  readonly readOnly?: boolean;
 }
 
 let jsTypesRegistered = false;
@@ -79,6 +81,7 @@ export function ScriptEditor({
   language: languageProp,
   showLanguageToggle = false,
   onLanguageChange,
+  readOnly = false,
 }: ScriptEditorProps): ReactNode {
   const themeMode = useUiStore((state) => state.themeMode);
   const monacoTheme = themeMode === 'dark' ? 'vs-dark' : 'vs';
@@ -98,6 +101,7 @@ export function ScriptEditor({
           <ToggleButtonGroup
             value={language}
             exclusive
+            disabled={readOnly}
             onChange={(_e, val: ScriptLanguage | null) => {
               if (val) {
                 setInternalLang(val);
@@ -125,6 +129,7 @@ export function ScriptEditor({
           beforeMount={handleBeforeMount}
           options={{
             minimap: { enabled: false },
+            readOnly,
             lineNumbers: 'on',
             scrollBeyondLastLine: false,
             fontSize: 13,

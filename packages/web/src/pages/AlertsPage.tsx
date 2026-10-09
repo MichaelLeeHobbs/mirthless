@@ -122,11 +122,13 @@ export function AlertsPage(): ReactNode {
                       />
                     </TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Edit">
-                        <IconButton aria-label="Edit alert" size="small" onClick={() => { navigate(`/alerts/${alert.id}`); }}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      {canWrite ? (
+                        <Tooltip title="Edit">
+                          <IconButton aria-label="Edit alert" size="small" onClick={() => { navigate(`/alerts/${alert.id}`); }}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      ) : null}
                       {canDelete ? (
                         <Tooltip title="Delete">
                           <IconButton aria-label="Delete alert" size="small" onClick={() => { setDeleteTarget(alert); }}>

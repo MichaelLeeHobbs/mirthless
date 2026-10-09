@@ -11,8 +11,11 @@ import type { ReactElement } from 'react';
 import { darkTheme } from '../../../styles/theme.js';
 import type { CodeTemplateLibrary, CodeTemplateDetail } from '../../../api/client.js';
 
-// Monaco is irrelevant to the button gating under test.
-vi.mock('../../editors/ScriptEditor.js', () => ({ ScriptEditor: () => null }));
+// Monaco cannot run in jsdom; record the props the editor is given instead.
+const scriptEditorProps = vi.hoisted(() => ({ last: {} as Record<string, unknown> }));
+vi.mock('../../editors/ScriptEditor.js', () => ({
+  ScriptEditor: (props: Record<string, unknown>) => { scriptEditorProps.last = props; return null; },
+}));
 
 import { LibraryTree } from '../LibraryTree.js';
 import { TemplateEditor } from '../TemplateEditor.js';
@@ -81,5 +84,21 @@ describe('TemplateEditor', () => {
     renderEditor(true);
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+  });
+
+  it('disables every field and the code editor when read-only', () => {
+    renderEditor(true);
+    expect((screen.getByLabelText('Name') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).disabled).toBe(true);
+    for (const box of screen.getAllByRole('checkbox')) {
+      expect((box as HTMLInputElement).disabled).toBe(true);
+    }
+    expect(scriptEditorProps.last['readOnly']).toBe(true);
+  });
+
+  it('leaves fields editable for writers', () => {
+    renderEditor(false);
+    expect((screen.getByLabelText('Name') as HTMLInputElement).disabled).toBe(false);
+    expect(scriptEditorProps.last['readOnly']).toBe(false);
   });
 });

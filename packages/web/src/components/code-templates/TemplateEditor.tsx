@@ -138,6 +138,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
           label="Name"
           value={name}
           onChange={(e) => { setName(e.target.value); }}
+          disabled={readOnly}
           size="small"
           sx={{ flex: 1 }}
         />
@@ -146,6 +147,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
           <Select
             value={type}
             label="Type"
+            disabled={readOnly}
             onChange={(e) => { setType(e.target.value); }}
           >
             <MenuItem value="FUNCTION">Function</MenuItem>
@@ -158,6 +160,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
         label="Description"
         value={description}
         onChange={(e) => { setDescription(e.target.value); }}
+        disabled={readOnly}
         size="small"
         multiline
         minRows={2}
@@ -173,6 +176,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
                 <Checkbox
                   checked={contexts.has(ctx)}
                   onChange={() => { toggleContext(ctx); }}
+                  disabled={readOnly}
                   size="small"
                 />
               }
@@ -191,6 +195,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
           showLanguageToggle
           language={language === 'TYPESCRIPT' ? 'typescript' : 'javascript'}
           onLanguageChange={(lang) => { setLanguage(lang === 'typescript' ? 'TYPESCRIPT' : 'JAVASCRIPT'); }}
+          readOnly={readOnly}
         />
       </Box>
 
