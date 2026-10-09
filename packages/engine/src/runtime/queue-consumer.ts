@@ -112,13 +112,7 @@ export class QueueConsumer {
     );
 
     if (sendResult.ok && sendResult.value.status === 'SENT') {
-      // Keep the destination's response, as the direct-send path does, so the
-      // message browser shows it for queued deliveries too.
-      await this.store.storeContent(msg.channelId, msg.messageId, msg.metaDataId, CT_RESPONSE, sendResult.value.content, 'TEXT');
-      await this.store.release(this.config.channelId, msg.messageId, msg.metaDataId, 'SENT');
-      await this.store.incrementStats(
-        this.config.channelId, msg.metaDataId, this.config.serverId, 'sent',
-      );
+      await this.finishSent(msg, sendResult.value.content);
       return;
     }
 
@@ -135,9 +129,47 @@ export class QueueConsumer {
     // Re-queue for retry. Transitioning back to QUEUED persists an incremented
     // send_attempts (see MessageService.updateConnectorMessageStatus) so the
     // retry cap above eventually trips and a poison message is not retried forever.
-    await this.store.updateConnectorMessageStatus(
+    const requeued = await this.store.updateConnectorMessageStatus(
       this.config.channelId, msg.messageId, msg.metaDataId, 'QUEUED',
     );
+    if (!requeued.ok) await this.reportUnrecorded(msg, 'QUEUED', requeued.error.message);
+  }
+
+  /** Delivered: keep the response, mark SENT, then count it. */
+  private async finishSent(msg: QueuedMessage, response: string): Promise<void> {
+    const { channelId, serverId } = this.config;
+    // Keep the destination's response, as the direct-send path does, so the
+    // message browser shows it for queued deliveries too.
+    const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CT_RESPONSE, response, 'TEXT');
+    if (!stored.ok) await this.reportUnrecorded(msg, 'response content', stored.error.message);
+    const released = await this.store.release(channelId, msg.messageId, msg.metaDataId, 'SENT');
+    if (!released.ok) {
+      await this.reportUnrecorded(msg, 'SENT', released.error.message);
+      return;
+    }
+    await this.store.incrementStats(channelId, msg.metaDataId, serverId, 'sent');
+  }
+
+  /**
+   * A persistence write failed. Raise it as an alert instead of carrying on as
+   * if the message were finalized. A row whose status was not saved stays
+   * PENDING, and deploy re-queues PENDING rows, so it is retried, never lost.
+   */
+  private async reportUnrecorded(msg: QueuedMessage, what: string, cause: string): Promise<void> {
+    await this.alert(
+      `Queued destination ${String(msg.metaDataId)} could not save ${what} for message ` +
+      `${String(msg.messageId)}: ${cause}. It stays PENDING and is re-queued on the next deploy.`,
+    );
+  }
+
+  private async alert(errorMessage: string): Promise<void> {
+    if (!this.config.onError) return;
+    await this.config.onError({
+      channelId: this.config.channelId,
+      errorType: 'DESTINATION_CONNECTOR',
+      errorMessage,
+      timestamp: Date.now(),
+    });
   }
 
   /**
@@ -146,16 +178,14 @@ export class QueueConsumer {
    */
   private async giveUp(msg: QueuedMessage, reason: string): Promise<void> {
     const { channelId, serverId } = this.config;
-    await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CT_ERROR, reason, 'TEXT');
-    await this.store.release(channelId, msg.messageId, msg.metaDataId, 'ERROR');
-    await this.store.incrementStats(channelId, msg.metaDataId, serverId, 'errored');
-    if (this.config.onError) {
-      await this.config.onError({
-        channelId,
-        errorType: 'DESTINATION_CONNECTOR',
-        errorMessage: `Queued destination ${String(msg.metaDataId)} gave up on message ${String(msg.messageId)}: ${reason}`,
-        timestamp: Date.now(),
-      });
+    const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CT_ERROR, reason, 'TEXT');
+    if (!stored.ok) await this.reportUnrecorded(msg, 'the error reason', stored.error.message);
+    const released = await this.store.release(channelId, msg.messageId, msg.metaDataId, 'ERROR');
+    if (!released.ok) {
+      await this.reportUnrecorded(msg, `ERROR (${reason})`, released.error.message);
+      return;
     }
+    await this.store.incrementStats(channelId, msg.metaDataId, serverId, 'errored');
+    await this.alert(`Queued destination ${String(msg.metaDataId)} gave up on message ${String(msg.messageId)}: ${reason}`);
   }
 }
