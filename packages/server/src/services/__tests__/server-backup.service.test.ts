@@ -211,13 +211,27 @@ describe('ServerBackupService', () => {
       expect(result.value.users[0]).not.toHaveProperty('passwordHash');
     });
 
-    it('returns error when channel export fails', async () => {
+    it('returns error when channel export fails, without logging an export', async () => {
       setupExportMocks();
       mockChannelExportAll.mockResolvedValue(errResult('DB error'));
+      const { emitEvent } = await import('../../lib/event-emitter.js');
 
-      const result = await ServerBackupService.exportBackup();
+      const result = await ServerBackupService.exportBackup({ userId: 'u-1', ipAddress: '10.0.0.9' });
 
       expect(result.ok).toBe(false);
+      expect(emitEvent).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'SERVER_BACKUP_EXPORTED' }));
+    });
+
+    it('audit-logs a successful export with who and from where', async () => {
+      setupExportMocks();
+      const { emitEvent } = await import('../../lib/event-emitter.js');
+
+      const result = await ServerBackupService.exportBackup({ userId: 'u-1', ipAddress: '10.0.0.9' });
+
+      expect(result.ok).toBe(true);
+      expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'SERVER_BACKUP_EXPORTED', outcome: 'SUCCESS', userId: 'u-1', ipAddress: '10.0.0.9',
+      }));
     });
 
     it('includes alert details with trigger and actions', async () => {

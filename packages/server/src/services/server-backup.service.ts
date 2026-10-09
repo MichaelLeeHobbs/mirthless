@@ -45,7 +45,21 @@ import {
 
 export class ServerBackupService {
   /** Export full server configuration as a backup payload. */
-  static async exportBackup(): Promise<Result<ServerBackup>> {
+  /** Export the server configuration. A successful export is audit-logged: it can carry secrets. */
+  static async exportBackup(context?: AuditContext): Promise<Result<ServerBackup>> {
+    const result = await ServerBackupService.buildBackup();
+    if (result.ok) {
+      emitEvent({
+        level: 'INFO', name: 'SERVER_BACKUP_EXPORTED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId: null,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { channels: result.value.channels.length },
+      });
+    }
+    return result;
+  }
+
+  private static async buildBackup(): Promise<Result<ServerBackup>> {
     return tryCatch(async () => {
       // Gather all entity data in parallel where possible
       const [
