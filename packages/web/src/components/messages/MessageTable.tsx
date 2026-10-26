@@ -84,7 +84,9 @@ export function MessageTable({
                   checked={allChecked}
                   indeterminate={!allChecked && someChecked}
                   onChange={onToggleCheckedAll}
-                  inputProps={{ 'aria-label': 'Select all messages on this page' }}
+                  slotProps={{
+                    input: { 'aria-label': 'Select all messages on this page' }
+                  }}
                 />
               </TableCell>
               <TableCell width={80}>Message ID</TableCell>
@@ -126,7 +128,9 @@ export function MessageTable({
                         checked={checkedIds.has(msg.messageId)}
                         onClick={(e) => { e.stopPropagation(); }}
                         onChange={() => onToggleChecked(msg.messageId)}
-                        inputProps={{ 'aria-label': `Select message ${String(msg.messageId)}` }}
+                        slotProps={{
+                          input: { 'aria-label': `Select message ${String(msg.messageId)}` }
+                        }}
                       />
                     </TableCell>
                     <TableCell sx={{ fontFamily: (t) => t.palette.fontFamilyMono, fontSize: '0.8125rem' }}>{msg.messageId}</TableCell>

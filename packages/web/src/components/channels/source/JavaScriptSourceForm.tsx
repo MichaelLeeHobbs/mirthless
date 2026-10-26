@@ -47,8 +47,13 @@ export function JavaScriptSourceForm({ properties, onChange }: SourceConnectorFo
 
   return (
     <Grid container spacing={3}>
-      <Grid item xs={12}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid size={12}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Script
         </Typography>
 

@@ -5,7 +5,7 @@ import { darkTheme } from '../../../styles/theme.js';
 import { MessageResultsTable } from '../MessageResultsTable.js';
 import type { CrossChannelSearchItem } from '../../../hooks/use-cross-channel-search.js';
 
-vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('react-router', () => ({ useNavigate: () => vi.fn() }));
 
 const items: CrossChannelSearchItem[] = [
   { messageId: 42, channelId: 'ch-1', channelName: 'Lab Feed', receivedAt: new Date().toISOString(), processed: true, status: 'ERROR', connectorName: 'File Writer' },

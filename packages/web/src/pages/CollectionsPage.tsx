@@ -269,7 +269,9 @@ function CollectionRecordsDialog({ collection, onClose }: { collection: Collecti
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error.message}</Alert>}
         {isLoading ? (
-          <Typography variant="body2" color="text.secondary">Loading records…</Typography>
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>Loading records…</Typography>
         ) : records && records.length > 0 ? (
           <TableContainer>
             <Table size="small">
@@ -296,7 +298,9 @@ function CollectionRecordsDialog({ collection, onClose }: { collection: Collecti
             </Table>
           </TableContainer>
         ) : (
-          <Typography variant="body2" color="text.secondary">No records stored yet.</Typography>
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>No records stored yet.</Typography>
         )}
       </DialogContent>
       <DialogActions>

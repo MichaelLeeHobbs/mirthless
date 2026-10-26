@@ -57,7 +57,9 @@ export function SendMessageDialog({ open, onClose, channelId, channelName }: Sen
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
       <DialogTitle>
         Send Message
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
           Send a raw message to <strong>{channelName}</strong>
         </Typography>
       </DialogTitle>

@@ -81,7 +81,9 @@ export function ChannelGroupChips({ channelId }: ChannelGroupChipsProps): ReactN
           />
         ))}
         {memberGroups.length === 0 ? (
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             Not assigned to any groups
           </Typography>
         ) : null}

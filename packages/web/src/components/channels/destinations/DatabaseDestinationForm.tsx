@@ -60,8 +60,17 @@ export function DatabaseDestinationForm({ properties, onChange }: DestConnectorF
   return (
     <Grid container spacing={3}>
       {/* Left column — Connection settings */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Connection
         </Typography>
 
@@ -110,8 +119,17 @@ export function DatabaseDestinationForm({ properties, onChange }: DestConnectorF
       </Grid>
 
       {/* Right column — Query settings */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Query
         </Typography>
 
@@ -150,7 +168,7 @@ export function DatabaseDestinationForm({ properties, onChange }: DestConnectorF
         />
       </Grid>
 
-      <Grid item xs={12}>
+      <Grid size={12}>
         <TestConnectionButton connectorType="DATABASE" mode="DESTINATION" properties={properties} />
       </Grid>
     </Grid>

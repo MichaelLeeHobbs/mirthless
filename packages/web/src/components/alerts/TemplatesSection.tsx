@@ -50,7 +50,11 @@ export function TemplatesSection({ values, onChange }: TemplatesSectionProps): R
 
       <Typography variant="subtitle2" gutterBottom>Limits</Typography>
       <Grid container spacing={2}>
-        <Grid item xs={12} md={6}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 6
+          }}>
           <TextField
             label="Re-alert Interval (ms)"
             type="number"
@@ -67,7 +71,11 @@ export function TemplatesSection({ values, onChange }: TemplatesSectionProps): R
             helperText="Minimum time between alerts (leave empty for no limit)"
           />
         </Grid>
-        <Grid item xs={12} md={6}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 6
+          }}>
           <TextField
             label="Max Alerts"
             type="number"

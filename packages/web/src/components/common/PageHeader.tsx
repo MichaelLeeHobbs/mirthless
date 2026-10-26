@@ -44,7 +44,13 @@ export function PageHeader({ title, description, overline, actions, isFetching }
             {isFetching ? <CircularProgress size={16} thickness={5} aria-label="Refreshing" /> : null}
           </Box>
           {description ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 640 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                color: 'text.secondary',
+                mt: 0.5,
+                maxWidth: 640
+              }}>
               {description}
             </Typography>
           ) : null}

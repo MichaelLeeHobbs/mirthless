@@ -217,12 +217,19 @@ export function SettingsPage(): ReactNode {
                     <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
                       {setting.key}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" sx={{
+                      color: 'text.secondary'
+                    }}>
                       ({setting.type})
                     </Typography>
                   </Box>
                   {setting.description ? (
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: 'text.secondary',
+                        mb: 1
+                      }}>
                       {setting.description}
                     </Typography>
                   ) : null}

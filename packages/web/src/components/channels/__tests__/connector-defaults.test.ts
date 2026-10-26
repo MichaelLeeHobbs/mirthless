@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // ===========================================
 // Connector Defaults Tests (SFTP + response transformer)
 // ===========================================

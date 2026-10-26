@@ -64,7 +64,9 @@ export function LibraryTree({
   if (libraries.length === 0) {
     return (
       <Box sx={{ p: 2, textAlign: 'center' }}>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
           No libraries yet. Create one to get started.
         </Typography>
       </Box>
@@ -88,9 +90,11 @@ export function LibraryTree({
               </ListItemIcon>
               <ListItemText
                 primary={lib.name}
-                primaryTypographyProps={{
-                  noWrap: true,
-                  sx: { fontWeight: 600 },
+                slotProps={{
+                  primary: {
+                    noWrap: true,
+                    sx: { fontWeight: 600 },
+                  }
                 }}
               />
               {readOnly ? null : (<>
@@ -136,12 +140,21 @@ export function LibraryTree({
                     </ListItemIcon>
                     <ListItemText
                       primary={tmpl.name}
-                      primaryTypographyProps={{ noWrap: true }}
+                      slotProps={{
+                        primary: { noWrap: true }
+                      }}
                     />
                   </ListItemButton>
                 ))}
                 {libTemplates.length === 0 ? (
-                  <Typography variant="caption" color="text.secondary" sx={{ pl: 6, py: 1, display: 'block' }}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: 'text.secondary',
+                      pl: 6,
+                      py: 1,
+                      display: 'block'
+                    }}>
                     No templates
                   </Typography>
                 ) : null}

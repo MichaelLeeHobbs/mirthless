@@ -34,7 +34,7 @@ export function StatusChip({ label, level }: StatusChipProps): ReactNode {
         height: 22,
         pl: 0.875,
         pr: 1.125,
-        borderRadius: `${theme.shape.borderRadius * 0.75}px`,
+        borderRadius: `${Number(theme.shape.borderRadius) * 0.75}px`,
         border: `1px solid ${alpha(color, 0.42)}`,
         backgroundColor: alpha(color, 0.12),
         color,

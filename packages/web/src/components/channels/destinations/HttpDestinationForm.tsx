@@ -81,8 +81,17 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
   return (
     <Grid container spacing={3}>
       {/* Left column — Request settings */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Request
         </Typography>
 
@@ -125,8 +134,17 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
       </Grid>
 
       {/* Right column — Response settings */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Connection
         </Typography>
 
@@ -143,9 +161,14 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
       </Grid>
 
       {/* Transport mode — HTTP or HTTPS (TLS material selected from the cert store) */}
-      <Grid item xs={12}>
+      <Grid size={12}>
         <Divider sx={{ mb: 2 }} />
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Transport
         </Typography>
 
@@ -164,7 +187,13 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
 
         {isHttps && (
           <>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                color: 'text.secondary',
+                display: 'block',
+                mb: 2
+              }}>
               References certificates by ID. Material is resolved server-side at deploy time.
             </Typography>
 
@@ -193,14 +222,21 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
               )}
               label="Reject unauthorized certificates"
             />
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, mb: 1 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                color: 'text.secondary',
+                display: 'block',
+                mt: 0.5,
+                mb: 1
+              }}>
               Keep enabled. Disabling skips server certificate verification (insecure — audited exceptions only).
             </Typography>
           </>
         )}
       </Grid>
 
-      <Grid item xs={12}>
+      <Grid size={12}>
         <TestConnectionButton connectorType="HTTP" mode="DESTINATION" properties={properties} />
       </Grid>
     </Grid>

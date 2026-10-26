@@ -70,7 +70,9 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
     <Accordion disableGutters>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Typography sx={{ fontWeight: 600, mr: 2 }}>Source Transformer</Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
           {transformer.steps.length === 0
             ? 'No transformer steps'
             : `${String(transformer.steps.length)} step${transformer.steps.length === 1 ? '' : 's'}`}
@@ -109,7 +111,12 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
         </Box>
 
         {transformer.steps.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'text.secondary',
+              mb: 2
+            }}>
             No transformer steps.
           </Typography>
         ) : (

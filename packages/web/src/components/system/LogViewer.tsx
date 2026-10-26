@@ -188,7 +188,9 @@ export function LogViewer(): ReactNode {
           sx={{ minWidth: 200 }}
         />
 
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
           {filteredEntries.length} entries
         </Typography>
       </Box>

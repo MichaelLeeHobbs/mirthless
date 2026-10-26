@@ -116,10 +116,14 @@ export function PrunerSection(): ReactNode {
 
       {status?.lastRunResult && (
         <Box sx={{ mt: 2 }}>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             Last run: {new Date(status.lastRunResult.completedAt).toLocaleString()}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             {status.lastRunResult.channelsPruned} channels pruned, {status.lastRunResult.totalDeleted} messages deleted
           </Typography>
         </Box>

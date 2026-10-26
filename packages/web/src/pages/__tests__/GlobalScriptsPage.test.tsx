@@ -25,7 +25,7 @@ const scriptsData = {
   postprocessor: 'postprocessor-src',
 };
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useBlocker: () => ({ state: 'unblocked', reset: vi.fn(), proceed: vi.fn() }),
 }));
 

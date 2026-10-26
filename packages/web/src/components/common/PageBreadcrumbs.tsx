@@ -4,7 +4,7 @@
 // Generic breadcrumb component for nested pages.
 
 import type { ReactNode } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
@@ -34,7 +34,9 @@ export function PageBreadcrumbs({ items }: PageBreadcrumbsProps): ReactNode {
             {item.label}
           </Link>
         ) : (
-          <Typography key={item.label} variant="body2" color="text.primary">
+          <Typography key={item.label} variant="body2" sx={{
+            color: 'text.primary'
+          }}>
             {item.label}
           </Typography>
         ),

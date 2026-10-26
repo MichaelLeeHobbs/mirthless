@@ -125,7 +125,12 @@ export function ImportDialog({ open, onClose, onSuccess }: ImportDialogProps): R
             Select File
           </Button>
           {preview ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                color: 'text.secondary',
+                mt: 1
+              }}>
               {preview}
             </Typography>
           ) : null}

@@ -230,7 +230,9 @@ export function CertificatesPage(): ReactNode {
                       <TableCell>
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>{cert.name}</Typography>
                         {cert.description ? (
-                          <Typography variant="caption" color="text.secondary">{cert.description}</Typography>
+                          <Typography variant="caption" sx={{
+                            color: 'text.secondary'
+                          }}>{cert.description}</Typography>
                         ) : null}
                       </TableCell>
                       <TableCell>
@@ -244,7 +246,12 @@ export function CertificatesPage(): ReactNode {
                       </TableCell>
                       <TableCell>
                         <Chip label={getExpiryLabel(days)} size="small" color={color} />
-                        <Typography variant="caption" display="block" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: 'block',
+                            color: 'text.secondary'
+                          }}>
                           {formatDate(cert.notBefore)} - {formatDate(cert.notAfter)}
                         </Typography>
                       </TableCell>

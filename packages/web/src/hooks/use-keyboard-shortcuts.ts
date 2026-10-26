@@ -4,7 +4,7 @@
 // Global keyboard shortcuts: ? for help, g+d dashboard, g+c channels, g+s settings, Escape close.
 
 import { useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 
 interface UseKeyboardShortcutsOptions {
   readonly onHelpOpen: () => void;
@@ -23,7 +23,7 @@ function isInputFocused(): boolean {
 export function useKeyboardShortcuts({ onHelpOpen }: UseKeyboardShortcutsOptions): void {
   const navigate = useNavigate();
   const pendingGRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const handleKeyDown = useCallback((e: KeyboardEvent): void => {
     if (isInputFocused()) return;

@@ -4,7 +4,7 @@
 // Alert management: list, enable/disable, delete.
 
 import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
@@ -104,7 +104,9 @@ export function AlertsPage(): ReactNode {
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>{alert.name}</Typography>
                       {alert.description ? (
-                        <Typography variant="caption" color="text.secondary">{alert.description}</Typography>
+                        <Typography variant="caption" sx={{
+                          color: 'text.secondary'
+                        }}>{alert.description}</Typography>
                       ) : null}
                     </TableCell>
                     <TableCell>

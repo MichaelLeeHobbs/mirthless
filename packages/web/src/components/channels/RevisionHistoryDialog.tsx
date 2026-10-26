@@ -71,7 +71,11 @@ export function RevisionHistoryDialog({ channelId, open, onClose }: Props): Reac
             <CircularProgress />
           </Box>
         ) : !revisions || revisions.length === 0 ? (
-          <Typography color="text.secondary" sx={{ py: 2 }}>
+          <Typography
+            sx={{
+              color: 'text.secondary',
+              py: 2
+            }}>
             No revisions found. Revisions are saved when a channel is updated.
           </Typography>
         ) : (

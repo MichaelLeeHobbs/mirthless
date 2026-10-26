@@ -13,7 +13,9 @@ interface UnsupportedConnectorPlaceholderProps {
 export function UnsupportedConnectorPlaceholder({ connectorType }: UnsupportedConnectorPlaceholderProps): ReactNode {
   return (
     <Box sx={{ textAlign: 'center', py: 4 }}>
-      <Typography color="text.secondary">
+      <Typography sx={{
+        color: 'text.secondary'
+      }}>
         {connectorType} connector settings are not yet available.
       </Typography>
     </Box>

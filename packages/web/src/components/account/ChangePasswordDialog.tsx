@@ -83,7 +83,6 @@ export function ChangePasswordDialog({ open, onClose, forced = false }: ChangePa
       onClose={handleClose}
       maxWidth="xs"
       fullWidth
-      disableEscapeKeyDown={forced}
     >
       <DialogTitle>Change Password</DialogTitle>
       <DialogContent>

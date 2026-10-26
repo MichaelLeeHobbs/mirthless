@@ -9,7 +9,7 @@ import { render, screen, fireEvent, cleanup, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@mui/material/styles';
 import type { ReactElement } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { darkTheme } from '../../styles/theme.js';
 
 // ----- Mocks -----
@@ -18,8 +18,8 @@ const navigateMock = vi.fn();
 const createMutateAsync = vi.fn();
 const updateMutateAsync = vi.fn();
 
-vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>();
+vi.mock('react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router')>();
   return {
     ...actual,
     useParams: () => ({}), // no id -> create mode

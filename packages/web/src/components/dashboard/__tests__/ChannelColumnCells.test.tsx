@@ -5,7 +5,7 @@ import { darkTheme } from '../../../styles/theme.js';
 import { ChannelBodyCells, type ChannelCellRow } from '../ChannelColumnCells.js';
 import type { DashboardColumnId } from '../../../lib/dashboard-columns.js';
 
-vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('react-router', () => ({ useNavigate: () => vi.fn() }));
 
 const row: ChannelCellRow = {
   channelId: 'ch-1', channelName: 'My Channel',

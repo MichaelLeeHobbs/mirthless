@@ -73,10 +73,21 @@ function AttachmentsEditor({ value, onChange }: AttachmentsEditorProps): ReactNo
 
   return (
     <>
-      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+      <Typography
+        variant="subtitle2"
+        sx={{
+          color: 'text.secondary',
+          mb: 1
+        }}>
         Attachments
       </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+      <Typography
+        variant="caption"
+        sx={{
+          color: 'text.secondary',
+          display: 'block',
+          mb: 2
+        }}>
         Each attachment is added in addition to any message content above. Filename and content support ${'{msg}'}, ${'{messageId}'}, ${'{channelId}'}, ${'{metaDataId}'}.
       </Typography>
 
@@ -145,8 +156,17 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
   return (
     <Grid container spacing={3}>
       {/* Left column — SMTP Server */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           SMTP Server
         </Typography>
 
@@ -191,7 +211,13 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
           label="Require STARTTLS"
           sx={{ mb: 0, display: 'block' }}
         />
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        <Typography
+          variant="caption"
+          sx={{
+            color: 'text.secondary',
+            display: 'block',
+            mb: 2
+          }}>
           Forces a STARTTLS upgrade before auth on a non-secure port, so credentials are never sent in plaintext. Not needed when Use TLS/SSL is on (already implicit TLS).
         </Typography>
 
@@ -214,8 +240,17 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
       </Grid>
 
       {/* Right column — Email */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Email
         </Typography>
 
@@ -298,14 +333,14 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
         />
       </Grid>
 
-      <Grid item xs={12}>
+      <Grid size={12}>
         <AttachmentsEditor
           value={getAttachments(properties)}
           onChange={(next) => { update('attachments', next); }}
         />
       </Grid>
 
-      <Grid item xs={12}>
+      <Grid size={12}>
         <TestConnectionButton connectorType="SMTP" mode="DESTINATION" properties={properties} />
       </Grid>
     </Grid>

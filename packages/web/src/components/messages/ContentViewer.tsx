@@ -55,7 +55,13 @@ export function ContentViewer({ content, label }: ContentViewerProps): ReactNode
   return (
     <Box sx={{ position: 'relative' }}>
       {label && (
-        <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+        <Typography
+          variant="caption"
+          sx={{
+            color: 'text.secondary',
+            mb: 0.5,
+            display: 'block'
+          }}>
           {label}
         </Typography>
       )}
