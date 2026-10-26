@@ -24,22 +24,22 @@
     "@mirthless/core-models": "workspace:*",
     "@mirthless/core-util": "workspace:*",
     "@mirthless/engine": "workspace:*",
-    "dcmjs-dimse": "^0.3.2",
+    "dcmjs-dimse": "^0.3.4",
     "generic-pool": "^3.9.0",
-    "imapflow": "^2.3.0",
-    "nodemailer": "^10.0.16",
-    "pg": "^8.13.0",
-    "pino": "^10.2.1",
+    "imapflow": "^2.9.1",
+    "nodemailer": "^10.2.1",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
     "ssh2-sftp-client": "^12.1.1"
   },
   "devDependencies": {
-    "@types/generic-pool": "^3.8.3",
-    "@types/nodemailer": "^7.0.11",
-    "@types/pg": "^8.11.0",
+    "@types/node": "24.19.2",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
     "@types/ssh2-sftp-client": "^9.0.6",
-    "@vitest/coverage-v8": "2.1.8",
-    "rimraf": "6.0.1",
-    "typescript": "5.7.2",
-    "vitest": "2.1.8"
+    "@vitest/coverage-v8": "5.0.5",
+    "rimraf": "6.1.3",
+    "typescript": "6.0.3",
+    "vitest": "5.0.5"
   }
 }

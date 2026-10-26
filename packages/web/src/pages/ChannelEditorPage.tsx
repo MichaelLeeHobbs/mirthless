@@ -5,7 +5,7 @@
 
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useEffect, useRef, useCallback, type ReactNode, type SyntheticEvent } from 'react';
-import { useParams, useNavigate, useBlocker } from 'react-router-dom';
+import { useParams, useNavigate, useBlocker } from 'react-router';
 import { useForm } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';

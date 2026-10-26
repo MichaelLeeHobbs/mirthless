@@ -48,10 +48,14 @@ export function RevisionDiffView({ channelId, leftRev, rightRev, open, onBack, o
         ) : (
           <Box sx={{ height: '70vh' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', px: 2, py: 1, bgcolor: 'action.hover' }}>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" sx={{
+                color: 'text.secondary'
+              }}>
                 Revision {String(leftRev)}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" sx={{
+                color: 'text.secondary'
+              }}>
                 Revision {String(rightRev)}
               </Typography>
             </Box>

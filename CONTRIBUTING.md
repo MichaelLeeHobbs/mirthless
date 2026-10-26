@@ -16,7 +16,7 @@ not optional. Please read this before opening a PR.
 
 ## Development Setup
 
-Prerequisites: **Node.js 22+**, **pnpm 9+**, and **PostgreSQL 17** (Docker is easiest).
+Prerequisites: **Node.js 24+**, **pnpm 12+**, and **PostgreSQL 17** (Docker is easiest).
 
 ```bash
 # 1. Install dependencies (pnpm workspaces — do NOT use npm/yarn)

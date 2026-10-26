@@ -92,7 +92,9 @@ export function DestinationsTab({ destinations, onChange }: DestinationsTabProps
           />
         ) : (
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-            <Typography color="text.secondary">
+            <Typography sx={{
+              color: 'text.secondary'
+            }}>
               No destinations. Click + to add one.
             </Typography>
           </Box>

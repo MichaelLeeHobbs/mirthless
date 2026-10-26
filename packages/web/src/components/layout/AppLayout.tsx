@@ -1,5 +1,5 @@
 import { useState, useCallback, type ReactNode, type MouseEvent } from 'react';
-import { Outlet, useNavigate, useLocation, Link as RouterLink } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation, Link as RouterLink } from 'react-router';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
 import Drawer from '@mui/material/Drawer';
@@ -233,11 +233,15 @@ export function AppLayout(): ReactNode {
                   {expanded ? (
                     <ListItemText
                       primary={item.label}
-                      primaryTypographyProps={{
-                        fontSize: '0.875rem',
-                        fontWeight: isActive ? 600 : 500,
-                        color: isActive ? 'text.primary' : 'text.secondary',
-                        noWrap: true,
+                      slotProps={{
+                        primary: {
+                          noWrap: true,
+                          sx: {
+                            fontSize: '0.875rem',
+                            fontWeight: isActive ? 600 : 500,
+                            color: isActive ? 'text.primary' : 'text.secondary',
+                          },
+                        }
                       }}
                     />
                   ) : null}
@@ -321,7 +325,9 @@ export function AppLayout(): ReactNode {
           >
             {user ? (
               <MenuItem disabled>
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" sx={{
+                  color: 'text.secondary'
+                }}>
                   {user.username} ({user.role})
                 </Typography>
               </MenuItem>

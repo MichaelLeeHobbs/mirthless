@@ -112,8 +112,17 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
     <Box>
       <Grid container spacing={3}>
         {/* Left column -- Identity & Description */}
-        <Grid item xs={12} md={6}>
-          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 6
+          }}>
+          <Typography
+            variant="subtitle2"
+            sx={{
+              color: 'text.secondary',
+              mb: 2
+            }}>
             Channel Identity
           </Typography>
 
@@ -200,8 +209,17 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
         </Grid>
 
         {/* Right column -- Data Types & Connector */}
-        <Grid item xs={12} md={6}>
-          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 6
+          }}>
+          <Typography
+            variant="subtitle2"
+            sx={{
+              color: 'text.secondary',
+              mb: 2
+            }}>
             Data Configuration
           </Typography>
 
@@ -264,7 +282,11 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
           </AccordionSummary>
           <AccordionDetails>
             <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 6
+                }}>
                 <FormControl>
                   <FormLabel>Storage Mode</FormLabel>
                   <RadioGroup
@@ -279,7 +301,9 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
                         label={
                           <Box>
                             <Typography variant="body2">{mode.label}</Typography>
-                            <Typography variant="caption" color="text.secondary">{mode.description}</Typography>
+                            <Typography variant="caption" sx={{
+                              color: 'text.secondary'
+                            }}>{mode.description}</Typography>
                           </Box>
                         }
                       />
@@ -287,7 +311,11 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
                   </RadioGroup>
                 </FormControl>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 6
+                }}>
                 <FormControlLabel
                   control={<Switch checked={advancedValues.encryptData} onChange={(_e, checked) => { onAdvancedChange({ encryptData: checked }); }} />}
                   label="Encrypt stored data"
@@ -316,7 +344,11 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
             />
             {advancedValues.pruningEnabled ? (
               <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
+                <Grid
+                  size={{
+                    xs: 12,
+                    md: 6
+                  }}>
                   <TextField
                     label="Max Age (days)"
                     type="number"
@@ -330,7 +362,7 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
                     slotProps={{ htmlInput: { min: 1 } }}
                   />
                 </Grid>
-                <Grid item xs={12}>
+                <Grid size={12}>
                   <Alert severity="warning" sx={{ mt: 1 }}>
                     Pruning <strong>permanently deletes</strong> messages older than the age above,
                     including message content (PHI). There is no archive step — export any messages
@@ -349,7 +381,11 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
           </AccordionSummary>
           <AccordionDetails>
             <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 6
+                }}>
                 <TextField
                   label="Script Timeout (seconds)"
                   type="number"

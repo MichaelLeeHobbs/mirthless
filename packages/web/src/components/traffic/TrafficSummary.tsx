@@ -35,7 +35,13 @@ export function TrafficSummary(): ReactNode {
     <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
       {tiles.map((t) => (
         <Paper key={t.label} sx={{ px: 2.5, py: 1.5, flex: '1 1 140px', minWidth: 130 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'text.secondary',
+              textTransform: 'uppercase',
+              letterSpacing: 0.5
+            }}>
             {t.label}
           </Typography>
           <Typography variant="h5" sx={{ fontWeight: 700, color: t.value > 0 && t.color ? t.color : undefined }}>

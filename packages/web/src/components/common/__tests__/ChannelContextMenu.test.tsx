@@ -14,7 +14,7 @@ const deployMutate = vi.fn();
 const toggleEnabledMutate = vi.fn();
 let permissions = new Set<string>(['channels:read', 'channels:write', 'channels:deploy', 'channels:delete']);
 
-vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('react-router', () => ({ useNavigate: () => vi.fn() }));
 vi.mock('../../../hooks/use-deployment.js', () => ({
   useDeploymentAction: () => ({ mutate: deployMutate }),
 }));

@@ -2,6 +2,26 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-26 — Upgrade every dependency to latest (branch `claude/project-thread-3l3i6d`)
+
+- **Toolchain:** Node 24 LTS (isolated-vm 7 and jsdom 30 require it) and pnpm 12. pnpm settings
+  (`allowBuilds`, `overrides`) now live in `pnpm-workspace.yaml`. CI and both Dockerfiles follow.
+  (D-197)
+- **Majors:** TypeScript 6, ESLint 10, Vitest 5, Vite 8, Express 5, React 19, MUI 9, React
+  Router 7 (`react-router-dom` replaced by `react-router`), dotenv 18, bcryptjs 3, commander 15,
+  isolated-vm 7, esbuild 0.28, jsdom 30. `prom-client` is replaced by its successor
+  `@prometheus-io/client`. TypeScript 7 is skipped until typescript-eslint supports it. (D-198)
+- **Express 5:** `validate()` assigned `req.query`, which is a getter in Express 5 and threw on
+  every list endpoint. It now shadows the property; a real-HTTP test covers it.
+- **Config:** `JWT_*_EXPIRES_IN` must be a duration (`15m`, `7d`, `1 hour`). dotenv runs quiet so
+  its banner stays out of the JSON logs.
+- **Web:** MUI codemods (Grid `size`, `slotProps`, system props to `sx`); theme overrides for
+  removed slots became `variants`; Vite vendor chunks are Rolldown `codeSplitting` groups.
+- **Tests:** coverage thresholds re-measured after Vitest 5 changed V8 counting (D-199).
+- **Verified locally:** build, lint, unit tests with coverage, `pnpm audit --prod` (clean),
+  integration tests against Postgres, Playwright e2e (108 pass; the 2 global-scripts specs need
+  Monaco's CDN, which this sandbox blocks).
+
 ## 2026-10-26 — Visual language rules, lint guards and `pnpm shots` (branch `claude/project-thread-2z3cpi`)
 
 Wrote down and enforced the visual language that `styles/tokens.ts` + `theme.ts` already implied, modelled on how the VNS Portal runs its own (D-196).

@@ -16,13 +16,15 @@ export default defineConfig({
     // Route-level React.lazy handles page splitting; this keeps the big, stable
     // vendor libraries in their own long-cacheable chunks so the app shell and
     // per-page chunks stay lean.
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-mui': ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
-          'vendor-monaco': ['@monaco-editor/react'],
-          'vendor-data': ['@tanstack/react-query', 'zustand', 'socket.io-client', 'zod'],
+        codeSplitting: {
+          groups: [
+            { name: 'vendor-react', test: /node_modules[\\/](react|react-dom|react-router|scheduler)[\\/]/ },
+            { name: 'vendor-mui', test: /node_modules[\\/](@mui|@emotion)[\\/]/ },
+            { name: 'vendor-monaco', test: /node_modules[\\/]@monaco-editor[\\/]/ },
+            { name: 'vendor-data', test: /node_modules[\\/](@tanstack|zustand|socket\.io-client|zod)[\\/]/ },
+          ],
         },
       },
     },

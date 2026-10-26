@@ -78,7 +78,13 @@ export function HeadersEditor({ value, onChange, label = 'Headers' }: HeadersEdi
 
   return (
     <Box>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+      <Typography
+        variant="caption"
+        sx={{
+          color: 'text.secondary',
+          display: 'block',
+          mb: 1
+        }}>
         {label}
       </Typography>
       {rows.map(([key, val], index) => (

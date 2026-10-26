@@ -124,7 +124,12 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 2 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
+      <Stack
+        direction="row"
+        sx={{
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
         <Typography variant="h6" sx={{ fontWeight: 600 }}>
           {template.name}
         </Typography>
@@ -200,7 +205,9 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
       </Box>
 
       {readOnly ? null : (
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
+        <Stack direction="row" spacing={1} sx={{
+          justifyContent: 'flex-end'
+        }}>
           <Button
             variant="outlined"
             color="error"

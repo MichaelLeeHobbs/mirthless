@@ -14,22 +14,24 @@ const mockAlertManager = {
   getAlerts: vi.fn().mockReturnValue([]),
 };
 
-const MockAlertManagerCtor = vi.fn().mockImplementation(() => mockAlertManager);
+const MockAlertManagerCtor = vi.fn().mockImplementation(function () { return mockAlertManager; });
 
 const mockRuntimeDeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeUndeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeStop = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
 const mockRuntimeHalt = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
-const MockChannelRuntime = vi.fn().mockImplementation(() => ({
-  deploy: mockRuntimeDeploy,
-  undeploy: mockRuntimeUndeploy,
-  stop: mockRuntimeStop,
-  halt: mockRuntimeHalt,
-  getState: vi.fn().mockReturnValue('STOPPED'),
-}));
+const MockChannelRuntime = vi.fn().mockImplementation(function () {
+  return {
+    deploy: mockRuntimeDeploy,
+    undeploy: mockRuntimeUndeploy,
+    stop: mockRuntimeStop,
+    halt: mockRuntimeHalt,
+    getState: vi.fn().mockReturnValue('STOPPED'),
+  };
+});
 
 const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn() };
-const MockGlobalChannelMap = vi.fn().mockImplementation(() => mockGcm);
+const MockGlobalChannelMap = vi.fn().mockImplementation(function () { return mockGcm; });
 
 const mockSandboxExecute = vi.fn().mockResolvedValue({
   ok: true,
@@ -37,10 +39,12 @@ const mockSandboxExecute = vi.fn().mockResolvedValue({
   error: null,
 });
 const mockSandboxDispose = vi.fn();
-const MockVmSandboxExecutor = vi.fn().mockImplementation(() => ({
-  execute: mockSandboxExecute,
-  dispose: mockSandboxDispose,
-}));
+const MockVmSandboxExecutor = vi.fn().mockImplementation(function () {
+  return {
+    execute: mockSandboxExecute,
+    dispose: mockSandboxDispose,
+  };
+});
 
 const mockCompileScript = vi.fn().mockResolvedValue({
   ok: true, value: { code: 'compiled-code' }, error: null,
@@ -49,22 +53,26 @@ const mockCompileScript = vi.fn().mockResolvedValue({
 vi.mock('@mirthless/engine', () => ({
   ChannelRuntime: MockChannelRuntime,
   VmSandboxExecutor: MockVmSandboxExecutor,
-  MessageProcessor: vi.fn().mockImplementation(() => ({
-    processMessage: vi.fn().mockResolvedValue({
-      ok: true, value: { messageId: 1, status: 'SENT', destinationResults: [] }, error: null,
-    }),
-  })),
+  MessageProcessor: vi.fn().mockImplementation(function () {
+    return {
+      processMessage: vi.fn().mockResolvedValue({
+        ok: true, value: { messageId: 1, status: 'SENT', destinationResults: [] }, error: null,
+      }),
+    };
+  }),
   DEFAULT_EXECUTION_OPTIONS: { timeout: 30000, memoryLimit: 134217728, signal: AbortSignal.timeout(30000) },
   GlobalChannelMap: MockGlobalChannelMap,
-  GlobalMapProxy: vi.fn().mockImplementation(() => ({ load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) })),
+  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
   compileScript: mockCompileScript,
   compileFilterRulesToScript: vi.fn().mockReturnValue(null),
   compileTransformerStepsToScript: vi.fn().mockReturnValue(null),
   prependTemplates: vi.fn().mockImplementation((src: string) => src),
   AlertManager: MockAlertManagerCtor,
-  RecoveryManager: vi.fn().mockImplementation(() => ({
-    recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
-  })),
+  RecoveryManager: vi.fn().mockImplementation(function () {
+    return {
+      recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
+    };
+  }),
 }));
 
 vi.mock('@mirthless/connectors', () => ({

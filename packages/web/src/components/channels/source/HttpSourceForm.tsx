@@ -85,8 +85,17 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
   return (
     <Grid container spacing={3}>
       {/* Left column — Listener settings */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Listener
         </Typography>
 
@@ -135,8 +144,17 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
       </Grid>
 
       {/* Right column — Response settings */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Response
         </Typography>
 
@@ -184,9 +202,14 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
       </Grid>
 
       {/* Transport mode — HTTP or HTTPS (server cert selected from the cert store) */}
-      <Grid item xs={12}>
+      <Grid size={12}>
         <Divider sx={{ mb: 2 }} />
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Transport
         </Typography>
 
@@ -205,7 +228,13 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
 
         {isHttps && (
           <>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                color: 'text.secondary',
+                display: 'block',
+                mb: 2
+              }}>
               References certificates by ID. Material is resolved server-side at deploy time.
             </Typography>
 
@@ -240,14 +269,21 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
               )}
               label="Require client certificate"
             />
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, mb: 1 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                color: 'text.secondary',
+                display: 'block',
+                mt: 0.5,
+                mb: 1
+              }}>
               When enabled, clients must present a certificate trusted by the CA above (mutual TLS).
             </Typography>
           </>
         )}
       </Grid>
 
-      <Grid item xs={12}>
+      <Grid size={12}>
         <TestConnectionButton connectorType="HTTP" mode="SOURCE" properties={properties} />
       </Grid>
     </Grid>

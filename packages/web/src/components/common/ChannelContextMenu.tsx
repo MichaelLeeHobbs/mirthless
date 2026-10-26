@@ -4,7 +4,7 @@
 // Right-click context menu for channel rows on the dashboard.
 
 import type { ReactNode, MouseEvent as ReactMouseEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
@@ -93,7 +93,9 @@ export function ChannelContextMenu({
       slotProps={{ root: { onContextMenu: (e: ReactMouseEvent) => { e.preventDefault(); onClose(); } } }}
     >
       <MenuItem disabled sx={{ opacity: '1 !important' }}>
-        <ListItemText primaryTypographyProps={{ variant: 'subtitle2', fontWeight: 600 }}>
+        <ListItemText slotProps={{
+          primary: { variant: 'subtitle2', sx: { fontWeight: 600 } }
+        }}>
           {channelName}
         </ListItemText>
       </MenuItem>
@@ -192,7 +194,9 @@ export function ChannelContextMenu({
       {onDelete && canDelete ? (
         <MenuItem onClick={() => { onClose(); onDelete(channelId, channelName ?? ''); }}>
           <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
-          <ListItemText primaryTypographyProps={{ color: 'error' }}>Delete</ListItemText>
+          <ListItemText slotProps={{
+            primary: { color: 'error' }
+          }}>Delete</ListItemText>
         </MenuItem>
       ) : null}
     </Menu>

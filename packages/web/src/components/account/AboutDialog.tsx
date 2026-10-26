@@ -30,7 +30,9 @@ export function AboutDialog({ open, onClose }: AboutDialogProps): ReactNode {
           <Typography variant="h6" sx={{ fontWeight: 700, color: 'primary.main' }}>
             Mirthless
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             A modern, open-source healthcare integration engine.
           </Typography>
           <Typography variant="body2">

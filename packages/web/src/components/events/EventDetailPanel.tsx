@@ -32,21 +32,29 @@ export function EventDetailPanel({ eventId }: EventDetailPanelProps): ReactNode 
     <Box sx={{ p: 2 }}>
       <Box sx={{ display: 'flex', gap: 4, mb: 2, flexWrap: 'wrap' }}>
         <Box>
-          <Typography variant="caption" color="text.secondary">Server ID</Typography>
+          <Typography variant="caption" sx={{
+            color: 'text.secondary'
+          }}>Server ID</Typography>
           <Typography variant="body2">{event.serverId ?? 'N/A'}</Typography>
         </Box>
         <Box>
-          <Typography variant="caption" color="text.secondary">IP Address</Typography>
+          <Typography variant="caption" sx={{
+            color: 'text.secondary'
+          }}>IP Address</Typography>
           <Typography variant="body2">{event.ipAddress ?? 'N/A'}</Typography>
         </Box>
         <Box>
-          <Typography variant="caption" color="text.secondary">User ID</Typography>
+          <Typography variant="caption" sx={{
+            color: 'text.secondary'
+          }}>User ID</Typography>
           <Typography variant="body2" sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem' }}>
             {event.userId ?? 'N/A'}
           </Typography>
         </Box>
         <Box>
-          <Typography variant="caption" color="text.secondary">Channel ID</Typography>
+          <Typography variant="caption" sx={{
+            color: 'text.secondary'
+          }}>Channel ID</Typography>
           <Typography variant="body2" sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem' }}>
             {event.channelId ?? 'N/A'}
           </Typography>
@@ -55,7 +63,13 @@ export function EventDetailPanel({ eventId }: EventDetailPanelProps): ReactNode 
 
       {event.attributes ? (
         <Box>
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'text.secondary',
+              mb: 0.5,
+              display: 'block'
+            }}>
             Attributes
           </Typography>
           <Paper

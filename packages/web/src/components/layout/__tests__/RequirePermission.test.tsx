@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router';
 import { RequirePermission } from '../RequirePermission.js';
 import { useAuthStore } from '../../../stores/auth.store.js';
 import { PERMISSION } from '../../../lib/permissions.js';

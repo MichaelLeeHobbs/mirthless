@@ -4,7 +4,7 @@
 // Shared table for the Traffic view's triage feed and search results.
 
 import { type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import Paper from '@mui/material/Paper';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';

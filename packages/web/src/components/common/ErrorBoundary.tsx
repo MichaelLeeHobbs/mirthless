@@ -47,7 +47,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <Typography variant="h5" sx={{ mb: 2, fontWeight: 600 }}>
               Something went wrong
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                color: 'text.secondary',
+                mb: 3
+              }}>
               {this.state.errorMessage}
             </Typography>
             <Button variant="contained" onClick={this.handleReload}>

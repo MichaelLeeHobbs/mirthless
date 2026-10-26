@@ -53,11 +53,21 @@ export function TransformerStepEditor({
         sx={{ '& .MuiAccordionSummary-content': { alignItems: 'center', gap: 1 } }}
       >
         <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>{title}</Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
+        <Typography
+          variant="caption"
+          sx={{
+            color: 'text.secondary',
+            mr: 1
+          }}>
           {typeLabel}
         </Typography>
         {!step.enabled ? (
-          <Typography variant="caption" color="warning.main" sx={{ mr: 1 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'warning.main',
+              mr: 1
+            }}>
             Disabled
           </Typography>
         ) : null}

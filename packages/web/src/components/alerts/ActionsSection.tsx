@@ -72,7 +72,9 @@ export function ActionsSection({ actions, onChange }: ActionsSectionProps): Reac
       </Box>
 
       {actions.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
           No actions configured. Add an action to define how alerts are delivered.
         </Typography>
       ) : null}
@@ -117,16 +119,11 @@ export function ActionsSection({ actions, onChange }: ActionsSectionProps): Reac
                 handleUpdate(index, { channelId: newValue?.id ?? '' });
               }}
               renderInput={(params) => {
-                const { InputLabelProps, InputProps, ...rest } = params;
                 return (
                   <TextField
-                    {...rest}
+                    {...params}
                     label="Target Channel"
                     size="small"
-                    slotProps={{
-                      inputLabel: InputLabelProps,
-                      input: InputProps as Record<string, unknown>,
-                    }}
                   />
                 );
               }}

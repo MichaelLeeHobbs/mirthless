@@ -104,7 +104,7 @@ const mockX509 = {
 };
 
 vi.mock('node:crypto', () => ({
-  X509Certificate: vi.fn().mockImplementation((pem: string) => {
+  X509Certificate: vi.fn().mockImplementation(function (pem: string) {
     if (!pem.includes('BEGIN CERTIFICATE')) {
       throw new Error('Invalid PEM');
     }

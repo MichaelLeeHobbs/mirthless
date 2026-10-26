@@ -28,9 +28,9 @@ export function TagFilter({ tags, selectedTagIds, onChangeTagIds }: TagFilterPro
       value={[...selectedTags]}
       onChange={(_, newValue) => onChangeTagIds(newValue.map((t) => t.id))}
       isOptionEqualToValue={(option, value) => option.id === value.id}
-      renderTags={(value, getTagProps) =>
+      renderValue={(value, getItemProps) =>
         value.map((option, index) => {
-          const { key, ...tagProps } = getTagProps({ index });
+          const { key, ...tagProps } = getItemProps({ index });
           return (
             <Chip
               key={key}

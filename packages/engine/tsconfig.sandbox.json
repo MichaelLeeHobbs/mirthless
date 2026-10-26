@@ -6,7 +6,8 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "composite": false
+    "composite": false,
+    "types": []
   },
   "include": ["sandbox-globals.d.ts", "examples/**/*.ts"]
 }

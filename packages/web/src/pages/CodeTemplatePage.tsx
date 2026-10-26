@@ -5,7 +5,7 @@
 
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
 import { useState, useCallback, type ReactNode } from 'react';
-import { useBlocker } from 'react-router-dom';
+import { useBlocker } from 'react-router';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -353,7 +353,9 @@ export function CodeTemplatePage(): ReactNode {
             />
           ) : (
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <Typography color="text.secondary">
+              <Typography sx={{
+                color: 'text.secondary'
+              }}>
                 Select a template from the library tree to edit it.
               </Typography>
             </Box>

@@ -42,14 +42,18 @@ export function TestConnectionButton({ connectorType, mode, properties }: TestCo
           {testMutation.data.success ? (
             <>
               <CheckCircleIcon color="success" fontSize="small" />
-              <Typography variant="body2" color="success.main">
+              <Typography variant="body2" sx={{
+                color: 'success.main'
+              }}>
                 Connected ({String(testMutation.data.latencyMs)}ms)
               </Typography>
             </>
           ) : (
             <>
               <ErrorIcon color="error" fontSize="small" />
-              <Typography variant="body2" color="error.main">
+              <Typography variant="body2" sx={{
+                color: 'error.main'
+              }}>
                 {testMutation.data.message}
               </Typography>
             </>
@@ -59,7 +63,9 @@ export function TestConnectionButton({ connectorType, mode, properties }: TestCo
       {testMutation.isError ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <ErrorIcon color="error" fontSize="small" />
-          <Typography variant="body2" color="error.main">
+          <Typography variant="body2" sx={{
+            color: 'error.main'
+          }}>
             {testMutation.error.message}
           </Typography>
         </Box>

@@ -19,20 +19,22 @@ vi.mock('../../config/index.js', () => ({ config: cfg }));
 
 vi.mock('@mirthless/engine', () => ({
   ChannelRuntime: vi.fn(),
-  VmSandboxExecutor: vi.fn().mockImplementation(() => ({ execute: vi.fn(), dispose: vi.fn() })),
+  VmSandboxExecutor: vi.fn().mockImplementation(function () { return { execute: vi.fn(), dispose: vi.fn() }; }),
   MessageProcessor: vi.fn(),
   DEFAULT_EXECUTION_OPTIONS: {},
   GlobalChannelMap: vi.fn(),
-  GlobalMapProxy: vi.fn().mockImplementation(() => ({ load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) })),
+  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
   compileScript: vi.fn(),
   compileFilterRulesToScript: vi.fn(),
   compileTransformerStepsToScript: vi.fn(),
   prependTemplates: vi.fn(),
   AlertManager: vi.fn(),
   QueueConsumer: vi.fn(),
-  RecoveryManager: vi.fn().mockImplementation(() => ({
-    recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
-  })),
+  RecoveryManager: vi.fn().mockImplementation(function () {
+    return {
+      recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
+    };
+  }),
 }));
 
 vi.mock('@mirthless/connectors', () => ({

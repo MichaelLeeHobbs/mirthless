@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { ThemeProvider } from '@mui/material/styles';
 import { darkTheme } from '../../styles/theme.js';
 
@@ -59,7 +59,7 @@ describe('AlertsPage', () => {
 
   it('toggles an alert with one click on its switch', () => {
     renderPage();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Disable Lab feed errors' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Disable Lab feed errors' }));
     expect(toggleMutate).toHaveBeenCalledWith({ id: 'a1', enabled: false });
   });
 
@@ -96,6 +96,6 @@ describe('AlertsPage', () => {
     expect(screen.queryByLabelText('Edit alert')).toBeNull();
     expect(screen.queryByLabelText('Delete alert')).toBeNull();
     expect(screen.queryByRole('link', { name: 'Lab feed errors' })).toBeNull();
-    expect((screen.getByRole('checkbox', { name: 'Disable Lab feed errors' }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('switch', { name: 'Disable Lab feed errors' }) as HTMLInputElement).disabled).toBe(true);
   });
 });

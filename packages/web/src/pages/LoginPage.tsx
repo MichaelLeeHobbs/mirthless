@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router';
 import { useForm } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -90,7 +90,9 @@ export function LoginPage(): ReactNode {
           >
             Mirthless
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             Healthcare Integration Engine
           </Typography>
         </Box>

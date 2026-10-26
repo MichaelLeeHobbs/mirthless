@@ -51,7 +51,12 @@ export function EmptyState({ icon, title, description, action, dense }: EmptySta
         {title}
       </Typography>
       {description ? (
-        <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 420 }}>
+        <Typography
+          variant="body2"
+          sx={{
+            color: 'text.secondary',
+            maxWidth: 420
+          }}>
           {description}
         </Typography>
       ) : null}

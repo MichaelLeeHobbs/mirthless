@@ -89,19 +89,14 @@ export function CertificateSelect({
         );
       }}
       renderInput={(params) => {
-        const { InputLabelProps, InputProps, ...rest } = params;
         return (
           <TextField
-            {...rest}
+            {...params}
             size="medium"
             label={label}
             required={required}
             error={error}
             helperText={helperText}
-            slotProps={{
-              inputLabel: InputLabelProps,
-              input: InputProps as Record<string, unknown>,
-            }}
           />
         );
       }}

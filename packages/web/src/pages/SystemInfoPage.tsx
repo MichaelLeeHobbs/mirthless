@@ -51,8 +51,12 @@ function MemoryBar({ label, used, total }: MemoryBarProps): ReactNode {
   return (
     <Box sx={{ mb: 2 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-        <Typography variant="body2" color="text.secondary">{label}</Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>{label}</Typography>
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
           {formatBytes(used)} / {formatBytes(total)} ({percent.toFixed(1)}%)
         </Typography>
       </Box>
@@ -69,7 +73,9 @@ interface InfoRowProps {
 function InfoRow({ label, value }: InfoRowProps): ReactNode {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.75 }}>
-      <Typography variant="body2" color="text.secondary">{label}</Typography>
+      <Typography variant="body2" sx={{
+        color: 'text.secondary'
+      }}>{label}</Typography>
       <Typography variant="body2" sx={{ fontFamily: FONT_FAMILY_MONO }}>{value}</Typography>
     </Box>
   );
@@ -100,7 +106,11 @@ export function SystemInfoPage(): ReactNode {
       {info && (
         <Grid container spacing={3}>
           {/* Server Info */}
-          <Grid item xs={12} md={6}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 6
+            }}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" sx={{ mb: 2 }}>Server</Typography>
               <InfoRow label="Version" value={info.server.version} />
@@ -112,11 +122,17 @@ export function SystemInfoPage(): ReactNode {
           </Grid>
 
           {/* Database Status */}
-          <Grid item xs={12} md={6}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 6
+            }}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" sx={{ mb: 2 }}>Database</Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography variant="body2" color="text.secondary">Status:</Typography>
+                <Typography variant="body2" sx={{
+                  color: 'text.secondary'
+                }}>Status:</Typography>
                 <Chip
                   label={info.database.connected ? 'Connected' : 'Disconnected'}
                   size="small"
@@ -127,7 +143,11 @@ export function SystemInfoPage(): ReactNode {
           </Grid>
 
           {/* Process Memory */}
-          <Grid item xs={12} md={6}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 6
+            }}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" sx={{ mb: 2 }}>Process Memory</Typography>
               <MemoryBar label="Heap" used={info.memory.heapUsed} total={info.memory.heapTotal} />
@@ -137,7 +157,11 @@ export function SystemInfoPage(): ReactNode {
           </Grid>
 
           {/* OS Memory */}
-          <Grid item xs={12} md={6}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 6
+            }}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" sx={{ mb: 2 }}>Operating System</Typography>
               <MemoryBar
@@ -151,39 +175,75 @@ export function SystemInfoPage(): ReactNode {
           </Grid>
 
           {/* Engine Stats */}
-          <Grid item xs={12}>
+          <Grid size={12}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" sx={{ mb: 2 }}>Engine</Typography>
               <Grid container spacing={2}>
-                <Grid item xs={6} sm={3}>
+                <Grid
+                  size={{
+                    xs: 6,
+                    sm: 3
+                  }}>
                   <Typography variant="h4" sx={{ fontWeight: 600, textAlign: 'center' }}>
                     {info.engine.deployed}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'text.secondary',
+                      textAlign: 'center'
+                    }}>
                     Deployed
                   </Typography>
                 </Grid>
-                <Grid item xs={6} sm={3}>
+                <Grid
+                  size={{
+                    xs: 6,
+                    sm: 3
+                  }}>
                   <Typography variant="h4" sx={{ fontWeight: 600, textAlign: 'center', color: 'success.main' }}>
                     {info.engine.started}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'text.secondary',
+                      textAlign: 'center'
+                    }}>
                     Started
                   </Typography>
                 </Grid>
-                <Grid item xs={6} sm={3}>
+                <Grid
+                  size={{
+                    xs: 6,
+                    sm: 3
+                  }}>
                   <Typography variant="h4" sx={{ fontWeight: 600, textAlign: 'center', color: 'error.main' }}>
                     {info.engine.stopped}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'text.secondary',
+                      textAlign: 'center'
+                    }}>
                     Stopped
                   </Typography>
                 </Grid>
-                <Grid item xs={6} sm={3}>
+                <Grid
+                  size={{
+                    xs: 6,
+                    sm: 3
+                  }}>
                   <Typography variant="h4" sx={{ fontWeight: 600, textAlign: 'center', color: 'warning.main' }}>
                     {info.engine.paused}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'text.secondary',
+                      textAlign: 'center'
+                    }}>
                     Paused
                   </Typography>
                 </Grid>
