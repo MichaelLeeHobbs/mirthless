@@ -78,9 +78,11 @@ Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside th
 - **DICOM is beta.** It has no TLS support yet.
 - **Not built yet:** extracting attachments from inbound messages, custom metadata columns, multi-threaded
   destination queues, and FTP/SMB/S3/WebDAV file transports. The UI no longer offers them.
-- **Email source:** if the post-action (mark read, delete or move) fails after an email was
-  processed, Mirthless will not process it again while running, but after a restart or
-  redeploy it can be processed a second time. The failure is logged as an error.
+- **Email source:** after processing an email, Mirthless sets the IMAP keyword
+  `$MirthlessDispatched` on it before the post-action (mark read, delete or move). If the
+  post-action fails, later polls, restarts and redeploys retry only the post-action. To
+  process such an email again, remove the keyword. A mailbox that rejects custom keywords
+  (a warning is logged once) can still reprocess an email after a restart if its post-action failed.
 - **Batch files** are ingested as one message. A file with several MSH segments is not
   split.
 - Migration 0007 drops message history on upgrade from installs that predate it; see

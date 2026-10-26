@@ -25,7 +25,10 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
 - **Seed:** demo content needs `SEED_DEMO_DATA=true`. (D-188)
 - **Socket.IO:** connections are revalidated (logout, disabled user, forced password change,
   permissions) on join and every 60s.
-- **Email receiver:** a failed post-action no longer re-dispatches the email.
+- **Email receiver:** a failed post-action no longer re-dispatches the email, including after a
+  restart: a dispatched email carries the IMAP keyword `$MirthlessDispatched`. A move to a missing
+  folder or a refused flag change was reported as success (imapflow resolves `false`), so the
+  email was dispatched again on every poll; it is now an error. (D-195)
 - **routeMessage:** the loop guard counts hops per message chain (AsyncLocalStorage), not engine-wide.
 - **UI honesty:** removed controls the engine ignores (remove attachments on completion, custom
   metadata columns, Attachments tab, extension enable toggle, queue thread count, rotate queue). (D-189)
@@ -41,7 +44,8 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
   added `$cfg`, `$c`, `$co`, `$s`. The shipped typings declared `$c`/`$g`/`$gc` as maps, so typed
   scripts compiled against shortcuts that did not exist; they are now functions. (D-191)
 - **Startup order:** `autoDeployChannels` deploys channels after the channels they depend on
-  (topological sort of `channel_dependencies`); it was list order.
+  (topological sort of `channel_dependencies`); it was list order. If the dependencies can't be
+  loaded, nothing is auto-deployed and an error is logged. (D-194)
 - **Silent-interface alert:** new `NO_MESSAGES` alert trigger fires when a started channel has
   received nothing for N minutes (checked every 30s; once per silence, repeating at the re-alert
   interval). Backup/restore carries it, and restore now keeps CHANNEL alert actions' target channel
