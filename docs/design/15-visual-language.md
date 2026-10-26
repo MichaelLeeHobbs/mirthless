@@ -53,6 +53,12 @@ This doc is the rulebook. The values live in code; the rules below say how to us
 - **Every page starts with `PageHeader`**: title, one line saying what the page is for, primary actions on the right. One primary (contained) button per page; the rest are outlined.
 - **States are not blank space.** Loading uses `TableSkeleton` or `LoadingBlock`, empty uses `EmptyState` with the next action, and failure uses `ErrorState` with retry. A failed request must never look like "no data".
 - **Admin lists** are a table inside a Paper, with row actions as icon buttons with tooltips. A disabled action's tooltip says which permission it needs.
+  - The row's name links to its editor, so opening an item is one click.
+  - An "Enabled" column is a small `Switch` (one click, with an `aria-label` naming the row). It is never a coloured "Enabled/Disabled" or "Yes/No" chip.
+  - Row icon buttons are neutral, including delete. The red belongs on the confirm button in `ConfirmDialog`.
+  - Show `TablePagination` only when the list has more than one page at the smallest page size. A three-row list has no pager.
+- **Labels are words, not enums.** Show server identifiers (`CHANNEL_ERROR`, `USER_LOGIN`, `admin`, `STARTED`) through `humanize()` in `lib/format.ts`, so they read "Channel error", "User login", "Admin", "Started". Status chips do this for you.
+- **Detail pages** put their breadcrumbs in `PageHeader`'s `overline` and their primary action in `actions`. The breadcrumb is the way back, so don't add a separate "Back to ..." button.
 - **Phones (under 900px, MUI `md`)**: the sidebar is an overlay that starts closed, and pages scroll vertically with no horizontal page scroll. Wide tables scroll inside their own container.
 
 ### Interaction

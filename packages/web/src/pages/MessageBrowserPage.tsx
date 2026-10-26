@@ -6,15 +6,13 @@
 // WebSocket events refresh the message list in real time.
 
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import CircularProgress from '@mui/material/CircularProgress';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -28,6 +26,7 @@ import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
 import { BulkMessageActionsToolbar } from '../components/messages/BulkMessageActionsToolbar.js';
 import { useReprocessMessage, useBulkDeleteMessages } from '../hooks/use-message-actions.js';
 import { useMessageExport, type ExportFormat } from '../hooks/use-message-export.js';
+import { PageHeader } from '../components/common/PageHeader.js';
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { LoadingBlock } from '../components/common/states/LoadingState.js';
@@ -38,7 +37,6 @@ import { PERMISSION } from '../lib/permissions.js';
 
 export function MessageBrowserPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParamsUrl] = useSearchParams();
   const channelId = id ?? '';
@@ -191,24 +189,19 @@ export function MessageBrowserPage(): ReactNode {
 
   return (
     <Box>
-      <PageBreadcrumbs items={[
-        { label: 'Dashboard', href: '/' },
-        { label: channel?.name ?? 'Channel' },
-        { label: 'Messages' },
-      ]} />
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+      <PageHeader
+        overline={
+          <PageBreadcrumbs items={[
+            { label: 'Dashboard', href: '/' },
+            { label: channel?.name ?? 'Channel', href: `/channels/${channelId}` },
+            { label: 'Messages' },
+          ]} />
+        }
+        title={channel ? `${channel.name} messages` : 'Messages'}
+        description="Search, inspect, reprocess and export what this channel received."
+        actions={<>
         <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={() => navigate('/')}
-          size="small"
-        >
-          Back to Dashboard
-        </Button>
-        <Typography variant="h5" component="h1" sx={{ fontWeight: 600, flexGrow: 1 }}>
-          Messages: {channel?.name ?? 'Loading...'}
-        </Typography>
-        <Button
-          size="small"
+          variant="outlined"
           startIcon={isExporting ? <CircularProgress size={16} /> : <DownloadIcon />}
           disabled={isExporting}
           aria-haspopup="menu"
@@ -229,7 +222,7 @@ export function MessageBrowserPage(): ReactNode {
             <Tooltip title={canReprocess ? '' : 'Requires channels:deploy permission'}>
               <span>
                 <Button
-                  size="small"
+                  variant="outlined"
                   startIcon={<ReplayIcon />}
                   disabled={reprocessMutation.isPending || !canReprocess}
                   onClick={() => { setConfirmReprocessOpen(true); }}
@@ -241,7 +234,7 @@ export function MessageBrowserPage(): ReactNode {
             <Tooltip title={canDelete ? '' : 'Requires channels:delete permission'}>
               <span>
                 <Button
-                  size="small"
+                  variant="outlined"
                   color="error"
                   startIcon={<DeleteIcon />}
                   disabled={bulkDeleteMutation.isPending || !canDelete}
@@ -253,7 +246,8 @@ export function MessageBrowserPage(): ReactNode {
             </Tooltip>
           </>
         ) : null}
-      </Box>
+        </>}
+      />
 
       <MessageSearchBar
         receivedFrom={receivedFrom}

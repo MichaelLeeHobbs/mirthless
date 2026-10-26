@@ -6,7 +6,6 @@
 import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
-import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
@@ -22,6 +21,7 @@ import type { GenerateMessagesInput } from '@mirthless/core-models';
 import Editor from '@monaco-editor/react';
 import { useUiStore } from '../stores/ui.store.js';
 import { useGenerateMessages } from '../hooks/use-message-generator.js';
+import { PageHeader } from '../components/common/PageHeader.js';
 
 const MESSAGE_TYPE_OPTIONS = [
   { value: 'ADT_A01', label: 'ADT^A01 — Admit/Visit' },
@@ -62,13 +62,14 @@ export function MessageGeneratorPage(): ReactNode {
 
   return (
     <Box>
-      <Typography variant="h5" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
-        Message Generator
-      </Typography>
+      <PageHeader
+        title="Message Generator"
+        description="Generate synthetic HL7 test messages. The data is fake, so it is safe to share."
+      />
 
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <FormControl sx={{ minWidth: 240 }}>
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <FormControl size="small" sx={{ minWidth: 240 }}>
             <InputLabel>Message Type</InputLabel>
             <Select
               value={messageType}
@@ -83,6 +84,7 @@ export function MessageGeneratorPage(): ReactNode {
 
           <TextField
             label="Count"
+            size="small"
             type="number"
             value={count}
             onChange={(e) => { setCount(Math.min(100, Math.max(1, Number(e.target.value)))); }}
@@ -92,6 +94,7 @@ export function MessageGeneratorPage(): ReactNode {
 
           <TextField
             label="Seed (optional)"
+            size="small"
             type="number"
             value={seed}
             onChange={(e) => { setSeed(e.target.value); }}
@@ -119,7 +122,7 @@ export function MessageGeneratorPage(): ReactNode {
         <Paper sx={{ position: 'relative' }}>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 1 }}>
             <Tooltip title={copied ? 'Copied!' : 'Copy to clipboard'}>
-              <IconButton size="small" onClick={handleCopy}>
+              <IconButton size="small" aria-label="Copy messages" onClick={handleCopy}>
                 <ContentCopyIcon fontSize="small" />
               </IconButton>
             </Tooltip>

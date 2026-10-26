@@ -17,6 +17,7 @@ import TableRow from '@mui/material/TableRow';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Chip from '@mui/material/Chip';
+import Switch from '@mui/material/Switch';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
@@ -24,6 +25,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useChangePassword, useUnlockUser } from '../hooks/use-users.js';
 import { UserDialog, type UserFormData } from '../components/users/UserDialog.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { humanize } from '../lib/format.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
@@ -31,17 +33,6 @@ import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 import type { UserSummary } from '../api/client.js';
-
-const ROLE_COLORS: Readonly<Record<string, 'error' | 'warning' | 'info' | 'default'>> = {
-  admin: 'error',
-  deployer: 'warning',
-  developer: 'info',
-  viewer: 'default',
-};
-
-function roleChipColor(role: string): 'error' | 'warning' | 'info' | 'default' {
-  return ROLE_COLORS[role] ?? 'default';
-}
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return 'Never';
@@ -128,6 +119,12 @@ export function UsersPage(): ReactNode {
     }
   };
 
+  /** Why the enabled switch is locked for this user, or '' when it can be used. Disabling needs users:delete. */
+  const toggleBlockedReason = (user: UserSummary): string => {
+    if (user.enabled) return canDelete ? '' : 'Requires users:delete permission';
+    return canWrite ? '' : 'Requires users:write permission';
+  };
+
   const handleToggleEnabled = (user: UserSummary): void => {
     if (user.enabled) {
       // Disabling is destructive — confirm first.
@@ -196,19 +193,20 @@ export function UsersPage(): ReactNode {
                       {[user.firstName, user.lastName].filter(Boolean).join(' ') || '-'}
                     </TableCell>
                     <TableCell>
-                      <Chip
-                        label={user.role}
-                        color={roleChipColor(user.role)}
-                        size="small"
-                        variant="outlined"
-                      />
+                      <Chip label={humanize(user.role)} size="small" variant="outlined" />
                     </TableCell>
                     <TableCell align="center">
-                      <Chip
-                        label={user.enabled ? 'Yes' : 'No'}
-                        color={user.enabled ? 'success' : 'default'}
-                        size="small"
-                      />
+                      <Tooltip title={toggleBlockedReason(user)}>
+                        <span>
+                          <Switch
+                            size="small"
+                            checked={user.enabled}
+                            onChange={() => { handleToggleEnabled(user); }}
+                            disabled={toggleBlockedReason(user) !== ''}
+                            inputProps={{ 'aria-label': `${user.enabled ? 'Disable' : 'Enable'} ${user.username}` }}
+                          />
+                        </span>
+                      </Tooltip>
                     </TableCell>
                     <TableCell>{formatDate(user.lastLoginAt)}</TableCell>
                     <TableCell align="right">
@@ -216,19 +214,6 @@ export function UsersPage(): ReactNode {
                         <span>
                           <IconButton aria-label="Edit user" size="small" onClick={() => { handleOpenEdit(user); }} disabled={!canWrite}>
                             <EditIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title={user.enabled ? 'Disable' : 'Enable'}>
-                        <span>
-                          <IconButton
-                            aria-label={user.enabled ? 'Disable user' : 'Enable user'}
-                            size="small"
-                            onClick={() => { handleToggleEnabled(user); }}
-                            color={user.enabled ? 'default' : 'success'}
-                            disabled={user.enabled ? !canDelete : !canWrite}
-                          >
-                            <Chip label={user.enabled ? 'Disable' : 'Enable'} size="small" variant="outlined" />
                           </IconButton>
                         </span>
                       </Tooltip>

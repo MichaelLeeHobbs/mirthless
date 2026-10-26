@@ -97,7 +97,7 @@ export function HeadersEditor({ value, onChange, label = 'Headers' }: HeadersEdi
             size="small"
             sx={{ flex: 2 }}
           />
-          <IconButton size="small" color="error" onClick={handleRemove(index)} aria-label="remove header">
+          <IconButton size="small" onClick={handleRemove(index)} aria-label="remove header">
             <DeleteIcon fontSize="small" />
           </IconButton>
         </Box>

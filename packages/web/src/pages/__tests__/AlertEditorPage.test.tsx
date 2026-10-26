@@ -101,8 +101,8 @@ describe('AlertEditorPage (create mode)', () => {
   it('toggles an error-event-type checkbox in the trigger section', () => {
     renderPage();
     // Default trigger has errorTypes: ['ANY'] -> ANY checked, others not.
-    const any = screen.getByRole('checkbox', { name: 'ANY' }) as HTMLInputElement;
-    const src = screen.getByRole('checkbox', { name: 'SOURCE CONNECTOR' }) as HTMLInputElement;
+    const any = screen.getByRole('checkbox', { name: 'Any' }) as HTMLInputElement;
+    const src = screen.getByRole('checkbox', { name: 'Source connector' }) as HTMLInputElement;
     expect(any.checked).toBe(true);
     expect(src.checked).toBe(false);
 

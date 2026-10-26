@@ -11,7 +11,6 @@ import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
@@ -31,6 +30,7 @@ import { TriggerSection, buildTriggerPayload, type TriggerFormValues } from '../
 import { ChannelsSection } from '../components/alerts/ChannelsSection.js';
 import { ActionsSection, type ActionFormValues } from '../components/alerts/ActionsSection.js';
 import { TemplatesSection, type TemplateFormValues } from '../components/alerts/TemplatesSection.js';
+import { PageHeader } from '../components/common/PageHeader.js';
 import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 
 // ----- Form Data -----
@@ -258,37 +258,30 @@ export function AlertEditorPage(): ReactNode {
     );
   }
 
-  const pageTitle = isEditMode ? `Edit: ${nameValue || 'Alert'}` : 'New Alert';
+  const pageTitle = isEditMode ? (nameValue || 'Alert') : 'New Alert';
 
   return (
     <Box>
-      <PageBreadcrumbs items={[
-        { label: 'Alerts', href: '/alerts' },
-        { label: isEditMode ? (nameValue || 'Edit Alert') : 'New Alert' },
-      ]} />
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, overflow: 'hidden' }}>
-        <IconButton onClick={() => { navigate('/alerts'); }} aria-label="back to alerts" sx={{ flexShrink: 0 }}>
-          <ArrowBackIcon />
-        </IconButton>
-        <Typography
-          variant="h5"
-          component="h1"
-          title={pageTitle}
-          sx={{ fontWeight: 600, flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}
-        >
-          {pageTitle}
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
-          disabled={isSaving || (!isDirty && isEditMode)}
-          onClick={handleSubmit(onSubmit)}
-          sx={{ flexShrink: 0 }}
-        >
-          {isEditMode ? 'Save' : 'Create'}
-        </Button>
-      </Box>
+      <PageHeader
+        overline={
+          <PageBreadcrumbs items={[
+            { label: 'Alerts', href: '/alerts' },
+            { label: isEditMode ? (nameValue || 'Edit Alert') : 'New Alert' },
+          ]} />
+        }
+        title={pageTitle}
+        description="Choose what triggers the alert, which channels it watches and who it notifies."
+        actions={
+          <Button
+            variant="contained"
+            startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
+            disabled={isSaving || (!isDirty && isEditMode)}
+            onClick={handleSubmit(onSubmit)}
+          >
+            {isEditMode ? 'Save' : 'Create'}
+          </Button>
+        }
+      />
 
       {/* Status messages */}
       {saveError ? (

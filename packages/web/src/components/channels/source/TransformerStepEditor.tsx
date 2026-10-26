@@ -151,7 +151,7 @@ export function TransformerStepEditor({
           <IconButton size="small" onClick={onMoveDown} disabled={index === total - 1} title="Move down">
             <ArrowDownwardIcon fontSize="small" />
           </IconButton>
-          <IconButton size="small" onClick={onRemove} color="error" title="Remove step">
+          <IconButton size="small" onClick={onRemove} title="Remove step">
             <DeleteIcon fontSize="small" />
           </IconButton>
         </Box>

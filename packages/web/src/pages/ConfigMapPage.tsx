@@ -188,7 +188,7 @@ export function ConfigMapPage(): ReactNode {
                       </Tooltip>
                       <Tooltip title={canWrite ? 'Delete' : 'Requires config_map:write permission'}>
                         <span>
-                          <IconButton aria-label="Delete entry" size="small" color="error" onClick={() => setDeleteTarget({ category: entry.category, name: entry.name })} disabled={!canWrite}>
+                          <IconButton aria-label="Delete entry" size="small" onClick={() => setDeleteTarget({ category: entry.category, name: entry.name })} disabled={!canWrite}>
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </span>

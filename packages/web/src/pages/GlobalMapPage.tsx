@@ -172,7 +172,7 @@ export function GlobalMapPage(): ReactNode {
                       </Tooltip>
                       <Tooltip title={canWrite ? 'Delete' : 'Requires global_map:write permission'}>
                         <span>
-                          <IconButton aria-label="Delete entry" size="small" color="error" onClick={() => setDeleteTarget(entry.key)} disabled={!canWrite}>
+                          <IconButton aria-label="Delete entry" size="small" onClick={() => setDeleteTarget(entry.key)} disabled={!canWrite}>
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </span>
