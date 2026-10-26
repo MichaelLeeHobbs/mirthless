@@ -27,7 +27,7 @@ Mirthless keeps what works (channels, transformers, filters, the pipeline model)
 ## Quick Start
 
 ```bash
-# Prerequisites: Node.js 22+, PostgreSQL 17, pnpm 9+
+# Prerequisites: Node.js 24+, PostgreSQL 17, pnpm 12+
 
 # Clone and install
 git clone https://github.com/MichaelLeeHobbs/mirthless.git

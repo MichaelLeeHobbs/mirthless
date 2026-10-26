@@ -42,41 +42,20 @@
     "soak": "node scripts/soak.mjs"
   },
   "devDependencies": {
-    "@eslint/js": "9.17.0",
-    "@playwright/test": "^1.58.2",
-    "@typescript-eslint/eslint-plugin": "8.18.2",
-    "@typescript-eslint/parser": "8.18.2",
-    "eslint": "9.17.0",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "^1.64.1",
+    "@typescript-eslint/eslint-plugin": "8.72.1",
+    "@typescript-eslint/parser": "8.72.1",
+    "eslint": "10.13.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "prettier": "3.4.2",
-    "typescript": "5.7.2",
-    "typescript-eslint": "8.18.2"
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
   },
   "engines": {
-    "node": ">=22.0.0",
-    "pnpm": ">=9.0.0"
+    "node": ">=24.0.0",
+    "pnpm": ">=12.0.0"
   },
-  "packageManager": "pnpm@9.15.1",
-  "pnpm": {
-    "comment": "Security overrides — bounded to the current major so we only take the patch. adm-zip is pinned to 0.6.1 under dcmjs, which declares it but never imports it.",
-    "overrides": {
-      "express-rate-limit@8": ">=8.2.2 <9",
-      "socket.io-parser@4": ">=4.2.7 <5",
-      "fast-xml-parser@5": ">=5.10.1 <6",
-      "path-to-regexp@<1": "0.1.13",
-      "ws@8": ">=8.20.1 <9",
-      "yaml@1": ">=1.10.3 <2",
-      "dompurify@3": ">=3.4.17 <4",
-      "qs@6": ">=6.14.2 <7",
-      "proxy-addr@2": ">=2.0.8 <3",
-      "engine.io@6": ">=6.6.10 <7",
-      "compression@1": ">=1.8.2 <2",
-      "body-parser@1": ">=1.20.9 <2",
-      "ip-address@10": ">=10.3.1 <11",
-      "adm-zip@0.5": "0.6.1",
-      "react-router@6": ">=6.30.4 <7",
-      "react-router-dom@6": ">=6.30.4 <7"
-    }
-  }
+  "packageManager": "pnpm@12.15.0"
 }

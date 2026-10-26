@@ -1,6 +1,6 @@
 # Stage 1: Base with pnpm
-FROM node:22-alpine AS base
-RUN corepack enable && corepack prepare pnpm@9.15.1 --activate
+FROM node:24-alpine AS base
+RUN corepack enable && corepack prepare pnpm@12.15.0 --activate
 WORKDIR /app
 
 # Stage 2: Install dependencies

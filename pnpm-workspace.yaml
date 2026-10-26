@@ -1,2 +1,42 @@
 packages:
   - 'packages/*'
+
+# Dependencies allowed to run install scripts. Everything else is denied.
+allowBuilds:
+  esbuild: true
+  isolated-vm: true
+  cpu-features: true
+  ssh2: true
+  '@scarf/scarf': false
+  core-js-pure: false
+
+# Security overrides — bounded to the current major so we only take the patch.
+# adm-zip is pinned to 0.6.1 under dcmjs, which declares it but never imports it.
+minimumReleaseAgeExclude:
+  - '@tanstack/query-core@5.105.0'
+  - '@tanstack/react-query@5.105.0'
+  - '@typescript-eslint/eslint-plugin@8.72.1'
+  - '@typescript-eslint/parser@8.72.1'
+  - '@typescript-eslint/project-service@8.72.1'
+  - '@typescript-eslint/scope-manager@8.72.1'
+  - '@typescript-eslint/tsconfig-utils@8.72.1'
+  - '@typescript-eslint/type-utils@8.72.1'
+  - '@typescript-eslint/types@8.72.1'
+  - '@typescript-eslint/typescript-estree@8.72.1'
+  - '@typescript-eslint/utils@8.72.1'
+  - '@typescript-eslint/visitor-keys@8.72.1'
+  - typescript-eslint@8.72.1
+
+overrides:
+  express-rate-limit@8: '>=8.2.2 <9'
+  socket.io-parser@4: '>=4.2.7 <5'
+  fast-xml-parser@5: '>=5.10.1 <6'
+  ws@8: '>=8.20.1 <9'
+  yaml@1: '>=1.10.3 <2'
+  dompurify@3: '>=3.4.17 <4'
+  qs@6: '>=6.14.2 <7'
+  proxy-addr@2: '>=2.0.8 <3'
+  engine.io@6: '>=6.6.10 <7'
+  compression@1: '>=1.8.2 <2'
+  ip-address@10: '>=10.7.4 <11'
+  adm-zip@0.5: 0.6.1

@@ -2,10 +2,13 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    include: ['src/**/*.test.ts'],
     passWithNoTests: true,
     coverage: {
-      // Minimums set 1 point under coverage on 2026-10-09; raise toward the 95% target (D-193).
-      thresholds: { statements: 15, branches: 74, functions: 63, lines: 15 },
+      include: ['src/**/*.ts'],
+      // Minimums set ~1 point under coverage on 2026-10-26, re-measured after the
+      // Vitest 5 upgrade changed how V8 coverage is counted; raise toward the 95% target (D-193).
+      thresholds: { statements: 13, branches: 6, functions: 37, lines: 13 },
     },
   },
 });
