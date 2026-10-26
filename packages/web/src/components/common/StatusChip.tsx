@@ -11,9 +11,10 @@ import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import { alpha, useTheme } from '@mui/material/styles';
 import { channelStateLevel, messageStatusLevel, type StatusLevel } from '../../lib/status.js';
+import { humanize } from '../../lib/format.js';
 
 interface StatusChipProps {
-  /** Display label, e.g. "STARTED" or "SENT". */
+  /** Display label in sentence case, e.g. "Started" or "Sent". */
   readonly label: string;
   /** Semantic level; drives the colour. */
   readonly level: StatusLevel;
@@ -83,10 +84,10 @@ export function StatusDot({ level, title, size = 8 }: StatusDotProps): ReactNode
 
 /** Convenience: render a channel deployment state as a StatusChip. */
 export function ChannelStateChip({ state }: { readonly state: string }): ReactNode {
-  return <StatusChip label={state} level={channelStateLevel(state)} />;
+  return <StatusChip label={humanize(state)} level={channelStateLevel(state)} />;
 }
 
 /** Convenience: render a message/connector status as a StatusChip. */
 export function MessageStatusChip({ status }: { readonly status: string }): ReactNode {
-  return <StatusChip label={status} level={messageStatusLevel(status)} />;
+  return <StatusChip label={humanize(status)} level={messageStatusLevel(status)} />;
 }

@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-26 — Uniform pages, Ctrl+K command bar, agent practices (branch `claude/project-thread-2z3cpi`, second PR)
+
+Michael: the look is good but not uniform (Alerts stood out), keep it minimal and modern, minimise clicks, add a jump-to command bar, and start the agent practices from the VNS repos (D-200).
+
+- **Uniform pages.** `humanize()` (`lib/format.ts`) turns enums into words everywhere, including status chips ("Started", "Channel error", "User login"). Admin lists share one pattern: the name links to the editor, "Enabled" is a one-click switch, row icons are neutral, delete confirms in `ConfirmDialog`, and the pager hides on short lists. Applied to Alerts, Users, Events (level/outcome now `StatusChip`), Config/Global Map and the channel editor's remove buttons. The alert editor, message browser and message generator use `PageHeader` (breadcrumbs as the way back, no separate back buttons). Rules added to `docs/design/15-visual-language.md`.
+- **Ctrl+K / ⌘K "Jump to".** Header search-box button (icon on phones) and shortcut open a palette of pages, channels (editor and messages) and actions (create channel/alert, theme, shortcuts), gated like the sidebar. Ranking in `lib/command-search.ts`; nav items moved to `components/layout/nav-items.tsx` so the sidebar and palette share them.
+- **Agent practices.** `AGENTS.md` is the source (CLAUDE.md imports it) with a working agreement and verification matrix; `pnpm gate` (build, lint, tests with coverage) is what CI runs; `verify-and-finish` and `write-tests` skills; `.claude/settings.json` permissions plus a cloud SessionStart install hook and a schema-change migration reminder.
+- `pnpm shots` covers all 22 pages plus the command palette.
+- Not done yet: a coverage map of `docs/testing/` manual scenarios against automated tests, and porting the highest-value scenarios to Playwright.
+
 ## 2026-10-26 — Upgrade every dependency to latest (branch `claude/project-thread-3l3i6d`)
 
 - **Toolchain:** Node 24 LTS (isolated-vm 7 and jsdom 30 require it) and pnpm 12. pnpm settings

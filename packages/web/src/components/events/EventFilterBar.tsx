@@ -9,6 +9,7 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import Select, { type SelectChangeEvent } from '@mui/material/Select';
+import { humanize } from '../../lib/format.js';
 
 export interface EventFilters {
   readonly level: string;
@@ -54,7 +55,7 @@ export function EventFilterBar({ filters, onFilterChange }: EventFilterBarProps)
         <Select value={filters.level} label="Level" onChange={handleLevelChange}>
           <MenuItem value="">All</MenuItem>
           {EVENT_LEVELS.filter((l) => l !== '').map((level) => (
-            <MenuItem key={level} value={level}>{level}</MenuItem>
+            <MenuItem key={level} value={level}>{humanize(level)}</MenuItem>
           ))}
         </Select>
       </FormControl>
@@ -64,7 +65,7 @@ export function EventFilterBar({ filters, onFilterChange }: EventFilterBarProps)
         <Select value={filters.name} label="Event Name" onChange={handleNameChange}>
           <MenuItem value="">All</MenuItem>
           {EVENT_NAMES.filter((n) => n !== '').map((name) => (
-            <MenuItem key={name} value={name}>{name.replace(/_/g, ' ')}</MenuItem>
+            <MenuItem key={name} value={name}>{humanize(name)}</MenuItem>
           ))}
         </Select>
       </FormControl>
@@ -74,7 +75,7 @@ export function EventFilterBar({ filters, onFilterChange }: EventFilterBarProps)
         <Select value={filters.outcome} label="Outcome" onChange={handleOutcomeChange}>
           <MenuItem value="">All</MenuItem>
           {EVENT_OUTCOMES.filter((o) => o !== '').map((outcome) => (
-            <MenuItem key={outcome} value={outcome}>{outcome}</MenuItem>
+            <MenuItem key={outcome} value={outcome}>{humanize(outcome)}</MenuItem>
           ))}
         </Select>
       </FormControl>

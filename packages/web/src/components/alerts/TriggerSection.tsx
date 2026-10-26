@@ -13,6 +13,7 @@ import FormGroup from '@mui/material/FormGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Checkbox from '@mui/material/Checkbox';
 import { ERROR_EVENT_TYPES, type AlertTriggerInput } from '@mirthless/core-models';
+import { humanize } from '../../lib/format.js';
 
 export type TriggerType = 'CHANNEL_ERROR' | 'NO_MESSAGES';
 
@@ -101,7 +102,7 @@ function ChannelErrorFields({ values, onChange }: TriggerSectionProps): ReactNod
   return (
     <>
       <Typography variant="subtitle2" gutterBottom>Error Event Types</Typography>
-      <FormGroup sx={{ mb: 2 }}>
+      <FormGroup row sx={{ mb: 2, columnGap: 1 }}>
         {ERROR_EVENT_TYPES.map((eventType) => (
           <FormControlLabel
             key={eventType}
@@ -112,7 +113,7 @@ function ChannelErrorFields({ values, onChange }: TriggerSectionProps): ReactNod
                 size="small"
               />
             }
-            label={eventType.replace(/_/g, ' ')}
+            label={humanize(eventType)}
           />
         ))}
       </FormGroup>

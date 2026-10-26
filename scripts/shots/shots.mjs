@@ -24,7 +24,11 @@ import { route } from './fixture.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-/** Pages to shoot: name → route. Add one when a page joins the visual language catalog. */
+/**
+ * Pages to shoot: name → route, or { url, keys, type } to press keys and type
+ * after load (for dialogs like the command palette). Add one when a page joins
+ * the visual language catalog.
+ */
 const PAGES = {
   login: '/login',
   dashboard: '/',
@@ -48,6 +52,7 @@ const PAGES = {
   certificates: '/certificates',
   extensions: '/extensions',
   'message-generator': '/tools/message-generator',
+  'jump-to': { url: '/', keys: 'Control+k', type: 'ad' },
 };
 
 const VARIANTS = {
@@ -87,7 +92,8 @@ async function launch() {
   }
 }
 
-async function shoot(browser, name, url, variantName) {
+async function shoot(browser, name, target, variantName) {
+  const { url, keys, type } = typeof target === 'string' ? { url: target } : target;
   const v = VARIANTS[variantName];
   const context = await browser.newContext({
     viewport: v.viewport, isMobile: v.isMobile ?? false, deviceScaleFactor: v.deviceScaleFactor ?? 1, reducedMotion: 'reduce',
@@ -112,6 +118,9 @@ async function shoot(browser, name, url, variantName) {
   }, [signedIn ? AUTH : null, v.mode]);
   await page.goto(opts.base + url, { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);
+  if (keys) await page.keyboard.press(keys);
+  if (type) await page.keyboard.type(type);
+  if (keys || type) await page.waitForTimeout(300);
   const file = path.join(opts.out, `${name}.${variantName}.png`);
   await page.screenshot({ path: file });
   await context.close();

@@ -17,8 +17,8 @@ describe('StatusChip', () => {
   afterEach(() => { cleanup(); });
 
   it('renders the label text so state is never colour-alone', () => {
-    renderThemed(<StatusChip label="STARTED" level="healthy" />);
-    expect(screen.getByText('STARTED')).toBeTruthy();
+    renderThemed(<StatusChip label="Started" level="healthy" />);
+    expect(screen.getByText('Started')).toBeTruthy();
   });
 
   it('exposes a status role for assistive tech', () => {
@@ -39,13 +39,13 @@ describe('StatusDot', () => {
 describe('ChannelStateChip / MessageStatusChip', () => {
   afterEach(() => { cleanup(); });
 
-  it('renders the channel state label', () => {
+  it('renders the channel state as a sentence-case label', () => {
     renderThemed(<ChannelStateChip state="STOPPED" />);
-    expect(screen.getByText('STOPPED')).toBeTruthy();
+    expect(screen.getByText('Stopped')).toBeTruthy();
   });
 
-  it('renders the message status label', () => {
+  it('renders the message status as a sentence-case label', () => {
     renderThemed(<MessageStatusChip status="SENT" />);
-    expect(screen.getByText('SENT')).toBeTruthy();
+    expect(screen.getByText('Sent')).toBeTruthy();
   });
 });

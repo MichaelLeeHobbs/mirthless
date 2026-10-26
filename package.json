@@ -12,6 +12,7 @@
     "build": "pnpm run -r build",
     "lint": "eslint packages --max-warnings 0",
     "lint:fix": "eslint packages --max-warnings 0 --fix",
+    "gate": "pnpm build && pnpm lint && pnpm test:coverage",
     "clean": "pnpm run -r clean",
 
     "------------ Testing ------------": "",

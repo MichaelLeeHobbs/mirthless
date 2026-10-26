@@ -141,6 +141,7 @@ const page = (data) => ({ data, pagination: { page: 1, pageSize: 25, total: data
 /** The `data` to answer a GET with; `undefined` answers an empty list. */
 export function route(pathname, search) {
   const p = pathname.replace(/^\/api\/v1/, '');
+  if (p === '/channels') return { data: CHANNELS.map(([id, name]) => ({ id, name })), pagination: { page: 1, pageSize: 100, total: CHANNELS.length, totalPages: 1 } };
   if (p === '/channels/statistics') return stats;
   if (p === '/channels/status') return status;
   if (p === '/channels/c1') return channelDetail;

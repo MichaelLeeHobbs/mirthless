@@ -15,7 +15,6 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import TablePagination from '@mui/material/TablePagination';
-import Chip from '@mui/material/Chip';
 import Collapse from '@mui/material/Collapse';
 import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
@@ -41,23 +40,15 @@ import { PERMISSION } from '../lib/permissions.js';
 import { useEventExport } from '../hooks/use-event-export.js';
 import { EventFilterBar, type EventFilters } from '../components/events/EventFilterBar.js';
 import { EventDetailPanel } from '../components/events/EventDetailPanel.js';
+import { StatusChip } from '../components/common/StatusChip.js';
+import { eventLevelLevel, eventOutcomeLevel } from '../lib/status.js';
+import { humanize } from '../lib/format.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import type { EventSummary } from '../api/client.js';
 import { FONT_FAMILY_MONO } from '../styles/tokens.js';
-
-const LEVEL_COLORS: Record<string, 'info' | 'warning' | 'error'> = {
-  INFO: 'info',
-  WARN: 'warning',
-  ERROR: 'error',
-};
-
-const OUTCOME_COLORS: Record<string, 'success' | 'error'> = {
-  SUCCESS: 'success',
-  FAILURE: 'error',
-};
 
 export function EventsPage(): ReactNode {
   const [page, setPage] = useState(0);
@@ -187,24 +178,15 @@ export function EventsPage(): ReactNode {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Chip
-                        label={event.level}
-                        color={LEVEL_COLORS[event.level] ?? 'default'}
-                        size="small"
-                        variant="outlined"
-                      />
+                      <StatusChip label={humanize(event.level)} level={eventLevelLevel(event.level)} />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                        {event.name.replace(/_/g, ' ')}
+                        {humanize(event.name)}
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Chip
-                        label={event.outcome}
-                        color={OUTCOME_COLORS[event.outcome] ?? 'default'}
-                        size="small"
-                      />
+                      <StatusChip label={humanize(event.outcome)} level={eventOutcomeLevel(event.outcome)} />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.7rem' }}>
@@ -240,7 +222,7 @@ export function EventsPage(): ReactNode {
             )}
           </TableBody>
         </Table>
-        {data && data.pagination.total > 0 ? (
+        {data && data.pagination.total > 10 ? (
           <TablePagination
             component="div"
             count={data.pagination.total}

@@ -64,3 +64,27 @@ describe('AppLayout navigation drawer', () => {
     expect(screen.getByText('Dashboard')).toBeTruthy();
   });
 });
+
+describe('AppLayout jump-to command bar', () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('opens from the header button', () => {
+    setViewport(false);
+    renderLayout();
+    fireEvent.click(screen.getByRole('button', { name: /Jump to a page or action/ }));
+    expect(screen.getByRole('combobox', { name: 'Jump to' })).toBeTruthy();
+  });
+
+  it('opens with Ctrl+K and not with a bare K', () => {
+    setViewport(false);
+    renderLayout();
+    fireEvent.keyDown(document, { key: 'k' });
+    expect(screen.queryByRole('combobox', { name: 'Jump to' })).toBeNull();
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true });
+    expect(screen.getByRole('combobox', { name: 'Jump to' })).toBeTruthy();
+  });
+});
+
