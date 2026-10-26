@@ -40,11 +40,16 @@ vi.mock('../db.js', () => ({
   db: { select: () => ({ from: () => ({ where: mockWhere }) }) },
 }));
 vi.mock('../../db/schema/index.js', () => ({ users: {}, userPermissions: {} }));
+
+// Session liveness is its own module (shared with the REST middleware).
+const session = vi.hoisted(() => ({ live: true }));
+const { mockIsSessionLive } = vi.hoisted(() => ({ mockIsSessionLive: vi.fn() }));
+vi.mock('../session-live.js', () => ({ isSessionLive: mockIsSessionLive }));
 vi.mock('drizzle-orm', () => ({ eq: vi.fn() }));
 
 // ----- Import after mocks -----
 
-import { authMiddleware, emitToRoom, emitToAll, _resetIO } from '../socket.js';
+import { authMiddleware, revalidateSocket, emitToRoom, emitToAll, _resetIO } from '../socket.js';
 import { permissionNamesForRole } from '../role-permissions.js';
 import type { Server as SocketIOServer } from 'socket.io';
 
@@ -75,6 +80,8 @@ describe('Socket.IO Auth & Room Management', () => {
     userRow = { id: 'user-1', enabled: true };
     permRows = [];
     dbSelectCall = 0;
+    session.live = true;
+    mockIsSessionLive.mockImplementation(async () => session.live);
   });
 
   // ----- Auth Middleware -----
@@ -191,6 +198,73 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(userData.permissions).toEqual(permissionNamesForRole('viewer'));
       expect(userData.permissions).toContain('channels:read');
       expect(userData.permissions).not.toContain('users:delete');
+    });
+  });
+
+  describe('session and account standing', () => {
+    it('rejects the handshake when the token session was revoked', async () => {
+      session.live = false;
+      userRow = { id: 'user-1', enabled: true, role: 'admin' };
+      const next = vi.fn();
+
+      await authMiddleware(createMockSocket(createValidToken({ userId: 'user-1', sessionId: 's1', type: 'access' })), next);
+
+      expect((next.mock.calls[0]![0] as Error).message).toBe('Authentication required');
+      expect(mockIsSessionLive).toHaveBeenCalledWith('s1', 'user-1');
+    });
+
+    it('rejects the handshake while the user must change their password', async () => {
+      userRow = { id: 'user-1', enabled: true, role: 'admin', mustChangePassword: true };
+      const next = vi.fn();
+
+      await authMiddleware(createMockSocket(createValidToken({ userId: 'user-1', sessionId: 's1', type: 'access' })), next);
+
+      expect((next.mock.calls[0]![0] as Error).message).toBe('Authentication required');
+    });
+
+    function connectedSocket(rooms: string[]): {
+      id: string; data: Record<string, unknown>; rooms: Set<string>;
+      leave: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn>;
+    } {
+      return {
+        id: 'sock-1',
+        data: { user: { userId: 'user-1', sessionId: 's1', type: 'access', permissions: permissionNamesForRole('admin') } },
+        rooms: new Set(['sock-1', ...rooms]),
+        leave: vi.fn(),
+        disconnect: vi.fn(),
+      };
+    }
+
+    it('disconnects a connected socket once its session is revoked (logout)', async () => {
+      session.live = false;
+      userRow = { id: 'user-1', enabled: true, role: 'admin' };
+      const socket = connectedSocket(['logs']);
+
+      const stillConnected = await revalidateSocket(socket);
+
+      expect(stillConnected).toBe(false);
+      expect(socket.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('disconnects a connected socket when the user is disabled', async () => {
+      userRow = { id: 'user-1', enabled: false, role: 'admin' };
+      const socket = connectedSocket(['dashboard']);
+
+      expect(await revalidateSocket(socket)).toBe(false);
+      expect(socket.disconnect).toHaveBeenCalled();
+    });
+
+    it('leaves rooms the user lost permission for after a role change', async () => {
+      userRow = { id: 'user-1', enabled: true, role: 'viewer' };
+      const socket = connectedSocket(['logs', 'dashboard', 'channel:abc']);
+
+      expect(await revalidateSocket(socket)).toBe(true);
+
+      expect(socket.leave).toHaveBeenCalledWith('logs');
+      expect(socket.leave).not.toHaveBeenCalledWith('dashboard');
+      expect(socket.leave).not.toHaveBeenCalledWith('channel:abc');
+      expect(socket.leave).not.toHaveBeenCalledWith('sock-1');
+      expect((socket.data['user'] as { permissions: string[] }).permissions).toEqual(permissionNamesForRole('viewer'));
     });
   });
 

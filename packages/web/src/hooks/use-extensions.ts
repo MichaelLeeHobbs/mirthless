@@ -2,7 +2,7 @@
 // Extension API Hooks
 // ===========================================
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 
 // ----- Types -----
@@ -47,20 +47,5 @@ export function useExtension(id: string): ReturnType<typeof useQuery<ExtensionIn
       return result.data;
     },
     enabled: id.length > 0,
-  });
-}
-
-export function useToggleExtension(): ReturnType<typeof useMutation<ExtensionInfo, Error, { id: string; enabled: boolean }>> {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
-      const result = await api.patch<ExtensionInfo>(`/extensions/${id}/enabled`, { enabled });
-      if (!result.success) throw new Error(result.error.message);
-      return result.data;
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: EXT_KEYS.all });
-    },
   });
 }

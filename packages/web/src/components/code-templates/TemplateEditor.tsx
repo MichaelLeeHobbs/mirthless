@@ -54,6 +54,8 @@ interface TemplateEditorProps {
   readonly onDelete: (id: string) => void;
   readonly onClose: () => void;
   readonly saving: boolean;
+  /** Hide Delete and Save for users without code_templates:write. */
+  readonly readOnly: boolean;
   /** Reports unsaved-changes state up so the page can guard navigation/switching. */
   readonly onDirtyChange?: (dirty: boolean) => void;
 }
@@ -63,7 +65,7 @@ function contextsEqual(a: ReadonlySet<string>, b: readonly string[]): boolean {
   return b.every((c) => a.has(c));
 }
 
-export function TemplateEditor({ template, onSave, onDelete, onClose, saving, onDirtyChange }: TemplateEditorProps): ReactNode {
+export function TemplateEditor({ template, onSave, onDelete, onClose, saving, readOnly, onDirtyChange }: TemplateEditorProps): ReactNode {
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? '');
   const [type, setType] = useState(template.type);
@@ -136,6 +138,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, on
           label="Name"
           value={name}
           onChange={(e) => { setName(e.target.value); }}
+          disabled={readOnly}
           size="small"
           sx={{ flex: 1 }}
         />
@@ -144,6 +147,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, on
           <Select
             value={type}
             label="Type"
+            disabled={readOnly}
             onChange={(e) => { setType(e.target.value); }}
           >
             <MenuItem value="FUNCTION">Function</MenuItem>
@@ -156,6 +160,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, on
         label="Description"
         value={description}
         onChange={(e) => { setDescription(e.target.value); }}
+        disabled={readOnly}
         size="small"
         multiline
         minRows={2}
@@ -171,6 +176,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, on
                 <Checkbox
                   checked={contexts.has(ctx)}
                   onChange={() => { toggleContext(ctx); }}
+                  disabled={readOnly}
                   size="small"
                 />
               }
@@ -189,25 +195,28 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, on
           showLanguageToggle
           language={language === 'TYPESCRIPT' ? 'typescript' : 'javascript'}
           onLanguageChange={(lang) => { setLanguage(lang === 'typescript' ? 'TYPESCRIPT' : 'JAVASCRIPT'); }}
+          readOnly={readOnly}
         />
       </Box>
 
-      <Stack direction="row" spacing={1} justifyContent="flex-end">
-        <Button
-          variant="outlined"
-          color="error"
-          onClick={() => { onDelete(template.id); }}
-        >
-          Delete
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleSave}
-          disabled={saving || !name.trim()}
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </Button>
-      </Stack>
+      {readOnly ? null : (
+        <Stack direction="row" spacing={1} justifyContent="flex-end">
+          <Button
+            variant="outlined"
+            color="error"
+            onClick={() => { onDelete(template.id); }}
+          >
+            Delete
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            disabled={saving || !name.trim()}
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </Stack>
+      )}
     </Box>
   );
 }

@@ -143,3 +143,30 @@ describe('roundtrip: parse → serialize → parse', () => {
     expect(obj2).toEqual(obj);
   });
 });
+
+describe('parseForSandbox — XML entity expansion limits', () => {
+  it('still decodes the standard XML entities', () => {
+    expect(parseForSandbox('<r>a &amp; b &lt;c&gt;</r>', 'XML')).toEqual({ r: 'a & b <c>' });
+  });
+
+  it('rejects a document whose entity references expand past the size cap', () => {
+    const big = 'y'.repeat(9_000);
+    const doc = `<?xml version="1.0"?><!DOCTYPE r [<!ENTITY e "${big}">]><r>${'&e;'.repeat(500)}</r>`;
+    const started = Date.now();
+    expect(() => parseForSandbox(doc, 'XML')).toThrow(/limit exceeded/i);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it('does not blow up on nested (billion-laughs) entity definitions', () => {
+    let entities = '<!ENTITY a0 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">';
+    for (let i = 1; i < 10; i++) entities += `<!ENTITY a${String(i)} "${`&a${String(i - 1)};`.repeat(10)}">`;
+    const doc = `<?xml version="1.0"?><!DOCTYPE r [${entities}]><r>&a9;</r>`;
+    let length = 0;
+    try {
+      length = JSON.stringify(parseForSandbox(doc, 'XML')).length;
+    } catch {
+      length = 0; // refusing the document is also acceptable
+    }
+    expect(length).toBeLessThan(1_000_000);
+  });
+});

@@ -61,6 +61,15 @@ describe('stripRedactedProperties', () => {
     expect('apiKey' in out).toBe(false);
   });
 
+  it('drops redacted values nested in objects and arrays', () => {
+    const out = stripRedactedProperties({
+      auth: { username: 'svc', password: '__REDACTED__' },
+      tls: { cert: 'C', key: '__REDACTED__' },
+      attachments: [{ filename: 'a', apiToken: '__REDACTED__' }, 'x'],
+    });
+    expect(out).toEqual({ auth: { username: 'svc' }, tls: { cert: 'C' }, attachments: [{ filename: 'a' }, 'x'] });
+  });
+
   it('returns an empty object for null/non-object input', () => {
     expect(stripRedactedProperties(null)).toEqual({});
     expect(stripRedactedProperties(undefined)).toEqual({});

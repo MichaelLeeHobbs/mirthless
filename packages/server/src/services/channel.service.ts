@@ -427,9 +427,9 @@ function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelI
     properties: {
       initialState: source.initialState as 'UNDEPLOYED' | 'STARTED' | 'PAUSED' | 'STOPPED',
       messageStorageMode: source.messageStorageMode as 'DEVELOPMENT' | 'PRODUCTION' | 'RAW' | 'METADATA' | 'DISABLED',
-      // A clone starts with encryptData off; the operator re-enables it explicitly
-      // (and ensures CONTENT_ENCRYPTION_KEY is configured) on the new channel.
-      encryptData: false,
+      // Keep encryption: a clone of an encrypted channel must not quietly store
+      // PHI in plaintext. Deploy refuses it loudly if no key is configured.
+      encryptData: source.encryptData,
       removeContentOnCompletion: source.removeContentOnCompletion,
       removeAttachmentsOnCompletion: source.removeAttachmentsOnCompletion,
       pruningEnabled: source.pruningEnabled,

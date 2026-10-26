@@ -20,10 +20,18 @@ const SECRET_KEY_FRAGMENTS: readonly string[] = [
   'pass', // covers password, passwd, authPass, passphrase
   'secret',
   'privatekey',
-  'apikey',
+  'apikey', // also X-API-Key once separators are stripped
   'token',
   'credential',
+  'authorization', // HTTP header values
+  'cookie',
 ];
+
+/**
+ * Keys that are secrets only as an exact match: `key` is the inline TLS private
+ * key PEM (`tls.key`); as a fragment it would also hit `keyColumn` and friends.
+ */
+const SECRET_EXACT_KEYS: ReadonlySet<string> = new Set(['key']);
 
 /**
  * Setting keys that hold secrets even when their `type` was seeded as a plain
@@ -43,8 +51,8 @@ export function isSecretSetting(key: string, type: string | null | undefined): b
 
 /** True when a connector property key looks like a credential field. */
 export function isSecretPropertyKey(key: string): boolean {
-  const lower = key.toLowerCase();
-  return SECRET_KEY_FRAGMENTS.some((fragment) => lower.includes(fragment));
+  const lower = key.toLowerCase().replace(/[-_]/g, '');
+  return SECRET_EXACT_KEYS.has(lower) || SECRET_KEY_FRAGMENTS.some((fragment) => lower.includes(fragment));
 }
 
 /**
@@ -59,21 +67,59 @@ export function redactSettingValue(key: string, type: string | null | undefined,
   return value !== null && value.length > 0 ? REDACTED : value;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 /**
- * Return a shallow copy of connector `properties` with any secret-looking value
- * replaced by the REDACTED marker. Non-string secrets that are present are also
- * masked; empty/nullish values pass through so the caller can see "unset".
+ * Return a deep copy of connector `properties` with every secret-looking value
+ * replaced by the REDACTED marker, at any depth (nested `auth.password`, inline
+ * `tls.key` PEMs, `headers.Authorization`). Non-string secrets that are present
+ * are also masked; empty/nullish values pass through so the caller can see
+ * "unset". Iterative (explicit stack) per the coding standard.
  */
 export function redactConnectorProperties(
   properties: Readonly<Record<string, unknown>>,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(properties)) {
-    if (isSecretPropertyKey(key) && value !== null && value !== undefined && value !== '') {
-      out[key] = REDACTED;
-    } else {
-      out[key] = value;
+  const root: Record<string, unknown> = {};
+  const stack: Array<[Readonly<Record<string, unknown>>, Record<string, unknown>]> = [[properties, root]];
+  while (stack.length > 0) {
+    const [src, dst] = stack.pop()!;
+    for (const [key, value] of Object.entries(src)) {
+      if (isSecretPropertyKey(key) && value !== null && value !== undefined && value !== '') {
+        dst[key] = REDACTED;
+      } else if (isPlainObject(value)) {
+        const copy: Record<string, unknown> = {};
+        dst[key] = copy;
+        stack.push([value, copy]);
+      } else if (Array.isArray(value)) {
+        const items: unknown[] = value.map((item) => (isPlainObject(item) ? {} : item));
+        dst[key] = items;
+        value.forEach((item, i) => { if (isPlainObject(item)) stack.push([item, items[i] as Record<string, unknown>]); });
+      } else {
+        dst[key] = value;
+      }
     }
   }
-  return out;
+  return root;
+}
+
+/**
+ * Redact the connector properties in a channel detail (or a revision snapshot,
+ * which has the same shape): the source connector properties and each
+ * destination's properties.
+ */
+export function redactChannelDetail(detail: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const source = detail['sourceConnectorProperties'];
+  const destinations = detail['destinations'];
+  return {
+    ...detail,
+    sourceConnectorProperties: isPlainObject(source) ? redactConnectorProperties(source) : source,
+    destinations: Array.isArray(destinations)
+      ? destinations.map((d: unknown) =>
+          isPlainObject(d) && isPlainObject(d['properties'])
+            ? { ...d, properties: redactConnectorProperties(d['properties']) }
+            : d)
+      : destinations,
+  };
 }

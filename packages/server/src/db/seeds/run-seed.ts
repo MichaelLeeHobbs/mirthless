@@ -2,7 +2,11 @@
 // Database Seed Script
 // ===========================================
 // Idempotent seed: safe to run multiple times.
-// Seeds: settings -> permissions -> roles -> admin user
+// Seeds: settings -> permissions -> roles -> admin user -> default group.
+// Demo content (example channels, showcase data, example messages) is seeded
+// only when demoDataEnabled() says so — never by default in production, where
+// it would add a global preprocessor that runs on every channel, a data source
+// with a dev password, an enabled alert and fabricated messages.
 //
 // Usage: tsx src/db/seeds/run-seed.ts
 
@@ -16,6 +20,7 @@ import { DEFAULT_GROUP_NAME } from '@mirthless/core-models';
 import * as schema from '../schema/index.js';
 import { defaultSettings } from './settings.js';
 import { defaultPermissions } from './permissions.js';
+import { demoDataEnabled } from './seed-options.js';
 
 loadEnv({ path: '../../.env' });
 loadEnv({ path: '.env' });
@@ -25,6 +30,16 @@ const ADMIN_USERNAME = 'admin';
 const ADMIN_EMAIL = 'admin@mirthless.local';
 const ADMIN_PASSWORD = 'Admin123!';
 
+/** Same TLS rules as the server pool (lib/db.ts buildDbSslConfig). */
+function seedSslConfig(): false | { rejectUnauthorized: boolean; ca?: string } {
+  if (process.env['DATABASE_SSL'] !== 'true') return false;
+  const ca = process.env['DATABASE_SSL_CA'];
+  return {
+    rejectUnauthorized: process.env['DATABASE_SSL_REJECT_UNAUTHORIZED'] !== 'false',
+    ...(ca ? { ca } : {}),
+  };
+}
+
 async function seed(): Promise<void> {
   const databaseUrl = process.env['DATABASE_URL'];
   if (!databaseUrl) {
@@ -33,7 +48,7 @@ async function seed(): Promise<void> {
     process.exit(1);
   }
 
-  const pool = new pg.Pool({ connectionString: databaseUrl });
+  const pool = new pg.Pool({ connectionString: databaseUrl, ssl: seedSslConfig() });
   const db = drizzle(pool, { schema });
 
   try {
@@ -145,6 +160,12 @@ async function seed(): Promise<void> {
       // eslint-disable-next-line no-console
       console.log('\nSeed complete.');
     });
+
+    if (!demoDataEnabled(process.env)) {
+      // eslint-disable-next-line no-console
+      console.log('\nSkipping demo content (set SEED_DEMO_DATA=true to seed example channels and data).');
+      return;
+    }
 
     // Seed example channels (separate from main transaction — uses channel IDs)
     const { seedExampleChannels } = await import('./seed-examples.js');

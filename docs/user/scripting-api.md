@@ -32,7 +32,7 @@ carried to later pipeline stages.
 | `channelMap` | read/write | Shared across all connectors for this message. |
 | `connectorMap` | read/write | Per-destination scope. |
 | `responseMap` | read/write | Response values (available in the postprocessor). |
-| `globalChannelMap` | read-only in script | Per-channel, persists across messages within a deployment. |
+| `globalChannelMap` | read/write | Per-channel, persists across messages within a deployment. |
 | `globalMap` | read/write | Global across all channels; flushed to the database. |
 | `configMap` | read-only (frozen) | Configuration values loaded at deploy time. Writing throws (strict mode). |
 
@@ -41,9 +41,16 @@ carried to later pipeline stages.
 | Function | Behavior |
 |---|---|
 | `$(key)` | Looks up `key` across maps in order: `responseMap`, `connectorMap`, `channelMap`, `globalChannelMap`, `globalMap`, `configMap`, `sourceMap`. Returns the first defined value. |
+| `$c(key)` / `$c(key, value)` | Get / set a `channelMap` entry. |
+| `$co(key)` / `$co(key, value)` | Get / set a `connectorMap` entry. |
 | `$r(key)` / `$r(key, value)` | Get / set a `responseMap` entry. |
 | `$g(key)` / `$g(key, value)` | Get / set a `globalMap` entry. |
-| `$gc(key)` | Get a `configMap` entry. |
+| `$gc(key)` / `$gc(key, value)` | Get / set a `globalChannelMap` entry. |
+| `$s(key)` | Get a `sourceMap` entry. |
+| `$cfg(key)` | Get a `configMap` entry. |
+
+These match Mirth Connect's shortcuts, so ported scripts read the same maps. Before
+2026-10, `$gc` read `configMap`; scripts written against that must use `$cfg`.
 
 ## Logging
 
@@ -89,7 +96,11 @@ $r('ack', ack); // expose it to the response
 
 These globals exist **only when the host enables them** for the channel (they are absent
 otherwise, so guard with `typeof`). They are `async` — `await` them. Outbound HTTP is
-subject to SSRF protection: requests to private/loopback address ranges are blocked.
+subject to SSRF protection: requests to loopback, private, link-local (including cloud
+metadata at 169.254.169.254), CGNAT and other reserved addresses are blocked, both as IP
+literals and when a DNS name resolves to one. Redirects are **not** followed (the 3xx response
+is returned to your script), and response bodies are capped at 10 MB. To reach an internal
+system, use a destination connector rather than `httpFetch`.
 
 | Function | Signature | Description |
 |---|---|---|

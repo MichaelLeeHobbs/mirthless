@@ -21,8 +21,8 @@ function errorResponse(error: unknown): { code: string; message: string } {
 }
 
 export class ServerBackupController {
-  static async exportBackup(_req: Request, res: Response): Promise<void> {
-    const result = await ServerBackupService.exportBackup();
+  static async exportBackup(req: Request, res: Response): Promise<void> {
+    const result = await ServerBackupService.exportBackup({ userId: req.user?.id ?? null, ipAddress: req.ip ?? null });
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);

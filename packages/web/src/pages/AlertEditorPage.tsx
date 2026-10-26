@@ -27,7 +27,7 @@ import DialogActions from '@mui/material/DialogActions';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
 import { useAlert, useCreateAlert, useUpdateAlert } from '../hooks/use-alerts.js';
-import { TriggerSection, type TriggerFormValues } from '../components/alerts/TriggerSection.js';
+import { TriggerSection, buildTriggerPayload, type TriggerFormValues } from '../components/alerts/TriggerSection.js';
 import { ChannelsSection } from '../components/alerts/ChannelsSection.js';
 import { ActionsSection, type ActionFormValues } from '../components/alerts/ActionsSection.js';
 import { TemplatesSection, type TemplateFormValues } from '../components/alerts/TemplatesSection.js';
@@ -48,8 +48,10 @@ const DEFAULT_FORM: AlertFormData = {
 };
 
 const DEFAULT_TRIGGER: TriggerFormValues = {
+  type: 'CHANNEL_ERROR',
   errorTypes: ['ANY'],
   regex: '',
+  windowMinutes: 60,
 };
 
 const DEFAULT_TEMPLATES: TemplateFormValues = {
@@ -112,8 +114,10 @@ export function AlertEditorPage(): ReactNode {
       });
 
       setTrigger({
-        errorTypes: [...alert.trigger.errorTypes],
+        type: alert.trigger.type === 'NO_MESSAGES' ? 'NO_MESSAGES' : 'CHANNEL_ERROR',
+        errorTypes: alert.trigger.errorTypes.length > 0 ? [...alert.trigger.errorTypes] : ['ANY'],
         regex: alert.trigger.regex ?? '',
+        windowMinutes: alert.trigger.windowMinutes ?? DEFAULT_TRIGGER.windowMinutes,
       });
 
       setChannelIds([...alert.channelIds]);
@@ -188,11 +192,7 @@ export function AlertEditorPage(): ReactNode {
     setSaveError(null);
     setSaveSuccess(false);
 
-    const triggerPayload = {
-      type: 'CHANNEL_ERROR' as const,
-      errorTypes: [...trigger.errorTypes] as ['ANY'],
-      regex: trigger.regex || null,
-    };
+    const triggerPayload = buildTriggerPayload(trigger);
 
     try {
       if (isEditMode) {

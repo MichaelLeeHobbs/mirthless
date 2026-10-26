@@ -12,6 +12,8 @@ RUN pnpm install --frozen-lockfile --prod=false
 
 # Stage 3: Build Vite app
 FROM deps AS build
+# Every package tsconfig extends the root one.
+COPY tsconfig.json ./
 COPY packages/core-models/ packages/core-models/
 COPY packages/web/ packages/web/
 ARG VITE_API_URL=/api/v1

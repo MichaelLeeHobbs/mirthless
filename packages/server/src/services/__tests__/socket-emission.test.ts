@@ -141,7 +141,7 @@ describe('Socket emission on deployment state changes', () => {
   });
 
   it('emits channel:state with STARTED after start', async () => {
-    deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
+    deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
     mockRuntime.getState.mockReturnValue('STARTED');
 
     const result = await DeploymentService.start(CHANNEL_ID);
@@ -154,7 +154,7 @@ describe('Socket emission on deployment state changes', () => {
   });
 
   it('emits channel:state with STOPPED after stop', async () => {
-    deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
+    deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
     mockRuntime.getState.mockReturnValue('STOPPED');
 
     const result = await DeploymentService.stop(CHANNEL_ID);
@@ -167,7 +167,7 @@ describe('Socket emission on deployment state changes', () => {
   });
 
   it('emits channel:state with UNDEPLOYED after undeploy', async () => {
-    deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [] });
+    deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
 
     const result = await DeploymentService.undeploy(CHANNEL_ID);
 

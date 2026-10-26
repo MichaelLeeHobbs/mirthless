@@ -68,7 +68,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
     openapi: '3.1.0',
     info: {
       title: 'Mirthless API',
-      version: '0.0.1',
+      version: '0.1.0',
       description: 'Healthcare integration engine API — message routing and transformation for HL7v2, FHIR, DICOM, and more.',
       license: { name: 'MIT', url: 'https://opensource.org/licenses/MIT' },
     },

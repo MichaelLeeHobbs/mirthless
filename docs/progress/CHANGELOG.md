@@ -2,6 +2,77 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-08 — Release-readiness pass (branch `claude/project-thread-yr28t9`)
+
+Worked the findings of the 2026-10-08 release-readiness review, one fix per commit.
+
+- **Docker:** images build again (root `tsconfig.json` copied, tests excluded); `migrate.mjs`
+  verifies database TLS unless `DATABASE_SSL_REJECT_UNAUTHORIZED=false`.
+- **Sandbox:** code after an `await` could spin forever and freeze the event loop. Contexts now
+  use `microtaskMode: 'afterEvaluate'` and IO bridges settle inside the script timeout. (D-184)
+- **Credentials:** connector secrets are redacted deeply (nested auth, inline TLS keys, auth
+  headers), including in channel revision snapshots for read-only users.
+- **Dependencies:** every high/critical production advisory cleared (drizzle-orm 0.45, nodemailer
+  10, imapflow 2, overrides for proxy-addr, engine.io, adm-zip and others); the CI audit gates.
+  Email, SMTP and SFTP clients now load via `createRequire` (bare `require` in ESM).
+- **dbQuery:** read-only sources run on the extended protocol, so `COMMIT; DELETE …` is rejected. (D-186)
+- **httpFetch SSRF:** private/loopback/link-local addresses are blocked at DNS-lookup time and the
+  connection is pinned to the checked address; no redirects; 10 MB body cap. (D-185)
+- **Recovery:** runs after the channel's destinations start, reprocesses TRANSFORMED messages and
+  keeps the source map. (D-187)
+- **Queue:** a message that exhausts its retries stores error content and raises an alert.
+- **XML:** entity expansion is bounded on inbound messages.
+- **Seed:** demo content needs `SEED_DEMO_DATA=true`. (D-188)
+- **Socket.IO:** connections are revalidated (logout, disabled user, forced password change,
+  permissions) on join and every 60s.
+- **Email receiver:** a failed post-action no longer re-dispatches the email, including after a
+  restart: a dispatched email carries the IMAP keyword `$MirthlessDispatched`. A move to a missing
+  folder or a refused flag change was reported as success (imapflow resolves `false`), so the
+  email was dispatched again on every poll; it is now an error. (D-195)
+- **routeMessage:** the loop guard counts hops per message chain (AsyncLocalStorage), not engine-wide.
+- **UI honesty:** removed controls the engine ignores (remove attachments on completion, custom
+  metadata columns, Attachments tab, extension enable toggle, queue thread count, rotate queue). (D-189)
+- **Wait for Previous Destination** was stored but ignored; destinations now run in Mirth-style
+  chains. (D-189)
+- **Permissions:** Events purge, Alerts create/toggle/delete and Code Template edits are hidden
+  from users the server would refuse.
+- **Editor:** a zero-step HL7V2→HL7V2 transformer with properties or templates survives save.
+- **E2E:** `message-flow.spec.ts` no longer skips itself; it really sends a message and checks
+  the ACK, storage and the message browser. It exposed that deleting a deployed channel left it
+  running invisibly; that now returns 409. (D-190)
+- **Map shortcuts:** `$gc` now reads/writes `globalChannelMap` as in Mirth (it read `configMap`);
+  added `$cfg`, `$c`, `$co`, `$s`. The shipped typings declared `$c`/`$g`/`$gc` as maps, so typed
+  scripts compiled against shortcuts that did not exist; they are now functions. (D-191)
+- **Startup order:** `autoDeployChannels` deploys channels after the channels they depend on
+  (topological sort of `channel_dependencies`); it was list order. If the dependencies can't be
+  loaded, nothing is auto-deployed and an error is logged. (D-194)
+- **Silent-interface alert:** new `NO_MESSAGES` alert trigger fires when a started channel has
+  received nothing for N minutes (checked every 30s; once per silence, repeating at the re-alert
+  interval). Backup/restore carries it, and restore now keeps CHANNEL alert actions' target channel
+  and reports failed alert/setting/map writes instead of counting them as restored. (D-192)
+- **Login:** two logins by the same user within one second failed with "Invalid username or
+  password": both refresh tokens were byte-identical and the second session insert hit the
+  unique index. Refresh tokens now carry a random `jti`.
+- **CI:** coverage minimums are enforced in every package, set just under today's numbers (D-193).
+  A sandbox isolation test that could fail under heavy parallel load is now deterministic.
+- **Rate limits:** in production, token refreshes and successful logins shared the 5-per-15-min
+  login limit, so a few users behind one proxy were logged out with 429s. Only failed logins
+  count now, and refresh has its own limit.
+- **Audit:** every rejected login (unknown user, locked, disabled, wrong password, lockout),
+  logout and server backup export is recorded. A cloned encrypted channel stays encrypted (it
+  silently dropped to plaintext).
+- **HIPAA checklist:** new `docs/ops/hipaa-security-checklist.md` with an operator checklist,
+  the 164.312 safeguards and the remaining gaps.
+- **Soak test:** `pnpm soak` drives a real server for hours and checks exactly-once delivery.
+  Baseline: 3 h at 100 msg/s, 1,080,004 messages, none lost or duplicated, memory flat after
+  an early step (`docs/ops/soak-test.md`).
+- **Advisories (2026-10-26):** new high/critical advisories failed the CI audit: dompurify (under
+  Monaco) raised to 3.4.17, zod 4.3.4 to 4.6.7, body-parser (under Express) to 1.20.9.
+- **Version 0.1.0:** all packages, the CLI `--version` and the OpenAPI spec are now 0.1.0 (tests
+  keep the last two in step with `package.json`). Release notes: `docs/ops/release-notes-v0.1.0.md`.
+  Not tagged yet.
+- **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
+  limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
 ## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle
 
 - Moved the real-message E2E harness, its 7 suites, the `*.itest.ts` integration lane and the DICOM

@@ -22,6 +22,11 @@ vi.mock('../../services/channel.service.js', () => ({
   ChannelService: mockService,
 }));
 
+const mockGetRuntime = vi.fn();
+vi.mock('../../engine.js', () => ({
+  getEngine: () => ({ getRuntime: mockGetRuntime }),
+}));
+
 vi.mock('../../lib/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
@@ -342,6 +347,24 @@ describe('ChannelController', () => {
       await ChannelController.delete(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('returns 409 and deletes nothing while the channel is deployed', async () => {
+      mockGetRuntime.mockReturnValueOnce({ channelId: 'c1' });
+
+      const req = makeReq({
+        params: { id: '00000000-0000-0000-0000-000000000001' } as Request['params'],
+      });
+      const res = makeRes();
+
+      await ChannelController.delete(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        success: false,
+        error: expect.objectContaining({ code: 'CONFLICT' }),
+      }));
+      expect(mockService.delete).not.toHaveBeenCalled();
     });
   });
 

@@ -20,6 +20,8 @@ interface AlertThrottleState {
 export class AlertManager {
   private alerts: readonly LoadedAlert[] = [];
   private readonly throttleState = new Map<string, AlertThrottleState>();
+  /** NO_MESSAGES: the lastActivityAt each alert last fired for, so one silence alerts once. */
+  private readonly silenceAlertedFor = new Map<string, number>();
   private deps: ActionDispatcherDeps;
 
   constructor(deps: ActionDispatcherDeps) {
@@ -49,6 +51,38 @@ export class AlertManager {
     }
   }
 
+  /**
+   * Fire NO_MESSAGES alerts for a channel that has received nothing since
+   * `lastActivityAt`. Each silence alerts once; if the alert has a re-alert
+   * interval it repeats at that interval until a message arrives.
+   */
+  async checkSilence(channelId: string, lastActivityAt: number, now: number): Promise<void> {
+    for (const alert of this.alerts) {
+      const windowMinutes = alert.trigger.windowMinutes;
+      if (!alert.enabled || alert.trigger.type !== 'NO_MESSAGES' || !windowMinutes) continue;
+      if (alert.channelIds.length > 0 && !alert.channelIds.includes(channelId)) continue;
+      if (now - lastActivityAt < windowMinutes * 60_000) continue;
+      if (!this.shouldRealertSilence(alert, lastActivityAt, now)) continue;
+
+      await dispatchActions(alert, {
+        channelId,
+        errorType: 'NO_MESSAGES',
+        errorMessage: `No messages received in the last ${String(windowMinutes)} minutes`,
+        timestamp: now,
+      }, this.deps);
+      this.recordAlert(alert.id, now);
+      this.silenceAlertedFor.set(alert.id, lastActivityAt);
+    }
+  }
+
+  /** A new silence always alerts; the same silence repeats only per reAlertIntervalMs. */
+  private shouldRealertSilence(alert: LoadedAlert, lastActivityAt: number, now: number): boolean {
+    if (this.isMaxedOut(alert)) return false;
+    if (this.silenceAlertedFor.get(alert.id) !== lastActivityAt) return true;
+    if (!alert.reAlertIntervalMs) return false;
+    return !this.isThrottled(alert, now);
+  }
+
   /** Reset throttle state for a specific alert. */
   resetAlert(alertId: string): void {
     this.throttleState.delete(alertId);
@@ -57,6 +91,7 @@ export class AlertManager {
   /** Clear all throttle state (e.g., on undeploy). */
   clearThrottleState(): void {
     this.throttleState.clear();
+    this.silenceAlertedFor.clear();
   }
 
   /** Check if an alert is throttled by the re-alert interval. */

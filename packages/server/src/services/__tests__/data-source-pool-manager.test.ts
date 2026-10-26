@@ -14,9 +14,10 @@ interface MockState {
   destroyed: number;
   txStatements: string[];
   directStatements: string[];
+  readOnlyStatements: string[];
 }
 
-const state: MockState = { rows: [], created: 0, destroyed: 0, txStatements: [], directStatements: [] };
+const state: MockState = { rows: [], created: 0, destroyed: 0, txStatements: [], directStatements: [], readOnlyStatements: [] };
 
 class MockConnectionPool {
   async create(): Promise<{ ok: true; value: void }> {
@@ -31,6 +32,10 @@ class MockConnectionPool {
       },
     };
     return { ok: true, value: await fn(tx) };
+  }
+  async queryReadOnly(sql: string): Promise<{ ok: true; value: { rows: Record<string, unknown>[]; rowCount: number } }> {
+    state.readOnlyStatements.push(sql);
+    return { ok: true, value: { rows: state.rows, rowCount: state.rows.length } };
   }
   async query(sql: string): Promise<{ ok: true; value: { rows: Record<string, unknown>[]; rowCount: number } }> {
     state.directStatements.push(sql);
@@ -62,21 +67,21 @@ beforeEach(() => {
   state.destroyed = 0;
   state.txStatements = [];
   state.directStatements = [];
+  state.readOnlyStatements = [];
 });
 
 // ----- Tests -----
 
 describe('DataSourcePoolManager', () => {
-  it('runs a read-only query inside a READ ONLY transaction', async () => {
+  it('runs a read-only query through the single-statement read-only path', async () => {
     state.rows = [{ id: 1 }];
     const mgr = new DataSourcePoolManager();
 
     const rows = await mgr.runQuery(makeSource({ readOnly: true }), 'SELECT 1', []);
 
     expect(rows).toEqual([{ id: 1 }]);
-    expect(state.txStatements[0]).toBe('SET TRANSACTION READ ONLY');
-    expect(state.txStatements).toContain('SELECT 1');
-    expect(state.directStatements).toHaveLength(0); // did not use the non-transaction path
+    expect(state.readOnlyStatements).toEqual(['SELECT 1']);
+    expect(state.directStatements).toHaveLength(0); // did not use the read-write path
   });
 
   it('runs a read-write query directly (no read-only transaction)', async () => {
@@ -86,7 +91,7 @@ describe('DataSourcePoolManager', () => {
     await mgr.runQuery(makeSource({ readOnly: false }), 'INSERT INTO t VALUES ($1)', [1]);
 
     expect(state.directStatements).toContain('INSERT INTO t VALUES ($1)');
-    expect(state.txStatements).toHaveLength(0);
+    expect(state.readOnlyStatements).toHaveLength(0);
   });
 
   it('rejects a result set larger than maxRows', async () => {

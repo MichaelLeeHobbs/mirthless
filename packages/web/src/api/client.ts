@@ -207,6 +207,8 @@ export interface AlertDetail extends AlertSummary {
     readonly type: string;
     readonly errorTypes: ReadonlyArray<string>;
     readonly regex: string | null;
+    /** NO_MESSAGES triggers only. */
+    readonly windowMinutes: number | null;
   };
   readonly channelIds: ReadonlyArray<string>;
   readonly actions: ReadonlyArray<AlertActionDetail>;

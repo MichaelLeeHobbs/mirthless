@@ -66,16 +66,29 @@ declare var configMap: Readonly<Record<string, unknown>>;
 /** Logger for sandbox scripts. */
 declare var logger: SandboxLogger;
 
-// ----- Map Shortcut Aliases -----
+// ----- Map Shortcut Functions (Mirth-compatible) -----
 
-/** Alias for channelMap. */
-declare var $c: Record<string, unknown>;
-/** Alias for responseMap. */
-declare var $r: Record<string, unknown>;
-/** Alias for globalChannelMap. */
-declare var $g: Record<string, unknown>;
-/** Alias for globalMap. */
-declare var $gc: Record<string, unknown>;
+/** Look a key up in responseMap, connectorMap, channelMap, globalChannelMap, globalMap, configMap, sourceMap (first defined wins). */
+declare function $(key: string): unknown;
+/** Get or set a channelMap entry. */
+declare function $c(key: string): unknown;
+declare function $c(key: string, value: unknown): void;
+/** Get or set a connectorMap entry. */
+declare function $co(key: string): unknown;
+declare function $co(key: string, value: unknown): void;
+/** Get or set a responseMap entry. */
+declare function $r(key: string): unknown;
+declare function $r(key: string, value: unknown): void;
+/** Get or set a globalMap entry. */
+declare function $g(key: string): unknown;
+declare function $g(key: string, value: unknown): void;
+/** Get or set a globalChannelMap entry. */
+declare function $gc(key: string): unknown;
+declare function $gc(key: string, value: unknown): void;
+/** Get a sourceMap entry (read-only). */
+declare function $s(key: string): unknown;
+/** Get a configMap entry (read-only). */
+declare function $cfg(key: string): unknown;
 
 // ----- Global Functions -----
 

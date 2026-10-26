@@ -80,6 +80,20 @@ export class ConnectionPool {
    * dispatch+ack of a batch so a concurrent poller cannot claim the same rows.
    */
   async transaction<T>(fn: (tx: TxQuery) => Promise<T>): Promise<Result<T>> {
+    return this.runInTransaction('BEGIN', false, fn);
+  }
+
+  /**
+   * Run ONE statement inside a READ ONLY transaction. The statement is sent with
+   * the extended query protocol, which accepts a single statement only, so input
+   * like `COMMIT; DELETE FROM t` is rejected instead of ending the read-only
+   * transaction and writing.
+   */
+  async queryReadOnly(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>> {
+    return this.runInTransaction('BEGIN READ ONLY', true, (tx) => tx.query(sql, params));
+  }
+
+  private async runInTransaction<T>(begin: string, extended: boolean, fn: (tx: TxQuery) => Promise<T>): Promise<Result<T>> {
     return tryCatch(async () => {
       if (!this.pool) {
         throw new Error('Pool not initialized — call create() first');
@@ -87,12 +101,12 @@ export class ConnectionPool {
       const client = await this.pool.connect();
       const tx: TxQuery = {
         query: async (sql, params) => {
-          const result = await client.query(sql, [...params]);
+          const result = await client.query({ text: sql, values: [...params], ...(extended ? { queryMode: 'extended' as const } : {}) });
           return { rows: result.rows as Record<string, unknown>[], rowCount: result.rowCount ?? 0 };
         },
       };
       try {
-        await client.query('BEGIN');
+        await client.query(begin);
         const value = await fn(tx);
         await client.query('COMMIT');
         return value;

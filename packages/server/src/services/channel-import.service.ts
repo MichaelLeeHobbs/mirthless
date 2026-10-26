@@ -24,6 +24,10 @@ import {
   transformerSteps,
 } from '../db/schema/index.js';
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 /**
  * Exports mask connector credentials as REDACTED. Importing that marker verbatim
  * would write the literal "__REDACTED__" over (or in place of) a real password.
@@ -32,13 +36,31 @@ import {
  * missing, rather than silently authenticating with a bogus value.
  */
 export function stripRedactedProperties(props: unknown): Record<string, unknown> {
-  if (props === null || typeof props !== 'object') return {};
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(props as Record<string, unknown>)) {
-    if (value === REDACTED) continue;
-    out[key] = value;
+  if (!isPlainObject(props)) return {};
+  const root: Record<string, unknown> = {};
+  // Exports redact at any depth (nested auth/tls/headers), so strip at any depth.
+  const stack: Array<[Record<string, unknown>, Record<string, unknown>]> = [[props, root]];
+  while (stack.length > 0) {
+    const [src, dst] = stack.pop()!;
+    for (const [key, value] of Object.entries(src)) {
+      if (value === REDACTED) continue;
+      if (isPlainObject(value)) {
+        const copy: Record<string, unknown> = {};
+        dst[key] = copy;
+        stack.push([value, copy]);
+      } else if (Array.isArray(value)) {
+        const kept = value.filter((item) => item !== REDACTED);
+        const items: unknown[] = kept.map((item) => (isPlainObject(item) ? {} : item));
+        dst[key] = items;
+        kept.forEach((item, i) => {
+          if (isPlainObject(item)) stack.push([item, items[i] as Record<string, unknown>]);
+        });
+      } else {
+        dst[key] = value;
+      }
+    }
   }
-  return out;
+  return root;
 }
 
 // ----- Service -----

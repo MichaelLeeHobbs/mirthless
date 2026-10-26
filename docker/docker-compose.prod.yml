@@ -41,7 +41,7 @@ services:
       #
       # Publish the range your channels listen on. The default 6661-6670 matches the
       # example channels; edit MLLP_PORT_RANGE in .env (or this list) to fit your
-      # deployment. See docs/ops/deployment for the listener-port strategy.
+      # deployment. See docs/ops/deployment.md for the listener-port strategy.
       - "${MLLP_PORT_RANGE:-6661-6670}:${MLLP_PORT_RANGE:-6661-6670}"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/health/live || exit 1"]

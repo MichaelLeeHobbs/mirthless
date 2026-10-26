@@ -43,3 +43,6 @@ e2e/
 playwright.config.ts
 playwright-report/
 test-results/
+
+# Test-only sources (helpers under __tests__ are not *.test.ts and would otherwise be compiled)
+**/__tests__/

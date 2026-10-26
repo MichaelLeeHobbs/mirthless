@@ -1,7 +1,7 @@
 // ===========================================
 // Map Shortcuts Tests
 // ===========================================
-// Tests for $, $r, $g, $gc shorthand functions and globalMap/configMap injection.
+// Tests for the Mirth-compatible $, $c, $co, $r, $g, $gc, $s, $cfg shortcuts and map injection.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
@@ -205,27 +205,79 @@ describe('Map Shortcuts', () => {
     });
   });
 
-  describe('$gc (configMap accessor)', () => {
-    it('reads from configMap', async () => {
+  describe('$gc (globalChannelMap, as in Mirth)', () => {
+    it('reads from globalChannelMap, not configMap', async () => {
       const context = makeContext({
-        configMap: { 'db.host': 'localhost' },
+        globalChannelMap: { counter: 'gcm' },
+        configMap: { counter: 'cfg' },
       });
-      const script = makeScript('return $gc("db.host");');
-      const result = await executor.execute(script, context, makeOptions());
+      const result = await executor.execute(makeScript('return $gc("counter");'), context, makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('gcm');
+    });
+
+    it('writes to globalChannelMap and reports the update', async () => {
+      const context = makeContext({ globalChannelMap: {} });
+      const result = await executor.execute(makeScript('$gc("seen", 3);'), context, makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.mapUpdates.globalChannelMap).toEqual({ seen: 3 });
+    });
+  });
+
+  describe('$cfg (configMap)', () => {
+    it('reads from configMap', async () => {
+      const context = makeContext({ configMap: { 'db.host': 'localhost' } });
+      const result = await executor.execute(makeScript('return $cfg("db.host");'), context, makeOptions());
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.returnValue).toBe('localhost');
     });
 
-    it('returns undefined for missing configMap key', async () => {
+    it('returns undefined for a missing key', async () => {
       const context = makeContext({ configMap: {} });
-      const script = makeScript('return $gc("nonexistent");');
-      const result = await executor.execute(script, context, makeOptions());
+      const result = await executor.execute(makeScript('return $cfg("nonexistent");'), context, makeOptions());
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.returnValue).toBeUndefined();
+    });
+  });
+
+  describe('$c and $co (channelMap, connectorMap)', () => {
+    it('reads and writes channelMap with $c', async () => {
+      const context = makeContext({ channelMap: { a: 1 } });
+      const result = await executor.execute(makeScript('$c("b", $c("a") + 1); return $c("b");'), context, makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe(2);
+      expect(result.value.mapUpdates.channelMap).toEqual({ a: 1, b: 2 });
+    });
+
+    it('reads and writes connectorMap with $co', async () => {
+      const context = makeContext({ connectorMap: {} });
+      const result = await executor.execute(makeScript('$co("dest", "x"); return $co("dest");'), context, makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('x');
+      expect(result.value.mapUpdates.connectorMap).toEqual({ dest: 'x' });
+    });
+  });
+
+  describe('$s (sourceMap)', () => {
+    it('reads from sourceMap', async () => {
+      const context = makeContext({ sourceMap: { remoteAddress: '10.0.0.5' } });
+      const result = await executor.execute(makeScript('return $s("remoteAddress");'), context, makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('10.0.0.5');
     });
   });
 

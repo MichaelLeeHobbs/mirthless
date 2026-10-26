@@ -233,6 +233,27 @@ function buildPayload(state: HostBridgeState, context: SandboxContext, deps: Bri
 
 const BOOTSTRAP_SRC = `'use strict';
 globalThis.__build = function (dispatch, payload) {
+  // IO bridges: the host returns a ticket id synchronously and later settles it by
+  // running __settle() in this context. Awaiting a sandbox-realm promise keeps every
+  // continuation on this context's microtask queue, which only drains inside a
+  // timed runInContext call, so post-await code is bounded by the script timeout.
+  var pendingIo = {};
+  function io() {
+    var id = dispatch.apply(null, arguments);
+    return new Promise(function (resolve) { pendingIo[id] = resolve; });
+  }
+  Object.defineProperty(globalThis, '__settle', { value: function () {
+    var t = JSON.parse(dispatch('io.next'));
+    var resolve = pendingIo[t[0]];
+    delete pendingIo[t[0]];
+    if (resolve) { resolve(t[1]); }
+  } });
+  Object.defineProperty(globalThis, '__watch', { value: function (p) {
+    p.then(
+      function (v) { globalThis.__result = v; dispatch('io.done', true); },
+      function (e) { dispatch('io.done', false, e); }
+    );
+  } });
   function makeHl7(handle) {
     return {
       __hl7Proxy: true,
@@ -283,31 +304,46 @@ globalThis.__build = function (dispatch, payload) {
     if (arguments.length >= 2) { globalMap[key] = value; return undefined; }
     return globalMap[key];
   };
-  globalThis.$gc = function (key) { return configMap[key]; };
+  // Mirth-compatible shortcuts: $c channelMap, $co connectorMap, $s sourceMap,
+  // $gc globalChannelMap, $cfg configMap.
+  globalThis.$c = function (key, value) {
+    if (arguments.length >= 2) { channelMap[key] = value; return undefined; }
+    return channelMap[key];
+  };
+  globalThis.$co = function (key, value) {
+    if (arguments.length >= 2) { connectorMap[key] = value; return undefined; }
+    return connectorMap[key];
+  };
+  globalThis.$s = function (key) { return sourceMap[key]; };
+  globalThis.$gc = function (key, value) {
+    if (arguments.length >= 2) { globalChannelMap[key] = value; return undefined; }
+    return globalChannelMap[key];
+  };
+  globalThis.$cfg = function (key) { return configMap[key]; };
   if (payload.bridges.httpFetch) {
     globalThis.httpFetch = async function (url, options) {
-      var r = JSON.parse(await dispatch('httpFetch', url, options || {}));
+      var r = JSON.parse(await io('httpFetch', url, options || {}));
       if (!r.ok) { throw new Error(r.e); }
       return r.v;
     };
   }
   if (payload.bridges.dbQuery) {
     globalThis.dbQuery = async function (dataSourceName, sqlText, params) {
-      var r = JSON.parse(await dispatch('dbQuery', dataSourceName, sqlText, params || []));
+      var r = JSON.parse(await io('dbQuery', dataSourceName, sqlText, params || []));
       if (!r.ok) { throw new Error(r.e); }
       return r.v;
     };
   }
   if (payload.bridges.routeMessage) {
     globalThis.routeMessage = async function (channelName, data) {
-      var r = JSON.parse(await dispatch('routeMessage', channelName, data));
+      var r = JSON.parse(await io('routeMessage', channelName, data));
       if (!r.ok) { throw new Error(r.e); }
       return r.v;
     };
   }
   if (payload.bridges.getResource) {
     globalThis.getResource = async function (name) {
-      var r = JSON.parse(await dispatch('getResource', name));
+      var r = JSON.parse(await io('getResource', name));
       if (!r.ok) { throw new Error(r.e); }
       return r.v;
     };
@@ -316,12 +352,12 @@ globalThis.__build = function (dispatch, payload) {
     globalThis.getCollection = function (name) {
       return {
         store: async function (fields, payload, options) {
-          var r = JSON.parse(await dispatch('collectionStore', name, fields || {}, String(payload == null ? '' : payload), options || {}));
+          var r = JSON.parse(await io('collectionStore', name, fields || {}, String(payload == null ? '' : payload), options || {}));
           if (!r.ok) { throw new Error(r.e); }
           return r.v;
         },
         find: async function (match, options) {
-          var r = JSON.parse(await dispatch('collectionFind', name, match || {}, options || {}));
+          var r = JSON.parse(await io('collectionFind', name, match || {}, options || {}));
           if (!r.ok) { throw new Error(r.e); }
           return r.v;
         }
@@ -373,6 +409,55 @@ function awaitWithSignal<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/**
+ * Drives one async script run. The vm context uses `microtaskMode: 'afterEvaluate'`,
+ * so sandbox microtasks only run inside a timed `runInContext` call: the initial
+ * evaluation, or a `__settle()` call made when an IO bridge completes. Code after an
+ * `await` is therefore bounded by the timeout and cannot block the host event loop,
+ * and once the run is finished no further sandbox code is ever resumed.
+ */
+class AsyncRun {
+  private readonly ioResults: Array<[number, string]> = [];
+  private nextTicket = 1;
+  private finished = false;
+  private resolveDone!: () => void;
+  private rejectDone!: (e: unknown) => void;
+  readonly done = new Promise<void>((resolve, reject) => { this.resolveDone = resolve; this.rejectDone = reject; });
+
+  constructor(private readonly contextObj: vm.Context, private readonly deadline: number) {}
+
+  /** Wrap the host dispatch so IO bridge promises become ticket ids settled in-context. */
+  wrap(dispatch: (op: string, ...args: unknown[]) => unknown): (op: string, ...args: unknown[]) => unknown {
+    return (op: string, ...args: unknown[]): unknown => {
+      if (op === 'io.next') return JSON.stringify(this.ioResults.shift() ?? [0, '']);
+      if (op === 'io.done') { this.finish(args[0] === true ? undefined : args[1], args[0] === true); return undefined; }
+      const out = dispatch(op, ...args);
+      if (!(out instanceof Promise)) return out;
+      if (this.finished) throw new Error('Script execution has already finished');
+      const ticket = this.nextTicket++;
+      void (out as Promise<string>).then((json) => this.settle(ticket, json));
+      return ticket;
+    };
+  }
+
+  /** Mark the run finished; later IO completions are discarded and never resume the script. */
+  finish(error: unknown, ok: boolean): void {
+    if (this.finished) return;
+    this.finished = true;
+    if (ok) this.resolveDone(); else this.rejectDone(error);
+  }
+
+  private settle(ticket: number, json: string): void {
+    if (this.finished) return;
+    this.ioResults.push([ticket, json]);
+    try {
+      vm.runInContext('__settle()', this.contextObj, { timeout: Math.max(1, this.deadline - Date.now()) });
+    } catch (e) {
+      this.finish(e, false);
+    }
+  }
+}
+
 // ----- VM Implementation -----
 
 /**
@@ -411,25 +496,28 @@ export class VmSandboxExecutor implements SandboxExecutor {
       const dispatch = makeHostDispatch(state);
       const payload = buildPayload(state, context, this.deps);
 
-      const contextObj: Record<string, unknown> = {};
-      vm.createContext(contextObj);
-      contextObj['__dispatch'] = dispatch;
+      const hasAsyncBridges = Boolean(
+        this.deps?.httpFetch || this.deps?.dbQuery || this.deps?.routeMessage || this.deps?.getResource || this.deps?.collections,
+      );
+      const contextObj: Record<string, unknown> = vm.createContext({}, { microtaskMode: 'afterEvaluate' });
+      const run = new AsyncRun(contextObj, Date.now() + options.timeout);
+      contextObj['__dispatch'] = run.wrap(dispatch);
       contextObj['__payloadJson'] = JSON.stringify(payload);
       vm.runInContext(BOOTSTRAP_SRC, contextObj, { timeout: options.timeout });
       vm.runInContext(INVOKE_SRC, contextObj, { timeout: options.timeout });
 
-      const hasAsyncBridges = Boolean(
-        this.deps?.httpFetch || this.deps?.dbQuery || this.deps?.routeMessage || this.deps?.getResource || this.deps?.collections,
-      );
       const wrappedCode = hasAsyncBridges
-        ? `'use strict'; __result = (async function() {\n${script.code}\n})();`
+        ? `'use strict'; __watch((async function() {\n${script.code}\n})());`
         : `'use strict'; __result = (function() {\n${script.code}\n})();`;
 
-      vm.runInContext(wrappedCode, contextObj, { timeout: options.timeout });
-
-      if (hasAsyncBridges) {
-        // Await the sandbox promise, enforcing a wall-clock timeout via the signal.
-        contextObj['__result'] = await awaitWithSignal(Promise.resolve(contextObj['__result']), signal);
+      try {
+        vm.runInContext(wrappedCode, contextObj, { timeout: options.timeout });
+        if (hasAsyncBridges) {
+          // Wait for the script to settle, enforcing the wall-clock timeout via the signal.
+          await awaitWithSignal(run.done, signal);
+        }
+      } finally {
+        run.finish(undefined, true);
       }
 
       return {

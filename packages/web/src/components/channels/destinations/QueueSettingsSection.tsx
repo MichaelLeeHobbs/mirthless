@@ -1,7 +1,7 @@
 // ===========================================
 // Queue Settings Section
 // ===========================================
-// Queue mode, retry, and thread settings for a destination.
+// Queue mode, retry, and ordering settings for a destination.
 
 import { type ReactNode, type ChangeEvent } from 'react';
 import Grid from '@mui/material/Grid';
@@ -80,45 +80,21 @@ export function QueueSettingsSection({ destination, onChange }: QueueSettingsSec
           ) : null}
         </Grid>
 
-        {queueEnabled ? (
-          <Grid item xs={12} md={6}>
-            <TextField
-              label="Queue Thread Count"
-              type="number"
-              value={destination.queueThreadCount}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                const parsed = parseInt(e.target.value, 10);
-                onChange({ queueThreadCount: Number.isNaN(parsed) ? 1 : Math.max(1, parsed) });
-              }}
-              helperText="Number of concurrent threads processing the queue"
-              fullWidth
-              sx={{ mb: 2 }}
-              slotProps={{ htmlInput: { min: 1 } }}
-            />
-
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={destination.rotateQueue}
-                  onChange={(_e, checked) => { onChange({ rotateQueue: checked }); }}
-                />
-              }
-              label="Rotate Queue"
-              sx={{ mb: 2, display: 'block' }}
-            />
-
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={destination.waitForPrevious}
-                  onChange={(_e, checked) => { onChange({ waitForPrevious: checked }); }}
-                />
-              }
-              label="Wait for Previous Destination"
-              sx={{ display: 'block' }}
-            />
-          </Grid>
-        ) : null}
+        <Grid item xs={12} md={6}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={destination.waitForPrevious}
+                onChange={(_e, checked) => { onChange({ waitForPrevious: checked }); }}
+              />
+            }
+            label="Wait for Previous Destination"
+            sx={{ display: 'block' }}
+          />
+          <Typography variant="caption" color="text.secondary">
+            Send only after the destination above finishes, so this one can read its response.
+          </Typography>
+        </Grid>
       </Grid>
     </>
   );
