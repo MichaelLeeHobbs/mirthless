@@ -49,18 +49,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm build
-
-      - name: Lint
-        run: pnpm lint
+      # Build, lint and unit tests with coverage minimums: the same command
+      # agents and developers run locally before calling a change done.
+      - name: Gate (build, lint, test with coverage)
+        run: pnpm gate
 
       # Fail on high/critical vulns in production deps.
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level high
-
-      - name: Test (unit / mock-DB) with coverage
-        run: pnpm test:coverage
 
       # Apply real Drizzle migrations to the CI Postgres, then run the
       # integration lane that exercises real SQL (queue, partitions, pruner,
