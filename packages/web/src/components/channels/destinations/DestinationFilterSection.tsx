@@ -57,7 +57,9 @@ export function DestinationFilterSection({ filter, onChange }: DestinationFilter
     <Accordion disableGutters>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Typography sx={{ fontWeight: 600, mr: 2 }}>Destination Filter</Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
           {filter.rules.length === 0
             ? 'No filter rules — all messages pass through'
             : `${String(filter.rules.length)} rule${filter.rules.length === 1 ? '' : 's'}`}
@@ -65,7 +67,12 @@ export function DestinationFilterSection({ filter, onChange }: DestinationFilter
       </AccordionSummary>
       <AccordionDetails>
         {filter.rules.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'text.secondary',
+              mb: 2
+            }}>
             No filter rules. All messages will pass through.
           </Typography>
         ) : (

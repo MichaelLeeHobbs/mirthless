@@ -80,7 +80,7 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Grid container spacing={2} sx={{ mt: 0.5 }}>
-          <Grid item xs={12}>
+          <Grid size={12}>
             <TextField
               label="Username"
               value={username}
@@ -91,7 +91,7 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
               autoFocus={!isEdit}
             />
           </Grid>
-          <Grid item xs={12}>
+          <Grid size={12}>
             <TextField
               label="Email"
               type="email"
@@ -101,7 +101,7 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
               required
             />
           </Grid>
-          <Grid item xs={12}>
+          <Grid size={12}>
             <TextField
               label={isEdit ? 'New Password (leave blank to keep)' : 'Password'}
               type="password"
@@ -111,7 +111,7 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
               required={!isEdit}
             />
           </Grid>
-          <Grid item xs={6}>
+          <Grid size={6}>
             <TextField
               label="First Name"
               value={firstName}
@@ -119,7 +119,7 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
               fullWidth
             />
           </Grid>
-          <Grid item xs={6}>
+          <Grid size={6}>
             <TextField
               label="Last Name"
               value={lastName}
@@ -127,7 +127,7 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
               fullWidth
             />
           </Grid>
-          <Grid item xs={12}>
+          <Grid size={12}>
             <TextField
               label="Role"
               select

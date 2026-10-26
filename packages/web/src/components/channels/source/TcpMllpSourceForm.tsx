@@ -58,8 +58,17 @@ export function TcpMllpSourceForm({ properties, onChange }: SourceConnectorFormP
   return (
     <Grid container spacing={3}>
       {/* Network settings */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Network
         </Typography>
 
@@ -96,8 +105,17 @@ export function TcpMllpSourceForm({ properties, onChange }: SourceConnectorFormP
       </Grid>
 
       {/* MLLP settings */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           MLLP
         </Typography>
 
@@ -141,7 +159,7 @@ export function TcpMllpSourceForm({ properties, onChange }: SourceConnectorFormP
         />
       </Grid>
 
-      <Grid item xs={12}>
+      <Grid size={12}>
         <TestConnectionButton connectorType="TCP_MLLP" mode="SOURCE" properties={properties} />
       </Grid>
     </Grid>

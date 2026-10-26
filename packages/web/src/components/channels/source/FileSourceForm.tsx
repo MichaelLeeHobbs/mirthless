@@ -74,8 +74,17 @@ export function FileSourceForm({ properties, onChange }: SourceConnectorFormProp
   return (
     <Grid container spacing={3}>
       {/* Left column — Directory settings */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Directory
         </Typography>
 
@@ -123,8 +132,17 @@ export function FileSourceForm({ properties, onChange }: SourceConnectorFormProp
       </Grid>
 
       {/* Right column — Processing settings */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Processing
         </Typography>
 
@@ -201,7 +219,7 @@ export function FileSourceForm({ properties, onChange }: SourceConnectorFormProp
         )}
       </Grid>
 
-      <Grid item xs={12}>
+      <Grid size={12}>
         <TestConnectionButton connectorType="FILE" mode="SOURCE" properties={properties} />
       </Grid>
     </Grid>

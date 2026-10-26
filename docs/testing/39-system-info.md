@@ -8,7 +8,7 @@
 
 ### Server Info Card
 - [ ] Shows server version
-- [ ] Shows Node.js version (e.g., v22.x.x)
+- [ ] Shows Node.js version (e.g., v24.x.x)
 - [ ] Shows environment (development/production)
 - [ ] Shows process PID
 - [ ] Shows uptime in human-readable format (Xd Xh Xm)

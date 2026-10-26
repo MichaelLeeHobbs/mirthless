@@ -4,7 +4,7 @@
 // Collapsible group sections with group headers and aggregate stats.
 
 import { Fragment, useState, useMemo, useCallback, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -535,7 +535,9 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
         slotProps={{ root: { onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); handleGroupMenuClose(); } } }}
       >
         <MenuItem disabled sx={{ opacity: '1 !important' }}>
-          <ListItemText primaryTypographyProps={{ variant: 'subtitle2', fontWeight: 600 }}>
+          <ListItemText slotProps={{
+            primary: { variant: 'subtitle2', sx: { fontWeight: 600 } }
+          }}>
             {groupMenuTarget?.groupName}
           </ListItemText>
         </MenuItem>
@@ -569,7 +571,9 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
           }
         >
           <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
-          <ListItemText primaryTypographyProps={{ color: 'error' }}>Delete</ListItemText>
+          <ListItemText slotProps={{
+            primary: { color: 'error' }
+          }}>Delete</ListItemText>
         </MenuItem>
       </Menu>
       {/* Rename group dialog */}

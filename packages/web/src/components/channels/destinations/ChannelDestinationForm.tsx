@@ -48,8 +48,17 @@ export function ChannelDestinationForm({ properties, onChange }: DestConnectorFo
 
   return (
     <Grid container spacing={3}>
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Target Channel
         </Typography>
 

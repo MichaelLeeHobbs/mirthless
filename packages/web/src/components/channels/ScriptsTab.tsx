@@ -41,7 +41,9 @@ export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
         <Accordion key={section.key} disableGutters>
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography sx={{ fontWeight: 600, mr: 2 }}>{section.label}</Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{
+              color: 'text.secondary'
+            }}>
               {section.description}
             </Typography>
           </AccordionSummary>

@@ -6,7 +6,7 @@
 // WebSocket events refresh the message list in real time.
 
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
@@ -93,7 +93,7 @@ export function MessageBrowserPage(): ReactNode {
   }, [channelId, selectedMessageId, bulkDeleteMutation, notify]);
 
   // Debounce content search
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     debounceRef.current = setTimeout(() => {
       setDebouncedContentSearch(contentSearch);

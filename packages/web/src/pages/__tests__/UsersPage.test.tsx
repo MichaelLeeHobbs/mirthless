@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { ThemeProvider } from '@mui/material/styles';
 import { lightTheme } from '../../styles/theme.js';
 
@@ -45,7 +45,7 @@ function renderPage(permissions: readonly string[] = ALL): void {
   );
 }
 
-const switchFor = (name: string): HTMLInputElement => screen.getByRole('checkbox', { name }) as HTMLInputElement;
+const switchFor = (name: string): HTMLInputElement => screen.getByRole('switch', { name }) as HTMLInputElement;
 
 beforeEach(() => { updateMutate.mockReset(); deleteMutate.mockReset(); });
 afterEach(() => { cleanup(); });

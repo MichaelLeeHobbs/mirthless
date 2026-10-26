@@ -33,7 +33,11 @@ export function QueueSettingsSection({ destination, onChange }: QueueSettingsSec
       </Typography>
 
       <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 6
+          }}>
           <TextField
             label="Queue Mode"
             value={destination.queueMode}
@@ -80,7 +84,11 @@ export function QueueSettingsSection({ destination, onChange }: QueueSettingsSec
           ) : null}
         </Grid>
 
-        <Grid item xs={12} md={6}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 6
+          }}>
           <FormControlLabel
             control={
               <Switch
@@ -91,7 +99,9 @@ export function QueueSettingsSection({ destination, onChange }: QueueSettingsSec
             label="Wait for Previous Destination"
             sx={{ display: 'block' }}
           />
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" sx={{
+            color: 'text.secondary'
+          }}>
             Send only after the destination above finishes, so this one can read its response.
           </Typography>
         </Grid>

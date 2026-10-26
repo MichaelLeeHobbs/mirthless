@@ -22,8 +22,8 @@ import { defaultSettings } from './settings.js';
 import { defaultPermissions } from './permissions.js';
 import { demoDataEnabled } from './seed-options.js';
 
-loadEnv({ path: '../../.env' });
-loadEnv({ path: '.env' });
+loadEnv({ path: '../../.env', quiet: true });
+loadEnv({ path: '.env', quiet: true });
 
 const SALT_ROUNDS = 12;
 const ADMIN_USERNAME = 'admin';

@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router';
 import CircularProgress from '@mui/material/CircularProgress';
 import Box from '@mui/material/Box';
 import type { ReactNode } from 'react';

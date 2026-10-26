@@ -108,7 +108,7 @@ test.describe('Alerts', () => {
     // The Enabled column is a switch named after the alert; one click flips it.
     const alertRow = page.locator('table tbody tr').filter({ hasText: /E2E Test Alert/ });
     if (await alertRow.first().isVisible()) {
-      const toggle = alertRow.first().getByRole('checkbox', { name: /^(Enable|Disable) E2E Test Alert/ });
+      const toggle = alertRow.first().getByRole('switch', { name: /^(Enable|Disable) E2E Test Alert/ });
       const wasOn = await toggle.isChecked();
       await toggle.click();
       await expect(toggle).toBeChecked({ checked: !wasOn, timeout: 5_000 });

@@ -143,9 +143,14 @@ function buildTheme(mode: PaletteMode): Theme {
       MuiButton: {
         defaultProps: { disableElevation: true },
         styleOverrides: {
-          root: { borderRadius: RADIUS.md, paddingInline: 16 },
+          root: {
+            borderRadius: RADIUS.md,
+            paddingInline: 16,
+            variants: [
+              { props: { variant: 'contained', color: 'primary' }, style: { color: c.primary.contrastText } },
+            ],
+          },
           sizeSmall: { paddingInline: 12 },
-          containedPrimary: { color: c.primary.contrastText },
         },
       },
       MuiChip: {
@@ -229,11 +234,17 @@ function buildTheme(mode: PaletteMode): Theme {
       },
       MuiAlert: {
         styleOverrides: {
-          root: { borderRadius: RADIUS.md, border: `1px solid ${c.divider}`, alignItems: 'center' },
-          standardError: { borderColor: alpha(c.error, 0.4) },
-          standardWarning: { borderColor: alpha(c.warning, 0.4) },
-          standardSuccess: { borderColor: alpha(c.success, 0.4) },
-          standardInfo: { borderColor: alpha(c.info, 0.4) },
+          root: {
+            borderRadius: RADIUS.md,
+            border: `1px solid ${c.divider}`,
+            alignItems: 'center',
+            variants: [
+              { props: { variant: 'standard', severity: 'error' }, style: { borderColor: alpha(c.error, 0.4) } },
+              { props: { variant: 'standard', severity: 'warning' }, style: { borderColor: alpha(c.warning, 0.4) } },
+              { props: { variant: 'standard', severity: 'success' }, style: { borderColor: alpha(c.success, 0.4) } },
+              { props: { variant: 'standard', severity: 'info' }, style: { borderColor: alpha(c.info, 0.4) } },
+            ],
+          },
         },
       },
       MuiLinearProgress: {

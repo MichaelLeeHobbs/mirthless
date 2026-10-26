@@ -15,7 +15,7 @@ const mockAlertManager = {
   getAlerts: vi.fn().mockReturnValue([]),
 };
 
-const MockAlertManagerCtor = vi.fn().mockImplementation(() => mockAlertManager);
+const MockAlertManagerCtor = vi.fn().mockImplementation(function () { return mockAlertManager; });
 
 // Mock ChannelRuntime
 const mockRuntimeDeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
@@ -30,11 +30,11 @@ const mockChannelRuntime = {
   halt: mockRuntimeHalt,
   getState: mockRuntimeGetState,
 };
-const MockChannelRuntime = vi.fn().mockImplementation(() => mockChannelRuntime);
+const MockChannelRuntime = vi.fn().mockImplementation(function () { return mockChannelRuntime; });
 
 // Mock GlobalChannelMap
 const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn() };
-const MockGlobalChannelMap = vi.fn().mockImplementation(() => mockGcm);
+const MockGlobalChannelMap = vi.fn().mockImplementation(function () { return mockGcm; });
 
 // Mock SandboxExecutor
 const mockSandboxExecute = vi.fn().mockResolvedValue({
@@ -43,10 +43,12 @@ const mockSandboxExecute = vi.fn().mockResolvedValue({
   error: null,
 });
 const mockSandboxDispose = vi.fn();
-const MockVmSandboxExecutor = vi.fn().mockImplementation(() => ({
-  execute: mockSandboxExecute,
-  dispose: mockSandboxDispose,
-}));
+const MockVmSandboxExecutor = vi.fn().mockImplementation(function () {
+  return {
+    execute: mockSandboxExecute,
+    dispose: mockSandboxDispose,
+  };
+});
 
 // Mock compileScript
 const mockCompileScript = vi.fn().mockResolvedValue({
@@ -56,47 +58,55 @@ const mockCompileScript = vi.fn().mockResolvedValue({
 vi.mock('@mirthless/engine', () => ({
   ChannelRuntime: MockChannelRuntime,
   VmSandboxExecutor: MockVmSandboxExecutor,
-  MessageProcessor: vi.fn().mockImplementation(() => ({
-    processMessage: vi.fn().mockResolvedValue({
-      ok: true, value: { messageId: 1, status: 'SENT', destinationResults: [] }, error: null,
-    }),
-  })),
+  MessageProcessor: vi.fn().mockImplementation(function () {
+    return {
+      processMessage: vi.fn().mockResolvedValue({
+        ok: true, value: { messageId: 1, status: 'SENT', destinationResults: [] }, error: null,
+      }),
+    };
+  }),
   DEFAULT_EXECUTION_OPTIONS: { timeout: 30000, memoryLimit: 134217728, signal: AbortSignal.timeout(30000) },
   GlobalChannelMap: MockGlobalChannelMap,
-  GlobalMapProxy: vi.fn().mockImplementation(() => ({ load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) })),
+  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
   compileScript: mockCompileScript,
   compileFilterRulesToScript: vi.fn().mockReturnValue(null),
   compileTransformerStepsToScript: vi.fn().mockReturnValue(null),
   prependTemplates: vi.fn().mockImplementation((src: string) => src),
   AlertManager: MockAlertManagerCtor,
-  RecoveryManager: vi.fn().mockImplementation(() => ({
-    recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
-  })),
+  RecoveryManager: vi.fn().mockImplementation(function () {
+    return {
+      recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
+    };
+  }),
 }));
 
 // Mock JavaScript connectors
 const mockSetScriptRunner = vi.fn();
 const mockSetDestScriptRunner = vi.fn();
 
-const MockJavaScriptReceiver = vi.fn().mockImplementation(() => ({
-  setScriptRunner: mockSetScriptRunner,
-  setDispatcher: vi.fn(),
-  onDeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-  onStart: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-  onStop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-  onHalt: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-  onUndeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-}));
+const MockJavaScriptReceiver = vi.fn().mockImplementation(function () {
+  return {
+    setScriptRunner: mockSetScriptRunner,
+    setDispatcher: vi.fn(),
+    onDeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    onStart: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    onStop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    onHalt: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    onUndeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+  };
+});
 
-const MockJavaScriptDispatcher = vi.fn().mockImplementation(() => ({
-  setScriptRunner: mockSetDestScriptRunner,
-  send: vi.fn().mockResolvedValue({ ok: true, value: { status: 'SENT', content: '' }, error: null }),
-  onDeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-  onStart: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-  onStop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-  onHalt: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-  onUndeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
-}));
+const MockJavaScriptDispatcher = vi.fn().mockImplementation(function () {
+  return {
+    setScriptRunner: mockSetDestScriptRunner,
+    send: vi.fn().mockResolvedValue({ ok: true, value: { status: 'SENT', content: '' }, error: null }),
+    onDeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    onStart: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    onStop: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    onHalt: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+    onUndeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+  };
+});
 
 // Track which connectors are returned by create* functions
 let _lastSourceConnector: unknown = null;

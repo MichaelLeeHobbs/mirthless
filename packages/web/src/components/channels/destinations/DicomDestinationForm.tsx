@@ -54,8 +54,17 @@ export function DicomDestinationForm({ properties, onChange }: DestConnectorForm
   return (
     <Grid container spacing={3}>
       {/* Left column — Remote SCP */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Remote SCP
         </Typography>
 
@@ -101,8 +110,17 @@ export function DicomDestinationForm({ properties, onChange }: DestConnectorForm
       </Grid>
 
       {/* Right column — Sending */}
-      <Grid item xs={12} md={6}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Grid
+        size={{
+          xs: 12,
+          md: 6
+        }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'text.secondary',
+            mb: 2
+          }}>
           Sending
         </Typography>
 
@@ -168,7 +186,7 @@ export function DicomDestinationForm({ properties, onChange }: DestConnectorForm
         />
       </Grid>
 
-      <Grid item xs={12}>
+      <Grid size={12}>
         <TestConnectionButton connectorType="DICOM" mode="DESTINATION" properties={properties} />
       </Grid>
     </Grid>

@@ -130,7 +130,9 @@ function GroupTable({ onClose: _onClose }: { readonly onClose: () => void }): Re
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             {groups?.length ?? 0} group{(groups?.length ?? 0) !== 1 ? 's' : ''}
           </Typography>
           {isFetching && !isLoading ? <CircularProgress size={16} /> : null}
@@ -176,7 +178,12 @@ function GroupTable({ onClose: _onClose }: { readonly onClose: () => void }): Re
             ) : (
               <TableRow>
                 <TableCell colSpan={4} align="center">
-                  <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'text.secondary',
+                      py: 2
+                    }}>
                     No channel groups found
                   </Typography>
                 </TableCell>

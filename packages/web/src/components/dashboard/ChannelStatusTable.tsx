@@ -5,7 +5,7 @@
 // Columns (beyond Name + State) are per-user configurable.
 
 import { useState, useMemo, useCallback, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import Box from '@mui/material/Box';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';

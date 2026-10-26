@@ -4,7 +4,7 @@
 // Alert management: list, enable/disable, delete.
 
 import { useState, type ReactNode } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
@@ -103,14 +103,25 @@ export function AlertsPage(): ReactNode {
                   <TableRow key={alert.id} hover>
                     <TableCell>
                       {canWrite ? (
-                        <Link component={RouterLink} to={`/alerts/${alert.id}`} underline="hover" color="text.primary" variant="body2" sx={{ fontWeight: 500, display: 'block' }}>
+                        <Link
+                          component={RouterLink}
+                          to={`/alerts/${alert.id}`}
+                          underline="hover"
+                          variant="body2"
+                          sx={{
+                            color: 'text.primary',
+                            fontWeight: 500,
+                            display: 'block'
+                          }}>
                           {alert.name}
                         </Link>
                       ) : (
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>{alert.name}</Typography>
                       )}
                       {alert.description ? (
-                        <Typography variant="caption" color="text.secondary">{alert.description}</Typography>
+                        <Typography variant="caption" sx={{
+                          color: 'text.secondary'
+                        }}>{alert.description}</Typography>
                       ) : null}
                     </TableCell>
                     <TableCell>
@@ -126,7 +137,9 @@ export function AlertsPage(): ReactNode {
                             checked={alert.enabled}
                             onChange={() => { handleToggleEnabled(alert); }}
                             disabled={!canWrite || toggleEnabled.isPending}
-                            inputProps={{ 'aria-label': `${alert.enabled ? 'Disable' : 'Enable'} ${alert.name}` }}
+                            slotProps={{
+                              input: { 'aria-label': `${alert.enabled ? 'Disable' : 'Enable'} ${alert.name}` }
+                            }}
                           />
                         </span>
                       </Tooltip>

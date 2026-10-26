@@ -203,7 +203,7 @@ export function UsersPage(): ReactNode {
                             checked={user.enabled}
                             onChange={() => { handleToggleEnabled(user); }}
                             disabled={toggleBlockedReason(user) !== ''}
-                            inputProps={{ 'aria-label': `${user.enabled ? 'Disable' : 'Enable'} ${user.username}` }}
+                            slotProps={{ input: { 'aria-label': `${user.enabled ? 'Disable' : 'Enable'} ${user.username}` } }}
                           />
                         </span>
                       </Tooltip>

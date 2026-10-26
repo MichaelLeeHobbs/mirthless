@@ -113,8 +113,6 @@ export class MessageQueryService {
       const hasConnectorFilter = (filters.status !== undefined && filters.status.length > 0) || filters.metaDataId !== undefined;
       const hasContentSearch = filters.contentSearch !== undefined && filters.contentSearch.length > 0;
 
-      let messageIdSubquery: ReturnType<typeof sql> | null = null;
-
       if (hasConnectorFilter) {
         const cmConditions = [sql`cm.channel_id = ${channelId}`];
         if (filters.status !== undefined && filters.status.length > 0) {
@@ -124,8 +122,7 @@ export class MessageQueryService {
           cmConditions.push(sql`cm.meta_data_id = ${filters.metaDataId}`);
         }
         const cmWhere = sql.join(cmConditions, sql` AND `);
-        messageIdSubquery = sql`${messages.id} IN (SELECT DISTINCT cm.message_id FROM connector_messages cm WHERE ${cmWhere})`;
-        conditions.push(messageIdSubquery);
+        conditions.push(sql`${messages.id} IN (SELECT DISTINCT cm.message_id FROM connector_messages cm WHERE ${cmWhere})`);
       }
 
       if (hasContentSearch) {

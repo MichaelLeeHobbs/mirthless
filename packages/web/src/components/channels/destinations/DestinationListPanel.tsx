@@ -40,7 +40,9 @@ export function DestinationListPanel({
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, py: 1 }}>
-        <Typography variant="subtitle2" color="text.secondary">
+        <Typography variant="subtitle2" sx={{
+          color: 'text.secondary'
+        }}>
           Destinations ({String(destinations.length)})
         </Typography>
         <Tooltip title="Add destination">
@@ -62,15 +64,23 @@ export function DestinationListPanel({
             <ListItemText
               primary={dest.name}
               secondary={dest.connectorType.replace('_', '/')}
-              primaryTypographyProps={{
-                noWrap: true,
-                sx: { fontWeight: index === selectedIndex ? 600 : 400 },
-              }}
-              secondaryTypographyProps={{ noWrap: true }}
               sx={{ minWidth: 0 }}
-            />
+              slotProps={{
+                primary: {
+                  noWrap: true,
+                  sx: { fontWeight: index === selectedIndex ? 600 : 400 },
+                },
+
+                secondary: { noWrap: true }
+              }} />
             {!dest.enabled ? (
-              <Typography variant="caption" color="text.disabled" sx={{ mx: 0.5, flexShrink: 0 }}>
+              <Typography
+                variant="caption"
+                sx={{
+                  color: 'text.disabled',
+                  mx: 0.5,
+                  flexShrink: 0
+                }}>
                 OFF
               </Typography>
             ) : null}

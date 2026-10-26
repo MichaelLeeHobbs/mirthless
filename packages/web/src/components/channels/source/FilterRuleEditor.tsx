@@ -50,11 +50,21 @@ export function FilterRuleEditor({
         sx={{ '& .MuiAccordionSummary-content': { alignItems: 'center', gap: 1 } }}
       >
         <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>{title}</Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
+        <Typography
+          variant="caption"
+          sx={{
+            color: 'text.secondary',
+            mr: 1
+          }}>
           {rule.type === 'JAVASCRIPT' ? 'JavaScript' : 'Rule Builder'}
         </Typography>
         {!rule.enabled ? (
-          <Typography variant="caption" color="warning.main" sx={{ mr: 1 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'warning.main',
+              mr: 1
+            }}>
             Disabled
           </Typography>
         ) : null}

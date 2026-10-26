@@ -161,7 +161,7 @@ describe('parseForSandbox — XML entity expansion limits', () => {
     let entities = '<!ENTITY a0 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">';
     for (let i = 1; i < 10; i++) entities += `<!ENTITY a${String(i)} "${`&a${String(i - 1)};`.repeat(10)}">`;
     const doc = `<?xml version="1.0"?><!DOCTYPE r [${entities}]><r>&a9;</r>`;
-    let length = 0;
+    let length: number;
     try {
       length = JSON.stringify(parseForSandbox(doc, 'XML')).length;
     } catch {

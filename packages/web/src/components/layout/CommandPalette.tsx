@@ -6,7 +6,7 @@
 // offers is permission-gated the same way as the sidebar.
 
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import Box from '@mui/material/Box';
 import Dialog from '@mui/material/Dialog';
 import InputBase from '@mui/material/InputBase';
@@ -85,7 +85,7 @@ export function CommandPalette({ open, onClose, onShowShortcuts }: CommandPalett
   };
 
   return (
-    <Dialog open={open} onClose={close} fullWidth maxWidth="sm" sx={{ '& .MuiDialog-container': { alignItems: 'flex-start' } }} PaperProps={{ sx: { mt: '12vh' } }}>
+    <Dialog open={open} onClose={close} fullWidth maxWidth="sm" sx={{ '& .MuiDialog-container': { alignItems: 'flex-start' } }} slotProps={{ paper: { sx: { mt: '12vh' } } }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider' }}>
         <SearchIcon sx={{ color: 'text.secondary' }} />
         <InputBase

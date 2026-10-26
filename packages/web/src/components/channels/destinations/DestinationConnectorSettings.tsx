@@ -49,7 +49,9 @@ export function DestinationConnectorSettings({ connectorType, properties, onChan
         ? <FormComponent properties={properties} onChange={onChange} />
         : (
           <Box sx={{ textAlign: 'center', py: 4 }}>
-            <Typography color="text.secondary">
+            <Typography sx={{
+              color: 'text.secondary'
+            }}>
               {connectorType} destination connector settings are not yet available.
             </Typography>
           </Box>

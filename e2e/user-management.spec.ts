@@ -73,13 +73,13 @@ test.describe('User Management', () => {
     const userRow = page.locator('table tbody tr', { hasText: TEST_USER.username });
     if (await userRow.isVisible()) {
       // Enabled is a switch; disabling asks first because the user loses sign-in.
-      const toggle = userRow.getByRole('checkbox', { name: `Disable ${TEST_USER.username}` });
+      const toggle = userRow.getByRole('switch', { name: `Disable ${TEST_USER.username}` });
       if (await toggle.isVisible()) {
         await toggle.click();
         const dialog = page.getByRole('dialog');
         await expect(dialog).toContainText(TEST_USER.username);
         await dialog.getByRole('button', { name: /disable|confirm/i }).click();
-        await expect(userRow.getByRole('checkbox', { name: `Enable ${TEST_USER.username}` })).toBeVisible({ timeout: 5_000 });
+        await expect(userRow.getByRole('switch', { name: `Enable ${TEST_USER.username}` })).toBeVisible({ timeout: 5_000 });
       }
     }
   });

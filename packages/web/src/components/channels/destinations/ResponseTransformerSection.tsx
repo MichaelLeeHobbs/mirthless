@@ -31,12 +31,19 @@ export function ResponseTransformerSection({ value, onChange }: ResponseTransfor
         id="response-transformer-header"
       >
         <Typography sx={{ fontWeight: 600, mr: 2 }}>Response Transformer</Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
           {hasScript ? 'Script configured' : 'No script'}
         </Typography>
       </AccordionSummary>
       <AccordionDetails>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        <Typography
+          variant="body2"
+          sx={{
+            color: 'text.secondary',
+            mb: 1
+          }}>
           Transform the response returned by this destination after a successful send.
           The <code>response</code> is available as <code>msg</code>; return the new value.
         </Typography>

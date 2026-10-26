@@ -55,9 +55,13 @@ function ConnectorContentTabs({ connector }: { readonly connector: ConnectorDeta
 
   if (availableTabs.length === 0) {
     return (
-      <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-        No content stored for this connector.
-      </Typography>
+      <Typography
+        variant="body2"
+        sx={{
+          color: 'text.secondary',
+          py: 2
+        }}>No content stored for this connector.
+              </Typography>
     );
   }
 
@@ -162,7 +166,9 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
             color={detail.processed ? 'success' : 'warning'}
             variant="outlined"
           />
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             {new Date(detail.receivedAt).toLocaleString()}
             {detail.processedAt ? ` (${String(new Date(detail.processedAt).getTime() - new Date(detail.receivedAt).getTime())}ms)` : ''}
           </Typography>
@@ -213,12 +219,16 @@ export function MessageDetailPanel({ channelId, messageId }: MessageDetailProps)
       {activeConnector && (
         <Box>
           <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{
+              color: 'text.secondary'
+            }}>
               {activeConnector.connectorName ?? (activeConnector.metaDataId === 0 ? 'Source' : `Destination ${String(activeConnector.metaDataId)}`)}
             </Typography>
             <Chip label={activeConnector.status} size="small" variant="outlined" />
             {activeConnector.sendAttempts > 0 && (
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" sx={{
+                color: 'text.secondary'
+              }}>
                 {String(activeConnector.sendAttempts)} attempt{activeConnector.sendAttempts !== 1 ? 's' : ''}
               </Typography>
             )}

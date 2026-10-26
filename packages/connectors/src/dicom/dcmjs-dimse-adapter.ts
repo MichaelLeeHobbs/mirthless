@@ -272,9 +272,8 @@ class DimseSender implements DcmtkSender {
 
   async send(files: readonly string[]): Promise<Result<DcmtkSendResult>> {
     let attempt = 0;
-    let last: Result<DcmtkSendResult> = fail(new Error('no attempt made'));
     for (;;) {
-      last = await this.sendOnce(files);
+      const last = await this.sendOnce(files);
       if (last.ok || attempt >= this.options.maxRetries) return last;
       attempt += 1;
       if (this.options.retryDelayMs > 0) {

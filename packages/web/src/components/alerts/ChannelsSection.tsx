@@ -25,7 +25,12 @@ export function ChannelsSection({ channelIds, onChange }: ChannelsSectionProps):
   return (
     <Box>
       <Typography variant="h6" gutterBottom>Channels</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+      <Typography
+        variant="body2"
+        sx={{
+          color: 'text.secondary',
+          mb: 2
+        }}>
         Select which channels this alert monitors. Leave empty to monitor all channels.
       </Typography>
 
@@ -43,17 +48,12 @@ export function ChannelsSection({ channelIds, onChange }: ChannelsSectionProps):
         onChange={(_e, newValue) => { onChange(newValue.map((ch) => ch.id)); }}
         loading={isLoading}
         renderInput={(params) => {
-          const { InputLabelProps, InputProps, ...rest } = params;
           return (
             <TextField
-              {...rest}
+              {...params}
               label="Channels"
               placeholder="Select channels..."
               size="small"
-              slotProps={{
-                inputLabel: InputLabelProps,
-                input: InputProps as Record<string, unknown>,
-              }}
             />
           );
         }}

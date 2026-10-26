@@ -13,7 +13,7 @@ import Button from '@mui/material/Button';
 import { ScriptEditor } from '../components/editors/ScriptEditor.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
-import { useBlocker } from 'react-router-dom';
+import { useBlocker } from 'react-router';
 import { useGlobalScripts, useUpdateGlobalScripts } from '../hooks/use-global-scripts.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
