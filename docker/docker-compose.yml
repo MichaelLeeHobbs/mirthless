@@ -18,8 +18,8 @@ services:
       retries: 5
 
   # --- Integration-test services (only start with: docker compose --profile test up) ---
-  # Back the engine's connector integration lane (packages/engine *.itest.ts).
-  # Match the env the gates expect (packages/engine/src/__tests__/integration/gates.ts).
+  # Back the connector integration lane (packages/connectors *.itest.ts).
+  # Match the env the gates expect (packages/connectors/src/__tests__/e2e/integration/gates.ts).
 
   sftp-test:
     image: atmoz/sftp:alpine

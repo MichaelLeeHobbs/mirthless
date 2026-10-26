@@ -114,7 +114,7 @@ test.describe('Resources', () => {
           }
         }
 
-        await page.getByRole('button', { name: /save/i }).click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Update' }).click();
         await page.waitForTimeout(1_000);
       }
     }

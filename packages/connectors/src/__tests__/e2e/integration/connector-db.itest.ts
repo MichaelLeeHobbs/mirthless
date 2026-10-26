@@ -6,7 +6,7 @@
 // Runs only when DATABASE_URL points at a *_test database.
 
 import { it, expect, beforeAll, afterAll } from 'vitest';
-import { ConnectionPool, TcpMllpReceiver, DatabaseDispatcher, clearChannelRegistry } from '@mirthless/connectors';
+import { ConnectionPool, TcpMllpReceiver, DatabaseDispatcher, clearChannelRegistry } from '../../../index.js';
 import { deployChannel, teardownAll } from '../support/e2e-harness.js';
 import { sendMllp } from '../support/tcp-helpers.js';
 import { describeDb, requireDb } from './gates.js';

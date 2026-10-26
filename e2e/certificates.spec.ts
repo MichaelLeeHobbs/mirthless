@@ -79,12 +79,12 @@ test.describe('Certificates', () => {
 
   test('navigate to certificates page', async ({ page }) => {
     await page.goto('/certificates');
-    await expect(page.getByRole('heading', { name: /certificates/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Certificates' })).toBeVisible({ timeout: 10_000 });
   });
 
   test('create (import) a new certificate', async ({ page }) => {
     await page.goto('/certificates');
-    await expect(page.getByRole('heading', { name: /certificates/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Certificates' })).toBeVisible({ timeout: 10_000 });
 
     // Open the Add Certificate dialog
     await page.getByRole('button', { name: /add certificate/i }).click();
@@ -123,7 +123,7 @@ test.describe('Certificates', () => {
 
   test('invalid PEM is rejected on create', async ({ page }) => {
     await page.goto('/certificates');
-    await expect(page.getByRole('heading', { name: /certificates/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Certificates' })).toBeVisible({ timeout: 10_000 });
 
     await page.getByRole('button', { name: /add certificate/i }).click();
 
@@ -158,7 +158,7 @@ test.describe('Certificates', () => {
         await expect(confirmBtn).toBeVisible({ timeout: 10_000 });
         await confirmBtn.click();
 
-        await expect(page.getByText(TEST_CERT_NAME)).not.toBeVisible({ timeout: 10_000 });
+        await expect(page.locator('table tbody tr').filter({ hasText: TEST_CERT_NAME })).toHaveCount(0, { timeout: 10_000 });
       }
     }
   });
