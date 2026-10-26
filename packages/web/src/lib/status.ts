@@ -39,3 +39,25 @@ export function messageStatusLevel(status: string): StatusLevel {
     default: return 'neutral';
   }
 }
+
+/**
+ * Map an audit event level to a semantic level.
+ * ERROR → critical, WARN → warning, INFO → info, otherwise neutral.
+ */
+export function eventLevelLevel(level: string): StatusLevel {
+  switch (level) {
+    case 'ERROR': return 'critical';
+    case 'WARN': return 'warning';
+    case 'INFO': return 'info';
+    default: return 'neutral';
+  }
+}
+
+/** Map an audit event outcome to a semantic level. SUCCESS → healthy, FAILURE → critical. */
+export function eventOutcomeLevel(outcome: string): StatusLevel {
+  switch (outcome) {
+    case 'SUCCESS': return 'healthy';
+    case 'FAILURE': return 'critical';
+    default: return 'neutral';
+  }
+}

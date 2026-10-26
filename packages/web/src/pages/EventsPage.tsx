@@ -46,6 +46,7 @@ import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import type { EventSummary } from '../api/client.js';
+import { FONT_FAMILY_MONO } from '../styles/tokens.js';
 
 const LEVEL_COLORS: Record<string, 'info' | 'warning' | 'error'> = {
   INFO: 'info',
@@ -206,7 +207,7 @@ export function EventsPage(): ReactNode {
                       />
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                      <Typography variant="body2" sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.7rem' }}>
                         {event.userId ? `${event.userId.slice(0, 8)}...` : '-'}
                       </Typography>
                     </TableCell>

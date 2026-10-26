@@ -9,6 +9,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { JAVASCRIPT_DEST_DEFAULTS } from './connector-defaults.js';
+import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 
 function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
   const val = props[key];
@@ -47,7 +48,7 @@ export function JavaScriptDestinationForm({ properties, onChange }: DestConnecto
           multiline
           minRows={8}
           maxRows={20}
-          sx={{ mb: 2, '& .MuiInputBase-input': { fontFamily: 'monospace', fontSize: '0.875rem' } }}
+          sx={{ mb: 2, '& .MuiInputBase-input': { fontFamily: FONT_FAMILY_MONO, fontSize: '0.875rem' } }}
         />
       </Grid>
     </Grid>

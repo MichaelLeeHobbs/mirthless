@@ -41,6 +41,7 @@ import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
+import { FONT_FAMILY_MONO } from '../styles/tokens.js';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${String(bytes)} B`;
@@ -255,7 +256,7 @@ export function ResourcesPage(): ReactNode {
             onChange={(e) => { setContent(e.target.value); setDirty(true); }}
             disabled={editingId != null && isDetailLoading}
             placeholder={editingId != null && isDetailLoading ? 'Loading content...' : ''}
-            sx={{ fontFamily: 'monospace' }}
+            sx={{ fontFamily: FONT_FAMILY_MONO }}
           />
         </DialogContent>
         <DialogActions>

@@ -39,6 +39,7 @@ import { PageHeader } from '../components/common/PageHeader.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
+import { FONT_FAMILY_MONO } from '../styles/tokens.js';
 
 export function ConfigMapPage(): ReactNode {
   const { data: entries, isLoading, isFetching, error, refetch } = useConfigMap();
@@ -173,8 +174,8 @@ export function ConfigMapPage(): ReactNode {
                     <TableCell>
                       <Chip label={entry.category} size="small" variant="outlined" />
                     </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 500 }}>{entry.name}</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <TableCell sx={{ fontFamily: FONT_FAMILY_MONO, fontWeight: 500 }}>{entry.name}</TableCell>
+                    <TableCell sx={{ fontFamily: FONT_FAMILY_MONO, maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {entry.value}
                     </TableCell>
                     <TableCell>
