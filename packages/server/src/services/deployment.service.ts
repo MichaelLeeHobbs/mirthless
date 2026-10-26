@@ -330,7 +330,8 @@ export class DeploymentService {
    * Channels with initialState STARTED are deployed and started.
    * Channels with initialState PAUSED are deployed and started then paused.
    * Channels with initialState STOPPED are deployed only.
-   * Channels deploy after the channels they depend on.
+   * Channels deploy after the channels they depend on. If the dependencies
+   * can't be loaded, nothing is auto-deployed: a safe order can't be proven.
    */
   static async autoDeployChannels(): Promise<void> {
     const listResult = await ChannelService.list({ page: 1, pageSize: 1000 });
@@ -341,6 +342,9 @@ export class DeploymentService {
 
     const allChannels = listResult.value.data;
     const channels = await orderForDeploy(allChannels.filter((ch) => ch.enabled));
+    if (channels === null) {
+      return;
+    }
     logger.info({
       total: allChannels.length,
       enabled: channels.length,
@@ -379,12 +383,15 @@ export class DeploymentService {
 
 // ----- Helper -----
 
-/** Sort channels so dependencies deploy first. Falls back to list order, loudly, if edges can't load. */
-async function orderForDeploy<T extends { readonly id: string }>(channels: readonly T[]): Promise<readonly T[]> {
+/** Sort channels so dependencies deploy first. Returns null, after logging, if edges can't load. */
+async function orderForDeploy<T extends { readonly id: string }>(channels: readonly T[]): Promise<readonly T[] | null> {
   const edgesResult = await ChannelDependencyService.listAll();
   if (!edgesResult.ok) {
-    logger.error({ errMsg: edgesResult.error.message }, 'Failed to load channel dependencies; deploying in list order');
-    return channels;
+    logger.error(
+      { errMsg: edgesResult.error.message, channelCount: channels.length },
+      'Failed to load channel dependencies; skipping auto-deploy. Deploy channels manually once the database is reachable.',
+    );
+    return null;
   }
   const byId = new Map(channels.map((ch) => [ch.id, ch]));
   return orderByDependencies(channels.map((ch) => ch.id), edgesResult.value)

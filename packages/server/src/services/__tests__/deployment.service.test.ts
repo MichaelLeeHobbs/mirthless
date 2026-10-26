@@ -453,13 +453,13 @@ describe('DeploymentService', () => {
       expect(deployedOrder()).toEqual(['a']);
     });
 
-    it('still deploys every channel, in list order, when dependencies fail to load', async () => {
+    it('deploys nothing when dependencies fail to load, since no safe order is known', async () => {
       mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b')] }));
       mockListAllDependencies.mockResolvedValue({ ok: false, value: null, error: new Error('db down') });
 
       await DeploymentService.autoDeployChannels();
 
-      expect(deployedOrder()).toEqual(['a', 'b']);
+      expect(deployedOrder()).toEqual([]);
     });
   });
 });
