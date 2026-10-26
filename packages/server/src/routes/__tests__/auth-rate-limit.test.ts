@@ -22,7 +22,7 @@ vi.mock('../../middleware/validate.middleware.js', () => ({
   validate: () => vi.fn((_req, _res, next) => { next(); }),
 }));
 
-const { authRateLimiter } = await import('../../middleware/rate-limit.middleware.js');
+const { authRateLimiter, refreshRateLimiter } = await import('../../middleware/rate-limit.middleware.js');
 const router = (await import('../auth.routes.js')).default;
 
 // ----- Helpers -----
@@ -60,10 +60,10 @@ describe('Auth Rate Limiting', () => {
     expect(hasLimiter).toBe(true);
   });
 
-  it('applies authRateLimiter to POST /refresh', () => {
+  it('applies the separate refreshRateLimiter, not the login limiter, to POST /refresh', () => {
     const stack = getRouteMiddleware('/refresh', 'post');
-    const hasLimiter = stack.some((mw) => mw.handle === authRateLimiter);
-    expect(hasLimiter).toBe(true);
+    expect(stack.some((mw) => mw.handle === refreshRateLimiter)).toBe(true);
+    expect(stack.some((mw) => mw.handle === authRateLimiter)).toBe(false);
   });
 
   it('does not apply authRateLimiter to POST /logout', () => {

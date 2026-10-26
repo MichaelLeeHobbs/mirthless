@@ -13,8 +13,9 @@ import type {
 } from '@mirthless/core-models';
 import { ChannelService } from '../services/channel.service.js';
 import { isServiceError } from '../lib/service-error.js';
-import { redactConnectorProperties } from '../lib/secret-redaction.js';
+import { redactChannelDetail } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
+import { getEngine } from '../engine.js';
 
 /**
  * Mask connector credentials (DB/SFTP passwords, API keys, private keys) in a
@@ -22,26 +23,6 @@ import logger from '../lib/logger.js';
  * channel (`channels:write`) sees the real values; everyone else — notably the
  * `viewer` role — gets the redacted marker.
  */
-function redactChannelDetail(detail: Record<string, unknown>): Record<string, unknown> {
-  const source = detail['sourceConnectorProperties'];
-  const destinations = detail['destinations'];
-  return {
-    ...detail,
-    sourceConnectorProperties:
-      source && typeof source === 'object'
-        ? redactConnectorProperties(source as Record<string, unknown>)
-        : source,
-    destinations: Array.isArray(destinations)
-      ? destinations.map((d: Record<string, unknown>) => {
-          const props = d['properties'];
-          return props && typeof props === 'object'
-            ? { ...d, properties: redactConnectorProperties(props as Record<string, unknown>) }
-            : d;
-        })
-      : destinations,
-  };
-}
-
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
   if (isServiceError(error, 'ALREADY_EXISTS')) return 409;
@@ -123,6 +104,12 @@ export class ChannelController {
   static async delete(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    // A deployed channel keeps receiving and routing messages after its row is
+    // soft-deleted, with nothing left in the UI to stop it. Require undeploy first.
+    if (getEngine().getRuntime(id)) {
+      res.status(409).json({ success: false, error: { code: 'CONFLICT', message: 'Cannot delete a deployed channel. Stop and undeploy it first.' } });
+      return;
+    }
     const result = await ChannelService.delete(id, context);
 
     if (!result.ok) {

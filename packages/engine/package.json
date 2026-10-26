@@ -1,6 +1,6 @@
 {
   "name": "@mirthless/engine",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -24,7 +24,7 @@
     "@mirthless/core-models": "workspace:*",
     "@mirthless/core-util": "workspace:*",
     "esbuild": "^0.27.3",
-    "fast-xml-parser": "^5.4.2",
+    "fast-xml-parser": "^5.11.2",
     "isolated-vm": "^6.0.2"
   },
   "devDependencies": {

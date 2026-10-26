@@ -70,6 +70,7 @@ The API is served behind nginx on port 80; interactive API docs (Swagger UI) are
 
 Running Mirthless in production? See the operator guides in [`docs/ops/`](docs/ops/):
 
+- [Deployment](docs/ops/deployment.md) — first install, required settings, listener ports, known limitations
 - [Backup & restore](docs/ops/backup-restore.md) — Postgres `pg_dump`/`pg_restore` plus the config backup API
 - [Upgrade procedure](docs/ops/upgrade.md) — migrations, downtime, and rollback
 - [TLS & PHI-in-transit](docs/ops/tls-and-phi.md) — edge TLS and connector-level TLS
@@ -97,7 +98,7 @@ packages/
 
 ## Current State
 
-This is a working system with ~2,200 automated tests. You can create channels, write transformers in TypeScript, deploy them, send messages, and watch them flow through the pipeline. The 10 seeded example channels demonstrate HL7v2, JSON, XML, channel-to-channel routing, filtering, error handling, and more.
+This is a working system with about 2,500 unit tests plus real-Postgres integration and Playwright end-to-end suites. You can create channels, write transformers in TypeScript, deploy them, send messages, and watch them flow through the pipeline. The 10 seeded example channels demonstrate HL7v2, JSON, XML, channel-to-channel routing, filtering, error handling, and more.
 
 What works: channels, pipeline, sandbox, 10 connector types, RBAC, audit logging, message browser, code templates, alerts, groups, tags, dark mode, CLI.
 

@@ -10,12 +10,23 @@ import type { Hl7MessageProxy } from '../sandbox/bridge-functions.js';
 
 const HL7_PROXY_BRAND = '__hl7Proxy';
 
+// Inbound XML comes from the network, so entity expansion is explicitly bounded
+// (billion-laughs / quadratic-blowup DoS). Standard entities (&amp; &lt; ...)
+// still decode; DOCTYPE-declared entities are capped in count and expanded size.
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   allowBooleanAttributes: true,
   parseTagValue: true,
   trimValues: true,
+  processEntities: {
+    enabled: true,
+    maxEntityCount: 100,
+    maxEntitySize: 10_000,
+    maxExpansionDepth: 10,
+    maxTotalExpansions: 10_000,
+    maxExpandedLength: 1_000_000,
+  },
 });
 
 const xmlBuilder = new XMLBuilder({

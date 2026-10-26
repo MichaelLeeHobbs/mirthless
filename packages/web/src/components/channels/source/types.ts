@@ -55,6 +55,21 @@ export interface TransformerFormValues {
   readonly outboundProperties: Record<string, unknown>;
 }
 
+/**
+ * Whether a transformer carries anything worth saving. A default HL7V2→HL7V2
+ * transformer with no steps is omitted, but one with data-type properties or
+ * templates (e.g. from a Mirth import) must be kept or saving would drop them.
+ */
+export function transformerHasContent(t: TransformerFormValues): boolean {
+  return t.steps.length > 0
+    || t.inboundDataType !== 'HL7V2'
+    || t.outboundDataType !== 'HL7V2'
+    || t.inboundTemplate !== null
+    || t.outboundTemplate !== null
+    || Object.keys(t.inboundProperties).length > 0
+    || Object.keys(t.outboundProperties).length > 0;
+}
+
 /** Default empty filter rule. */
 export function createDefaultFilterRule(): FilterRuleFormValues {
   return {

@@ -6,25 +6,11 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../lib/jwt.js';
 import { db } from '../lib/db.js';
-import { users, sessions } from '../db/schema/index.js';
-import { eq, and, gt } from 'drizzle-orm';
+import { users } from '../db/schema/index.js';
+import { eq } from 'drizzle-orm';
+import { isSessionLive } from '../lib/session-live.js';
 import { permissionNamesForRole } from '../lib/role-permissions.js';
 import logger from '../lib/logger.js';
-
-/**
- * True when the token's session still exists and has not expired. Logout and
- * admin password-reset delete the session row, so this makes an access token stop
- * working immediately on logout instead of lingering until its 15-minute TTL.
- * Tokens minted without a sessionId (should not happen for access tokens) pass.
- */
-async function isSessionLive(sessionId: string | undefined, userId: string): Promise<boolean> {
-  if (sessionId === undefined) return true;
-  const [row] = await db
-    .select({ id: sessions.id })
-    .from(sessions)
-    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId), gt(sessions.expiresAt, new Date())));
-  return row !== undefined;
-}
 
 // Extend Express Request type
 declare global {

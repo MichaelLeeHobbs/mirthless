@@ -90,7 +90,7 @@ export class AuthController {
     const sessionId = req.sessionId;
 
     if (sessionId) {
-      const result = await AuthService.logout(sessionId);
+      const result = await AuthService.logout(sessionId, req.user?.id ?? null, req.ip ?? null);
       if (!result.ok) {
         logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Logout failed');
       }

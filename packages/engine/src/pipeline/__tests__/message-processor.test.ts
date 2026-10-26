@@ -4,13 +4,14 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from '@mirthless/core-util';
-import { MessageProcessor } from '../message-processor.js';
+import { MessageProcessor, groupDestinationChains } from '../message-processor.js';
 import type {
   MessageStore,
   SendToDestination,
   PipelineConfig,
   PipelineInput,
   DestinationResponse,
+  DestinationConfig,
 } from '../message-processor.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';
 import { GlobalChannelMap } from '../../runtime/global-channel-map.js';
@@ -231,6 +232,92 @@ describe('MessageProcessor', () => {
     expect(result.value.destinationResults[0]!.status).toBe('SENT');
     expect(result.value.destinationResults[1]!.status).toBe('SENT');
     expect(sendFn).toHaveBeenCalledTimes(2);
+  });
+
+  /** A send function that records start/finish order and holds each send briefly. */
+  function makeOrderedSendFn(events: string[]): SendToDestination {
+    return vi.fn(async (metaDataId: number) => {
+      events.push(`start ${String(metaDataId)}`);
+      await new Promise((r) => setTimeout(r, 10));
+      events.push(`end ${String(metaDataId)}`);
+      return ok({ status: 'SENT' as const, content: `ACK${String(metaDataId)}` });
+    });
+  }
+
+  it('runs a waitForPrevious destination only after the one before it finishes', async () => {
+    const events: string[] = [];
+    const config = makeConfig({
+      destinations: [
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER', waitForPrevious: true },
+      ],
+    });
+    const processor = new MessageProcessor(
+      sandbox, makeStore(), makeOrderedSendFn(events), config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    expect(events).toEqual(['start 1', 'end 1', 'start 2', 'end 2']);
+  });
+
+  it('starts destinations without waitForPrevious in parallel', async () => {
+    const events: string[] = [];
+    const config = makeConfig({
+      destinations: [
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER', waitForPrevious: false },
+      ],
+    });
+    const processor = new MessageProcessor(
+      sandbox, makeStore(), makeOrderedSendFn(events), config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(events.slice(0, 2)).toEqual(['start 1', 'start 2']);
+  });
+
+  it('lets a waitForPrevious destination read the earlier response from responseMap', async () => {
+    const sendFn = vi.fn(async (metaDataId: number) =>
+      ok({ status: 'SENT' as const, content: `ACK${String(metaDataId)}` }));
+    const config = makeConfig({
+      destinations: [
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        {
+          metaDataId: 2, name: 'Dest 2', enabled: true, queueMode: 'NEVER', waitForPrevious: true,
+          scripts: { transformer: { code: 'msg = responseMap["Dest 1"].content;' } },
+        },
+      ],
+    });
+    const processor = new MessageProcessor(
+      sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(sendFn).toHaveBeenCalledWith(2, 1, 'ACK1', expect.any(AbortSignal), expect.any(String));
+  });
+
+  it('keeps destination results in configured order across chains', async () => {
+    const events: string[] = [];
+    const config = makeConfig({
+      destinations: [
+        { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER', waitForPrevious: true },
+        { metaDataId: 3, name: 'Dest 3', enabled: true, scripts: {}, queueMode: 'NEVER' },
+      ],
+    });
+    const processor = new MessageProcessor(
+      sandbox, makeStore(), makeOrderedSendFn(events), config, DEFAULT_EXECUTION_OPTIONS,
+    );
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.destinationResults.map((r) => r.metaDataId)).toEqual([1, 2, 3]);
   });
 
   // ----- Data Type Tests -----
@@ -1077,5 +1164,31 @@ describe('MessageProcessor', () => {
     const calls = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls;
     const sourceMapCall = calls.find((c) => c[3] === 9);
     expect(sourceMapCall).toBeDefined();
+  });
+});
+
+describe('groupDestinationChains', () => {
+  const dest = (metaDataId: number, waitForPrevious?: boolean): DestinationConfig => ({
+    metaDataId, name: `D${String(metaDataId)}`, enabled: true, scripts: {}, queueMode: 'NEVER',
+    ...(waitForPrevious === undefined ? {} : { waitForPrevious }),
+  });
+  const ids = (chains: ReadonlyArray<readonly DestinationConfig[]>): number[][] =>
+    chains.map((c) => c.map((d) => d.metaDataId));
+
+  it('returns no chains for no destinations', () => {
+    expect(groupDestinationChains([])).toEqual([]);
+  });
+
+  it('puts every destination in its own chain by default', () => {
+    expect(ids(groupDestinationChains([dest(1), dest(2, false), dest(3)]))).toEqual([[1], [2], [3]]);
+  });
+
+  it('joins waitForPrevious destinations to the chain before them', () => {
+    expect(ids(groupDestinationChains([dest(1), dest(2, true), dest(3), dest(4, true), dest(5, true)])))
+      .toEqual([[1, 2], [3, 4, 5]]);
+  });
+
+  it('starts a chain when the first destination has waitForPrevious', () => {
+    expect(ids(groupDestinationChains([dest(1, true), dest(2, true)]))).toEqual([[1, 2]]);
   });
 });

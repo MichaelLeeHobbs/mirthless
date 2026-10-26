@@ -12,7 +12,7 @@ logger.info(`received ${parsed.messageType} (${parsed.messageControlId})`);
 
 const mrn: string = parsed.get('PID.3') ?? 'unknown';
 channelMap['lastMrn'] = mrn;
-$c['lastType'] = parsed.messageType;
+$c('lastType', parsed.messageType);
 
 // Durable lookup via a Collection, typed end to end.
 const priorVisits: Promise<CollectionRecord[]> = getCollection('visits').find({ mrn });
@@ -21,7 +21,7 @@ void priorVisits.then((records: CollectionRecord[]) => {
 });
 
 // Config + global maps, and a plain string transform on msg.
-const facility: unknown = configMap['facility.name'];
+const facility: unknown = $cfg('facility.name') ?? configMap['facility.name'];
 globalMap['seenCount'] = ((globalMap['seenCount'] as number | undefined) ?? 0) + 1;
 const normalized: string = String(msg).trim().toUpperCase();
 void [facility, normalized];

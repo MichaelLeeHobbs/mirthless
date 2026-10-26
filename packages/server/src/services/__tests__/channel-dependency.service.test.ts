@@ -101,7 +101,7 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
-const { ChannelDependencyService } = await import('../channel-dependency.service.js');
+const { ChannelDependencyService, orderByDependencies } = await import('../channel-dependency.service.js');
 
 // ----- Fixtures -----
 
@@ -329,5 +329,38 @@ describe('ChannelDependencyService', () => {
       if (result.ok) return;
       expect(result.error).toHaveProperty('message', expect.stringContaining('Circular dependency'));
     });
+  });
+});
+
+describe('orderByDependencies', () => {
+  const edge = (channelId: string, dependsOnChannelId: string): { channelId: string; dependsOnChannelId: string } =>
+    ({ channelId, dependsOnChannelId });
+
+  it('keeps input order when there are no dependencies', () => {
+    expect(orderByDependencies(['a', 'b', 'c'], [])).toEqual(['a', 'b', 'c']);
+  });
+
+  it('puts a dependency before the channel that needs it', () => {
+    expect(orderByDependencies(['a', 'b'], [edge('a', 'b')])).toEqual(['b', 'a']);
+  });
+
+  it('orders a chain transitively', () => {
+    expect(orderByDependencies(['a', 'b', 'c'], [edge('a', 'b'), edge('b', 'c')])).toEqual(['c', 'b', 'a']);
+  });
+
+  it('places a channel after all of its dependencies', () => {
+    const order = orderByDependencies(['d', 'a', 'b', 'c'], [edge('d', 'b'), edge('d', 'c'), edge('b', 'a')]);
+    expect(order.indexOf('d')).toBeGreaterThan(order.indexOf('b'));
+    expect(order.indexOf('d')).toBeGreaterThan(order.indexOf('c'));
+    expect(order.indexOf('b')).toBeGreaterThan(order.indexOf('a'));
+    expect([...order].sort()).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('ignores edges to channels not being deployed', () => {
+    expect(orderByDependencies(['a', 'b'], [edge('a', 'disabled'), edge('other', 'b')])).toEqual(['a', 'b']);
+  });
+
+  it('keeps every channel when the edges contain a cycle', () => {
+    expect(orderByDependencies(['x', 'a', 'b'], [edge('a', 'b'), edge('b', 'a')])).toEqual(['x', 'a', 'b']);
   });
 });

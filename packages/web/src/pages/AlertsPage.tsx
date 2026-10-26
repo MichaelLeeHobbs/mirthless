@@ -25,6 +25,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import { useAlerts, useDeleteAlert, useToggleAlertEnabled } from '../hooks/use-alerts.js';
+import { usePermissions } from '../hooks/use-permissions.js';
+import { PERMISSION } from '../lib/permissions.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { humanize } from '../lib/format.js';
@@ -42,6 +44,9 @@ export function AlertsPage(): ReactNode {
   const { data, isLoading, error, isFetching, refetch } = useAlerts(page + 1, pageSize);
   const deleteAlert = useDeleteAlert();
   const toggleEnabled = useToggleAlertEnabled();
+  const { has } = usePermissions();
+  const canWrite = has(PERMISSION.ALERTS_WRITE);
+  const canDelete = has(PERMISSION.ALERTS_DELETE);
 
   const [deleteTarget, setDeleteTarget] = useState<AlertSummary | null>(null);
 
@@ -62,7 +67,7 @@ export function AlertsPage(): ReactNode {
         title="Alerts"
         description="Configure notifications for channel errors and events."
         isFetching={isFetching && !isLoading}
-        actions={
+        actions={canWrite ? (
           <Button
             variant="contained"
             startIcon={<AddIcon />}
@@ -70,7 +75,7 @@ export function AlertsPage(): ReactNode {
           >
             Create Alert
           </Button>
-        }
+        ) : null}
       />
 
       {/* Error */}
@@ -97,9 +102,13 @@ export function AlertsPage(): ReactNode {
               data.data.map((alert) => (
                   <TableRow key={alert.id} hover>
                     <TableCell>
-                      <Link component={RouterLink} to={`/alerts/${alert.id}`} underline="hover" color="text.primary" variant="body2" sx={{ fontWeight: 500, display: 'block' }}>
-                        {alert.name}
-                      </Link>
+                      {canWrite ? (
+                        <Link component={RouterLink} to={`/alerts/${alert.id}`} underline="hover" color="text.primary" variant="body2" sx={{ fontWeight: 500, display: 'block' }}>
+                          {alert.name}
+                        </Link>
+                      ) : (
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>{alert.name}</Typography>
+                      )}
                       {alert.description ? (
                         <Typography variant="caption" color="text.secondary">{alert.description}</Typography>
                       ) : null}
@@ -110,25 +119,33 @@ export function AlertsPage(): ReactNode {
                     <TableCell align="center">{alert.channelCount}</TableCell>
                     <TableCell align="center">{alert.actionCount}</TableCell>
                     <TableCell align="center">
-                      <Switch
-                        size="small"
-                        checked={alert.enabled}
-                        onChange={() => { handleToggleEnabled(alert); }}
-                        disabled={toggleEnabled.isPending}
-                        inputProps={{ 'aria-label': `${alert.enabled ? 'Disable' : 'Enable'} ${alert.name}` }}
-                      />
+                      <Tooltip title={canWrite ? '' : 'Requires alerts:write permission'}>
+                        <span>
+                          <Switch
+                            size="small"
+                            checked={alert.enabled}
+                            onChange={() => { handleToggleEnabled(alert); }}
+                            disabled={!canWrite || toggleEnabled.isPending}
+                            inputProps={{ 'aria-label': `${alert.enabled ? 'Disable' : 'Enable'} ${alert.name}` }}
+                          />
+                        </span>
+                      </Tooltip>
                     </TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Edit">
-                        <IconButton aria-label="Edit alert" size="small" onClick={() => { navigate(`/alerts/${alert.id}`); }}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton aria-label="Delete alert" size="small" onClick={() => { setDeleteTarget(alert); }}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      {canWrite ? (
+                        <Tooltip title="Edit">
+                          <IconButton aria-label="Edit alert" size="small" onClick={() => { navigate(`/alerts/${alert.id}`); }}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      ) : null}
+                      {canDelete ? (
+                        <Tooltip title="Delete">
+                          <IconButton aria-label="Delete alert" size="small" onClick={() => { setDeleteTarget(alert); }}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))

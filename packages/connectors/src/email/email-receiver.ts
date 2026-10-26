@@ -9,9 +9,21 @@ import { tryCatch, type Result } from '@mirthless/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
+import { createRequire } from 'node:module';
+
+// The package is ESM, so a bare `require` is undefined at runtime (vitest
+// injects one, which hid this). Load the CJS client library through createRequire.
+const require = createRequire(import.meta.url);
 
 /** Bound each IMAP operation — a hung mailbox must not wedge the poll loop. */
 const IMAP_OP_TIMEOUT_MS = 30_000;
+
+/**
+ * IMAP keyword set on an email once it has been dispatched. It lives on the
+ * mail server, so a restart before the post-action succeeds retries only the
+ * post-action instead of dispatching the email a second time.
+ */
+export const DISPATCHED_KEYWORD = '$MirthlessDispatched';
 
 // ----- Constants -----
 
@@ -59,6 +71,8 @@ export interface EmailMessage {
   readonly date: string;
   readonly body: string;
   readonly attachmentCount: number;
+  /** True when the email already carries {@link DISPATCHED_KEYWORD}. */
+  readonly dispatched: boolean;
 }
 
 /** Abstraction over IMAP client for testability. */
@@ -66,6 +80,8 @@ export interface ImapClient {
   connect(): Promise<void>;
   fetchUnread(folder: string): Promise<readonly EmailMessage[]>;
   markRead(uid: number): Promise<void>;
+  /** Set {@link DISPATCHED_KEYWORD}. Resolves false when the mailbox does not accept custom keywords. */
+  markDispatched(uid: number): Promise<boolean>;
   moveMessage(uid: number, folder: string): Promise<void>;
   deleteMessage(uid: number): Promise<void>;
   disconnect(): Promise<void>;
@@ -84,6 +100,14 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
   private client: ImapClient | null = null;
+  /**
+   * UIDs already dispatched whose post-action (mark read / move / delete) has
+   * not succeeded yet. The email is still unread on the server, so later polls
+   * only retry the post-action for these instead of dispatching them again.
+   * Backs up {@link DISPATCHED_KEYWORD} for mailboxes that reject custom keywords.
+   */
+  private readonly awaitingPostAction = new Set<number>();
+  private warnedNoKeywords = false;
 
   constructor(config: EmailReceiverConfig, createClient?: ImapClientFactory, logger?: ConnectorLogger) {
     this.config = config;
@@ -208,21 +232,58 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private async processMessage(msg: EmailMessage): Promise<void> {
     if (!this.dispatcher || !this.client) return;
 
-    const raw: RawMessage = {
-      content: msg.body,
-      sourceMap: {
-        subject: msg.subject,
-        from: msg.from,
-        to: msg.to,
-        date: msg.date,
-        attachmentCount: msg.attachmentCount,
-      },
-    };
+    if (!msg.dispatched && !this.awaitingPostAction.has(msg.uid)) {
+      const raw: RawMessage = {
+        content: msg.body,
+        sourceMap: {
+          subject: msg.subject,
+          from: msg.from,
+          to: msg.to,
+          date: msg.date,
+          attachmentCount: msg.attachmentCount,
+        },
+      };
 
-    const result = await this.dispatcher(raw);
+      const result = await this.dispatcher(raw);
+      if (!result.ok) {
+        // Left unread on the server, so the next poll retries it.
+        this.logger.error({ ...errorInfo(result.error), uid: msg.uid }, 'Email dispatch failed; message left unread for retry');
+        return;
+      }
+      this.awaitingPostAction.add(msg.uid);
+      await this.recordDispatched(msg.uid);
+    }
 
-    if (result.ok) {
+    // A post-action failure must not cause a second dispatch: the UID stays in
+    // awaitingPostAction and only the post-action is retried on the next poll.
+    try {
       await this.postProcess(msg.uid);
+      this.awaitingPostAction.delete(msg.uid);
+    } catch (err) {
+      this.logger.error({ ...errorInfo(err), uid: msg.uid }, 'Email post-action failed after dispatch; will retry the post-action only');
+    }
+  }
+
+  /**
+   * Persist that the email was dispatched by setting the IMAP keyword. A failure
+   * is logged, not fatal: the in-memory set still prevents a duplicate until restart.
+   */
+  private async recordDispatched(uid: number): Promise<void> {
+    if (!this.client) return;
+    try {
+      const stored = await withTimeout(this.client.markDispatched(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markDispatched');
+      if (!stored && !this.warnedNoKeywords) {
+        this.warnedNoKeywords = true;
+        this.logger.warn(
+          { uid, folder: this.config.folder, keyword: DISPATCHED_KEYWORD },
+          'Mailbox does not accept custom IMAP keywords; an email whose post-action fails may be dispatched again after a restart',
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        { ...errorInfo(err), uid },
+        'Could not mark email as dispatched; if its post-action also fails, a restart may dispatch it again',
+      );
     }
   }
 
@@ -263,7 +324,6 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
 /** Create an imapflow-based IMAP client. Requires imapflow to be installed. */
 function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ImapFlow } = require('imapflow') as { ImapFlow: new (opts: Record<string, unknown>) => ImapFlowInstance };
 
   const client = new ImapFlow({
@@ -290,7 +350,7 @@ function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
       const lock = await client.getMailboxLock(folder);
       try {
         const messages: EmailMessage[] = [];
-        const fetchOptions = { source: true, envelope: true, uid: true };
+        const fetchOptions = { source: true, envelope: true, uid: true, flags: true };
         for await (const msg of client.fetch({ seen: false }, fetchOptions)) {
           messages.push({
             uid: msg.uid,
@@ -300,6 +360,7 @@ function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
             date: msg.envelope?.date?.toISOString() ?? '',
             body: msg.source?.toString() ?? '',
             attachmentCount: 0,
+            dispatched: msg.flags?.has(DISPATCHED_KEYWORD) ?? false,
           });
         }
         return messages;
@@ -308,19 +369,31 @@ function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
       }
     },
     async markRead(uid: number): Promise<void> {
-      await client.messageFlagsAdd({ uid }, ['\\Seen']);
+      requireDone(await client.messageFlagsAdd({ uid }, ['\\Seen']), 'mark read', uid);
+    },
+    async markDispatched(uid: number): Promise<boolean> {
+      // imapflow drops a keyword the selected mailbox's PERMANENTFLAGS rejects and returns false.
+      return client.messageFlagsAdd({ uid }, [DISPATCHED_KEYWORD]);
     },
     async moveMessage(uid: number, targetFolder: string): Promise<void> {
-      await client.messageMove({ uid }, targetFolder);
+      requireDone(await client.messageMove({ uid }, targetFolder), `move to "${targetFolder}"`, uid);
     },
     async deleteMessage(uid: number): Promise<void> {
-      await client.messageFlagsAdd({ uid }, ['\\Deleted']);
+      requireDone(await client.messageFlagsAdd({ uid }, ['\\Deleted']), 'flag deleted', uid);
       await client.expunge({ uid });
     },
     async disconnect(): Promise<void> {
       await client.logout();
     },
   };
+}
+
+/**
+ * imapflow reports a failed move or flag change by resolving false, not by
+ * throwing. Throw so the receiver treats the post-action as failed.
+ */
+function requireDone(done: boolean, action: string, uid: number): void {
+  if (!done) throw new Error(`IMAP server refused to ${action} for UID ${uid}`);
 }
 
 // ----- ImapFlow type helpers (minimal interface for require) -----
@@ -340,6 +413,7 @@ interface ImapFlowFetchMessage {
   readonly uid: number;
   readonly source?: Buffer;
   readonly envelope?: ImapFlowEnvelope;
+  readonly flags?: ReadonlySet<string>;
 }
 
 interface ImapFlowLock {
@@ -351,8 +425,8 @@ interface ImapFlowInstance {
   on(event: string, listener: (arg: unknown) => void): void;
   getMailboxLock(folder: string): Promise<ImapFlowLock>;
   fetch(query: Record<string, unknown>, options: Record<string, unknown>): AsyncIterable<ImapFlowFetchMessage>;
-  messageFlagsAdd(query: Record<string, unknown>, flags: readonly string[]): Promise<void>;
-  messageMove(query: Record<string, unknown>, destination: string): Promise<void>;
+  messageFlagsAdd(query: Record<string, unknown>, flags: readonly string[]): Promise<boolean>;
+  messageMove(query: Record<string, unknown>, destination: string): Promise<boolean>;
   expunge(query: Record<string, unknown>): Promise<void>;
   logout(): Promise<void>;
 }

@@ -9,6 +9,7 @@ import {
   EmailReceiver,
   EMAIL_PROTOCOL,
   EMAIL_POST_ACTION,
+  DISPATCHED_KEYWORD,
   type EmailReceiverConfig,
   type ImapClient,
   type ImapClientFactory,
@@ -45,6 +46,7 @@ function makeMessage(overrides?: Partial<EmailMessage>): EmailMessage {
     date: '2026-01-15T10:30:00.000Z',
     body: 'MSH|^~\\&|SENDER|HOSPITAL',
     attachmentCount: 0,
+    dispatched: false,
     ...overrides,
   };
 }
@@ -54,6 +56,7 @@ function makeMockClient(messages: readonly EmailMessage[] = []): ImapClient {
     connect: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     fetchUnread: vi.fn<(folder: string) => Promise<readonly EmailMessage[]>>().mockResolvedValue(messages),
     markRead: vi.fn<(uid: number) => Promise<void>>().mockResolvedValue(undefined),
+    markDispatched: vi.fn<(uid: number) => Promise<boolean>>().mockResolvedValue(true),
     moveMessage: vi.fn<(uid: number, folder: string) => Promise<void>>().mockResolvedValue(undefined),
     deleteMessage: vi.fn<(uid: number) => Promise<void>>().mockResolvedValue(undefined),
     disconnect: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -422,6 +425,43 @@ describe('EmailReceiver', () => {
     });
   });
 
+  describe('post-action failure', () => {
+    it('retries only the post-action, never dispatching the same email twice', async () => {
+      const msg = makeMessage({ uid: 7 });
+      const client = makeMockClient([msg]); // stays unread until markRead succeeds
+      vi.mocked(client.markRead)
+        .mockRejectedValueOnce(new Error('IMAP STORE failed'))
+        .mockResolvedValue(undefined);
+      const dispatched: RawMessage[] = [];
+      const { logger, errors } = makeMockLogger();
+
+      receiver = new EmailReceiver(makeConfig({ postAction: EMAIL_POST_ACTION.MARK_READ }), makeClientFactory(client), logger);
+      receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw); return { messageId: 1 }; }));
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000); // dispatch ok, markRead fails
+      await vi.advanceTimersByTimeAsync(5_000); // same email fetched again: post-action retried only
+
+      expect(dispatched).toHaveLength(1);
+      expect(client.markRead).toHaveBeenCalledTimes(2);
+      expect(errors.some((e) => e.msg.includes('post-action failed'))).toBe(true);
+    });
+
+    it('logs a dispatch failure and leaves the email for retry', async () => {
+      const client = makeMockClient([makeMessage({ uid: 8 })]);
+      const { logger, errors } = makeMockLogger();
+
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client), logger);
+      receiver.setDispatcher(makeFailDispatcher());
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(errors.some((e) => e.msg.includes('dispatch failed'))).toBe(true);
+      expect(client.markRead).not.toHaveBeenCalled();
+    });
+  });
+
   describe('connection error handling', () => {
     it('continues polling after fetch error', async () => {
       const captured: RawMessage[] = [];
@@ -549,6 +589,76 @@ describe('EmailReceiver', () => {
       await vi.advanceTimersByTimeAsync(30_000);
 
       expect(errors.some((e) => e.msg.includes('poll cycle failed'))).toBe(true);
+    });
+  });
+
+  describe('dispatched keyword', () => {
+    async function startWith(client: ImapClient, dispatched: RawMessage[], logger = makeMockLogger().logger): Promise<void> {
+      receiver = new EmailReceiver(makeConfig({ postAction: EMAIL_POST_ACTION.MARK_READ }), makeClientFactory(client), logger);
+      receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw); return { messageId: 1 }; }));
+      await receiver.onStart();
+    }
+
+    it('marks the email dispatched on the server before running the post-action', async () => {
+      const client = makeMockClient([makeMessage({ uid: 3 })]);
+      await startWith(client, []);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(client.markDispatched).toHaveBeenCalledWith(3);
+      const markOrder = vi.mocked(client.markDispatched).mock.invocationCallOrder[0]!;
+      const readOrder = vi.mocked(client.markRead).mock.invocationCallOrder[0]!;
+      expect(markOrder).toBeLessThan(readOrder);
+    });
+
+    it('after a restart, retries only the post-action for an email that carries the keyword', async () => {
+      const client = makeMockClient([makeMessage({ uid: 4, dispatched: true })]);
+      const dispatched: RawMessage[] = [];
+      await startWith(client, dispatched);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(dispatched).toHaveLength(0);
+      expect(client.markDispatched).not.toHaveBeenCalled();
+      expect(client.markRead).toHaveBeenCalledWith(4);
+    });
+
+    it('does not mark an email whose dispatch failed', async () => {
+      const client = makeMockClient([makeMessage({ uid: 5 })]);
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client), makeMockLogger().logger);
+      receiver.setDispatcher(makeFailDispatcher());
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(client.markDispatched).not.toHaveBeenCalled();
+    });
+
+    it('warns once when the mailbox does not accept custom keywords, and still finishes each email', async () => {
+      const client = makeMockClient([makeMessage({ uid: 1 }), makeMessage({ uid: 2 })]);
+      vi.mocked(client.markDispatched).mockResolvedValue(false);
+      const { logger, warnings } = makeMockLogger();
+      const dispatched: RawMessage[] = [];
+      await startWith(client, dispatched, logger);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(dispatched).toHaveLength(2);
+      expect(client.markRead).toHaveBeenCalledTimes(2);
+      const keywordWarnings = warnings.filter((w) => w.obj['keyword'] === DISPATCHED_KEYWORD);
+      expect(keywordWarnings).toHaveLength(1);
+    });
+
+    it('logs an error and still runs the post-action when setting the keyword fails', async () => {
+      const client = makeMockClient([makeMessage({ uid: 6 })]);
+      vi.mocked(client.markDispatched).mockRejectedValue(new Error('IMAP STORE failed'));
+      const { logger, errors } = makeMockLogger();
+      await startWith(client, [], logger);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(errors.some((e) => e.msg.includes('Could not mark email as dispatched'))).toBe(true);
+      expect(client.markRead).toHaveBeenCalledWith(6);
     });
   });
 });

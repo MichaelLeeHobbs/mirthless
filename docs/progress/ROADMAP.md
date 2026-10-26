@@ -39,7 +39,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] I/O bridges implemented in the sandbox (httpFetch, dbQuery, routeMessage, getResource, getCollection)
 - [x] **All IO bridges wired** end-to-end into the production engine (`engine.ts`): getCollection, getResource, httpFetch, routeMessage (hop-depth loop guard), and **dbQuery** via named **Data Sources** (`docs/design/11-datasources.md`, D-178 — encrypted creds, read-only default, statement timeout + row cap, Postgres v1)
 - [x] Map system (channelMap, connectorMap, globalMap, configMap, responseMap, sourceMap)
-- [x] Map shortcuts ($, $r, $g, $gc)
+- [x] Map shortcuts ($, $c, $co, $r, $g, $gc, $s, $cfg — Mirth-compatible, D-191)
 - [x] Code template injection (FUNCTION type prepended to scripts)
 - [x] Per-channel script timeout (1-300s configurable)
 
@@ -80,11 +80,11 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 
 - [ ] **[N1] EDI/X12 + NCPDP serializers** (+ enum entries) — 🔴 blocks X12 billing/eligibility + pharmacy channels.
 - [ ] **[N2] Finish declared-but-pass-through datatypes** — Delimited, HL7v3, DICOM→XML. 🔴 `msg` mapping impossible on them today.
-- [ ] **[N3] Fix `$gc` map-shortcut collision** (means configMap; Mirth = globalChannelMap) + add `$cfg`/`$c`/`$co`/`$s` — 🔴 silent-wrong-map footgun for ported scripts.
+- [x] **[N3] Fix `$gc` map-shortcut collision** (means configMap; Mirth = globalChannelMap) + add `$cfg`/`$c`/`$co`/`$s` — 🔴 silent-wrong-map footgun for ported scripts.
 - [ ] **[N4] Message search operators** — metadata-column search, regex, error, send-attempt filters. 🔴 daily-use triage gap.
-- [ ] **[N5] Populate custom metadata columns + make searchable** — 🔴 currently stored but never populated (half-built).
-- [ ] **[N6] Dependency-ordered deploy** (topological sort in `autoDeployChannels`) — 🔴 graph stored/validated but not applied; channel can start before its dependency.
-- [ ] **[N7] Destination-queue threading** (threadCount/groupBy/rotate) or remove dead schema fields — 🔴 throughput/ordering at volume.
+- [ ] **[N5] Populate custom metadata columns + make searchable** — 🔴 currently stored but never populated (half-built). Editor UI removed until built (D-189).
+- [x] **[N6] Dependency-ordered deploy** (topological sort in `autoDeployChannels`) — 🔴 graph stored/validated but not applied; channel can start before its dependency.
+- [ ] **[N7] Destination-queue threading** (threadCount/groupBy/rotate) — 🔴 throughput/ordering at volume. Thread count and rotate controls removed from the UI until built; `waitForPrevious` chains now work (D-189).
 - [ ] **[N8] Pruner archiver + content/metadata-day split** — 🟡 `pruningArchiveEnabled` flag has no archiver (half-built); HIPAA retention.
 - [ ] **[N9] JS API breadth** — DateUtil, ChannelUtil, AttachmentUtil, SerializerFactory, getArrayOrXmlLength, etc. (~10 of Mirth's ~40 userutil objects). 🟡
 - [ ] **[N10] Per-connector connection monitoring** (Mirth dashboardstatus) + per-channel Prometheus labels — 🔴 ops triage visibility.
@@ -100,7 +100,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 > Full analysis + pursue/consider/partner/non-goal calls: [`docs/design/14-beyond-mirth-competitive-gaps.md`](../design/14-beyond-mirth-competitive-gaps.md).
 > These are **platform expansions beyond Mirth** (Mirth lacks most of them too), NOT parity gaps. A strategy menu, not a defect list — act only after the doc 12/13 blockers clear. Top PURSUE picks:
 
-- [ ] **[B1] Silent-interface / SLA / heartbeat alerting** — 🟢 "no message in N min" + throughput/queue-depth thresholds. Deadliest failure mode; alert engine currently fires only on CHANNEL_ERROR.
+- [ ] **[B1] Silent-interface / SLA / heartbeat alerting** — 🟢 "no message in N min" (✅ NO_MESSAGES trigger, D-192) + throughput/queue-depth thresholds (open). Deadliest failure mode; alert engine currently fires only on CHANNEL_ERROR.
 - [ ] **[B2] HA / clustering / automatic failover** — 🟢 genuine production gap; multi-node today duplicates inbound on singleton sources.
 - [ ] **[B3] Keyed partitioning / per-key ordering + scale** — 🟢 per-patient order + horizontal scale; the real fix for doc 13 N7 (dead threadCount/groupBy).
 - [ ] **[B4] End-to-end lineage + OpenTelemetry tracing** — 🟢 cross-channel message journeys.
@@ -149,9 +149,9 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] ~~Dashboard: replace polling with WebSocket-driven query invalidation~~
 - [x] ~~Example channels seeded (10 channels in Examples group)~~
 - [x] ~~Connection testing — "Test Connection" button per connector type~~
-- [ ] Load testing — throughput benchmarks with realistic message volumes
-- [ ] E2E test suite refresh — 19 specs may need updates after recent UI changes
-- [ ] Security review — HIPAA compliance checklist, penetration testing
+- [x] ~~Load testing — throughput benchmarks with realistic message volumes~~ (3-hour soak, 1.08M messages, 0 lost: `docs/ops/soak-test.md`, 2026-10-09)
+- [ ] E2E test suite refresh — 19 specs may need updates after recent UI changes (`message-flow.spec.ts` rewritten to assert real delivery, 2026-10-08)
+- [ ] Security review — HIPAA checklist written (`docs/ops/hipaa-security-checklist.md`, 2026-10-09, lists the open gaps); penetration testing not done
 
 ---
 

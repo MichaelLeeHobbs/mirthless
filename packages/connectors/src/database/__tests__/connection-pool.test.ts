@@ -143,6 +143,40 @@ describe('ConnectionPool', () => {
     });
   });
 
+  describe('queryReadOnly', () => {
+    it('runs one statement in a READ ONLY transaction using the extended protocol', async () => {
+      pool = new ConnectionPool();
+      await pool.create(makePoolConfig());
+      mockRelease.mockClear();
+
+      const result = await pool.queryReadOnly('SELECT $1::int', [1]);
+
+      expect(result.ok).toBe(true);
+      const calls = mockClientQuery.mock.calls.map((c) => c[0]);
+      expect(calls[0]).toBe('BEGIN READ ONLY');
+      // Extended protocol accepts a single statement, so `COMMIT; DELETE ...` cannot escape.
+      expect(calls[1]).toEqual({ text: 'SELECT $1::int', values: [1], queryMode: 'extended' });
+      expect(calls).toContain('COMMIT');
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not force the extended protocol on ordinary transactions', async () => {
+      pool = new ConnectionPool();
+      await pool.create(makePoolConfig());
+
+      await pool.transaction(async (tx) => tx.query('UPDATE t SET x = 1', []));
+
+      const calls = mockClientQuery.mock.calls.map((c) => c[0]);
+      expect(calls).toContainEqual({ text: 'UPDATE t SET x = 1', values: [] });
+    });
+
+    it('returns an error when the pool is not initialized', async () => {
+      pool = new ConnectionPool();
+      const result = await pool.queryReadOnly('SELECT 1', []);
+      expect(result.ok).toBe(false);
+    });
+  });
+
   describe('query', () => {
     it('executes query and returns rows', async () => {
       mockQuery.mockResolvedValue({

@@ -13,6 +13,7 @@ import { users } from '../db/schema/index.js';
 import { permissionNamesForRole } from './role-permissions.js';
 import logger from './logger.js';
 import { verifyAccessToken } from './jwt.js';
+import { isSessionLive } from './session-live.js';
 
 /** User data stored on authenticated sockets. */
 export interface SocketUserData {
@@ -29,7 +30,11 @@ const ROOM_PERMISSIONS = {
   logs: 'system:info',
 } as const;
 
+/** How often connected sockets are re-validated against the database. */
+const REVALIDATE_INTERVAL_MS = 60_000;
+
 let io: SocketIOServer | null = null;
+let revalidateTimer: ReturnType<typeof setInterval> | null = null;
 
 /** True when the authenticated socket holds the given `resource:action` permission. */
 function socketHasPermission(socket: { data: Record<string, unknown> }, permission: string): boolean {
@@ -38,11 +43,27 @@ function socketHasPermission(socket: { data: Record<string, unknown> }, permissi
 }
 
 /**
+ * Load the user's current standing for a socket. Returns null when the token may
+ * no longer be used: the user is gone or disabled, must change their password, or
+ * the token's session was revoked (logout, password reset). Mirrors the REST
+ * authenticate middleware so the websocket cannot outlive what REST would allow.
+ */
+export async function loadSocketUser(userId: string, sessionId: string | undefined, type: string): Promise<SocketUserData | null> {
+  const [user] = await db
+    .select({ id: users.id, enabled: users.enabled, role: users.role, mustChangePassword: users.mustChangePassword })
+    .from(users)
+    .where(eq(users.id, userId));
+  if (!user || !user.enabled || user.mustChangePassword === true) return null;
+  if (!(await isSessionLive(sessionId, userId))) return null;
+  return { userId, sessionId, type, permissions: permissionNamesForRole(user.role) };
+}
+
+/**
  * Socket.IO authentication middleware.
- * Validates the JWT from the `auth.token` handshake parameter, re-checks that the
- * user still exists and is enabled, and loads their permissions so the room-join
- * handlers can enforce RBAC (the REST API's guards must not be bypassable over the
- * websocket — e.g. streaming logs requires system:info).
+ * Validates the JWT from the `auth.token` handshake parameter and loads the user's
+ * live standing (see loadSocketUser) so the room-join handlers can enforce RBAC
+ * (the REST API's guards must not be bypassable over the websocket — e.g.
+ * streaming logs requires system:info).
  */
 export async function authMiddleware(
   socket: { data: Record<string, unknown>; handshake: { auth: Record<string, unknown> } },
@@ -56,27 +77,54 @@ export async function authMiddleware(
 
   try {
     const decoded = verifyAccessToken(token);
-
-    const [user] = await db
-      .select({ id: users.id, enabled: users.enabled, role: users.role })
-      .from(users)
-      .where(eq(users.id, decoded.userId));
-    if (!user || !user.enabled) {
+    const userData = await loadSocketUser(decoded.userId, decoded.sessionId, decoded.type);
+    if (!userData) {
       next(new Error('Authentication required'));
       return;
     }
-
-    const userData: SocketUserData = {
-      userId: decoded.userId,
-      sessionId: decoded.sessionId,
-      type: decoded.type,
-      permissions: permissionNamesForRole(user.role),
-    };
     socket.data['user'] = userData;
     next();
   } catch {
     next(new Error('Authentication required'));
   }
+}
+
+/** Permission a joined room requires, or null for rooms this server does not manage. */
+function roomPermission(room: string): string | null {
+  if (room === 'dashboard') return ROOM_PERMISSIONS.dashboard;
+  if (room === 'logs') return ROOM_PERMISSIONS.logs;
+  if (room.startsWith('channel:')) return ROOM_PERMISSIONS.channel;
+  return null;
+}
+
+interface RevalidatableSocket {
+  readonly id: string;
+  readonly data: Record<string, unknown>;
+  readonly rooms: ReadonlySet<string>;
+  leave(room: string): unknown;
+  disconnect(close?: boolean): unknown;
+}
+
+/**
+ * Re-check a connected socket against the database. Disconnects it when its
+ * session was revoked or the user lost access, and leaves any room whose
+ * permission the user no longer holds (e.g. after a role change).
+ * Returns true when the socket remains connected.
+ */
+export async function revalidateSocket(socket: RevalidatableSocket): Promise<boolean> {
+  const current = socket.data['user'] as SocketUserData | undefined;
+  const fresh = current ? await loadSocketUser(current.userId, current.sessionId, current.type).catch(() => null) : null;
+  if (!fresh) {
+    logger.info({ socketId: socket.id }, 'Disconnecting socket: session revoked or access removed');
+    socket.disconnect(true);
+    return false;
+  }
+  socket.data['user'] = fresh;
+  for (const room of socket.rooms) {
+    const needed = roomPermission(room);
+    if (needed !== null && !fresh.permissions.includes(needed)) void socket.leave(room);
+  }
+  return true;
 }
 
 /**
@@ -86,10 +134,11 @@ function registerConnectionHandlers(server: SocketIOServer): void {
   server.on('connection', (socket) => {
     logger.debug({ socketId: socket.id }, 'Socket connected');
 
-    socket.on('join:channel', (channelId: unknown) => {
+    socket.on('join:channel', async (channelId: unknown) => {
       if (typeof channelId !== 'string' || channelId.length === 0) {
         return;
       }
+      if (!(await revalidateSocket(socket))) return;
       if (!socketHasPermission(socket, ROOM_PERMISSIONS.channel)) {
         socket.emit('error:forbidden', { room: `channel:${channelId}` });
         logger.warn({ socketId: socket.id, room: `channel:${channelId}` }, 'Denied room join (missing permission)');
@@ -109,7 +158,8 @@ function registerConnectionHandlers(server: SocketIOServer): void {
       logger.debug({ socketId: socket.id, room }, 'Left room');
     });
 
-    socket.on('join:dashboard', () => {
+    socket.on('join:dashboard', async () => {
+      if (!(await revalidateSocket(socket))) return;
       if (!socketHasPermission(socket, ROOM_PERMISSIONS.dashboard)) {
         socket.emit('error:forbidden', { room: 'dashboard' });
         logger.warn({ socketId: socket.id, room: 'dashboard' }, 'Denied room join (missing permission)');
@@ -124,7 +174,8 @@ function registerConnectionHandlers(server: SocketIOServer): void {
       logger.debug({ socketId: socket.id, room: 'dashboard' }, 'Left room');
     });
 
-    socket.on('join:logs', () => {
+    socket.on('join:logs', async () => {
+      if (!(await revalidateSocket(socket))) return;
       // Live server logs can contain error payloads / PHI fragments — same bar as
       // the REST /logs endpoint (system:info), which only admin holds by default.
       if (!socketHasPermission(socket, ROOM_PERMISSIONS.logs)) {
@@ -161,6 +212,14 @@ export function initializeSocketIO(httpServer: HttpServer): SocketIOServer {
   io.use(authMiddleware);
   registerConnectionHandlers(io);
 
+  // Sockets stay open long after the handshake; re-check them periodically so a
+  // logout, password reset, disable or role change also cuts off live streams.
+  const server = io;
+  revalidateTimer = setInterval(() => {
+    for (const socket of server.of('/').sockets.values()) void revalidateSocket(socket);
+  }, REVALIDATE_INTERVAL_MS);
+  revalidateTimer.unref();
+
   logger.info({ component: 'socketio' }, 'Socket.IO initialized');
   return io;
 }
@@ -192,6 +251,10 @@ export function emitToAll(event: string, data: unknown): void {
 }
 
 export async function shutdownSocketIO(): Promise<void> {
+  if (revalidateTimer) {
+    clearInterval(revalidateTimer);
+    revalidateTimer = null;
+  }
   if (io) {
     // Force-disconnect all clients first. Open websockets otherwise keep the
     // underlying HTTP server's `close()` from ever resolving, which would hang

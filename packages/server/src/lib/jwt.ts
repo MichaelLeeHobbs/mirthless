@@ -2,6 +2,7 @@
 // JWT Utilities
 // ===========================================
 
+import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
 
@@ -25,9 +26,12 @@ export function signAccessToken(payload: Omit<JwtPayload, 'type'>): string {
 }
 
 export function signRefreshToken(payload: Omit<JwtPayload, 'type'>): string {
+  // A unique jti: without it two logins by one user in the same second produced
+  // identical tokens, and the second hit the sessions.refresh_token unique index.
   return jwt.sign({ ...payload, type: 'refresh' }, config.JWT_SECRET, {
     expiresIn: config.JWT_REFRESH_EXPIRES_IN,
     algorithm: JWT_ALGORITHM,
+    jwtid: randomUUID(),
   });
 }
 

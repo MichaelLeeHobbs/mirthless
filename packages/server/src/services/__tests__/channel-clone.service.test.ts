@@ -311,9 +311,8 @@ describe('ChannelService.clone', () => {
     expect(createInput.responseMode).toBe('AUTO_AFTER_DESTINATIONS');
     expect(createInput.properties?.initialState).toBe('STARTED');
     expect(createInput.properties?.messageStorageMode).toBe('PRODUCTION');
-    // encryptData is not yet supported — a clone always drops it to false so the
-    // resulting create() is not rejected (see channel.service assertEncryptDataNotEnabled).
-    expect(createInput.properties?.encryptData).toBe(false);
+    // An encrypted channel's clone stays encrypted (no silent plaintext PHI).
+    expect(createInput.properties?.encryptData).toBe(true);
     expect(createInput.properties?.pruningEnabled).toBe(true);
     expect(createInput.properties?.pruningMaxAgeDays).toBe(30);
     expect(createInput.properties?.pruningArchiveEnabled).toBe(true);

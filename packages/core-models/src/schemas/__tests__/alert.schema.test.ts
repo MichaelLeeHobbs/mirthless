@@ -84,7 +84,7 @@ describe('alertTriggerSchema', () => {
       errorTypes: ['ANY'],
     });
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success || result.data.type !== 'CHANNEL_ERROR') return;
     expect(result.data.regex).toBeNull();
   });
 
@@ -95,8 +95,20 @@ describe('alertTriggerSchema', () => {
       regex: 'timeout|connection refused',
     });
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success || result.data.type !== 'CHANNEL_ERROR') return;
     expect(result.data.regex).toBe('timeout|connection refused');
+  });
+
+  it('accepts a NO_MESSAGES trigger with a window in minutes', () => {
+    const result = alertTriggerSchema.safeParse({ type: 'NO_MESSAGES', windowMinutes: 30 });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a NO_MESSAGES trigger without a valid window', () => {
+    expect(alertTriggerSchema.safeParse({ type: 'NO_MESSAGES' }).success).toBe(false);
+    expect(alertTriggerSchema.safeParse({ type: 'NO_MESSAGES', windowMinutes: 0 }).success).toBe(false);
+    expect(alertTriggerSchema.safeParse({ type: 'NO_MESSAGES', windowMinutes: 1.5 }).success).toBe(false);
+    expect(alertTriggerSchema.safeParse({ type: 'NO_MESSAGES', windowMinutes: 10_081 }).success).toBe(false);
   });
 });
 

@@ -2,22 +2,30 @@
 // AlertsPage Tests
 // ===========================================
 // The alert list follows the shared admin-list pattern: readable trigger
-// labels, a one-click enabled switch, a named delete confirm, and no pager
-// on a short list. Data hooks are mocked at the API boundary.
+// labels, a one-click enabled switch, a named delete confirm, and no pager on
+// a short list. Users without alerts:write must not be offered the edit flow:
+// the server rejects their saves, and the editor route is gated the same way.
+// Data and permission hooks are mocked at the API boundary.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { ThemeProvider } from '@mui/material/styles';
 import { MemoryRouter } from 'react-router-dom';
-import { lightTheme } from '../../styles/theme.js';
+import { ThemeProvider } from '@mui/material/styles';
+import { darkTheme } from '../../styles/theme.js';
 
+const ALL = ['alerts:read', 'alerts:write', 'alerts:delete'];
+let granted: readonly string[] = ALL;
+let total = 2;
 const toggleMutate = vi.fn();
 const deleteMutate = vi.fn();
-let total = 2;
 
 function alert(id: string, name: string, enabled: boolean): Record<string, unknown> {
   return { id, name, description: null, triggerType: 'CHANNEL_ERROR', channelCount: 1, actionCount: 2, enabled };
 }
+
+vi.mock('../../hooks/use-permissions.js', () => ({
+  usePermissions: () => ({ has: (p: string) => granted.includes(p) }),
+}));
 
 vi.mock('../../hooks/use-alerts.js', () => ({
   useAlerts: () => ({
@@ -30,12 +38,11 @@ vi.mock('../../hooks/use-alerts.js', () => ({
 
 import { AlertsPage } from '../AlertsPage.js';
 
-function renderPage(): void {
+function renderPage(permissions: readonly string[] = ALL): void {
+  granted = permissions;
   render(
-    <ThemeProvider theme={lightTheme}>
-      <MemoryRouter>
-        <AlertsPage />
-      </MemoryRouter>
+    <ThemeProvider theme={darkTheme}>
+      <MemoryRouter><AlertsPage /></MemoryRouter>
     </ThemeProvider>,
   );
 }
@@ -76,5 +83,19 @@ describe('AlertsPage', () => {
     total = 40;
     renderPage();
     expect(screen.getByText(/Rows per page/)).toBeTruthy();
+  });
+
+  it('offers edit to users with alerts:write', () => {
+    renderPage(['alerts:read', 'alerts:write']);
+    expect(screen.getAllByLabelText('Edit alert')).toHaveLength(2);
+  });
+
+  it('gives read-only users the list without edit, delete, links or a live switch', () => {
+    renderPage(['alerts:read']);
+    expect(screen.getByText('Lab feed errors')).toBeTruthy();
+    expect(screen.queryByLabelText('Edit alert')).toBeNull();
+    expect(screen.queryByLabelText('Delete alert')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Lab feed errors' })).toBeNull();
+    expect((screen.getByRole('checkbox', { name: 'Disable Lab feed errors' }) as HTMLInputElement).disabled).toBe(true);
   });
 });

@@ -4,8 +4,11 @@
 // Tests end-to-end message flow: create a TCP/MLLP channel via API,
 // deploy and start it, send an HL7 ADT^A01 message, verify ACK,
 // then confirm the message appears in the browser UI.
+//
+// The steps run serially and every step must succeed: a failed setup step
+// fails the suite rather than skipping the message checks.
 
-import { test, expect, request } from '@playwright/test';
+import { test, expect, request, type APIRequestContext } from '@playwright/test';
 import * as net from 'node:net';
 import { login } from './fixtures/auth.js';
 import { ADMIN_USER, TEST_CHANNEL } from './fixtures/test-data.js';
@@ -76,238 +79,122 @@ const HL7_ADT = [
 // -------------------------------------------------------
 // Shared state across tests in this suite
 // -------------------------------------------------------
-let authToken = '';
+let api: APIRequestContext;
 let channelId = '';
 const MLLP_PORT = TEST_CHANNEL.sourcePort; // 18661
+
+interface Envelope<T> { readonly success: boolean; readonly data: T }
+
+/** GET an API path and return its data, failing the test on a non-2xx. */
+async function getData<T>(path: string): Promise<T> {
+  const res = await api.get(`${API_BASE}${path}`);
+  expect(res.ok(), `GET ${path} returned ${String(res.status())}`).toBeTruthy();
+  return (await res.json() as Envelope<T>).data;
+}
+
+/** POST to an API path, failing the test on a non-2xx. */
+async function postOk(path: string, data?: unknown): Promise<unknown> {
+  const res = await api.post(`${API_BASE}${path}`, data === undefined ? {} : { data });
+  expect(res.ok(), `POST ${path} returned ${String(res.status())}: ${await res.text()}`).toBeTruthy();
+  return (await res.json() as Envelope<unknown>).data;
+}
+
+/** Stop, undeploy (ignoring "not deployed") and delete a channel. */
+async function removeChannel(id: string): Promise<void> {
+  await api.post(`${API_BASE}/channels/${id}/stop`);
+  await api.post(`${API_BASE}/channels/${id}/undeploy`);
+  await api.delete(`${API_BASE}/channels/${id}`);
+}
 
 // -------------------------------------------------------
 // Tests
 // -------------------------------------------------------
 test.describe('Message Flow', () => {
-  /**
-   * Obtain a fresh auth token once for the whole suite.
-   * All API setup/teardown calls use this token directly via page.request,
-   * which runs in the same browser context as the logged-in page.
-   */
-  test.beforeAll(async () => {
-    const ctx = await request.newContext({ baseURL: API_BASE });
-    try {
-      const loginRes = await ctx.post('/auth/login', {
-        data: { username: ADMIN_USER.username, password: ADMIN_USER.password },
-      });
-      if (!loginRes.ok()) return;
-      const body = await loginRes.json() as { success: boolean; data: { accessToken: string } };
-      if (body.data?.accessToken) {
-        authToken = body.data.accessToken;
-      }
+  test.describe.configure({ mode: 'serial' });
 
-      // Clean up any leftover test channels from previous runs
-      const listRes = await ctx.get('/channels', {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
-      if (listRes.ok()) {
-        const listBody = await listRes.json() as {
-          success: boolean;
-          data: { data: Array<{ id: string; name: string; state: string }> };
-        };
-        const channels = Array.isArray(listBody.data?.data) ? listBody.data.data : [];
-        for (const ch of channels) {
-          if (ch.name === TEST_CHANNEL.name) {
-            // Attempt to undeploy first, then delete
-            await ctx.post(`/channels/${ch.id}/undeploy`, {
-              headers: { Authorization: `Bearer ${authToken}` },
-            });
-            await ctx.delete(`/channels/${ch.id}`, {
-              headers: { Authorization: `Bearer ${authToken}` },
-            });
-          }
-        }
-      }
-    } finally {
-      await ctx.dispose();
+  test.beforeAll(async () => {
+    const loginCtx = await request.newContext();
+    const loginRes = await loginCtx.post(`${API_BASE}/auth/login`, { data: ADMIN_USER });
+    expect(loginRes.ok(), `Admin login failed: ${String(loginRes.status())}`).toBeTruthy();
+    const { accessToken } = (await loginRes.json() as Envelope<{ accessToken: string }>).data;
+    await loginCtx.dispose();
+
+    api = await request.newContext({ extraHTTPHeaders: { Authorization: `Bearer ${accessToken}` } });
+
+    // Remove leftovers from an earlier, interrupted run.
+    const list = await getData<{ data: Array<{ id: string; name: string }> }>('/channels?pageSize=100');
+    for (const ch of list.data) {
+      if (ch.name === TEST_CHANNEL.name) await removeChannel(ch.id);
     }
   });
 
   test.afterAll(async () => {
-    if (!authToken || !channelId) return;
-    const ctx = await request.newContext({ baseURL: API_BASE });
-    try {
-      await ctx.post(`/channels/${channelId}/undeploy`, {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
-      await ctx.delete(`/channels/${channelId}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
-    } finally {
-      await ctx.dispose();
-    }
+    if (channelId) await removeChannel(channelId);
+    await api?.dispose();
   });
 
   test.beforeEach(async ({ page }) => {
     await login(page);
   });
 
-  // ---------------------------------------------------
-  // Test 1: Create channel via API
-  // ---------------------------------------------------
-  test('create TCP/MLLP channel via API', async ({ page }) => {
-    if (!authToken) {
-      test.skip();
-      return;
-    }
-
-    const res = await page.request.post(`${API_BASE}/channels`, {
-      headers: { Authorization: `Bearer ${authToken}` },
-      data: {
-        name: TEST_CHANNEL.name,
-        description: TEST_CHANNEL.description,
-        enabled: true,
-        sourceConnector: {
-          connectorType: 'tcp-mllp',
-          name: 'TCP/MLLP Source',
-          enabled: true,
-          properties: {
-            host: '0.0.0.0',
-            port: MLLP_PORT,
-          },
-        },
-        destinationConnectors: [],
+  test('create TCP/MLLP channel via API', async () => {
+    const created = await postOk('/channels', {
+      name: TEST_CHANNEL.name,
+      description: TEST_CHANNEL.description,
+      enabled: true,
+      inboundDataType: 'HL7V2',
+      outboundDataType: 'HL7V2',
+      sourceConnectorType: 'TCP_MLLP',
+      sourceConnectorProperties: {
+        host: '127.0.0.1',
+        port: MLLP_PORT,
+        maxConnections: 10,
+        responseMode: 'AUTO_ACK',
+        charset: 'utf-8',
+        maxFrameBytes: 52428800,
       },
-    });
-
-    if (res.ok()) {
-      const body = await res.json() as { success: boolean; data: { id: string } };
-      if (body.data?.id) {
-        channelId = body.data.id;
-      }
-      expect(body.success).toBeTruthy();
-      expect(channelId).not.toBe('');
-    } else {
-      // Server may reject the payload shape — log status and skip downstream tests
-      console.warn(`Channel creation returned ${res.status()} — skipping MLLP send tests`);
-    }
+    }) as { id: string };
+    expect(created.id).toMatch(/^[0-9a-f-]{36}$/);
+    channelId = created.id;
   });
 
-  // ---------------------------------------------------
-  // Test 2: Deploy and start channel via API
-  // ---------------------------------------------------
-  test('deploy and start channel via API', async ({ page }) => {
-    if (!authToken || !channelId) {
-      test.skip();
-      return;
+  test('deploy and start channel via API', async () => {
+    await postOk(`/channels/${channelId}/deploy`);
+    const status = await getData<{ state: string }>(`/channels/${channelId}/status`);
+    if (status.state !== 'STARTED') {
+      await postOk(`/channels/${channelId}/start`);
     }
-
-    const deployRes = await page.request.post(`${API_BASE}/channels/${channelId}/deploy`, {
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
-
-    if (!deployRes.ok()) {
-      console.warn(`Deploy returned ${deployRes.status()} — may already be deployed`);
-    }
-
-    // Allow the channel listener to bind its port
-    await page.waitForTimeout(2_000);
-
-    const startRes = await page.request.post(`${API_BASE}/channels/${channelId}/start`, {
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
-
-    if (startRes.ok()) {
-      const body = await startRes.json() as { success: boolean };
-      expect(body.success).toBeTruthy();
-    }
-
-    // Give the listener another moment to be ready
-    await page.waitForTimeout(1_000);
+    await expect.poll(async () => (await getData<{ state: string }>(`/channels/${channelId}/status`)).state)
+      .toBe('STARTED');
   });
 
-  // ---------------------------------------------------
-  // Test 3: Send HL7 message and verify ACK
-  // ---------------------------------------------------
-  test('send HL7 ADT^A01 and receive ACK', async ({ page }) => {
-    if (!channelId) {
-      test.skip();
-      return;
-    }
+  test('send HL7 ADT^A01 and receive ACK', async () => {
+    const ack = await sendMllpMessage('127.0.0.1', MLLP_PORT, HL7_ADT);
 
-    let ack = '';
-    try {
-      ack = await sendMllpMessage('127.0.0.1', MLLP_PORT, HL7_ADT);
-    } catch (err) {
-      // Port may not be open if channel creation/deploy failed — skip gracefully
-      console.warn(`MLLP send failed: ${String(err)}`);
-      test.skip();
-      return;
-    }
-
-    // ACK must contain the HL7 ACK segment header
     expect(ack).toContain('MSH');
-    expect(ack).toMatch(/MSA\|AA|MSA\|AE|MSA\|AR/);
-
-    // Confirm the page is still in a good state
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    expect(ack).toContain('MSA|AA|E2E001');
   });
 
-  // ---------------------------------------------------
-  // Test 4: Message appears in the message browser UI
-  // ---------------------------------------------------
-  test('message appears in message browser after send', async ({ page }) => {
-    if (!channelId) {
-      test.skip();
-      return;
-    }
+  test('message is stored and appears in the message browser', async ({ page }) => {
+    await expect.poll(async () =>
+      (await getData<{ total: number }>(`/channels/${channelId}/messages`)).total,
+    ).toBeGreaterThanOrEqual(1);
 
-    // Navigate to the channel-specific message browser
     await page.goto(`/channels/${channelId}/messages`);
-    await page.waitForTimeout(2_000);
-
-    // If the route doesn't exist, fall back to the global message browser
-    const headingVisible = await page.getByRole('heading', { name: /messages/i }).isVisible();
-    if (!headingVisible) {
-      await page.goto('/messages');
-      await page.waitForTimeout(2_000);
-    }
-
-    await expect(page.getByRole('heading', { name: /messages/i })).toBeVisible({ timeout: 10_000 });
-
-    // The table should have at least one row OR an empty state (either is valid UI state)
-    const table = page.locator('table');
-    const emptyText = page.getByText(/no messages|no data/i).first();
-    const hasTable = await table.isVisible();
-    const hasEmpty = await emptyText.isVisible();
-    expect(hasTable || hasEmpty).toBeTruthy();
+    await expect(page.getByRole('heading', { level: 1, name: `Messages: ${TEST_CHANNEL.name}` }))
+      .toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('table tbody tr').first()).toContainText(/SENT|TRANSFORMED|RECEIVED/, { timeout: 10_000 });
   });
 
-  // ---------------------------------------------------
-  // Test 5: Clean up — undeploy and delete channel
-  // ---------------------------------------------------
-  test('undeploy and delete channel', async ({ page }) => {
-    if (!authToken || !channelId) {
-      test.skip();
-      return;
-    }
-
-    const undeployRes = await page.request.post(`${API_BASE}/channels/${channelId}/undeploy`, {
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
-
-    // 200 or 204 are both acceptable
-    expect([200, 204, 400].includes(undeployRes.status())).toBeTruthy();
-
-    await page.waitForTimeout(1_000);
-
-    const deleteRes = await page.request.delete(`${API_BASE}/channels/${channelId}`, {
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
-
-    expect([200, 204].includes(deleteRes.status())).toBeTruthy();
-
-    // Verify it's gone from the UI (channel list lives on the Dashboard now)
-    await page.goto('/');
-    await page.waitForTimeout(1_000);
-    await expect(page.getByText(TEST_CHANNEL.name)).not.toBeVisible({ timeout: 10_000 });
-
-    // Reset shared state so afterAll cleanup is a no-op
+  test('stop, undeploy and delete channel', async ({ page }) => {
+    await postOk(`/channels/${channelId}/stop`);
+    await postOk(`/channels/${channelId}/undeploy`);
+    const deleteRes = await api.delete(`${API_BASE}/channels/${channelId}`);
+    expect([200, 204]).toContain(deleteRes.status());
     channelId = '';
+
+    // The channel list lives on the Dashboard.
+    await page.goto('/');
+    await expect(page.locator('tr', { hasText: TEST_CHANNEL.name })).toHaveCount(0, { timeout: 10_000 });
   });
 });

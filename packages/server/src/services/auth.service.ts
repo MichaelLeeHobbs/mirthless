@@ -23,6 +23,21 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/** Audit-log a rejected login. Every rejection is recorded, including unknown usernames. */
+function auditLoginFailure(
+  username: string,
+  userId: string | null,
+  reason: string,
+  metadata: SessionMetadata | undefined,
+): void {
+  emitEvent({
+    level: 'WARN', name: 'USER_LOGIN_FAILED', outcome: 'FAILURE',
+    userId, channelId: null, serverId: null,
+    ipAddress: metadata?.ipAddress ?? null,
+    attributes: { username, reason },
+  });
+}
+
 export interface SessionMetadata {
   userAgent?: string;
   ipAddress?: string;
@@ -64,11 +79,13 @@ export class AuthService {
         .where(eq(users.username, username));
 
       if (!user) {
+        auditLoginFailure(username, null, 'unknown_user', metadata);
         throw new ServiceError('INVALID_CREDENTIALS', 'Invalid credentials');
       }
 
       // Check account lockout
       if (user.lockedUntil && user.lockedUntil > new Date()) {
+        auditLoginFailure(username, user.id, 'account_locked', metadata);
         const minutesRemaining = Math.ceil(
           (user.lockedUntil.getTime() - Date.now()) / 60_000
         );
@@ -77,6 +94,7 @@ export class AuthService {
 
       // Check if account is enabled
       if (!user.enabled) {
+        auditLoginFailure(username, user.id, 'account_disabled', metadata);
         throw new ServiceError('ACCOUNT_DEACTIVATED', 'Account is deactivated');
       }
 
@@ -96,6 +114,7 @@ export class AuthService {
           })
           .where(eq(users.id, user.id));
 
+        auditLoginFailure(username, user.id, shouldLock ? 'invalid_password_locked' : 'invalid_password', metadata);
         if (shouldLock) {
           throw new ServiceError(
             'ACCOUNT_LOCKED',
@@ -103,13 +122,6 @@ export class AuthService {
             { lockedNow: true }
           );
         }
-
-        emitEvent({
-          level: 'WARN', name: 'USER_LOGIN_FAILED', outcome: 'FAILURE',
-          userId: user.id, channelId: null, serverId: null,
-          ipAddress: metadata?.ipAddress ?? null,
-          attributes: { username, reason: 'invalid_password' },
-        });
 
         throw new ServiceError('INVALID_CREDENTIALS', 'Invalid credentials');
       }
@@ -189,9 +201,13 @@ export class AuthService {
     });
   }
 
-  static async logout(sessionId: string): Promise<Result<void>> {
+  static async logout(sessionId: string, userId: string | null, ipAddress: string | null): Promise<Result<void>> {
     return tryCatch(async () => {
       await db.delete(sessions).where(eq(sessions.id, sessionId));
+      emitEvent({
+        level: 'INFO', name: 'USER_LOGOUT', outcome: 'SUCCESS',
+        userId, channelId: null, serverId: null, ipAddress, attributes: {},
+      });
     });
   }
 

@@ -49,6 +49,28 @@ export interface DestinationConfig {
    * ON_FAILURE — try a direct send; only enqueue for retry if that send fails.
    */
   readonly queueMode: 'NEVER' | 'ON_FAILURE' | 'ALWAYS';
+  /** Run after the preceding destination finishes instead of in parallel with it (default false). */
+  readonly waitForPrevious?: boolean | undefined;
+}
+
+/**
+ * Split destinations into chains. Each destination with waitForPrevious joins the
+ * chain of the destination before it; any other destination starts a new chain.
+ * Chains run in parallel and destinations within a chain run sequentially.
+ */
+export function groupDestinationChains(
+  destinations: readonly DestinationConfig[],
+): ReadonlyArray<readonly DestinationConfig[]> {
+  const chains: DestinationConfig[][] = [];
+  for (const dest of destinations) {
+    const current = chains[chains.length - 1];
+    if (dest.waitForPrevious && current) {
+      current.push(dest);
+    } else {
+      chains.push([dest]);
+    }
+  }
+  return chains;
 }
 
 /** Callback to send a message to a destination connector. */
@@ -495,154 +517,159 @@ export class MessageProcessor {
     correlationId?: string | undefined,
   ): Promise<readonly DestinationResult[]> {
     const { channelId, serverId, dataType } = this.config;
-    const results: DestinationResult[] = [];
 
-    // Process destinations in parallel, filtered by active set
-    const promises = this.config.destinations
-      .filter((d) => d.enabled && (!activeDestinations || activeDestinations.has(d.metaDataId)))
-      .map(async (dest): Promise<DestinationResult> => {
-        // A persistence failure here must fail the destination loudly (ERROR +
-        // alert), never be ignored — otherwise the message is silently lost with
-        // no dest row, no recovery, and a SENT source status.
-        const createResult = await this.store.createConnectorMessage(
-          channelId, messageId, dest.metaDataId, dest.name, 'RECEIVED',
+    const processDestination = async (dest: DestinationConfig): Promise<DestinationResult> => {
+      // A persistence failure here must fail the destination loudly (ERROR +
+      // alert), never be ignored — otherwise the message is silently lost with
+      // no dest row, no recovery, and a SENT source status.
+      const createResult = await this.store.createConnectorMessage(
+        channelId, messageId, dest.metaDataId, dest.name, 'RECEIVED',
+      );
+      if (!createResult.ok) {
+        return this.destErrorOut(messageId, dest, 'createConnectorMessage', createResult.error.message);
+      }
+
+      let destContent = content;
+
+      // Destination filter — fresh connectorMap per destination.
+      // A script error must fail the destination loudly, never fall through as
+      // if the filter passed (which would send unfiltered PHI downstream).
+      if (dest.scripts.filter) {
+        const filterResult = await this.runScript(
+          dest.scripts.filter, destContent, input, signal, mapState,
         );
-        if (!createResult.ok) {
-          return this.destErrorOut(messageId, dest, 'createConnectorMessage', createResult.error.message);
+        if (!filterResult.ok) {
+          return this.destErrorOut(messageId, dest, 'destinationFilter', filterResult.error.message);
         }
-
-        let destContent = content;
-
-        // Destination filter — fresh connectorMap per destination.
-        // A script error must fail the destination loudly, never fall through as
-        // if the filter passed (which would send unfiltered PHI downstream).
-        if (dest.scripts.filter) {
-          const filterResult = await this.runScript(
-            dest.scripts.filter, destContent, input, signal, mapState,
-          );
-          if (!filterResult.ok) {
-            return this.destErrorOut(messageId, dest, 'destinationFilter', filterResult.error.message);
-          }
-          if (filterResult.value.returnValue === false) {
-            await Promise.all([
-              this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'FILTERED'),
-              this.store.incrementStats(channelId, dest.metaDataId, serverId, 'filtered'),
-            ]);
-            return { metaDataId: dest.metaDataId, status: 'FILTERED' as const };
-          }
+        if (filterResult.value.returnValue === false) {
+          await Promise.all([
+            this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'FILTERED'),
+            this.store.incrementStats(channelId, dest.metaDataId, serverId, 'filtered'),
+          ]);
+          return { metaDataId: dest.metaDataId, status: 'FILTERED' as const };
         }
+      }
 
-        // Destination transformer — a script error must fail the destination.
-        // Never send untransformed content downstream on a transformer failure.
-        if (dest.scripts.transformer) {
-          const txResult = await this.runScript(
-            dest.scripts.transformer, destContent, input, signal, mapState,
-          );
-          if (!txResult.ok) {
-            return this.destErrorOut(messageId, dest, 'destinationTransformer', txResult.error.message);
-          }
-          const transformed = txResult.value.returnValue ?? txResult.value.msg;
-          destContent = serializeFromSandbox(transformed, dataType);
-        }
-
-        // Persist the outbound (SENT) content BEFORE queuing/sending. A queued
-        // destination reloads exactly this row to deliver, and crash recovery
-        // redispatches from it — if the write fails we must error now (before any
-        // send) rather than silently lose the message or deliver un-persisted PHI.
-        const storeSentResult = await this.store.storeContent(
-          channelId, messageId, dest.metaDataId, CT_SENT, destContent, dataType,
+      // Destination transformer — a script error must fail the destination.
+      // Never send untransformed content downstream on a transformer failure.
+      if (dest.scripts.transformer) {
+        const txResult = await this.runScript(
+          dest.scripts.transformer, destContent, input, signal, mapState,
         );
-        if (!storeSentResult.ok) {
-          return this.destErrorOut(messageId, dest, 'storeSentContent', storeSentResult.error.message);
+        if (!txResult.ok) {
+          return this.destErrorOut(messageId, dest, 'destinationTransformer', txResult.error.message);
         }
+        const transformed = txResult.value.returnValue ?? txResult.value.msg;
+        destContent = serializeFromSandbox(transformed, dataType);
+      }
 
-        // ALWAYS: hand straight to the queue (the consumer delivers + retries).
-        if (dest.queueMode === 'ALWAYS') {
-          return this.enqueueDestination(messageId, dest);
-        }
+      // Persist the outbound (SENT) content BEFORE queuing/sending. A queued
+      // destination reloads exactly this row to deliver, and crash recovery
+      // redispatches from it — if the write fails we must error now (before any
+      // send) rather than silently lose the message or deliver un-persisted PHI.
+      const storeSentResult = await this.store.storeContent(
+        channelId, messageId, dest.metaDataId, CT_SENT, destContent, dataType,
+      );
+      if (!storeSentResult.ok) {
+        return this.destErrorOut(messageId, dest, 'storeSentContent', storeSentResult.error.message);
+      }
 
-        // NEVER / ON_FAILURE: attempt a direct send first.
-        const sendResult = await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId);
+      // ALWAYS: hand straight to the queue (the consumer delivers + retries).
+      if (dest.queueMode === 'ALWAYS') {
+        return this.enqueueDestination(messageId, dest);
+      }
 
-        if (!sendResult.ok) {
-          // ON_FAILURE: fall back to the queue for retry instead of a hard ERROR.
-          if (dest.queueMode === 'ON_FAILURE') {
-            return this.enqueueDestination(messageId, dest);
-          }
-          await Promise.all([
-            this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'ERROR'),
-            this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored'),
-          ]);
-          return { metaDataId: dest.metaDataId, status: 'ERROR' as const };
-        }
+      // NEVER / ON_FAILURE: attempt a direct send first.
+      const sendResult = await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId);
 
-        const response = sendResult.value;
-
-        if (response.status === 'SENT') {
-          await this.store.storeContent(
-            channelId, messageId, dest.metaDataId, CT_RESPONSE, response.content, dataType,
-          );
-
-          // Populate responseMap with destination response
-          mapState.responseMap[dest.name] = { status: response.status, content: response.content };
-
-          // Response transformer (if configured). A script error here must be
-          // surfaced loudly (error content + alert), never swallowed — but the
-          // message was already delivered to the destination, so we keep the
-          // destination SENT and fall back to the untransformed response rather
-          // than flip to ERROR (which could trigger a duplicate redelivery).
-          let responseContent = response.content;
-          if (dest.scripts.responseTransformer) {
-            const rtResult = await this.runScript(
-              dest.scripts.responseTransformer, response.content, input, signal, mapState,
-            );
-            if (rtResult.ok) {
-              const transformed = rtResult.value.returnValue ?? rtResult.value.msg;
-              responseContent = serializeFromSandbox(transformed, dataType);
-              await this.store.storeContent(
-                channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
-              );
-            } else {
-              await this.store.storeContent(
-                channelId, messageId, dest.metaDataId, CT_PROCESSING_ERROR,
-                `Script error in responseTransformer: ${rtResult.error.message}`, 'TEXT',
-              );
-              if (this.config.onError) {
-                await this.config.onError({
-                  channelId, errorType: 'DESTINATION_CONNECTOR',
-                  errorMessage: `Response transformer error in message ${String(messageId)}: ${rtResult.error.message}`,
-                  timestamp: Date.now(),
-                });
-              }
-            }
-          }
-
-          await Promise.all([
-            this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'SENT'),
-            this.store.incrementStats(channelId, dest.metaDataId, serverId, 'sent'),
-          ]);
-          return {
-            metaDataId: dest.metaDataId,
-            status: 'SENT' as const,
-            response: responseContent,
-          };
-        }
-
-        // Destination responded but not SENT (e.g. remote NAK). ON_FAILURE queues
-        // it for retry; otherwise mark ERROR.
+      if (!sendResult.ok) {
+        // ON_FAILURE: fall back to the queue for retry instead of a hard ERROR.
         if (dest.queueMode === 'ON_FAILURE') {
           return this.enqueueDestination(messageId, dest);
         }
-        await this.store.updateConnectorMessageStatus(
-          channelId, messageId, dest.metaDataId, 'ERROR',
-        );
-        await this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored');
+        await Promise.all([
+          this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'ERROR'),
+          this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored'),
+        ]);
         return { metaDataId: dest.metaDataId, status: 'ERROR' as const };
-      });
+      }
 
-    const settled = await Promise.all(promises);
-    results.push(...settled);
-    return results;
+      const response = sendResult.value;
+
+      if (response.status === 'SENT') {
+        await this.store.storeContent(
+          channelId, messageId, dest.metaDataId, CT_RESPONSE, response.content, dataType,
+        );
+
+        // Populate responseMap with destination response
+        mapState.responseMap[dest.name] = { status: response.status, content: response.content };
+
+        // Response transformer (if configured). A script error here must be
+        // surfaced loudly (error content + alert), never swallowed — but the
+        // message was already delivered to the destination, so we keep the
+        // destination SENT and fall back to the untransformed response rather
+        // than flip to ERROR (which could trigger a duplicate redelivery).
+        let responseContent = response.content;
+        if (dest.scripts.responseTransformer) {
+          const rtResult = await this.runScript(
+            dest.scripts.responseTransformer, response.content, input, signal, mapState,
+          );
+          if (rtResult.ok) {
+            const transformed = rtResult.value.returnValue ?? rtResult.value.msg;
+            responseContent = serializeFromSandbox(transformed, dataType);
+            await this.store.storeContent(
+              channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
+            );
+          } else {
+            await this.store.storeContent(
+              channelId, messageId, dest.metaDataId, CT_PROCESSING_ERROR,
+              `Script error in responseTransformer: ${rtResult.error.message}`, 'TEXT',
+            );
+            if (this.config.onError) {
+              await this.config.onError({
+                channelId, errorType: 'DESTINATION_CONNECTOR',
+                errorMessage: `Response transformer error in message ${String(messageId)}: ${rtResult.error.message}`,
+                timestamp: Date.now(),
+              });
+            }
+          }
+        }
+
+        await Promise.all([
+          this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'SENT'),
+          this.store.incrementStats(channelId, dest.metaDataId, serverId, 'sent'),
+        ]);
+        return {
+          metaDataId: dest.metaDataId,
+          status: 'SENT' as const,
+          response: responseContent,
+        };
+      }
+
+      // Destination responded but not SENT (e.g. remote NAK). ON_FAILURE queues
+      // it for retry; otherwise mark ERROR.
+      if (dest.queueMode === 'ON_FAILURE') {
+        return this.enqueueDestination(messageId, dest);
+      }
+      await this.store.updateConnectorMessageStatus(
+        channelId, messageId, dest.metaDataId, 'ERROR',
+      );
+      await this.store.incrementStats(channelId, dest.metaDataId, serverId, 'errored');
+      return { metaDataId: dest.metaDataId, status: 'ERROR' as const };
+    };
+
+    // Chains run in parallel; destinations within a chain run in order, so a
+    // waitForPrevious destination sees the earlier destination's responseMap entry.
+    const active = this.config.destinations
+      .filter((d) => d.enabled && (!activeDestinations || activeDestinations.has(d.metaDataId)));
+    const settled = await Promise.all(groupDestinationChains(active).map(async (chain) => {
+      const chainResults: DestinationResult[] = [];
+      for (const dest of chain) {
+        chainResults.push(await processDestination(dest));
+      }
+      return chainResults;
+    }));
+    return settled.flat();
   }
 
   /** Enqueue a destination for (retried) delivery by the queue consumer. */

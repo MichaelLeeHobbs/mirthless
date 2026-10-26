@@ -6,6 +6,12 @@
 // Mirrors the SmtpTransport / ImapClient factory-DI pattern in this package.
 // Never logs credentials or private keys.
 
+import { createRequire } from 'node:module';
+
+// The package is ESM, so a bare `require` is undefined at runtime (vitest
+// injects one, which hid this). Load the CJS client library through createRequire.
+const require = createRequire(import.meta.url);
+
 // ----- Connection options -----
 
 /**
@@ -152,7 +158,6 @@ export function buildConnectOptions(options: SftpConnectionOptions): Record<stri
 
 /** Create an ssh2-sftp-client-backed {@link SftpClient}. */
 export function createSsh2SftpClient(options: SftpConnectionOptions): SftpClient {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Ctor = require('ssh2-sftp-client') as new () => Ssh2ClientInstance;
   const client = new Ctor();
   return {

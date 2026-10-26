@@ -12,7 +12,9 @@ Mirthless applies schema changes through **Drizzle migrations**. The golden rule
   (`docker/server-entrypoint.sh`) runs `node packages/server/migrate.mjs` on every
   start, *before* the server boots. Migrations are **fail-loud** — if a migration
   errors, the container exits and the server never serves against a half-migrated
-  schema. It then runs an idempotent seed unless `SEED_ON_START=false`.
+  schema. It then runs an idempotent seed unless `SEED_ON_START=false`. The seed creates the admin user,
+  roles, permissions and default settings only; demo channels and data are seeded only when
+  `SEED_DEMO_DATA=true`.
 - **Local / non-Docker:** run `pnpm db:migrate` yourself before `pnpm start` /
   `pnpm dev`.
 
@@ -40,8 +42,8 @@ migration will not migrate it for you. From 1.0 onward, migrations will be data-
 # 1. BACK UP FIRST (see docs/ops/backup-restore.md)
 docker exec -t mirthless-db-prod pg_dump -U mirthless -d mirthless -F c > pre-upgrade.dump
 
-# 2. Pull the new images / new code
-git pull                # or: docker compose pull  (if using published tags)
+# 2. Pull the new code
+git pull                # there are no published images; the stack builds from source
 
 # 3. Rebuild & restart — the server container migrates on start
 docker compose -f docker/docker-compose.prod.yml up -d --build
