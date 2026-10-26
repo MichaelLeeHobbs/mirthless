@@ -17,6 +17,7 @@ import { LogViewer } from '../components/system/LogViewer.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { LoadingBlock } from '../components/common/states/LoadingState.js';
+import { FONT_FAMILY_MONO } from '../styles/tokens.js';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -69,7 +70,7 @@ function InfoRow({ label, value }: InfoRowProps): ReactNode {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.75 }}>
       <Typography variant="body2" color="text.secondary">{label}</Typography>
-      <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{value}</Typography>
+      <Typography variant="body2" sx={{ fontFamily: FONT_FAMILY_MONO }}>{value}</Typography>
     </Box>
   );
 }

@@ -15,6 +15,7 @@ import Button from '@mui/material/Button';
 import type { DestConnectorFormProps } from './types.js';
 import { SMTP_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
+import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 
 const CONTENT_TYPES = ['text/plain', 'text/html'] as const;
 const DEFAULT_MIME_TYPE = 'text/plain';
@@ -100,7 +101,7 @@ function AttachmentsEditor({ value, onChange }: AttachmentsEditorProps): ReactNo
             onChange={(e) => { setRow(index, 'content', e.target.value); }}
             multiline
             minRows={1}
-            sx={{ flex: 2, '& .MuiInputBase-input': { fontFamily: 'monospace', fontSize: '0.875rem' } }}
+            sx={{ flex: 2, '& .MuiInputBase-input': { fontFamily: FONT_FAMILY_MONO, fontSize: '0.875rem' } }}
           />
           <Button color="error" onClick={() => { removeRow(index); }} sx={{ mt: 1 }}>
             Remove
@@ -270,7 +271,7 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
           fullWidth
           multiline
           minRows={4}
-          sx={{ mb: 2, '& .MuiInputBase-input': { fontFamily: 'monospace', fontSize: '0.875rem' } }}
+          sx={{ mb: 2, '& .MuiInputBase-input': { fontFamily: FONT_FAMILY_MONO, fontSize: '0.875rem' } }}
         />
 
         <TextField

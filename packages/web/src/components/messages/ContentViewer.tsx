@@ -10,6 +10,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
+import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
 interface ContentViewerProps {
   readonly content: string;
@@ -77,7 +78,7 @@ export function ContentViewer({ content, label }: ContentViewerProps): ReactNode
           maxHeight: 400,
           fontSize: '0.8125rem',
           lineHeight: 1.6,
-          fontFamily: 'monospace',
+          fontFamily: FONT_FAMILY_MONO,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}

@@ -19,6 +19,9 @@ test-results/
 playwright-report/
 blob-report/
 
+# pnpm shots output
+/shots/
+
 # TypeScript build info
 *.tsbuildinfo
 

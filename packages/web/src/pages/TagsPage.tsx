@@ -41,6 +41,8 @@ import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
+import { TAG_COLOR } from '../styles/tokens.js';
+import { contrastText } from '../components/common/TagChips.js';
 
 export function TagsPage(): ReactNode {
   const { data: tags, isLoading, error, isFetching, refetch } = useTags();
@@ -51,7 +53,7 @@ export function TagsPage(): ReactNode {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<TagSummary | null>(null);
   const [name, setName] = useState('');
-  const [color, setColor] = useState('#2196F3');
+  const [color, setColor] = useState<string>(TAG_COLOR.default);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TagSummary | null>(null);
   const { has } = usePermissions();
@@ -60,7 +62,7 @@ export function TagsPage(): ReactNode {
   const handleOpenCreate = (): void => {
     setEditing(null);
     setName('');
-    setColor('#2196F3');
+    setColor(TAG_COLOR.default);
     setDialogError(null);
     setDialogOpen(true);
   };
@@ -68,7 +70,7 @@ export function TagsPage(): ReactNode {
   const handleOpenEdit = (tag: TagSummary): void => {
     setEditing(tag);
     setName(tag.name);
-    setColor(tag.color ?? '#2196F3');
+    setColor(tag.color ?? TAG_COLOR.default);
     setDialogError(null);
     setDialogOpen(true);
   };
@@ -146,7 +148,7 @@ export function TagsPage(): ReactNode {
                       <Chip
                         label={tag.name}
                         size="small"
-                        sx={{ backgroundColor: tag.color ?? '#ccc', color: '#fff', fontWeight: 500 }}
+                        sx={{ backgroundColor: tag.color ?? undefined, color: contrastText(tag.color), fontWeight: 500 }}
                       />
                     </TableCell>
                     <TableCell>
@@ -156,7 +158,7 @@ export function TagsPage(): ReactNode {
                             width: 16,
                             height: 16,
                             borderRadius: '50%',
-                            backgroundColor: tag.color ?? '#ccc',
+                            backgroundColor: tag.color ?? 'transparent',
                             border: '1px solid',
                             borderColor: 'divider',
                           }}

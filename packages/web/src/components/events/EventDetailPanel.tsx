@@ -9,6 +9,7 @@ import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useEvent } from '../../hooks/use-events.js';
+import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
 interface EventDetailPanelProps {
   readonly eventId: number;
@@ -40,13 +41,13 @@ export function EventDetailPanel({ eventId }: EventDetailPanelProps): ReactNode 
         </Box>
         <Box>
           <Typography variant="caption" color="text.secondary">User ID</Typography>
-          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+          <Typography variant="body2" sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem' }}>
             {event.userId ?? 'N/A'}
           </Typography>
         </Box>
         <Box>
           <Typography variant="caption" color="text.secondary">Channel ID</Typography>
-          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+          <Typography variant="body2" sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem' }}>
             {event.channelId ?? 'N/A'}
           </Typography>
         </Box>
@@ -62,7 +63,7 @@ export function EventDetailPanel({ eventId }: EventDetailPanelProps): ReactNode 
             sx={{
               p: 1.5,
               bgcolor: 'action.hover',
-              fontFamily: 'monospace',
+              fontFamily: FONT_FAMILY_MONO,
               fontSize: '0.8rem',
               whiteSpace: 'pre-wrap',
               overflow: 'auto',

@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { DATABASE_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
+import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 
 const UPDATE_MODES = ['NEVER', 'ALWAYS', 'ON_SUCCESS'] as const;
 const ROW_FORMATS = ['JSON'] as const;
@@ -117,7 +118,7 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
           multiline
           minRows={3}
           sx={{ mb: 2 }}
-          slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
+          slotProps={{ htmlInput: { style: { fontFamily: FONT_FAMILY_MONO } } }}
         />
 
         <TextField
@@ -129,7 +130,7 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
           multiline
           minRows={2}
           sx={{ mb: 2 }}
-          slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
+          slotProps={{ htmlInput: { style: { fontFamily: FONT_FAMILY_MONO } } }}
         />
 
         <TextField

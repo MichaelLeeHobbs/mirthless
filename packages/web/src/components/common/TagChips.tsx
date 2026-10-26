@@ -8,6 +8,7 @@ import { type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import type { TagSummary } from '../../hooks/use-tags.js';
+import { TAG_COLOR } from '../../styles/tokens.js';
 
 /** Pick black or white text for readability over a hex background color. */
 export function contrastText(hex: string | null): string | undefined {
@@ -20,7 +21,7 @@ export function contrastText(hex: string | null): string | undefined {
   const b = int & 0xff;
   // Relative luminance (sRGB approximation).
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.6 ? 'rgba(0,0,0,0.87)' : '#fff';
+  return luminance > 0.6 ? TAG_COLOR.textOnLight : TAG_COLOR.textOnDark;
 }
 
 interface TagChipsProps {

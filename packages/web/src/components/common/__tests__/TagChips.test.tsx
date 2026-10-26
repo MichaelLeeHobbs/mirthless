@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { darkTheme } from '../../../styles/theme.js';
+import { TAG_COLOR } from '../../../styles/tokens.js';
 import { TagChips, contrastText } from '../TagChips.js';
 import type { TagSummary } from '../../../hooks/use-tags.js';
 
@@ -13,10 +14,10 @@ afterEach(() => { cleanup(); });
 
 describe('contrastText', () => {
   it('returns dark text over a light background and white over a dark one', () => {
-    expect(contrastText('#ffffff')).toBe('rgba(0,0,0,0.87)');
-    expect(contrastText('#000000')).toBe('#fff');
-    expect(contrastText('#f0e68c')).toBe('rgba(0,0,0,0.87)'); // khaki (light)
-    expect(contrastText('#1a237e')).toBe('#fff'); // indigo (dark)
+    expect(contrastText('#ffffff')).toBe(TAG_COLOR.textOnLight);
+    expect(contrastText('#000000')).toBe(TAG_COLOR.textOnDark);
+    expect(contrastText('#f0e68c')).toBe(TAG_COLOR.textOnLight); // khaki (light)
+    expect(contrastText('#1a237e')).toBe(TAG_COLOR.textOnDark); // indigo (dark)
   });
 
   it('returns undefined for null/invalid colors', () => {

@@ -23,6 +23,7 @@ import { MessageStatusChip } from '../common/StatusChip.js';
 import { EmptyState } from '../common/states/EmptyState.js';
 import { TableSkeleton } from '../common/states/LoadingState.js';
 import type { CrossChannelSearchItem } from '../../hooks/use-cross-channel-search.js';
+import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
 interface MessageResultsTableProps {
   readonly items: readonly CrossChannelSearchItem[];
@@ -76,7 +77,7 @@ export function MessageResultsTable({
                 const key = `${item.channelId}-${String(item.messageId)}`;
                 return (
                   <TableRow key={key} hover>
-                    <TableCell sx={{ fontFamily: (t) => t.palette.fontFamilyMono, fontSize: '0.8125rem' }}>{item.messageId}</TableCell>
+                    <TableCell sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.8125rem' }}>{item.messageId}</TableCell>
                     <TableCell>
                       <Link component="button" variant="body2" onClick={() => { navigate(`/channels/${item.channelId}/messages`); }} sx={{ textDecoration: 'none' }}>
                         {item.channelName}

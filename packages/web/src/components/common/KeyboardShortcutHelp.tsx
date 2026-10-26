@@ -13,6 +13,7 @@ import TableCell from '@mui/material/TableCell';
 import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import Kbd from '@mui/material/Chip';
+import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
 interface ShortcutEntry {
   readonly keys: string;
@@ -50,7 +51,7 @@ export function KeyboardShortcutHelp({ open, onClose }: KeyboardShortcutHelpProp
                       label={k}
                       size="small"
                       variant="outlined"
-                      sx={{ mr: 0.5, fontFamily: 'monospace', fontSize: '0.75rem' }}
+                      sx={{ mr: 0.5, fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem' }}
                     />
                   ))}
                 </TableCell>

@@ -26,6 +26,7 @@ import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import type { SettingDetail } from '../api/client.js';
+import { FONT_FAMILY_MONO } from '../styles/tokens.js';
 
 const CATEGORIES = ['all', 'general', 'security', 'features', 'smtp'] as const;
 
@@ -142,7 +143,7 @@ export function SettingsPage(): ReactNode {
           maxRows={8}
           value={currentValue}
           onChange={(e) => { handleValueChange(setting.key, e.target.value); }}
-          slotProps={{ htmlInput: { style: { fontFamily: 'monospace', fontSize: '0.85rem' } } }}
+          slotProps={{ htmlInput: { style: { fontFamily: FONT_FAMILY_MONO, fontSize: '0.85rem' } } }}
         />
       );
     }
@@ -214,7 +215,7 @@ export function SettingsPage(): ReactNode {
               filteredSettings.map((setting) => (
                 <Box key={setting.key} sx={{ mb: 3, pb: 2, borderBottom: 1, borderColor: 'divider', '&:last-child': { borderBottom: 0, mb: 0, pb: 0 } }}>
                   <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
-                    <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
+                    <Typography variant="subtitle2" sx={{ fontFamily: FONT_FAMILY_MONO }}>
                       {setting.key}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">

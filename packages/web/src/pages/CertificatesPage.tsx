@@ -42,6 +42,7 @@ import {
   useDeleteCertificate,
   type CertificateSummary,
 } from '../hooks/use-certificates.js';
+import { FONT_FAMILY_MONO } from '../styles/tokens.js';
 
 // ----- Helpers -----
 
@@ -321,7 +322,7 @@ export function CertificatesPage(): ReactNode {
             onChange={(e) => { setCertificatePem(e.target.value); }}
             disabled={editingId != null && isDetailLoading}
             placeholder={editingId != null && isDetailLoading ? 'Loading...' : '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----'}
-            sx={{ fontFamily: 'monospace' }}
+            sx={{ fontFamily: FONT_FAMILY_MONO }}
           />
           <TextField
             margin="dense"
@@ -333,7 +334,7 @@ export function CertificatesPage(): ReactNode {
             onChange={(e) => { setPrivateKeyPem(e.target.value); }}
             disabled={editingId != null && isDetailLoading}
             placeholder="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
-            sx={{ fontFamily: 'monospace' }}
+            sx={{ fontFamily: FONT_FAMILY_MONO }}
           />
         </DialogContent>
         <DialogActions>

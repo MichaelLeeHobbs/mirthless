@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-26 — Visual language rules, lint guards and `pnpm shots` (branch `claude/project-thread-2z3cpi`)
+
+Wrote down and enforced the visual language that `styles/tokens.ts` + `theme.ts` already implied, modelled on how the VNS Portal runs its own (D-196).
+
+- **Doc** `docs/design/15-visual-language.md`: tokens, status levels, type, surfaces, page anatomy, interaction rules, reference pages, and how to verify a UI change. Pointer section in CLAUDE.md; `.claude/skills/create-ui` skill for agents.
+- **Lint guards** in `eslint.config.js` for `packages/web/src` (outside `styles/` and tests): no hex/rgb/hsl colour literals, no inline `fontFamily` strings, no `window.confirm`/`alert`/`prompt`. Fixed the existing violations (14 colour literals, 25 inline font stacks): monospace text now uses `FONT_FAMILY_MONO`; the log viewer follows the theme (it was a hard-coded dark console with Material colours); tag chips use `contrastText()` everywhere and `TAG_COLOR` tokens.
+- **`pnpm shots`** (`scripts/shots/`): Playwright renders 11 pages signed in against a fake API in light, dark and 390x844 phone sizes, and exits 1 if a page throws. No server or database needed.
+- **Bugs the shots found and fixed**: the header's menu, theme and account icons were invisible in light mode (AppBar text colour was white on the white paper background); on phones the navigation drawer opened over the page on every load. Regression tests in `AppLayout.test.tsx`.
+- Not fixed: a `<button>` nested in a `<button>` React warning on the new-channel page.
+
 ## 2026-07-14 — Real-message E2E testing + DICOM dcmjs-dimse port (branch `feature/real-e2e-testing`)
 
 Replaced mock-heavy connector tests with a harness that actually pushes messages through real

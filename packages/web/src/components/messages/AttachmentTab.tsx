@@ -19,6 +19,7 @@ import Tooltip from '@mui/material/Tooltip';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import { useAttachments, useAttachment } from '../../hooks/use-attachments.js';
 import { ContentViewer } from './ContentViewer.js';
+import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
 interface AttachmentTabProps {
   readonly channelId: string;
@@ -87,7 +88,7 @@ export function AttachmentTab({ channelId, messageId }: AttachmentTabProps): Rea
             {attachments.map((att) => (
               <TableRow key={`${att.id}-${String(att.segmentId)}`} hover>
                 <TableCell>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                  <Typography variant="body2" sx={{ fontFamily: FONT_FAMILY_MONO }}>
                     {att.id}
                   </Typography>
                 </TableCell>

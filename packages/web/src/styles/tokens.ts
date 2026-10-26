@@ -32,6 +32,16 @@ export const FONT_FAMILY_MONO =
   'ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace';
 
 /**
+ * Tag colours are user data, not part of the palette. A new tag starts at
+ * `default`; a chip picks whichever text colour reads on the tag's colour.
+ */
+export const TAG_COLOR = {
+  default: '#2196f3',
+  textOnLight: 'rgba(0, 0, 0, 0.87)',
+  textOnDark: '#ffffff',
+} as const;
+
+/**
  * Semantic status levels — the heart of the system. Every stateful thing in the
  * app collapses onto one of these five levels, so a colour always means the same
  * thing. Status colours are reserved: they are never reused as decoration.
