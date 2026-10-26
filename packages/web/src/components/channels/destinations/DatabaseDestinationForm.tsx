@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { DATABASE_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
+import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 
 function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
   const val = props[key];
@@ -142,7 +143,7 @@ export function DatabaseDestinationForm({ properties, onChange }: DestConnectorF
           multiline
           minRows={4}
           sx={{ mb: 2 }}
-          slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
+          slotProps={{ htmlInput: { style: { fontFamily: FONT_FAMILY_MONO } } }}
         />
 
         <FormControlLabel

@@ -8,6 +8,7 @@ import Autocomplete from '@mui/material/Autocomplete';
 import TextField, { type TextFieldProps } from '@mui/material/TextField';
 import Chip from '@mui/material/Chip';
 import type { TagSummary } from '../../hooks/use-tags.js';
+import { contrastText } from '../common/TagChips.js';
 
 interface TagFilterProps {
   readonly tags: readonly TagSummary[];
@@ -38,7 +39,7 @@ export function TagFilter({ tags, selectedTagIds, onChangeTagIds }: TagFilterPro
               {...tagProps}
               sx={{
                 backgroundColor: option.color ?? undefined,
-                color: option.color ? '#fff' : undefined,
+                color: contrastText(option.color),
               }}
             />
           );

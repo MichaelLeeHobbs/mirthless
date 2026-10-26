@@ -20,6 +20,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
+    "shots": "node scripts/shots/shots.mjs",
     "test:integration": "pnpm --filter @mirthless/server exec vitest run --config vitest.integration.config.ts",
 
     "------------ Database ------------": "",

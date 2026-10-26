@@ -124,6 +124,7 @@ pnpm lint                             # ESLint across all packages (--max-warnin
 pnpm lint:fix                         # ESLint with auto-fix
 pnpm test                             # Run all tests
 pnpm test:coverage                    # Run with coverage
+pnpm shots                            # Screenshot web pages against a fake API (needs pnpm dev:web)
 
 # Single package
 pnpm --filter @mirthless/server dev
@@ -237,6 +238,16 @@ const CHANNEL_STATE = {
 } as const;
 type ChannelState = typeof CHANNEL_STATE[keyof typeof CHANNEL_STATE];
 ```
+
+---
+
+## Visual Language
+
+The web UI follows [`docs/design/15-visual-language.md`](docs/design/15-visual-language.md). Use the `create-ui` skill for any page or layout change. In short:
+
+- Colours and fonts come from `packages/web/src/styles/tokens.ts` through the MUI theme. Lint fails hex/rgb literals, inline font stacks and `window.confirm`/`alert`/`prompt` in `packages/web/src`.
+- Status colours mean the same thing everywhere: decide the level with `lib/status.ts` and render it with `StatusChip`/`StatusDot`.
+- A UI change isn't done until you've run `pnpm shots` and looked at the light, dark and phone images of the pages you touched.
 
 ---
 

@@ -47,6 +47,7 @@ import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 import { formatTtl, parseFields } from '../lib/collections.js';
+import { FONT_FAMILY_MONO } from '../styles/tokens.js';
 
 export function CollectionsPage(): ReactNode {
   const { data: collections, isLoading, error, isFetching, refetch } = useCollections();
@@ -286,8 +287,8 @@ function CollectionRecordsDialog({ collection, onClose }: { collection: Collecti
               <TableBody>
                 {records.map((r) => (
                   <TableRow key={r.id}>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{JSON.stringify(r.fields)}</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <TableCell sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem' }}>{JSON.stringify(r.fields)}</TableCell>
+                    <TableCell sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {r.payload ?? ''}
                     </TableCell>
                     <TableCell>{new Date(r.createdAt).toLocaleString()}</TableCell>

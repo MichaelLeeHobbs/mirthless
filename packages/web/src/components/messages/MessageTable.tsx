@@ -17,6 +17,7 @@ import { MessageStatusChip } from '../common/StatusChip.js';
 import { EmptyState } from '../common/states/EmptyState.js';
 import InboxIcon from '@mui/icons-material/Inbox';
 import type { MessageSummary } from '../../hooks/use-messages.js';
+import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
 interface MessageTableProps {
   readonly items: readonly MessageSummary[];
@@ -133,7 +134,7 @@ export function MessageTable({
                         }}
                       />
                     </TableCell>
-                    <TableCell sx={{ fontFamily: (t) => t.palette.fontFamilyMono, fontSize: '0.8125rem' }}>{msg.messageId}</TableCell>
+                    <TableCell sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.8125rem' }}>{msg.messageId}</TableCell>
                     <TableCell>
                       <MessageStatusChip status={worstStatus} />
                     </TableCell>

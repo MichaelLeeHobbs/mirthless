@@ -127,7 +127,7 @@ export function AppLayout(): ReactNode {
   const { hasAny } = usePermissions();
   const sidebarOpen = useUiStore((state) => state.sidebarOpen);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
-  const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const themeMode = useUiStore((state) => state.themeMode);
   const toggleThemeMode = useUiStore((state) => state.toggleThemeMode);
 
@@ -156,10 +156,13 @@ export function AppLayout(): ReactNode {
   const handleNavClick = (): void => {
     // Close drawer on mobile after nav click
     if (isMobile) {
-      setSidebarOpen(false);
+      setMobileOpen(false);
     }
   };
 
+  // On phones the drawer is a temporary overlay that starts closed and always
+  // shows labels; the store's sidebarOpen only collapses the desktop rail.
+  const expanded = isMobile || sidebarOpen;
   const drawerWidth = sidebarOpen ? DRAWER_WIDTH : COLLAPSED_DRAWER_WIDTH;
   const drawerVariant = isMobile ? 'temporary' as const : 'permanent' as const;
 
@@ -176,7 +179,7 @@ export function AppLayout(): ReactNode {
       <List sx={{ pt: 1 }}>
         {visibleSections.map((section) => (
           <Box key={section.heading}>
-            {sidebarOpen ? (
+            {expanded ? (
               <ListSubheader
                 sx={{
                   lineHeight: '32px',
@@ -209,8 +212,8 @@ export function AppLayout(): ReactNode {
                     mx: 1,
                     mb: 0.25,
                     borderRadius: 1.5,
-                    justifyContent: sidebarOpen ? 'initial' : 'center',
-                    px: sidebarOpen ? 1.5 : 1.25,
+                    justifyContent: expanded ? 'initial' : 'center',
+                    px: expanded ? 1.5 : 1.25,
                     '&.Mui-selected': {
                       backgroundColor: 'action.selected',
                       '&:hover': { backgroundColor: 'action.selected' },
@@ -220,14 +223,14 @@ export function AppLayout(): ReactNode {
                   <ListItemIcon
                     sx={{
                       minWidth: 0,
-                      mr: sidebarOpen ? 1.75 : 'auto',
+                      mr: expanded ? 1.75 : 'auto',
                       justifyContent: 'center',
                       color: isActive ? 'primary.main' : 'text.secondary',
                     }}
                   >
                     {item.icon}
                   </ListItemIcon>
-                  {sidebarOpen ? (
+                  {expanded ? (
                     <ListItemText
                       primary={item.label}
                       slotProps={{
@@ -244,7 +247,7 @@ export function AppLayout(): ReactNode {
                   ) : null}
                 </ListItemButton>
               );
-              return sidebarOpen ? button : (
+              return expanded ? button : (
                 <Tooltip key={item.path} title={item.label} placement="right">
                   {button}
                 </Tooltip>
@@ -264,6 +267,9 @@ export function AppLayout(): ReactNode {
         sx={{
           zIndex: (t) => t.zIndex.drawer + 1,
           backgroundColor: 'background.paper',
+          // AppBar's default colour is primary.contrastText (white), which
+          // vanishes on the light paper background.
+          color: 'text.primary',
           borderBottom: 1,
           borderColor: 'divider',
         }}
@@ -274,7 +280,7 @@ export function AppLayout(): ReactNode {
             edge="start"
             color="inherit"
             aria-label="toggle sidebar"
-            onClick={toggleSidebar}
+            onClick={isMobile ? () => setMobileOpen((open) => !open) : toggleSidebar}
             sx={{ mr: 2 }}
           >
             <MenuIcon />
@@ -353,8 +359,8 @@ export function AppLayout(): ReactNode {
       {/* Sidebar Navigation */}
       <Drawer
         variant={drawerVariant}
-        open={isMobile ? sidebarOpen : true}
-        onClose={isMobile ? () => setSidebarOpen(false) : undefined}
+        open={isMobile ? mobileOpen : true}
+        onClose={isMobile ? () => setMobileOpen(false) : undefined}
         sx={{
           width: isMobile ? DRAWER_WIDTH : drawerWidth,
           flexShrink: 0,

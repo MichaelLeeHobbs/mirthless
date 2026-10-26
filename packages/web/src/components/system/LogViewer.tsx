@@ -17,6 +17,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import DownloadIcon from '@mui/icons-material/Download';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { useHistoricalLogs, useLogStream, type LogEntry } from '../../hooks/use-logs.js';
+import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
 // ----- Constants -----
 
@@ -29,11 +30,12 @@ const LEVELS = [
 
 // ----- Helpers -----
 
+/** Theme palette path for a pino level, so log lines follow the status colours in both modes. */
 function getLevelColor(level: number): string {
-  if (level >= 50) return '#f44336'; // red
-  if (level >= 40) return '#ff9800'; // orange
-  if (level <= 20) return '#9e9e9e'; // gray
-  return '#e0e0e0'; // default
+  if (level >= 50) return 'status.critical';
+  if (level >= 40) return 'status.warning';
+  if (level <= 20) return 'text.disabled';
+  return 'text.primary';
 }
 
 function formatTimestamp(iso: string): string {
@@ -200,10 +202,10 @@ export function LogViewer(): ReactNode {
         sx={{
           height: 400,
           overflow: 'auto',
-          bgcolor: '#1e1e1e',
+          bgcolor: 'surfaceSunken',
           borderRadius: 1,
           p: 1,
-          fontFamily: 'monospace',
+          fontFamily: FONT_FAMILY_MONO,
           fontSize: '0.8rem',
           lineHeight: 1.6,
         }}
@@ -217,7 +219,7 @@ export function LogViewer(): ReactNode {
           </Box>
         ))}
         {filteredEntries.length === 0 && (
-          <Typography variant="body2" sx={{ color: '#666', textAlign: 'center', mt: 4 }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center', mt: 4 }}>
             No log entries
           </Typography>
         )}
