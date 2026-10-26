@@ -1,6 +1,7 @@
 # Stage 1: Base with pnpm
 FROM node:24-alpine AS base
-RUN corepack enable && corepack prepare pnpm@12.15.0 --activate
+# Corepack is deprecated and gone from Node 25+, so install pnpm from npm.
+RUN npm install -g pnpm@12.15.0
 WORKDIR /app
 
 # Stage 2: Install dependencies
