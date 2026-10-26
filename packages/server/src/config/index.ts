@@ -5,11 +5,22 @@
 // If validation fails, the app exits immediately.
 
 import { config as loadEnv } from 'dotenv';
+import type { SignOptions } from 'jsonwebtoken';
 import { z } from 'zod/v4';
 
-// Load .env from project root and local fallback
-loadEnv({ path: '../../.env' });
-loadEnv({ path: '.env' });
+// Load .env from project root and local fallback. quiet: dotenv 17+ otherwise
+// prints an unstructured "injected env" line that pollutes the JSON log stream.
+loadEnv({ path: '../../.env', quiet: true });
+loadEnv({ path: '.env', quiet: true });
+
+/** A jsonwebtoken `expiresIn` duration such as '15m', '7d' or '1 hour'. */
+export const jwtDuration = z
+  .string()
+  .regex(
+    /^\d+(\.\d+)?\s?(ms|msecs?|milliseconds?|s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|d|days?|w|weeks?|y|yrs?|years?)?$/i,
+    'must be a duration such as 15m or 7d',
+  )
+  .transform((v) => v as NonNullable<SignOptions['expiresIn']>);
 
 const configSchema = z.object({
   // Application
@@ -29,8 +40,8 @@ const configSchema = z.object({
 
   // Authentication
   JWT_SECRET: z.string().min(32),
-  JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
-  JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+  JWT_ACCESS_EXPIRES_IN: jwtDuration.default('15m'),
+  JWT_REFRESH_EXPIRES_IN: jwtDuration.default('7d'),
 
   // Proxy — accepts 'true', 'false', 'loopback', number, or specific IPs
   TRUST_PROXY: z.string().default('false')

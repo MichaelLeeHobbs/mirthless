@@ -4,7 +4,7 @@
 // Configures a Prometheus metrics registry with application-specific
 // counters, gauges, and histograms for observability.
 
-import { Registry, collectDefaultMetrics, Histogram, Counter, Gauge } from 'prom-client';
+import { Registry, collectDefaultMetrics, Histogram, Counter, Gauge } from '@prometheus-io/client';
 
 /** Prometheus metrics registry */
 export const registry = new Registry();

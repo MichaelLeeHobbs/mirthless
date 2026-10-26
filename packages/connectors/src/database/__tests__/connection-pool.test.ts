@@ -15,11 +15,11 @@ const mockRelease = vi.fn();
 const mockClientQuery = vi.fn();
 
 vi.mock('pg', () => {
-  const MockPool = vi.fn().mockImplementation(() => ({
+  const MockPool = vi.fn().mockImplementation(function () { return {
     query: mockQuery,
     connect: mockConnect,
     end: mockEnd,
-  }));
+  }; });
 
   return { default: { Pool: MockPool }, Pool: MockPool };
 });

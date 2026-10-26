@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockQueueConsumerInstances: Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; config: Record<string, unknown> }> = [];
 
-const MockQueueConsumerCtor = vi.fn().mockImplementation((config: Record<string, unknown>) => {
+const MockQueueConsumerCtor = vi.fn().mockImplementation(function (config: Record<string, unknown>) {
   const instance = {
     start: vi.fn(),
     stop: vi.fn().mockResolvedValue(undefined),
@@ -28,7 +28,7 @@ const mockAlertManager = {
   getAlerts: vi.fn().mockReturnValue([]),
 };
 
-const MockAlertManagerCtor = vi.fn().mockImplementation(() => mockAlertManager);
+const MockAlertManagerCtor = vi.fn().mockImplementation(function () { return mockAlertManager; });
 
 // Mock ChannelRuntime
 const mockRuntimeDeploy = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
@@ -40,42 +40,42 @@ const mockChannelRuntime = {
   halt: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
   getState: vi.fn().mockReturnValue('STOPPED'),
 };
-const MockChannelRuntime = vi.fn().mockImplementation(() => mockChannelRuntime);
+const MockChannelRuntime = vi.fn().mockImplementation(function () { return mockChannelRuntime; });
 
 // Mock GlobalChannelMap
 const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn() };
-const MockGlobalChannelMap = vi.fn().mockImplementation(() => mockGcm);
+const MockGlobalChannelMap = vi.fn().mockImplementation(function () { return mockGcm; });
 
 // Mock SandboxExecutor
-const MockVmSandboxExecutor = vi.fn().mockImplementation(() => ({
+const MockVmSandboxExecutor = vi.fn().mockImplementation(function () { return {
   execute: vi.fn().mockResolvedValue({
     ok: true,
     value: { returnValue: 'test-result', mapUpdates: { channelMap: {}, connectorMap: {}, globalChannelMap: {} }, logs: [] },
     error: null,
   }),
   dispose: vi.fn(),
-}));
+}; });
 
 vi.mock('@mirthless/engine', () => ({
   ChannelRuntime: MockChannelRuntime,
   VmSandboxExecutor: MockVmSandboxExecutor,
-  MessageProcessor: vi.fn().mockImplementation(() => ({
+  MessageProcessor: vi.fn().mockImplementation(function () { return {
     processMessage: vi.fn().mockResolvedValue({
       ok: true, value: { messageId: 1, status: 'SENT', destinationResults: [] }, error: null,
     }),
-  })),
+  }; }),
   DEFAULT_EXECUTION_OPTIONS: { timeout: 30000, memoryLimit: 134217728, signal: AbortSignal.timeout(30000) },
   GlobalChannelMap: MockGlobalChannelMap,
-  GlobalMapProxy: vi.fn().mockImplementation(() => ({ load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) })),
+  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
   QueueConsumer: MockQueueConsumerCtor,
   compileScript: vi.fn().mockResolvedValue({ ok: true, value: { code: 'compiled' }, error: null }),
   compileFilterRulesToScript: vi.fn().mockReturnValue(null),
   compileTransformerStepsToScript: vi.fn().mockReturnValue(null),
   prependTemplates: vi.fn().mockImplementation((src: string) => src),
   AlertManager: MockAlertManagerCtor,
-  RecoveryManager: vi.fn().mockImplementation(() => ({
+  RecoveryManager: vi.fn().mockImplementation(function () { return {
     recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
-  })),
+  }; }),
 }));
 
 vi.mock('@mirthless/connectors', () => ({

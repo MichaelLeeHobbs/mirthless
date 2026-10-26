@@ -37,7 +37,14 @@ export function validate(schema: ValidationTarget) {
         });
         return;
       }
-      req.query = result.data as typeof req.query;
+      // Express 5 exposes req.query as a getter, so plain assignment throws.
+      // Shadow it with an own property holding the parsed value.
+      Object.defineProperty(req, 'query', {
+        value: result.data,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
     }
 
     if (schema.body) {
