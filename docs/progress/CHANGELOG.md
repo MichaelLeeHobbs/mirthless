@@ -66,6 +66,8 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
 - **Soak test:** `pnpm soak` drives a real server for hours and checks exactly-once delivery.
   Baseline: 3 h at 100 msg/s, 1,080,004 messages, none lost or duplicated, memory flat after
   an early step (`docs/ops/soak-test.md`).
+- **Advisories (2026-10-26):** new high/critical advisories failed the CI audit: dompurify (under
+  Monaco) raised to 3.4.17, zod 4.3.4 to 4.6.7, body-parser (under Express) to 1.20.9.
 - **Version 0.1.0:** all packages, the CLI `--version` and the OpenAPI spec are now 0.1.0 (tests
   keep the last two in step with `package.json`). Release notes: `docs/ops/release-notes-v0.1.0.md`.
   Not tagged yet.
