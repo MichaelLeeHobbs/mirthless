@@ -6,7 +6,7 @@
 // lane runnable anywhere while still exercising real protocols in CI / docker.
 
 import { describe } from 'vitest';
-import type { PoolConfig } from '@mirthless/connectors';
+import type { PoolConfig } from '../../../index.js';
 
 // ----- Postgres (DATABASE_URL ending in *_test) -----
 
@@ -110,4 +110,4 @@ export function requireMail(): TestMailConfig {
 }
 
 // (DICOM needs no gate: the dcmjs-dimse connector runs in-process, so its cascade
-// test lives in the default lane — packages/engine/src/__tests__/connector-dicom.e2e.test.ts.)
+// test lives in the default lane — packages/connectors/src/__tests__/e2e/connector-dicom.e2e.test.ts.)

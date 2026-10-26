@@ -42,19 +42,20 @@ test.describe('Data Sources', () => {
 
   test('navigate to data sources page', async ({ page }) => {
     await page.goto('/datasources');
-    await expect(page.getByRole('heading', { name: /data sources/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Data Sources' })).toBeVisible({ timeout: 10_000 });
   });
 
   test('create a read-only data source', async ({ page }) => {
     await page.goto('/datasources');
     await page.getByRole('button', { name: /create data source/i }).click();
 
-    await page.getByLabel('Name').fill(TEST_DS_NAME);
-    await page.getByLabel('Host').fill('localhost');
-    await page.getByLabel('Database').fill('mirthless');
-    await page.getByLabel('User').fill('mirthless');
-    await page.getByLabel('Password', { exact: false }).fill('mirthless_dev');
-    await page.getByRole('button', { name: /^create$/i }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill(TEST_DS_NAME);
+    await dialog.getByLabel('Host').fill('localhost');
+    await dialog.getByLabel('Database').fill('mirthless');
+    await dialog.getByLabel('User').fill('mirthless');
+    await dialog.getByLabel('Password', { exact: false }).fill('mirthless_dev');
+    await dialog.getByRole('button', { name: /^create$/i }).click();
 
     await expect(page.getByText(TEST_DS_NAME)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('Read-only').first()).toBeVisible();

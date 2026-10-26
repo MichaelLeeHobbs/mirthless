@@ -54,7 +54,7 @@ test.describe('Code Templates', () => {
     await expect(page.getByRole('heading', { name: 'Code Templates' })).toBeVisible();
 
     // Click Library button to open the create dialog
-    await page.getByRole('button', { name: /library/i }).click();
+    await page.getByRole('button', { name: 'Library', exact: true }).click();
 
     // Wait for dialog to open and scope all interactions to the dialog
     const dialog = page.getByRole('dialog');
@@ -86,7 +86,7 @@ test.describe('Code Templates', () => {
 
     // Click the per-library "Add template" button on the TEST_LIBRARY row
     const libItem = page.locator('li, div').filter({ hasText: TEST_LIBRARY.name });
-    await libItem.getByRole('button', { name: 'Add template' }).first().click();
+    await libItem.getByRole('button', { name: 'Add template', exact: true }).first().click();
 
     // New template should appear (use .first() to handle duplicates from prior runs)
     await expect(page.getByText('New Template').first()).toBeVisible({ timeout: 10_000 });

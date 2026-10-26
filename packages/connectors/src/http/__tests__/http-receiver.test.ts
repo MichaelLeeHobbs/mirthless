@@ -60,7 +60,9 @@ async function sendRequest(
   const response = await fetch(`http://127.0.0.1:${String(port)}${path}`, {
     method,
     body,
-    headers,
+    // Fresh connection per request: a pooled keep-alive socket from a previous
+    // test's (now stopped) server on the same port would otherwise be reused.
+    headers: { connection: 'close', ...headers },
     signal: AbortSignal.timeout(5_000),
   });
 

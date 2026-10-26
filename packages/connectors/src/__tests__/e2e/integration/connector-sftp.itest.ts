@@ -14,7 +14,7 @@ import {
   SftpDispatcher,
   SFTP_POST_ACTION,
   clearChannelRegistry,
-} from '@mirthless/connectors';
+} from '../../../index.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from '../support/e2e-harness.js';
 import { sendMllp } from '../support/tcp-helpers.js';
 import { describeSftp, requireSftp } from './gates.js';

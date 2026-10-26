@@ -15,10 +15,9 @@ import {
   TcpMllpReceiver,
   clearChannelRegistry,
   type ConnectorMessage,
-} from '@mirthless/connectors';
+} from '../../index.js';
 import type { Result } from '@mirthless/core-util';
-import { VmSandboxExecutor, compileScript, DEFAULT_EXECUTION_OPTIONS } from '../index.js';
-import { createSandboxContext } from '../sandbox/sandbox-context.js';
+import { VmSandboxExecutor, compileScript, DEFAULT_EXECUTION_OPTIONS, createSandboxContext } from '@mirthless/engine';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
 import { sendMllp } from './support/tcp-helpers.js';
 
