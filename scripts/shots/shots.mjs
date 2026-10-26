@@ -37,6 +37,17 @@ const PAGES = {
   settings: '/settings',
   system: '/system',
   tags: '/tags',
+  'alert-editor': '/alerts/a1',
+  'code-templates': '/code-templates',
+  'global-scripts': '/global-scripts',
+  resources: '/resources',
+  collections: '/collections',
+  datasources: '/datasources',
+  'global-map': '/global-map',
+  'config-map': '/config-map',
+  certificates: '/certificates',
+  extensions: '/extensions',
+  'message-generator': '/tools/message-generator',
 };
 
 const VARIANTS = {

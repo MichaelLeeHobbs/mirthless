@@ -4,7 +4,7 @@
 // Alert management: list, enable/disable, delete.
 
 import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
@@ -18,22 +18,22 @@ import TableRow from '@mui/material/TableRow';
 import TablePagination from '@mui/material/TablePagination';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import Chip from '@mui/material/Chip';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogActions from '@mui/material/DialogActions';
+import Link from '@mui/material/Link';
+import Switch from '@mui/material/Switch';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import { useAlerts, useDeleteAlert, useToggleAlertEnabled } from '../hooks/use-alerts.js';
 import { PageHeader } from '../components/common/PageHeader.js';
+import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
+import { humanize } from '../lib/format.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import type { AlertSummary } from '../api/client.js';
+
+const PAGE_SIZES = [10, 25, 50] as const;
 
 export function AlertsPage(): ReactNode {
   const navigate = useNavigate();
@@ -83,11 +83,11 @@ export function AlertsPage(): ReactNode {
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
-              <TableCell>Trigger Type</TableCell>
+              <TableCell>Trigger</TableCell>
               <TableCell align="center">Channels</TableCell>
-              <TableCell align="center">Actions</TableCell>
+              <TableCell align="center">Notifies</TableCell>
               <TableCell align="center">Enabled</TableCell>
-              <TableCell align="right">Actions</TableCell>
+              <TableCell align="right" aria-label="Row actions" />
             </TableRow>
           </TableHead>
           <TableBody>
@@ -97,23 +97,25 @@ export function AlertsPage(): ReactNode {
               data.data.map((alert) => (
                   <TableRow key={alert.id} hover>
                     <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{alert.name}</Typography>
+                      <Link component={RouterLink} to={`/alerts/${alert.id}`} underline="hover" color="text.primary" variant="body2" sx={{ fontWeight: 500, display: 'block' }}>
+                        {alert.name}
+                      </Link>
                       {alert.description ? (
                         <Typography variant="caption" color="text.secondary">{alert.description}</Typography>
                       ) : null}
                     </TableCell>
                     <TableCell>
-                      <Chip label={alert.triggerType} size="small" variant="outlined" />
+                      {humanize(alert.triggerType)}
                     </TableCell>
                     <TableCell align="center">{alert.channelCount}</TableCell>
                     <TableCell align="center">{alert.actionCount}</TableCell>
                     <TableCell align="center">
-                      <Chip
-                        label={alert.enabled ? 'Enabled' : 'Disabled'}
-                        color={alert.enabled ? 'success' : 'default'}
+                      <Switch
                         size="small"
-                        onClick={() => { handleToggleEnabled(alert); }}
-                        sx={{ cursor: 'pointer' }}
+                        checked={alert.enabled}
+                        onChange={() => { handleToggleEnabled(alert); }}
+                        disabled={toggleEnabled.isPending}
+                        inputProps={{ 'aria-label': `${alert.enabled ? 'Disable' : 'Enable'} ${alert.name}` }}
                       />
                     </TableCell>
                     <TableCell align="right">
@@ -144,7 +146,8 @@ export function AlertsPage(): ReactNode {
             )}
           </TableBody>
         </Table>
-        {data && data.pagination.total > 0 ? (
+        {/* A short list needs no pager; show it once there is more than one page at the smallest size. */}
+        {data && data.pagination.total > PAGE_SIZES[0] ? (
           <TablePagination
             component="div"
             count={data.pagination.total}
@@ -155,26 +158,21 @@ export function AlertsPage(): ReactNode {
               setPageSize(parseInt(e.target.value, 10));
               setPage(0);
             }}
-            rowsPerPageOptions={[10, 25, 50]}
+            rowsPerPageOptions={[...PAGE_SIZES]}
           />
         ) : null}
       </TableContainer>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteTarget !== null} onClose={() => { setDeleteTarget(null); }}>
-        <DialogTitle>Delete Alert</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete alert &quot;{deleteTarget?.name}&quot;? This action cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setDeleteTarget(null); }}>Cancel</Button>
-          <Button color="error" onClick={handleDelete} disabled={deleteAlert.isPending}>
-            {deleteAlert.isPending ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete alert"
+        message={`Delete the alert "${deleteTarget?.name ?? ''}"? This can't be undone.`}
+        confirmLabel="Delete"
+        severity="error"
+        isPending={deleteAlert.isPending}
+        onConfirm={handleDelete}
+        onCancel={() => { setDeleteTarget(null); }}
+      />
     </Box>
   );
 }

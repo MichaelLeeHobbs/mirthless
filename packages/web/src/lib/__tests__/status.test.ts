@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { channelStateLevel, messageStatusLevel } from '../status.js';
+import { channelStateLevel, messageStatusLevel, eventLevelLevel, eventOutcomeLevel } from '../status.js';
 
 describe('channelStateLevel', () => {
   it('maps STARTED to healthy', () => {
@@ -50,5 +50,28 @@ describe('messageStatusLevel', () => {
   it('falls back to neutral for an unknown status', () => {
     expect(messageStatusLevel('PENDING')).toBe('neutral');
     expect(messageStatusLevel('')).toBe('neutral');
+  });
+});
+
+describe('eventLevelLevel', () => {
+  it('maps ERROR, WARN and INFO to critical, warning and info', () => {
+    expect(eventLevelLevel('ERROR')).toBe('critical');
+    expect(eventLevelLevel('WARN')).toBe('warning');
+    expect(eventLevelLevel('INFO')).toBe('info');
+  });
+
+  it('falls back to neutral for an unknown level', () => {
+    expect(eventLevelLevel('DEBUG')).toBe('neutral');
+  });
+});
+
+describe('eventOutcomeLevel', () => {
+  it('maps SUCCESS to healthy and FAILURE to critical', () => {
+    expect(eventOutcomeLevel('SUCCESS')).toBe('healthy');
+    expect(eventOutcomeLevel('FAILURE')).toBe('critical');
+  });
+
+  it('falls back to neutral for an unknown outcome', () => {
+    expect(eventOutcomeLevel('PARTIAL')).toBe('neutral');
   });
 });

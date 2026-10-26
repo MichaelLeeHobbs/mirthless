@@ -116,6 +116,26 @@ const logs = [
   [30, 'INFO', 'http', 'GET /api/v1/channels/statistics 200 4ms'],
 ].map(([level, levelLabel, logger, message], i) => ({ timestamp: ago(i * 2), level, levelLabel, logger, message }));
 
+const libraries = [
+  { id: 'l1', name: 'HL7 helpers', description: 'Segment and field utilities', revision: 4, templateCount: 2, createdAt: ago(90000), updatedAt: ago(800) },
+  { id: 'l2', name: 'Date formatting', description: null, revision: 1, templateCount: 1, createdAt: ago(90000), updatedAt: ago(5000) },
+];
+const templates = [
+  ['t1', 'l1', 'getPatientName', 'Formats PID-5 as "Last, First"'],
+  ['t2', 'l1', 'normalizeMrn', null],
+  ['t3', 'l2', 'toIsoDate', 'HL7 TS to ISO 8601'],
+].map(([id, libraryId, name, description]) => ({
+  id, libraryId, name, description, type: 'FUNCTION', language: 'JAVASCRIPT',
+  code: `function ${name}(value) {\n  return value;\n}`, contexts: ['SOURCE_FILTER_TRANSFORMER'], revision: 1, createdAt: ago(9000), updatedAt: ago(900),
+}));
+
+const alertDetail = {
+  ...{ id: 'a1', name: 'Channel errors', description: 'Any errored message on a production channel', enabled: true, triggerType: 'CHANNEL_ERROR', revision: 1, channelCount: 2, actionCount: 1, createdAt: ago(50000), updatedAt: ago(3000) },
+  trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null }, channelIds: ['c1', 'c2'],
+  actions: [{ id: 'aa1', actionType: 'EMAIL', recipients: ['oncall@example.test'], properties: null }],
+  subjectTemplate: 'Mirthless: ${channelName} errored', bodyTemplate: '${error}', reAlertIntervalMs: 900000, maxAlerts: 5,
+};
+
 const page = (data) => ({ data, pagination: { page: 1, pageSize: 25, total: data.length, totalPages: 1 } });
 
 /** The `data` to answer a GET with; `undefined` answers an empty list. */
@@ -137,5 +157,35 @@ export function route(pathname, search) {
   if (p === '/system') return systemInfo;
   if (p === '/system/logs') return { entries: logs, total: logs.length };
   if (p === '/admin/prune/schedule') return { enabled: true, cronExpression: '0 2 * * *', lastRunAt: ago(720), lastRunResult: { channelsPruned: 4, totalDeleted: 18230, completedAt: ago(715) } };
+  if (p === '/code-templates/libraries') return libraries;
+  if (p === '/code-templates') return templates;
+  if (p === '/global-scripts') return { deploy: '// Runs when any channel deploys\n', undeploy: '', preprocessor: 'return message;\n', postprocessor: '' };
+  if (p === '/resources') return [
+    { id: 'r1', name: 'facility-codes.json', description: 'Facility code lookup', mimeType: 'application/json', sizeBytes: 18234, createdAt: ago(90000), updatedAt: ago(4000) },
+    { id: 'r2', name: 'zip-to-county.csv', description: null, mimeType: 'text/csv', sizeBytes: 1048576, createdAt: ago(90000), updatedAt: ago(40000) },
+  ];
+  if (p === '/collections') return [
+    { id: 'k1', name: 'pending-orders', description: 'Orders waiting for a result, by accession', indexedFields: ['accession', 'facility'], defaultTtlSeconds: 2592000, createdAt: ago(90000), updatedAt: ago(100) },
+  ];
+  if (p === '/datasources') return [
+    { id: 'ds1', name: 'ehr-replica', description: 'Read-only EHR reporting replica', driver: 'postgres', host: 'ehr-replica.example.test', port: 5432, database: 'ehr', user: 'mirthless_ro', readOnly: true, maxConnections: 5, statementTimeoutMs: 10000, maxRows: 1000, createdAt: ago(90000), updatedAt: ago(9000) },
+  ];
+  if (p === '/global-map') return [
+    { key: 'lastAdtSequence', value: '48211', updatedAt: ago(1) },
+    { key: 'ehr.maintenanceWindow', value: 'false', updatedAt: ago(600) },
+  ];
+  if (p === '/config-map') return [
+    { category: 'endpoints', name: 'ehr.host', value: 'ehr.example.test' },
+    { category: 'endpoints', name: 'ehr.port', value: '7001' },
+    { category: 'flags', name: 'sendAcks', value: 'true' },
+  ];
+  if (p === '/certificates') return [
+    { id: 'cert1', name: 'ehr-mllp-tls', description: 'TLS for the EHR MLLP link', type: 'CERTIFICATE', fingerprint: 'AB:CD:EF:01:23:45:67:89', issuer: 'CN=Example Test CA', subject: 'CN=ehr.example.test', notBefore: ago(400000), notAfter: new Date(NOW + 20 * 86400000).toISOString(), hasPrivateKey: true, createdAt: ago(400000), updatedAt: ago(400000) },
+  ];
+  if (p === '/extensions') return [
+    { id: 'x1', name: 'HL7 v2 data type', version: '0.1.0', type: 'DATA_TYPE', description: 'Parse and serialize HL7 v2', enabled: true, capabilities: ['parse', 'serialize'] },
+    { id: 'x2', name: 'DICOM connector', version: '0.1.0', type: 'CONNECTOR', description: 'C-STORE SCP and SCU', enabled: true, capabilities: ['source', 'destination'] },
+  ];
+  if (p === '/alerts/a1') return alertDetail;
   return undefined;
 }
