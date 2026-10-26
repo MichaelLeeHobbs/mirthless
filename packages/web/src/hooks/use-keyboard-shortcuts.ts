@@ -1,13 +1,16 @@
 // ===========================================
 // Keyboard Shortcuts Hook
 // ===========================================
-// Global keyboard shortcuts: ? for help, g+d dashboard, g+c channels, g+s settings, Escape close.
+// Global keyboard shortcuts: Ctrl/Cmd+K jump to, ? for help, g+d dashboard,
+// g+c channels, g+s settings, Escape close.
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { isPaletteShortcut } from '../lib/command-search.js';
 
 interface UseKeyboardShortcutsOptions {
   readonly onHelpOpen: () => void;
+  readonly onPaletteOpen: () => void;
 }
 
 /** Returns true if focus is on an input element that captures typing. */
@@ -20,12 +23,19 @@ function isInputFocused(): boolean {
   return false;
 }
 
-export function useKeyboardShortcuts({ onHelpOpen }: UseKeyboardShortcutsOptions): void {
+export function useKeyboardShortcuts({ onHelpOpen, onPaletteOpen }: UseKeyboardShortcutsOptions): void {
   const navigate = useNavigate();
   const pendingGRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const handleKeyDown = useCallback((e: KeyboardEvent): void => {
+    // Ctrl/Cmd+K works everywhere, even while typing, like VS Code.
+    if (isPaletteShortcut(e)) {
+      e.preventDefault();
+      onPaletteOpen();
+      return;
+    }
+
     if (isInputFocused()) return;
 
     // Escape — close any open dialogs (browser-native for MUI)
@@ -59,7 +69,7 @@ export function useKeyboardShortcuts({ onHelpOpen }: UseKeyboardShortcutsOptions
         default: break;
       }
     }
-  }, [navigate, onHelpOpen]);
+  }, [navigate, onHelpOpen, onPaletteOpen]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);

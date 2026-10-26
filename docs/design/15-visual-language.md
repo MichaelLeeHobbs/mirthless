@@ -64,6 +64,7 @@ This doc is the rulebook. The values live in code; the rules below say how to us
 ### Interaction
 
 - **Never use the browser's popups.** `window.confirm`, `alert` and `prompt` can't be styled or tested, so lint fails them. Confirm with `ConfirmDialog`. For a destructive action, name the target in the message and use `severity="error"`.
+- **Fewest clicks.** Anything a user goes to often is one click from its list (the row name links to it) and reachable from the Ctrl+K / ⌘K "Jump to" palette in the header. A new page in `components/layout/nav-items.tsx` appears in the sidebar and the palette together. A new frequent action belongs in the palette's actions (`CommandPalette.tsx`), gated by the same permission as its button.
 - **Focus is always visible.** The theme draws a 2px primary outline on `:focus-visible` for every control. Don't remove it; hover-only affordances must also appear on focus.
 - **Motion is minimal** and the theme switches it off under `prefers-reduced-motion`.
 
