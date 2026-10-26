@@ -30,9 +30,11 @@ vi.mock('@mirthless/engine', () => ({
   prependTemplates: vi.fn(),
   AlertManager: vi.fn(),
   QueueConsumer: vi.fn(),
-  RecoveryManager: vi.fn().mockImplementation(function () { return {
-    recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
-  }; }),
+  RecoveryManager: vi.fn().mockImplementation(function () {
+    return {
+      recover: vi.fn().mockResolvedValue({ ok: true, value: { recovered: 0, errors: 0, skipped: 0 }, error: null }),
+    };
+  }),
 }));
 
 vi.mock('@mirthless/connectors', () => ({
