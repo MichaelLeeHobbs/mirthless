@@ -181,9 +181,9 @@ test.describe('Message Flow', () => {
     ).toBeGreaterThanOrEqual(1);
 
     await page.goto(`/channels/${channelId}/messages`);
-    await expect(page.getByRole('heading', { level: 1, name: `Messages: ${TEST_CHANNEL.name}` }))
+    await expect(page.getByRole('heading', { level: 1, name: `${TEST_CHANNEL.name} messages` }))
       .toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('table tbody tr').first()).toContainText(/SENT|TRANSFORMED|RECEIVED/, { timeout: 10_000 });
+    await expect(page.locator('table tbody tr').first()).toContainText(/Sent|Transformed|Received/, { timeout: 10_000 });
   });
 
   test('stop, undeploy and delete channel', async ({ page }) => {

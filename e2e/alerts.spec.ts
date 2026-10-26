@@ -105,14 +105,13 @@ test.describe('Alerts', () => {
     await page.goto('/alerts');
     await page.waitForTimeout(2_000);
 
-    // Find the alert row and click the enabled chip to toggle
+    // The Enabled column is a switch named after the alert; one click flips it.
     const alertRow = page.locator('table tbody tr').filter({ hasText: /E2E Test Alert/ });
     if (await alertRow.first().isVisible()) {
-      const enabledChip = alertRow.first().locator('.MuiChip-root').last();
-      if (await enabledChip.isVisible()) {
-        await enabledChip.click();
-        await page.waitForTimeout(1_000);
-      }
+      const toggle = alertRow.first().getByRole('checkbox', { name: /^(Enable|Disable) E2E Test Alert/ });
+      const wasOn = await toggle.isChecked();
+      await toggle.click();
+      await expect(toggle).toBeChecked({ checked: !wasOn, timeout: 5_000 });
     }
   });
 
@@ -120,15 +119,15 @@ test.describe('Alerts', () => {
     await page.goto('/alerts');
     await page.waitForTimeout(2_000);
 
-    // Handle confirm dialog
-    page.on('dialog', async (dialog) => {
-      await dialog.accept();
-    });
-
     const alertRow = page.locator('table tbody tr').filter({ hasText: /E2E Test Alert/ });
     if (await alertRow.first().isVisible()) {
-      await alertRow.first().getByRole('button', { name: /delete/i }).click();
-      await page.waitForTimeout(1_000);
+      const before = await alertRow.count();
+      await alertRow.first().getByRole('button', { name: 'Delete alert' }).click();
+      // Confirm in the in-app dialog, which names the alert.
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toContainText('E2E Test Alert');
+      await dialog.getByRole('button', { name: 'Delete' }).click();
+      await expect(alertRow).toHaveCount(before - 1, { timeout: 5_000 });
     }
   });
 
