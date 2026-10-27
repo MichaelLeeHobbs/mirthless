@@ -15,7 +15,7 @@
 
 import { eq, and, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { CreateAlertInput, CreateDataSourceInput } from '@mirthless/core-models';
+import type { CreateAlertInput, CreateDataSourceInput } from '@galvaniflow/core-models';
 import * as schema from '../schema/index.js';
 import { isContentEncryptionConfigured } from '../../lib/content-crypto.js';
 import { AlertService } from '../../services/alert.service.js';

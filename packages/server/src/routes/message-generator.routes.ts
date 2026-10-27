@@ -3,7 +3,7 @@
 // ===========================================
 
 import { Router, type IRouter } from 'express';
-import { generateMessagesInputSchema } from '@mirthless/core-models';
+import { generateMessagesInputSchema } from '@galvaniflow/core-models';
 import { MessageGeneratorController } from '../controllers/message-generator.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

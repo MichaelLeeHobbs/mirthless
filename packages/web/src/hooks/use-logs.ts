@@ -5,7 +5,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { SOCKET_EVENT } from '@mirthless/core-models';
+import { SOCKET_EVENT } from '@galvaniflow/core-models';
 import { api } from '../api/client.js';
 import { useSocketRoom, useSocketEvent } from './use-socket.js';
 

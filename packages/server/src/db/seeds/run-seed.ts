@@ -16,7 +16,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 
-import { DEFAULT_GROUP_NAME } from '@mirthless/core-models';
+import { DEFAULT_GROUP_NAME } from '@galvaniflow/core-models';
 import * as schema from '../schema/index.js';
 import { defaultSettings } from './settings.js';
 import { defaultPermissions } from './permissions.js';

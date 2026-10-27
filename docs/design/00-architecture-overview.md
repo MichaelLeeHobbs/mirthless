@@ -425,7 +425,7 @@ hl7.createACK(msg, code)     // Generate ACK response
 
 2. **Message storage: partitioned single table from day one** — Single set of message tables (`messages`, `connector_messages`, `message_content`, etc.) partitioned by `channel_id` using Postgres declarative list partitioning. Partitions created/dropped at runtime when channels are created/deleted via raw SQL (`db.execute()`). Drizzle schema defines tables normally; partition DDL is in custom migrations. Queries work unchanged — Postgres handles partition routing transparently.
 
-3. **Plugin API from day one** — Design runtime plugin discovery and loading from the start. Plugins are npm packages with a `mirthless` manifest in `package.json` (e.g., `@mirthless/connector-tcp-mllp`). Built-in connectors are just packages in the monorepo; third-party connectors install the same way. Pluggable surface: connectors, data types, transmission modes, and auth providers. Auth is pluggable to support OAuth2/OIDC, SAML, and LDAP down the road (v1 ships with local JWT auth only).
+3. **Plugin API from day one** — Design runtime plugin discovery and loading from the start. Plugins are npm packages with a `mirthless` manifest in `package.json` (e.g., `@galvaniflow/connector-tcp-mllp`). Built-in connectors are just packages in the monorepo; third-party connectors install the same way. Pluggable surface: connectors, data types, transmission modes, and auth providers. Auth is pluggable to support OAuth2/OIDC, SAML, and LDAP down the road (v1 ships with local JWT auth only).
 
 4. **Real-time UI: Socket.IO** — Use Socket.IO (from fullstack-template patterns) for real-time dashboard updates: channel status changes, statistics, log streaming. TanStack Query polling as fallback.
 

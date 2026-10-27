@@ -23,8 +23,8 @@ vi.mock('node:dns', async (importOriginal) => {
   };
 });
 
-vi.mock('@mirthless/engine', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@mirthless/engine')>();
+vi.mock('@galvaniflow/engine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@galvaniflow/engine')>();
   return {
     ...actual,
     isBlockedAddress: (a: string) => (policy.narrow ? a.startsWith('10.') : actual.isBlockedAddress(a)),

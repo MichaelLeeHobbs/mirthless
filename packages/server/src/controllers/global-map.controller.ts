@@ -4,7 +4,7 @@
 // Handles HTTP requests for global map key-value store CRUD.
 
 import type { Request, Response } from 'express';
-import type { UpsertGlobalMapEntryInput } from '@mirthless/core-models';
+import type { UpsertGlobalMapEntryInput } from '@galvaniflow/core-models';
 import { GlobalMapService } from '../services/global-map.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

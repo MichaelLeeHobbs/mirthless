@@ -4,7 +4,7 @@
 // Executes parameterized INSERT/UPDATE queries
 // against a PostgreSQL database.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { ConnectionPool, type PoolConfig } from './connection-pool.js';
 import { prepare } from './query-builder.js';

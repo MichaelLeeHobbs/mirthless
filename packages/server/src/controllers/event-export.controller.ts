@@ -4,7 +4,7 @@
 // Handles HTTP requests for exporting audit events as CSV or JSON files.
 
 import type { Request, Response } from 'express';
-import type { EventExportQuery } from '@mirthless/core-models';
+import type { EventExportQuery } from '@galvaniflow/core-models';
 import { EventExportService } from '../services/event-export.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

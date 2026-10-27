@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { RecoveryManager, type RecoveryStore, type UnprocessedMessage, type ConnectorMessageRecord } from '../recovery-manager.js';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 
 // ----- Helpers -----
 

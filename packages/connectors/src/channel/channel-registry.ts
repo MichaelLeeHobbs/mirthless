@@ -5,7 +5,7 @@
 // Enables in-memory inter-channel message routing.
 
 import type { RawMessage } from '../base.js';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 
 /** Callback for dispatching a message into a channel's source pipeline. */
 export type ChannelDispatchCallback = (raw: RawMessage) => Promise<Result<{ messageId: number; response?: string }>>;

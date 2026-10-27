@@ -3,7 +3,7 @@
 // ===========================================
 
 import { Router, type IRouter } from 'express';
-import { crossChannelSearchQuerySchema } from '@mirthless/core-models';
+import { crossChannelSearchQuerySchema } from '@galvaniflow/core-models';
 import { CrossChannelSearchController } from '../controllers/cross-channel-search.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

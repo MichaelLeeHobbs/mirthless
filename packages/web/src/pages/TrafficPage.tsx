@@ -17,7 +17,7 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
-import { MESSAGE_STATUS } from '@mirthless/core-models';
+import { MESSAGE_STATUS } from '@galvaniflow/core-models';
 import { useCrossChannelSearch, type CrossChannelFilters } from '../hooks/use-cross-channel-search.js';
 import { useReprocessMessage } from '../hooks/use-message-actions.js';
 import { PageHeader } from '../components/common/PageHeader.js';

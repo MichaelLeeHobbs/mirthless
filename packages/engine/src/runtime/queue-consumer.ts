@@ -4,7 +4,7 @@
 // Polls for queued messages and processes them through destination connectors.
 // Uses SKIP LOCKED to allow concurrent consumers.
 
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 import type { MessageStore, DestinationResponse, SendToDestination, AlertEventHandler } from '../pipeline/message-processor.js';
 
 // ----- Types -----

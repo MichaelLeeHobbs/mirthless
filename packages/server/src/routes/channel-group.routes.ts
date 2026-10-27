@@ -9,7 +9,7 @@ import {
   addChannelGroupMemberSchema,
   channelGroupUuidParamSchema,
   channelGroupMemberParamSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { ChannelGroupController } from '../controllers/channel-group.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

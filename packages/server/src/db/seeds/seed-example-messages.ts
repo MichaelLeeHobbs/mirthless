@@ -21,7 +21,7 @@
 // db singleton (same connection MessageService uses); no db argument.
 
 import { eq, and, asc, isNull, sql } from 'drizzle-orm';
-import { CONTENT_TYPE, type MessageStatus } from '@mirthless/core-models';
+import { CONTENT_TYPE, type MessageStatus } from '@galvaniflow/core-models';
 import type { Result } from 'stderr-lib';
 import { db } from '../../lib/db.js';
 import { MessageService } from '../../services/message.service.js';

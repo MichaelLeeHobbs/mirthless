@@ -5,7 +5,7 @@
 // Looks up the target channel in the static channel registry.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { getChannelDispatcher, hasChannel } from './channel-registry.js';
 

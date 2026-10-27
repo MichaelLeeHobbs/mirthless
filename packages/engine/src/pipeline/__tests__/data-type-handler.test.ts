@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { parseForSandbox, serializeFromSandbox, isHl7MessageProxy, createHl7Proxy } from '../data-type-handler.js';
-import { Hl7Message } from '@mirthless/core-util';
+import { Hl7Message } from '@galvaniflow/core-util';
 
 const SAMPLE_HL7 = [
   'MSH|^~\\&|SENDING|FACILITY|RECEIVING|FACILITY|20260329||ADT^A01|MSG001|P|2.5',

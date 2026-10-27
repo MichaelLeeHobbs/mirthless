@@ -4,7 +4,7 @@
 // Fire-and-forget helper for creating audit events.
 // If event recording fails, the original operation still succeeds.
 
-import type { CreateEventInput } from '@mirthless/core-models';
+import type { CreateEventInput } from '@galvaniflow/core-models';
 import { EventService } from '../services/event.service.js';
 import logger from './logger.js';
 

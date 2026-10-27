@@ -4,7 +4,7 @@
 // Orchestrates message flow: receive → preprocess → filter → transform →
 // route to destinations → postprocess → mark processed.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from '../sandbox/sandbox-executor.js';
 import type { SandboxContext } from '../sandbox/sandbox-context.js';
 import { createSandboxContext } from '../sandbox/sandbox-context.js';

@@ -9,7 +9,7 @@ import type {
   UpdateCodeTemplateLibraryInput,
   CreateCodeTemplateInput,
   UpdateCodeTemplateInput,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { api, type CodeTemplateLibrary, type CodeTemplateDetail } from '../api/client.js';
 
 // ----- Query Keys -----

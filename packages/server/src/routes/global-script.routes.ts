@@ -3,7 +3,7 @@
 // ===========================================
 
 import { Router, type IRouter } from 'express';
-import { updateGlobalScriptsSchema } from '@mirthless/core-models';
+import { updateGlobalScriptsSchema } from '@galvaniflow/core-models';
 import { GlobalScriptController } from '../controllers/global-script.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

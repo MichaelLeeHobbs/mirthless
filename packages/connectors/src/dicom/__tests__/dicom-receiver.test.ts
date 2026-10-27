@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 import type { MessageDispatcher, RawMessage, DispatchResult } from '../../base.js';
 import {
   DicomReceiver,

@@ -4,7 +4,7 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
-import { sendMessageInputSchema } from '@mirthless/core-models';
+import { sendMessageInputSchema } from '@galvaniflow/core-models';
 import { DeploymentController } from '../controllers/deployment.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

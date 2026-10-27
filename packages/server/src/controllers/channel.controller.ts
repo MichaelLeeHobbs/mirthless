@@ -10,7 +10,7 @@ import type {
   UpdateChannelInput,
   ChannelListQuery,
   PatchChannelEnabledInput,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { ChannelService } from '../services/channel.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import { redactChannelDetail } from '../lib/secret-redaction.js';

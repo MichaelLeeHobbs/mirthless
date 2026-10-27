@@ -5,7 +5,7 @@
 // Source connectors additionally dispatch messages into the pipeline.
 // Destination connectors send messages to external systems.
 
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 
 // ----- Lifecycle -----
 

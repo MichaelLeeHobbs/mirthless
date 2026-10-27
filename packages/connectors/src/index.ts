@@ -1,5 +1,5 @@
 // ===========================================
-// @mirthless/connectors
+// @galvaniflow/connectors
 // ===========================================
 // Protocol adapters: TCP/MLLP, HTTP, File, Database, DICOM, FHIR, SMTP, JavaScript.
 

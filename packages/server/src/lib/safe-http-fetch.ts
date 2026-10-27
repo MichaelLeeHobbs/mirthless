@@ -14,7 +14,7 @@ import * as dns from 'node:dns';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import type { LookupFunction } from 'node:net';
-import { isBlockedAddress, isBlockedHostname, type HttpFetchOptions, type HttpFetchResult } from '@mirthless/engine';
+import { isBlockedAddress, isBlockedHostname, type HttpFetchOptions, type HttpFetchResult } from '@galvaniflow/engine';
 
 /** Cap on a response body read into a script (bytes). */
 export const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;

@@ -3,7 +3,7 @@
 // ===========================================
 // Splits inbound content into multiple messages based on a configured mode.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from '../sandbox/sandbox-executor.js';
 import { createSandboxContext } from '../sandbox/sandbox-context.js';
 

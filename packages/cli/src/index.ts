@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ===========================================
-// @mirthless/cli
+// @galvaniflow/cli
 // ===========================================
 // CLI for Mirthless server management.
 

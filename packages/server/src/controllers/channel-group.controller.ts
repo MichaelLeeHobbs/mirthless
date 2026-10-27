@@ -4,7 +4,7 @@
 // Handles HTTP requests for channel group CRUD + member management.
 
 import type { Request, Response } from 'express';
-import type { CreateChannelGroupInput, UpdateChannelGroupInput, AddChannelGroupMemberInput } from '@mirthless/core-models';
+import type { CreateChannelGroupInput, UpdateChannelGroupInput, AddChannelGroupMemberInput } from '@galvaniflow/core-models';
 import { ChannelGroupService } from '../services/channel-group.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

@@ -7,7 +7,7 @@
 import { X509Certificate } from 'node:crypto';
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc, lte, ilike, and, sql, type SQL } from 'drizzle-orm';
-import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@mirthless/core-models';
+import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';

@@ -22,8 +22,8 @@
 // `process`, `require`, `module`, or `globalThis`-host access.
 
 import * as vm from 'node:vm';
-import type { Result } from '@mirthless/core-util';
-import { tryCatch } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
+import { tryCatch } from '@galvaniflow/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy } from '../pipeline/data-type-handler.js';

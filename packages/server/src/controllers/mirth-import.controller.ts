@@ -4,7 +4,7 @@
 // Handles HTTP requests for importing Mirth Connect XML channel exports.
 
 import type { Request, Response } from 'express';
-import type { MirthImportInput } from '@mirthless/core-models';
+import type { MirthImportInput } from '@galvaniflow/core-models';
 import { MirthImportService } from '../services/mirth-import.service.js';
 import logger from '../lib/logger.js';
 

@@ -8,7 +8,7 @@ import {
   preferenceKeyParamSchema,
   upsertPreferenceSchema,
   bulkUpsertPreferencesSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { UserPreferenceController } from '../controllers/user-preference.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

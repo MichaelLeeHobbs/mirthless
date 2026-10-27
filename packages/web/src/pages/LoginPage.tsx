@@ -8,7 +8,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
-import type { LoginInput } from '@mirthless/core-models';
+import type { LoginInput } from '@galvaniflow/core-models';
 import { api } from '../api/client.js';
 import { useAuthStore } from '../stores/auth.store.js';
 

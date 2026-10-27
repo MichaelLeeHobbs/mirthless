@@ -1,5 +1,5 @@
 {
-  "name": "@mirthless/connectors",
+  "name": "@galvaniflow/connectors",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -21,9 +21,9 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@mirthless/core-models": "workspace:*",
-    "@mirthless/core-util": "workspace:*",
-    "@mirthless/engine": "workspace:*",
+    "@galvaniflow/core-models": "workspace:*",
+    "@galvaniflow/core-util": "workspace:*",
+    "@galvaniflow/engine": "workspace:*",
     "dcmjs-dimse": "^0.3.4",
     "generic-pool": "^3.9.0",
     "imapflow": "^2.9.1",

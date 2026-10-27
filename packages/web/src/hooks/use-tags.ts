@@ -4,7 +4,7 @@
 // TanStack Query hooks for channel tag CRUD + assignment.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateTagInput, UpdateTagInput } from '@mirthless/core-models';
+import type { CreateTagInput, UpdateTagInput } from '@galvaniflow/core-models';
 import { api } from '../api/client.js';
 
 // ----- Types -----

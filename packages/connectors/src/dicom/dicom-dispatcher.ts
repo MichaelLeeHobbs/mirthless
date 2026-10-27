@@ -5,7 +5,7 @@
 // Expects message content to be a file path.
 
 import * as path from 'node:path';
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { createDimseSender } from './dcmjs-dimse-adapter.js';
 

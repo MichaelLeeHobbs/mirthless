@@ -10,7 +10,7 @@ import type {
   CreateCodeTemplateInput,
   UpdateCodeTemplateInput,
   CodeTemplateListQuery,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { CodeTemplateService } from '../services/code-template.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

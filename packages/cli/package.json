@@ -1,5 +1,5 @@
 {
-  "name": "@mirthless/cli",
+  "name": "@galvaniflow/cli",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@mirthless/core-models": "workspace:*",
+    "@galvaniflow/core-models": "workspace:*",
     "commander": "^15.0.0"
   },
   "devDependencies": {

@@ -24,7 +24,7 @@ import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { ServerRestoreResult } from '@mirthless/core-models';
+import type { ServerRestoreResult } from '@galvaniflow/core-models';
 import { useBackup, useRestore } from '../../hooks/use-backup.js';
 
 export function BackupRestoreSection(): ReactNode {

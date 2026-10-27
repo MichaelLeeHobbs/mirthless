@@ -4,7 +4,7 @@
 // Handles HTTP requests for user management.
 
 import type { Request, Response } from 'express';
-import type { CreateUserInput, UpdateUserInput, ChangePasswordInput, ChangeOwnPasswordInput } from '@mirthless/core-models';
+import type { CreateUserInput, UpdateUserInput, ChangePasswordInput, ChangeOwnPasswordInput } from '@galvaniflow/core-models';
 import { UserService } from '../services/user.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

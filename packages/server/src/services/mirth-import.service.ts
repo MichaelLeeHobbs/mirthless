@@ -7,7 +7,7 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { XMLParser } from 'fast-xml-parser';
 import { randomUUID } from 'node:crypto';
-import type { ChannelExportEntry, ImportResult } from '@mirthless/core-models';
+import type { ChannelExportEntry, ImportResult } from '@galvaniflow/core-models';
 import { ChannelImportService } from './channel-import.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';

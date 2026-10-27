@@ -92,31 +92,31 @@ Connect's "basic" alerting is so limited that "advanced" is really just "compete
 
 **What Connect charges for:** Pre-built IHE connectors for HIE participation — PIX (patient identity), PDQ (demographics query), XDS.b (document sharing), XCA (cross-community access), XCPD (patient discovery). Includes SAML/WS-Security for eHealth Exchange compliance.
 
-**Mirthless: Plugin (P3/P4).** `@mirthless/connector-ihe`. Specialized use case for large health systems. SOAP/WS-Security complexity is significant. Good test of our plugin API.
+**Mirthless: Plugin (P3/P4).** `@galvaniflow/connector-ihe`. Specialized use case for large health systems. SOAP/WS-Security complexity is significant. Good test of our plugin API.
 
 ### Serial Connector
 
 **What Connect charges for:** RS-232 serial port communication with legacy lab instruments and medical devices.
 
-**Mirthless: Plugin (P4).** `@mirthless/connector-serial`. Hardware-dependent, irrelevant in Docker/cloud. Most lab instruments moving to TCP. Low priority but validates the plugin system.
+**Mirthless: Plugin (P4).** `@galvaniflow/connector-serial`. Hardware-dependent, irrelevant in Docker/cloud. Most lab instruments moving to TCP. Low priority but validates the plugin system.
 
 ### ASTM E1394 (Data Type)
 
 **What Connect charges for:** Parse/serialize ASTM E1394 messages from clinical lab analyzers (chemistry, hematology, blood gas).
 
-**Mirthless: Plugin (P3).** `@mirthless/datatype-astm`. Validates that data types are pluggable in our plugin API.
+**Mirthless: Plugin (P3).** `@galvaniflow/datatype-astm`. Validates that data types are pluggable in our plugin API.
 
 ### ASTM E1381 (Transmission Mode)
 
 **What Connect charges for:** ASTM E1381 framing protocol (ENQ/ACK/NAK handshaking, checksums) over TCP or serial. Paired with E1394.
 
-**Mirthless: Plugin (P3).** `@mirthless/transmission-astm-e1381`. Validates that transmission modes are pluggable.
+**Mirthless: Plugin (P3).** `@galvaniflow/transmission-astm-e1381`. Validates that transmission modes are pluggable.
 
 ### Secure Email (POP3/IMAP Receiver)
 
 **What Connect charges for:** POP3/IMAP source connector for receiving emails. Open-source only has SMTP sending.
 
-**Mirthless: Built-in connector (P2).** `@mirthless/connector-email`. Uses `nodemailer` for sending, `imapflow` for receiving. Common in healthcare workflows (lab results, referrals, reports).
+**Mirthless: Built-in connector (P2).** `@galvaniflow/connector-email`. Uses `nodemailer` for sending, `imapflow` for receiving. Common in healthcare workflows (lab results, referrals, reports).
 
 ---
 

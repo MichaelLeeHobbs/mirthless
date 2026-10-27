@@ -11,7 +11,7 @@ import {
 } from '../sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
 import { createHl7Proxy } from '../../pipeline/data-type-handler.js';
-import { Hl7Message } from '@mirthless/core-util';
+import { Hl7Message } from '@galvaniflow/core-util';
 
 // ----- Helpers -----
 

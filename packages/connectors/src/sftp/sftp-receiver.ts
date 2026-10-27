@@ -8,7 +8,7 @@
 // quarantine ledger lives as a sidecar in the remote directory so a restart
 // (new instance) does not re-dispatch an already-dispatched file.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { matchGlob } from '../file/file-receiver.js';

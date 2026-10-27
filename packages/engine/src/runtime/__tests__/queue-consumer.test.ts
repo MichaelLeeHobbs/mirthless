@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 import { QueueConsumer } from '../queue-consumer.js';
 import type { QueueConsumerConfig } from '../queue-consumer.js';
 import type { MessageStore, SendToDestination, DestinationResponse } from '../../pipeline/message-processor.js';

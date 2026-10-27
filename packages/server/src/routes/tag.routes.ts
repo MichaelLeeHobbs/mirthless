@@ -9,7 +9,7 @@ import {
   assignTagSchema,
   tagUuidParamSchema,
   tagChannelParamSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { TagController } from '../controllers/tag.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

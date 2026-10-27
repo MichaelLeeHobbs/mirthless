@@ -8,7 +8,7 @@
 // genuine input to transform).
 //
 // Assertions target the stored connector content types defined in
-// @mirthless/core-models CONTENT_TYPE:
+// @galvaniflow/core-models CONTENT_TYPE:
 //   - CT_SENT (5)                 — outbound content AFTER the dest transformer
 //   - CT_RESPONSE (6)             — raw response from the destination
 //   - CT_RESPONSE_TRANSFORMED (7) — response AFTER the response transformer
@@ -17,8 +17,8 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
-import type { Result } from '@mirthless/core-util';
-import { CONTENT_TYPE } from '@mirthless/core-models';
+import type { Result } from '@galvaniflow/core-util';
+import { CONTENT_TYPE } from '@galvaniflow/core-models';
 import {
   TcpMllpReceiver,
   TcpMllpDispatcher,
@@ -31,13 +31,13 @@ import {
   MessageProcessor,
   ChannelRuntime,
   DEFAULT_EXECUTION_OPTIONS,
-} from '@mirthless/engine';
+} from '@galvaniflow/engine';
 import type {
   CompiledScript,
   MessageStore,
   PipelineConfig,
   ChannelRuntimeConfig,
-} from '@mirthless/engine';
+} from '@galvaniflow/engine';
 
 // ----- In-Memory Message Store -----
 

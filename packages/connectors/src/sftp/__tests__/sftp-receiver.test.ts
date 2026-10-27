@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 import { SftpReceiver, joinRemote, SFTP_POST_ACTION, type SftpReceiverConfig } from '../sftp-receiver.js';
 import type { SftpClientFactory } from '../sftp-client.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';

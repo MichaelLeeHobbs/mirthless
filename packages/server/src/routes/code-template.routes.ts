@@ -10,7 +10,7 @@ import {
   updateCodeTemplateSchema,
   codeTemplateListQuerySchema,
   codeTemplateUuidParamSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { CodeTemplateController } from '../controllers/code-template.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

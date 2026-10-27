@@ -1,5 +1,5 @@
 {
-  "name": "@mirthless/engine",
+  "name": "@galvaniflow/engine",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -21,8 +21,8 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@mirthless/core-models": "workspace:*",
-    "@mirthless/core-util": "workspace:*",
+    "@galvaniflow/core-models": "workspace:*",
+    "@galvaniflow/core-util": "workspace:*",
     "esbuild": "^0.28.2",
     "fast-xml-parser": "^5.11.2",
     "isolated-vm": "^7.0.1"

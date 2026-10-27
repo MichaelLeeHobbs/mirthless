@@ -213,7 +213,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@mirthless/core-models':
+      '@galvaniflow/core-models':
         specifier: workspace:*
         version: link:../core-models
       commander:
@@ -238,13 +238,13 @@ importers:
 
   packages/connectors:
     dependencies:
-      '@mirthless/core-models':
+      '@galvaniflow/core-models':
         specifier: workspace:*
         version: link:../core-models
-      '@mirthless/core-util':
+      '@galvaniflow/core-util':
         specifier: workspace:*
         version: link:../core-util
-      '@mirthless/engine':
+      '@galvaniflow/engine':
         specifier: workspace:*
         version: link:../engine
       dcmjs-dimse:
@@ -318,7 +318,7 @@ importers:
 
   packages/core-util:
     dependencies:
-      '@mirthless/core-models':
+      '@galvaniflow/core-models':
         specifier: workspace:*
         version: link:../core-models
       stderr-lib:
@@ -346,10 +346,10 @@ importers:
 
   packages/engine:
     dependencies:
-      '@mirthless/core-models':
+      '@galvaniflow/core-models':
         specifier: workspace:*
         version: link:../core-models
-      '@mirthless/core-util':
+      '@galvaniflow/core-util':
         specifier: workspace:*
         version: link:../core-util
       esbuild:
@@ -380,16 +380,16 @@ importers:
 
   packages/server:
     dependencies:
-      '@mirthless/connectors':
+      '@galvaniflow/connectors':
         specifier: workspace:^
         version: link:../connectors
-      '@mirthless/core-models':
+      '@galvaniflow/core-models':
         specifier: workspace:*
         version: link:../core-models
-      '@mirthless/core-util':
+      '@galvaniflow/core-util':
         specifier: workspace:*
         version: link:../core-util
-      '@mirthless/engine':
+      '@galvaniflow/engine':
         specifier: workspace:^
         version: link:../engine
       '@prometheus-io/client':
@@ -522,7 +522,7 @@ importers:
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
-      '@mirthless/core-models':
+      '@galvaniflow/core-models':
         specifier: workspace:*
         version: link:../core-models
       '@monaco-editor/react':

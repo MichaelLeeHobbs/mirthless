@@ -5,8 +5,8 @@
 // Returns CompiledScript objects ready for sandbox execution.
 
 import { transform } from 'esbuild';
-import type { Result } from '@mirthless/core-util';
-import { tryCatch } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
+import { tryCatch } from '@galvaniflow/core-util';
 import type { CompiledScript } from './sandbox-executor.js';
 
 // ----- Compile Options -----

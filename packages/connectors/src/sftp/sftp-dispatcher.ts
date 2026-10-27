@@ -8,7 +8,7 @@
 // reused across queue retries. Honors the caller's AbortSignal and a hard send
 // timeout — a hung server surfaces as an ERROR Result, not an unbounded wait.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { withTimeoutSignal } from '../timeout.js';
 import { resolveOutputFilename } from '../file/file-dispatcher.js';

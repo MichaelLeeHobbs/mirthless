@@ -8,7 +8,7 @@ import {
   updateCertificateSchema,
   certificateUuidParamSchema,
   certificateListQuerySchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { CertificateController } from '../controllers/certificate.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

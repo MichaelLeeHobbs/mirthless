@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 import { FileReceiver, matchGlob, FILE_SORT_BY, FILE_POST_ACTION, type FileReceiverConfig } from '../file-receiver.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 

@@ -5,7 +5,7 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../api/client.js';
-import type { ServerRestoreResult } from '@mirthless/core-models';
+import type { ServerRestoreResult } from '@galvaniflow/core-models';
 
 // ----- Types -----
 

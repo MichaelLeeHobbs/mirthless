@@ -4,7 +4,7 @@
 // TanStack Query hooks for data source CRUD + connection test.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateDataSourceInput, UpdateDataSourceInput, TestDataSourceInput } from '@mirthless/core-models';
+import type { CreateDataSourceInput, UpdateDataSourceInput, TestDataSourceInput } from '@galvaniflow/core-models';
 import { api } from '../api/client.js';
 
 // ----- Types (never include the password) -----

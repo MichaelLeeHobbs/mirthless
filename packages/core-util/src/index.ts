@@ -1,5 +1,5 @@
 // ===========================================
-// @mirthless/core-util
+// @galvaniflow/core-util
 // ===========================================
 // Shared utilities for the Mirthless platform.
 

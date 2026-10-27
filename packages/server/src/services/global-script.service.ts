@@ -6,8 +6,8 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq } from 'drizzle-orm';
-import type { UpdateGlobalScriptsInput } from '@mirthless/core-models';
-import { GLOBAL_SCRIPT_TYPE } from '@mirthless/core-models';
+import type { UpdateGlobalScriptsInput } from '@galvaniflow/core-models';
+import { GLOBAL_SCRIPT_TYPE } from '@galvaniflow/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { globalScripts } from '../db/schema/index.js';

@@ -4,7 +4,7 @@
 // Handles HTTP requests for certificate CRUD.
 
 import type { Request, Response } from 'express';
-import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@mirthless/core-models';
+import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@galvaniflow/core-models';
 import { CertificateService } from '../services/certificate.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

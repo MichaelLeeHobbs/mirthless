@@ -23,7 +23,7 @@ export interface ConnectorLogger {
 // ----- Root logger -----
 
 const rootLogger: Logger = pino({
-  name: '@mirthless/connectors',
+  name: '@galvaniflow/connectors',
   level: process.env['LOG_LEVEL'] ?? 'info',
 });
 

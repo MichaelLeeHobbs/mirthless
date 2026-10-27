@@ -28,7 +28,7 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SecurityIcon from '@mui/icons-material/Security';
-import { CERTIFICATE_TYPE } from '@mirthless/core-models';
+import { CERTIFICATE_TYPE } from '@galvaniflow/core-models';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';

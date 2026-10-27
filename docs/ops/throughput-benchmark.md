@@ -1,7 +1,7 @@
 # Throughput Benchmark & Baseline
 
 `scripts/bench-throughput.mjs` drives real HL7v2 messages through the **actual engine
-pipeline** (`@mirthless/engine` `MessageProcessor` + `VmSandboxExecutor`) and reports
+pipeline** (`@galvaniflow/engine` `MessageProcessor` + `VmSandboxExecutor`) and reports
 sustained throughput (messages/sec) and per-message latency percentiles. It is the first
 concrete answer to the ROADMAP's long-standing "throughput: untested".
 
@@ -10,7 +10,7 @@ concrete answer to the ROADMAP's long-standing "throughput: untested".
 Build first (the script imports the built engine dist):
 
 ```bash
-pnpm build      # or: pnpm --filter @mirthless/engine build
+pnpm build      # or: pnpm --filter @galvaniflow/engine build
 
 # In-memory pipeline (no DB, no network) — runs anywhere:
 pnpm bench:throughput                                   # 5000 msgs, sandbox on
@@ -24,7 +24,7 @@ node scripts/bench-throughput.mjs --db --messages 2000
 Flags: `--messages N` (default 5000), `--concurrency C` (default 16), `--warmup W`
 (default 250), `--no-sandbox` (skip the per-message filter script), `--db` (use the real
 Postgres `MessageService` store; reads `DATABASE_URL` from `.env`; requires
-`pnpm --filter @mirthless/server build`).
+`pnpm --filter @galvaniflow/server build`).
 
 What each message does: create message + source connector + raw/source-map content →
 validate inbound HL7v2 → (optional) run a sandbox filter → route to one cheap destination

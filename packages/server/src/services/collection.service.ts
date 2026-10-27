@@ -15,7 +15,7 @@ import type {
   ListRecordsQuery,
   RecordColumn,
   UpdateRecordInput,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';

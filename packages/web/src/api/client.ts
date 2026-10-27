@@ -1,4 +1,4 @@
-import type { ApiResponse } from '@mirthless/core-models';
+import type { ApiResponse } from '@galvaniflow/core-models';
 import { useAuthStore } from '../stores/auth.store.js';
 
 const BASE_URL = '/api/v1';

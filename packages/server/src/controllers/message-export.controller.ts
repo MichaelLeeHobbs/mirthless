@@ -6,7 +6,7 @@
 // emits a MESSAGES_EXPORTED audit event.
 
 import type { Request, Response } from 'express';
-import type { MessageExportQuery } from '@mirthless/core-models';
+import type { MessageExportQuery } from '@galvaniflow/core-models';
 import { MessageExportService } from '../services/message-export.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { emitEvent } from '../lib/event-emitter.js';

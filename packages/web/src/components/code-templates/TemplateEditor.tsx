@@ -19,7 +19,7 @@ import Stack from '@mui/material/Stack';
 import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
 import { ScriptEditor } from '../editors/ScriptEditor.js';
-import { CODE_TEMPLATE_CONTEXTS } from '@mirthless/core-models';
+import { CODE_TEMPLATE_CONTEXTS } from '@galvaniflow/core-models';
 import type { CodeTemplateDetail } from '../../api/client.js';
 
 const CONTEXT_LABELS: Record<string, string> = {

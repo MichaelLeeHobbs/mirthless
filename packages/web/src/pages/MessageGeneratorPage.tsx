@@ -17,7 +17,7 @@ import Alert from '@mui/material/Alert';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import type { GenerateMessagesInput } from '@mirthless/core-models';
+import type { GenerateMessagesInput } from '@galvaniflow/core-models';
 import Editor from '@monaco-editor/react';
 import { useUiStore } from '../stores/ui.store.js';
 import { useGenerateMessages } from '../hooks/use-message-generator.js';

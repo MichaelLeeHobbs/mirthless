@@ -43,7 +43,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
-import { DEFAULT_GROUP_NAME } from '@mirthless/core-models';
+import { DEFAULT_GROUP_NAME } from '@galvaniflow/core-models';
 import type { ChannelStatisticsSummary } from '../../hooks/use-statistics.js';
 import type { ChannelStatus } from '../../hooks/use-deployment.js';
 import type { TagSummary } from '../../hooks/use-tags.js';

@@ -4,7 +4,7 @@
 // TanStack Query hooks for resource CRUD.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateResourceInput, UpdateResourceInput } from '@mirthless/core-models';
+import type { CreateResourceInput, UpdateResourceInput } from '@galvaniflow/core-models';
 import { api } from '../api/client.js';
 
 // ----- Types -----

@@ -3,7 +3,7 @@
 // ===========================================
 // Applies Drizzle migrations using drizzle-orm's built-in migrator.
 // This avoids shipping drizzle-kit (a devDependency) in the runtime image —
-// drizzle-orm and pg are both production dependencies of @mirthless/server.
+// drizzle-orm and pg are both production dependencies of @galvaniflow/server.
 //
 // Runs at container start via docker/server-entrypoint.sh. Fail-loud: a
 // non-zero exit stops the container before the server boots against an

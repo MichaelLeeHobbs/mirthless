@@ -17,7 +17,7 @@ vi.mock('../../config/index.js', () => ({ config: cfg }));
 
 // ----- Engine / connector mocks -----
 
-vi.mock('@mirthless/engine', () => ({
+vi.mock('@galvaniflow/engine', () => ({
   ChannelRuntime: vi.fn(),
   VmSandboxExecutor: vi.fn().mockImplementation(function () { return { execute: vi.fn(), dispose: vi.fn() }; }),
   MessageProcessor: vi.fn(),
@@ -37,7 +37,7 @@ vi.mock('@mirthless/engine', () => ({
   }),
 }));
 
-vi.mock('@mirthless/connectors', () => ({
+vi.mock('@galvaniflow/connectors', () => ({
   createSourceConnector: vi.fn(),
   createDestinationConnector: vi.fn(),
   JavaScriptReceiver: vi.fn(),

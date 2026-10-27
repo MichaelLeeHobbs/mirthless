@@ -4,7 +4,7 @@
 // Handles HTTP requests for channel export and import operations.
 
 import type { Request, Response } from 'express';
-import type { ChannelImportInput } from '@mirthless/core-models';
+import type { ChannelImportInput } from '@galvaniflow/core-models';
 import { ChannelExportService } from '../services/channel-export.service.js';
 import { ChannelImportService } from '../services/channel-import.service.js';
 import { isServiceError } from '../lib/service-error.js';

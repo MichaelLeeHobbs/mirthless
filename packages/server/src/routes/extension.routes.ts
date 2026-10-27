@@ -4,7 +4,7 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod';
-import { setExtensionEnabledSchema } from '@mirthless/core-models';
+import { setExtensionEnabledSchema } from '@galvaniflow/core-models';
 import { ExtensionController } from '../controllers/extension.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

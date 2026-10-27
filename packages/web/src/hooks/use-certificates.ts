@@ -4,7 +4,7 @@
 // TanStack Query hooks for certificate CRUD.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@mirthless/core-models';
+import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@galvaniflow/core-models';
 import { api } from '../api/client.js';
 
 // ----- Types -----

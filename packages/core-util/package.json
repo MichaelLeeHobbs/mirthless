@@ -1,5 +1,5 @@
 {
-  "name": "@mirthless/core-util",
+  "name": "@galvaniflow/core-util",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -20,7 +20,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@mirthless/core-models": "workspace:*",
+    "@galvaniflow/core-models": "workspace:*",
     "stderr-lib": "2.2.0",
     "zod": "4.6.7"
   },

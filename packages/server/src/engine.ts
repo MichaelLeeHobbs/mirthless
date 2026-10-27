@@ -32,7 +32,7 @@ import {
   type CodeTemplateData,
   type QueueConsumerConfig,
   type LoadedAlert,
-} from '@mirthless/engine';
+} from '@galvaniflow/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { tryCatch, type Result } from 'stderr-lib';
 import {
@@ -44,8 +44,8 @@ import {
   type DispatchStatus,
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
-} from '@mirthless/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema } from '@mirthless/core-models';
+} from '@galvaniflow/connectors';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema } from '@galvaniflow/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';

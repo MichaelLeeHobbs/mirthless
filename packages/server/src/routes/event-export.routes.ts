@@ -3,7 +3,7 @@
 // ===========================================
 
 import { Router, type IRouter } from 'express';
-import { eventExportQuerySchema } from '@mirthless/core-models';
+import { eventExportQuerySchema } from '@galvaniflow/core-models';
 import { EventExportController } from '../controllers/event-export.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { EventExportQuery } from '@mirthless/core-models';
+import type { EventExportQuery } from '@galvaniflow/core-models';
 
 // ----- Mock DB -----
 

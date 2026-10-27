@@ -50,7 +50,7 @@ const mockCompileScript = vi.fn().mockResolvedValue({
   ok: true, value: { code: 'compiled-code' }, error: null,
 });
 
-vi.mock('@mirthless/engine', () => ({
+vi.mock('@galvaniflow/engine', () => ({
   ChannelRuntime: MockChannelRuntime,
   VmSandboxExecutor: MockVmSandboxExecutor,
   MessageProcessor: vi.fn().mockImplementation(function () {
@@ -75,7 +75,7 @@ vi.mock('@mirthless/engine', () => ({
   }),
 }));
 
-vi.mock('@mirthless/connectors', () => ({
+vi.mock('@galvaniflow/connectors', () => ({
   createSourceConnector: vi.fn().mockReturnValue({
     setDispatcher: vi.fn(),
     onDeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),

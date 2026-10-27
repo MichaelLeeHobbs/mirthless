@@ -3,7 +3,7 @@
 // ===========================================
 
 import { Router, type IRouter } from 'express';
-import { mirthImportSchema } from '@mirthless/core-models';
+import { mirthImportSchema } from '@galvaniflow/core-models';
 import { MirthImportController } from '../controllers/mirth-import.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

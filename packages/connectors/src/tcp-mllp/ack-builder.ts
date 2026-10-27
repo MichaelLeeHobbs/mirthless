@@ -6,7 +6,7 @@
 // destination connector must treat a NAK (MSA-1 = AE/AR/CE/CR) as an ERROR,
 // not a silent SENT.
 
-import { Hl7Message, createAck, formatTimestamp } from '@mirthless/core-util';
+import { Hl7Message, createAck, formatTimestamp } from '@galvaniflow/core-util';
 
 /** HL7 acknowledgement codes we emit. */
 export type AckCode = 'AA' | 'AE' | 'AR';
