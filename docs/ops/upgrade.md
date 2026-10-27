@@ -1,6 +1,6 @@
 # Upgrade Procedure
 
-Mirthless applies schema changes through **Drizzle migrations**. The golden rule:
+GalvaniFlow applies schema changes through **Drizzle migrations**. The golden rule:
 
 > **Always back up the database, then run migrations, before starting the new server
 > version.** Never point a new binary at an un-migrated database and never point an old
@@ -40,7 +40,9 @@ migration will not migrate it for you. From 1.0 onward, migrations will be data-
 
 ```bash
 # 1. BACK UP FIRST (see docs/ops/backup-restore.md)
-docker exec -t mirthless-db-prod pg_dump -U mirthless -d mirthless -F c > pre-upgrade.dump
+#    First upgrade after the rename: the container is still mirthless-db-prod and
+#    the database and user are mirthless (see "Renamed from Mirthless" below).
+docker exec -t galvaniflow-db-prod pg_dump -U galvaniflow -d galvaniflow -F c > pre-upgrade.dump
 
 # 2. Pull the new code
 git pull                # there are no published images; the stack builds from source
@@ -55,6 +57,53 @@ docker compose -f docker/docker-compose.prod.yml logs server | grep -i migrat
 
 Watch the server logs for `[migrate] migrations applied` before the startup banner.
 
+## Renamed from Mirthless
+
+The project was renamed from Mirthless to GalvaniFlow. Upgrading an install created under
+the old name has these one-time effects.
+
+**Database name and user.** New installs default to database and user `galvaniflow`.
+Postgres applies `POSTGRES_DB` / `POSTGRES_USER` only when it first creates the data
+volume, so an existing volume still holds database `mirthless` owned by user
+`mirthless`. Nothing in the code depends on the database name; keep using the old one:
+
+- **Docker prod stack:** set `POSTGRES_DB=mirthless` and `POSTGRES_USER=mirthless` in the
+  same place you set `POSTGRES_PASSWORD`. `docker/docker-compose.prod.yml` builds the
+  server's `DATABASE_URL` from these three, so leaving them unset points the server at a
+  `galvaniflow` database that does not exist in the old volume.
+- **Local / non-Docker:** keep your existing `DATABASE_URL` in `.env`
+  (`postgresql://mirthless:...@.../mirthless`). The dev compose (`pnpm docker:up`) keeps
+  the same volume, so the old databases are still there; for `pnpm test:integration`,
+  point `DATABASE_URL` at `mirthless_test`. Or start fresh with `pnpm docker:reset`,
+  which deletes the dev volume and its data.
+- The data volume keeps its name (`docker_postgres_data`; the compose project is named
+  after the `docker/` folder), so no data moves. Only the containers are renamed:
+  `mirthless-db-prod`, `mirthless-server` and `mirthless-web` become
+  `galvaniflow-db-prod`, `galvaniflow-server` and `galvaniflow-web` (dev: `mirthless-db`
+  becomes `galvaniflow-db`). Update any backup cron jobs or scripts that name a container.
+
+**Other changes:**
+
+- **CLI:** the command is `galvaniflow` (was `mirthless`). It writes its config to
+  `~/.galvaniflow`; when only `~/.mirthless` exists it reads that, so a saved login keeps
+  working.
+- **Prometheus metrics** are renamed from `mirthless_*` to `galvaniflow_*` (for example
+  `galvaniflow_messages_processed_total`). Update dashboards, alert rules and recording
+  rules.
+- **Web UI:** each user signs in once more after the upgrade (the browser stores the
+  session under a new key).
+- **Wire defaults** change from `MIRTHLESS` to `GALVANIFLOW`: the DICOM source AE title
+  and destination calling AE title for new connectors, MSH-3 in generated test HL7
+  messages, and the control-ID prefix of the fallback ACK sent for unparseable HL7.
+  Existing channels keep the AE titles saved in them. If a trading partner checks these
+  values (for example a PACS that allow-lists calling AE titles), tell them before you
+  create new channels or rely on the fallback ACK.
+- **File and SFTP sources:** the quarantine ledger is now `.galvaniflow-quarantine.json`.
+  An existing `.mirthless-quarantine.json` in the watched directory is still read, so
+  quarantined files stay quarantined.
+- **Email sources:** processed emails are now marked `$GalvaniFlowDispatched`. Emails
+  marked `$MirthlessDispatched` by the old version still count as dispatched.
+
 ## Standard upgrade (local / non-Docker)
 
 ```bash
@@ -67,7 +116,7 @@ pnpm start          # or pnpm dev
 
 ## Downtime expectations
 
-Mirthless is currently a **single-instance** deployment (no clustering yet — see the
+GalvaniFlow is currently a **single-instance** deployment (no clustering yet — see the
 ROADMAP). A schema migration therefore implies a short restart window:
 
 - **Low-downtime:** most migrations are additive (new tables/columns) and complete in

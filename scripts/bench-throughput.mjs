@@ -161,7 +161,7 @@ async function run() {
   };
 
   process.stdout.write(
-    `Mirthless throughput benchmark\n` +
+    `GalvaniFlow throughput benchmark\n` +
       `  store=${args.db ? 'postgres (dev DB)' : 'in-memory'} sandbox=${args.sandbox} ` +
       `concurrency=${args.concurrency} warmup=${args.warmup} messages=${args.messages}\n`,
   );

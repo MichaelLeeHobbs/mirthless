@@ -1,6 +1,6 @@
 # 15 — Visual Language
 
-Mirthless looks like a calm, precise clinical instrument panel. Operators watch it all day, so the UI favours legibility under pressure: hairline borders over heavy shadows, tabular numerals for every metric, and five status colours that mean the same thing on every page. Light and dark modes are equally finished, because many hospital IT shops run light.
+GalvaniFlow looks like a calm, precise clinical instrument panel. Operators watch it all day, so the UI favours legibility under pressure: hairline borders over heavy shadows, tabular numerals for every metric, and five status colours that mean the same thing on every page. Light and dark modes are equally finished, because many hospital IT shops run light.
 
 This doc is the rulebook. The values live in code; the rules below say how to use them. The `create-ui` skill (`.claude/skills/create-ui/SKILL.md`) is the workflow that points agents here.
 

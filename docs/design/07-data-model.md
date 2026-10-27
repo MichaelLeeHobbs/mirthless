@@ -792,7 +792,7 @@ Drizzle tracks migrations via its own `__drizzle_migrations` table. No custom `s
 
 ## Key Differences from Connect
 
-| Aspect | Connect | Mirthless |
+| Aspect | Connect | GalvaniFlow |
 |---|---|---|
 | Config storage | XML blobs in TEXT columns | Normalized relational tables |
 | Message tables | Dynamic per-channel (6 tables each) | Partitioned single table set |

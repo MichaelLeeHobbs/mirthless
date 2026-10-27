@@ -1,8 +1,8 @@
-# 13 — Non-Connector Gap Analysis (Mirthless vs Mirth Connect / OIE 4.6.0)
+# 13 — Non-Connector Gap Analysis (GalvaniFlow vs Mirth Connect / OIE 4.6.0)
 
 > **Status:** Draft for review · **Date:** 2026-07-15 · **Owner:** Michael Hobbs
 > **Scope:** Everything *except* connectors (those are in [`12-connector-parity-gap-analysis.md`](./12-connector-parity-gap-analysis.md)) — the message engine, storage, scripting/sandbox API, data types, transformers, channel lifecycle, code templates, admin/server, the extension model, alerts, events, and monitoring.
-> **Baselines:** Mirthless `feature/real-e2e-testing` · Mirth reference `reference/connect/` · OIE **4.6.0** at `C:\Users\mhobb\WebstormProjects\_temp\engine`.
+> **Baselines:** GalvaniFlow `feature/real-e2e-testing` · Mirth reference `reference/connect/` · OIE **4.6.0** at `C:\Users\mhobb\WebstormProjects\_temp\engine`.
 
 ---
 
@@ -16,7 +16,7 @@ The expectation going in was "there won't be much here." That held for **channel
 Two structural themes tie most of this together:
 
 - **"Half-built" features** — a recurring pattern of schema present / runtime missing (custom metadata, pruner archive, queue threading, HL7v3 datatype). These are the most dangerous because they *look* complete.
-- **The extension/plugin model is architecturally absent** — Mirth's whole third-party ecosystem (runtime plugin loader, `plugin.xml`, typed extension points) has no Mirthless equivalent. This is a **strategic decision to make, not a bug** — but it should be a conscious one.
+- **The extension/plugin model is architecturally absent** — Mirth's whole third-party ecosystem (runtime plugin loader, `plugin.xml`, typed extension points) has no GalvaniFlow equivalent. This is a **strategic decision to make, not a bug** — but it should be a conscious one.
 
 **Severity legend:** 🔴 blocker (channel/feature unusable) · 🟡 degraded (works but loses capability) · 🟢 parity / ahead.
 
@@ -26,9 +26,9 @@ Nothing here changes the top-line: the **connector gaps in doc 12 are the migrat
 
 ## 1. Data Types & Serializers — 🔴 the biggest non-connector gap
 
-Mirth ships full inbound/outbound serializers (raw ⇄ XML) for each datatype, so the `msg` object works for mapping. Mirthless's `data-type-handler.ts` genuinely transforms only **HL7v2, XML, JSON, Raw**; the rest are declared in the `DATA_TYPE` enum but pass through as raw strings.
+Mirth ships full inbound/outbound serializers (raw ⇄ XML) for each datatype, so the `msg` object works for mapping. GalvaniFlow's `data-type-handler.ts` genuinely transforms only **HL7v2, XML, JSON, Raw**; the rest are declared in the `DATA_TYPE` enum but pass through as raw strings.
 
-| Datatype | Mirth | Mirthless | Sev |
+| Datatype | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | HL7v2 (ER7) | Full serializer → XML, batch, ACK, validation | Path-proxy get/set/toString (**not E4X XML `msg`**) | 🟡 different access model |
 | XML | Full | parse/build via fast-xml-parser | 🟢 |
@@ -39,7 +39,7 @@ Mirth ships full inbound/outbound serializers (raw ⇄ XML) for each datatype, s
 | **EDI / X12** | Full serializer, X12 vocab, batch | **Absent from enum entirely** | 🔴 |
 | **NCPDP** | Full serializer + NCPDPUtil | **Absent** | 🔴 |
 | **HL7v3** | Full serializer, batch | Declared enum only; pass-through | 🔴 |
-| FHIR | Not a native Mirth datatype | Declared (pass-through) | 🟢 Mirthless extra |
+| FHIR | Not a native Mirth datatype | Declared (pass-through) | 🟢 GalvaniFlow extra |
 
 **Why it matters.** X12 (837/835/270/271) is ubiquitous in US billing/eligibility; NCPDP is the pharmacy standard; HL7v3/CDA appears in registries and older EMRs. A channel whose source/transformer relies on any of these datatypes' `msg` object **cannot be built or migrated**.
 
@@ -53,7 +53,7 @@ Mirth ships full inbound/outbound serializers (raw ⇄ XML) for each datatype, s
 
 ## 2. Scripting / Sandbox JS API — 🟡 breadth + a portability footgun
 
-Mirthless exposes a deliberately small, JSON-marshalled bridge (`sandbox-executor.ts` + `bridge-functions.ts`, typed in `sandbox-globals.d.ts`) — ~10 of Mirth's ~40 `userutil` objects. Maps, `logger`, `createACK`, `httpFetch`, `dbQuery`, `routeMessage`, `getCollection`, and map shortcuts are present. The following are **absent** and appear in real Mirth channel scripts:
+GalvaniFlow exposes a deliberately small, JSON-marshalled bridge (`sandbox-executor.ts` + `bridge-functions.ts`, typed in `sandbox-globals.d.ts`) — ~10 of Mirth's ~40 `userutil` objects. Maps, `logger`, `createACK`, `httpFetch`, `dbQuery`, `routeMessage`, `getCollection`, and map shortcuts are present. The following are **absent** and appear in real Mirth channel scripts:
 
 | Missing API | Mirth use | Sev |
 |---|---|---|
@@ -73,7 +73,7 @@ Mirthless exposes a deliberately small, JSON-marshalled bridge (`sandbox-executo
 
 Verified in `sandbox-executor.ts:274-286`. This is a **correctness/portability** issue, not just missing sugar:
 
-| Shortcut | Mirth means | Mirthless means | Status |
+| Shortcut | Mirth means | GalvaniFlow means | Status |
 |---|---|---|---|
 | `$('key')` | precedence search across maps | precedence search (`responseMap, connectorMap, channelMap, globalChannelMap, globalMap, configMap, sourceMap`) | ~parity |
 | `$r` | responseMap | responseMap | ✅ correct |
@@ -84,13 +84,13 @@ Verified in `sandbox-executor.ts:274-286`. This is a **correctness/portability**
 | `$co` | connectorMap | — (absent) | ❌ missing |
 | `$s` | sourceMap | — (absent) | ❌ missing |
 
-**The dangerous one is `$gc`:** a migrated Mirth script using `$gc('x')` to read the **global channel map** will instead read the **configuration map** in Mirthless — no error, just wrong data. In healthcare that's a silent-wrong-value class of bug. **Fix:** align `$gc`→globalChannelMap, add `$cfg`→configurationMap, and add the missing `$c`/`$co`/`$s`. This is small and high-value; do it before anyone ports scripts.
+**The dangerous one is `$gc`:** a migrated Mirth script using `$gc('x')` to read the **global channel map** will instead read the **configuration map** in GalvaniFlow — no error, just wrong data. In healthcare that's a silent-wrong-value class of bug. **Fix:** align `$gc`→globalChannelMap, add `$cfg`→configurationMap, and add the missing `$c`/`$co`/`$s`. This is small and high-value; do it before anyone ports scripts.
 
 ---
 
 ## 3. Transformer Step Types — 🟡
 
-Mirth has six visual step types: **Mapper, Message Builder, JavaScript, XSLT, External Script, + Iterator** (repeat/loop wrapper). Mirthless (`transformer.schema.ts`, `TransformerStepEditor.tsx`) has three: **JavaScript, Mapper, Message Builder**.
+Mirth has six visual step types: **Mapper, Message Builder, JavaScript, XSLT, External Script, + Iterator** (repeat/loop wrapper). GalvaniFlow (`transformer.schema.ts`, `TransformerStepEditor.tsx`) has three: **JavaScript, Mapper, Message Builder**.
 
 - **Missing: XSLT, External Script, and Iterator.** The **Iterator** absence is the notable one — repeating-segment mapping (e.g. iterate OBX segments) is a daily HL7 idiom; without an Iterator step users must hand-write loops in a Code step. Medium impact, UX-level (not a hard blocker).
 
@@ -98,9 +98,9 @@ Mirth has six visual step types: **Mapper, Message Builder, JavaScript, XSLT, Ex
 
 ## 4. Message Engine & Storage — 🟡/🔴 several half-built features
 
-Mirthless reproduces the *coarse* model well (5 `MessageStorageMode` levels, queue-mode/retry, recovery, at-rest encryption, age-based prune) and is **cleaner** in a few spots. The gaps are granularity — and three features that are wired in the schema but not the runtime.
+GalvaniFlow reproduces the *coarse* model well (5 `MessageStorageMode` levels, queue-mode/retry, recovery, at-rest encryption, age-based prune) and is **cleaner** in a few spots. The gaps are granularity — and three features that are wired in the schema but not the runtime.
 
-| Capability | Mirth | Mirthless | Sev |
+| Capability | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | Storage modes | 5 modes + ~20 per-content-type `StorageSettings` booleans | Same 5 modes, gating collapses to 3 fixed content sets (`shouldStoreContent`) | 🟡 |
 | **Custom metadata columns** | Defined, **populated via MetaDataReplacer**, typed, **searchable** | Table + `mappingExpression` stored, **never populated in pipeline, not in search** | 🔴 half-built |
@@ -123,9 +123,9 @@ Mirthless reproduces the *coarse* model well (5 `MessageStorageMode` levels, que
 
 ## 5. Channel Lifecycle, Scripts & Code Templates — 🟢 mostly parity
 
-Strong parity on all four channel script types (deploy/undeploy/preprocessor/postprocessor + attachment/batch), all four global scripts, groups, tags, dependency cycle-validation, and deploy/redeploy/initial-state. **Mirthless exceeds Mirth** on channel revision history (full JSONB snapshots + comment + userId vs Mirth's bare `revision` integer) and redeploy state-preservation. Real gaps:
+Strong parity on all four channel script types (deploy/undeploy/preprocessor/postprocessor + attachment/batch), all four global scripts, groups, tags, dependency cycle-validation, and deploy/redeploy/initial-state. **GalvaniFlow exceeds Mirth** on channel revision history (full JSONB snapshots + comment + userId vs Mirth's bare `revision` integer) and redeploy state-preservation. Real gaps:
 
-| Capability | Mirth | Mirthless | Sev |
+| Capability | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | **Dependency-ordered deploy** | `ChannelDependencyGraph` topological deploy order | Stored + cycle-validated, **but `autoDeployChannels` iterates arbitrarily** — no topo sort | 🔴 correctness |
 | **Code-template library per-channel scoping** | `enabledChannelIds`/`disabledChannelIds`/`includeNewChannels` | Flat — every template offered to every channel (context-filtered only) | 🟡 |
@@ -142,7 +142,7 @@ Strong parity on all four channel script types (deploy/undeploy/preprocessor/pos
 
 Feature-parity items are largely covered as **built-in services** (data pruner, server log, dashboard status, config map, global scripts, SMTP/settings, SSL/keystore manager, backup/restore, system info). RBAC has ~30 granular `resource:action` permissions — good. The gaps:
 
-| Capability | Mirth | Mirthless | Sev |
+| Capability | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | **3rd-party plugin/extension system** | Runtime loader, 30 `plugin.xml` descriptors, 8 typed extension points (`ServicePlugin`, `ChannelPlugin`, `DataTypeServerPlugin`, `ResourcePlugin`, `TransmissionModeProvider`, `AuthorizationPlugin`, `MultiFactorAuthenticationPlugin`, …), zip install/uninstall | **None** — static built-in catalog (`extension.service.ts`) with enable/disable only | 🔴 strategic |
 | Add connectors/datatypes/dashboard panels by 3rd party | Yes (plugin) | No — must fork/PR | 🔴 strategic |
@@ -153,7 +153,7 @@ Feature-parity items are largely covered as **built-in services** (data pruner, 
 | Password policy engine | Configurable | `failed_login_attempts` column only | 🟡 |
 | Clustering / advanced | **Commercial** | None | 🟢 (parity w/ OSS core) |
 
-**On the extension system — a decision, not a defect.** Replicating individual Mirth plugins as built-ins is tractable and mostly done. Replicating the **open plugin platform** (descriptor format, isolated loading, extension-point SPI, install lifecycle) is a large, deliberate architectural choice. Mirth's extensibility is a core reason for its ecosystem. **Recommendation:** decide explicitly whether Mirthless wants a third-party extension contract (even a narrow, modern one — e.g. npm-package connectors/datatypes registered via a manifest) or commits to a curated built-in-only model. Don't let it be decided by default. *Note:* LDAP/MFA/clustering are Mirth **commercial** extensions — their absence is parity-with-open-source, not a shortfall vs OIE.
+**On the extension system — a decision, not a defect.** Replicating individual Mirth plugins as built-ins is tractable and mostly done. Replicating the **open plugin platform** (descriptor format, isolated loading, extension-point SPI, install lifecycle) is a large, deliberate architectural choice. Mirth's extensibility is a core reason for its ecosystem. **Recommendation:** decide explicitly whether GalvaniFlow wants a third-party extension contract (even a narrow, modern one — e.g. npm-package connectors/datatypes registered via a manifest) or commits to a curated built-in-only model. Don't let it be decided by default. *Note:* LDAP/MFA/clustering are Mirth **commercial** extensions — their absence is parity-with-open-source, not a shortfall vs OIE.
 
 **Custom RBAC roles** is the tractable near-term item here: allow defining roles as permission sets rather than the 4 hardcoded roles. Healthcare orgs frequently need "developer who can't deploy to prod" style roles.
 
@@ -161,9 +161,9 @@ Feature-parity items are largely covered as **built-in services** (data pruner, 
 
 ## 7. Alerts, Events & Monitoring — 🟢 parity or ahead
 
-Core alerting, events, statistics, and message browsing are present, and Mirthless is **ahead** on real-time and observability. Gaps are Mirth's per-connector granularity.
+Core alerting, events, statistics, and message browsing are present, and GalvaniFlow is **ahead** on real-time and observability. Gaps are Mirth's per-connector granularity.
 
-| Capability | Mirth | Mirthless | Sev |
+| Capability | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | **Per-connector connection state** | dashboardstatus plugin: IDLE/READING/WRITING/POLLING/CONNECTED/WAITING/DISCONNECTED | Channel-level STARTED/STOPPED/PAUSED only | 🔴 (ops visibility) |
 | **Current connections / queue depth per connector** | connectionCount / maxConnectionCount | None | 🔴 |
@@ -183,7 +183,7 @@ Core alerting, events, statistics, and message browsing are present, and Mirthle
 
 ---
 
-## 8. Where Mirthless Already Exceeds Mirth (non-connector)
+## 8. Where GalvaniFlow Already Exceeds Mirth (non-connector)
 
 - **Channel revision history** — full JSONB snapshots + comment + user (Mirth: bare integer).
 - **Encryption at rest** — AES-256-GCM, **fail-loud** if key missing (never silently stores plaintext PHI).
@@ -232,8 +232,8 @@ Ranked by real-world impact (channels blocked / correctness / daily-use pain), n
 
 ## 11. Appendix — Key File References
 
-**Mirthless — sandbox/datatypes:** `packages/engine/src/sandbox/{sandbox-executor,bridge-functions,template-injector}.ts`, `packages/engine/sandbox-globals.d.ts`, `packages/engine/src/pipeline/data-type-handler.ts`, `packages/core-models/src/constants.ts` (`DATA_TYPE`), `packages/core-models/src/schemas/transformer.schema.ts`
-**Mirthless — engine/storage:** `packages/server/src/engine.ts` (`shouldStoreContent`, `storageModeSupportsQueue`, encrypt gating), `packages/server/src/services/{data-pruner,message-query,message-reprocess,message-export}.service.ts`, `packages/engine/src/runtime/{queue-consumer,recovery-manager}.ts`
-**Mirthless — lifecycle/admin/monitoring:** `packages/server/src/services/{deployment,channel-dependency,code-template,global-script,channel-export,extension,alert,event,event-export,statistics}.service.ts`, `packages/server/src/lib/{socket,metrics}.ts`, `packages/web/src/components/messages/*`
+**GalvaniFlow — sandbox/datatypes:** `packages/engine/src/sandbox/{sandbox-executor,bridge-functions,template-injector}.ts`, `packages/engine/sandbox-globals.d.ts`, `packages/engine/src/pipeline/data-type-handler.ts`, `packages/core-models/src/constants.ts` (`DATA_TYPE`), `packages/core-models/src/schemas/transformer.schema.ts`
+**GalvaniFlow — engine/storage:** `packages/server/src/engine.ts` (`shouldStoreContent`, `storageModeSupportsQueue`, encrypt gating), `packages/server/src/services/{data-pruner,message-query,message-reprocess,message-export}.service.ts`, `packages/engine/src/runtime/{queue-consumer,recovery-manager}.ts`
+**GalvaniFlow — lifecycle/admin/monitoring:** `packages/server/src/services/{deployment,channel-dependency,code-template,global-script,channel-export,extension,alert,event,event-export,statistics}.service.ts`, `packages/server/src/lib/{socket,metrics}.ts`, `packages/web/src/components/messages/*`
 **Mirth reference:** `reference/connect/server/src/com/mirth/connect/server/userutil/*`, `.../plugins/datatypes/{edi,ncpdp,hl7v3,dicom,delimited}/*`, `.../donkey/.../StorageSettings.java`, `.../queue/DestinationQueue.java`, `.../model/MessageStorageMode.java`, `.../model/filters/{MessageFilter,EventFilter}.java`, `.../plugins/datapruner/DataPruner.java`, `.../server/controllers/DefaultExtensionController.java`, `.../plugins/dashboardstatus/*`, `.../model/codetemplates/CodeTemplateLibrary.java`, `.../core-util/.../ChannelDependencyGraph.java`
 **OIE 4.6.0:** `C:\Users\mhobb\WebstormProjects\_temp\engine` (connector/datatype set confirmed identical to reference)

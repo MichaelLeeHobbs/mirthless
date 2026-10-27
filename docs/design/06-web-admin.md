@@ -101,7 +101,7 @@ The landing page. Real-time overview of all channels.
 
 #### Key Differences from Connect
 
-| Connect | Mirthless |
+| Connect | GalvaniFlow |
 |---|---|
 | Swing JXTaskPaneContainer | MUI DataGrid + Summary Cards |
 | Manual refresh button | Auto-refresh with configurable interval |
@@ -417,7 +417,7 @@ Plugin management page (admin only).
 ├─────────────────────────────────────────────────────────────┤
 │ Extension Detail: FHIR R4                                    │
 │ ┌───────────────────────────────────────────────────────────┐│
-│ │ Author: mirthless-contrib      License: MIT               ││
+│ │ Author: galvaniflow-contrib      License: MIT               ││
 │ │ Description: FHIR R4 client connector for REST endpoints  ││
 │ │ Provides: connector (fhir-r4), data type (fhir-bundle)    ││
 │ │ Status: Enabled    [Disable]                               ││
@@ -756,7 +756,7 @@ Status colors:
 
 ## Key Differences from Connect
 
-| Aspect | Connect (Swing) | Mirthless (React) |
+| Aspect | Connect (Swing) | GalvaniFlow (React) |
 |---|---|---|
 | Platform | Desktop app (Java Swing) | Web app (browser) |
 | Real-time | Manual refresh + polling | WebSocket + auto-refresh |

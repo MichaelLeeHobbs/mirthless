@@ -16,19 +16,19 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: mirthless_test
-          POSTGRES_USER: mirthless
-          POSTGRES_PASSWORD: mirthless_test
+          POSTGRES_DB: galvaniflow_test
+          POSTGRES_USER: galvaniflow
+          POSTGRES_PASSWORD: galvaniflow_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U mirthless -d mirthless_test"
+          --health-cmd "pg_isready -U galvaniflow -d galvaniflow_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://mirthless:mirthless_test@localhost:5432/mirthless_test
+      DATABASE_URL: postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test
       JWT_SECRET: ci-test-secret-that-is-at-least-32-characters-long
       NODE_ENV: test
       LOG_LEVEL: error
@@ -86,19 +86,19 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: mirthless_test
-          POSTGRES_USER: mirthless
-          POSTGRES_PASSWORD: mirthless_test
+          POSTGRES_DB: galvaniflow_test
+          POSTGRES_USER: galvaniflow
+          POSTGRES_PASSWORD: galvaniflow_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U mirthless -d mirthless_test"
+          --health-cmd "pg_isready -U galvaniflow -d galvaniflow_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://mirthless:mirthless_test@localhost:5432/mirthless_test
+      DATABASE_URL: postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test
       JWT_SECRET: ci-test-secret-that-is-at-least-32-characters-long
       NODE_ENV: test
       LOG_LEVEL: error

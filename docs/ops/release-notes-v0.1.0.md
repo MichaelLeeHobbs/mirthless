@@ -1,6 +1,6 @@
-# Mirthless v0.1.0 Release Notes
+# GalvaniFlow v0.1.0 Release Notes
 
-The first tagged release of Mirthless, an open-source healthcare integration engine for
+The first tagged release of GalvaniFlow, an open-source healthcare integration engine for
 Node.js. Treat it as an early release: it has passed a 3-hour, 1-million-message soak test,
 but it is single-node, and several security controls are opt-in (see below).
 

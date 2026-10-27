@@ -1,7 +1,7 @@
 # ===========================================
-# Initialize Mirthless Database (Windows)
+# Initialize GalvaniFlow Database (Windows)
 # ===========================================
-# Creates the mirthless database and user on a local PostgreSQL instance.
+# Creates the galvaniflow database and user on a local PostgreSQL instance.
 # Safe to run multiple times — uses IF NOT EXISTS / ON CONFLICT.
 #
 # Prerequisites:
@@ -19,15 +19,15 @@ param(
     [string]$PgPort     = "5432",
     [string]$PgUser     = "postgres",
     [string]$PgPassword = "postgres",
-    [string]$DbName     = "mirthless",
-    [string]$DbUser     = "mirthless",
-    [string]$DbPassword = "mirthless_dev"
+    [string]$DbName     = "galvaniflow",
+    [string]$DbUser     = "galvaniflow",
+    [string]$DbPassword = "galvaniflow_dev"
 )
 
 $ErrorActionPreference = "Stop"
 $env:PGPASSWORD = $PgPassword
 
-Write-Host "=== Mirthless Database Setup ===" -ForegroundColor Cyan
+Write-Host "=== GalvaniFlow Database Setup ===" -ForegroundColor Cyan
 Write-Host "  Host:     ${PgHost}:${PgPort}"
 Write-Host "  Admin:    ${PgUser}"
 Write-Host "  Database: ${DbName}"

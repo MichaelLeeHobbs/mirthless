@@ -4,11 +4,11 @@ Instructions for AI coding agents (Claude Code, Codex and others) working in thi
 
 ## Project Overview
 
-**Mirthless** — A modern, open-source healthcare integration engine built from scratch in Node.js/TypeScript. Spiritual successor to NextGen Connect (Mirth Connect), redesigned natively for the Node.js ecosystem.
+**GalvaniFlow** — A modern, open-source healthcare integration engine built from scratch in Node.js/TypeScript. Spiritual successor to NextGen Connect (Mirth Connect), redesigned natively for the Node.js ecosystem.
 
-> The project name "mirthless" is a working title. Centralized in package.json `name` field.
+> The project is named GalvaniFlow (formerly Mirthless). The name is centralized in the package.json `name` field.
 
-Mirthless is a message routing and transformation engine for healthcare systems. Core concepts:
+GalvaniFlow is a message routing and transformation engine for healthcare systems. Core concepts:
 
 - **Channels** — message processing pipelines with a source connector (inbound) and destination connectors (outbound)
 - **Connectors** — protocol adapters: TCP/MLLP (HL7), HTTP/REST, File, Database, DICOM, FHIR, SMTP, JavaScript

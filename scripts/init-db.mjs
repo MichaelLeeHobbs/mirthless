@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // ===========================================
-// Initialize Mirthless Database (Cross-Platform)
+// Initialize GalvaniFlow Database (Cross-Platform)
 // ===========================================
-// Creates the mirthless database and user on a local PostgreSQL instance.
+// Creates the galvaniflow database and user on a local PostgreSQL instance.
 // Safe to run multiple times — checks for existing user/database.
 //
 // Usage:
@@ -14,9 +14,9 @@
 //   PGPORT       PostgreSQL port          (default: 5432)
 //   PGUSER       Superuser for setup      (default: postgres)
 //   PGPASSWORD   Superuser password       (default: postgres)
-//   DB_NAME      Database to create       (default: mirthless)
-//   DB_USER      App user to create       (default: mirthless)
-//   DB_PASSWORD  App user password        (default: mirthless_dev)
+//   DB_NAME      Database to create       (default: galvaniflow)
+//   DB_USER      App user to create       (default: galvaniflow)
+//   DB_PASSWORD  App user password        (default: galvaniflow_dev)
 //
 // Platform scripts also available:
 //   Linux/macOS:  ./scripts/init-db.sh
@@ -30,12 +30,12 @@ const PGHOST     = process.env.PGHOST     || 'localhost';
 const PGPORT     = process.env.PGPORT     || '5432';
 const PGUSER     = process.env.PGUSER     || 'postgres';
 const PGPASSWORD = process.env.PGPASSWORD || 'postgres';
-const DB_NAME    = process.env.DB_NAME    || 'mirthless';
-const DB_USER    = process.env.DB_USER    || 'mirthless';
-const DB_PASSWORD= process.env.DB_PASSWORD|| 'mirthless_dev';
+const DB_NAME    = process.env.DB_NAME    || 'galvaniflow';
+const DB_USER    = process.env.DB_USER    || 'galvaniflow';
+const DB_PASSWORD= process.env.DB_PASSWORD|| 'galvaniflow_dev';
 
 async function main() {
-  console.log('=== Mirthless Database Setup ===');
+  console.log('=== GalvaniFlow Database Setup ===');
   console.log(`  Host:     ${PGHOST}:${PGPORT}`);
   console.log(`  Admin:    ${PGUSER}`);
   console.log(`  Database: ${DB_NAME}`);

@@ -1,7 +1,7 @@
 # TLS Termination & PHI-in-Transit
 
 Message content is PHI. **PHI must never traverse a network in plaintext.** TLS
-applies at two independent layers in Mirthless, and a compliant deployment secures
+applies at two independent layers in GalvaniFlow, and a compliant deployment secures
 both:
 
 1. **The admin/API edge** — the web UI and REST/WebSocket API, fronted by nginx.

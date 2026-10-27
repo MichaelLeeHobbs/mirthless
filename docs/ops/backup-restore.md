@@ -1,6 +1,6 @@
 # Backup & Restore
 
-Mirthless has **two independent backup layers**, and a complete disaster-recovery
+GalvaniFlow has **two independent backup layers**, and a complete disaster-recovery
 plan uses both:
 
 1. **Postgres database backup** (`pg_dump`) — the full source of truth: channels,
@@ -19,18 +19,24 @@ plan uses both:
 ## 1. Postgres Database Backup (full)
 
 This is the authoritative backup. The production stack runs Postgres 17 in the
-`mirthless-db-prod` container (`mirthless-db` in the dev compose), database `mirthless`,
-user `mirthless`, with data on the named volume `postgres_data`.
+`galvaniflow-db-prod` container (`galvaniflow-db` in the dev compose), database `galvaniflow`,
+user `galvaniflow`, with data on the named volume `postgres_data`.
+
+> **Installs created before the GalvaniFlow rename** keep the database and user
+> `mirthless` (set as `POSTGRES_DB` / `POSTGRES_USER`, see [Upgrade](upgrade.md#renamed-from-mirthless)).
+> Use `-U mirthless -d mirthless` in the commands below. The container is still
+> `galvaniflow-db-prod` once the stack has been restarted on the new compose file;
+> before that it is `mirthless-db-prod`.
 
 ### Logical backup with `pg_dump` (recommended)
 
 Run a compressed custom-format dump against the running container:
 
 ```bash
-# Production compose: container name is mirthless-db-prod
-docker exec -t mirthless-db-prod \
-  pg_dump -U mirthless -d mirthless -F c \
-  > mirthless-$(date +%Y%m%d-%H%M%S).dump
+# Production compose: container name is galvaniflow-db-prod
+docker exec -t galvaniflow-db-prod \
+  pg_dump -U galvaniflow -d galvaniflow -F c \
+  > galvaniflow-$(date +%Y%m%d-%H%M%S).dump
 ```
 
 `-F c` (custom format) enables selective, parallel `pg_restore` and is smaller than
@@ -40,7 +46,7 @@ file.
 Automate it with a cron job on the host (example: nightly at 02:00, keep 14 days):
 
 ```cron
-0 2 * * * docker exec -t mirthless-db-prod pg_dump -U mirthless -d mirthless -F c > /backups/mirthless-$(date +\%Y\%m\%d).dump && find /backups -name 'mirthless-*.dump' -mtime +14 -delete
+0 2 * * * docker exec -t galvaniflow-db-prod pg_dump -U galvaniflow -d galvaniflow -F c > /backups/galvaniflow-$(date +\%Y\%m\%d).dump && find /backups -name 'galvaniflow-*.dump' -mtime +14 -delete
 ```
 
 ### Restore with `pg_restore`
@@ -53,12 +59,12 @@ writes during the restore.
 docker compose -f docker/docker-compose.prod.yml stop server web
 
 # Drop & recreate the database, then restore
-docker exec -t mirthless-db-prod psql -U mirthless -d postgres \
-  -c "DROP DATABASE IF EXISTS mirthless WITH (FORCE);" \
-  -c "CREATE DATABASE mirthless OWNER mirthless;"
+docker exec -t galvaniflow-db-prod psql -U galvaniflow -d postgres \
+  -c "DROP DATABASE IF EXISTS galvaniflow WITH (FORCE);" \
+  -c "CREATE DATABASE galvaniflow OWNER galvaniflow;"
 
-cat mirthless-20260712-020000.dump | \
-  docker exec -i mirthless-db-prod pg_restore -U mirthless -d mirthless --no-owner
+cat galvaniflow-20260712-020000.dump | \
+  docker exec -i galvaniflow-db-prod pg_restore -U galvaniflow -d galvaniflow --no-owner
 
 # Bring the app back up (entrypoint re-runs migrations idempotently)
 docker compose -f docker/docker-compose.prod.yml start server web
@@ -76,14 +82,15 @@ You can also back up the raw `postgres_data` volume, but only while Postgres is
 
 ```bash
 docker compose -f docker/docker-compose.prod.yml stop
-docker run --rm -v mirthless_postgres_data:/data -v "$PWD":/backup alpine \
+docker run --rm -v docker_postgres_data:/data -v "$PWD":/backup alpine \
   tar czf /backup/pgdata-$(date +%Y%m%d).tar.gz -C /data .
 docker compose -f docker/docker-compose.prod.yml start
 ```
 
 Prefer `pg_dump` for routine backups; use volume snapshots only for full-machine
-disaster recovery. (The actual volume name is `<project>_postgres_data`; check with
-`docker volume ls`.)
+disaster recovery. (The volume name is `<project>_postgres_data`. The compose project
+defaults to the compose file's folder, `docker`, so it is `docker_postgres_data` unless you
+run compose with `-p`; check with `docker volume ls`.)
 
 ---
 
@@ -108,7 +115,7 @@ Both require authentication (JWT bearer). The `admin` role holds both permission
 ```bash
 curl -s https://your-host/api/v1/system/backup \
   -H "Authorization: Bearer $TOKEN" \
-  | jq '.data' > mirthless-config-$(date +%Y%m%d).json
+  | jq '.data' > galvaniflow-config-$(date +%Y%m%d).json
 ```
 
 The response is `{ "success": true, "data": { ... } }`. The `data` object
@@ -144,7 +151,7 @@ The response is `{ "success": true, "data": { ... } }`. The `data` object
 curl -s -X POST https://your-host/api/v1/system/backup \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "collisionMode": "SKIP", "backup": '"$(cat mirthless-config-20260712.json)"' }'
+  -d '{ "collisionMode": "SKIP", "backup": '"$(cat galvaniflow-config-20260712.json)"' }'
 ```
 
 `collisionMode`:

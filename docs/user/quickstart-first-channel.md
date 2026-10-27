@@ -6,7 +6,7 @@ Allow about 10 minutes.
 
 ## Prerequisites
 
-- Mirthless running (`pnpm dev`, or the Docker prod stack — see the repo README).
+- GalvaniFlow running (`pnpm dev`, or the Docker prod stack — see the repo README).
 - The web UI open at `http://localhost:5173` (dev) or your deployed URL.
 - Logged in. The seeded admin account is `admin` / `Admin123!` — change this password.
 
@@ -60,7 +60,7 @@ The destination is the outbound side — where transformed messages go.
 1. Open the **Destinations** tab and add a destination.
 2. Choose connector type **FILE**.
 3. Set the key fields:
-   - **Directory** — an output folder the server can write to, e.g. `/tmp/mirthless-out`.
+   - **Directory** — an output folder the server can write to, e.g. `/tmp/galvaniflow-out`.
    - **Output Pattern** — file name template, e.g. `${messageId}.hl7`.
 4. Each destination can have its own transformer/filter. For now leave them empty so the
    message is written as received.

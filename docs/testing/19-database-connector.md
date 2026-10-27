@@ -14,7 +14,7 @@
 | 3 | Set host | Type `db.example.com` | Value updates | |
 | 4 | Set port | Enter 5433 | Value updates | |
 | 5 | Set database name | Type `hl7_staging` | Value updates | |
-| 6 | Set username | Type `mirthless_user` | Value updates | |
+| 6 | Set username | Type `galvaniflow_user` | Value updates | |
 | 7 | Set password | Type password | Value masked with dots, value updates | |
 | 8 | Set SELECT query | Type multi-line SQL query | Monospace text area updates | |
 | 9 | Set UPDATE query | Type update SQL | Monospace text area updates | |

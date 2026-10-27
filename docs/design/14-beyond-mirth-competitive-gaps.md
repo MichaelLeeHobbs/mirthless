@@ -1,8 +1,8 @@
 # 14 — Beyond Mirth: Competitive Capability Gaps vs the Broader Integration Landscape
 
 > **Status:** Draft for review · **Date:** 2026-07-15 · **Owner:** Michael Hobbs
-> **Scope:** Capabilities that *other* integration engines and health-data platforms offer that Mirthless lacks — deliberately looking **past** Mirth/OIE parity (docs [12](./12-connector-parity-gap-analysis.md), [13](./13-non-connector-gap-analysis.md)) to "what should a modern engine that isn't shackled to Mirth's legacy aim for?"
-> **Method:** A 6-category survey (healthcare engines, iPaaS/low-code, streaming, workflow/EIP, FHIR/interop, platform/DevEx) → adversarial verification of each candidate against both the cited product's real capabilities and a grounded Mirthless inventory. 68 candidates → **35 confirmed gaps, 33 partial, 0 rejected** (75 agents). Engines surveyed: Rhapsody, Cloverleaf, Corepoint, InterSystems IRIS for Health, Smile CDR, HAPI FHIR, MuleSoft, Boomi, Workato, Tray, n8n, WSO2, Kafka/Confluent, Pulsar, NATS, Redpanda, Apache Camel, NiFi, Node-RED, Camunda/Zeebe, Temporal, Kestra, Google/AWS/Azure health clouds, Redox, 1upHealth, Health Gorilla, Kong.
+> **Scope:** Capabilities that *other* integration engines and health-data platforms offer that GalvaniFlow lacks — deliberately looking **past** Mirth/OIE parity (docs [12](./12-connector-parity-gap-analysis.md), [13](./13-non-connector-gap-analysis.md)) to "what should a modern engine that isn't shackled to Mirth's legacy aim for?"
+> **Method:** A 6-category survey (healthcare engines, iPaaS/low-code, streaming, workflow/EIP, FHIR/interop, platform/DevEx) → adversarial verification of each candidate against both the cited product's real capabilities and a grounded GalvaniFlow inventory. 68 candidates → **35 confirmed gaps, 33 partial, 0 rejected** (75 agents). Engines surveyed: Rhapsody, Cloverleaf, Corepoint, InterSystems IRIS for Health, Smile CDR, HAPI FHIR, MuleSoft, Boomi, Workato, Tray, n8n, WSO2, Kafka/Confluent, Pulsar, NATS, Redpanda, Apache Camel, NiFi, Node-RED, Camunda/Zeebe, Temporal, Kestra, Google/AWS/Azure health clouds, Redox, 1upHealth, Health Gorilla, Kong.
 
 ---
 
@@ -102,7 +102,7 @@ Unlike most of this doc, EIP patterns (Apache Camel's heritage) are **core inter
 
 ## 6. Streaming & Event Infrastructure — *mostly integrate, don't rebuild*
 
-Real capabilities, but this is **Kafka's category, not ours.** Reimplementing a streaming platform inside a healthcare engine is the clearest example of scope dilution. The right move for most of these is a **Kafka/Pulsar connector** so Mirthless participates in a streaming backbone without becoming one. Cherry-pick only the few that are engine-local.
+Real capabilities, but this is **Kafka's category, not ours.** Reimplementing a streaming platform inside a healthcare engine is the clearest example of scope dilution. The right move for most of these is a **Kafka/Pulsar connector** so GalvaniFlow participates in a streaming backbone without becoming one. Cherry-pick only the few that are engine-local.
 
 | Capability | Relevance | Rec |
 |---|---|---|
@@ -114,7 +114,7 @@ Real capabilities, but this is **Kafka's category, not ours.** Reimplementing a 
 | **Stateful stream processing** (windowing, joins, aggregation) | valuable | ⛔ NON-GOAL / 🔗 integrate Flink/ksqlDB |
 | **Log compaction, tiered/infinite storage, geo-replication** | niche/valuable | ⛔ NON-GOAL |
 
-> **Recommendation:** ship a **Kafka (and/or NATS) connector** as the strategic answer to this whole row. It gives customers the streaming backbone they want and positions Mirthless as the *healthcare-aware edge* of an event platform, not a competitor to it.
+> **Recommendation:** ship a **Kafka (and/or NATS) connector** as the strategic answer to this whole row. It gives customers the streaming backbone they want and positions GalvaniFlow as the *healthcare-aware edge* of an event platform, not a competitor to it.
 
 ---
 
@@ -219,7 +219,7 @@ If I had to compress 68 candidates into a bet: **spend the no-legacy advantage o
 ## 14. Method, Confidence & Caveats
 
 - **Verification upgraded strictness:** the verify pass repeatedly corrected researcher "partial" claims to "absent" (e.g. FHIR facade, SMART, IG validation, external secrets, silent-interface alerting) — the gaps are, if anything, *cleaner* than first surveyed. All 35 confirmed items are high-confidence.
-- **0 rejected** is expected here, not suspicious: researchers were given the grounded Mirthless inventory up front and pre-filtered things we already ship (TLS, RBAC, FHIR client, Prometheus, revision history, etc.), so few false candidates reached verify.
+- **0 rejected** is expected here, not suspicious: researchers were given the grounded GalvaniFlow inventory up front and pre-filtered things we already ship (TLS, RBAC, FHIR client, Prometheus, revision history, etc.), so few false candidates reached verify.
 - **The dominant caveat, restated:** most confirmed items are *beyond-Mirth platform expansions*, which is exactly what was requested — but it means this doc is a **strategy menu, not a defect list.** Treat 🟢 PURSUE items as roadmap candidates *after* the doc 12/13 blockers; treat ⛔/🔗 items as scope discipline.
 - **Dedup:** semantic duplicates across surveys (terminology ×2, EMPI/patient-matching ×2, FHIR facade/repository ×3, durable workflow ×3, visual canvas ×2, backpressure ×2) are merged in the tables above.
 

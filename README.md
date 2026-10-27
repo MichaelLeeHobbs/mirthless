@@ -1,4 +1,4 @@
-# Mirthless
+# GalvaniFlow
 
 > A modern, open-source healthcare integration engine. Think Mirth Connect, but built from scratch for Node.js — no Java, no desktop client, no paywall tiers.
 
@@ -13,7 +13,7 @@ Mirth Connect (NextGen Connect) is the de facto standard for healthcare integrat
 - **Paywalled** — RBAC, MFA, channel history, cross-channel search? That'll be $$$ for the Gold tier
 - **Closed direction** — increasingly proprietary with each release
 
-Mirthless keeps what works (channels, transformers, filters, the pipeline model) and rebuilds everything else for the modern era.
+GalvaniFlow keeps what works (channels, transformers, filters, the pipeline model) and rebuilds everything else for the modern era.
 
 ## What's Different
 
@@ -68,7 +68,7 @@ The API is served behind nginx on port 80; interactive API docs (Swagger UI) are
 
 ### Operations
 
-Running Mirthless in production? See the operator guides in [`docs/ops/`](docs/ops/):
+Running GalvaniFlow in production? See the operator guides in [`docs/ops/`](docs/ops/):
 
 - [Deployment](docs/ops/deployment.md) — first install, required settings, listener ports, known limitations
 - [Backup & restore](docs/ops/backup-restore.md) — Postgres `pg_dump`/`pg_restore` plus the config backup API
