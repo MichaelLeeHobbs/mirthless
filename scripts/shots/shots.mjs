@@ -40,6 +40,8 @@ const PAGES = {
   events: '/events',
   settings: '/settings',
   system: '/system',
+  'system-logs': '/system/logs',
+  'system-pruner': '/system/pruner',
   tags: '/tags',
   'alert-editor': '/alerts/a1',
   'code-templates': '/code-templates',

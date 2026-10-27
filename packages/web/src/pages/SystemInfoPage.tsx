@@ -1,271 +1,109 @@
 // ===========================================
 // System Info Page
 // ===========================================
-// Displays server info, memory usage, DB status, engine stats, OS info.
+// One page for running the server, split into tabs whose state lives in the
+// path (/system, /system/logs, /system/pruner, /system/backup) so each is
+// bookmarkable, back-button correct and one click away. Only the active tab is
+// mounted, so leaving Overview stops its poll and leaving Logs closes the stream.
 
 import type { ReactNode } from 'react';
+import { Navigate, useNavigate, useParams } from 'react-router';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Grid from '@mui/material/Grid';
-import Paper from '@mui/material/Paper';
-import LinearProgress from '@mui/material/LinearProgress';
-import Chip from '@mui/material/Chip';
-import { useSystemInfo } from '../hooks/use-system-info.js';
+import Button from '@mui/material/Button';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { useSystemInfo, type SystemInfo } from '../hooks/use-system-info.js';
+import { useNotification } from '../stores/notification.store.js';
 import { BackupRestoreSection } from '../components/system/BackupRestoreSection.js';
 import { PrunerSection } from '../components/system/PrunerSection.js';
 import { LogViewer } from '../components/system/LogViewer.js';
+import { SystemOverview } from '../components/system/SystemOverview.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { LoadingBlock } from '../components/common/states/LoadingState.js';
-import { FONT_FAMILY_MONO } from '../styles/tokens.js';
+import { diagnosticsText } from '../lib/system-health.js';
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / Math.pow(1024, i);
-  return `${value.toFixed(1)} ${units[i]}`;
-}
-
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const parts: string[] = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
-  parts.push(`${mins}m`);
-  return parts.join(' ');
-}
-
-interface MemoryBarProps {
+interface SystemTab {
+  /** Path segment after /system; empty for the default tab. */
+  readonly slug: string;
   readonly label: string;
-  readonly used: number;
-  readonly total: number;
+  readonly description: string;
 }
 
-function MemoryBar({ label, used, total }: MemoryBarProps): ReactNode {
-  const percent = total > 0 ? (used / total) * 100 : 0;
-  const color = percent > 90 ? 'error' : percent > 70 ? 'warning' : 'primary';
+const SYSTEM_TABS: readonly SystemTab[] = [
+  { slug: '', label: 'Overview', description: 'Server, database, engine and memory health at a glance.' },
+  { slug: 'logs', label: 'Logs', description: 'The live server log, filterable by level and text.' },
+  { slug: 'pruner', label: 'Data pruner', description: 'Schedule or run the pruner that removes old message content.' },
+  { slug: 'backup', label: 'Backup & restore', description: 'Download a configuration backup or restore one.' },
+];
 
+const pathFor = (slug: string): string => (slug ? `/system/${slug}` : '/system');
+
+function CopyDiagnosticsButton({ info }: { readonly info: SystemInfo | undefined }): ReactNode {
+  const { notify } = useNotification();
+  const copy = (): void => {
+    if (!info) return;
+    navigator.clipboard.writeText(diagnosticsText(info, new Date())).then(
+      () => notify('Diagnostics copied to the clipboard', 'success'),
+      () => notify('Could not copy to the clipboard', 'error'),
+    );
+  };
   return (
-    <Box sx={{ mb: 2 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-        <Typography variant="body2" sx={{
-          color: 'text.secondary'
-        }}>{label}</Typography>
-        <Typography variant="body2" sx={{
-          color: 'text.secondary'
-        }}>
-          {formatBytes(used)} / {formatBytes(total)} ({percent.toFixed(1)}%)
-        </Typography>
-      </Box>
-      <LinearProgress variant="determinate" value={percent} color={color} sx={{ height: 8, borderRadius: 1 }} />
-    </Box>
+    <Button variant="outlined" startIcon={<ContentCopyIcon />} onClick={copy} disabled={!info}>
+      Copy diagnostics
+    </Button>
   );
 }
 
-interface InfoRowProps {
-  readonly label: string;
-  readonly value: string | number;
-}
-
-function InfoRow({ label, value }: InfoRowProps): ReactNode {
+function OverviewTab({ query }: { readonly query: ReturnType<typeof useSystemInfo> }): ReactNode {
+  const { data, isLoading, error, refetch } = query;
   return (
-    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.75 }}>
-      <Typography variant="body2" sx={{
-        color: 'text.secondary'
-      }}>{label}</Typography>
-      <Typography variant="body2" sx={{ fontFamily: FONT_FAMILY_MONO }}>{value}</Typography>
-    </Box>
+    <>
+      {error ? (
+        <ErrorState title="Couldn't load system info" error={error} onRetry={() => void refetch()} sx={{ mb: 2 }} />
+      ) : null}
+      {isLoading ? <LoadingBlock label="Loading system information" /> : null}
+      {data ? <SystemOverview info={data} /> : null}
+    </>
   );
 }
 
 export function SystemInfoPage(): ReactNode {
-  const { data: info, isLoading, isFetching, error, refetch } = useSystemInfo();
+  const { tab = '' } = useParams<{ tab: string }>();
+  const navigate = useNavigate();
+  const active = SYSTEM_TABS.find((t) => t.slug === tab);
+  const onOverview = active?.slug === '';
+  const query = useSystemInfo(onOverview);
+
+  // An unknown tab (a typo, an old bookmark) lands on Overview rather than a blank page.
+  if (!active) return <Navigate to="/system" replace />;
 
   return (
     <Box>
       <PageHeader
         title="System Information"
-        description="Server, database, memory, and engine status at a glance."
-        isFetching={isFetching && !isLoading}
+        description={active.description}
+        isFetching={onOverview && query.isFetching && !query.isLoading}
+        actions={onOverview ? <CopyDiagnosticsButton info={query.data} /> : undefined}
       />
 
-      {error ? (
-        <ErrorState
-          title="Couldn't load system info"
-          error={error}
-          onRetry={() => void refetch()}
-          sx={{ mb: 2 }}
-        />
-      ) : null}
+      <Tabs
+        value={active.slug}
+        onChange={(_e, slug: string) => { navigate(pathFor(slug)); }}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        sx={{ mb: 2.5, borderBottom: 1, borderColor: 'divider' }}
+      >
+        {SYSTEM_TABS.map((t) => <Tab key={t.slug} value={t.slug} label={t.label} />)}
+      </Tabs>
 
-      {isLoading ? <LoadingBlock label="Loading system information" /> : null}
-
-      {info && (
-        <Grid container spacing={3}>
-          {/* Server Info */}
-          <Grid
-            size={{
-              xs: 12,
-              md: 6
-            }}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" sx={{ mb: 2 }}>Server</Typography>
-              <InfoRow label="Version" value={info.server.version} />
-              <InfoRow label="Node.js" value={info.server.nodeVersion} />
-              <InfoRow label="Environment" value={info.server.env} />
-              <InfoRow label="PID" value={info.server.pid} />
-              <InfoRow label="Uptime" value={formatUptime(info.server.uptime)} />
-            </Paper>
-          </Grid>
-
-          {/* Database Status */}
-          <Grid
-            size={{
-              xs: 12,
-              md: 6
-            }}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" sx={{ mb: 2 }}>Database</Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography variant="body2" sx={{
-                  color: 'text.secondary'
-                }}>Status:</Typography>
-                <Chip
-                  label={info.database.connected ? 'Connected' : 'Disconnected'}
-                  size="small"
-                  color={info.database.connected ? 'success' : 'error'}
-                />
-              </Box>
-            </Paper>
-          </Grid>
-
-          {/* Process Memory */}
-          <Grid
-            size={{
-              xs: 12,
-              md: 6
-            }}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" sx={{ mb: 2 }}>Process Memory</Typography>
-              <MemoryBar label="Heap" used={info.memory.heapUsed} total={info.memory.heapTotal} />
-              <InfoRow label="RSS" value={formatBytes(info.memory.rss)} />
-              <InfoRow label="External" value={formatBytes(info.memory.external)} />
-            </Paper>
-          </Grid>
-
-          {/* OS Memory */}
-          <Grid
-            size={{
-              xs: 12,
-              md: 6
-            }}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" sx={{ mb: 2 }}>Operating System</Typography>
-              <MemoryBar
-                label="System Memory"
-                used={info.os.totalMemory - info.os.freeMemory}
-                total={info.os.totalMemory}
-              />
-              <InfoRow label="Platform" value={info.os.platform} />
-              <InfoRow label="Architecture" value={info.os.arch} />
-            </Paper>
-          </Grid>
-
-          {/* Engine Stats */}
-          <Grid size={12}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" sx={{ mb: 2 }}>Engine</Typography>
-              <Grid container spacing={2}>
-                <Grid
-                  size={{
-                    xs: 6,
-                    sm: 3
-                  }}>
-                  <Typography variant="h4" sx={{ fontWeight: 600, textAlign: 'center' }}>
-                    {info.engine.deployed}
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: 'text.secondary',
-                      textAlign: 'center'
-                    }}>
-                    Deployed
-                  </Typography>
-                </Grid>
-                <Grid
-                  size={{
-                    xs: 6,
-                    sm: 3
-                  }}>
-                  <Typography variant="h4" sx={{ fontWeight: 600, textAlign: 'center', color: 'success.main' }}>
-                    {info.engine.started}
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: 'text.secondary',
-                      textAlign: 'center'
-                    }}>
-                    Started
-                  </Typography>
-                </Grid>
-                <Grid
-                  size={{
-                    xs: 6,
-                    sm: 3
-                  }}>
-                  <Typography variant="h4" sx={{ fontWeight: 600, textAlign: 'center', color: 'error.main' }}>
-                    {info.engine.stopped}
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: 'text.secondary',
-                      textAlign: 'center'
-                    }}>
-                    Stopped
-                  </Typography>
-                </Grid>
-                <Grid
-                  size={{
-                    xs: 6,
-                    sm: 3
-                  }}>
-                  <Typography variant="h4" sx={{ fontWeight: 600, textAlign: 'center', color: 'warning.main' }}>
-                    {info.engine.paused}
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: 'text.secondary',
-                      textAlign: 'center'
-                    }}>
-                    Paused
-                  </Typography>
-                </Grid>
-              </Grid>
-            </Paper>
-          </Grid>
-        </Grid>
-      )}
-
-      {/* Data Pruner */}
-      <Box sx={{ mt: 3 }}>
-        <PrunerSection />
-      </Box>
-
-      {/* Server Logs */}
-      <Box sx={{ mt: 3 }}>
-        <LogViewer />
-      </Box>
-
-      {/* Backup & Restore */}
-      <Box sx={{ mt: 3 }}>
-        <BackupRestoreSection />
+      <Box role="tabpanel" aria-label={active.label}>
+        {onOverview ? <OverviewTab query={query} /> : null}
+        {active.slug === 'logs' ? <LogViewer /> : null}
+        {active.slug === 'pruner' ? <PrunerSection /> : null}
+        {active.slug === 'backup' ? <BackupRestoreSection /> : null}
       </Box>
     </Box>
   );
