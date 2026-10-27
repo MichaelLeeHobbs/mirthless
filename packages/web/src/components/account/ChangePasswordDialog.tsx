@@ -12,6 +12,7 @@ import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import Stack from '@mui/material/Stack';
+import { useQueryClient } from '@tanstack/react-query';
 import { useChangeOwnPassword } from '../../hooks/use-users.js';
 import { useNotification } from '../../stores/notification.store.js';
 import { useAuthStore } from '../../stores/auth.store.js';
@@ -30,6 +31,7 @@ const MIN_LENGTH = 8;
 
 export function ChangePasswordDialog({ open, onClose, forced = false }: ChangePasswordDialogProps): ReactNode {
   const changePassword = useChangeOwnPassword();
+  const queryClient = useQueryClient();
   const { notify } = useNotification();
   const clearMustChangePassword = useAuthStore((state) => state.clearMustChangePassword);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -69,6 +71,8 @@ export function ChangePasswordDialog({ open, onClose, forced = false }: ChangePa
           reset();
           if (forced) {
             clearMustChangePassword();
+            // Everything fetched before the change was refused with 403; load it now.
+            void queryClient.invalidateQueries();
           }
           onClose();
         },
