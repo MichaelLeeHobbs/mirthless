@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-27 — Rename to GalvaniFlow (branch `claude/project-thread-fxf1aq`)
+
+Michael: the app will be renamed GalvaniFlow; do it before tagging v0.1.0.
+
+- **Package scope** `@mirthless/*` → `@galvaniflow/*`, root package `galvaniflow`.
+- **Product name** in the UI, OpenAPI title, server log, seeds, CLI (`galvaniflow`, config `~/.galvaniflow` with `~/.mirthless` fallback), Prometheus metrics (`galvaniflow_*`), browser storage keys (theme falls back to the old key), DICOM AE title and HL7 MSH-3/ACK defaults (`GALVANIFLOW`).
+- **No reprocessing after upgrade:** the old quarantine ledger is merged on load and the old IMAP dispatched keyword still counts (D-205), with tests.
+- **Infra and docs:** Docker container/network names, image prefix, CI and dev Postgres defaults, init-db scripts, `.env` examples, all docs outside `docs/progress/`. Prod compose takes `POSTGRES_DB`/`POSTGRES_USER` so existing volumes keep working; `docs/ops/upgrade.md` has a "Renamed from Mirthless" section.
+- Not done here: renaming the GitHub repository (Michael's click); repo URLs still point at `mirthless` and GitHub will redirect.
+
 ## 2026-10-27 — Breadcrumbs in the header, centred "Jump to" (branch `claude/project-thread-t9fahq`)
 
 Michael: move breadcrumbs into the header bar to stop wasting space, most views have none; centre the Ctrl+K "Jump to".
