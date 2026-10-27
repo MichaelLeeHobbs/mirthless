@@ -282,7 +282,7 @@ async function seedAlert(db: Db): Promise<void> {
     channelIds: [],
     actions: [{ type: 'EMAIL', recipients: ['oncall@example.com'] }],
     subjectTemplate: 'Mirthless error on ${channelName}',
-    bodyTemplate: 'A channel error occurred: ${error}',
+    bodyTemplate: 'A channel error occurred at ${timestamp}: ${errorMessage}',
     reAlertIntervalMs: null,
     maxAlerts: null,
   };

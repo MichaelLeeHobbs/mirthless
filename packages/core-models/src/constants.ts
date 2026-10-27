@@ -179,6 +179,20 @@ export const ERROR_EVENT_TYPE = {
 } as const;
 export type ErrorEventType = (typeof ERROR_EVENT_TYPE)[keyof typeof ERROR_EVENT_TYPE];
 
+/**
+ * Placeholders an alert's subject and body templates may use, written `${name}`.
+ * The engine substitutes exactly these and the editor lists exactly these.
+ */
+export const ALERT_TEMPLATE_VARIABLES = [
+  { name: 'alertName', description: 'Name of the alert' },
+  { name: 'channelName', description: 'Name of the channel that raised the error' },
+  { name: 'channelId', description: 'ID of the channel that raised the error' },
+  { name: 'errorType', description: 'Kind of error, e.g. SOURCE_CONNECTOR or NO_MESSAGES' },
+  { name: 'errorMessage', description: 'The error message' },
+  { name: 'timestamp', description: 'When the error happened (ISO 8601, UTC)' },
+] as const;
+export type AlertTemplateVariable = (typeof ALERT_TEMPLATE_VARIABLES)[number]['name'];
+
 // --- Channel Scripts ---
 
 export const CHANNEL_SCRIPT_TYPE = {
