@@ -34,6 +34,7 @@ import { NAV_SECTIONS } from './nav-items.js';
 import { KeyboardShortcutHelp } from '../common/KeyboardShortcutHelp.js';
 import { CommandPalette } from './CommandPalette.js';
 import { JumpToButton } from './JumpToButton.js';
+import { HeaderBreadcrumbs } from './HeaderBreadcrumbs.js';
 import { ChangePasswordDialog } from '../account/ChangePasswordDialog.js';
 import { AboutDialog } from '../account/AboutDialog.js';
 
@@ -204,22 +205,31 @@ export function AppLayout(): ReactNode {
         }}
         elevation={0}
       >
-        <Toolbar>
-          <IconButton
-            edge="start"
-            color="inherit"
-            aria-label="toggle sidebar"
-            onClick={isMobile ? () => setMobileOpen((open) => !open) : toggleSidebar}
-            sx={{ mr: 2 }}
-          >
-            <MenuIcon />
-          </IconButton>
-          <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Toolbar
+          sx={{
+            // Three columns keep "Jump to" centred in the bar whatever the trail's
+            // length; on a phone it joins the icons on the right.
+            display: 'grid',
+            gridTemplateColumns: isMobile ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr) auto minmax(0, 1fr)',
+            columnGap: 2,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0 }}>
+            <IconButton
+              edge="start"
+              color="inherit"
+              aria-label="toggle sidebar"
+              onClick={isMobile ? () => setMobileOpen((open) => !open) : toggleSidebar}
+              sx={{ mr: 0.75 }}
+            >
+              <MenuIcon />
+            </IconButton>
             <Box
               sx={{
-                display: 'inline-flex',
+                display: { xs: 'none', sm: 'inline-flex' },
                 alignItems: 'center',
                 justifyContent: 'center',
+                flexShrink: 0,
                 width: 30,
                 height: 30,
                 borderRadius: 1.5,
@@ -232,57 +242,62 @@ export function AppLayout(): ReactNode {
             <Typography
               variant="h6"
               component="div"
-              sx={{ fontWeight: 700, letterSpacing: '-0.01em', color: 'text.primary' }}
+              sx={{ display: { xs: 'none', lg: 'block' }, fontWeight: 700, letterSpacing: '-0.01em', color: 'text.primary' }}
             >
               Mirthless
             </Typography>
+            <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', lg: 'block' }, my: 2, mx: 0.5 }} />
+            <HeaderBreadcrumbs compact={isMobile} />
           </Box>
-          <JumpToButton compact={isMobile} onClick={handlePaletteOpen} />
-          <Tooltip title={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-            <IconButton color="inherit" onClick={toggleThemeMode} aria-label="toggle theme" sx={{ mr: 1 }}>
-              {themeMode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+          {isMobile ? null : <JumpToButton compact={false} onClick={handlePaletteOpen} />}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifySelf: 'end' }}>
+            {isMobile ? <JumpToButton compact onClick={handlePaletteOpen} /> : null}
+            <Tooltip title={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+              <IconButton color="inherit" onClick={toggleThemeMode} aria-label="toggle theme" sx={{ mr: 1 }}>
+                {themeMode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+              </IconButton>
+            </Tooltip>
+            <IconButton color="inherit" onClick={handleUserMenuOpen} aria-label="user menu">
+              <AccountCircleIcon />
             </IconButton>
-          </Tooltip>
-          <IconButton color="inherit" onClick={handleUserMenuOpen} aria-label="user menu">
-            <AccountCircleIcon />
-          </IconButton>
-          <Menu
-            anchorEl={anchorEl}
-            open={userMenuOpen}
-            onClose={handleUserMenuClose}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-          >
-            {user ? (
-              <MenuItem disabled>
-                <Typography variant="body2" sx={{
-                  color: 'text.secondary'
-                }}>
-                  {user.username} ({user.role})
-                </Typography>
+            <Menu
+              anchorEl={anchorEl}
+              open={userMenuOpen}
+              onClose={handleUserMenuClose}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            >
+              {user ? (
+                <MenuItem disabled>
+                  <Typography variant="body2" sx={{
+                    color: 'text.secondary'
+                  }}>
+                    {user.username} ({user.role})
+                  </Typography>
+                </MenuItem>
+              ) : null}
+              <Divider />
+              <MenuItem onClick={() => { handleUserMenuClose(); setChangePasswordOpen(true); }}>
+                <ListItemIcon>
+                  <LockResetIcon fontSize="small" />
+                </ListItemIcon>
+                Change Password
               </MenuItem>
-            ) : null}
-            <Divider />
-            <MenuItem onClick={() => { handleUserMenuClose(); setChangePasswordOpen(true); }}>
-              <ListItemIcon>
-                <LockResetIcon fontSize="small" />
-              </ListItemIcon>
-              Change Password
-            </MenuItem>
-            <MenuItem onClick={() => { handleUserMenuClose(); setAboutOpen(true); }}>
-              <ListItemIcon>
-                <InfoIcon fontSize="small" />
-              </ListItemIcon>
-              About
-            </MenuItem>
-            <Divider />
-            <MenuItem onClick={handleLogout}>
-              <ListItemIcon>
-                <LogoutIcon fontSize="small" />
-              </ListItemIcon>
-              Logout
-            </MenuItem>
-          </Menu>
+              <MenuItem onClick={() => { handleUserMenuClose(); setAboutOpen(true); }}>
+                <ListItemIcon>
+                  <InfoIcon fontSize="small" />
+                </ListItemIcon>
+                About
+              </MenuItem>
+              <Divider />
+              <MenuItem onClick={handleLogout}>
+                <ListItemIcon>
+                  <LogoutIcon fontSize="small" />
+                </ListItemIcon>
+                Logout
+              </MenuItem>
+            </Menu>
+          </Box>
         </Toolbar>
       </AppBar>
 

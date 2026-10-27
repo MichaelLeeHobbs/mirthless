@@ -15,18 +15,15 @@ interface PageHeaderProps {
   readonly title: string;
   /** Optional supporting line beneath the title. */
   readonly description?: string;
-  /** Optional breadcrumbs or eyebrow rendered above the title. */
-  readonly overline?: ReactNode;
   /** Right-aligned action controls (buttons, toggles). */
   readonly actions?: ReactNode;
   /** Shows a small spinner beside the title during a background refetch. */
   readonly isFetching?: boolean;
 }
 
-export function PageHeader({ title, description, overline, actions, isFetching }: PageHeaderProps): ReactNode {
+export function PageHeader({ title, description, actions, isFetching }: PageHeaderProps): ReactNode {
   return (
     <Box sx={{ mb: 3 }}>
-      {overline ? <Box sx={{ mb: 0.75 }}>{overline}</Box> : null}
       <Box
         sx={{
           display: 'flex',

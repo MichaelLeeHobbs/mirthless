@@ -40,7 +40,7 @@ export function JumpToButton({ compact, onClick }: JumpToButtonProps): ReactNode
       onClick={onClick}
       aria-label={`Jump to a page or action (${keys})`}
       sx={{
-        display: 'flex', alignItems: 'center', gap: 1, mr: 1.5, pl: 1.25, pr: 0.75, height: 34, width: 280,
+        display: 'flex', alignItems: 'center', gap: 1, pl: 1.25, pr: 0.75, height: 34, width: 280,
         border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'surfaceSunken', color: 'text.secondary',
         justifyContent: 'flex-start', '&:hover': { borderColor: 'text.secondary' },
       }}

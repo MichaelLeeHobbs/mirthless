@@ -33,6 +33,7 @@ const PAGES = {
   login: '/login',
   dashboard: '/',
   'channel-new': '/channels/new',
+  'channel-editor': '/channels/c1',
   'message-browser': '/channels/c1/messages',
   traffic: '/messages',
   alerts: '/alerts',
