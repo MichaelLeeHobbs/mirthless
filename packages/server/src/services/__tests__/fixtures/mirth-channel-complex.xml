@@ -110,7 +110,7 @@
         <smtpHost>smtp.example.com</smtpHost>
         <smtpPort>587</smtpPort>
         <to>admin@example.com</to>
-        <from>mirthless@example.com</from>
+        <from>galvaniflow@example.com</from>
       </properties>
       <transformer version="4.5.0">
         <inboundDataType>HL7V2</inboundDataType>

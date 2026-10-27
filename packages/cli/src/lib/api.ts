@@ -1,7 +1,7 @@
 // ===========================================
 // CLI API Client
 // ===========================================
-// HTTP client for the Mirthless server API.
+// HTTP client for the GalvaniFlow server API.
 
 /** Configuration for the API client. */
 export interface ApiClientConfig {
@@ -9,7 +9,7 @@ export interface ApiClientConfig {
   readonly token: string | null;
 }
 
-/** Standard API response shape from the Mirthless server. */
+/** Standard API response shape from the GalvaniFlow server. */
 export interface ApiResponse<T> {
   readonly success: boolean;
   readonly data?: T;
@@ -17,7 +17,7 @@ export interface ApiResponse<T> {
 }
 
 /**
- * Thin HTTP client for communicating with the Mirthless server API.
+ * Thin HTTP client for communicating with the GalvaniFlow server API.
  * Handles auth headers, JSON serialization, and 204 responses.
  */
 export class ApiClient {

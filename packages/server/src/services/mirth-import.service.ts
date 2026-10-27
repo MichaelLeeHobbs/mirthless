@@ -1,7 +1,7 @@
 // ===========================================
 // Mirth Connect XML Import Service
 // ===========================================
-// Converts Mirth Connect XML channel exports to Mirthless JSON format,
+// Converts Mirth Connect XML channel exports to GalvaniFlow JSON format,
 // then delegates to ChannelImportService for persistence.
 
 import { tryCatch, type Result } from 'stderr-lib';
@@ -67,7 +67,7 @@ function createParser(): XMLParser {
 // ----- Service -----
 
 export class MirthImportService {
-  /** Convert Mirth Connect XML to Mirthless channel entries. */
+  /** Convert Mirth Connect XML to GalvaniFlow channel entries. */
   static convertXml(xml: string): Result<MirthConvertResult> {
     return tryCatch(() => {
       // Reject a DOCTYPE outright — Mirth exports never carry one, and it is the
@@ -124,11 +124,11 @@ export class MirthImportService {
         };
       }
 
-      // Map RENAME to CREATE_NEW (Mirthless collision mode)
-      const mirthlessCollisionMode = collisionMode === 'RENAME' ? 'CREATE_NEW' as const : collisionMode;
+      // Map RENAME to CREATE_NEW (GalvaniFlow collision mode)
+      const galvaniflowCollisionMode = collisionMode === 'RENAME' ? 'CREATE_NEW' as const : collisionMode;
       const importResult = await ChannelImportService.importChannels(
         convertResult.value.channels,
-        mirthlessCollisionMode,
+        galvaniflowCollisionMode,
         context,
       );
       if (!importResult.ok) throw importResult.error;

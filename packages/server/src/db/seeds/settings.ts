@@ -8,7 +8,7 @@ import type { NewSystemSetting } from '../schema/index.js';
 export const defaultSettings: readonly NewSystemSetting[] = [
   {
     key: 'general.server_name',
-    value: 'Mirthless',
+    value: 'GalvaniFlow',
     type: 'string',
     category: 'general',
     description: 'Display name for this server instance',

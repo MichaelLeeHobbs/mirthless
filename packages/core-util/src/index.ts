@@ -1,7 +1,7 @@
 // ===========================================
 // @galvaniflow/core-util
 // ===========================================
-// Shared utilities for the Mirthless platform.
+// Shared utilities for the GalvaniFlow platform.
 
 export * from './result.js';
 export * from './validation.js';

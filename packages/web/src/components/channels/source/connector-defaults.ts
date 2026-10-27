@@ -72,7 +72,7 @@ export const CHANNEL_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
 export const DICOM_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   port: 4242,
   storageDir: '',
-  aeTitle: 'MIRTHLESS',
+  aeTitle: 'GALVANIFLOW',
   minPoolSize: 2,
   maxPoolSize: 10,
   connectionTimeoutMs: 10000,

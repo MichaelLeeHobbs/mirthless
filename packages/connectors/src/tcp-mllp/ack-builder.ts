@@ -34,7 +34,7 @@ export function buildAck(inbound: string, ackCode: AckCode, textMessage?: string
 /** Minimal ACK used when the inbound message is not parseable HL7. */
 function buildFallbackAck(ackCode: AckCode, textMessage?: string): string {
   const timestamp = formatTimestamp(new Date());
-  const controlId = `MIRTHLESS${String(Date.now())}`;
+  const controlId = `GALVANIFLOW${String(Date.now())}`;
   const msh = ['MSH', '^~\\&', '', '', '', '', timestamp, '', 'ACK', controlId, 'P', '2.5.1'].join('|');
   const msaParts = ['MSA', ackCode, controlId];
   if (textMessage !== undefined) msaParts.push(textMessage);

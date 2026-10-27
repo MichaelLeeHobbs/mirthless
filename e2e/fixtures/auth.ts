@@ -7,7 +7,7 @@
 import { type Page, expect } from '@playwright/test';
 import { ADMIN_USER } from './test-data.js';
 
-const STORAGE_KEY = 'mirthless_auth';
+const STORAGE_KEY = 'galvaniflow_auth';
 const API_BASE = 'http://localhost:3000/api/v1';
 
 /** Log in via the API and inject auth state into the browser's localStorage. */

@@ -1,7 +1,7 @@
 // ===========================================
 // Login Command
 // ===========================================
-// CLI command for authenticating with the Mirthless server.
+// CLI command for authenticating with the GalvaniFlow server.
 
 import { Command } from 'commander';
 import { createInterface } from 'node:readline/promises';
@@ -25,7 +25,7 @@ export function registerLoginCommand(
 ): void {
   program
     .command('login')
-    .description('Authenticate with the Mirthless server')
+    .description('Authenticate with the GalvaniFlow server')
     .action(async () => {
       const rl = createInterface({
         input: process.stdin,

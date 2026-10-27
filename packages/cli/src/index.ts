@@ -2,13 +2,14 @@
 // ===========================================
 // @galvaniflow/cli
 // ===========================================
-// CLI for Mirthless server management.
+// CLI for GalvaniFlow server management.
 
 import { Command } from 'commander';
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { ApiClient } from './lib/api.js';
+import { configDir, configFileToRead } from './lib/config-path.js';
 import { registerChannelCommands } from './commands/channels.js';
 import { registerDeployCommands } from './commands/deploy.js';
 import { registerExportImportCommands } from './commands/export-import.js';
@@ -16,7 +17,7 @@ import { registerUserCommands } from './commands/users.js';
 import { registerLoginCommand } from './commands/login.js';
 
 /** Config file location in the user's home directory. */
-const CONFIG_DIR = join(homedir(), '.mirthless');
+const CONFIG_DIR = configDir(homedir());
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
 interface CliConfig {
@@ -26,9 +27,10 @@ interface CliConfig {
 
 /** Load CLI configuration from disk. */
 function loadConfig(): CliConfig {
-  if (!existsSync(CONFIG_FILE)) return {};
+  const file = configFileToRead(homedir());
+  if (!existsSync(file)) return {};
   try {
-    return JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')) as CliConfig;
+    return JSON.parse(readFileSync(file, 'utf-8')) as CliConfig;
   } catch {
     return {};
   }
@@ -44,8 +46,8 @@ export function saveConfig(config: CliConfig): void {
 
 const program = new Command();
 program
-  .name('mirthless')
-  .description('Mirthless CLI — Healthcare Integration Engine')
+  .name('galvaniflow')
+  .description('GalvaniFlow CLI — Healthcare Integration Engine')
   .version('0.1.0')
   .option('--url <url>', 'Server URL')
   .option('--token <token>', 'Auth token');

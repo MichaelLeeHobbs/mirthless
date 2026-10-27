@@ -10,7 +10,7 @@ describe('generateOpenAPISpec', () => {
   it('returns a valid OpenAPI 3.1 structure', () => {
     expect(spec.openapi).toBe('3.1.0');
     expect(spec.info).toBeDefined();
-    expect(spec.info.title).toBe('Mirthless API');
+    expect(spec.info.title).toBe('GalvaniFlow API');
     expect(spec.info.version).toBe(pkg.version);
     expect(spec.paths).toBeDefined();
     expect(spec.components).toBeDefined();

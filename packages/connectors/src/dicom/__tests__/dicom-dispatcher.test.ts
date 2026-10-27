@@ -19,7 +19,7 @@ function makeConfig(overrides?: Partial<DicomDispatcherConfig>): DicomDispatcher
     host: '192.168.1.100',
     port: 104,
     calledAETitle: 'PACS',
-    callingAETitle: 'MIRTHLESS',
+    callingAETitle: 'GALVANIFLOW',
     mode: 'multiple',
     maxAssociations: 4,
     maxRetries: 3,

@@ -141,7 +141,7 @@ export function LogViewer(): ReactNode {
     const a = document.createElement('a');
     a.href = url;
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    a.download = `mirthless-logs-${timestamp}.log`;
+    a.download = `galvaniflow-logs-${timestamp}.log`;
     a.click();
     URL.revokeObjectURL(url);
   };

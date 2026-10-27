@@ -27,7 +27,7 @@ loadEnv({ path: '.env', quiet: true });
 
 const SALT_ROUNDS = 12;
 const ADMIN_USERNAME = 'admin';
-const ADMIN_EMAIL = 'admin@mirthless.local';
+const ADMIN_EMAIL = 'admin@galvaniflow.local';
 const ADMIN_PASSWORD = 'Admin123!';
 
 /** Same TLS rules as the server pool (lib/db.ts buildDbSslConfig). */

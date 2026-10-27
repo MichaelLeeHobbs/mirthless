@@ -44,7 +44,7 @@ export function BackupRestoreSection(): ReactNode {
         const a = document.createElement('a');
         a.href = url;
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        a.download = `mirthless-backup-${timestamp}.json`;
+        a.download = `galvaniflow-backup-${timestamp}.json`;
         a.click();
         URL.revokeObjectURL(url);
       },

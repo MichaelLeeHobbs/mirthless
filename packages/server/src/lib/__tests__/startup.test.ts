@@ -24,8 +24,8 @@ const configSchema = z.object({
 const validEnv = {
   NODE_ENV: 'production',
   PORT: '3000',
-  FRONTEND_URL: 'https://mirthless.example.com',
-  DATABASE_URL: 'postgresql://user:pass@db:5432/mirthless',
+  FRONTEND_URL: 'https://galvaniflow.example.com',
+  DATABASE_URL: 'postgresql://user:pass@db:5432/galvaniflow',
   DATABASE_SSL: 'false',
   JWT_SECRET: 'a-very-long-secret-string-that-is-at-least-32-characters',
   JWT_ACCESS_EXPIRES_IN: '15m',
@@ -41,8 +41,8 @@ describe('Config schema', () => {
     if (!result.success) return;
     expect(result.data.NODE_ENV).toBe('production');
     expect(result.data.PORT).toBe(3000);
-    expect(result.data.FRONTEND_URL).toBe('https://mirthless.example.com');
-    expect(result.data.DATABASE_URL).toBe('postgresql://user:pass@db:5432/mirthless');
+    expect(result.data.FRONTEND_URL).toBe('https://galvaniflow.example.com');
+    expect(result.data.DATABASE_URL).toBe('postgresql://user:pass@db:5432/galvaniflow');
     expect(result.data.JWT_SECRET).toBe('a-very-long-secret-string-that-is-at-least-32-characters');
     expect(result.data.TRUST_PROXY).toBe('true');
     expect(result.data.LOG_LEVEL).toBe('info');
@@ -67,7 +67,7 @@ describe('Config schema', () => {
 
   it('applies correct defaults when optional fields are omitted', () => {
     const minimal = {
-      DATABASE_URL: 'postgresql://user:pass@db:5432/mirthless',
+      DATABASE_URL: 'postgresql://user:pass@db:5432/galvaniflow',
       JWT_SECRET: 'a-very-long-secret-string-that-is-at-least-32-characters',
     };
     const result = configSchema.safeParse(minimal);

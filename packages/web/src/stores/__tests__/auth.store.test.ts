@@ -27,7 +27,7 @@ describe('auth store mustChangePassword', () => {
   it('stores the flag from setAuth and persists it', () => {
     useAuthStore.getState().setAuth(USER, 'token', true);
     expect(useAuthStore.getState().mustChangePassword).toBe(true);
-    const raw = localStorage.getItem('mirthless_auth');
+    const raw = localStorage.getItem('galvaniflow_auth');
     expect(raw).toContain('"mustChangePassword":true');
   });
 

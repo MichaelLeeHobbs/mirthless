@@ -88,7 +88,7 @@ export function LoginPage(): ReactNode {
             component="h1"
             sx={{ fontWeight: 700, color: 'primary.main', mb: 0.5 }}
           >
-            Mirthless
+            GalvaniFlow
           </Typography>
           <Typography variant="body2" sx={{
             color: 'text.secondary'

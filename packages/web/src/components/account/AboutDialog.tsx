@@ -24,11 +24,11 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 export function AboutDialog({ open, onClose }: AboutDialogProps): ReactNode {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>About Mirthless</DialogTitle>
+      <DialogTitle>About GalvaniFlow</DialogTitle>
       <DialogContent>
         <Stack spacing={1} sx={{ mt: 1 }}>
           <Typography variant="h6" sx={{ fontWeight: 700, color: 'primary.main' }}>
-            Mirthless
+            GalvaniFlow
           </Typography>
           <Typography variant="body2" sx={{
             color: 'text.secondary'

@@ -22,7 +22,7 @@ const PORT = config.PORT;
 const server = app.listen(PORT, () => {
   logger.info(
     { nodeVersion: process.version, environment: config.NODE_ENV, port: PORT },
-    'Mirthless server started'
+    'GalvaniFlow server started'
   );
 });
 

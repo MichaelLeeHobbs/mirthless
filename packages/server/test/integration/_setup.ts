@@ -7,7 +7,7 @@
 // whose name ends in `_test`. This protects developer/prod databases from the
 // destructive inserts/deletes these suites perform, and lets the suites skip
 // gracefully when no test DB is configured (e.g. a plain `pnpm test:integration`
-// on a machine without Postgres). CI sets DATABASE_URL to the `mirthless_test`
+// on a machine without Postgres). CI sets DATABASE_URL to the `galvaniflow_test`
 // service DB, so the suites run there.
 
 import { describe } from 'vitest';

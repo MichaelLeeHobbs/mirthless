@@ -20,7 +20,7 @@ function makeConfig(overrides?: Partial<DicomReceiverConfig>): DicomReceiverConf
   return {
     port: 4242,
     storageDir: '/data/dicom',
-    aeTitle: 'MIRTHLESS',
+    aeTitle: 'GALVANIFLOW',
     minPoolSize: 2,
     maxPoolSize: 10,
     connectionTimeoutMs: 10_000,
@@ -37,7 +37,7 @@ function makeFileData(overrides?: Partial<DcmtkFileData>): DcmtkFileData {
     associationId: 'assoc-1',
     associationDir: '/data/dicom/assoc-1',
     callingAE: 'SCANNER',
-    calledAE: 'MIRTHLESS',
+    calledAE: 'GALVANIFLOW',
     source: '192.168.1.10:4242',
     instance: {
       dataset: {
@@ -56,7 +56,7 @@ function makeAssociationData(overrides?: Partial<DcmtkAssociationData>): DcmtkAs
     associationId: 'assoc-1',
     associationDir: '/data/dicom/assoc-1',
     callingAE: 'SCANNER',
-    calledAE: 'MIRTHLESS',
+    calledAE: 'GALVANIFLOW',
     source: '192.168.1.10:4242',
     files: ['/data/dicom/assoc-1/img1.dcm', '/data/dicom/assoc-1/img2.dcm'],
     durationMs: 500,
@@ -229,7 +229,7 @@ describe('DicomReceiver PER_FILE dispatch', () => {
     expect(raw.sourceMap['patientID']).toBe('P12345');
     expect(raw.sourceMap['studyInstanceUID']).toBe('1.2.3.4.5');
     expect(raw.sourceMap['callingAE']).toBe('SCANNER');
-    expect(raw.sourceMap['calledAE']).toBe('MIRTHLESS');
+    expect(raw.sourceMap['calledAE']).toBe('GALVANIFLOW');
     expect(raw.sourceMap['associationId']).toBe('assoc-1');
   });
 
