@@ -12,6 +12,16 @@ Michael: Collections → View Records should be a grid where he can sort, filter
 - Fixed the Collections e2e cleanup, which built `http://localhost:3000/collections` (leading slash dropped `/api/v1`) and so never deleted leftovers.
 - `pnpm shots` gains `collection-records` and `collection-record-edit`, and a `click` option for shooting a dialog.
 
+## 2026-10-27 — System Information, after MedFusion's System Monitor (branch `claude/project-thread-z0c3be`)
+
+Michael: the System Information view could learn a lot from MedFusion. Taken from MedFusion's System Monitor: tabs held in the path, a status strip first, dense label/value panels.
+
+- **Tabs in the path.** `/system` (Overview), `/system/logs`, `/system/pruner`, `/system/backup` replace one long scrolling page. Only the active tab is mounted, so the 10 s system-info poll and the log stream stop when you leave them. The three non-overview tabs are in the Ctrl+K palette ("Server logs", "Data pruner", "Backup & restore"). (D-202)
+- **Status strip.** Server, Database, Engine, Heap and Host each get a level, a word and a one-line reason (`lib/system-health.ts`). The Engine cell links to the dashboard.
+- **More facts, from one probe.** The server now reports the PostgreSQL version, database size and probe round trip, hostname, start time, OS release, CPU count, load average and the V8 heap limit.
+- **Heap is measured against the V8 limit**, not `heapTotal`. `heapTotal` is only what V8 has allocated so far and normally sits near 90% used, so the old bar read red on a healthy server.
+- **Copy diagnostics** puts a plain-text summary (no PHI, no settings values) on the clipboard for support tickets.
+
 ## 2026-10-27 — Settings page rebuilt after the VNS Portal's settings (branch `claude/project-thread-ype1i7`)
 
 Michael: "For Settings we could learn a lot from the Portal." (D-201)

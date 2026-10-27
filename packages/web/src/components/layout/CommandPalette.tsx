@@ -48,6 +48,12 @@ function usePaletteCommands(onShowShortcuts: () => void): readonly PaletteComman
     const pages: PaletteCommand[] = NAV_SECTIONS.flatMap((section) => section.items
       .filter((item) => (item.anyOf ? hasAny(item.anyOf) : true))
       .map((item) => ({ id: `page:${item.path}`, label: item.label, section: 'Pages', keywords: section.heading, run: go(item.path) })));
+    // The System Information tabs, so logs, pruner and backup are one jump away.
+    const systemTabs: PaletteCommand[] = has(PERMISSION.SYSTEM_INFO) ? [
+      { id: 'page:/system/logs', label: 'Server logs', section: 'Pages', keywords: 'system log', run: go('/system/logs') },
+      { id: 'page:/system/pruner', label: 'Data pruner', section: 'Pages', keywords: 'system prune', run: go('/system/pruner') },
+      { id: 'page:/system/backup', label: 'Backup & restore', section: 'Pages', keywords: 'system export import', run: go('/system/backup') },
+    ] : [];
     const channelCommands: PaletteCommand[] = (channels?.data ?? []).flatMap((c) => [
       { id: `channel:${c.id}`, label: c.name, section: 'Channels', keywords: 'edit open channel', run: go(`/channels/${c.id}`) },
       { id: `messages:${c.id}`, label: `${c.name} messages`, section: 'Channels', keywords: 'browse search', run: go(`/channels/${c.id}/messages`) },
@@ -61,7 +67,7 @@ function usePaletteCommands(onShowShortcuts: () => void): readonly PaletteComman
       { id: 'theme', label: themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', section: 'Actions', keywords: 'theme', run: toggleThemeMode },
       { id: 'shortcuts', label: 'Keyboard shortcuts', section: 'Actions', keywords: 'help keys', run: onShowShortcuts },
     ];
-    return [...pages, ...channelCommands, ...collectionCommands, ...actions];
+    return [...pages, ...systemTabs, ...channelCommands, ...collectionCommands, ...actions];
   }, [navigate, has, hasAny, channels, collections, themeMode, toggleThemeMode, onShowShortcuts]);
 }
 

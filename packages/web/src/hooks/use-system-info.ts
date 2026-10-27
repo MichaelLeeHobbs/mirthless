@@ -15,10 +15,16 @@ export interface SystemInfo {
     readonly env: string;
     readonly pid: number;
     readonly uptime: number;
+    readonly startedAt: string;
+    readonly hostname: string;
   };
   readonly os: {
     readonly platform: string;
+    readonly release: string;
     readonly arch: string;
+    readonly cpus: number;
+    /** 1, 5 and 15 minute load averages. Always zeros on Windows. */
+    readonly loadAverage: readonly [number, number, number];
     readonly totalMemory: number;
     readonly freeMemory: number;
   };
@@ -26,6 +32,8 @@ export interface SystemInfo {
     readonly rss: number;
     readonly heapUsed: number;
     readonly heapTotal: number;
+    /** The V8 heap ceiling; the process runs out of memory near this. */
+    readonly heapLimit: number;
     readonly external: number;
   };
   readonly engine: {
@@ -36,6 +44,9 @@ export interface SystemInfo {
   };
   readonly database: {
     readonly connected: boolean;
+    readonly latencyMs: number | null;
+    readonly version: string | null;
+    readonly sizeBytes: number | null;
   };
 }
 
@@ -48,8 +59,10 @@ const SYS_KEYS = {
 
 // ----- Hooks -----
 
-export function useSystemInfo(): ReturnType<typeof useQuery<SystemInfo>> {
+/** Polls every 10 s while enabled; pass false to stop polling when the data isn't on screen. */
+export function useSystemInfo(enabled = true): ReturnType<typeof useQuery<SystemInfo>> {
   return useQuery({
+    enabled,
     queryKey: SYS_KEYS.info(),
     queryFn: async () => {
       const result = await api.get<SystemInfo>('/system');
