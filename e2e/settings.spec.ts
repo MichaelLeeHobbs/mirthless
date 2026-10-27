@@ -1,93 +1,89 @@
 // ===========================================
 // Settings E2E Tests
 // ===========================================
+// Against the seeded server: sections render, an edit saves and survives a
+// reload, invalid values block saving, pruner settings reach the pruner
+// schedule, and leaving with unsaved changes asks first. Each test puts back
+// what it changed.
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
+
+const field = (page: Page, label: string) => page.getByLabel(label, { exact: true });
+const saveBar = (page: Page) => page.getByRole('region', { name: 'Unsaved changes' });
+
+async function saveAndWait(page: Page, notice: string): Promise<void> {
+  await saveBar(page).getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText(notice)).toBeVisible();
+  await expect(saveBar(page)).toBeHidden();
+}
 
 test.describe('Settings', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
+    await page.goto('/settings');
+    await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
   });
 
-  test('navigate to settings page', async ({ page }) => {
-    await page.goto('/settings');
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-  });
-
-  test('default settings visible', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForTimeout(2_000);
-
-    // Seeded settings should be visible (e.g., general.server_name)
-    const settingKey = page.getByText('general.server_name');
-    if (await settingKey.isVisible()) {
-      await expect(settingKey).toBeVisible();
-    } else {
-      // At minimum, some settings should be displayed
-      const settingsContainer = page.locator('[class*="Paper"], [class*="Card"]');
-      const count = await settingsContainer.count();
-      expect(count).toBeGreaterThanOrEqual(0);
+  test('shows the seeded settings in named sections', async ({ page }) => {
+    for (const name of ['General', 'Email', 'Data pruning', 'Maintenance']) {
+      await expect(page.getByRole('heading', { name, level: 2 })).toBeVisible();
     }
+    await expect(field(page, 'Server name')).toBeVisible();
+    await expect(saveBar(page)).toBeHidden();
   });
 
-  test('switch category tabs', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForTimeout(2_000);
+  test('saves an edit that survives a reload', async ({ page }) => {
+    const original = await field(page, 'Server name').inputValue();
+    await field(page, 'Server name').fill('Mirthless E2E');
+    await expect(saveBar(page)).toContainText('1 unsaved change');
+    await saveAndWait(page, 'Setting saved');
 
-    // Click through each tab
-    const tabs = ['All', 'General', 'Security', 'Features'];
-    for (const tabName of tabs) {
-      const tab = page.getByRole('tab', { name: tabName });
-      if (await tab.isVisible()) {
-        await tab.click();
-        await page.waitForTimeout(500);
+    await page.reload();
+    await expect(field(page, 'Server name')).toHaveValue('Mirthless E2E');
 
-        // Tab should be selected
-        await expect(tab).toHaveAttribute('aria-selected', 'true');
-      }
-    }
+    await field(page, 'Server name').fill(original);
+    await page.keyboard.press('Control+s');
+    await expect(page.getByText('Setting saved')).toBeVisible();
   });
 
-  test('edit and save setting', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForTimeout(2_000);
-
-    // Find a text input setting and modify it
-    const textInputs = page.locator('input[type="text"]');
-    const count = await textInputs.count();
-    if (count > 0) {
-      const firstInput = textInputs.first();
-      await firstInput.clear();
-      await firstInput.fill('E2E Test Value');
-
-      // Save button should be enabled now
-      const saveBtn = page.getByRole('button', { name: /save/i });
-      if (await saveBtn.isEnabled()) {
-        await saveBtn.click();
-        await page.waitForTimeout(2_000);
-      }
-    }
+  test('blocks saving an invalid port and discards back to the saved value', async ({ page }) => {
+    const original = await field(page, 'Port').inputValue();
+    await field(page, 'Port').fill('70000');
+    await expect(page.getByText('Enter a port from 1 to 65535.')).toBeVisible();
+    await expect(saveBar(page).getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    await saveBar(page).getByRole('button', { name: 'Discard' }).click();
+    await expect(field(page, 'Port')).toHaveValue(original);
   });
 
-  test('boolean setting toggle', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForTimeout(2_000);
+  test('pruner settings change the pruner schedule', async ({ page }) => {
+    const toggle = page.getByRole('switch', { name: 'Prune on a schedule' });
+    const wasOn = await toggle.isChecked();
+    const originalCron = await field(page, 'Schedule').inputValue();
 
-    // Find a switch (boolean setting) and toggle it
-    const switches = page.locator('input[type="checkbox"][role="switch"]');
-    const count = await switches.count();
-    if (count > 0) {
-      const firstSwitch = switches.first();
-      await firstSwitch.click();
-      await page.waitForTimeout(500);
+    await field(page, 'Schedule').fill('15 2 * * *');
+    await saveAndWait(page, 'Setting saved');
 
-      // Save
-      const saveBtn = page.getByRole('button', { name: /save/i });
-      if (await saveBtn.isEnabled()) {
-        await saveBtn.click();
-        await page.waitForTimeout(2_000);
-      }
-    }
+    const status = await page.evaluate(async () => {
+      const auth = JSON.parse(localStorage.getItem('mirthless_auth') ?? '{}') as { accessToken?: string };
+      const res = await fetch('/api/v1/admin/prune/schedule', { headers: { Authorization: `Bearer ${auth.accessToken ?? ''}` } });
+      return (await res.json()) as { data: { enabled: boolean; cronExpression: string } };
+    });
+    expect(status.data).toMatchObject({ enabled: wasOn, cronExpression: '15 2 * * *' });
+
+    // Restore. The snackbar drops a repeat of the same message within 1.5s, so wait on the bar instead.
+    await field(page, 'Schedule').fill(originalCron);
+    await saveBar(page).getByRole('button', { name: 'Save changes' }).click();
+    await expect(saveBar(page)).toBeHidden();
+    await page.reload();
+    await expect(field(page, 'Schedule')).toHaveValue(originalCron);
+  });
+
+  test('asks before leaving with unsaved changes', async ({ page }) => {
+    await field(page, 'SMTP server').fill('smtp.unsaved.example');
+    await page.getByRole('link', { name: 'Dashboard' }).first().click();
+    await expect(page.getByText('You have unsaved settings. Leave anyway?')).toBeVisible();
+    await page.getByRole('button', { name: 'Stay' }).click();
+    await expect(field(page, 'SMTP server')).toHaveValue('smtp.unsaved.example');
   });
 });

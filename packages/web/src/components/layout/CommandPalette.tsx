@@ -2,7 +2,7 @@
 // Command Palette
 // ===========================================
 // Ctrl+K (Cmd+K) "Jump to" box, like VS Code's and MedFusion's: type a few
-// letters of a page, a channel or an action and press Enter. Everything it
+// letters of a page, a channel, a collection or an action and press Enter. Everything it
 // offers is permission-gated the same way as the sidebar.
 
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography';
 import SearchIcon from '@mui/icons-material/Search';
 import { usePermissions } from '../../hooks/use-permissions.js';
 import { useChannels } from '../../hooks/use-channels.js';
+import { useCollections } from '../../hooks/use-collections.js';
 import { useUiStore } from '../../stores/ui.store.js';
 import { PERMISSION } from '../../lib/permissions.js';
 import { rankCommands, type Command } from '../../lib/command-search.js';
@@ -33,11 +34,12 @@ interface CommandPaletteProps {
   readonly onShowShortcuts: () => void;
 }
 
-/** Build every command this user may run: pages, then channels, then actions. */
+/** Build every command this user may run: pages, channels, collections, then actions. */
 function usePaletteCommands(onShowShortcuts: () => void): readonly PaletteCommand[] {
   const navigate = useNavigate();
   const { has, hasAny } = usePermissions();
   const { data: channels } = useChannels(1, 100);
+  const { data: collections } = useCollections(has(PERMISSION.COLLECTIONS_READ));
   const themeMode = useUiStore((state) => state.themeMode);
   const toggleThemeMode = useUiStore((state) => state.toggleThemeMode);
 
@@ -46,18 +48,27 @@ function usePaletteCommands(onShowShortcuts: () => void): readonly PaletteComman
     const pages: PaletteCommand[] = NAV_SECTIONS.flatMap((section) => section.items
       .filter((item) => (item.anyOf ? hasAny(item.anyOf) : true))
       .map((item) => ({ id: `page:${item.path}`, label: item.label, section: 'Pages', keywords: section.heading, run: go(item.path) })));
+    // The System Information tabs, so logs, pruner and backup are one jump away.
+    const systemTabs: PaletteCommand[] = has(PERMISSION.SYSTEM_INFO) ? [
+      { id: 'page:/system/logs', label: 'Server logs', section: 'Pages', keywords: 'system log', run: go('/system/logs') },
+      { id: 'page:/system/pruner', label: 'Data pruner', section: 'Pages', keywords: 'system prune', run: go('/system/pruner') },
+      { id: 'page:/system/backup', label: 'Backup & restore', section: 'Pages', keywords: 'system export import', run: go('/system/backup') },
+    ] : [];
     const channelCommands: PaletteCommand[] = (channels?.data ?? []).flatMap((c) => [
       { id: `channel:${c.id}`, label: c.name, section: 'Channels', keywords: 'edit open channel', run: go(`/channels/${c.id}`) },
       { id: `messages:${c.id}`, label: `${c.name} messages`, section: 'Channels', keywords: 'browse search', run: go(`/channels/${c.id}/messages`) },
     ]);
+    const collectionCommands: PaletteCommand[] = (collections ?? []).map((c) => (
+      { id: `records:${c.id}`, label: `${c.name} records`, section: 'Collections', keywords: 'browse search collection', run: go(`/collections/${c.id}/records`) }
+    ));
     const actions: PaletteCommand[] = [
       ...(has(PERMISSION.CHANNELS_WRITE) ? [{ id: 'new-channel', label: 'Create channel', section: 'Actions', keywords: 'new add', run: go('/channels/new') }] : []),
       ...(has(PERMISSION.ALERTS_WRITE) ? [{ id: 'new-alert', label: 'Create alert', section: 'Actions', keywords: 'new add', run: go('/alerts/new') }] : []),
       { id: 'theme', label: themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', section: 'Actions', keywords: 'theme', run: toggleThemeMode },
       { id: 'shortcuts', label: 'Keyboard shortcuts', section: 'Actions', keywords: 'help keys', run: onShowShortcuts },
     ];
-    return [...pages, ...channelCommands, ...actions];
-  }, [navigate, has, hasAny, channels, themeMode, toggleThemeMode, onShowShortcuts]);
+    return [...pages, ...systemTabs, ...channelCommands, ...collectionCommands, ...actions];
+  }, [navigate, has, hasAny, channels, collections, themeMode, toggleThemeMode, onShowShortcuts]);
 }
 
 export function CommandPalette({ open, onClose, onShowShortcuts }: CommandPaletteProps): ReactNode {

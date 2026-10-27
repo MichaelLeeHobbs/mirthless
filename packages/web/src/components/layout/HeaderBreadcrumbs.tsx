@@ -2,7 +2,7 @@
 // Header Breadcrumbs
 // ===========================================
 // The trail in the app bar. It reads the URL, so every page gets one without
-// rendering it, and it looks up a channel or alert name from the query cache
+// rendering it, and it looks up a channel, alert or collection name from the query cache
 // the page already filled.
 
 import type { ReactNode } from 'react';
@@ -12,6 +12,7 @@ import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { useChannel } from '../../hooks/use-channels.js';
 import { useAlert } from '../../hooks/use-alerts.js';
+import { useCollection } from '../../hooks/use-collections.js';
 import { breadcrumbsFor, crumbEntity } from '../../lib/breadcrumbs.js';
 import { NAV_SECTIONS } from './nav-items.js';
 
@@ -30,8 +31,10 @@ export function HeaderBreadcrumbs({ compact }: HeaderBreadcrumbsProps): ReactNod
   const entity = crumbEntity(pathname);
   const channel = useChannel(entity?.kind === 'channel' ? entity.id : null);
   const alert = useAlert(entity?.kind === 'alert' ? entity.id : null);
-  const name = entity?.kind === 'channel' ? channel.data?.name : alert.data?.name;
-  const crumbs = breadcrumbsFor(pathname, PAGES, entity ? name : undefined);
+  const collection = useCollection(entity?.kind === 'collection' ? entity.id : '');
+  const names = { channel: channel.data?.name, alert: alert.data?.name, collection: collection.data?.name };
+  const name = entity ? names[entity.kind] : undefined;
+  const crumbs = breadcrumbsFor(pathname, PAGES, name);
 
   return (
     <Breadcrumbs

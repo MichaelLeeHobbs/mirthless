@@ -6,14 +6,52 @@
 
 Michael: move breadcrumbs into the header bar to stop wasting space, most views have none; centre the Ctrl+K "Jump to".
 
-- **Route-driven breadcrumbs.** `lib/breadcrumbs.ts` builds the trail from the URL: Dashboard, then the sidebar label for top-level pages, the channel name (and "Messages") for channel routes, and Alerts plus the alert name for the alert editor. `HeaderBreadcrumbs` renders it in the app bar and reads names from the query cache the page already filled. Every page now has a trail; `PageBreadcrumbs` and `PageHeader`'s `overline` are gone (D-201).
+- **Route-driven breadcrumbs.** `lib/breadcrumbs.ts` builds the trail from the URL: Dashboard, then the sidebar label for top-level pages, the channel name (and "Messages") for channel routes, and Alerts plus the alert name for the alert editor. `HeaderBreadcrumbs` renders it in the app bar and reads names from the query cache the page already filled. Every page now has a trail; `PageBreadcrumbs` and `PageHeader`'s `overline` are gone (D-203).
 - **Header layout.** Three columns: logo and trail left, "Jump to" centred, theme and account right. Below `lg` the "Mirthless" wordmark hides to give the trail room; on phones the trail collapses to the current page and "Jump to" is an icon on the right.
 - `pnpm shots` gains `channel-editor` (`/channels/c1`).
+- Merged after the collection records grid (#54): its page dropped its own `PageBreadcrumbs` and the header trail now covers `/collections/:id/records` (Dashboard / Collections / <collection name>).
+
+## 2026-10-27 — Collection records grid (branch `claude/project-thread-1ogw6z`)
+
+Michael: Collections → View Records should be a grid where he can sort, filter and create/edit/delete records.
+
+- **Records page** at `/collections/:id/records` replaces the read-only "last 100" dialog. One column per indexed field plus payload, created and expires; every head sorts; a search box (all columns or one) filters; paging shows past 25 rows. Clicking a row opens it in a dialog to edit (or view, without `collections:write`); Add Record and a per-row delete with a named confirm. The collection name on the Collections page links to it, and Ctrl+K lists "<name> records".
+- **API:** `GET /collections/:id/records` now sorts, searches and pages on the server and returns `{ items, total }`. New `POST`, `PUT` and `DELETE /collections/:id/records[/:recordId]`, gated by `collections:write`/`collections:delete` and audited as `COLLECTION_UPDATED`. Sort/search field names are checked against the collection's indexed fields; LIKE wildcards in a search are escaped.
+- **Scripts can update and delete records** (Michael: scripts should be able to CRUD records). `getCollection(name)` gains `update(id, changes)` (only the keys given change; `null` if the record is gone) and `delete(id)` (`false` if already gone). The same partial update backs the grid's edit. Design doc, scripting API and editor IntelliSense updated (D-204).
+- Fixed the Collections e2e cleanup, which built `http://localhost:3000/collections` (leading slash dropped `/api/v1`) and so never deleted leftovers.
+- `pnpm shots` gains `collection-records` and `collection-record-edit`, and a `click` option for shooting a dialog.
+
+## 2026-10-27 — Alert template variables you can see (branch `claude/project-thread-6e5ntp`)
+
+- The alert editor's hint said to use `${channelName}` and `${error}`, but the engine only replaced `${alertName}`, `${channelId}`, `${errorType}`, `${errorMessage}` and `${timestamp}`, so those were sent literally (the showcase seed did exactly that). The list now lives once in core-models (`ALERT_TEMPLATE_VARIABLES`); the engine substitutes from a record typed by it and the editor renders it, so they cannot drift.
+- `${channelName}` is now real: each channel's `AlertManager` gets the channel name (falls back to the ID).
+- Under the body field, one chip per variable inserts it at the caret of the subject or body, whichever was last focused, with a tooltip saying what it holds. A placeholder the engine won't replace shows a warning under its field. `pnpm shots --only alert-templates` shows the section.
+
+## 2026-10-27 — System Information, after MedFusion's System Monitor (branch `claude/project-thread-z0c3be`)
+
+Michael: the System Information view could learn a lot from MedFusion. Taken from MedFusion's System Monitor: tabs held in the path, a status strip first, dense label/value panels.
+
+- **Tabs in the path.** `/system` (Overview), `/system/logs`, `/system/pruner`, `/system/backup` replace one long scrolling page. Only the active tab is mounted, so the 10 s system-info poll and the log stream stop when you leave them. The three non-overview tabs are in the Ctrl+K palette ("Server logs", "Data pruner", "Backup & restore"). (D-202)
+- **Status strip.** Server, Database, Engine, Heap and Host each get a level, a word and a one-line reason (`lib/system-health.ts`). The Engine cell links to the dashboard.
+- **More facts, from one probe.** The server now reports the PostgreSQL version, database size and probe round trip, hostname, start time, OS release, CPU count, load average and the V8 heap limit.
+- **Heap is measured against the V8 limit**, not `heapTotal`. `heapTotal` is only what V8 has allocated so far and normally sits near 90% used, so the old bar read red on a healthy server.
+- **Copy diagnostics** puts a plain-text summary (no PHI, no settings values) on the clipboard for support tickets.
+
+## 2026-10-27 — Settings page rebuilt after the VNS Portal's settings (branch `claude/project-thread-ype1i7`)
+
+Michael: "For Settings we could learn a lot from the Portal." (D-201)
+
+- **One page, plain words.** Sections (General, Email, Data pruning, Maintenance, plus Other for unlisted keys) from `lib/settings-catalog.ts`. Each row has a label and what the setting does on the left, its control on the right (stacked on phones), and the raw key in small monospace for reference. Replaces the All/General/Security/Features/SMTP tabs, where Security was always empty and pruner settings only showed under All.
+- **Save bar.** `components/common/UnsavedChangesBar.tsx` sticks to the bottom only while something changed: count, Discard, Save; Ctrl+S saves. Edited rows are marked. Invalid values (port range, email, cron, JSON, numbers) are flagged inline and block saving. Save results go to the snackbar; a failed save keeps the edits (it was silent before).
+- **Fixes.** Pruner settings now save through the pruner schedule API, so a new schedule takes effect without a restart. The SMTP password no longer loads the server's redaction marker into the field (editing it could save a corrupted marker as the password); it starts empty with "Saved. Type to replace." and a show/hide toggle. Leaving with unsaved changes asks first.
+- `pnpm shots` gains `settings-edited` (a `fill` option fills fields by label), and its settings fixture uses the real seeded keys.
+- Flagged, not changed: `features.maintenance_mode` is not enforced anywhere on the server; the page now says so.
 
 ## 2026-10-27 — First login no longer bounces back to /login (branch `claude/project-thread-8fdw4k`)
 
 - A freshly seeded admin (`mustChangePassword`) was logged out right after signing in: the server refuses the websocket handshake until the password changes (since e8259ba), and `useSocketConnection` treated that refusal as an auth failure and called `clearAuth()`, so the forced change-password dialog never appeared. The socket now waits until the forced change is done.
 - After a forced change, the dialog invalidates all queries so pages that were refused with 403 load without a manual retry.
+- E2E global setup now does the CI admin's forced change through the login page and dialog instead of the API, so a broken first login fails the E2E run (branch `claude/project-thread-ycxczi`).
 
 ## 2026-10-26 — Uniform pages, Ctrl+K command bar, agent practices (branch `claude/project-thread-2z3cpi`, second PR)
 
@@ -126,6 +164,7 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
   Not tagged yet.
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
+
 ## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle
 
 - Moved the real-message E2E harness, its 7 suites, the `*.itest.ts` integration lane and the DICOM
@@ -285,6 +324,7 @@ connectors 418→475 tests, core-models 198 tests passing.
 ### Dependency added
 - `ssh2-sftp-client@^12.1.1` (dep) + `@types/ssh2-sftp-client@^9.0.6` (dev) in
   `@mirthless/connectors`.
+
 ## 2026-07-12 — Message ops endpoints + real partitioning (branch `w2/server`)
 
 Scope: `packages/{server,core-models}` only. Added four message-operations endpoints and resolved the D-166 partitioning gap. New/changed files lint clean (`pnpm lint --max-warnings 0`); core-models + server builds green; core-models 221 tests green; the 64 tests across the 5 touched server test files green. (Pre-existing, out-of-scope: 9 `data-pruner.service.test.ts` unit failures inherited from the D-165 `inArray` change — those files are untouched here.)
@@ -297,6 +337,7 @@ Scope: `packages/{server,core-models}` only. Added four message-operations endpo
 
 ### Partitioning (D-167, resolves D-166)
 - New hand-written migration `0007_partition_message_tables.sql` recreates the six message parent tables as `PARTITION BY LIST (channel_id)` with a DEFAULT partition each, so the already-correct `PartitionManagerService` works. Registered in `meta/_journal.json`. Verified against a throwaway Postgres 17 (partition routing + DEFAULT fallback + drop). `db:migrate` not run against any live DB.
+
 ## 2026-07-12 — Web admin console feature completion (branch `w2/web`)
 
 Scope: `packages/web/**` only. Five feature areas. Web: 68 tests passing (was 45),
@@ -434,6 +475,7 @@ web tests 25 → 45 passing; ESLint clean (`--max-warnings 0`).
 ### Tests
 - New: `lib/__tests__/status.test.ts`, `components/common/__tests__/StatusChip.test.tsx`,
   `components/common/states/__tests__/states.test.tsx` (20 tests).
+
 ## 2026-07-12 — Ops, Docs & CI Hardening (v0.1 readiness)
 
 Branch `w1/ops`. Scope: repo root, `.github/**`, `docker` docs, `docs/**`, `scripts/**`,

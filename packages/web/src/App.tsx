@@ -40,6 +40,7 @@ const UsersPage = page(() => import('./pages/UsersPage.js'), 'UsersPage');
 const TagsPage = page(() => import('./pages/TagsPage.js'), 'TagsPage');
 const ResourcesPage = page(() => import('./pages/ResourcesPage.js'), 'ResourcesPage');
 const CollectionsPage = page(() => import('./pages/CollectionsPage.js'), 'CollectionsPage');
+const CollectionRecordsPage = page(() => import('./pages/CollectionRecordsPage.js'), 'CollectionRecordsPage');
 const DataSourcesPage = page(() => import('./pages/DataSourcesPage.js'), 'DataSourcesPage');
 const GlobalMapPage = page(() => import('./pages/GlobalMapPage.js'), 'GlobalMapPage');
 const ConfigMapPage = page(() => import('./pages/ConfigMapPage.js'), 'ConfigMapPage');
@@ -86,6 +87,7 @@ const router = createBrowserRouter([
           { path: 'global-scripts', element: lazyRoute(<GlobalScriptsPage />) },
           { path: 'resources', element: lazyRoute(<ResourcesPage />) },
           { path: 'collections', element: lazyRoute(<CollectionsPage />) },
+          { path: 'collections/:id/records', element: lazyRoute(<CollectionRecordsPage />) },
           { path: 'datasources', element: lazyRoute(<DataSourcesPage />) },
           { path: 'certificates', element: lazyRoute(<CertificatesPage />) },
           { path: 'tags', element: lazyRoute(<TagsPage />) },
@@ -104,7 +106,10 @@ const router = createBrowserRouter([
           },
           {
             element: <RequirePermission anyOf={[PERMISSION.SYSTEM_INFO]} />,
-            children: [{ path: 'system', element: lazyRoute(<SystemInfoPage />) }],
+            children: [
+              { path: 'system', element: lazyRoute(<SystemInfoPage />) },
+              { path: 'system/:tab', element: lazyRoute(<SystemInfoPage />) },
+            ],
           },
           {
             element: <RequirePermission anyOf={[PERMISSION.USERS_READ]} />,

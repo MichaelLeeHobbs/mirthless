@@ -45,7 +45,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@mirthless/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema } from '@mirthless/core-models';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema } from '@mirthless/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
@@ -274,7 +274,7 @@ function toBridgeRecord(v: CollectionRecordResult): {
 }
 
 /**
- * getCollection() script bridge: store/find against CollectionService. Inputs
+ * getCollection() script bridge: store/find/update/delete against CollectionService. Inputs
  * from user scripts are Zod-validated at this boundary (fail loud on bad input);
  * service errors surface as thrown errors inside the script.
  */
@@ -295,6 +295,18 @@ function createCollectionBridge(): NonNullable<BridgeDependencies['collections']
       const result = await CollectionService.find(name, query);
       if (!result.ok) throw new Error(result.error.message);
       return result.value.map(toBridgeRecord);
+    },
+    update: async (name, id, changes) => {
+      const recordId = collectionRecordIdSchema.parse(id);
+      const input = updateRecordSchema.parse(changes);
+      const result = await CollectionService.updateByName(name, recordId, input);
+      if (!result.ok) throw new Error(result.error.message);
+      return result.value ? toBridgeRecord(result.value) : null;
+    },
+    delete: async (name, id) => {
+      const result = await CollectionService.removeByName(name, collectionRecordIdSchema.parse(id));
+      if (!result.ok) throw new Error(result.error.message);
+      return result.value;
     },
   };
 }
@@ -509,7 +521,7 @@ export class EngineManager {
     };
 
     // Create alert manager and load alerts for this channel
-    const alertManager = new AlertManager({ logger, emailSender });
+    const alertManager = new AlertManager({ logger, emailSender, channelName: channel.name });
     alertManager.loadAlerts(loadedAlerts);
 
     // Execute global deploy script (before channel deploy)

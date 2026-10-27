@@ -13,6 +13,7 @@ describe('crumbEntity', () => {
     expect(crumbEntity('/channels/abc')).toEqual({ kind: 'channel', id: 'abc' });
     expect(crumbEntity('/channels/abc/messages')).toEqual({ kind: 'channel', id: 'abc' });
     expect(crumbEntity('/alerts/xyz')).toEqual({ kind: 'alert', id: 'xyz' });
+    expect(crumbEntity('/collections/c1/records')).toEqual({ kind: 'collection', id: 'c1' });
   });
 
   it('returns null for new records, lists and other pages', () => {
@@ -21,6 +22,8 @@ describe('crumbEntity', () => {
     expect(crumbEntity('/alerts')).toBeNull();
     expect(crumbEntity('/')).toBeNull();
     expect(crumbEntity('/tools/message-generator')).toBeNull();
+    expect(crumbEntity('/collections')).toBeNull();
+    expect(crumbEntity('/collections/c1')).toBeNull();
   });
 });
 
@@ -70,5 +73,24 @@ describe('breadcrumbsFor', () => {
     ]);
     expect(breadcrumbsFor('/alerts/a1', PAGES, undefined)[2]?.label).toBe('Alert');
     expect(breadcrumbsFor('/alerts/new', PAGES, undefined)[2]?.label).toBe('New alert');
+  });
+
+  it('links a collection\'s records back to Collections and names the collection', () => {
+    expect(breadcrumbsFor('/collections/c1/records', PAGES, 'Accessions')).toEqual([
+      { label: 'Dashboard', href: '/' },
+      { label: 'Collections', href: '/collections' },
+      { label: 'Accessions' },
+    ]);
+  });
+
+  it('shows Records until the collection name has loaded', () => {
+    expect(breadcrumbsFor('/collections/c1/records', PAGES, undefined).at(-1)).toEqual({ label: 'Records' });
+  });
+
+  it('shows Collections as the current page on the Collections list', () => {
+    expect(breadcrumbsFor('/collections', PAGES, undefined)).toEqual([
+      { label: 'Dashboard', href: '/' },
+      { label: 'Collections' },
+    ]);
   });
 });

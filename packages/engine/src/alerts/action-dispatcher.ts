@@ -4,6 +4,7 @@
 // Executes alert actions: LOG writes to the logger,
 // CHANNEL routes error details to a target channel.
 
+import type { AlertTemplateVariable } from '@mirthless/core-models';
 import type { LoadedAlert, AlertAction, ChannelErrorEvent } from './alert-evaluator.js';
 
 // ----- Types -----
@@ -31,6 +32,8 @@ export interface ActionDispatcherDeps {
   readonly logger: AlertLogger;
   readonly channelSender?: ChannelSender;
   readonly emailSender?: EmailSender;
+  /** Name of the channel these alerts serve, for `${channelName}`. */
+  readonly channelName?: string;
 }
 
 // ----- Dispatch -----
@@ -41,7 +44,7 @@ export async function dispatchActions(
   event: ChannelErrorEvent,
   deps: ActionDispatcherDeps,
 ): Promise<void> {
-  const content = formatAlertContent(alert, event);
+  const content = formatAlertContent(alert, event, deps.channelName);
 
   for (const action of alert.actions) {
     await dispatchSingleAction(action, alert, event, content, deps);
@@ -67,7 +70,7 @@ async function dispatchSingleAction(
         break;
       }
       const subject = alert.subjectTemplate
-        ? substituteAlertTemplate(alert.subjectTemplate, alert, event)
+        ? substituteAlertTemplate(alert.subjectTemplate, alert, event, deps.channelName)
         : `Alert: ${alert.name}`;
       if (deps.emailSender) {
         try {
@@ -117,9 +120,9 @@ async function dispatchSingleAction(
 }
 
 /** Format alert content for channel dispatch. */
-function formatAlertContent(alert: LoadedAlert, event: ChannelErrorEvent): string {
+function formatAlertContent(alert: LoadedAlert, event: ChannelErrorEvent, channelName?: string): string {
   const body = alert.bodyTemplate
-    ? substituteAlertTemplate(alert.bodyTemplate, alert, event)
+    ? substituteAlertTemplate(alert.bodyTemplate, alert, event, channelName)
     : defaultAlertBody(alert, event);
   return body;
 }
@@ -135,16 +138,24 @@ function defaultAlertBody(alert: LoadedAlert, event: ChannelErrorEvent): string 
   ].join('\n');
 }
 
-/** Substitute placeholders in an alert template. */
+/**
+ * Substitute `${name}` placeholders in an alert template. Only the variables in
+ * ALERT_TEMPLATE_VARIABLES are replaced; anything else is left as written.
+ */
 export function substituteAlertTemplate(
   template: string,
   alert: LoadedAlert,
   event: ChannelErrorEvent,
+  channelName?: string,
 ): string {
-  return template
-    .replace(/\$\{alertName\}/g, alert.name)
-    .replace(/\$\{channelId\}/g, event.channelId)
-    .replace(/\$\{errorType\}/g, event.errorType)
-    .replace(/\$\{errorMessage\}/g, event.errorMessage)
-    .replace(/\$\{timestamp\}/g, new Date(event.timestamp).toISOString());
+  const values: Readonly<Record<AlertTemplateVariable, string>> = {
+    alertName: alert.name,
+    channelName: channelName ?? event.channelId,
+    channelId: event.channelId,
+    errorType: event.errorType,
+    errorMessage: event.errorMessage,
+    timestamp: new Date(event.timestamp).toISOString(),
+  };
+  return template.replace(/\$\{(\w+)\}/g, (placeholder, name: string) =>
+    Object.hasOwn(values, name) ? values[name as AlertTemplateVariable] : placeholder);
 }

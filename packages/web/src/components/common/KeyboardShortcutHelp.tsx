@@ -23,6 +23,7 @@ interface ShortcutEntry {
 const SHORTCUTS: readonly ShortcutEntry[] = [
   { keys: 'Ctrl K', description: 'Jump to a page, channel or action (⌘K on a Mac)' },
   { keys: '?', description: 'Show this help dialog' },
+  { keys: 'Ctrl S', description: 'Save changes on the Settings page (⌘S on a Mac)' },
   { keys: 'g d', description: 'Go to Dashboard' },
   { keys: 'g c', description: 'Go to Channels' },
   { keys: 'g s', description: 'Go to Settings' },

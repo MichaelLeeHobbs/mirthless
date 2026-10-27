@@ -26,7 +26,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 /**
  * Pages to shoot: name → route, or { url, keys, type } to press keys and type
- * after load (for dialogs like the command palette). Add one when a page joins
+ * after load (for dialogs like the command palette), { url, click } to click the
+ * element showing some text (for a record editor), or { url, fill } to fill
+ * fields by their label (for a form's edited state). Add one when a page joins
  * the visual language catalog.
  */
 const PAGES = {
@@ -40,13 +42,19 @@ const PAGES = {
   users: '/users',
   events: '/events',
   settings: '/settings',
+  'settings-edited': { url: '/settings', fill: { 'Server name': 'Mirthless (prod)', Port: '70000' } },
   system: '/system',
+  'system-logs': '/system/logs',
+  'system-pruner': '/system/pruner',
   tags: '/tags',
   'alert-editor': '/alerts/a1',
+  'alert-templates': { url: '/alerts/a1', keys: 'End' },
   'code-templates': '/code-templates',
   'global-scripts': '/global-scripts',
   resources: '/resources',
   collections: '/collections',
+  'collection-records': '/collections/k1/records',
+  'collection-record-edit': { url: '/collections/k1/records', click: 'ACC20480' },
   datasources: '/datasources',
   'global-map': '/global-map',
   'config-map': '/config-map',
@@ -94,7 +102,7 @@ async function launch() {
 }
 
 async function shoot(browser, name, target, variantName) {
-  const { url, keys, type } = typeof target === 'string' ? { url: target } : target;
+  const { url, keys, type, click, fill } = typeof target === 'string' ? { url: target } : target;
   const v = VARIANTS[variantName];
   const context = await browser.newContext({
     viewport: v.viewport, isMobile: v.isMobile ?? false, deviceScaleFactor: v.deviceScaleFactor ?? 1, reducedMotion: 'reduce',
@@ -121,7 +129,9 @@ async function shoot(browser, name, target, variantName) {
   await page.waitForTimeout(800);
   if (keys) await page.keyboard.press(keys);
   if (type) await page.keyboard.type(type);
-  if (keys || type) await page.waitForTimeout(300);
+  if (click) await page.getByText(click, { exact: true }).first().click();
+  for (const [label, value] of Object.entries(fill ?? {})) await page.getByLabel(label, { exact: true }).fill(value);
+  if (keys || type || click || fill) await page.waitForTimeout(300);
   const file = path.join(opts.out, `${name}.${variantName}.png`);
   await page.screenshot({ path: file });
   await context.close();

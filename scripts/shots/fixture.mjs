@@ -94,18 +94,25 @@ const events = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 const settings = [
-  ['s1', 'server.name', 'Mirthless (staging)', 'string', 'Shown in the header', 'general'],
-  ['s2', 'smtp.host', 'smtp.example.test', 'string', 'Outgoing mail server', 'smtp'],
-  ['s3', 'smtp.port', '587', 'number', null, 'smtp'],
-  ['s4', 'pruner.enabled', 'true', 'boolean', 'Run the data pruner nightly', 'pruner'],
+  ['s1', 'general.server_name', 'Mirthless (staging)', 'string', 'Display name for this server instance', 'general'],
+  ['s2', 'general.default_admin_address', 'integration-team@hospital.example', 'string', null, 'general'],
+  ['s3', 'smtp.host', 'smtp.hospital.example', 'string', 'SMTP server hostname', 'smtp'],
+  ['s4', 'smtp.port', '587', 'number', 'SMTP server port', 'smtp'],
+  ['s5', 'smtp.secure', 'false', 'boolean', null, 'smtp'],
+  ['s6', 'smtp.from', 'mirthless@hospital.example', 'string', null, 'smtp'],
+  ['s7', 'smtp.auth_user', 'mirthless', 'string', null, 'smtp'],
+  ['s8', 'smtp.auth_pass', '__REDACTED__', 'password', null, 'smtp'],
+  ['s9', 'pruner.enabled', 'true', 'boolean', 'Run the data pruner nightly', 'pruner'],
+  ['s10', 'pruner.cron_expression', '0 3 * * *', 'string', null, 'pruner'],
+  ['s11', 'features.maintenance_mode', 'false', 'boolean', null, 'features'],
 ].map(([id, key, value, type, description, category]) => ({ id, key, value, type, description, category, createdAt: ago(90000), updatedAt: ago(500) }));
 
 const systemInfo = {
-  server: { version: '0.1.0', nodeVersion: 'v22.11.0', env: 'production', pid: 4127, uptime: 389_200 },
-  os: { platform: 'linux', arch: 'x64', totalMemory: 16 * 2 ** 30, freeMemory: 9.4 * 2 ** 30 },
-  memory: { rss: 512 * 2 ** 20, heapUsed: 214 * 2 ** 20, heapTotal: 300 * 2 ** 20, external: 12 * 2 ** 20 },
+  server: { version: '0.1.0', nodeVersion: 'v24.11.0', env: 'production', pid: 4127, uptime: 389_200, startedAt: ago(6487), hostname: 'mirth-prod-01' },
+  os: { platform: 'linux', release: '6.8.0-49-generic', arch: 'x64', cpus: 8, loadAverage: [0.42, 0.38, 0.31], totalMemory: 16 * 2 ** 30, freeMemory: 9.4 * 2 ** 30 },
+  memory: { rss: 512 * 2 ** 20, heapUsed: 214 * 2 ** 20, heapTotal: 300 * 2 ** 20, heapLimit: 4144 * 2 ** 20, external: 12 * 2 ** 20 },
   engine: { deployed: 6, started: 4, stopped: 1, paused: 1 },
-  database: { connected: true },
+  database: { connected: true, latencyMs: 2.4, version: '17.2', sizeBytes: 38.6 * 2 ** 30 },
 };
 
 const logs = [
@@ -136,6 +143,19 @@ const alertDetail = {
   subjectTemplate: 'Mirthless: ${channelName} errored', bodyTemplate: '${error}', reAlertIntervalMs: 900000, maxAlerts: 5,
 };
 
+const collection = { id: 'k1', name: 'pending-orders', description: 'Orders waiting for a result, by accession', indexedFields: ['accession', 'facility'], defaultTtlSeconds: 2592000, createdAt: ago(90000), updatedAt: ago(100) };
+
+const FACILITIES = ['North Campus', 'South Clinic', 'Main Hospital'];
+const collectionRecords = Array.from({ length: 12 }, (_, i) => ({
+  id: `rec${String(i)}`,
+  fields: { accession: `ACC${String(20481 - i)}`, facility: FACILITIES[i % 3] },
+  payload: i % 4 === 3
+    ? `{"orderId":"ORD-${String(7700 + i)}","test":"CBC","status":"pending"}`
+    : `MSH|^~\\&|EPIC|${FACILITIES[i % 3].toUpperCase().replace(' ', '_')}|LAB|LAB|20261026${String(1000 + i)}||ORM^O01|MSG${String(90000 + i)}|P|2.5.1\rPID|1||MRN${String(400 + i)}`,
+  expireAt: new Date(NOW + (30 * 86400000) - i * 3600000).toISOString(),
+  createdAt: ago(i * 7 + 2),
+}));
+
 const page = (data) => ({ data, pagination: { page: 1, pageSize: 25, total: data.length, totalPages: 1 } });
 
 /** The `data` to answer a GET with; `undefined` answers an empty list. */
@@ -165,9 +185,9 @@ export function route(pathname, search) {
     { id: 'r1', name: 'facility-codes.json', description: 'Facility code lookup', mimeType: 'application/json', sizeBytes: 18234, createdAt: ago(90000), updatedAt: ago(4000) },
     { id: 'r2', name: 'zip-to-county.csv', description: null, mimeType: 'text/csv', sizeBytes: 1048576, createdAt: ago(90000), updatedAt: ago(40000) },
   ];
-  if (p === '/collections') return [
-    { id: 'k1', name: 'pending-orders', description: 'Orders waiting for a result, by accession', indexedFields: ['accession', 'facility'], defaultTtlSeconds: 2592000, createdAt: ago(90000), updatedAt: ago(100) },
-  ];
+  if (p === '/collections') return [collection];
+  if (p === '/collections/k1') return collection;
+  if (p === '/collections/k1/records') return { items: collectionRecords, total: 214 };
   if (p === '/datasources') return [
     { id: 'ds1', name: 'ehr-replica', description: 'Read-only EHR reporting replica', driver: 'postgres', host: 'ehr-replica.example.test', port: 5432, database: 'ehr', user: 'mirthless_ro', readOnly: true, maxConnections: 5, statementTimeoutMs: 10000, maxRows: 1000, createdAt: ago(90000), updatedAt: ago(9000) },
   ];
