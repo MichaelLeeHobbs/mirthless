@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { dispatchActions, substituteAlertTemplate, type ActionDispatcherDeps } from '../action-dispatcher.js';
 import type { LoadedAlert, ChannelErrorEvent } from '../alert-evaluator.js';
+import { ALERT_TEMPLATE_VARIABLES } from '@mirthless/core-models';
 
 // ----- Helpers -----
 
@@ -78,6 +79,23 @@ describe('substituteAlertTemplate', () => {
   it('returns template unchanged when no placeholders', () => {
     expect(substituteAlertTemplate('plain text', alert, event)).toBe('plain text');
   });
+
+  it('substitutes ${channelName} with the channel name', () => {
+    expect(substituteAlertTemplate('On ${channelName}', alert, event, 'ADT Inbound')).toBe('On ADT Inbound');
+  });
+
+  it('falls back to the channel ID for ${channelName} when the name is unknown', () => {
+    expect(substituteAlertTemplate('On ${channelName}', alert, event)).toBe('On ch-test');
+  });
+
+  it('substitutes every listed variable', () => {
+    const template = ALERT_TEMPLATE_VARIABLES.map((v) => '${' + v.name + '}').join('|');
+    expect(substituteAlertTemplate(template, alert, event, 'ADT')).not.toContain('${');
+  });
+
+  it('leaves unknown placeholders as written', () => {
+    expect(substituteAlertTemplate('Err: ${error}', alert, event)).toBe('Err: ${error}');
+  });
 });
 
 // ----- dispatchActions -----
@@ -117,6 +135,16 @@ describe('dispatchActions', () => {
       'Error in ch-abc',
       expect.any(String),
     );
+  });
+
+  it('fills ${channelName} from the channel the manager serves', async () => {
+    const emailSender = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps({ emailSender, channelName: 'Lab Results' });
+    const alert = makeAlert({ subjectTemplate: 'Error in ${channelName}' });
+
+    await dispatchActions(alert, makeEvent(), deps);
+
+    expect(emailSender).toHaveBeenCalledWith(['admin@test.com'], 'Error in Lab Results', expect.any(String));
   });
 
   it('uses default subject when no subjectTemplate', async () => {

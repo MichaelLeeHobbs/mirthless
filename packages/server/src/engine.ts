@@ -521,7 +521,7 @@ export class EngineManager {
     };
 
     // Create alert manager and load alerts for this channel
-    const alertManager = new AlertManager({ logger, emailSender });
+    const alertManager = new AlertManager({ logger, emailSender, channelName: channel.name });
     alertManager.loadAlerts(loadedAlerts);
 
     // Execute global deploy script (before channel deploy)

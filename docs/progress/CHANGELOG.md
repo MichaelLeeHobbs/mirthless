@@ -12,6 +12,12 @@ Michael: Collections → View Records should be a grid where he can sort, filter
 - Fixed the Collections e2e cleanup, which built `http://localhost:3000/collections` (leading slash dropped `/api/v1`) and so never deleted leftovers.
 - `pnpm shots` gains `collection-records` and `collection-record-edit`, and a `click` option for shooting a dialog.
 
+## 2026-10-27 — Alert template variables you can see (branch `claude/project-thread-6e5ntp`)
+
+- The alert editor's hint said to use `${channelName}` and `${error}`, but the engine only replaced `${alertName}`, `${channelId}`, `${errorType}`, `${errorMessage}` and `${timestamp}`, so those were sent literally (the showcase seed did exactly that). The list now lives once in core-models (`ALERT_TEMPLATE_VARIABLES`); the engine substitutes from a record typed by it and the editor renders it, so they cannot drift.
+- `${channelName}` is now real: each channel's `AlertManager` gets the channel name (falls back to the ID).
+- Under the body field, one chip per variable inserts it at the caret of the subject or body, whichever was last focused, with a tooltip saying what it holds. A placeholder the engine won't replace shows a warning under its field. `pnpm shots --only alert-templates` shows the section.
+
 ## 2026-10-27 — System Information, after MedFusion's System Monitor (branch `claude/project-thread-z0c3be`)
 
 Michael: the System Information view could learn a lot from MedFusion. Taken from MedFusion's System Monitor: tabs held in the path, a status strip first, dense label/value panels.
@@ -149,6 +155,7 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
   Not tagged yet.
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
+
 ## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle
 
 - Moved the real-message E2E harness, its 7 suites, the `*.itest.ts` integration lane and the DICOM
@@ -308,6 +315,7 @@ connectors 418→475 tests, core-models 198 tests passing.
 ### Dependency added
 - `ssh2-sftp-client@^12.1.1` (dep) + `@types/ssh2-sftp-client@^9.0.6` (dev) in
   `@mirthless/connectors`.
+
 ## 2026-07-12 — Message ops endpoints + real partitioning (branch `w2/server`)
 
 Scope: `packages/{server,core-models}` only. Added four message-operations endpoints and resolved the D-166 partitioning gap. New/changed files lint clean (`pnpm lint --max-warnings 0`); core-models + server builds green; core-models 221 tests green; the 64 tests across the 5 touched server test files green. (Pre-existing, out-of-scope: 9 `data-pruner.service.test.ts` unit failures inherited from the D-165 `inArray` change — those files are untouched here.)
@@ -320,6 +328,7 @@ Scope: `packages/{server,core-models}` only. Added four message-operations endpo
 
 ### Partitioning (D-167, resolves D-166)
 - New hand-written migration `0007_partition_message_tables.sql` recreates the six message parent tables as `PARTITION BY LIST (channel_id)` with a DEFAULT partition each, so the already-correct `PartitionManagerService` works. Registered in `meta/_journal.json`. Verified against a throwaway Postgres 17 (partition routing + DEFAULT fallback + drop). `db:migrate` not run against any live DB.
+
 ## 2026-07-12 — Web admin console feature completion (branch `w2/web`)
 
 Scope: `packages/web/**` only. Five feature areas. Web: 68 tests passing (was 45),
@@ -457,6 +466,7 @@ web tests 25 → 45 passing; ESLint clean (`--max-warnings 0`).
 ### Tests
 - New: `lib/__tests__/status.test.ts`, `components/common/__tests__/StatusChip.test.tsx`,
   `components/common/states/__tests__/states.test.tsx` (20 tests).
+
 ## 2026-07-12 — Ops, Docs & CI Hardening (v0.1 readiness)
 
 Branch `w1/ops`. Scope: repo root, `.github/**`, `docker` docs, `docs/**`, `scripts/**`,
