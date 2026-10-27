@@ -1,7 +1,7 @@
 // ===========================================
 // CommandPalette Tests
 // ===========================================
-// Type, arrow, Enter: the palette jumps to pages, channels and actions the
+// Type, arrow, Enter: the palette jumps to pages, channels, collections and actions the
 // user is allowed to use. Permission and channel hooks are mocked at the API
 // boundary; routing and the UI store run for real.
 
@@ -24,6 +24,11 @@ vi.mock('../../../hooks/use-permissions.js', () => ({
 
 vi.mock('../../../hooks/use-channels.js', () => ({
   useChannels: () => ({ data: { data: [{ id: 'c1', name: 'ADT Inbound' }, { id: 'c2', name: 'Lab Results' }] } }),
+}));
+
+// Like the real hook, returns nothing when the caller disables the query.
+vi.mock('../../../hooks/use-collections.js', () => ({
+  useCollections: (enabled: boolean) => ({ data: enabled ? [{ id: 'k1', name: 'pending-orders' }] : undefined }),
 }));
 
 import { CommandPalette } from '../CommandPalette.js';
@@ -109,6 +114,20 @@ describe('CommandPalette', () => {
     type('shortcuts');
     fireEvent.keyDown(input(), { key: 'Enter' });
     expect(onShowShortcuts).toHaveBeenCalled();
+  });
+
+  it('jumps to a collection\'s records grid for users who can read collections', () => {
+    renderPalette(['collections:read']);
+    type('pending');
+    expect(options()).toEqual(['pending-orders recordsCollections']);
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(screen.getByTestId('where').textContent).toBe('/collections/k1/records');
+  });
+
+  it('does not list collections without collections:read', () => {
+    renderPalette([]);
+    type('pending');
+    expect(options()).toEqual([]);
   });
 
   it('does nothing on Enter when nothing matches', () => {
