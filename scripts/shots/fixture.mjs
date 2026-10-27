@@ -94,10 +94,17 @@ const events = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 const settings = [
-  ['s1', 'server.name', 'Mirthless (staging)', 'string', 'Shown in the header', 'general'],
-  ['s2', 'smtp.host', 'smtp.example.test', 'string', 'Outgoing mail server', 'smtp'],
-  ['s3', 'smtp.port', '587', 'number', null, 'smtp'],
-  ['s4', 'pruner.enabled', 'true', 'boolean', 'Run the data pruner nightly', 'pruner'],
+  ['s1', 'general.server_name', 'Mirthless (staging)', 'string', 'Display name for this server instance', 'general'],
+  ['s2', 'general.default_admin_address', 'integration-team@hospital.example', 'string', null, 'general'],
+  ['s3', 'smtp.host', 'smtp.hospital.example', 'string', 'SMTP server hostname', 'smtp'],
+  ['s4', 'smtp.port', '587', 'number', 'SMTP server port', 'smtp'],
+  ['s5', 'smtp.secure', 'false', 'boolean', null, 'smtp'],
+  ['s6', 'smtp.from', 'mirthless@hospital.example', 'string', null, 'smtp'],
+  ['s7', 'smtp.auth_user', 'mirthless', 'string', null, 'smtp'],
+  ['s8', 'smtp.auth_pass', '__REDACTED__', 'password', null, 'smtp'],
+  ['s9', 'pruner.enabled', 'true', 'boolean', 'Run the data pruner nightly', 'pruner'],
+  ['s10', 'pruner.cron_expression', '0 3 * * *', 'string', null, 'pruner'],
+  ['s11', 'features.maintenance_mode', 'false', 'boolean', null, 'features'],
 ].map(([id, key, value, type, description, category]) => ({ id, key, value, type, description, category, createdAt: ago(90000), updatedAt: ago(500) }));
 
 const systemInfo = {

@@ -11,7 +11,7 @@ This doc is the rulebook. The values live in code; the rules below say how to us
 | Tokens: colours per mode, radius, fonts, tag colours | `packages/web/src/styles/tokens.ts` | The only file with colour literals (plus `theme.ts`). |
 | MUI theme: palette, type scale, component overrides | `packages/web/src/styles/theme.ts` | Overrides make pages consistent without per-page styling. |
 | Status meaning | `packages/web/src/lib/status.ts` | Maps channel states and message statuses to a level. |
-| Shared page parts | `packages/web/src/components/common/` | `PageHeader`, `StatusChip`/`StatusDot`/`ChannelStateChip`/`MessageStatusChip`, `ConfirmDialog`, `states/` (`EmptyState`, `ErrorState`, `TableSkeleton`, `LoadingBlock`). |
+| Shared page parts | `packages/web/src/components/common/` | `PageHeader`, `StatusChip`/`StatusDot`/`ChannelStateChip`/`MessageStatusChip`, `ConfirmDialog`, `UnsavedChangesBar`, `states/` (`EmptyState`, `ErrorState`, `TableSkeleton`, `LoadingBlock`). |
 | Screenshot check | `scripts/shots/` (`pnpm shots`) | Renders pages against a fake API in light, dark and phone sizes. |
 | Lint guards | `eslint.config.js` (visual language block) | Blocks hex/rgb colours, inline font stacks and browser popups in `packages/web/src`. |
 
@@ -64,6 +64,7 @@ This doc is the rulebook. The values live in code; the rules below say how to us
 ### Interaction
 
 - **Never use the browser's popups.** `window.confirm`, `alert` and `prompt` can't be styled or tested, so lint fails them. Confirm with `ConfirmDialog`. For a destructive action, name the target in the message and use `severity="error"`.
+- **Forms save from one place.** A form page with several fields shows `UnsavedChangesBar` at the bottom only while something changed (Discard, Save, Ctrl+S), marks edited fields, blocks saving while a field is invalid, and asks before navigating away with unsaved changes.
 - **Fewest clicks.** Anything a user goes to often is one click from its list (the row name links to it) and reachable from the Ctrl+K / ⌘K "Jump to" palette in the header. A new page in `components/layout/nav-items.tsx` appears in the sidebar and the palette together. A new frequent action belongs in the palette's actions (`CommandPalette.tsx`), gated by the same permission as its button.
 - **Focus is always visible.** The theme draws a 2px primary outline on `:focus-visible` for every control. Don't remove it; hover-only affordances must also appear on focus.
 - **Motion is minimal** and the theme switches it off under `prefers-reduced-motion`.
@@ -89,3 +90,4 @@ When building something new, copy the closest of these:
 | Dense detail browser | Message browser (`pages/MessageBrowserPage.tsx`) | Filters, monospace IDs, status per connector. |
 | Read-only status | System Info (`pages/SystemInfoPage.tsx`) | Panels of facts, progress bars, status counts. |
 | Long-form editor | Channel editor (`pages/ChannelEditorPage.tsx`) | Tabs, accordions for advanced settings. |
+| Settings form | Settings (`pages/SettingsPage.tsx`) | Sections from a catalog, label and help beside each control, save bar only while dirty. |
