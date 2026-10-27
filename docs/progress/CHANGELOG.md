@@ -8,10 +8,31 @@
 - `${channelName}` is now real: each channel's `AlertManager` gets the channel name (falls back to the ID).
 - Under the body field, one chip per variable inserts it at the caret of the subject or body, whichever was last focused, with a tooltip saying what it holds. A placeholder the engine won't replace shows a warning under its field. `pnpm shots --only alert-templates` shows the section.
 
+## 2026-10-27 — System Information, after MedFusion's System Monitor (branch `claude/project-thread-z0c3be`)
+
+Michael: the System Information view could learn a lot from MedFusion. Taken from MedFusion's System Monitor: tabs held in the path, a status strip first, dense label/value panels.
+
+- **Tabs in the path.** `/system` (Overview), `/system/logs`, `/system/pruner`, `/system/backup` replace one long scrolling page. Only the active tab is mounted, so the 10 s system-info poll and the log stream stop when you leave them. The three non-overview tabs are in the Ctrl+K palette ("Server logs", "Data pruner", "Backup & restore"). (D-202)
+- **Status strip.** Server, Database, Engine, Heap and Host each get a level, a word and a one-line reason (`lib/system-health.ts`). The Engine cell links to the dashboard.
+- **More facts, from one probe.** The server now reports the PostgreSQL version, database size and probe round trip, hostname, start time, OS release, CPU count, load average and the V8 heap limit.
+- **Heap is measured against the V8 limit**, not `heapTotal`. `heapTotal` is only what V8 has allocated so far and normally sits near 90% used, so the old bar read red on a healthy server.
+- **Copy diagnostics** puts a plain-text summary (no PHI, no settings values) on the clipboard for support tickets.
+
+## 2026-10-27 — Settings page rebuilt after the VNS Portal's settings (branch `claude/project-thread-ype1i7`)
+
+Michael: "For Settings we could learn a lot from the Portal." (D-201)
+
+- **One page, plain words.** Sections (General, Email, Data pruning, Maintenance, plus Other for unlisted keys) from `lib/settings-catalog.ts`. Each row has a label and what the setting does on the left, its control on the right (stacked on phones), and the raw key in small monospace for reference. Replaces the All/General/Security/Features/SMTP tabs, where Security was always empty and pruner settings only showed under All.
+- **Save bar.** `components/common/UnsavedChangesBar.tsx` sticks to the bottom only while something changed: count, Discard, Save; Ctrl+S saves. Edited rows are marked. Invalid values (port range, email, cron, JSON, numbers) are flagged inline and block saving. Save results go to the snackbar; a failed save keeps the edits (it was silent before).
+- **Fixes.** Pruner settings now save through the pruner schedule API, so a new schedule takes effect without a restart. The SMTP password no longer loads the server's redaction marker into the field (editing it could save a corrupted marker as the password); it starts empty with "Saved. Type to replace." and a show/hide toggle. Leaving with unsaved changes asks first.
+- `pnpm shots` gains `settings-edited` (a `fill` option fills fields by label), and its settings fixture uses the real seeded keys.
+- Flagged, not changed: `features.maintenance_mode` is not enforced anywhere on the server; the page now says so.
+
 ## 2026-10-27 — First login no longer bounces back to /login (branch `claude/project-thread-8fdw4k`)
 
 - A freshly seeded admin (`mustChangePassword`) was logged out right after signing in: the server refuses the websocket handshake until the password changes (since e8259ba), and `useSocketConnection` treated that refusal as an auth failure and called `clearAuth()`, so the forced change-password dialog never appeared. The socket now waits until the forced change is done.
 - After a forced change, the dialog invalidates all queries so pages that were refused with 403 load without a manual retry.
+- E2E global setup now does the CI admin's forced change through the login page and dialog instead of the API, so a broken first login fails the E2E run (branch `claude/project-thread-ycxczi`).
 
 ## 2026-10-26 — Uniform pages, Ctrl+K command bar, agent practices (branch `claude/project-thread-2z3cpi`, second PR)
 
@@ -124,6 +145,7 @@ Worked the findings of the 2026-10-08 release-readiness review, one fix per comm
   Not tagged yet.
 - **Docs:** new `docs/ops/deployment.md` (first install, required settings, listener ports, known
   limitations); `CONTENT_ENCRYPTION_KEY` is now a required production setting in the example env.
+
 ## 2026-10-08 — Fix CI: break the engine ↔ connectors workspace cycle
 
 - Moved the real-message E2E harness, its 7 suites, the `*.itest.ts` integration lane and the DICOM
@@ -283,6 +305,7 @@ connectors 418→475 tests, core-models 198 tests passing.
 ### Dependency added
 - `ssh2-sftp-client@^12.1.1` (dep) + `@types/ssh2-sftp-client@^9.0.6` (dev) in
   `@mirthless/connectors`.
+
 ## 2026-07-12 — Message ops endpoints + real partitioning (branch `w2/server`)
 
 Scope: `packages/{server,core-models}` only. Added four message-operations endpoints and resolved the D-166 partitioning gap. New/changed files lint clean (`pnpm lint --max-warnings 0`); core-models + server builds green; core-models 221 tests green; the 64 tests across the 5 touched server test files green. (Pre-existing, out-of-scope: 9 `data-pruner.service.test.ts` unit failures inherited from the D-165 `inArray` change — those files are untouched here.)
@@ -295,6 +318,7 @@ Scope: `packages/{server,core-models}` only. Added four message-operations endpo
 
 ### Partitioning (D-167, resolves D-166)
 - New hand-written migration `0007_partition_message_tables.sql` recreates the six message parent tables as `PARTITION BY LIST (channel_id)` with a DEFAULT partition each, so the already-correct `PartitionManagerService` works. Registered in `meta/_journal.json`. Verified against a throwaway Postgres 17 (partition routing + DEFAULT fallback + drop). `db:migrate` not run against any live DB.
+
 ## 2026-07-12 — Web admin console feature completion (branch `w2/web`)
 
 Scope: `packages/web/**` only. Five feature areas. Web: 68 tests passing (was 45),
@@ -432,6 +456,7 @@ web tests 25 → 45 passing; ESLint clean (`--max-warnings 0`).
 ### Tests
 - New: `lib/__tests__/status.test.ts`, `components/common/__tests__/StatusChip.test.tsx`,
   `components/common/states/__tests__/states.test.tsx` (20 tests).
+
 ## 2026-07-12 — Ops, Docs & CI Hardening (v0.1 readiness)
 
 Branch `w1/ops`. Scope: repo root, `.github/**`, `docker` docs, `docs/**`, `scripts/**`,
