@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-27 — Settings page rebuilt after the VNS Portal's settings (branch `claude/project-thread-ype1i7`)
+
+Michael: "For Settings we could learn a lot from the Portal." (D-201)
+
+- **One page, plain words.** Sections (General, Email, Data pruning, Maintenance, plus Other for unlisted keys) from `lib/settings-catalog.ts`. Each row has a label and what the setting does on the left, its control on the right (stacked on phones), and the raw key in small monospace for reference. Replaces the All/General/Security/Features/SMTP tabs, where Security was always empty and pruner settings only showed under All.
+- **Save bar.** `components/common/UnsavedChangesBar.tsx` sticks to the bottom only while something changed: count, Discard, Save; Ctrl+S saves. Edited rows are marked. Invalid values (port range, email, cron, JSON, numbers) are flagged inline and block saving. Save results go to the snackbar; a failed save keeps the edits (it was silent before).
+- **Fixes.** Pruner settings now save through the pruner schedule API, so a new schedule takes effect without a restart. The SMTP password no longer loads the server's redaction marker into the field (editing it could save a corrupted marker as the password); it starts empty with "Saved. Type to replace." and a show/hide toggle. Leaving with unsaved changes asks first.
+- `pnpm shots` gains `settings-edited` (a `fill` option fills fields by label), and its settings fixture uses the real seeded keys.
+- Flagged, not changed: `features.maintenance_mode` is not enforced anywhere on the server; the page now says so.
+
 ## 2026-10-27 — First login no longer bounces back to /login (branch `claude/project-thread-8fdw4k`)
 
 - A freshly seeded admin (`mustChangePassword`) was logged out right after signing in: the server refuses the websocket handshake until the password changes (since e8259ba), and `useSocketConnection` treated that refusal as an auth failure and called `clearAuth()`, so the forced change-password dialog never appeared. The socket now waits until the forced change is done.
