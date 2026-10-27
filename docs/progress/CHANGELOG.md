@@ -2,6 +2,11 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-27 — First login no longer bounces back to /login (branch `claude/project-thread-8fdw4k`)
+
+- A freshly seeded admin (`mustChangePassword`) was logged out right after signing in: the server refuses the websocket handshake until the password changes (since e8259ba), and `useSocketConnection` treated that refusal as an auth failure and called `clearAuth()`, so the forced change-password dialog never appeared. The socket now waits until the forced change is done.
+- After a forced change, the dialog invalidates all queries so pages that were refused with 403 load without a manual retry.
+
 ## 2026-10-26 — Uniform pages, Ctrl+K command bar, agent practices (branch `claude/project-thread-2z3cpi`, second PR)
 
 Michael: the look is good but not uniform (Alerts stood out), keep it minimal and modern, minimise clicks, add a jump-to command bar, and start the agent practices from the VNS repos (D-200).

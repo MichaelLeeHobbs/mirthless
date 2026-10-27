@@ -13,19 +13,22 @@ import { queryClient } from '../providers/QueryProvider.js';
  * Call once at the top level of the authenticated layout (AppLayout).
  *
  * - Connects when authenticated, disconnects on logout or unmount.
+ * - Waits while a forced password change is pending: the server refuses the
+ *   handshake until then, and that refusal must not log the user out.
  * - Invalidates all TanStack queries on reconnection (stale data refresh).
  * - Stops reconnection attempts on auth errors to prevent token-expired loops.
  */
 export function useSocketConnection(): void {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const accessToken = useAuthStore((state) => state.accessToken);
+  const mustChangePassword = useAuthStore((state) => state.mustChangePassword);
   const clearAuth = useAuthStore((state) => state.clearAuth);
 
   // Track whether this is a reconnection (not the initial connect)
   const hasConnectedOnce = useRef(false);
 
   useEffect(() => {
-    if (!isAuthenticated || !accessToken) {
+    if (!isAuthenticated || !accessToken || mustChangePassword) {
       disconnectSocket();
       hasConnectedOnce.current = false;
       return;
@@ -59,7 +62,7 @@ export function useSocketConnection(): void {
       disconnectSocket();
       hasConnectedOnce.current = false;
     };
-  }, [isAuthenticated, accessToken, clearAuth]);
+  }, [isAuthenticated, accessToken, mustChangePassword, clearAuth]);
 }
 
 /**
