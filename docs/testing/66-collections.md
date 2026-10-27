@@ -18,7 +18,7 @@
 - [ ] `GET /collections/:id/records` — returns `{ items, total }`, newest first by default; takes `page`, `pageSize` (≤500), `sort` (`createdAt`, `expireAt`, `payload`, `fields.<name>`), `order`, `q` and `in` *(automated: collection.itest.ts)*
 - [ ] `GET /collections/:id/records?sort=fields.bogus` (field not indexed) → 400
 - [ ] `POST /collections/:id/records` — adds a record (`fields`, `payload`, optional `expireAt`/`ttlSeconds`); requires `collections:write`
-- [ ] `PUT /collections/:id/records/:recordId` — replaces fields, payload and `expireAt` (null = never); 404 for a record in another collection
+- [ ] `PUT /collections/:id/records/:recordId` — changes the given `fields` (whole set), `payload` and/or `expireAt` (null = never); 400 when none is given; 404 for a record in another collection
 - [ ] `DELETE /collections/:id/records/:recordId` — deletes one record; requires `collections:delete`
 - [ ] `PUT /collections/:id` — updates name/description/fields/TTL
 - [ ] `DELETE /collections/:id` — deletes the collection and cascades its records; requires `collections:delete`
@@ -59,6 +59,9 @@ Deploy two channels; in a transformer/script:
 - [ ] Storing with a field NOT in `indexedFields` throws (fail-loud)
 - [ ] Storing a payload > 1 MiB throws
 - [ ] `getCollection('orders').find({ accessionNumber, institutionName }, { filter: { orderControl: ['XO','NW','SC'] }, latest: true })` returns the newest matching record
+- [ ] `getCollection('orders').update(order.id, { payload, expireAt: null })` changes only those keys; returns `null` for a deleted or pruned record
+- [ ] `getCollection('orders').delete(order.id)` returns `true`, then `false` on a second call
+- [ ] `update`/`delete` with a non-UUID id, or on an unknown collection, throws in the script
 - [ ] `find` with multiple filter fields (scalar + array) AND-combines correctly
 - [ ] A record written with `{ ttlSeconds }` / `{ expireAt }` override expires per the override, not the collection default
 - [ ] IntelliSense: the channel script editor autocompletes `getCollection(...)` with `store`/`find`

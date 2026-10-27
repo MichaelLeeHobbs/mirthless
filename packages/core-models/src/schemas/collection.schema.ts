@@ -102,13 +102,18 @@ export const listRecordsQuerySchema = z.object({
 
 export type ListRecordsQuery = z.infer<typeof listRecordsQuerySchema>;
 
-// ----- Record edit (UI) -----
+// ----- Record edit (UI and scripts) -----
 
-/** Replace a record's fields, payload and expiry. `expireAt: null` keeps it forever. */
+/**
+ * Change a record. Only the keys given change: `fields` replaces the whole
+ * field set, `payload` the value, and `expireAt` the expiry (`null` = never).
+ */
 export const updateRecordSchema = z.object({
-  fields: z.record(z.string(), collectionScalar),
-  payload: z.string(),
-  expireAt: z.string().datetime().nullable(),
+  fields: z.record(z.string(), collectionScalar).optional(),
+  payload: z.string().optional(),
+  expireAt: z.string().datetime().nullable().optional(),
+}).refine((v) => v.fields !== undefined || v.payload !== undefined || v.expireAt !== undefined, {
+  message: 'give at least one of fields, payload or expireAt',
 });
 
 export type UpdateRecordInput = z.infer<typeof updateRecordSchema>;
@@ -123,7 +128,10 @@ export const collectionNameParamSchema = z.object({
   name: z.string().min(1).max(255),
 });
 
+/** A record id, as a script passes it to update() or delete(). */
+export const collectionRecordIdSchema = z.string().uuid('record id must be a UUID');
+
 export const collectionRecordParamSchema = z.object({
   id: z.string().uuid(),
-  recordId: z.string().uuid(),
+  recordId: collectionRecordIdSchema,
 });

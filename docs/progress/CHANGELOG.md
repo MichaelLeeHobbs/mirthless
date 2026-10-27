@@ -8,6 +8,7 @@ Michael: Collections → View Records should be a grid where he can sort, filter
 
 - **Records page** at `/collections/:id/records` replaces the read-only "last 100" dialog. One column per indexed field plus payload, created and expires; every head sorts; a search box (all columns or one) filters; paging shows past 25 rows. Clicking a row opens it in a dialog to edit (or view, without `collections:write`); Add Record and a per-row delete with a named confirm. The collection name on the Collections page links to it, and Ctrl+K lists "<name> records".
 - **API:** `GET /collections/:id/records` now sorts, searches and pages on the server and returns `{ items, total }`. New `POST`, `PUT` and `DELETE /collections/:id/records[/:recordId]`, gated by `collections:write`/`collections:delete` and audited as `COLLECTION_UPDATED`. Sort/search field names are checked against the collection's indexed fields; LIKE wildcards in a search are escaped.
+- **Scripts can update and delete records** (Michael: scripts should be able to CRUD records). `getCollection(name)` gains `update(id, changes)` (only the keys given change; `null` if the record is gone) and `delete(id)` (`false` if already gone). The same partial update backs the grid's edit. Design doc, scripting API and editor IntelliSense updated (D-204).
 - Fixed the Collections e2e cleanup, which built `http://localhost:3000/collections` (leading slash dropped `/api/v1`) and so never deleted leftovers.
 - `pnpm shots` gains `collection-records` and `collection-record-edit`, and a `click` option for shooting a dialog.
 

@@ -257,5 +257,41 @@ describeIntegration('CollectionService (real Postgres)', () => {
     const result = await CollectionService.updateRecord(id, record.id, { fields: { bogus: 'x' }, payload: 'p', expireAt: null });
     expect(result.ok).toBe(false);
   });
-});
 
+  // ----- Script bridge: update / delete by collection name -----
+
+  it('lets a script change only the payload and expiry, keeping the fields', async () => {
+    const { CollectionService } = mods;
+    const { name } = await makeCollection(['accession'], 3600);
+    const record = unwrap(await CollectionService.store(name, { fields: { accession: 'A1' }, payload: 'ORDERED' }));
+
+    const updated = unwrap(await CollectionService.updateByName(name, record.id, { payload: 'RESULTED', expireAt: null }));
+    expect(updated).toMatchObject({ id: record.id, fields: { accession: 'A1' }, payload: 'RESULTED', expireAt: null });
+  });
+
+  it('returns null / false to a script when the record is already gone', async () => {
+    const { CollectionService } = mods;
+    const { name } = await makeCollection(['accession']);
+    const record = unwrap(await CollectionService.store(name, { fields: { accession: 'A1' }, payload: 'p' }));
+
+    expect(unwrap(await CollectionService.removeByName(name, record.id))).toBe(true);
+    expect(unwrap(await CollectionService.removeByName(name, record.id))).toBe(false);
+    expect(unwrap(await CollectionService.updateByName(name, record.id, { payload: 'x' }))).toBeNull();
+  });
+
+  it('will not let a script touch a record through another collection name', async () => {
+    const { CollectionService } = mods;
+    const owner = await makeCollection(['accession']);
+    const other = await makeCollection(['accession']);
+    const record = unwrap(await CollectionService.store(owner.name, { fields: { accession: 'A1' }, payload: 'p' }));
+
+    expect(unwrap(await CollectionService.removeByName(other.name, record.id))).toBe(false);
+    expect(unwrap(await CollectionService.updateByName(other.name, record.id, { payload: 'x' }))).toBeNull();
+    expect(unwrap(await CollectionService.listRecords(owner.id, PAGE)).items[0]?.payload).toBe('p');
+  });
+
+  it('fails loudly when a script names a collection that does not exist', async () => {
+    const result = await mods.CollectionService.removeByName('no-such-collection', '00000000-0000-4000-8000-000000000001');
+    expect(result.ok).toBe(false);
+  });
+});

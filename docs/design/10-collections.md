@@ -42,10 +42,15 @@ A **CollectionRecord** is one stored row:
 | `expireAt` | timestamptz, nullable — when the pruner removes it |
 | `createdAt` | timestamptz — drives newest-wins ordering |
 
-Records are **append-only**: `store()` inserts, never upserts. "Newest wins" is a
-query result (`ORDER BY created_at DESC LIMIT 1`), not a storage constraint. This
-matches the domain (many orders accrue per accession over time) and avoids
-read-modify-write races at high write volume.
+`store()` always inserts, never upserts. "Newest wins" is a query result
+(`ORDER BY created_at DESC LIMIT 1`), not a storage constraint. This matches the
+domain (many orders accrue per accession over time) and avoids read-modify-write
+races at high write volume.
+
+A record can still be changed or removed **by its `id`**: scripts call
+`update(id, changes)` / `delete(id)`, and the admin UI's records grid does the
+same (D-204). That is for a known record (mark an order resulted, drop it once a
+report has gone out), not a keyed upsert, so the no-upsert rule above holds.
 
 ## Storage
 
@@ -110,6 +115,11 @@ const order = getCollection('orders').find(
   { accessionNumber, institutionName },
   { filter: { orderControl: ['XO', 'NW', 'SC'] }, latest: true }
 );   // → { id, fields, payload, createdAt } | null
+
+// Change or remove a record found earlier, by id
+await getCollection('orders').update(order.id, { payload: resulted, expireAt: null });
+                                     // only the keys given change; → record | null if gone
+await getCollection('orders').delete(order.id);   // → true, or false if already gone
 ```
 
 The bridge is injected the same way as the other IO bridges, at the currently

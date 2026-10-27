@@ -185,8 +185,13 @@ describe('updateRecordSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('requires an explicit expiry so an edit never silently keeps a stale one', () => {
-    expect(updateRecordSchema.safeParse({ fields: {}, payload: '' }).success).toBe(false);
+  it('accepts a change to the payload alone, leaving the rest as they are', () => {
+    const result = updateRecordSchema.parse({ payload: 'v2' });
+    expect(result).toEqual({ payload: 'v2' });
+  });
+
+  it('rejects an update that changes nothing', () => {
+    expect(updateRecordSchema.safeParse({}).success).toBe(false);
   });
 
   it('rejects an expiry that is not an ISO date-time', () => {

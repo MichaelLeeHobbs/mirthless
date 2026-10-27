@@ -242,7 +242,7 @@ export class CollectionService {
     });
   }
 
-  /** Replace a record's fields, payload and expiry from the UI. */
+  /** Change a record from the UI. Only the keys given change. */
   static async updateRecord(
     collectionId: string,
     recordId: string,
@@ -250,34 +250,34 @@ export class CollectionService {
     context?: AuditContext,
   ): Promise<Result<CollectionRecordResult>> {
     return tryCatch(async () => {
-      assertPayloadSize(input.payload);
-      const collection = await requireById(collectionId);
-      assertKnownFields(Object.keys(input.fields), collection.indexedFields, 'update');
-      const [row] = await db
-        .update(collectionRecords)
-        .set({
-          fields: stringifyFields(input.fields),
-          payload: input.payload,
-          expireAt: input.expireAt === null ? null : new Date(input.expireAt),
-        })
-        .where(and(eq(collectionRecords.id, recordId), eq(collectionRecords.collectionId, collectionId)))
-        .returning();
-      if (!row) throw new ServiceError('NOT_FOUND', `Record ${recordId} not found`);
+      const record = await patchRecord(await requireById(collectionId), recordId, input);
+      if (!record) throw new ServiceError('NOT_FOUND', `Record ${recordId} not found`);
       emitCollectionEvent(context, { action: 'record.update', collectionId, recordId });
-      return toRecord(row);
+      return record;
     });
   }
 
   /** Delete one record from the UI. */
   static async deleteRecord(collectionId: string, recordId: string, context?: AuditContext): Promise<Result<void>> {
     return tryCatch(async () => {
-      const deleted = await db
-        .delete(collectionRecords)
-        .where(and(eq(collectionRecords.id, recordId), eq(collectionRecords.collectionId, collectionId)))
-        .returning({ id: collectionRecords.id });
-      if (deleted.length === 0) throw new ServiceError('NOT_FOUND', `Record ${recordId} not found`);
+      if (!(await removeRecord(collectionId, recordId))) {
+        throw new ServiceError('NOT_FOUND', `Record ${recordId} not found`);
+      }
       emitCollectionEvent(context, { action: 'record.delete', collectionId, recordId });
     });
+  }
+
+  /**
+   * Change a record in a collection (by name). Called by the script bridge.
+   * Returns null when the record is gone (deleted or pruned), so a script can decide.
+   */
+  static async updateByName(name: string, recordId: string, input: UpdateRecordInput): Promise<Result<CollectionRecordResult | null>> {
+    return tryCatch(async () => patchRecord(await requireByName(name), recordId, input));
+  }
+
+  /** Delete a record from a collection (by name). Called by the script bridge. False when it was already gone. */
+  static async removeByName(name: string, recordId: string): Promise<Result<boolean>> {
+    return tryCatch(async () => removeRecord((await requireByName(name)).id, recordId));
   }
 
   /** Delete all expired records across all collections. Called by the pruner. */
@@ -322,6 +322,39 @@ async function insertRecord(
     })
     .returning();
   return toRecord(row!);
+}
+
+/** Apply the given changes to a record in this collection; null when it isn't there. */
+async function patchRecord(
+  collection: typeof collections.$inferSelect,
+  recordId: string,
+  input: UpdateRecordInput,
+): Promise<CollectionRecordResult | null> {
+  const changes: Partial<typeof collectionRecords.$inferInsert> = {};
+  if (input.fields !== undefined) {
+    assertKnownFields(Object.keys(input.fields), collection.indexedFields, 'update');
+    changes.fields = stringifyFields(input.fields);
+  }
+  if (input.payload !== undefined) {
+    assertPayloadSize(input.payload);
+    changes.payload = input.payload;
+  }
+  if (input.expireAt !== undefined) changes.expireAt = input.expireAt === null ? null : new Date(input.expireAt);
+  const [row] = await db
+    .update(collectionRecords)
+    .set(changes)
+    .where(and(eq(collectionRecords.id, recordId), eq(collectionRecords.collectionId, collection.id)))
+    .returning();
+  return row ? toRecord(row) : null;
+}
+
+/** Delete a record in this collection; false when it isn't there. */
+async function removeRecord(collectionId: string, recordId: string): Promise<boolean> {
+  const deleted = await db
+    .delete(collectionRecords)
+    .where(and(eq(collectionRecords.id, recordId), eq(collectionRecords.collectionId, collectionId)))
+    .returning({ id: collectionRecords.id });
+  return deleted.length > 0;
 }
 
 /** The SQL for a grid column. An indexed field reads its text out of the jsonb. */

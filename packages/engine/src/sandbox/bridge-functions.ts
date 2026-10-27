@@ -71,7 +71,14 @@ export interface CollectionFindOptions {
   readonly order?: 'asc' | 'desc';
 }
 
-/** Host-side collection store/find, backed by CollectionService. */
+/** Changes for getCollection(...).update(). Only the keys given change; expireAt null = never. */
+export interface CollectionUpdateChanges {
+  readonly fields?: Readonly<Record<string, CollectionScalar>>;
+  readonly payload?: string;
+  readonly expireAt?: string | null;
+}
+
+/** Host-side collection store/find/update/delete, backed by CollectionService. */
 export interface CollectionBridge {
   readonly store: (
     name: string,
@@ -84,6 +91,10 @@ export interface CollectionBridge {
     match: Readonly<Record<string, CollectionScalar>>,
     options: CollectionFindOptions,
   ) => Promise<readonly CollectionRecordData[]>;
+  /** Null when the record no longer exists. */
+  readonly update: (name: string, id: string, changes: CollectionUpdateChanges) => Promise<CollectionRecordData | null>;
+  /** False when the record no longer exists. */
+  readonly delete: (name: string, id: string) => Promise<boolean>;
 }
 
 /** Host-side dependency callbacks for IO bridge functions. */
