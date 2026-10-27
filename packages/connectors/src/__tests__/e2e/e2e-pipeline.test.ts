@@ -7,7 +7,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 import {
   TcpMllpReceiver,
   TcpMllpDispatcher,
@@ -19,12 +19,12 @@ import {
   MessageProcessor,
   ChannelRuntime,
   DEFAULT_EXECUTION_OPTIONS,
-} from '@mirthless/engine';
+} from '@galvaniflow/engine';
 import type {
   MessageStore,
   PipelineConfig,
   ChannelRuntimeConfig,
-} from '@mirthless/engine';
+} from '@galvaniflow/engine';
 
 // ----- In-Memory Message Store -----
 

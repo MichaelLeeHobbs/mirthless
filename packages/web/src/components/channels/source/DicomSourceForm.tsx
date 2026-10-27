@@ -82,7 +82,7 @@ export function DicomSourceForm({ properties, onChange }: SourceConnectorFormPro
 
         <TextField
           label="AE Title"
-          value={getStr(properties, 'aeTitle', 'MIRTHLESS')}
+          value={getStr(properties, 'aeTitle', 'GALVANIFLOW')}
           onChange={handleText('aeTitle')}
           helperText="Application Entity Title (max 16 characters)"
           fullWidth

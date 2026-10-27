@@ -24,7 +24,7 @@ function setting(key: string, value: string | null, type: string, category: stri
 
 const SETTINGS = [
   setting('smtp.port', '587', 'number', 'smtp'),
-  setting('general.server_name', 'Mirthless', 'string', 'general'),
+  setting('general.server_name', 'GalvaniFlow', 'string', 'general'),
   setting('smtp.host', '', 'string', 'smtp'),
   setting('smtp.auth_pass', '__REDACTED__', 'password', 'smtp'),
   setting('pruner.enabled', 'false', 'boolean', 'pruner'),
@@ -76,17 +76,17 @@ describe('SettingsPage', () => {
   it('shows no save bar until something changes, and hides it again on discard', () => {
     renderPage();
     expect(saveBar()).toBeNull();
-    fireEvent.change(field('Server name'), { target: { value: 'Mirthless (prod)' } });
+    fireEvent.change(field('Server name'), { target: { value: 'GalvaniFlow (prod)' } });
     expect(saveBar()?.textContent).toContain('1 unsaved change');
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(saveBar()).toBeNull();
-    expect(field('Server name').value).toBe('Mirthless');
+    expect(field('Server name').value).toBe('GalvaniFlow');
   });
 
   it('does not count a value changed back to what was saved', () => {
     renderPage();
     fireEvent.change(field('Server name'), { target: { value: 'x' } });
-    fireEvent.change(field('Server name'), { target: { value: 'Mirthless' } });
+    fireEvent.change(field('Server name'), { target: { value: 'GalvaniFlow' } });
     expect(saveBar()).toBeNull();
   });
 

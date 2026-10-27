@@ -5,7 +5,7 @@
 // All methods return Result<T> via tryCatch.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { CHANNEL_STATE, SOCKET_EVENT, type ChannelState } from '@mirthless/core-models';
+import { CHANNEL_STATE, SOCKET_EVENT, type ChannelState } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { emitToAll } from '../lib/socket.js';

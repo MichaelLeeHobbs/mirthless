@@ -21,7 +21,7 @@
 // db singleton (same connection MessageService uses); no db argument.
 
 import { eq, and, asc, isNull, sql } from 'drizzle-orm';
-import { CONTENT_TYPE, type MessageStatus } from '@mirthless/core-models';
+import { CONTENT_TYPE, type MessageStatus } from '@galvaniflow/core-models';
 import type { Result } from 'stderr-lib';
 import { db } from '../../lib/db.js';
 import { MessageService } from '../../services/message.service.js';
@@ -261,7 +261,7 @@ const HL7_TO_JSON_OUT = JSON.stringify(
 );
 
 const JSON_IN = '{"patient":"TEST","mrn":"TEST12345"}';
-const JSON_OUT = '{"patient":"TEST","mrn":"TEST12345","processedAt":"2026-07-12T12:00:00.000Z","processedBy":"Mirthless"}';
+const JSON_OUT = '{"patient":"TEST","mrn":"TEST12345","processedAt":"2026-07-12T12:00:00.000Z","processedBy":"GalvaniFlow"}';
 const XML_DOC = '<patient><name>TEST DOE</name><mrn>TEST12345</mrn></patient>';
 const HEARTBEAT = '{"type":"heartbeat","timestamp":"2026-07-12T12:00:00.000Z","source":"Example: JS Scripted"}';
 
@@ -279,7 +279,7 @@ const SPECS: ReadonlyArray<ChannelSpec> = [
     channelName: 'Example: String Transform',
     messages: [
       { raw: 'World', transformed: 'Hello, World!', outcome: 'SENT' },
-      { raw: 'Mirthless', transformed: 'Hello, Mirthless!', outcome: 'SENT' },
+      { raw: 'GalvaniFlow', transformed: 'Hello, GalvaniFlow!', outcome: 'SENT' },
     ],
   },
   {
@@ -301,9 +301,9 @@ const SPECS: ReadonlyArray<ChannelSpec> = [
       },
       {
         raw: '{"patient":"TEST","mrn":"TEST67890"}',
-        transformed: '{"patient":"TEST","mrn":"TEST67890","processedAt":"2026-07-12T12:05:00.000Z","processedBy":"Mirthless"}',
+        transformed: '{"patient":"TEST","mrn":"TEST67890","processedAt":"2026-07-12T12:05:00.000Z","processedBy":"GalvaniFlow"}',
         outcome: 'SENT',
-        dests: [{ status: 'SENT', sent: '{"patient":"TEST","mrn":"TEST67890","processedBy":"Mirthless"}', response: 'Wrote ./output/json-processor/msg-2.json' }],
+        dests: [{ status: 'SENT', sent: '{"patient":"TEST","mrn":"TEST67890","processedBy":"GalvaniFlow"}', response: 'Wrote ./output/json-processor/msg-2.json' }],
       },
     ],
   },

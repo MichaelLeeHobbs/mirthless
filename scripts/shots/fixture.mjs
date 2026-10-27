@@ -94,13 +94,13 @@ const events = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 const settings = [
-  ['s1', 'general.server_name', 'Mirthless (staging)', 'string', 'Display name for this server instance', 'general'],
+  ['s1', 'general.server_name', 'GalvaniFlow (staging)', 'string', 'Display name for this server instance', 'general'],
   ['s2', 'general.default_admin_address', 'integration-team@hospital.example', 'string', null, 'general'],
   ['s3', 'smtp.host', 'smtp.hospital.example', 'string', 'SMTP server hostname', 'smtp'],
   ['s4', 'smtp.port', '587', 'number', 'SMTP server port', 'smtp'],
   ['s5', 'smtp.secure', 'false', 'boolean', null, 'smtp'],
-  ['s6', 'smtp.from', 'mirthless@hospital.example', 'string', null, 'smtp'],
-  ['s7', 'smtp.auth_user', 'mirthless', 'string', null, 'smtp'],
+  ['s6', 'smtp.from', 'galvaniflow@hospital.example', 'string', null, 'smtp'],
+  ['s7', 'smtp.auth_user', 'galvaniflow', 'string', null, 'smtp'],
   ['s8', 'smtp.auth_pass', '__REDACTED__', 'password', null, 'smtp'],
   ['s9', 'pruner.enabled', 'true', 'boolean', 'Run the data pruner nightly', 'pruner'],
   ['s10', 'pruner.cron_expression', '0 3 * * *', 'string', null, 'pruner'],
@@ -140,7 +140,7 @@ const alertDetail = {
   ...{ id: 'a1', name: 'Channel errors', description: 'Any errored message on a production channel', enabled: true, triggerType: 'CHANNEL_ERROR', revision: 1, channelCount: 2, actionCount: 1, createdAt: ago(50000), updatedAt: ago(3000) },
   trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null }, channelIds: ['c1', 'c2'],
   actions: [{ id: 'aa1', actionType: 'EMAIL', recipients: ['oncall@example.test'], properties: null }],
-  subjectTemplate: 'Mirthless: ${channelName} errored', bodyTemplate: '${error}', reAlertIntervalMs: 900000, maxAlerts: 5,
+  subjectTemplate: 'GalvaniFlow: ${channelName} errored', bodyTemplate: '${error}', reAlertIntervalMs: 900000, maxAlerts: 5,
 };
 
 const collection = { id: 'k1', name: 'pending-orders', description: 'Orders waiting for a result, by accession', indexedFields: ['accession', 'facility'], defaultTtlSeconds: 2592000, createdAt: ago(90000), updatedAt: ago(100) };
@@ -189,7 +189,7 @@ export function route(pathname, search) {
   if (p === '/collections/k1') return collection;
   if (p === '/collections/k1/records') return { items: collectionRecords, total: 214 };
   if (p === '/datasources') return [
-    { id: 'ds1', name: 'ehr-replica', description: 'Read-only EHR reporting replica', driver: 'postgres', host: 'ehr-replica.example.test', port: 5432, database: 'ehr', user: 'mirthless_ro', readOnly: true, maxConnections: 5, statementTimeoutMs: 10000, maxRows: 1000, createdAt: ago(90000), updatedAt: ago(9000) },
+    { id: 'ds1', name: 'ehr-replica', description: 'Read-only EHR reporting replica', driver: 'postgres', host: 'ehr-replica.example.test', port: 5432, database: 'ehr', user: 'galvaniflow_ro', readOnly: true, maxConnections: 5, statementTimeoutMs: 10000, maxRows: 1000, createdAt: ago(90000), updatedAt: ago(9000) },
   ];
   if (p === '/global-map') return [
     { key: 'lastAdtSequence', value: '48211', updatedAt: ago(1) },

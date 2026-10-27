@@ -9,7 +9,7 @@ import {
   alertListQuerySchema,
   alertUuidParamSchema,
   patchAlertEnabledSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { AlertController } from '../controllers/alert.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

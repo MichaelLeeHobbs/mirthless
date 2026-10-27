@@ -6,7 +6,7 @@
 // destination connector must treat a NAK (MSA-1 = AE/AR/CE/CR) as an ERROR,
 // not a silent SENT.
 
-import { Hl7Message, createAck, formatTimestamp } from '@mirthless/core-util';
+import { Hl7Message, createAck, formatTimestamp } from '@galvaniflow/core-util';
 
 /** HL7 acknowledgement codes we emit. */
 export type AckCode = 'AA' | 'AE' | 'AR';
@@ -34,7 +34,7 @@ export function buildAck(inbound: string, ackCode: AckCode, textMessage?: string
 /** Minimal ACK used when the inbound message is not parseable HL7. */
 function buildFallbackAck(ackCode: AckCode, textMessage?: string): string {
   const timestamp = formatTimestamp(new Date());
-  const controlId = `MIRTHLESS${String(Date.now())}`;
+  const controlId = `GALVANIFLOW${String(Date.now())}`;
   const msh = ['MSH', '^~\\&', '', '', '', '', timestamp, '', 'ACK', controlId, 'P', '2.5.1'].join('|');
   const msaParts = ['MSA', ackCode, controlId];
   if (textMessage !== undefined) msaParts.push(textMessage);

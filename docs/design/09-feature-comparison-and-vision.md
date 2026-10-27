@@ -8,7 +8,7 @@ These are the table-stakes features that any Mirth Connect replacement must have
 
 ### 1.1 Channel Processing Pipeline
 
-| Feature | Mirth Connect | Mirthless Status | Notes |
+| Feature | Mirth Connect | GalvaniFlow Status | Notes |
 |---|---|---|---|
 | Source connector (1 per channel) | Yes | **Done** | 10 connector types implemented |
 | Destination connectors (N per channel) | Yes | **Done** | Fan-out routing with chains |
@@ -24,7 +24,7 @@ These are the table-stakes features that any Mirth Connect replacement must have
 
 ### 1.2 Connectors
 
-| Connector | Mirth (Source/Dest) | Mirthless Status |
+| Connector | Mirth (Source/Dest) | GalvaniFlow Status |
 |---|---|---|
 | TCP/MLLP (HL7v2) | S/D | **Done** |
 | HTTP/REST | S/D | **Done** |
@@ -43,7 +43,7 @@ These are the table-stakes features that any Mirth Connect replacement must have
 
 ### 1.3 Data Types
 
-| Data Type | Mirth | Mirthless Status |
+| Data Type | Mirth | GalvaniFlow Status |
 |---|---|---|
 | HL7 v2.x (ER7/pipe-delimited) | Yes | **Done** (custom parser in core-util) |
 | XML | Yes | **Done** |
@@ -74,7 +74,7 @@ These are Mirth features tightly coupled to the Java ecosystem. Replicating them
 
 ### 1.5 Message Lifecycle & Storage
 
-| Feature | Mirth | Mirthless Status |
+| Feature | Mirth | GalvaniFlow Status |
 |---|---|---|
 | Message status tracking (RECEIVED/FILTERED/TRANSFORMED/SENT/QUEUED/ERROR) | Yes | **Done** |
 | Per-connector status independence | Yes | **Done** |
@@ -90,7 +90,7 @@ These are Mirth features tightly coupled to the Java ecosystem. Replicating them
 
 ### 1.6 Channel Management
 
-| Feature | Mirth | Mirthless Status |
+| Feature | Mirth | GalvaniFlow Status |
 |---|---|---|
 | Channel CRUD | Yes | **Done** |
 | Channel groups | Yes | **Done** |
@@ -105,7 +105,7 @@ These are Mirth features tightly coupled to the Java ecosystem. Replicating them
 
 ### 1.7 Administration
 
-| Feature | Mirth | Mirthless Status |
+| Feature | Mirth | GalvaniFlow Status |
 |---|---|---|
 | Code templates + libraries | Yes | **Done** |
 | Global scripts | Yes | **Done** |
@@ -228,7 +228,7 @@ These are capabilities that modern integration engines, developer tools, and clo
 | Capability | Description |
 |---|---|
 | **Channel-as-code** | Export channels as JSON files. Import via API or CLI. |
-| **CLI deployment** | `mirthless deploy --file channel.json` or `mirthless deploy --dir ./channels/` |
+| **CLI deployment** | `galvaniflow deploy --file channel.json` or `galvaniflow deploy --dir ./channels/` |
 | **Git integration** | Webhook triggers redeploy when channel files change in a repo |
 | **Environment promotion** | Deploy same channel definition across dev/staging/prod with environment-specific config (connection strings, ports) via config map overrides |
 | **Diff on deploy** | Show what changed before deploying, require approval for production |
@@ -258,8 +258,8 @@ These are capabilities that modern integration engines, developer tools, and clo
 **What:** A curated registry of community-contributed connectors, data types, and extensions that can be installed via CLI or web UI.
 
 ```
-mirthless plugin install @mirthless-community/connector-kafka
-mirthless plugin install @mirthless-community/datatype-astm
+galvaniflow plugin install @galvaniflow-community/connector-kafka
+galvaniflow plugin install @galvaniflow-community/datatype-astm
 ```
 
 **Why it matters:** Mirth's extension model requires downloading JARs and placing them in the `/extensions` directory, then restarting. There is no discovery, no versioning, no dependency management. An npm-based plugin registry provides:
@@ -269,11 +269,11 @@ mirthless plugin install @mirthless-community/datatype-astm
 - One-command installation
 - Community contributions without forking the core
 
-**Implementation:** Plugins are npm packages with a `mirthless` field in `package.json`. The plugin manager resolves dependencies, installs to a `plugins/` directory, and hot-reloads where possible (connectors) or flags for restart (core extensions).
+**Implementation:** Plugins are npm packages with a `galvaniflow` field in `package.json`. The plugin manager resolves dependencies, installs to a `plugins/` directory, and hot-reloads where possible (connectors) or flags for restart (core extensions).
 
 ### 3.8 Multi-Tenancy (P4)
 
-**What:** A single Mirthless instance serving multiple isolated tenants (healthcare organizations), each with their own channels, users, and data.
+**What:** A single GalvaniFlow instance serving multiple isolated tenants (healthcare organizations), each with their own channels, users, and data.
 
 **Why it matters:** Healthcare integration is increasingly offered as a managed service (iPaaS). Companies like Redox, Health Gorilla, and Rhapsody Cloud provide cloud-hosted integration as a service. Multi-tenancy enables this model without running separate instances per customer.
 
@@ -355,7 +355,7 @@ Based on analysis of the Mirth Connect source code, community forums, GitHub iss
 
 ### 5.1 Direct Competitors (Healthcare-Specific Integration Engines)
 
-| Product | Type | Key Differentiator | Weakness vs. Mirthless |
+| Product | Type | Key Differentiator | Weakness vs. GalvaniFlow |
 |---|---|---|---|
 | **NextGen Connect (Mirth)** | On-premise, Java | Market incumbent, large community | Dated tech, paywalled features, proprietary license (v4.6+) |
 | **Rhapsody** | Commercial, on-prem/cloud | Enterprise polish, dedicated support | Extremely expensive, closed-source, vendor lock-in |
@@ -377,7 +377,7 @@ Based on analysis of the Mirth Connect source code, community forums, GitHub iss
 
 ### 5.3 Our Positioning
 
-Mirthless occupies a unique position: **the only open-source, modern, healthcare-specific integration engine built on a mainstream web technology stack (Node.js/TypeScript/React).**
+GalvaniFlow occupies a unique position: **the only open-source, modern, healthcare-specific integration engine built on a mainstream web technology stack (Node.js/TypeScript/React).**
 
 - vs. Mirth Connect: Modern tech, open-source, everything included, better DX
 - vs. Rhapsody/InterSystems: Free, open-source, lighter weight, faster to deploy
@@ -406,7 +406,7 @@ Mirthless occupies a unique position: **the only open-source, modern, healthcare
 
 | Feature | Impact |
 |---|---|
-| **Horizontal clustering** | Multiple Mirthless nodes sharing Postgres, leader election, message takeover |
+| **Horizontal clustering** | Multiple GalvaniFlow nodes sharing Postgres, leader election, message takeover |
 | **OpenTelemetry distributed tracing** | Trace a message across channels with spans and timing |
 | **Helm chart for Kubernetes** | Production K8s deployment with HPA, PDB, secrets |
 | **Plugin marketplace** | Community-contributed connectors and data types |
@@ -436,7 +436,7 @@ Mirthless occupies a unique position: **the only open-source, modern, healthcare
 
 ## Part 7: What Would Make This Truly Lasting
 
-Beyond individual features, these are the strategic decisions that determine whether Mirthless becomes a footnote or a platform:
+Beyond individual features, these are the strategic decisions that determine whether GalvaniFlow becomes a footnote or a platform:
 
 ### 7.1 Community-First License
 
@@ -450,7 +450,7 @@ Mirth's shift from open-source (MPL 2.0) to proprietary in v4.6 was a watershed 
 
 ### 7.2 Escape Velocity: The Channel Ecosystem
 
-The moat for an integration engine is not the engine itself -- it is the library of pre-built channels, transformers, and templates that users share. If Mirthless has 500 community-contributed channel templates covering common healthcare integration patterns (ADT routing, lab results, radiology orders, FHIR facade, etc.), switching costs become enormous.
+The moat for an integration engine is not the engine itself -- it is the library of pre-built channels, transformers, and templates that users share. If GalvaniFlow has 500 community-contributed channel templates covering common healthcare integration patterns (ADT routing, lab results, radiology orders, FHIR facade, etc.), switching costs become enormous.
 
 **How to get there:**
 - Built-in "Publish to Community" from the channel editor
@@ -497,4 +497,4 @@ The reason enterprises pay for Rhapsody ($100K+/year) is not features -- it is o
 
 ## Summary: The Three-Sentence Pitch
 
-Mirthless is the open-source healthcare integration engine that Mirth Connect should have become: everything Mirth does, rebuilt from scratch on modern technology, with every paywalled feature included for free. It bridges the HL7v2 world hospitals run today with the FHIR world they are moving toward, while giving developers a TypeScript-first experience with Monaco editor, visual flow building, and AI-assisted mapping. It deploys in Docker, scales on Kubernetes, integrates with Prometheus and Grafana, and ships channel templates for every common healthcare integration pattern out of the box.
+GalvaniFlow is the open-source healthcare integration engine that Mirth Connect should have become: everything Mirth does, rebuilt from scratch on modern technology, with every paywalled feature included for free. It bridges the HL7v2 world hospitals run today with the FHIR world they are moving toward, while giving developers a TypeScript-first experience with Monaco editor, visual flow building, and AI-assisted mapping. It deploys in Docker, scales on Kubernetes, integrates with Prometheus and Grafana, and ships channel templates for every common healthcare integration pattern out of the box.

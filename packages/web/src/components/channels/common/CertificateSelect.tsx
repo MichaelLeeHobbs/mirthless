@@ -9,7 +9,7 @@ import Autocomplete from '@mui/material/Autocomplete';
 import TextField from '@mui/material/TextField';
 import Chip from '@mui/material/Chip';
 import Box from '@mui/material/Box';
-import type { CertificateListQuery } from '@mirthless/core-models';
+import type { CertificateListQuery } from '@galvaniflow/core-models';
 import { useCertificates, type CertificateSummary } from '../../../hooks/use-certificates.js';
 
 interface CertificateSelectProps {

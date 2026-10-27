@@ -16,8 +16,8 @@ import {
   clearChannelRegistry,
   type ConnectorMessage,
 } from '../../index.js';
-import type { Result } from '@mirthless/core-util';
-import { VmSandboxExecutor, compileScript, DEFAULT_EXECUTION_OPTIONS, createSandboxContext } from '@mirthless/engine';
+import type { Result } from '@galvaniflow/core-util';
+import { VmSandboxExecutor, compileScript, DEFAULT_EXECUTION_OPTIONS, createSandboxContext } from '@galvaniflow/engine';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
 import { sendMllp } from './support/tcp-helpers.js';
 

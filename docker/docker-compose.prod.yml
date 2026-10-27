@@ -1,36 +1,39 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: mirthless-db-prod
+    container_name: galvaniflow-db-prod
     environment:
-      POSTGRES_DB: mirthless
-      POSTGRES_USER: mirthless
+      # POSTGRES_DB / POSTGRES_USER default to galvaniflow. Postgres applies them only when
+      # it first creates the data volume; an install created under the old name sets
+      # POSTGRES_DB=mirthless and POSTGRES_USER=mirthless (see docs/ops/upgrade.md).
+      POSTGRES_DB: ${POSTGRES_DB:-galvaniflow}
+      POSTGRES_USER: ${POSTGRES_USER:-galvaniflow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mirthless -d mirthless"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     restart: unless-stopped
     networks:
-      - mirthless
+      - galvaniflow
 
   server:
     build:
       context: ..
       dockerfile: docker/Dockerfile.server
-    container_name: mirthless-server
+    container_name: galvaniflow-server
     depends_on:
       db:
         condition: service_healthy
     env_file:
       - ../.env
     environment:
-      DATABASE_URL: postgresql://mirthless:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/mirthless
+      DATABASE_URL: postgresql://${POSTGRES_USER:-galvaniflow}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-galvaniflow}
     expose:
       - "3000"
     ports:
@@ -51,13 +54,13 @@ services:
       start_period: 40s
     restart: unless-stopped
     networks:
-      - mirthless
+      - galvaniflow
 
   web:
     build:
       context: ..
       dockerfile: docker/Dockerfile.web
-    container_name: mirthless-web
+    container_name: galvaniflow-web
     depends_on:
       - server
     ports:
@@ -70,11 +73,11 @@ services:
       start_period: 20s
     restart: unless-stopped
     networks:
-      - mirthless
+      - galvaniflow
 
 volumes:
   postgres_data:
 
 networks:
-  mirthless:
+  galvaniflow:
     driver: bridge

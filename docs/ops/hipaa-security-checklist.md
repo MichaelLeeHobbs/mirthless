@@ -1,11 +1,11 @@
 # HIPAA / Security Checklist
 
-What Mirthless does today for the HIPAA Security Rule's technical safeguards
+What GalvaniFlow does today for the HIPAA Security Rule's technical safeguards
 (45 CFR 164.312) and related controls, what an operator must configure, and
 the known gaps. Reviewed against the code on 2026-10-09.
 
 > This is an engineering checklist, not legal advice. HIPAA compliance belongs
-> to the organisation running Mirthless: its risk analysis, policies, BAAs,
+> to the organisation running GalvaniFlow: its risk analysis, policies, BAAs,
 > training and physical safeguards are outside this document.
 
 ## Operator checklist (do these before carrying PHI)

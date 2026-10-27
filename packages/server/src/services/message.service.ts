@@ -7,7 +7,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, sql } from 'drizzle-orm';
-import { SOCKET_EVENT, type ContentType, type MessageStatus } from '@mirthless/core-models';
+import { SOCKET_EVENT, type ContentType, type MessageStatus } from '@galvaniflow/core-models';
 import { db } from '../lib/db.js';
 import { emitToRoom } from '../lib/socket.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';

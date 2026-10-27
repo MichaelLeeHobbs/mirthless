@@ -1,7 +1,7 @@
 // ===========================================
 // Default Permissions
 // ===========================================
-// Mirthless-specific permissions using resource:action naming.
+// GalvaniFlow-specific permissions using resource:action naming.
 
 export const PERMISSIONS = {
   // Channels

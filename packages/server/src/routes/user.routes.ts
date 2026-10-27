@@ -9,7 +9,7 @@ import {
   changePasswordSchema,
   changeOwnPasswordSchema,
   userIdParamSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { UserController } from '../controllers/user.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

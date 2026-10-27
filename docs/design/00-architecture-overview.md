@@ -1,6 +1,6 @@
 # 00 — Architecture Overview
 
-> Mirthless: a spiritual remake of NextGen Connect (Mirth Connect) for Node.js/TypeScript.
+> GalvaniFlow: a spiritual remake of NextGen Connect (Mirth Connect) for Node.js/TypeScript.
 
 ## Connect at a Glance
 
@@ -65,52 +65,52 @@ Channels can declare dependencies on other channels. The deployment system uses 
 ### Problem 1: Pervasive Mutability
 **Connect:** Every model class is fully mutable via public setters. No `final` fields. `Channel.clone()` is explicitly documented as shallow.
 
-**Mirthless:** All models are `readonly` by default. Zod schemas enforce structure at boundaries. Immutable by construction.
+**GalvaniFlow:** All models are `readonly` by default. Zod schemas enforce structure at boundaries. Immutable by construction.
 
 ### Problem 2: No Type Safety on IDs
 **Connect:** Channel IDs are `String`, User IDs are `Integer`, Message IDs are `Long`. Nothing prevents passing a channelId where a userId is expected.
 
-**Mirthless:** Branded types: `ChannelId`, `ConnectorId`, `MessageId`, `UserId`. Factory functions with validation returning `Result<T>`.
+**GalvaniFlow:** Branded types: `ChannelId`, `ConnectorId`, `MessageId`, `UserId`. Factory functions with validation returning `Result<T>`.
 
 ### Problem 3: String-Typed Discriminators
 **Connect:** `Connector.transportName` is a plain `String` ("TCP Sender", "HTTP Listener"). `Transformer.inboundDataType` is a string ("HL7V2"). No compile-time safety.
 
-**Mirthless:** Discriminated unions with `as const` objects. Connector properties use TypeScript discriminated unions keyed by `type`.
+**GalvaniFlow:** Discriminated unions with `as const` objects. Connector properties use TypeScript discriminated unions keyed by `type`.
 
 ### Problem 4: God Classes
 **Connect:** `Channel.java` is 2,200 lines handling lifecycle, pipeline, queuing, and content management. `ConnectorMessage` has 30+ fields (8 content slots, 4 map slots, 3 error slots).
 
-**Mirthless:** Decompose into focused modules: `ChannelLifecycle`, `MessageProcessor`, `QueueManager`, `ContentManager`. ConnectorMessage uses composition over flat fields.
+**GalvaniFlow:** Decompose into focused modules: `ChannelLifecycle`, `MessageProcessor`, `QueueManager`, `ContentManager`. ConnectorMessage uses composition over flat fields.
 
 ### Problem 5: XML-Blob Storage
 **Connect:** Channels, alerts, code templates stored as serialized XML TEXT blobs in the database. Querying, partial updates, and migration are painful. JSON is a second-class citizen (round-trips through XML).
 
-**Mirthless:** Proper relational schema in Drizzle ORM. JSON is the native format. No XML serialization layer.
+**GalvaniFlow:** Proper relational schema in Drizzle ORM. JSON is the native format. No XML serialization layer.
 
 ### Problem 6: No Authorization by Default
 **Connect:** `DefaultAuthorizationController.isUserAuthorized()` always returns `true`. RBAC is a commercial plugin.
 
-**Mirthless:** RBAC built into core from day one. Role-based permissions with channel-level access control. Based on fullstack-template auth patterns (JWT + sessions, bcrypt, PBKDF2).
+**GalvaniFlow:** RBAC built into core from day one. Role-based permissions with channel-level access control. Based on fullstack-template auth patterns (JWT + sessions, bcrypt, PBKDF2).
 
 ### Problem 7: Rhino JavaScript Engine
 **Connect:** Uses patched Mozilla Rhino with full Java interop. User scripts can access any Java class. No sandbox. Runs in interpreted mode for debugging.
 
-**Mirthless:** Sandboxed JS/TS execution via `isolated-vm` or Node.js worker threads. TypeScript support with on-the-fly transpilation. Explicit API surface — no uncontrolled access to host runtime.
+**GalvaniFlow:** Sandboxed JS/TS execution via `isolated-vm` or Node.js worker threads. TypeScript support with on-the-fly transpilation. Explicit API surface — no uncontrolled access to host runtime.
 
 ### Problem 8: Complex Thread Management
 **Connect:** Manual thread pools, acceptor threads, reader threads, queue threads. Busy-wait polling for drain. `synchronized` blocks everywhere. The stop sequence for a channel is ~100 lines of careful thread coordination.
 
-**Mirthless:** Node.js event loop + worker threads for CPU-bound work. `AbortController` for cancellation. Async/await instead of thread pools. `Promise.all` with bounded concurrency instead of `synchronized`.
+**GalvaniFlow:** Node.js event loop + worker threads for CPU-bound work. `AbortController` for cancellation. Async/await instead of thread pools. `Promise.all` with bounded concurrency instead of `synchronized`.
 
 ### Problem 9: Tight Singleton Coupling
 **Connect:** `Donkey.getInstance()`, `ControllerFactory.getFactory().createXxxController()`, `SqlConfig.getInstance()` everywhere. Circular controller dependencies. Untestable.
 
-**Mirthless:** Dependency injection. Services receive their dependencies as constructor parameters. No singletons. Testable with mocks.
+**GalvaniFlow:** Dependency injection. Services receive their dependencies as constructor parameters. No singletons. Testable with mocks.
 
 ### Problem 10: No Input Validation
 **Connect:** Zero validation in the model layer. Names can be null, IDs can be null, sequences can be anything.
 
-**Mirthless:** Zod validation at every boundary. Domain models can only be constructed through validated factory functions returning `Result<T>`.
+**GalvaniFlow:** Zod validation at every boundary. Domain models can only be constructed through validated factory functions returning `Result<T>`.
 
 ---
 
@@ -425,7 +425,7 @@ hl7.createACK(msg, code)     // Generate ACK response
 
 2. **Message storage: partitioned single table from day one** — Single set of message tables (`messages`, `connector_messages`, `message_content`, etc.) partitioned by `channel_id` using Postgres declarative list partitioning. Partitions created/dropped at runtime when channels are created/deleted via raw SQL (`db.execute()`). Drizzle schema defines tables normally; partition DDL is in custom migrations. Queries work unchanged — Postgres handles partition routing transparently.
 
-3. **Plugin API from day one** — Design runtime plugin discovery and loading from the start. Plugins are npm packages with a `mirthless` manifest in `package.json` (e.g., `@mirthless/connector-tcp-mllp`). Built-in connectors are just packages in the monorepo; third-party connectors install the same way. Pluggable surface: connectors, data types, transmission modes, and auth providers. Auth is pluggable to support OAuth2/OIDC, SAML, and LDAP down the road (v1 ships with local JWT auth only).
+3. **Plugin API from day one** — Design runtime plugin discovery and loading from the start. Plugins are npm packages with a `galvaniflow` manifest in `package.json` (e.g., `@galvaniflow/connector-tcp-mllp`). Built-in connectors are just packages in the monorepo; third-party connectors install the same way. Pluggable surface: connectors, data types, transmission modes, and auth providers. Auth is pluggable to support OAuth2/OIDC, SAML, and LDAP down the road (v1 ships with local JWT auth only).
 
 4. **Real-time UI: Socket.IO** — Use Socket.IO (from fullstack-template patterns) for real-time dashboard updates: channel status changes, statistics, log streaming. TanStack Query polling as fallback.
 

@@ -71,7 +71,7 @@ function unframe(buffer) {
 
 function hl7(controlId) {
   return [
-    `MSH|^~\\&|SOAK|SOAKFAC|MIRTHLESS|FAC|20261009000000||ADT^A01|${controlId}|P|2.5`,
+    `MSH|^~\\&|SOAK|SOAKFAC|GALVANIFLOW|FAC|20261009000000||ADT^A01|${controlId}|P|2.5`,
     'EVN|A01|20261009000000',
     `PID|1||${controlId}^^^HOSP^MR||DOE^JANE^Q||19800101|F|||1 MAIN ST^^METROPOLIS^NY^10001`,
     'PV1|1|I|WARD^101^1|||||||MED',

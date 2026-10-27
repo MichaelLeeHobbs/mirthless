@@ -1,6 +1,6 @@
 # Connector Reference
 
-Mirthless connectors are protocol adapters. A **source** connector receives inbound
+GalvaniFlow connectors are protocol adapters. A **source** connector receives inbound
 messages; a **destination** connector sends outbound. This reference documents the
 property keys each connector actually reads, sourced from
 `packages/connectors/src/registry.ts` (the registry is the source of truth). Defaults
@@ -89,7 +89,7 @@ metadata in the source map.
 |---|---|---|
 | `port` | — (required) | DICOM listen port. |
 | `storageDir` | — (required) | Where received objects are written. |
-| `aeTitle` | `MIRTHLESS` | Application Entity title. |
+| `aeTitle` | `GALVANIFLOW` | Application Entity title. |
 | `minPoolSize` | `2` | Association worker pool minimum. |
 | `maxPoolSize` | `10` | Association worker pool maximum. |
 | `connectionTimeoutMs` | `10000` | Association timeout. |
@@ -226,7 +226,7 @@ DICOM C-STORE SCU — sends objects to a PACS.
 | `host` | — (required) | PACS host. |
 | `port` | — (required) | PACS port. |
 | `calledAETitle` | `PACS` | Remote AE title. |
-| `callingAETitle` | `MIRTHLESS` | Local AE title. |
+| `callingAETitle` | `GALVANIFLOW` | Local AE title. |
 | `mode` | `multiple` | `single` or `multiple` associations. |
 | `maxAssociations` | `4` | Max concurrent associations. |
 | `maxRetries` | `3` | Retry attempts. |

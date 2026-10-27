@@ -8,8 +8,8 @@
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import type { CreateChannelInput } from '@mirthless/core-models';
-import { createChannelSchema } from '@mirthless/core-models';
+import type { CreateChannelInput } from '@galvaniflow/core-models';
+import { createChannelSchema } from '@galvaniflow/core-models';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('Channel CRUD + message round trip (real Postgres)', () => {

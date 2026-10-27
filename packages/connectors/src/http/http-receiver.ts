@@ -8,7 +8,7 @@
 import * as http from 'node:http';
 import * as https from 'node:https';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import type { TlsServerOptions } from '../tls.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';

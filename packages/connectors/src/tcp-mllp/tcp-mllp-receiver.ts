@@ -7,7 +7,7 @@
 
 import * as net from 'node:net';
 import * as tls from 'node:tls';
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type {
   SourceConnectorRuntime,
   MessageDispatcher,

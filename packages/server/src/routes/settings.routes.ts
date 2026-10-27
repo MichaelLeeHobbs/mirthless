@@ -8,7 +8,7 @@ import {
   settingKeyParamSchema,
   upsertSettingSchema,
   bulkUpsertSettingsSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { SettingsController } from '../controllers/settings.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

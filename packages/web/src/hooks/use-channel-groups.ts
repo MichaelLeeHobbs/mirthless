@@ -4,7 +4,7 @@
 // TanStack Query hooks for channel group CRUD + member management.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateChannelGroupInput, UpdateChannelGroupInput } from '@mirthless/core-models';
+import type { CreateChannelGroupInput, UpdateChannelGroupInput } from '@galvaniflow/core-models';
 import { api } from '../api/client.js';
 
 // ----- Types -----

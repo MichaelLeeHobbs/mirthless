@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea or enhancement for Mirthless
+about: Suggest an idea or enhancement for GalvaniFlow
 title: "[Feature]: "
 labels: enhancement
 assignees: ''

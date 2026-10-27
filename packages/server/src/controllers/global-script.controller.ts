@@ -4,7 +4,7 @@
 // Handles HTTP requests for global scripts GET/PUT.
 
 import type { Request, Response } from 'express';
-import type { UpdateGlobalScriptsInput } from '@mirthless/core-models';
+import type { UpdateGlobalScriptsInput } from '@galvaniflow/core-models';
 import { GlobalScriptService } from '../services/global-script.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

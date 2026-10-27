@@ -8,7 +8,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { sql } from 'drizzle-orm';
-import type { MessageExportQuery } from '@mirthless/core-models';
+import type { MessageExportQuery } from '@galvaniflow/core-models';
 import { db } from '../lib/db.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { CONTENT_TYPE } from '../db/schema/message-content.js';

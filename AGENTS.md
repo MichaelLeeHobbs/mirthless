@@ -4,11 +4,11 @@ Instructions for AI coding agents (Claude Code, Codex and others) working in thi
 
 ## Project Overview
 
-**Mirthless** — A modern, open-source healthcare integration engine built from scratch in Node.js/TypeScript. Spiritual successor to NextGen Connect (Mirth Connect), redesigned natively for the Node.js ecosystem.
+**GalvaniFlow** — A modern, open-source healthcare integration engine built from scratch in Node.js/TypeScript. Spiritual successor to NextGen Connect (Mirth Connect), redesigned natively for the Node.js ecosystem.
 
-> The project name "mirthless" is a working title. Centralized in package.json `name` field.
+> The project is named GalvaniFlow (formerly Mirthless). The name is centralized in the package.json `name` field.
 
-Mirthless is a message routing and transformation engine for healthcare systems. Core concepts:
+GalvaniFlow is a message routing and transformation engine for healthcare systems. Core concepts:
 
 - **Channels** — message processing pipelines with a source connector (inbound) and destination connectors (outbound)
 - **Connectors** — protocol adapters: TCP/MLLP (HL7), HTTP/REST, File, Database, DICOM, FHIR, SMTP, JavaScript
@@ -84,7 +84,7 @@ Run what matches the files you touched. `pnpm gate` runs build, lint and every p
 | A multi-step UI flow | `pnpm test:e2e` (needs Postgres, migrated and seeded) | Add or extend a spec in `e2e/` |
 | `packages/server/src/db/schema` | `pnpm db:generate`, commit the migration | `pnpm test:integration` against Postgres |
 | SQL, queues, pruning, partitions | `pnpm test:integration` | |
-| Engine pipeline or a connector | The package's tests (`pnpm --filter @mirthless/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes |
+| Engine pipeline or a connector | The package's tests (`pnpm --filter @galvaniflow/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes |
 | Throughput or memory | `pnpm soak` (see `docs/ops/soak-test.md`) | Compare with the recorded baseline |
 | Docs only | Check the commands and paths you mention exist | |
 
@@ -112,7 +112,7 @@ Tests are mandatory, not optional. This is healthcare software.
 pnpm test                             # Run all tests
 pnpm test:coverage                    # Run with coverage report
 pnpm vitest run src/path/to/file.test.ts  # Single test file
-pnpm --filter @mirthless/engine test  # Test a specific package
+pnpm --filter @galvaniflow/engine test  # Test a specific package
 ```
 
 ### What To Test
@@ -159,8 +159,8 @@ pnpm test:coverage                    # Run with coverage
 pnpm shots                            # Screenshot web pages against a fake API (needs pnpm dev:web)
 
 # Single package
-pnpm --filter @mirthless/server dev
-pnpm --filter @mirthless/engine test
+pnpm --filter @galvaniflow/server dev
+pnpm --filter @galvaniflow/engine test
 
 # Single test file
 pnpm vitest run src/path/to/file.test.ts

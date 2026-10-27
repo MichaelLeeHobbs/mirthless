@@ -4,7 +4,7 @@
 // TanStack Query hooks for global scripts GET/PUT.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { UpdateGlobalScriptsInput } from '@mirthless/core-models';
+import type { UpdateGlobalScriptsInput } from '@galvaniflow/core-models';
 import { api, type GlobalScriptsData } from '../api/client.js';
 
 // ----- Query Keys -----

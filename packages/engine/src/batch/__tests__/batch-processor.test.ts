@@ -5,7 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { BatchProcessor, BATCH_MODE, type BatchConfig } from '../batch-processor.js';
 import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from '../../sandbox/sandbox-executor.js';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 
 // ----- Helpers -----
 

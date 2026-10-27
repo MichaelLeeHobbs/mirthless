@@ -4,7 +4,7 @@
 // Handles HTTP requests for categorized configuration map CRUD.
 
 import type { Request, Response } from 'express';
-import type { UpsertConfigMapEntryInput, BulkUpsertConfigMapInput, ConfigMapQuery } from '@mirthless/core-models';
+import type { UpsertConfigMapEntryInput, BulkUpsertConfigMapInput, ConfigMapQuery } from '@galvaniflow/core-models';
 import { ConfigMapService } from '../services/config-map.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

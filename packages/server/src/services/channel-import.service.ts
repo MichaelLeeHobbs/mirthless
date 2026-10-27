@@ -7,7 +7,7 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { randomUUID } from 'node:crypto';
 import { eq, isNull, and } from 'drizzle-orm';
-import type { ChannelExportEntry, CollisionMode, ImportResult } from '@mirthless/core-models';
+import type { ChannelExportEntry, CollisionMode, ImportResult } from '@galvaniflow/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';

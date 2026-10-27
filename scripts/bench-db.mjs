@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(new URL('../packages/server/package.json', import.meta.url));
 const pg = require('pg');
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://mirthless:mirthless_dev@localhost:5432/mirthless';
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://galvaniflow:galvaniflow_dev@localhost:5432/galvaniflow';
 const ITERATIONS = 50;
 const WARMUP = 5;
 

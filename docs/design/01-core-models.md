@@ -1,6 +1,6 @@
 # 01 — Core Models
 
-> Domain types, Zod schemas, and branded types for Mirthless.
+> Domain types, Zod schemas, and branded types for GalvaniFlow.
 
 ## Design Principles
 
@@ -132,7 +132,7 @@ interface MetadataColumnDefinition {
 
 ### Key Differences from Connect
 
-| Aspect | Connect | Mirthless |
+| Aspect | Connect | GalvaniFlow |
 |---|---|---|
 | Mutability | All mutable | All `readonly` |
 | MetaDataId assignment | Auto-increment counter on Channel | Each connector has its own `ConnectorId`; `metaDataId` is assigned at deployment time |

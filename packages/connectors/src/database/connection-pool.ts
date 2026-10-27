@@ -4,7 +4,7 @@
 // Thin wrapper around pg.Pool with Result<T> returns.
 
 import pg from 'pg';
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 
 // ----- Config -----
 

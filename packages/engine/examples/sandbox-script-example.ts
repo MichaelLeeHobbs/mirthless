@@ -1,6 +1,6 @@
 // Example channel transformer, authored against the sandbox ambient types
 // (../sandbox-globals.d.ts). This file is type-checked by tsconfig.sandbox.json
-// (`pnpm --filter @mirthless/engine typecheck:scripts`) but never bundled or run
+// (`pnpm --filter @galvaniflow/engine typecheck:scripts`) but never bundled or run
 // — it exists to prove the shipped ambient types resolve for real authoring.
 //
 // A real transformer body would end in `return <newMsg>`; a top-level return is

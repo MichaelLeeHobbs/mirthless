@@ -76,8 +76,8 @@ COPY docker/server-entrypoint.sh ./docker/server-entrypoint.sh
 RUN chmod +x ./docker/server-entrypoint.sh
 
 # Non-root user for security
-RUN addgroup -S mirthless && adduser -S mirthless -G mirthless
-USER mirthless
+RUN addgroup -S galvaniflow && adduser -S galvaniflow -G galvaniflow
+USER galvaniflow
 
 EXPOSE 3000
 

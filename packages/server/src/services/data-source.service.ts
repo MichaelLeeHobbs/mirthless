@@ -7,7 +7,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc } from 'drizzle-orm';
-import type { CreateDataSourceInput, UpdateDataSourceInput } from '@mirthless/core-models';
+import type { CreateDataSourceInput, UpdateDataSourceInput } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
@@ -188,7 +188,7 @@ export class DataSourceService {
 
   /** Test connectivity for unsaved form values (throwaway pool, no caching). */
   static async testConnection(input: TestConnectionInput): Promise<Result<void>> {
-    const { ConnectionPool } = await import('@mirthless/connectors');
+    const { ConnectionPool } = await import('@galvaniflow/connectors');
     return tryCatch(async () => {
       const pool = new ConnectionPool();
       const created = await pool.create({

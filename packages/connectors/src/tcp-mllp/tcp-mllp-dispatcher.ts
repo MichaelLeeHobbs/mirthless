@@ -9,7 +9,7 @@
 import * as net from 'node:net';
 import * as tls from 'node:tls';
 import * as genericPool from 'generic-pool';
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { MllpParser, wrapMllp } from '../transmission/mllp-mode.js';
 import type { TlsClientOptions } from '../tls.js';

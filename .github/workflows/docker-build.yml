@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: michaelleehobbs/mirthless
+  IMAGE_PREFIX: michaelleehobbs/galvaniflow
 
 jobs:
   # Gate the release on the full CI suite passing for the tagged commit.
@@ -22,13 +22,13 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: mirthless_test
-          POSTGRES_USER: mirthless
-          POSTGRES_PASSWORD: mirthless_test
+          POSTGRES_DB: galvaniflow_test
+          POSTGRES_USER: galvaniflow
+          POSTGRES_PASSWORD: galvaniflow_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U mirthless -d mirthless_test"
+          --health-cmd "pg_isready -U galvaniflow -d galvaniflow_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
@@ -36,15 +36,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build server image
-        run: docker build -f docker/Dockerfile.server -t mirthless-server:smoke .
+        run: docker build -f docker/Dockerfile.server -t galvaniflow-server:smoke .
 
       - name: Run server container (migrates + seeds on start)
         run: |
-          docker run -d --name mirthless-smoke --network host \
-            -e DATABASE_URL=postgresql://mirthless:mirthless_test@localhost:5432/mirthless_test \
+          docker run -d --name galvaniflow-smoke --network host \
+            -e DATABASE_URL=postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test \
             -e JWT_SECRET=ci-smoke-secret-that-is-at-least-32-characters \
             -e NODE_ENV=production \
-            mirthless-server:smoke
+            galvaniflow-server:smoke
 
       - name: Wait for /health/live
         run: |
@@ -56,12 +56,12 @@ jobs:
             sleep 2
           done
           echo "::error::server did not become healthy"
-          docker logs mirthless-smoke
+          docker logs galvaniflow-smoke
           exit 1
 
       - name: Dump server logs
         if: always()
-        run: docker logs mirthless-smoke || true
+        run: docker logs galvaniflow-smoke || true
 
   build-and-push:
     runs-on: ubuntu-latest

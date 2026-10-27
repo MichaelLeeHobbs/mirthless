@@ -1,7 +1,7 @@
 // ===========================================
 // Design Tokens
 // ===========================================
-// Single source of truth for the Mirthless visual system.
+// Single source of truth for the GalvaniFlow visual system.
 //
 // Direction: a calm, precise clinical instrument panel. Operators watch this
 // all day, so the system favours legibility under pressure — hairline borders

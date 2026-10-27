@@ -3,7 +3,7 @@
 // ===========================================
 
 import type { Request, Response } from 'express';
-import type { BulkDeleteInput, BulkReprocessInput } from '@mirthless/core-models';
+import type { BulkDeleteInput, BulkReprocessInput } from '@galvaniflow/core-models';
 import { MessageReprocessService } from '../services/message-reprocess.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

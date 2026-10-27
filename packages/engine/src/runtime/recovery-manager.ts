@@ -5,7 +5,7 @@
 // Queries messages where processed=false and routes them based on
 // connector status and metaDataId.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 
 // ----- Types -----
 

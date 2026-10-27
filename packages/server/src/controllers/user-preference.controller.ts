@@ -4,7 +4,7 @@
 // Handles HTTP requests for per-user preference CRUD.
 
 import type { Request, Response } from 'express';
-import type { UpsertPreferenceInput, BulkUpsertPreferencesInput } from '@mirthless/core-models';
+import type { UpsertPreferenceInput, BulkUpsertPreferencesInput } from '@galvaniflow/core-models';
 import { UserPreferenceService } from '../services/user-preference.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

@@ -4,7 +4,7 @@
 // Handles HTTP request for connector connection testing.
 
 import type { Request, Response } from 'express';
-import type { ConnectionTestInput } from '@mirthless/core-models';
+import type { ConnectionTestInput } from '@galvaniflow/core-models';
 import { ConnectionTestService } from '../services/connection-test.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

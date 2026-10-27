@@ -150,10 +150,10 @@ describe('generateHL7Messages — common fields', () => {
     expect(parsed.get('MSH.11')).toBe('P');
   });
 
-  it('MSH.3 sending application is MIRTHLESS', () => {
+  it('MSH.3 sending application is GALVANIFLOW', () => {
     const messages = generateHL7Messages({ messageType: 'ADT_A01', seed: 42 });
     const parsed = Hl7Message.parse(messages[0]!);
-    expect(parsed.get('MSH.3')).toBe('MIRTHLESS');
+    expect(parsed.get('MSH.3')).toBe('GALVANIFLOW');
   });
 
   it('MSH.10 control ID is non-empty', () => {

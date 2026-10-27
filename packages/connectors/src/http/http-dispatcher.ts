@@ -9,7 +9,7 @@
 // options without an undici Agent, and undici is not a dependency here.
 
 import * as https from 'node:https';
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import type { TlsClientOptions } from '../tls.js';
 

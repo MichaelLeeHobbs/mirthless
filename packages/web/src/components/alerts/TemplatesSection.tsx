@@ -10,7 +10,7 @@ import TextField from '@mui/material/TextField';
 import Grid from '@mui/material/Grid';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
-import { ALERT_TEMPLATE_VARIABLES } from '@mirthless/core-models';
+import { ALERT_TEMPLATE_VARIABLES } from '@galvaniflow/core-models';
 
 export interface TemplateFormValues {
   readonly subjectTemplate: string;

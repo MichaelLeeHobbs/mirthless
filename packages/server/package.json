@@ -1,5 +1,5 @@
 {
-  "name": "@mirthless/server",
+  "name": "@galvaniflow/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -18,10 +18,10 @@
     "db:seed": "tsx src/db/seeds/run-seed.ts"
   },
   "dependencies": {
-    "@mirthless/connectors": "workspace:^",
-    "@mirthless/core-models": "workspace:*",
-    "@mirthless/core-util": "workspace:*",
-    "@mirthless/engine": "workspace:^",
+    "@galvaniflow/connectors": "workspace:^",
+    "@galvaniflow/core-models": "workspace:*",
+    "@galvaniflow/core-util": "workspace:*",
+    "@galvaniflow/engine": "workspace:^",
     "@prometheus-io/client": "^0.16.1",
     "bcryptjs": "3.0.3",
     "compression": "1.8.2",

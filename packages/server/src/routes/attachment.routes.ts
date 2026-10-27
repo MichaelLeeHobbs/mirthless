@@ -7,7 +7,7 @@ import { Router, type IRouter } from 'express';
 import {
   attachmentListParamsSchema,
   attachmentGetParamsSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { AttachmentController } from '../controllers/attachment.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

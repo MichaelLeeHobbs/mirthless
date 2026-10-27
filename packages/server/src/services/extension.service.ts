@@ -5,7 +5,7 @@
 // Enable/disable stored in system_settings table.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { EXTENSION_TYPE, type ExtensionType } from '@mirthless/core-models';
+import { EXTENSION_TYPE, type ExtensionType } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { SettingsService } from './settings.service.js';
 

@@ -7,7 +7,7 @@ import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, appendLockClause, type Datab
 import { ConnectionPool } from '../connection-pool.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 import type { RawMessage, DispatchResult } from '../../base.js';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 
 // ----- Helpers -----
 

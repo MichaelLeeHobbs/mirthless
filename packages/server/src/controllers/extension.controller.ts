@@ -3,7 +3,7 @@
 // ===========================================
 
 import type { Request, Response } from 'express';
-import type { SetExtensionEnabledInput } from '@mirthless/core-models';
+import type { SetExtensionEnabledInput } from '@galvaniflow/core-models';
 import { ExtensionService } from '../services/extension.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

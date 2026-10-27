@@ -8,7 +8,7 @@ import {
   configMapQuerySchema,
   upsertConfigMapEntrySchema,
   bulkUpsertConfigMapSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { ConfigMapController } from '../controllers/config-map.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

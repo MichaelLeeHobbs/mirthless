@@ -4,8 +4,8 @@
 // Manages channel lifecycle: deploy → start → stop → undeploy.
 // Coordinates source connector, destination connectors, and pipeline.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
-import type { CHANNEL_STATE } from '@mirthless/core-models';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
+import type { CHANNEL_STATE } from '@galvaniflow/core-models';
 
 // ----- Types -----
 

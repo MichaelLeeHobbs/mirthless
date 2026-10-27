@@ -6,7 +6,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq } from 'drizzle-orm';
-import type { UpsertSettingInput } from '@mirthless/core-models';
+import type { UpsertSettingInput } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { redactSettingValue } from '../lib/secret-redaction.js';

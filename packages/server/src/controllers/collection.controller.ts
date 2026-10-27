@@ -11,7 +11,7 @@ import type {
   ListRecordsQuery,
   StoreRecordInput,
   UpdateRecordInput,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { CollectionService } from '../services/collection.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

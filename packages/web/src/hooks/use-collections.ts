@@ -9,7 +9,7 @@ import type {
   UpdateCollectionInput,
   StoreRecordInput,
   UpdateRecordInput,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { api } from '../api/client.js';
 import type { RecordColumn } from '../lib/collections.js';
 

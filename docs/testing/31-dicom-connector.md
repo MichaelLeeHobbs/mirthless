@@ -9,7 +9,7 @@
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 1 | Source form renders with defaults | Create channel, select DICOM source type | Port=4242, AE Title=MIRTHLESS, dispatchMode=PER_FILE, postAction=DELETE | |
+| 1 | Source form renders with defaults | Create channel, select DICOM source type | Port=4242, AE Title=GALVANIFLOW, dispatchMode=PER_FILE, postAction=DELETE | |
 | 2 | Port field accepts valid values | Enter 11112 in Port | Value updates to 11112 | |
 | 3 | AE Title max 16 characters | Type more than 16 characters | Input limited to 16 characters | |
 | 4 | Storage directory field editable | Enter /data/dicom/received | Value updates correctly | |
@@ -27,7 +27,7 @@
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 14 | Destination form renders with defaults | Add DICOM destination | Host=localhost, Port=104, CalledAE=PACS, CallingAE=MIRTHLESS, mode=multiple | |
+| 14 | Destination form renders with defaults | Add DICOM destination | Host=localhost, Port=104, CalledAE=PACS, CallingAE=GALVANIFLOW, mode=multiple | |
 | 15 | Host field editable | Enter 192.168.1.100 | Value updates | |
 | 16 | Port field accepts valid values | Enter 4242 | Value updates to 4242 | |
 | 17 | Called AE Title max 16 characters | Type more than 16 chars | Input limited to 16 | |

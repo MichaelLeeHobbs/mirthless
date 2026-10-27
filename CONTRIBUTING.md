@@ -1,6 +1,6 @@
-# Contributing to Mirthless
+# Contributing to GalvaniFlow
 
-Thanks for your interest in Mirthless. It's an open-source healthcare integration
+Thanks for your interest in GalvaniFlow. It's an open-source healthcare integration
 engine, and because it can end up routing lab results and medication orders, we hold
 contributions to a high bar — tests, strict typing, and fail-loud error handling are
 not optional. Please read this before opening a PR.
@@ -23,7 +23,7 @@ Prerequisites: **Node.js 24+**, **pnpm 12+**, and **PostgreSQL 17** (Docker is e
 pnpm install
 
 # 2. Start PostgreSQL (dev compose stack)
-pnpm docker:up                 # postgres on :5432 (db: mirthless / user: mirthless)
+pnpm docker:up                 # postgres on :5432 (db: galvaniflow / user: galvaniflow)
 
 # 3. Configure environment
 cp .env.example .env           # defaults line up with docker:up; edit if needed

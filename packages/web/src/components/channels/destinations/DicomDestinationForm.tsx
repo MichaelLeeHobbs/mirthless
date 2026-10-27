@@ -100,7 +100,7 @@ export function DicomDestinationForm({ properties, onChange }: DestConnectorForm
 
         <TextField
           label="Calling AE Title"
-          value={getStr(properties, 'callingAETitle', 'MIRTHLESS')}
+          value={getStr(properties, 'callingAETitle', 'GALVANIFLOW')}
           onChange={handleText('callingAETitle')}
           helperText="Local SCU Application Entity Title (max 16)"
           fullWidth

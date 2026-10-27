@@ -15,7 +15,7 @@
 //           cascade from the project vision.
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { CONTENT_TYPE } from '@mirthless/core-models';
+import { CONTENT_TYPE } from '@galvaniflow/core-models';
 import {
   TcpMllpReceiver,
   TcpMllpDispatcher,
@@ -23,7 +23,7 @@ import {
   ChannelDispatcher,
   clearChannelRegistry,
 } from '../../index.js';
-import type { CodeTemplateData } from '@mirthless/engine';
+import type { CodeTemplateData } from '@galvaniflow/engine';
 import {
   deployChannel,
   teardownAll,

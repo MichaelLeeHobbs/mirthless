@@ -12,7 +12,7 @@ import MenuItem from '@mui/material/MenuItem';
 import FormGroup from '@mui/material/FormGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Checkbox from '@mui/material/Checkbox';
-import { ERROR_EVENT_TYPES, type AlertTriggerInput } from '@mirthless/core-models';
+import { ERROR_EVENT_TYPES, type AlertTriggerInput } from '@galvaniflow/core-models';
 import { humanize } from '../../lib/format.js';
 
 export type TriggerType = 'CHANNEL_ERROR' | 'NO_MESSAGES';

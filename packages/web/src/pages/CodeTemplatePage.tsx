@@ -216,7 +216,7 @@ export function CodeTemplatePage(): ReactNode {
           type: updates.type as 'FUNCTION' | 'CODE_BLOCK',
           language: updates.language as 'JAVASCRIPT' | 'TYPESCRIPT',
           code: updates.code,
-          contexts: updates.contexts as Array<typeof import('@mirthless/core-models').CODE_TEMPLATE_CONTEXTS[number]>,
+          contexts: updates.contexts as Array<typeof import('@galvaniflow/core-models').CODE_TEMPLATE_CONTEXTS[number]>,
           revision: updates.revision,
         },
       });

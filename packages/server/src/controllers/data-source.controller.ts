@@ -4,7 +4,7 @@
 // HTTP for data source CRUD + connection test. Passwords are never returned.
 
 import type { Request, Response } from 'express';
-import type { CreateDataSourceInput, UpdateDataSourceInput } from '@mirthless/core-models';
+import type { CreateDataSourceInput, UpdateDataSourceInput } from '@galvaniflow/core-models';
 import { DataSourceService, type TestConnectionInput } from '../services/data-source.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

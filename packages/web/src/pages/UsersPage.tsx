@@ -234,7 +234,7 @@ export function UsersPage(): ReactNode {
                     dense
                     icon={<PeopleIcon />}
                     title="No users yet"
-                    description="Create an operator account to grant access to Mirthless."
+                    description="Create an operator account to grant access to GalvaniFlow."
                   />
                 </TableCell>
               </TableRow>

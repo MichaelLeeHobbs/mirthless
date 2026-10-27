@@ -4,7 +4,7 @@
 // HTTP adapter for message search, detail, and deletion.
 
 import type { Request, Response } from 'express';
-import type { MessageSearchQuery } from '@mirthless/core-models';
+import type { MessageSearchQuery } from '@galvaniflow/core-models';
 import { MessageQueryService } from '../services/message-query.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import { emitEvent } from '../lib/event-emitter.js';

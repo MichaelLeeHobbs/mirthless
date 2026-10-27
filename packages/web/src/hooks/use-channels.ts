@@ -4,7 +4,7 @@
 // TanStack Query hooks for channel CRUD operations.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateChannelInput, UpdateChannelInput } from '@mirthless/core-models';
+import type { CreateChannelInput, UpdateChannelInput } from '@galvaniflow/core-models';
 import { api } from '../api/client.js';
 import { STATS_KEYS } from './use-statistics.js';
 

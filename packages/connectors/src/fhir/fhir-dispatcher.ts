@@ -4,7 +4,7 @@
 // Sends messages as FHIR resources to a FHIR R4 server.
 // Uses native fetch for HTTP communication.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 
 // ----- Auth Types -----

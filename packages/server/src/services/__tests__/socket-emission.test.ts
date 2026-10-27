@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from 'stderr-lib';
-import { SOCKET_EVENT } from '@mirthless/core-models';
+import { SOCKET_EVENT } from '@galvaniflow/core-models';
 
 // ----- Mock Socket -----
 

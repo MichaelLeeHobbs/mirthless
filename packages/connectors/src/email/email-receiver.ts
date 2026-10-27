@@ -5,7 +5,7 @@
 // dispatches each as a message, then applies
 // post-processing (delete, mark read, or move).
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
@@ -23,7 +23,15 @@ const IMAP_OP_TIMEOUT_MS = 30_000;
  * mail server, so a restart before the post-action succeeds retries only the
  * post-action instead of dispatching the email a second time.
  */
-export const DISPATCHED_KEYWORD = '$MirthlessDispatched';
+export const DISPATCHED_KEYWORD = '$GalvaniFlowDispatched';
+
+/** Keyword set before the GalvaniFlow rename. Still read as dispatched, never set. */
+export const LEGACY_DISPATCHED_KEYWORD = '$MirthlessDispatched';
+
+/** True when the flags carry the current or the legacy dispatched keyword. */
+export function hasDispatchedKeyword(flags: ReadonlySet<string> | undefined): boolean {
+  return flags !== undefined && (flags.has(DISPATCHED_KEYWORD) || flags.has(LEGACY_DISPATCHED_KEYWORD));
+}
 
 // ----- Constants -----
 
@@ -71,7 +79,7 @@ export interface EmailMessage {
   readonly date: string;
   readonly body: string;
   readonly attachmentCount: number;
-  /** True when the email already carries {@link DISPATCHED_KEYWORD}. */
+  /** True when the email already carries {@link DISPATCHED_KEYWORD} or {@link LEGACY_DISPATCHED_KEYWORD}. */
   readonly dispatched: boolean;
 }
 
@@ -360,7 +368,7 @@ function defaultImapClientFactory(config: EmailReceiverConfig): ImapClient {
             date: msg.envelope?.date?.toISOString() ?? '',
             body: msg.source?.toString() ?? '',
             attachmentCount: 0,
-            dispatched: msg.flags?.has(DISPATCHED_KEYWORD) ?? false,
+            dispatched: hasDispatchedKeyword(msg.flags),
           });
         }
         return messages;

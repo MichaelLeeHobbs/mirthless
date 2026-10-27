@@ -1,5 +1,5 @@
 // ===========================================
-// @mirthless/core-models
+// @galvaniflow/core-models
 // ===========================================
 // Shared TypeScript types, Zod schemas, and branded types.
 

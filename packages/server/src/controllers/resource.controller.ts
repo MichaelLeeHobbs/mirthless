@@ -4,7 +4,7 @@
 // Handles HTTP requests for resource CRUD.
 
 import type { Request, Response } from 'express';
-import type { CreateResourceInput, UpdateResourceInput } from '@mirthless/core-models';
+import type { CreateResourceInput, UpdateResourceInput } from '@galvaniflow/core-models';
 import { ResourceService } from '../services/resource.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

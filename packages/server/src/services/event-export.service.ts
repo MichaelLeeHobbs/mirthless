@@ -6,7 +6,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { desc, and, inArray, gte, lte, eq } from 'drizzle-orm';
-import type { EventExportQuery } from '@mirthless/core-models';
+import type { EventExportQuery } from '@galvaniflow/core-models';
 import { db } from '../lib/db.js';
 import { events } from '../db/schema/index.js';
 

@@ -5,7 +5,7 @@
 // Registers this channel's dispatcher in the static channel registry
 // so ChannelDispatcher destinations can route messages here.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher } from '../base.js';
 import { registerChannel, unregisterChannel } from './channel-registry.js';
 

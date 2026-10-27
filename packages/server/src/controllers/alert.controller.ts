@@ -9,7 +9,7 @@ import type {
   UpdateAlertInput,
   AlertListQuery,
   PatchAlertEnabledInput,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { AlertService } from '../services/alert.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

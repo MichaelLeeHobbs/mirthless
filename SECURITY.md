@@ -1,12 +1,12 @@
 # Security Policy
 
-Mirthless routes and transforms healthcare messages. Message content is Protected
+GalvaniFlow routes and transforms healthcare messages. Message content is Protected
 Health Information (PHI). We take security reports seriously and ask that you help
 us keep patients' data safe by disclosing responsibly.
 
 ## Supported Versions
 
-Mirthless is pre-1.0 and experimental. Security fixes are applied to the latest
+GalvaniFlow is pre-1.0 and experimental. Security fixes are applied to the latest
 release line only. Until a `1.x` release exists, treat any version below the most
 recent tag as unsupported.
 
@@ -25,7 +25,7 @@ Report privately through one of:
 1. **GitHub Security Advisories** (preferred) — open a draft advisory at
    <https://github.com/MichaelLeeHobbs/mirthless/security/advisories/new>. This keeps
    the report private and lets us collaborate on a fix and CVE if warranted.
-2. **Email** — `michael.lee.hobbs@gmail.com` with subject line `SECURITY: Mirthless`.
+2. **Email** — `michael.lee.hobbs@gmail.com` with subject line `SECURITY: GalvaniFlow`.
    If you want to send sensitive details encrypted, say so in a first plaintext
    message and we will arrange a key exchange.
 

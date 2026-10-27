@@ -26,7 +26,7 @@ import Tooltip from '@mui/material/Tooltip';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
 import HistoryIcon from '@mui/icons-material/History';
-import type { CreateChannelInput, UpdateChannelInput } from '@mirthless/core-models';
+import type { CreateChannelInput, UpdateChannelInput } from '@galvaniflow/core-models';
 import { useChannel, useCreateChannel, useUpdateChannel } from '../hooks/use-channels.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';

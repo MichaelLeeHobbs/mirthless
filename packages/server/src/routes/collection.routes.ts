@@ -11,7 +11,7 @@ import {
   listRecordsQuerySchema,
   storeRecordSchema,
   updateRecordSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { CollectionController } from '../controllers/collection.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

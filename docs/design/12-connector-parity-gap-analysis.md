@@ -1,14 +1,14 @@
-# 12 — Connector Parity Gap Analysis (Mirthless vs Mirth Connect / OIE 4.6.0)
+# 12 — Connector Parity Gap Analysis (GalvaniFlow vs Mirth Connect / OIE 4.6.0)
 
 > **Status:** Draft for review · **Date:** 2026-07-14 · **Owner:** Michael Hobbs
 > **Scope:** Connector feature parity only. Engine/pipeline/UI gaps are noted where they block a connector capability but are otherwise out of scope.
-> **Baselines compared:** Mirthless `feature/real-e2e-testing` · Mirth reference source `reference/connect/` · OIE (Open Integration Engine) **4.6.0** at `C:\Users\mhobb\WebstormProjects\_temp\engine`.
+> **Baselines compared:** GalvaniFlow `feature/real-e2e-testing` · Mirth reference source `reference/connect/` · OIE (Open Integration Engine) **4.6.0** at `C:\Users\mhobb\WebstormProjects\_temp\engine`.
 
 ---
 
 ## 0. Executive Summary
 
-Mirthless is **close to Mirth/OIE on connector breadth** and **ahead on modern safety** (native TLS/mTLS, DoS guards, constant-time credential compare, `FOR UPDATE SKIP LOCKED`, modern `fetch`/`AbortSignal`, first-class FHIR + IMAP). But there are **real connector shortfalls**, and the two most dangerous are not missing connectors — they are **"silent partials"**: connectors that look complete in the UI but cannot reach the targets real hospitals actually use.
+GalvaniFlow is **close to Mirth/OIE on connector breadth** and **ahead on modern safety** (native TLS/mTLS, DoS guards, constant-time credential compare, `FOR UPDATE SKIP LOCKED`, modern `fetch`/`AbortSignal`, first-class FHIR + IMAP). But there are **real connector shortfalls**, and the two most dangerous are not missing connectors — they are **"silent partials"**: connectors that look complete in the UI but cannot reach the targets real hospitals actually use.
 
 **Verdict on the "don't fall short on connectors" red line:** we currently fall short in five places that block whole classes of channel migration:
 
@@ -32,11 +32,11 @@ A recurring **cross-cutting theme**: several capabilities are **implemented in t
 
 ## 1. Methodology
 
-Six parallel source-reading passes diffed each connector's full option surface. Mirth side: the `*Properties`, `*Receiver`, `*Dispatcher`, and filesystem/scheme classes under `reference/connect/`. Mirthless side: `packages/connectors/src/**`, the runtime wiring in `packages/connectors/src/registry.ts`, and the **UI option surface** in `packages/web/src/components/channels/{source,destinations}/**` including `connector-defaults.ts`.
+Six parallel source-reading passes diffed each connector's full option surface. Mirth side: the `*Properties`, `*Receiver`, `*Dispatcher`, and filesystem/scheme classes under `reference/connect/`. GalvaniFlow side: `packages/connectors/src/**`, the runtime wiring in `packages/connectors/src/registry.ts`, and the **UI option surface** in `packages/web/src/components/channels/{source,destinations}/**` including `connector-defaults.ts`.
 
 **OIE divergence check:** OIE 4.6.0 (Gradle build, `version=4.6.0`) has an **identical connector set** to the reference snapshot — 11 connectors (`dimse, doc, file, http, jdbc, jms, js, smtp, tcp, vm, ws`) and the **identical six File schemes** (`FILE, FTP, SFTP, S3, SMB, WEBDAV`). No connectors or schemes were added or removed vs the reference. Divergence is packaging/module layout only. **Conclusion: the reference-based findings below are valid for OIE 4.6.0.**
 
-**Resolved during analysis:** Mirth's per-destination `template` (Velocity string that builds outbound content) has **no gap** in Mirthless. `packages/engine/src/pipeline/message-processor.ts:535-545` runs a full **destination transformer** and hands the resulting `destContent` to the dispatcher. A full transformer script strictly supersedes a Velocity template — **we are ahead here.** Dispatchers correctly send pre-transformed content; this is not a defect.
+**Resolved during analysis:** Mirth's per-destination `template` (Velocity string that builds outbound content) has **no gap** in GalvaniFlow. `packages/engine/src/pipeline/message-processor.ts:535-545` runs a full **destination transformer** and hands the resulting `destContent` to the dispatcher. A full transformer script strictly supersedes a Velocity template — **we are ahead here.** Dispatchers correctly send pre-transformed content; this is not a defect.
 
 ---
 
@@ -44,11 +44,11 @@ Six parallel source-reading passes diffed each connector's full option surface. 
 
 ### 2.1 🔴 Database (`jdbc`) — **PostgreSQL-only, the #1 silent blocker**
 
-**Current state.** Mirth's connector is JDBC-based and DB-agnostic: `DriverInfo.getDefaultDrivers()` ships **MySQL, Oracle, PostgreSQL, SQL Server/Sybase (jTDS), Microsoft SQL Server, SQLite**, plus a **Custom** option (any JDBC driver class + URL). Mirthless hardwires PostgreSQL — `packages/connectors/src/database/connection-pool.ts` imports `pg` and builds a `pg.Pool`; configs accept `host/port/database/username/password` (no driver, no JDBC URL); `DatabaseSourceForm.tsx` defaults port 5432 with no vendor selector.
+**Current state.** Mirth's connector is JDBC-based and DB-agnostic: `DriverInfo.getDefaultDrivers()` ships **MySQL, Oracle, PostgreSQL, SQL Server/Sybase (jTDS), Microsoft SQL Server, SQLite**, plus a **Custom** option (any JDBC driver class + URL). GalvaniFlow hardwires PostgreSQL — `packages/connectors/src/database/connection-pool.ts` imports `pg` and builds a `pg.Pool`; configs accept `host/port/database/username/password` (no driver, no JDBC URL); `DatabaseSourceForm.tsx` defaults port 5432 with no vendor selector.
 
-> **Critical distinction:** Mirthless's "PostgreSQL-only" *storage* decision (its own message store) is deliberate and correct. The **Database connector**, however, talks to **external customer databases** — those are frequently Oracle/SQL Server/MySQL. Vendor-locking the connector is an unintended consequence of reusing `pg`, not a design decision.
+> **Critical distinction:** GalvaniFlow's "PostgreSQL-only" *storage* decision (its own message store) is deliberate and correct. The **Database connector**, however, talks to **external customer databases** — those are frequently Oracle/SQL Server/MySQL. Vendor-locking the connector is an unintended consequence of reusing `pg`, not a design decision.
 
-| Capability | Mirth | Mirthless | Sev |
+| Capability | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | Multi-vendor target DB | 6 built-in drivers + Custom JDBC | **Postgres only** (`pg`) | 🔴 |
 | JavaScript mode (`useScript`) both R+D | Yes | **Not supported** | 🔴 |
@@ -77,11 +77,11 @@ Six parallel source-reading passes diffed each connector's full option surface. 
 
 ### 2.2 🔴 File — **local-disk-only vs Mirth's six-scheme connector**
 
-**Current state.** Mirth's File connector is **scheme-pluggable**: one connector, six backends via `FileSystemConnectionFactory` + `SchemeProperties` (`FileScheme`: FILE, FTP/FTPS, SFTP, S3, SMB, WEBDAV). Mirthless implements **local FILE only** and has a **separate standalone SFTP connector** — SFTP is *not* a File scheme, and FTP/SMB/S3/WebDAV do not exist anywhere.
+**Current state.** Mirth's File connector is **scheme-pluggable**: one connector, six backends via `FileSystemConnectionFactory` + `SchemeProperties` (`FileScheme`: FILE, FTP/FTPS, SFTP, S3, SMB, WEBDAV). GalvaniFlow implements **local FILE only** and has a **separate standalone SFTP connector** — SFTP is *not* a File scheme, and FTP/SMB/S3/WebDAV do not exist anywhere.
 
 **Schemes (the headline gap):**
 
-| Scheme | Mirth | Mirthless | Sev |
+| Scheme | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | Local FILE | Yes | Yes | 🟢 |
 | SFTP | Scheme (key auth, passphrase, knownHosts, hostKeyChecking) | **Separate connector**, not a scheme | 🟡 (architecture) |
@@ -92,7 +92,7 @@ Six parallel source-reading passes diffed each connector's full option surface. 
 
 **Local-FILE option gaps:**
 
-| Capability | Mirth | Mirthless | Sev |
+| Capability | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | File filter | wildcard **or regex** | glob only (no `**`/classes) | 🟡 |
 | Directory recursion | Yes | **No** | 🟡 |
@@ -119,11 +119,11 @@ Six parallel source-reading passes diffed each connector's full option surface. 
 
 ### 2.3 🔴/🟡 TCP / MLLP — **hardcoded framing, hidden runtime options**
 
-**Current state.** Mirth exposes fully configurable transmission via `FrameModeProperties`/`FrameStreamHandler`: arbitrary N-byte start/end sequences parsed from hex, plus a **Basic mode** (no framing; delimiter/regex batch readers). Mirthless's `MllpParser` recognizes **only** single VT (`0x0B`) start and FS+CR (`0x1C 0x0D`) end — hardcoded in `transmission/mllp-mode.ts`, no configurability, no Basic/LLP-without-CR.
+**Current state.** Mirth exposes fully configurable transmission via `FrameModeProperties`/`FrameStreamHandler`: arbitrary N-byte start/end sequences parsed from hex, plus a **Basic mode** (no framing; delimiter/regex batch readers). GalvaniFlow's `MllpParser` recognizes **only** single VT (`0x0B`) start and FS+CR (`0x1C 0x0D`) end — hardcoded in `transmission/mllp-mode.ts`, no configurability, no Basic/LLP-without-CR.
 
 **Also critical:** the runtime (`registry.ts`) wires `tls`, `charset`, `responseMode`, `maxFrameBytes`, `acquireTimeoutMs`, but the **UI forms + `connector-defaults.ts` expose only host/port/maxConnections** (+ responseTimeout on dest). The forms carry TODO comments acknowledging this. **These capabilities exist in code but are unreachable by users.**
 
-| Capability | Mirth | Mirthless | Sev |
+| Capability | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | Configurable start/end bytes (hex, multi-byte) | Yes | **Hardcoded VT/FS+CR** | 🔴 |
 | Basic / non-MLLP framing (delimiter/regex batch) | Yes | **No** | 🔴 |
@@ -151,7 +151,7 @@ Six parallel source-reading passes diffed each connector's full option surface. 
 
 **Current state.** Listener supports path match, single method filter, Basic + bearer-token inbound auth (constant-time compare), content-type response, `maxBodyBytes` DoS guard, and **native TLS/mTLS + custom CA** wired end-to-end. Client supports URL, method, single-valued headers, response body + status class, `AbortSignal` timeout, and the recently added **client TLS/mTLS + custom CA + `rejectUnauthorized`** (confirmed in `tls.ts` → `readTlsClientOptions` → `registry.ts` → `HttpDestinationForm.tsx`).
 
-| Capability | Mirth | Mirthless | Sev |
+| Capability | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | **Outbound Basic/Digest auth** (+ preemptive) | Yes | **None** | 🔴 |
 | **Query-parameters / form-urlencoded table** | Yes | **None** | 🔴 |
@@ -182,7 +182,7 @@ Six parallel source-reading passes diffed each connector's full option surface. 
 
 **Current state.** Genuinely strong: `dcmjs-dimse-adapter.ts` performs real association negotiation, per-presentation-context accept/reject, ~11 transfer syntaxes, C-STORE + C-ECHO (source + dest).
 
-| Capability | Mirth | Mirthless | Sev |
+| Capability | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | Association negotiation / context accept-reject | Yes | Yes | 🟢 |
 | C-STORE / C-ECHO | Yes | Yes | 🟢 |
@@ -200,7 +200,7 @@ Six parallel source-reading passes diffed each connector's full option surface. 
 
 **Current state.** `smtp-dispatcher.ts` has TLS/STARTTLS, auth, html/plain, cc/bcc, attachments. Correctly send-only.
 
-| Capability | Mirth | Mirthless | Sev |
+| Capability | Mirth | GalvaniFlow | Sev |
 |---|---|---|---|
 | TLS/STARTTLS, auth, html/plain, cc/bcc | Yes | Yes | 🟢 |
 | Attachments | Rich multi-`Attachment` (per-item name/MIME/content) | **Single hardcoded `message.txt`** | 🟡 |
@@ -312,8 +312,8 @@ Ranked by **channels unblocked**, not effort. Effort is a rough T-shirt size.
 
 ## 9. Appendix — Key File References
 
-**Mirthless connectors:** `packages/connectors/src/{tcp-mllp,http,file,sftp,database,dicom,smtp,channel,javascript,fhir,email}/*.ts`, `packages/connectors/src/registry.ts`
-**Mirthless forms:** `packages/web/src/components/channels/source/{ConnectorSettingsSection,connector-defaults}.tsx|ts`, `.../destinations/{DestinationConnectorSettings,connector-defaults}.tsx|ts`
+**GalvaniFlow connectors:** `packages/connectors/src/{tcp-mllp,http,file,sftp,database,dicom,smtp,channel,javascript,fhir,email}/*.ts`, `packages/connectors/src/registry.ts`
+**GalvaniFlow forms:** `packages/web/src/components/channels/source/{ConnectorSettingsSection,connector-defaults}.tsx|ts`, `.../destinations/{DestinationConnectorSettings,connector-defaults}.tsx|ts`
 **Destination transformer flow:** `packages/engine/src/pipeline/message-processor.ts:535-545`
 **Mirth reference:** `reference/connect/server/src/com/mirth/connect/connectors/{tcp,http,file,jdbc,dimse,smtp,vm,js,ws,jms,doc}/**`, `reference/connect/core-server-plugins/.../file/filesystems/*Connection.java`, `reference/connect/.../core/file/FileScheme.java`, `.../DriverInfo.java`
 **OIE 4.6.0:** `C:\Users\mhobb\WebstormProjects\_temp\engine` (Gradle, `server/src/main/java/com/mirth/connect/connectors/**`)

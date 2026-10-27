@@ -9,7 +9,7 @@ import type {
   SettingKeyParam,
   UpsertSettingInput,
   BulkUpsertSettingsInput,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { SettingsService } from '../services/settings.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

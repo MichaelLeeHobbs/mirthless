@@ -15,7 +15,7 @@
 // for this package. They are therefore deliberately NOT tested here.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 import { MessageProcessor } from '../message-processor.js';
 import type {
   MessageStore,

@@ -3,17 +3,17 @@
 // End-to-End Channel Throughput Benchmark
 // ===========================================
 // Drives real HL7v2 messages through the REAL engine pipeline
-// (@mirthless/engine MessageProcessor + VmSandboxExecutor) to measure sustained
+// (@galvaniflow/engine MessageProcessor + VmSandboxExecutor) to measure sustained
 // throughput (messages/sec) and per-message latency percentiles.
 //
 // Two storage modes:
 //   (default)  in-memory MessageStore — measures the pipeline + sandbox cost
 //              alone (parse -> filter -> route -> persist-calls), no DB/network.
 //              Runs anywhere; reproducible baseline for the engine hot path.
-//   --db       real Postgres MessageStore via @mirthless/server's MessageService
+//   --db       real Postgres MessageStore via @galvaniflow/server's MessageService
 //              (reads DATABASE_URL from your .env). Measures true end-to-end
 //              persistence cost against the dev database. Requires the server
-//              package to be built (`pnpm --filter @mirthless/server build`).
+//              package to be built (`pnpm --filter @galvaniflow/server build`).
 //
 // Usage:
 //   node scripts/bench-throughput.mjs [--messages N] [--concurrency C]
@@ -24,13 +24,13 @@
 //   node scripts/bench-throughput.mjs --db --messages 2000  # against dev Postgres
 //
 // Requires packages to be built first: `pnpm build` (or at least
-// `pnpm --filter @mirthless/engine build`).
+// `pnpm --filter @galvaniflow/engine build`).
 
 import { performance } from 'node:perf_hooks';
 import { randomUUID } from 'node:crypto';
 // Import from the built dist directly so the script works when run from the repo
 // root (the workspace package name isn't resolvable from root node_modules).
-// Requires: pnpm --filter @mirthless/engine build (or pnpm build).
+// Requires: pnpm --filter @galvaniflow/engine build (or pnpm build).
 import {
   MessageProcessor,
   VmSandboxExecutor,
@@ -161,7 +161,7 @@ async function run() {
   };
 
   process.stdout.write(
-    `Mirthless throughput benchmark\n` +
+    `GalvaniFlow throughput benchmark\n` +
       `  store=${args.db ? 'postgres (dev DB)' : 'in-memory'} sandbox=${args.sandbox} ` +
       `concurrency=${args.concurrency} warmup=${args.warmup} messages=${args.messages}\n`,
   );

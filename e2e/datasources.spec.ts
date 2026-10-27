@@ -52,9 +52,9 @@ test.describe('Data Sources', () => {
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Name').fill(TEST_DS_NAME);
     await dialog.getByLabel('Host').fill('localhost');
-    await dialog.getByLabel('Database').fill('mirthless');
-    await dialog.getByLabel('User').fill('mirthless');
-    await dialog.getByLabel('Password', { exact: false }).fill('mirthless_dev');
+    await dialog.getByLabel('Database').fill('galvaniflow');
+    await dialog.getByLabel('User').fill('galvaniflow');
+    await dialog.getByLabel('Password', { exact: false }).fill('galvaniflow_dev');
     await dialog.getByRole('button', { name: /^create$/i }).click();
 
     await expect(page.getByText(TEST_DS_NAME)).toBeVisible({ timeout: 10_000 });

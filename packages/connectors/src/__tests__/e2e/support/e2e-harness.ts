@@ -19,7 +19,7 @@ import {
   DEFAULT_EXECUTION_OPTIONS,
   compileScript,
   prependTemplates,
-} from '@mirthless/engine';
+} from '@galvaniflow/engine';
 import type {
   MessageStore,
   PipelineConfig,
@@ -31,14 +31,14 @@ import type {
   DestinationResponse,
   CompiledScript,
   CodeTemplateData,
-} from '@mirthless/engine';
+} from '@galvaniflow/engine';
 import type {
   SourceConnectorRuntime,
   DestinationConnectorRuntime,
   ConnectorMessage,
   ConnectorResponse,
 } from '../../../index.js';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 
 // ----- Result helper -----
 

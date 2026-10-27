@@ -120,7 +120,7 @@ const sourceFactories = new Map<string, SourceFactory>([
   ['DICOM', (props): SourceConnectorRuntime => new DicomReceiver({
     port: num(props, 'port', 0),
     storageDir: props['storageDir'] as string,
-    aeTitle: (props['aeTitle'] as string | undefined) ?? 'MIRTHLESS',
+    aeTitle: (props['aeTitle'] as string | undefined) ?? 'GALVANIFLOW',
     minPoolSize: num(props, 'minPoolSize', 2),
     maxPoolSize: num(props, 'maxPoolSize', 10),
     connectionTimeoutMs: num(props, 'connectionTimeoutMs', 10_000),
@@ -247,7 +247,7 @@ const destinationFactories = new Map<string, DestinationFactory>([
     host: props['host'] as string,
     port: num(props, 'port', 0),
     calledAETitle: (props['calledAETitle'] as string | undefined) ?? 'PACS',
-    callingAETitle: (props['callingAETitle'] as string | undefined) ?? 'MIRTHLESS',
+    callingAETitle: (props['callingAETitle'] as string | undefined) ?? 'GALVANIFLOW',
     mode: (props['mode'] as 'single' | 'multiple' | undefined) ?? 'multiple',
     maxAssociations: num(props, 'maxAssociations', 4),
     maxRetries: num(props, 'maxRetries', 3),

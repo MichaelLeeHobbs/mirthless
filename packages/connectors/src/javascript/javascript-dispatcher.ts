@@ -4,7 +4,7 @@
 // Executes a user script with message content in scope.
 // The script's return value becomes the response content.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 
 // ----- Config -----

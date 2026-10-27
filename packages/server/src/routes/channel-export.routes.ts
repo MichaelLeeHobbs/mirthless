@@ -4,7 +4,7 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
-import { channelImportSchema } from '@mirthless/core-models';
+import { channelImportSchema } from '@galvaniflow/core-models';
 import { ChannelExportController } from '../controllers/channel-export.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

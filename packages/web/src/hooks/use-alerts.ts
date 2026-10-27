@@ -4,7 +4,7 @@
 // TanStack Query hooks for alert CRUD operations.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateAlertInput, UpdateAlertInput } from '@mirthless/core-models';
+import type { CreateAlertInput, UpdateAlertInput } from '@galvaniflow/core-models';
 import { api, type AlertListResult, type AlertDetail } from '../api/client.js';
 
 // ----- Query Keys -----

@@ -4,7 +4,7 @@
 // Parse raw string content into sandbox-friendly objects based on data type,
 // and serialize sandbox results back to strings for storage/transport.
 
-import { Hl7Message } from '@mirthless/core-util';
+import { Hl7Message } from '@galvaniflow/core-util';
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 import type { Hl7MessageProxy } from '../sandbox/bridge-functions.js';
 

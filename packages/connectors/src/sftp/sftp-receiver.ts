@@ -8,7 +8,7 @@
 // quarantine ledger lives as a sidecar in the remote directory so a restart
 // (new instance) does not re-dispatch an already-dispatched file.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { matchGlob } from '../file/file-receiver.js';
@@ -29,7 +29,13 @@ const SFTP_OP_TIMEOUT_MS = 30_000;
  * Sidecar ledger file (in the remote directory) that persists the quarantine
  * set across restarts. Excluded from polling so it is never dispatched.
  */
-const QUARANTINE_LEDGER = '.mirthless-quarantine.json';
+const QUARANTINE_LEDGER = '.galvaniflow-quarantine.json';
+/**
+ * Ledger name used before the GalvaniFlow rename. Still read (merged into the
+ * set) and never dispatched, but never written: the next persist carries its
+ * entries into {@link QUARANTINE_LEDGER}.
+ */
+const LEGACY_QUARANTINE_LEDGER = '.mirthless-quarantine.json';
 
 // ----- Constants -----
 
@@ -189,7 +195,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
     const results: SftpFileInfo[] = [];
     for (const entry of entries) {
       if (!entry.isFile) continue;
-      if (entry.name === QUARANTINE_LEDGER) continue; // never dispatch the ledger
+      if (entry.name === QUARANTINE_LEDGER || entry.name === LEGACY_QUARANTINE_LEDGER) continue; // never dispatch a ledger
       if (!matchGlob(this.config.filePattern, entry.name)) continue;
       if (now - entry.modifyTime < this.config.minFileAgeMs) continue; // still being written
       results.push(entry);
@@ -261,31 +267,45 @@ export class SftpReceiver implements SourceConnectorRuntime {
   }
 
   /**
-   * Load the quarantine ledger from the remote sidecar into memory. Resilient:
-   * a missing ledger means an empty set; a corrupt ledger is logged and treated
-   * as empty (a startup read must never crash the connector).
+   * Load the current and legacy remote ledgers and merge them into memory, so
+   * entries quarantined before the rename are still skipped.
    */
   private async loadQuarantine(): Promise<void> {
+    await this.loadLedgerFile(this.ledgerPath);
+    await this.loadLedgerFile(joinRemote(this.config.remoteDirectory, LEGACY_QUARANTINE_LEDGER));
+  }
+
+  /**
+   * Add one remote ledger's keys to the quarantine set. Resilient: a missing
+   * ledger adds nothing; a corrupt ledger is logged and ignored (a startup read
+   * must never crash the connector).
+   */
+  private async loadLedgerFile(ledgerPath: string): Promise<void> {
     if (!this.client) return;
     let exists: boolean;
     try {
-      exists = await withTimeout(this.client.exists(this.ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP exists');
+      exists = await withTimeout(this.client.exists(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP exists');
     } catch {
       return;
     }
     if (!exists) return;
     let text: string;
     try {
-      const buf = await withTimeout(this.client.get(this.ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP get ledger');
+      const buf = await withTimeout(this.client.get(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP get ledger');
       text = buf.toString('utf8').trim();
     } catch (err) {
       this.logger.error(
-        { ...errorInfo(err), file: this.ledgerPath },
+        { ...errorInfo(err), file: ledgerPath },
         'Failed to read quarantine ledger; ignoring it (files may be re-dispatched)',
       );
       return;
     }
     if (!text.startsWith('[')) return;
+    this.addLedgerKeys(text, ledgerPath);
+  }
+
+  /** Parse ledger JSON into the quarantine set; corruption is logged, not fatal. */
+  private addLedgerKeys(text: string, ledgerPath: string): void {
     try {
       const parsed: unknown = JSON.parse(text);
       if (Array.isArray(parsed)) {
@@ -295,7 +315,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
       }
     } catch (err) {
       this.logger.error(
-        { ...errorInfo(err), file: this.ledgerPath },
+        { ...errorInfo(err), file: ledgerPath },
         'Quarantine ledger is corrupt; ignoring it (files may be re-dispatched)',
       );
     }

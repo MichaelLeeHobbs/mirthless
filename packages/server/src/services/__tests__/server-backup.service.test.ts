@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ServerBackup, RestoreSectionResult } from '@mirthless/core-models';
+import type { ServerBackup, RestoreSectionResult } from '@galvaniflow/core-models';
 
 // ----- Mock Dependencies -----
 

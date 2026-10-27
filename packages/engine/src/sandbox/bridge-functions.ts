@@ -5,7 +5,7 @@
 // Returns plain objects with closures to avoid cross-realm
 // class instance issues with private fields.
 
-import { Hl7Message, createAck, type AckOptions } from '@mirthless/core-util';
+import { Hl7Message, createAck, type AckOptions } from '@galvaniflow/core-util';
 import { isHl7MessageProxy, createHl7Proxy } from '../pipeline/data-type-handler.js';
 import { isBlockedHostname } from './ssrf.js';
 

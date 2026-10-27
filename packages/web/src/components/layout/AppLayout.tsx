@@ -244,7 +244,7 @@ export function AppLayout(): ReactNode {
               component="div"
               sx={{ display: { xs: 'none', lg: 'block' }, fontWeight: 700, letterSpacing: '-0.01em', color: 'text.primary' }}
             >
-              Mirthless
+              GalvaniFlow
             </Typography>
             <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', lg: 'block' }, my: 2, mx: 0.5 }} />
             <HeaderBreadcrumbs compact={isMobile} />

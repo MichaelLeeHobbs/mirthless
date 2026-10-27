@@ -6,7 +6,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc } from 'drizzle-orm';
-import type { CreateResourceInput, UpdateResourceInput } from '@mirthless/core-models';
+import type { CreateResourceInput, UpdateResourceInput } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';

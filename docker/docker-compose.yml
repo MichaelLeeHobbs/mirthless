@@ -1,18 +1,18 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: mirthless-db
+    container_name: galvaniflow-db
     environment:
-      POSTGRES_DB: mirthless
-      POSTGRES_USER: mirthless
-      POSTGRES_PASSWORD: mirthless_dev
+      POSTGRES_DB: galvaniflow
+      POSTGRES_USER: galvaniflow
+      POSTGRES_PASSWORD: galvaniflow_dev
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mirthless -d mirthless"]
+      test: ["CMD-SHELL", "pg_isready -U galvaniflow -d galvaniflow"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,7 +23,7 @@ services:
 
   sftp-test:
     image: atmoz/sftp:alpine
-    container_name: mirthless-sftp-test
+    container_name: galvaniflow-sftp-test
     profiles: ["test"]
     # user:password:::dir  → creates /home/mirth/upload, writable, chrooted.
     command: mirth:mirthpw:::upload
@@ -33,7 +33,7 @@ services:
   mail-test:
     # GreenMail: SMTP (3025) + IMAP (3143) in one container for mail connectors.
     image: greenmail/standalone:2.1.0
-    container_name: mirthless-mail-test
+    container_name: galvaniflow-mail-test
     profiles: ["test"]
     environment:
       GREENMAIL_OPTS: >-

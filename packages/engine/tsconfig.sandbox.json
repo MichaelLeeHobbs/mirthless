@@ -1,5 +1,5 @@
 {
-  "//": "Type-checks example channel scripts against the shipped sandbox ambient types (sandbox-globals.d.ts). Not part of the build. Run: pnpm --filter @mirthless/engine typecheck:scripts",
+  "//": "Type-checks example channel scripts against the shipped sandbox ambient types (sandbox-globals.d.ts). Not part of the build. Run: pnpm --filter @galvaniflow/engine typecheck:scripts",
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "noEmit": true,

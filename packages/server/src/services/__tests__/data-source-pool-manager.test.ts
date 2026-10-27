@@ -47,7 +47,7 @@ class MockConnectionPool {
   }
 }
 
-vi.mock('@mirthless/connectors', () => ({ ConnectionPool: MockConnectionPool }));
+vi.mock('@galvaniflow/connectors', () => ({ ConnectionPool: MockConnectionPool }));
 
 const { DataSourcePoolManager } = await import('../data-source-pool-manager.js');
 type PooledDataSource = import('../data-source-pool-manager.js').PooledDataSource;

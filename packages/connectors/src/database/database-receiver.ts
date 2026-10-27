@@ -5,7 +5,7 @@
 // dispatches each row as a message, and optionally
 // executes an UPDATE to mark rows as processed.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { ConnectionPool, type PoolConfig, type TxQuery } from './connection-pool.js';
 import { prepare } from './query-builder.js';

@@ -4,7 +4,7 @@
 // Handles HTTP requests for channel tag CRUD + assignment.
 
 import type { Request, Response } from 'express';
-import type { CreateTagInput, UpdateTagInput, AssignTagInput } from '@mirthless/core-models';
+import type { CreateTagInput, UpdateTagInput, AssignTagInput } from '@galvaniflow/core-models';
 import { TagService } from '../services/tag.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';

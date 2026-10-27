@@ -8,7 +8,7 @@ import {
   updateDataSourceSchema,
   testDataSourceSchema,
   dataSourceUuidParamSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { DataSourceController } from '../controllers/data-source.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

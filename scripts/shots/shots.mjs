@@ -42,7 +42,7 @@ const PAGES = {
   users: '/users',
   events: '/events',
   settings: '/settings',
-  'settings-edited': { url: '/settings', fill: { 'Server name': 'Mirthless (prod)', Port: '70000' } },
+  'settings-edited': { url: '/settings', fill: { 'Server name': 'GalvaniFlow (prod)', Port: '70000' } },
   system: '/system',
   'system-logs': '/system/logs',
   'system-pruner': '/system/pruner',
@@ -122,8 +122,8 @@ async function shoot(browser, name, target, variantName) {
   });
   const signedIn = name !== 'login';
   await page.addInitScript(([auth, mode]) => {
-    localStorage.setItem('mirthless_theme', mode);
-    if (auth) localStorage.setItem('mirthless_auth', JSON.stringify(auth));
+    localStorage.setItem('galvaniflow_theme', mode);
+    if (auth) localStorage.setItem('galvaniflow_auth', JSON.stringify(auth));
   }, [signedIn ? AUTH : null, v.mode]);
   await page.goto(opts.base + url, { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);

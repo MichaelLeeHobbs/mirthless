@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 import { SftpReceiver, joinRemote, SFTP_POST_ACTION, type SftpReceiverConfig } from '../sftp-receiver.js';
 import type { SftpClientFactory } from '../sftp-client.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
@@ -345,6 +345,60 @@ describe('durable quarantine', () => {
 
     expect(dispatchCount).toBe(1); // ledger ignored, file still dispatched
     expect(errors.some((e) => e.msg.includes('corrupt'))).toBe(true);
+  });
+
+  it('honours a pre-rename legacy ledger: a key quarantined there is not re-dispatched', async () => {
+    const state = new RemoteState();
+    const mtime = Date.now() - 10_000;
+    state.addFile('a.hl7', 'X', mtime);
+    state.legacyLedger = JSON.stringify([`a.hl7:${String(mtime)}`]);
+
+    let dispatchCount = 0;
+    receiver = new SftpReceiver(makeConfig(), factoryFor(state));
+    receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: dispatchCount }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(dispatchCount).toBe(0);
+  });
+
+  it('merges legacy and current ledgers and writes the union to the current ledger only', async () => {
+    const state = new RemoteState();
+    const mtime = Date.now() - 10_000;
+    state.addFile('a.hl7', 'X', mtime);
+    state.addFile('b.hl7', 'Y', mtime);
+    state.addFile('c.hl7', 'Z', mtime);
+    state.legacyLedger = JSON.stringify([`a.hl7:${String(mtime)}`]);
+    state.ledger = JSON.stringify([`b.hl7:${String(mtime)}`]);
+    const legacyBefore = state.legacyLedger;
+
+    const captured: RawMessage[] = [];
+    receiver = new SftpReceiver(makeConfig(), factoryFor(state, { delete: true }));
+    receiver.setDispatcher(makeDispatcher((raw) => { captured.push(raw); return { messageId: 1 }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000); // c.hl7 dispatched, delete fails → quarantined
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(captured.map((r) => r.sourceMap['originalFilename'])).toEqual(['c.hl7']);
+    const written = JSON.parse(state.ledger) as string[];
+    expect(written).toEqual(expect.arrayContaining([
+      `a.hl7:${String(mtime)}`, `b.hl7:${String(mtime)}`, `c.hl7:${String(mtime)}`,
+    ]));
+    expect(state.legacyLedger).toBe(legacyBefore); // legacy file never written
+  });
+
+  it('never dispatches the legacy ledger sidecar even when the pattern matches it', async () => {
+    const state = new RemoteState();
+    state.legacyLedger = '[]';
+    state.addFile('a.hl7', 'X', Date.now() - 10_000);
+
+    const captured: RawMessage[] = [];
+    receiver = new SftpReceiver(makeConfig({ filePattern: '*' }), factoryFor(state));
+    receiver.setDispatcher(makeDispatcher((raw) => { captured.push(raw); return { messageId: 1 }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(captured.map((r) => r.sourceMap['originalFilename'])).toEqual(['a.hl7']);
   });
 });
 

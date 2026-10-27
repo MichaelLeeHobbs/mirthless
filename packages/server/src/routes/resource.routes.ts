@@ -7,7 +7,7 @@ import {
   createResourceSchema,
   updateResourceSchema,
   resourceUuidParamSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { ResourceController } from '../controllers/resource.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

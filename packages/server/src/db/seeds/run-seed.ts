@@ -16,7 +16,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 
-import { DEFAULT_GROUP_NAME } from '@mirthless/core-models';
+import { DEFAULT_GROUP_NAME } from '@galvaniflow/core-models';
 import * as schema from '../schema/index.js';
 import { defaultSettings } from './settings.js';
 import { defaultPermissions } from './permissions.js';
@@ -27,7 +27,7 @@ loadEnv({ path: '.env', quiet: true });
 
 const SALT_ROUNDS = 12;
 const ADMIN_USERNAME = 'admin';
-const ADMIN_EMAIL = 'admin@mirthless.local';
+const ADMIN_EMAIL = 'admin@galvaniflow.local';
 const ADMIN_PASSWORD = 'Admin123!';
 
 /** Same TLS rules as the server pool (lib/db.ts buildDbSslConfig). */

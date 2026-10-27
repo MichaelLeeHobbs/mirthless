@@ -7,7 +7,7 @@
 import bcrypt from 'bcryptjs';
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, ne, asc } from 'drizzle-orm';
-import type { CreateUserInput, UpdateUserInput } from '@mirthless/core-models';
+import type { CreateUserInput, UpdateUserInput } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { permissionNamesForRole } from '../lib/role-permissions.js';

@@ -12,7 +12,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 import pkg from 'dcmjs-dimse';
 import type { DcmtkReceiver, DcmtkFileData, DcmtkAssociationData } from './dicom-receiver.js';
 import type { DcmtkSender, DcmtkSendResult } from './dicom-dispatcher.js';

@@ -4,7 +4,7 @@
 // Sends messages as emails via SMTP using nodemailer.
 // Supports template variable substitution in subject/body.
 
-import { tryCatch, type Result } from '@mirthless/core-util';
+import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { createRequire } from 'node:module';
 import { withTimeoutSignal } from '../timeout.js';

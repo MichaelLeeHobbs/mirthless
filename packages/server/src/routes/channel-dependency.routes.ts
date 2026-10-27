@@ -7,7 +7,7 @@ import { Router, type IRouter } from 'express';
 import {
   setDependenciesSchema,
   channelDependencyParamSchema,
-} from '@mirthless/core-models';
+} from '@galvaniflow/core-models';
 import { ChannelDependencyService } from '../services/channel-dependency.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import { authenticate } from '../middleware/auth.middleware.js';

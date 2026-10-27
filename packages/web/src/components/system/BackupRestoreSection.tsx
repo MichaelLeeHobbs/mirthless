@@ -24,7 +24,7 @@ import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { ServerRestoreResult } from '@mirthless/core-models';
+import type { ServerRestoreResult } from '@galvaniflow/core-models';
 import { useBackup, useRestore } from '../../hooks/use-backup.js';
 
 export function BackupRestoreSection(): ReactNode {
@@ -44,7 +44,7 @@ export function BackupRestoreSection(): ReactNode {
         const a = document.createElement('a');
         a.href = url;
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        a.download = `mirthless-backup-${timestamp}.json`;
+        a.download = `galvaniflow-backup-${timestamp}.json`;
         a.click();
         URL.revokeObjectURL(url);
       },

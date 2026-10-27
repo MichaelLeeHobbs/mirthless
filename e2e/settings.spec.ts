@@ -35,12 +35,12 @@ test.describe('Settings', () => {
 
   test('saves an edit that survives a reload', async ({ page }) => {
     const original = await field(page, 'Server name').inputValue();
-    await field(page, 'Server name').fill('Mirthless E2E');
+    await field(page, 'Server name').fill('GalvaniFlow E2E');
     await expect(saveBar(page)).toContainText('1 unsaved change');
     await saveAndWait(page, 'Setting saved');
 
     await page.reload();
-    await expect(field(page, 'Server name')).toHaveValue('Mirthless E2E');
+    await expect(field(page, 'Server name')).toHaveValue('GalvaniFlow E2E');
 
     await field(page, 'Server name').fill(original);
     await page.keyboard.press('Control+s');
@@ -65,7 +65,7 @@ test.describe('Settings', () => {
     await saveAndWait(page, 'Setting saved');
 
     const status = await page.evaluate(async () => {
-      const auth = JSON.parse(localStorage.getItem('mirthless_auth') ?? '{}') as { accessToken?: string };
+      const auth = JSON.parse(localStorage.getItem('galvaniflow_auth') ?? '{}') as { accessToken?: string };
       const res = await fetch('/api/v1/admin/prune/schedule', { headers: { Authorization: `Bearer ${auth.accessToken ?? ''}` } });
       return (await res.json()) as { data: { enabled: boolean; cronExpression: string } };
     });

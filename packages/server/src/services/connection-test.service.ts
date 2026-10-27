@@ -14,7 +14,7 @@ import * as fs from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
 import { stderr, type Result } from 'stderr-lib';
-import type { ConnectionTestResult } from '@mirthless/core-models';
+import type { ConnectionTestResult } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { resolveHttpDestinationTls, resolveHttpSourceTls } from './connector-tls-resolver.js';
 

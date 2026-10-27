@@ -9,7 +9,7 @@ import {
   type HttpReceiverConfig,
 } from '../http-receiver.js';
 import type { RawMessage, DispatchResult } from '../../base.js';
-import type { Result } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 
 // ----- Helpers -----

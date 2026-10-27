@@ -54,7 +54,7 @@ From fullstack-template patterns. JWT + sessions.
 
 ### Key Differences from Connect
 
-| Aspect | Connect | Mirthless |
+| Aspect | Connect | GalvaniFlow |
 |---|---|---|
 | Auth | Session cookies + Basic Auth | JWT + refresh tokens |
 | RBAC | Always-true default (commercial plugin) | Built-in roles + permissions |

@@ -55,7 +55,7 @@ const mockCompileScript = vi.fn().mockResolvedValue({
   ok: true, value: { code: 'compiled-code' }, error: null,
 });
 
-vi.mock('@mirthless/engine', () => ({
+vi.mock('@galvaniflow/engine', () => ({
   ChannelRuntime: MockChannelRuntime,
   VmSandboxExecutor: MockVmSandboxExecutor,
   MessageProcessor: vi.fn().mockImplementation(function () {
@@ -112,7 +112,7 @@ const MockJavaScriptDispatcher = vi.fn().mockImplementation(function () {
 let _lastSourceConnector: unknown = null;
 let destConnectorsByCall: unknown[] = [];
 
-vi.mock('@mirthless/connectors', () => ({
+vi.mock('@galvaniflow/connectors', () => ({
   createSourceConnector: vi.fn().mockImplementation((type: string) => {
     if (type === 'JAVASCRIPT') {
       const instance = new (MockJavaScriptReceiver as unknown as new () => unknown)();

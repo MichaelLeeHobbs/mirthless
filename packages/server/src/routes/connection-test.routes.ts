@@ -4,7 +4,7 @@
 // POST / — test connector connectivity
 
 import { Router, type IRouter } from 'express';
-import { connectionTestSchema } from '@mirthless/core-models';
+import { connectionTestSchema } from '@galvaniflow/core-models';
 import { ConnectionTestController } from '../controllers/connection-test.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

@@ -5,8 +5,8 @@
 // Runs between preprocessor and source filter in the pipeline.
 
 import * as crypto from 'node:crypto';
-import type { Result } from '@mirthless/core-util';
-import { tryCatch } from '@mirthless/core-util';
+import type { Result } from '@galvaniflow/core-util';
+import { tryCatch } from '@galvaniflow/core-util';
 import type { SandboxExecutor, CompiledScript, ExecutionOptions, ExecutionResult } from '../sandbox/sandbox-executor.js';
 import { createSandboxContext } from '../sandbox/sandbox-context.js';
 
