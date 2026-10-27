@@ -2,6 +2,14 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-27 — Breadcrumbs in the header, centred "Jump to" (branch `claude/project-thread-t9fahq`)
+
+Michael: move breadcrumbs into the header bar to stop wasting space, most views have none; centre the Ctrl+K "Jump to".
+
+- **Route-driven breadcrumbs.** `lib/breadcrumbs.ts` builds the trail from the URL: Dashboard, then the sidebar label for top-level pages, the channel name (and "Messages") for channel routes, and Alerts plus the alert name for the alert editor. `HeaderBreadcrumbs` renders it in the app bar and reads names from the query cache the page already filled. Every page now has a trail; `PageBreadcrumbs` and `PageHeader`'s `overline` are gone (D-201).
+- **Header layout.** Three columns: logo and trail left, "Jump to" centred, theme and account right. Below `lg` the "Mirthless" wordmark hides to give the trail room; on phones the trail collapses to the current page and "Jump to" is an icon on the right.
+- `pnpm shots` gains `channel-editor` (`/channels/c1`).
+
 ## 2026-10-27 — First login no longer bounces back to /login (branch `claude/project-thread-8fdw4k`)
 
 - A freshly seeded admin (`mustChangePassword`) was logged out right after signing in: the server refuses the websocket handshake until the password changes (since e8259ba), and `useSocketConnection` treated that refusal as an auth failure and called `clearAuth()`, so the forced change-password dialog never appeared. The socket now waits until the forced change is done.
