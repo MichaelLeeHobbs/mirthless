@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-27 — System Information, after MedFusion's System Monitor (branch `claude/project-thread-z0c3be`)
+
+Michael: the System Information view could learn a lot from MedFusion. Taken from MedFusion's System Monitor: tabs held in the path, a status strip first, dense label/value panels.
+
+- **Tabs in the path.** `/system` (Overview), `/system/logs`, `/system/pruner`, `/system/backup` replace one long scrolling page. Only the active tab is mounted, so the 10 s system-info poll and the log stream stop when you leave them. The three non-overview tabs are in the Ctrl+K palette ("Server logs", "Data pruner", "Backup & restore"). (D-201)
+- **Status strip.** Server, Database, Engine, Heap and Host each get a level, a word and a one-line reason (`lib/system-health.ts`). The Engine cell links to the dashboard.
+- **More facts, from one probe.** The server now reports the PostgreSQL version, database size and probe round trip, hostname, start time, OS release, CPU count, load average and the V8 heap limit.
+- **Heap is measured against the V8 limit**, not `heapTotal`. `heapTotal` is only what V8 has allocated so far and normally sits near 90% used, so the old bar read red on a healthy server.
+- **Copy diagnostics** puts a plain-text summary (no PHI, no settings values) on the clipboard for support tickets.
+
 ## 2026-10-27 — First login no longer bounces back to /login (branch `claude/project-thread-8fdw4k`)
 
 - A freshly seeded admin (`mustChangePassword`) was logged out right after signing in: the server refuses the websocket handshake until the password changes (since e8259ba), and `useSocketConnection` treated that refusal as an auth failure and called `clearAuth()`, so the forced change-password dialog never appeared. The socket now waits until the forced change is done.
