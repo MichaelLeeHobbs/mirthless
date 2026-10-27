@@ -88,6 +88,6 @@ When building something new, copy the closest of these:
 | Admin list and edit | Users (`pages/UsersPage.tsx`), Tags (`pages/TagsPage.tsx`) | `PageHeader`, table in Paper, row actions, dialog editor. |
 | Triage worklist | Traffic (`pages/TrafficPage.tsx`) | Summary tiles above a filtered list of what needs attention. |
 | Dense detail browser | Message browser (`pages/MessageBrowserPage.tsx`) | Filters, monospace IDs, status per connector. |
-| Read-only status | System Info (`pages/SystemInfoPage.tsx`) | Panels of facts, progress bars, status counts. |
+| Read-only status | System Info (`pages/SystemInfoPage.tsx`) | Status strip first, then label/value fact panels; sub-views as tabs in the path (`/system/logs`). |
 | Long-form editor | Channel editor (`pages/ChannelEditorPage.tsx`) | Tabs, accordions for advanced settings. |
 | Settings form | Settings (`pages/SettingsPage.tsx`) | Sections from a catalog, label and help beside each control, save bar only while dirty. |

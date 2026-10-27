@@ -42,6 +42,8 @@ const PAGES = {
   settings: '/settings',
   'settings-edited': { url: '/settings', fill: { 'Server name': 'Mirthless (prod)', Port: '70000' } },
   system: '/system',
+  'system-logs': '/system/logs',
+  'system-pruner': '/system/pruner',
   tags: '/tags',
   'alert-editor': '/alerts/a1',
   'code-templates': '/code-templates',

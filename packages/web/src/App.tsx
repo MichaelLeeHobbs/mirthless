@@ -104,7 +104,10 @@ const router = createBrowserRouter([
           },
           {
             element: <RequirePermission anyOf={[PERMISSION.SYSTEM_INFO]} />,
-            children: [{ path: 'system', element: lazyRoute(<SystemInfoPage />) }],
+            children: [
+              { path: 'system', element: lazyRoute(<SystemInfoPage />) },
+              { path: 'system/:tab', element: lazyRoute(<SystemInfoPage />) },
+            ],
           },
           {
             element: <RequirePermission anyOf={[PERMISSION.USERS_READ]} />,

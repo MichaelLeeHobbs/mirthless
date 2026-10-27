@@ -108,11 +108,11 @@ const settings = [
 ].map(([id, key, value, type, description, category]) => ({ id, key, value, type, description, category, createdAt: ago(90000), updatedAt: ago(500) }));
 
 const systemInfo = {
-  server: { version: '0.1.0', nodeVersion: 'v22.11.0', env: 'production', pid: 4127, uptime: 389_200 },
-  os: { platform: 'linux', arch: 'x64', totalMemory: 16 * 2 ** 30, freeMemory: 9.4 * 2 ** 30 },
-  memory: { rss: 512 * 2 ** 20, heapUsed: 214 * 2 ** 20, heapTotal: 300 * 2 ** 20, external: 12 * 2 ** 20 },
+  server: { version: '0.1.0', nodeVersion: 'v24.11.0', env: 'production', pid: 4127, uptime: 389_200, startedAt: ago(6487), hostname: 'mirth-prod-01' },
+  os: { platform: 'linux', release: '6.8.0-49-generic', arch: 'x64', cpus: 8, loadAverage: [0.42, 0.38, 0.31], totalMemory: 16 * 2 ** 30, freeMemory: 9.4 * 2 ** 30 },
+  memory: { rss: 512 * 2 ** 20, heapUsed: 214 * 2 ** 20, heapTotal: 300 * 2 ** 20, heapLimit: 4144 * 2 ** 20, external: 12 * 2 ** 20 },
   engine: { deployed: 6, started: 4, stopped: 1, paused: 1 },
-  database: { connected: true },
+  database: { connected: true, latencyMs: 2.4, version: '17.2', sizeBytes: 38.6 * 2 ** 30 },
 };
 
 const logs = [

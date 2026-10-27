@@ -51,4 +51,17 @@ test.describe('System Info', () => {
     // (the section heading test above already verifies the page loads)
     expect(foundVersion || true).toBeTruthy();
   });
+
+  test('each tab has its own address', async ({ page }) => {
+    await page.goto('/system');
+    await expect(page.getByRole('region', { name: 'System status' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByLabel(/^Database: Connected/)).toBeVisible();
+
+    await page.getByRole('tab', { name: 'Logs' }).click();
+    await expect(page).toHaveURL(/\/system\/logs$/);
+    await expect(page.getByText('Server Logs')).toBeVisible();
+
+    await page.goto('/system/pruner');
+    await expect(page.getByRole('tab', { name: 'Data pruner', selected: true })).toBeVisible();
+  });
 });

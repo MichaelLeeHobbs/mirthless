@@ -86,6 +86,19 @@ describe('CommandPalette', () => {
     expect(screen.getByTestId('where').textContent).toBe('/channels/c2');
   });
 
+  it('jumps straight to a System Information tab', () => {
+    renderPalette(['system:info']);
+    type('server logs');
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(screen.getByTestId('where').textContent).toBe('/system/logs');
+  });
+
+  it('offers the System Information tabs only with system:info', () => {
+    renderPalette([]);
+    type('backup');
+    expect(options()).toEqual([]);
+  });
+
   it('hides pages and actions the user lacks permission for', () => {
     renderPalette([]);
     type('alert');
