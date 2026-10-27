@@ -27,7 +27,6 @@ import { BulkMessageActionsToolbar } from '../components/messages/BulkMessageAct
 import { useReprocessMessage, useBulkDeleteMessages } from '../hooks/use-message-actions.js';
 import { useMessageExport, type ExportFormat } from '../hooks/use-message-export.js';
 import { PageHeader } from '../components/common/PageHeader.js';
-import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
@@ -190,13 +189,6 @@ export function MessageBrowserPage(): ReactNode {
   return (
     <Box>
       <PageHeader
-        overline={
-          <PageBreadcrumbs items={[
-            { label: 'Dashboard', href: '/' },
-            { label: channel?.name ?? 'Channel', href: `/channels/${channelId}` },
-            { label: 'Messages' },
-          ]} />
-        }
         title={channel ? `${channel.name} messages` : 'Messages'}
         description="Search, inspect, reprocess and export what this channel received."
         actions={<>

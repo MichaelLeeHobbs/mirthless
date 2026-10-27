@@ -49,7 +49,6 @@ import { fieldColumn, formatTtl, nextSort, payloadPreview, type RecordColumn } f
 import { RecordDialog, type RecordDraft } from '../components/collections/RecordDialog.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotificationStore } from '../stores/notification.store.js';
-import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
@@ -85,7 +84,7 @@ export function CollectionRecordsPage(): ReactNode {
   if (collectionError) {
     return (
       <Box>
-        <PageHeader title="Records" overline={<PageBreadcrumbs items={[{ label: 'Collections', href: '/collections' }, { label: 'Records' }]} />} />
+        <PageHeader title="Records" />
         <ErrorState title="Couldn't load this collection" error={collectionError} onRetry={() => void refetchCollection()} />
       </Box>
     );
@@ -93,7 +92,7 @@ export function CollectionRecordsPage(): ReactNode {
   if (!collection) {
     return (
       <Box>
-        <PageHeader title="Records" overline={<PageBreadcrumbs items={[{ label: 'Collections', href: '/collections' }, { label: 'Records' }]} />} />
+        <PageHeader title="Records" />
         <Paper><Table><TableBody><TableSkeleton rows={6} columns={4} /></TableBody></Table></Paper>
       </Box>
     );
@@ -168,7 +167,6 @@ function RecordsGrid({ collection }: { readonly collection: CollectionSummary })
       <PageHeader
         title={collection.name}
         description={collectionSubtitle(collection)}
-        overline={<PageBreadcrumbs items={[{ label: 'Collections', href: '/collections' }, { label: collection.name }]} />}
         isFetching={isFetching && !isLoading}
         actions={
           <Tooltip title={canWrite ? '' : 'Requires collections:write permission'}>

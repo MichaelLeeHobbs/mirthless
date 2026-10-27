@@ -31,7 +31,6 @@ import { ChannelsSection } from '../components/alerts/ChannelsSection.js';
 import { ActionsSection, type ActionFormValues } from '../components/alerts/ActionsSection.js';
 import { TemplatesSection, type TemplateFormValues } from '../components/alerts/TemplatesSection.js';
 import { PageHeader } from '../components/common/PageHeader.js';
-import { PageBreadcrumbs } from '../components/common/PageBreadcrumbs.js';
 
 // ----- Form Data -----
 
@@ -263,12 +262,6 @@ export function AlertEditorPage(): ReactNode {
   return (
     <Box>
       <PageHeader
-        overline={
-          <PageBreadcrumbs items={[
-            { label: 'Alerts', href: '/alerts' },
-            { label: isEditMode ? (nameValue || 'Edit Alert') : 'New Alert' },
-          ]} />
-        }
         title={pageTitle}
         description="Choose what triggers the alert, which channels it watches and who it notifies."
         actions={

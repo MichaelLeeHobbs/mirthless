@@ -2,6 +2,15 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-27 — Breadcrumbs in the header, centred "Jump to" (branch `claude/project-thread-t9fahq`)
+
+Michael: move breadcrumbs into the header bar to stop wasting space, most views have none; centre the Ctrl+K "Jump to".
+
+- **Route-driven breadcrumbs.** `lib/breadcrumbs.ts` builds the trail from the URL: Dashboard, then the sidebar label for top-level pages, the channel name (and "Messages") for channel routes, and Alerts plus the alert name for the alert editor. `HeaderBreadcrumbs` renders it in the app bar and reads names from the query cache the page already filled. Every page now has a trail; `PageBreadcrumbs` and `PageHeader`'s `overline` are gone (D-203).
+- **Header layout.** Three columns: logo and trail left, "Jump to" centred, theme and account right. Below `lg` the "Mirthless" wordmark hides to give the trail room; on phones the trail collapses to the current page and "Jump to" is an icon on the right.
+- `pnpm shots` gains `channel-editor` (`/channels/c1`).
+- Merged after the collection records grid (#54): its page dropped its own `PageBreadcrumbs` and the header trail now covers `/collections/:id/records` (Dashboard / Collections / <collection name>).
+
 ## 2026-10-27 — Collection records grid (branch `claude/project-thread-1ogw6z`)
 
 Michael: Collections → View Records should be a grid where he can sort, filter and create/edit/delete records.
