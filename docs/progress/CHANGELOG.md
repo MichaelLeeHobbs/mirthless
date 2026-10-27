@@ -2,7 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
-## 2026-10-27 — First login no longer bounces back to /login (branch `claude/project-thread-8fdw4k`)
+## 2026-10-27 — Collection records grid (branch `claude/project-thread-1ogw6z`)
+
+Michael: Collections → View Records should be a grid where he can sort, filter and create/edit/delete records.
+
+- **Records page** at `/collections/:id/records` replaces the read-only "last 100" dialog. One column per indexed field plus payload, created and expires; every head sorts; a search box (all columns or one) filters; paging shows past 25 rows. Clicking a row opens it in a dialog to edit (or view, without `collections:write`); Add Record and a per-row delete with a named confirm. The collection name on the Collections page links to it, and Ctrl+K lists "<name> records".
+- **API:** `GET /collections/:id/records` now sorts, searches and pages on the server and returns `{ items, total }`. New `POST`, `PUT` and `DELETE /collections/:id/records[/:recordId]`, gated by `collections:write`/`collections:delete` and audited as `COLLECTION_UPDATED`. Sort/search field names are checked against the collection's indexed fields; LIKE wildcards in a search are escaped.
+- Fixed the Collections e2e cleanup, which built `http://localhost:3000/collections` (leading slash dropped `/api/v1`) and so never deleted leftovers.
+- `pnpm shots` gains `collection-records` and `collection-record-edit`, and a `click` option for shooting a dialog.
+
+ no longer bounces back to /login (branch `claude/project-thread-8fdw4k`)
 
 - A freshly seeded admin (`mustChangePassword`) was logged out right after signing in: the server refuses the websocket handshake until the password changes (since e8259ba), and `useSocketConnection` treated that refusal as an auth failure and called `clearAuth()`, so the forced change-password dialog never appeared. The socket now waits until the forced change is done.
 - After a forced change, the dialog invalidates all queries so pages that were refused with 403 load without a manual retry.

@@ -148,6 +148,7 @@ Separate DB tables, services, routes, bridges, and pages. Wiring `getResource`
    routes + RBAC (`collections:read/write/delete`); pruner hook.
 3. **engine** — inject `getCollection` into `VmSandboxExecutor`; in-sandbox
    global; `.d.ts` for script IntelliSense.
-4. **web** — Collections page (define fields + TTL, browse/inspect records).
+4. **web** — Collections page (define fields + TTL) and a records grid per
+   collection (server-side sort, search and paging; add/edit/delete records).
 5. **tests + docs** — sandbox bridge tests, server unit + integration tests,
    `docs/testing/` checklist, scripting-api docs, progress docs.

@@ -15,7 +15,11 @@
 - [ ] `POST /collections` with an invalid field name (e.g. `"bad name"`) → 400
 - [ ] `POST /collections` with empty `indexedFields` → 400
 - [ ] `GET /collections/:id` — returns the definition
-- [ ] `GET /collections/:id/records` — lists recent records (newest first)
+- [ ] `GET /collections/:id/records` — returns `{ items, total }`, newest first by default; takes `page`, `pageSize` (≤500), `sort` (`createdAt`, `expireAt`, `payload`, `fields.<name>`), `order`, `q` and `in` *(automated: collection.itest.ts)*
+- [ ] `GET /collections/:id/records?sort=fields.bogus` (field not indexed) → 400
+- [ ] `POST /collections/:id/records` — adds a record (`fields`, `payload`, optional `expireAt`/`ttlSeconds`); requires `collections:write`
+- [ ] `PUT /collections/:id/records/:recordId` — replaces fields, payload and `expireAt` (null = never); 404 for a record in another collection
+- [ ] `DELETE /collections/:id/records/:recordId` — deletes one record; requires `collections:delete`
 - [ ] `PUT /collections/:id` — updates name/description/fields/TTL
 - [ ] `DELETE /collections/:id` — deletes the collection and cascades its records; requires `collections:delete`
 - [ ] Viewer role can read but not write/delete (403 on write/delete)
@@ -29,9 +33,23 @@
 | 3 | TTL blank = Never | Create with blank TTL | TTL column shows "Never" | |
 | 4 | Invalid TTL | Enter a negative/decimal TTL | Inline error; not saved | |
 | 5 | Edit | Edit a collection's fields/TTL | Changes persist after reload | |
-| 6 | View records | Click the records icon | Dialog lists recent records (fields JSON, payload, created, expires) or "No records stored yet" | |
+| 6 | View records | Click the collection name (or the records icon) | Records grid opens: a column per indexed field, payload, created, expires; "No records yet" when empty *(automated: e2e/collections.spec.ts)* | |
 | 7 | Delete | Delete → confirm | Collection removed | |
 | 8 | RBAC | As viewer | Create/Edit/Delete controls disabled with permission tooltips | |
+
+## UI Tests — Records grid
+
+Automated in `e2e/collections.spec.ts` (sort, search, add/edit/delete) and `CollectionRecordsPage.test.tsx` (read-only, errors, pager).
+
+| # | Scenario | Steps | Expected | Pass? |
+|---|---|---|---|---|
+| 1 | Sort | Click a column head, then again | Rows re-sort across all pages, ascending then descending | |
+| 2 | Search | Type in "Search records"; pick a column in "Search in" | Count shows "N records found"; "No matching records" when none | |
+| 3 | Add | Add Record → fill fields and payload → Add | Row appears; blank Expires uses the collection default TTL | |
+| 4 | Edit | Click a row → change a field → Save | Row shows the new value | |
+| 5 | Delete | Row delete icon → confirm | Row removed; confirm names the first field's value | |
+| 6 | Read-only | As viewer, click a row | Record opens read-only with no Save; Add and Delete disabled | |
+| 7 | Jump to | Ctrl+K → type the collection name | "<name> records" opens the grid | |
 
 ## Script Bridge Tests (`getCollection`)
 
