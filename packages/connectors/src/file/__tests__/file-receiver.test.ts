@@ -30,7 +30,8 @@ const mockUnlink = vi.mocked(fs.unlink);
 const mockRename = vi.mocked(fs.rename);
 const mockMkdir = vi.mocked(fs.mkdir);
 
-const QUARANTINE_LEDGER = '.mirthless-quarantine.json';
+const QUARANTINE_LEDGER = '.galvaniflow-quarantine.json';
+const LEGACY_LEDGER = '.mirthless-quarantine.json';
 
 // ----- Helpers -----
 
@@ -672,6 +673,75 @@ describe('FileReceiver', () => {
       // The file is the same (same name+mtime) and was quarantined before the
       // "restart": it must NOT be re-dispatched.
       expect(dispatchCount).toBe(0);
+    });
+
+    it('honours a pre-rename legacy ledger: a key quarantined there is not re-dispatched', async () => {
+      const { logger } = makeMockLogger();
+      const mtime = Date.now() - 5_000;
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7', true)] as never);
+      mockStat.mockResolvedValue(makeStatResult(mtime, 100) as never);
+      mockReadFile.mockImplementation((p: unknown) => {
+        if (typeof p === 'string' && p.endsWith(LEGACY_LEDGER)) return Promise.resolve(JSON.stringify([`a.hl7:${String(mtime)}`])) as never;
+        if (typeof p === 'string' && p.endsWith(QUARANTINE_LEDGER)) return Promise.reject(new Error('ENOENT')) as never;
+        return Promise.resolve('MSH|^~\\&|X') as never;
+      });
+
+      let dispatchCount = 0;
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: dispatchCount }; }));
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(dispatchCount).toBe(0);
+    });
+
+    it('merges legacy and current ledgers and writes the union to the current ledger only', async () => {
+      const { logger } = makeMockLogger();
+      const mtime = Date.now() - 5_000;
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7'), makeDirent('b.hl7'), makeDirent('c.hl7')] as never);
+      mockStat.mockResolvedValue(makeStatResult(mtime, 100) as never);
+      mockUnlink.mockRejectedValue(new Error('EPERM: unlink failed'));
+      mockReadFile.mockImplementation((p: unknown) => {
+        if (typeof p === 'string' && p.endsWith(LEGACY_LEDGER)) return Promise.resolve(JSON.stringify([`a.hl7:${String(mtime)}`])) as never;
+        if (typeof p === 'string' && p.endsWith(QUARANTINE_LEDGER)) return Promise.resolve(JSON.stringify([`b.hl7:${String(mtime)}`])) as never;
+        return Promise.resolve('MSH|^~\\&|X') as never;
+      });
+
+      const dispatched: string[] = [];
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(String(raw.sourceMap['originalFilename'])); return { messageId: 1 }; }));
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000); // c.hl7 dispatched, unlink fails → quarantined
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(dispatched).toEqual(['c.hl7']);
+      const ledgerWrites = mockWriteFile.mock.calls.filter((c) => String(c[0]).endsWith(QUARANTINE_LEDGER));
+      expect(ledgerWrites.length).toBeGreaterThan(0);
+      const written = JSON.parse(String(ledgerWrites.at(-1)![1])) as string[];
+      expect(written).toEqual(expect.arrayContaining([
+        `a.hl7:${String(mtime)}`, `b.hl7:${String(mtime)}`, `c.hl7:${String(mtime)}`,
+      ]));
+      expect(mockWriteFile.mock.calls.some((c) => String(c[0]).endsWith(LEGACY_LEDGER))).toBe(false);
+    });
+
+    it('never dispatches the legacy ledger file even when the filter matches it', async () => {
+      const { logger } = makeMockLogger();
+      const mtime = Date.now() - 5_000;
+      mockReaddir.mockResolvedValue([makeDirent(LEGACY_LEDGER), makeDirent('a.hl7')] as never);
+      mockStat.mockResolvedValue(makeStatResult(mtime, 100) as never);
+      mockReadFile.mockImplementation((p: unknown) =>
+        (typeof p === 'string' && (p.endsWith(LEGACY_LEDGER) || p.endsWith(QUARANTINE_LEDGER))
+          ? Promise.resolve('[]')
+          : Promise.resolve('MSH|^~\\&|X')) as never,
+      );
+
+      const dispatched: string[] = [];
+      receiver = new FileReceiver(makeConfig({ fileFilter: '*' }), logger);
+      receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(String(raw.sourceMap['originalFilename'])); return { messageId: 1 }; }));
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(dispatched).toEqual(['a.hl7']);
     });
   });
 });

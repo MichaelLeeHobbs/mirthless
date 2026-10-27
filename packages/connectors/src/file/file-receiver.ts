@@ -32,7 +32,13 @@ type FilePostAction = typeof FILE_POST_ACTION[keyof typeof FILE_POST_ACTION];
  * Sidecar ledger file (in the watched directory) that persists the quarantine
  * set across restarts. Excluded from polling so it is never dispatched.
  */
-const QUARANTINE_LEDGER = '.mirthless-quarantine.json';
+const QUARANTINE_LEDGER = '.galvaniflow-quarantine.json';
+/**
+ * Ledger name used before the GalvaniFlow rename. Still read (merged into the
+ * set) and never dispatched, but never written: the next persist carries its
+ * entries into {@link QUARANTINE_LEDGER}.
+ */
+const LEGACY_QUARANTINE_LEDGER = '.mirthless-quarantine.json';
 
 // ----- Config -----
 
@@ -199,7 +205,7 @@ export class FileReceiver implements SourceConnectorRuntime {
 
     for (const entry of dirEntries) {
       if (!entry.isFile()) continue;
-      if (entry.name === QUARANTINE_LEDGER) continue; // never dispatch the ledger
+      if (entry.name === QUARANTINE_LEDGER || entry.name === LEGACY_QUARANTINE_LEDGER) continue; // never dispatch a ledger
       if (!matchGlob(this.config.fileFilter, entry.name)) continue;
 
       const fullPath = path.join(this.config.directory, entry.name);
@@ -279,14 +285,23 @@ export class FileReceiver implements SourceConnectorRuntime {
   }
 
   /**
-   * Load the quarantine ledger from disk into memory. Resilient: a missing
-   * ledger means an empty set; a corrupt ledger is logged and treated as empty
-   * (a startup read must never crash the connector).
+   * Load the current and legacy quarantine ledgers from disk and merge them
+   * into memory, so entries quarantined before the rename are still skipped.
    */
   private async loadQuarantine(): Promise<void> {
+    await this.loadLedgerFile(this.ledgerPath);
+    await this.loadLedgerFile(path.join(this.config.directory, LEGACY_QUARANTINE_LEDGER));
+  }
+
+  /**
+   * Add one ledger file's keys to the quarantine set. Resilient: a missing
+   * ledger adds nothing; a corrupt ledger is logged and ignored (a startup read
+   * must never crash the connector).
+   */
+  private async loadLedgerFile(ledgerPath: string): Promise<void> {
     let raw: unknown;
     try {
-      raw = await fs.readFile(this.ledgerPath, { encoding: 'utf8' });
+      raw = await fs.readFile(ledgerPath, { encoding: 'utf8' });
     } catch {
       return; // no ledger yet — nothing quarantined
     }
@@ -304,7 +319,7 @@ export class FileReceiver implements SourceConnectorRuntime {
       }
     } catch (err) {
       this.logger.error(
-        { ...errorInfo(err), file: this.ledgerPath },
+        { ...errorInfo(err), file: ledgerPath },
         'Quarantine ledger is corrupt; ignoring it (files may be re-dispatched)',
       );
     }

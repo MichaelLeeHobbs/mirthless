@@ -10,6 +10,8 @@ import {
   EMAIL_PROTOCOL,
   EMAIL_POST_ACTION,
   DISPATCHED_KEYWORD,
+  LEGACY_DISPATCHED_KEYWORD,
+  hasDispatchedKeyword,
   type EmailReceiverConfig,
   type ImapClient,
   type ImapClientFactory,
@@ -593,6 +595,18 @@ describe('EmailReceiver', () => {
   });
 
   describe('dispatched keyword', () => {
+    it('sets the GalvaniFlow keyword and still recognises the pre-rename one', () => {
+      expect(DISPATCHED_KEYWORD).toBe('$GalvaniFlowDispatched');
+      expect(LEGACY_DISPATCHED_KEYWORD).toBe('$MirthlessDispatched');
+      expect(hasDispatchedKeyword(new Set([DISPATCHED_KEYWORD]))).toBe(true);
+      expect(hasDispatchedKeyword(new Set(['\\Flagged', LEGACY_DISPATCHED_KEYWORD]))).toBe(true);
+    });
+
+    it('treats an email without either keyword, or without flags, as not dispatched', () => {
+      expect(hasDispatchedKeyword(new Set(['\\Flagged', '$Other']))).toBe(false);
+      expect(hasDispatchedKeyword(undefined)).toBe(false);
+    });
+
     async function startWith(client: ImapClient, dispatched: RawMessage[], logger = makeMockLogger().logger): Promise<void> {
       receiver = new EmailReceiver(makeConfig({ postAction: EMAIL_POST_ACTION.MARK_READ }), makeClientFactory(client), logger);
       receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw); return { messageId: 1 }; }));
