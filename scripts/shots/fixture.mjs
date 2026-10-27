@@ -143,6 +143,19 @@ const alertDetail = {
   subjectTemplate: 'Mirthless: ${channelName} errored', bodyTemplate: '${error}', reAlertIntervalMs: 900000, maxAlerts: 5,
 };
 
+const collection = { id: 'k1', name: 'pending-orders', description: 'Orders waiting for a result, by accession', indexedFields: ['accession', 'facility'], defaultTtlSeconds: 2592000, createdAt: ago(90000), updatedAt: ago(100) };
+
+const FACILITIES = ['North Campus', 'South Clinic', 'Main Hospital'];
+const collectionRecords = Array.from({ length: 12 }, (_, i) => ({
+  id: `rec${String(i)}`,
+  fields: { accession: `ACC${String(20481 - i)}`, facility: FACILITIES[i % 3] },
+  payload: i % 4 === 3
+    ? `{"orderId":"ORD-${String(7700 + i)}","test":"CBC","status":"pending"}`
+    : `MSH|^~\\&|EPIC|${FACILITIES[i % 3].toUpperCase().replace(' ', '_')}|LAB|LAB|20261026${String(1000 + i)}||ORM^O01|MSG${String(90000 + i)}|P|2.5.1\rPID|1||MRN${String(400 + i)}`,
+  expireAt: new Date(NOW + (30 * 86400000) - i * 3600000).toISOString(),
+  createdAt: ago(i * 7 + 2),
+}));
+
 const page = (data) => ({ data, pagination: { page: 1, pageSize: 25, total: data.length, totalPages: 1 } });
 
 /** The `data` to answer a GET with; `undefined` answers an empty list. */
@@ -172,9 +185,9 @@ export function route(pathname, search) {
     { id: 'r1', name: 'facility-codes.json', description: 'Facility code lookup', mimeType: 'application/json', sizeBytes: 18234, createdAt: ago(90000), updatedAt: ago(4000) },
     { id: 'r2', name: 'zip-to-county.csv', description: null, mimeType: 'text/csv', sizeBytes: 1048576, createdAt: ago(90000), updatedAt: ago(40000) },
   ];
-  if (p === '/collections') return [
-    { id: 'k1', name: 'pending-orders', description: 'Orders waiting for a result, by accession', indexedFields: ['accession', 'facility'], defaultTtlSeconds: 2592000, createdAt: ago(90000), updatedAt: ago(100) },
-  ];
+  if (p === '/collections') return [collection];
+  if (p === '/collections/k1') return collection;
+  if (p === '/collections/k1/records') return { items: collectionRecords, total: 214 };
   if (p === '/datasources') return [
     { id: 'ds1', name: 'ehr-replica', description: 'Read-only EHR reporting replica', driver: 'postgres', host: 'ehr-replica.example.test', port: 5432, database: 'ehr', user: 'mirthless_ro', readOnly: true, maxConnections: 5, statementTimeoutMs: 10000, maxRows: 1000, createdAt: ago(90000), updatedAt: ago(9000) },
   ];

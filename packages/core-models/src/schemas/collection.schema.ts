@@ -76,6 +76,48 @@ export const findRecordsSchema = z.object({
 
 export type FindRecordsInput = z.infer<typeof findRecordsSchema>;
 
+// ----- Record browse (UI grid) -----
+
+/**
+ * A grid column: `createdAt`, `expireAt`, `payload` or `fields.<name>` for an
+ * indexed field. Field names are checked against the collection on the server.
+ */
+export const recordColumn = z.union([
+  z.enum(['createdAt', 'expireAt', 'payload']),
+  z.string().regex(/^fields\.[A-Za-z_][A-Za-z0-9_]*$/, 'must be createdAt, expireAt, payload or fields.<name>'),
+]);
+export type RecordColumn = z.infer<typeof recordColumn>;
+
+export const listRecordsQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(500).default(25),
+  /** Column to sort by. Ties fall back to newest first. */
+  sort: recordColumn.default('createdAt'),
+  order: z.enum(['asc', 'desc']).default('desc'),
+  /** Case-insensitive substring to look for. */
+  q: z.string().max(500).optional(),
+  /** Where to look for `q`: one column, or every indexed field and the payload when omitted. */
+  in: recordColumn.optional(),
+});
+
+export type ListRecordsQuery = z.infer<typeof listRecordsQuerySchema>;
+
+// ----- Record edit (UI and scripts) -----
+
+/**
+ * Change a record. Only the keys given change: `fields` replaces the whole
+ * field set, `payload` the value, and `expireAt` the expiry (`null` = never).
+ */
+export const updateRecordSchema = z.object({
+  fields: z.record(z.string(), collectionScalar).optional(),
+  payload: z.string().optional(),
+  expireAt: z.string().datetime().nullable().optional(),
+}).refine((v) => v.fields !== undefined || v.payload !== undefined || v.expireAt !== undefined, {
+  message: 'give at least one of fields, payload or expireAt',
+});
+
+export type UpdateRecordInput = z.infer<typeof updateRecordSchema>;
+
 // ----- Params -----
 
 export const collectionUuidParamSchema = z.object({
@@ -84,4 +126,12 @@ export const collectionUuidParamSchema = z.object({
 
 export const collectionNameParamSchema = z.object({
   name: z.string().min(1).max(255),
+});
+
+/** A record id, as a script passes it to update() or delete(). */
+export const collectionRecordIdSchema = z.string().uuid('record id must be a UUID');
+
+export const collectionRecordParamSchema = z.object({
+  id: z.string().uuid(),
+  recordId: collectionRecordIdSchema,
 });

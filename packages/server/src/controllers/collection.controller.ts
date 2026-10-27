@@ -5,7 +5,13 @@
 // Record store/find is done in-process by the script bridge, not over HTTP.
 
 import type { Request, Response } from 'express';
-import type { CreateCollectionInput, UpdateCollectionInput } from '@mirthless/core-models';
+import type {
+  CreateCollectionInput,
+  UpdateCollectionInput,
+  ListRecordsQuery,
+  StoreRecordInput,
+  UpdateRecordInput,
+} from '@mirthless/core-models';
 import { CollectionService } from '../services/collection.service.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';
@@ -90,14 +96,58 @@ export class CollectionController {
 
   static async listRecords(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const limit = Math.min(Number(req.query['limit'] ?? 100) || 100, 1000);
-    const offset = Number(req.query['offset'] ?? 0) || 0;
-    const result = await CollectionService.listRecords(id, limit, offset);
+    const query = req.query as unknown as ListRecordsQuery;
+    const result = await CollectionService.listRecords(id, query);
     if (!result.ok) {
-      logger.error({ errMsg: result.error.message, collectionId: id }, 'Failed to list collection records');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      const status = mapErrorToStatus(result.error);
+      logger.warn({ errMsg: result.error.message, collectionId: id }, 'Failed to list collection records');
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
     res.json({ success: true, data: result.value });
+  }
+
+  static async createRecord(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await CollectionService.createRecord(id, req.body as StoreRecordInput, context);
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      logger.warn({ errMsg: result.error.message, collectionId: id }, 'Failed to create collection record');
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
+      return;
+    }
+    logger.info({ collectionId: id, recordId: result.value.id }, 'Collection record created');
+    res.status(201).json({ success: true, data: result.value });
+  }
+
+  static async updateRecord(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const recordId = req.params['recordId'] as string;
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await CollectionService.updateRecord(id, recordId, req.body as UpdateRecordInput, context);
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      logger.warn({ errMsg: result.error.message, collectionId: id, recordId }, 'Failed to update collection record');
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
+      return;
+    }
+    logger.info({ collectionId: id, recordId }, 'Collection record updated');
+    res.json({ success: true, data: result.value });
+  }
+
+  static async deleteRecord(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const recordId = req.params['recordId'] as string;
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await CollectionService.deleteRecord(id, recordId, context);
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      logger.warn({ errMsg: result.error.message, collectionId: id, recordId }, 'Failed to delete collection record');
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
+      return;
+    }
+    logger.info({ collectionId: id, recordId }, 'Collection record deleted');
+    res.status(204).send();
   }
 }

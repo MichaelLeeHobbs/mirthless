@@ -1,14 +1,16 @@
 // ===========================================
 // Collections Page
 // ===========================================
-// Manage collections: define name/indexed fields/TTL, browse stored records.
+// Manage collections: define name/indexed fields/TTL. The name opens the
+// records grid (CollectionRecordsPage).
 // Collections are the keyed record store channel scripts read/write via
 // getCollection(). See docs/design/10-collections.md.
 
 import { useState, type ReactNode } from 'react';
+import { Link as RouterLink, useNavigate } from 'react-router';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
+import Link from '@mui/material/Link';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
@@ -33,7 +35,6 @@ import StorageIcon from '@mui/icons-material/Storage';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import {
   useCollections,
-  useCollectionRecords,
   useCreateCollection,
   useUpdateCollection,
   useDeleteCollection,
@@ -47,9 +48,9 @@ import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 import { formatTtl, parseFields } from '../lib/collections.js';
-import { FONT_FAMILY_MONO } from '../styles/tokens.js';
 
 export function CollectionsPage(): ReactNode {
+  const navigate = useNavigate();
   const { data: collections, isLoading, error, isFetching, refetch } = useCollections();
   const createCollection = useCreateCollection();
   const updateCollection = useUpdateCollection();
@@ -63,7 +64,6 @@ export function CollectionsPage(): ReactNode {
   const [ttlInput, setTtlInput] = useState('');
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CollectionSummary | null>(null);
-  const [recordsTarget, setRecordsTarget] = useState<CollectionSummary | null>(null);
 
   const { has } = usePermissions();
   const canWrite = has(PERMISSION.COLLECTIONS_WRITE);
@@ -158,7 +158,15 @@ export function CollectionsPage(): ReactNode {
               collections.map((collection) => (
                 <TableRow key={collection.id} hover>
                   <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{collection.name}</Typography>
+                    <Link
+                      component={RouterLink}
+                      to={`/collections/${collection.id}/records`}
+                      underline="hover"
+                      variant="body2"
+                      sx={{ color: 'text.primary', fontWeight: 500 }}
+                    >
+                      {collection.name}
+                    </Link>
                   </TableCell>
                   <TableCell>{collection.description || '-'}</TableCell>
                   <TableCell>
@@ -171,7 +179,7 @@ export function CollectionsPage(): ReactNode {
                   <TableCell>{formatTtl(collection.defaultTtlSeconds)}</TableCell>
                   <TableCell align="right">
                     <Tooltip title="View records">
-                      <IconButton aria-label="View records" size="small" onClick={() => { setRecordsTarget(collection); }}>
+                      <IconButton aria-label="View records" size="small" onClick={() => { navigate(`/collections/${collection.id}/records`); }}>
                         <ViewListIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
@@ -244,8 +252,6 @@ export function CollectionsPage(): ReactNode {
         </DialogActions>
       </Dialog>
 
-      <CollectionRecordsDialog collection={recordsTarget} onClose={() => { setRecordsTarget(null); }} />
-
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Delete Collection"
@@ -257,56 +263,5 @@ export function CollectionsPage(): ReactNode {
         onCancel={() => { setDeleteTarget(null); }}
       />
     </Box>
-  );
-}
-
-/** Read-only browser for the most recent records in a collection. */
-function CollectionRecordsDialog({ collection, onClose }: { collection: CollectionSummary | null; onClose: () => void }): ReactNode {
-  const { data: records, isLoading, error } = useCollectionRecords(collection?.id ?? '');
-
-  return (
-    <Dialog open={collection !== null} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>Records — {collection?.name}</DialogTitle>
-      <DialogContent>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error.message}</Alert>}
-        {isLoading ? (
-          <Typography variant="body2" sx={{
-            color: 'text.secondary'
-          }}>Loading records…</Typography>
-        ) : records && records.length > 0 ? (
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Fields</TableCell>
-                  <TableCell>Payload</TableCell>
-                  <TableCell>Created</TableCell>
-                  <TableCell>Expires</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {records.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem' }}>{JSON.stringify(r.fields)}</TableCell>
-                    <TableCell sx={{ fontFamily: FONT_FAMILY_MONO, fontSize: '0.75rem', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {r.payload ?? ''}
-                    </TableCell>
-                    <TableCell>{new Date(r.createdAt).toLocaleString()}</TableCell>
-                    <TableCell>{r.expireAt ? new Date(r.expireAt).toLocaleString() : 'Never'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        ) : (
-          <Typography variant="body2" sx={{
-            color: 'text.secondary'
-          }}>No records stored yet.</Typography>
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Close</Button>
-      </DialogActions>
-    </Dialog>
   );
 }

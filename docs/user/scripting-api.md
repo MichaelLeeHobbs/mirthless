@@ -108,7 +108,7 @@ system, use a destination connector rather than `httpFetch`.
 | `dbQuery` | `dbQuery(dataSourceName, sql, params?)` → rows | Parameterized query against a named [Data Source](#data-sources). Never string-interpolate values into `sql`. |
 | `routeMessage` | `routeMessage(channelName, rawData)` → `{ success, response? }` | Route a message to another channel. |
 | `getResource` | `getResource(name)` → `string \| null` | Load a configured resource by name. |
-| `getCollection` | `getCollection(name)` → `{ store, find }` | Read/write a durable keyed record store. See [Collections](#collections). |
+| `getCollection` | `getCollection(name)` → `{ store, find, update, delete }` | Read/write a durable keyed record store. See [Collections](#collections). |
 
 > Wiring status: all bridges above (`getResource`, `httpFetch`, `routeMessage`, `getCollection`,
 > `dbQuery`) are wired into the production engine.
@@ -141,12 +141,18 @@ are indexed by, and a default TTL). Then `getCollection(name)` returns a handle:
 - `await store(fields, payload, options?)` — append a record. `fields` keys must be among the
   collection's indexed fields; `payload` is your value (HL7/JSON/text — you parse it).
   `options` may override the TTL with `{ expireAt }` (ISO) or `{ ttlSeconds }`; otherwise the
-  collection default applies. Records are **append-only** (no upsert).
+  collection default applies. `store()` always adds a new record (no upsert).
 - `await find(match, options?)` — query. `match` is equality on indexed fields; `options.filter`
   adds more field predicates (a scalar is equality, an array is `IN`, multiple fields are AND'd);
   `options.latest` returns only the single newest match; `options.limit`/`options.order` page and
   order by creation time (default newest-first). Returns an array of
   `{ id, fields, payload, expireAt, createdAt }`.
+- `await update(id, changes)` — change one record by its `id`. `changes` may hold `fields`
+  (replaces the whole field set), `payload` and `expireAt` (ISO, or `null` to never expire);
+  keys you leave out stay as they are. Returns the updated record, or `null` if it no longer
+  exists (deleted or pruned).
+- `await delete(id)` — remove one record by its `id`. Returns `true`, or `false` if it was
+  already gone.
 
 Reads/writes hit the database directly (no caching). Collections are not a secret store — any
 channel script can read any collection by name.
@@ -168,6 +174,8 @@ const [order] = await getCollection('orders').find(
 );
 if (order) {
   channelMap.orderPayload = order.payload;
+  // The order is reported: drop it so it can't match again.
+  await getCollection('orders').delete(order.id);
 }
 ```
 

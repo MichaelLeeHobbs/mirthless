@@ -172,6 +172,20 @@ interface CollectionHandle {
       order?: 'asc' | 'desc';
     },
   ): Promise<CollectionRecord[]>;
+  /**
+   * Change one record by id. Only the keys given change: "fields" replaces the
+   * whole field set, "expireAt" null means never expire.
+   * @returns The updated record, or null if it no longer exists.
+   */
+  update(
+    id: string,
+    changes: { fields?: Record<string, string | number | boolean>; payload?: string; expireAt?: string | null },
+  ): Promise<CollectionRecord | null>;
+  /**
+   * Remove one record by id.
+   * @returns true, or false if it was already gone.
+   */
+  delete(id: string): Promise<boolean>;
 }
 
 /**

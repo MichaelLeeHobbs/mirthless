@@ -25,7 +25,7 @@ import * as vm from 'node:vm';
 import type { Result } from '@mirthless/core-util';
 import { tryCatch } from '@mirthless/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
-import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions } from './bridge-functions.js';
+import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy } from '../pipeline/data-type-handler.js';
 
 // ----- Types -----
@@ -171,6 +171,12 @@ function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown
         args[1] as Record<string, CollectionScalar>,
         args[2] as CollectionFindOptions,
       ));
+      case 'collectionUpdate': return ioDispatch(() => bridges.collections!.update(
+        args[0] as string,
+        args[1] as string,
+        args[2] as CollectionUpdateChanges,
+      ));
+      case 'collectionDelete': return ioDispatch(() => bridges.collections!.delete(args[0] as string, args[1] as string));
       default: return undefined;
     }
   };
@@ -358,6 +364,16 @@ globalThis.__build = function (dispatch, payload) {
         },
         find: async function (match, options) {
           var r = JSON.parse(await io('collectionFind', name, match || {}, options || {}));
+          if (!r.ok) { throw new Error(r.e); }
+          return r.v;
+        },
+        update: async function (id, changes) {
+          var r = JSON.parse(await io('collectionUpdate', name, String(id), changes || {}));
+          if (!r.ok) { throw new Error(r.e); }
+          return r.v;
+        },
+        delete: async function (id) {
+          var r = JSON.parse(await io('collectionDelete', name, String(id)));
           if (!r.ok) { throw new Error(r.e); }
           return r.v;
         }

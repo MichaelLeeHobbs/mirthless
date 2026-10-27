@@ -239,11 +239,15 @@ describe('Bridge IO Functions', () => {
     let executor: VmSandboxExecutor;
     const mockStore = vi.fn();
     const mockFind = vi.fn();
+    const mockUpdate = vi.fn();
+    const mockDelete = vi.fn();
 
     beforeEach(() => {
       mockStore.mockReset();
       mockFind.mockReset();
-      executor = new VmSandboxExecutor({ collections: { store: mockStore, find: mockFind } });
+      mockUpdate.mockReset();
+      mockDelete.mockReset();
+      executor = new VmSandboxExecutor({ collections: { store: mockStore, find: mockFind, update: mockUpdate, delete: mockDelete } });
     });
 
     afterEach(() => {
@@ -300,6 +304,54 @@ describe('Bridge IO Functions', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.returnValue).toBe('caught:unknown field');
+    });
+
+    it('updates a record by id with only the changes given', async () => {
+      mockUpdate.mockResolvedValue({ id: 'r1', fields: { a: '1' }, payload: 'RESULTED', expireAt: null, createdAt: '2026-07-13T00:00:00.000Z' });
+
+      const script = makeScript('var r = await getCollection("orders").update("r1", { payload: "RESULTED", expireAt: null }); return r.payload;');
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(mockUpdate).toHaveBeenCalledWith('orders', 'r1', { payload: 'RESULTED', expireAt: null });
+      expect(result.value.returnValue).toBe('RESULTED');
+    });
+
+    it('returns null from update when the record is gone', async () => {
+      mockUpdate.mockResolvedValue(null);
+
+      const script = makeScript('return await getCollection("orders").update("r1", { payload: "x" });');
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBeNull();
+    });
+
+    it('deletes a record by id and reports whether it existed', async () => {
+      mockDelete.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+      const script = makeScript('var c = getCollection("orders"); return [await c.delete("r1"), await c.delete("r1")];');
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(mockDelete).toHaveBeenCalledWith('orders', 'r1');
+      expect(result.value.returnValue).toEqual([true, false]);
+    });
+
+    it('propagates an update error as a thrown error in the script', async () => {
+      mockUpdate.mockRejectedValue(new Error('record id must be a UUID'));
+
+      const script = makeScript(
+        'try { await getCollection("orders").update("nope", { payload: "x" }); return "no-throw"; } catch (e) { return "caught:" + e.message; }',
+      );
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('caught:record id must be a UUID');
     });
   });
 
