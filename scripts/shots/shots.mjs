@@ -42,6 +42,7 @@ const PAGES = {
   system: '/system',
   tags: '/tags',
   'alert-editor': '/alerts/a1',
+  'alert-templates': { url: '/alerts/a1', keys: 'End' },
   'code-templates': '/code-templates',
   'global-scripts': '/global-scripts',
   resources: '/resources',
