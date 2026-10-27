@@ -6,7 +6,7 @@
 
 Michael: the System Information view could learn a lot from MedFusion. Taken from MedFusion's System Monitor: tabs held in the path, a status strip first, dense label/value panels.
 
-- **Tabs in the path.** `/system` (Overview), `/system/logs`, `/system/pruner`, `/system/backup` replace one long scrolling page. Only the active tab is mounted, so the 10 s system-info poll and the log stream stop when you leave them. The three non-overview tabs are in the Ctrl+K palette ("Server logs", "Data pruner", "Backup & restore"). (D-201)
+- **Tabs in the path.** `/system` (Overview), `/system/logs`, `/system/pruner`, `/system/backup` replace one long scrolling page. Only the active tab is mounted, so the 10 s system-info poll and the log stream stop when you leave them. The three non-overview tabs are in the Ctrl+K palette ("Server logs", "Data pruner", "Backup & restore"). (D-202)
 - **Status strip.** Server, Database, Engine, Heap and Host each get a level, a word and a one-line reason (`lib/system-health.ts`). The Engine cell links to the dashboard.
 - **More facts, from one probe.** The server now reports the PostgreSQL version, database size and probe round trip, hostname, start time, OS release, CPU count, load average and the V8 heap limit.
 - **Heap is measured against the V8 limit**, not `heapTotal`. `heapTotal` is only what V8 has allocated so far and normally sits near 90% used, so the old bar read red on a healthy server.
