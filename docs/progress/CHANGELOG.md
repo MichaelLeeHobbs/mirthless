@@ -2,6 +2,12 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-10-27 — Alert template variables you can see (branch `claude/project-thread-6e5ntp`)
+
+- The alert editor's hint said to use `${channelName}` and `${error}`, but the engine only replaced `${alertName}`, `${channelId}`, `${errorType}`, `${errorMessage}` and `${timestamp}`, so those were sent literally (the showcase seed did exactly that). The list now lives once in core-models (`ALERT_TEMPLATE_VARIABLES`); the engine substitutes from a record typed by it and the editor renders it, so they cannot drift.
+- `${channelName}` is now real: each channel's `AlertManager` gets the channel name (falls back to the ID).
+- Under the body field, one chip per variable inserts it at the caret of the subject or body, whichever was last focused, with a tooltip saying what it holds. A placeholder the engine won't replace shows a warning under its field. `pnpm shots --only alert-templates` shows the section.
+
 ## 2026-10-27 — First login no longer bounces back to /login (branch `claude/project-thread-8fdw4k`)
 
 - A freshly seeded admin (`mustChangePassword`) was logged out right after signing in: the server refuses the websocket handshake until the password changes (since e8259ba), and `useSocketConnection` treated that refusal as an auth failure and called `clearAuth()`, so the forced change-password dialog never appeared. The socket now waits until the forced change is done.
