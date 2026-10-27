@@ -8,6 +8,9 @@ import {
   updateCollectionSchema,
   storeRecordSchema,
   findRecordsSchema,
+  listRecordsQuerySchema,
+  updateRecordSchema,
+  collectionRecordParamSchema,
 } from '../collection.schema.js';
 
 describe('createCollectionSchema', () => {
@@ -151,5 +154,50 @@ describe('findRecordsSchema', () => {
   it('rejects a bad order value', () => {
     const result = findRecordsSchema.safeParse({ order: 'sideways' });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('listRecordsQuerySchema', () => {
+  it('defaults to the first page of 25, newest first', () => {
+    const result = listRecordsQuerySchema.parse({});
+    expect(result).toEqual({ page: 1, pageSize: 25, sort: 'createdAt', order: 'desc' });
+  });
+
+  it('coerces query-string numbers and accepts an indexed field column', () => {
+    const result = listRecordsQuerySchema.parse({ page: '3', pageSize: '100', sort: 'fields.accession', order: 'asc', q: 'A1', in: 'payload' });
+    expect(result).toEqual({ page: 3, pageSize: 100, sort: 'fields.accession', order: 'asc', q: 'A1', in: 'payload' });
+  });
+
+  it('rejects a sort column that is neither a record column nor fields.<identifier>', () => {
+    expect(listRecordsQuerySchema.safeParse({ sort: 'id' }).success).toBe(false);
+    expect(listRecordsQuerySchema.safeParse({ sort: 'fields.bad name' }).success).toBe(false);
+    expect(listRecordsQuerySchema.safeParse({ in: "fields.x'--" }).success).toBe(false);
+  });
+
+  it('caps the page size at 500', () => {
+    expect(listRecordsQuerySchema.safeParse({ pageSize: '501' }).success).toBe(false);
+  });
+});
+
+describe('updateRecordSchema', () => {
+  it('accepts fields, payload and a null expiry', () => {
+    const result = updateRecordSchema.safeParse({ fields: { accession: 'A1' }, payload: '{}', expireAt: null });
+    expect(result.success).toBe(true);
+  });
+
+  it('requires an explicit expiry so an edit never silently keeps a stale one', () => {
+    expect(updateRecordSchema.safeParse({ fields: {}, payload: '' }).success).toBe(false);
+  });
+
+  it('rejects an expiry that is not an ISO date-time', () => {
+    expect(updateRecordSchema.safeParse({ fields: {}, payload: '', expireAt: 'tomorrow' }).success).toBe(false);
+  });
+});
+
+describe('collectionRecordParamSchema', () => {
+  it('requires both ids to be UUIDs', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    expect(collectionRecordParamSchema.safeParse({ id, recordId: id }).success).toBe(true);
+    expect(collectionRecordParamSchema.safeParse({ id, recordId: '1' }).success).toBe(false);
   });
 });

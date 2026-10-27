@@ -6,12 +6,15 @@
 // All methods return Result<T> using tryCatch from stderr-lib.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { and, eq, asc, desc, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import { and, eq, asc, desc, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
 import type {
   CreateCollectionInput,
   UpdateCollectionInput,
   StoreRecordInput,
   FindRecordsInput,
+  ListRecordsQuery,
+  RecordColumn,
+  UpdateRecordInput,
 } from '@mirthless/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -39,6 +42,12 @@ export interface CollectionRecordResult {
   readonly payload: string | null;
   readonly expireAt: Date | null;
   readonly createdAt: Date;
+}
+
+/** One page of records for the UI grid, plus the total matching the search. */
+export interface RecordPage {
+  readonly items: readonly CollectionRecordResult[];
+  readonly total: number;
 }
 
 // ----- Helpers -----
@@ -160,26 +169,7 @@ export class CollectionService {
 
   /** Append a record to a collection (by name). Called by the script bridge. */
   static async store(name: string, input: StoreRecordInput): Promise<Result<CollectionRecordResult>> {
-    return tryCatch(async () => {
-      if (Buffer.byteLength(input.payload, 'utf-8') > MAX_PAYLOAD_BYTES) {
-        throw new ServiceError('INVALID_INPUT', `Payload exceeds ${String(MAX_PAYLOAD_BYTES)} bytes`);
-      }
-      const collection = await requireByName(name);
-      assertKnownFields(Object.keys(input.fields), collection.indexedFields, 'store');
-
-      const expireAt = computeExpireAt(input, collection.defaultTtlSeconds);
-      const [row] = await db
-        .insert(collectionRecords)
-        .values({
-          collectionId: collection.id,
-          fields: stringifyFields(input.fields),
-          payload: input.payload,
-          expireAt,
-        })
-        .returning();
-
-      return toRecord(row!);
-    });
+    return tryCatch(async () => insertRecord(await requireByName(name), input));
   }
 
   /** Query records in a collection (by name). Called by the script bridge. */
@@ -217,21 +207,76 @@ export class CollectionService {
     });
   }
 
-  /** List records for a collection (UI browse), newest first. */
-  static async listRecords(
-    collectionId: string,
-    limit = 100,
-    offset = 0,
-  ): Promise<Result<readonly CollectionRecordResult[]>> {
+  /** One sorted, searched page of a collection's records for the UI grid. */
+  static async listRecords(collectionId: string, query: ListRecordsQuery): Promise<Result<RecordPage>> {
     return tryCatch(async () => {
+      const collection = await requireById(collectionId);
+      const sortExpr = columnExpr(query.sort, collection.indexedFields);
+      const conditions: SQL[] = [eq(collectionRecords.collectionId, collectionId)];
+      const search = searchCondition(query, collection.indexedFields);
+      if (search) conditions.push(search);
+      const where = and(...conditions);
+
       const rows = await db
         .select()
         .from(collectionRecords)
-        .where(eq(collectionRecords.collectionId, collectionId))
-        .orderBy(desc(collectionRecords.createdAt))
-        .limit(limit)
-        .offset(offset);
-      return rows.map(toRecord);
+        .where(where)
+        .orderBy(query.order === 'asc' ? asc(sortExpr) : desc(sortExpr), desc(collectionRecords.createdAt), asc(collectionRecords.id))
+        .limit(query.pageSize)
+        .offset((query.page - 1) * query.pageSize);
+      const [counted] = await db.select({ total: sql<number>`count(*)::int` }).from(collectionRecords).where(where);
+      return { items: rows.map(toRecord), total: counted?.total ?? 0 };
+    });
+  }
+
+  /** Add a record from the UI. Same rules as a script write. */
+  static async createRecord(
+    collectionId: string,
+    input: StoreRecordInput,
+    context?: AuditContext,
+  ): Promise<Result<CollectionRecordResult>> {
+    return tryCatch(async () => {
+      const record = await insertRecord(await requireById(collectionId), input);
+      emitCollectionEvent(context, { action: 'record.create', collectionId, recordId: record.id });
+      return record;
+    });
+  }
+
+  /** Replace a record's fields, payload and expiry from the UI. */
+  static async updateRecord(
+    collectionId: string,
+    recordId: string,
+    input: UpdateRecordInput,
+    context?: AuditContext,
+  ): Promise<Result<CollectionRecordResult>> {
+    return tryCatch(async () => {
+      assertPayloadSize(input.payload);
+      const collection = await requireById(collectionId);
+      assertKnownFields(Object.keys(input.fields), collection.indexedFields, 'update');
+      const [row] = await db
+        .update(collectionRecords)
+        .set({
+          fields: stringifyFields(input.fields),
+          payload: input.payload,
+          expireAt: input.expireAt === null ? null : new Date(input.expireAt),
+        })
+        .where(and(eq(collectionRecords.id, recordId), eq(collectionRecords.collectionId, collectionId)))
+        .returning();
+      if (!row) throw new ServiceError('NOT_FOUND', `Record ${recordId} not found`);
+      emitCollectionEvent(context, { action: 'record.update', collectionId, recordId });
+      return toRecord(row);
+    });
+  }
+
+  /** Delete one record from the UI. */
+  static async deleteRecord(collectionId: string, recordId: string, context?: AuditContext): Promise<Result<void>> {
+    return tryCatch(async () => {
+      const deleted = await db
+        .delete(collectionRecords)
+        .where(and(eq(collectionRecords.id, recordId), eq(collectionRecords.collectionId, collectionId)))
+        .returning({ id: collectionRecords.id });
+      if (deleted.length === 0) throw new ServiceError('NOT_FOUND', `Record ${recordId} not found`);
+      emitCollectionEvent(context, { action: 'record.delete', collectionId, recordId });
     });
   }
 
@@ -248,6 +293,67 @@ export class CollectionService {
 }
 
 // ----- Internal -----
+
+async function requireById(id: string): Promise<typeof collections.$inferSelect> {
+  const [row] = await db.select().from(collections).where(eq(collections.id, id));
+  if (!row) throw new ServiceError('NOT_FOUND', `Collection ${id} not found`);
+  return row;
+}
+
+function assertPayloadSize(payload: string): void {
+  if (Buffer.byteLength(payload, 'utf-8') > MAX_PAYLOAD_BYTES) {
+    throw new ServiceError('INVALID_INPUT', `Payload exceeds ${String(MAX_PAYLOAD_BYTES)} bytes`);
+  }
+}
+
+async function insertRecord(
+  collection: typeof collections.$inferSelect,
+  input: StoreRecordInput,
+): Promise<CollectionRecordResult> {
+  assertPayloadSize(input.payload);
+  assertKnownFields(Object.keys(input.fields), collection.indexedFields, 'store');
+  const [row] = await db
+    .insert(collectionRecords)
+    .values({
+      collectionId: collection.id,
+      fields: stringifyFields(input.fields),
+      payload: input.payload,
+      expireAt: computeExpireAt(input, collection.defaultTtlSeconds),
+    })
+    .returning();
+  return toRecord(row!);
+}
+
+/** The SQL for a grid column. An indexed field reads its text out of the jsonb. */
+function columnExpr(column: RecordColumn, indexedFields: readonly string[]): SQL {
+  switch (column) {
+    case 'createdAt': return sql`${collectionRecords.createdAt}`;
+    case 'expireAt': return sql`${collectionRecords.expireAt}`;
+    case 'payload': return sql`${collectionRecords.payload}`;
+    default: {
+      const field = column.slice('fields.'.length);
+      assertKnownFields([field], indexedFields, 'column');
+      return sql`${collectionRecords.fields} ->> ${field}`;
+    }
+  }
+}
+
+/** Escape LIKE wildcards so a search for "50%" finds that text, not everything. */
+function likePattern(text: string): string {
+  return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/** Case-insensitive substring match on one column, or on every field and the payload. */
+function searchCondition(query: ListRecordsQuery, indexedFields: readonly string[]): SQL | undefined {
+  const text = query.q?.trim() ?? '';
+  if (text === '') return undefined;
+  const pattern = likePattern(text);
+  if (query.in !== undefined) return sql`(${columnExpr(query.in, indexedFields)})::text ilike ${pattern}`;
+  return or(
+    sql`exists (select 1 from jsonb_each_text(${collectionRecords.fields}) as f where f.value ilike ${pattern})`,
+    sql`${collectionRecords.payload} ilike ${pattern}`,
+  );
+}
 
 async function requireByName(name: string): Promise<typeof collections.$inferSelect> {
   const [row] = await db.select().from(collections).where(eq(collections.name, name));

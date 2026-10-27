@@ -111,7 +111,7 @@ describeIntegration('CollectionService (real Postgres)', () => {
     const deleted = unwrap(await CollectionService.pruneExpired());
     expect(deleted).toBeGreaterThanOrEqual(1);
 
-    const remaining = unwrap(await CollectionService.listRecords(id));
+    const remaining = unwrap(await CollectionService.listRecords(id, { page: 1, pageSize: 25, sort: 'createdAt', order: 'desc' })).items;
     expect(remaining).toHaveLength(0);
   });
 
@@ -166,4 +166,96 @@ describeIntegration('CollectionService (real Postgres)', () => {
       .where(eq(schema.collectionRecords.collectionId, id));
     expect(rows).toHaveLength(0);
   });
+
+  // ----- UI grid: list / create / update / delete -----
+
+  const PAGE = { page: 1, pageSize: 25, sort: 'createdAt', order: 'desc' } as const;
+
+  /** A collection with three records stored oldest to newest. */
+  async function makeGridCollection(): Promise<{ id: string; name: string }> {
+    const made = await makeCollection(['accession', 'facility']);
+    for (const [accession, facility, payload] of [
+      ['B200', 'North', 'second order'],
+      ['A100', 'South', 'first order 50% done'],
+      ['C300', 'North', 'third order'],
+    ] as const) {
+      unwrap(await mods.CollectionService.store(made.name, { fields: { accession, facility }, payload }));
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    return made;
+  }
+
+  it('sorts by an indexed field and pages with the total', async () => {
+    const { id } = await makeGridCollection();
+    const asc = unwrap(await mods.CollectionService.listRecords(id, { ...PAGE, sort: 'fields.accession', order: 'asc' }));
+    expect(asc.items.map((r) => r.fields['accession'])).toEqual(['A100', 'B200', 'C300']);
+    expect(asc.total).toBe(3);
+
+    const second = unwrap(await mods.CollectionService.listRecords(id, { ...PAGE, page: 2, pageSize: 2 }));
+    expect(second.items.map((r) => r.fields['accession'])).toEqual(['B200']);
+    expect(second.total).toBe(3);
+  });
+
+  it('searches every field and the payload case-insensitively, with the total narrowed', async () => {
+    const { id } = await makeGridCollection();
+    const byField = unwrap(await mods.CollectionService.listRecords(id, { ...PAGE, q: 'north' }));
+    expect(byField.items.map((r) => r.fields['accession'])).toEqual(['C300', 'B200']);
+    expect(byField.total).toBe(2);
+
+    const byPayload = unwrap(await mods.CollectionService.listRecords(id, { ...PAGE, q: 'THIRD' }));
+    expect(byPayload.items.map((r) => r.payload)).toEqual(['third order']);
+  });
+
+  it('scopes a search to one column and treats % as text, not a wildcard', async () => {
+    const { id } = await makeGridCollection();
+    const scoped = unwrap(await mods.CollectionService.listRecords(id, { ...PAGE, q: 'order', in: 'fields.facility' }));
+    expect(scoped.total).toBe(0);
+
+    const percent = unwrap(await mods.CollectionService.listRecords(id, { ...PAGE, q: '50%', in: 'payload' }));
+    expect(percent.items.map((r) => r.fields['accession'])).toEqual(['A100']);
+    const wildcard = unwrap(await mods.CollectionService.listRecords(id, { ...PAGE, q: '%' }));
+    expect(wildcard.total).toBe(1);
+  });
+
+  it('rejects sorting by a field the collection does not index', async () => {
+    const { id } = await makeGridCollection();
+    const result = await mods.CollectionService.listRecords(id, { ...PAGE, sort: 'fields.bogus' });
+    expect(result.ok).toBe(false);
+  });
+
+  it('creates, updates and deletes a record from the UI', async () => {
+    const { CollectionService } = mods;
+    const { id } = await makeCollection(['accession'], 3600);
+
+    const created = unwrap(await CollectionService.createRecord(id, { fields: { accession: 'X1' }, payload: 'v1' }));
+    expect(created.expireAt).not.toBeNull(); // collection default TTL applies
+
+    const updated = unwrap(await CollectionService.updateRecord(id, created.id, { fields: { accession: 'X2' }, payload: 'v2', expireAt: null }));
+    expect(updated).toMatchObject({ id: created.id, fields: { accession: 'X2' }, payload: 'v2', expireAt: null });
+
+    unwrap(await CollectionService.deleteRecord(id, created.id));
+    expect(unwrap(await CollectionService.listRecords(id, PAGE)).total).toBe(0);
+  });
+
+  it('will not edit or delete a record through another collection', async () => {
+    const { CollectionService } = mods;
+    const owner = await makeCollection(['accession']);
+    const other = await makeCollection(['accession']);
+    const record = unwrap(await CollectionService.createRecord(owner.id, { fields: { accession: 'X' }, payload: 'p' }));
+
+    const edit = await CollectionService.updateRecord(other.id, record.id, { fields: {}, payload: 'hijack', expireAt: null });
+    expect(edit.ok).toBe(false);
+    const removed = await CollectionService.deleteRecord(other.id, record.id);
+    expect(removed.ok).toBe(false);
+    expect(unwrap(await CollectionService.listRecords(owner.id, PAGE)).items[0]?.payload).toBe('p');
+  });
+
+  it('rejects an update that sets a field the collection does not index', async () => {
+    const { CollectionService } = mods;
+    const { id } = await makeCollection(['accession']);
+    const record = unwrap(await CollectionService.createRecord(id, { fields: { accession: 'X' }, payload: 'p' }));
+    const result = await CollectionService.updateRecord(id, record.id, { fields: { bogus: 'x' }, payload: 'p', expireAt: null });
+    expect(result.ok).toBe(false);
+  });
 });
+

@@ -7,6 +7,10 @@ import {
   createCollectionSchema,
   updateCollectionSchema,
   collectionUuidParamSchema,
+  collectionRecordParamSchema,
+  listRecordsQuerySchema,
+  storeRecordSchema,
+  updateRecordSchema,
 } from '@mirthless/core-models';
 import { CollectionController } from '../controllers/collection.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
@@ -33,8 +37,29 @@ router.get(
 router.get(
   '/:id/records',
   requirePermission('collections:read'),
-  validate({ params: collectionUuidParamSchema }),
+  validate({ params: collectionUuidParamSchema, query: listRecordsQuerySchema }),
   CollectionController.listRecords,
+);
+
+router.post(
+  '/:id/records',
+  requirePermission('collections:write'),
+  validate({ params: collectionUuidParamSchema, body: storeRecordSchema }),
+  CollectionController.createRecord,
+);
+
+router.put(
+  '/:id/records/:recordId',
+  requirePermission('collections:write'),
+  validate({ params: collectionRecordParamSchema, body: updateRecordSchema }),
+  CollectionController.updateRecord,
+);
+
+router.delete(
+  '/:id/records/:recordId',
+  requirePermission('collections:delete'),
+  validate({ params: collectionRecordParamSchema }),
+  CollectionController.deleteRecord,
 );
 
 router.post(
