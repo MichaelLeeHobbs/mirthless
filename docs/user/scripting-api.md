@@ -74,9 +74,10 @@ The returned object exposes:
 
 | Member | Description |
 |---|---|
-| `get(path)` | Read a field by path, e.g. `msg.get('PID.3.1')`. `get('MSH.9')` auto-resolves to the first subcomponent — use `get('MSH.9.2')` for the trigger event. |
+| `get(path)` | Read the first value at a path, e.g. `msg.get('PID.3.1')`. A path that stops above a single value returns the first value below it: `get('PID.5')` on `DOE^JOHN` is `DOE` and `get('MSH.9')` is the message code. Use `get('MSH.9.2')` for the trigger event. |
+| `getRaw(path)` | Read everything at a path as it is encoded: `getRaw('PID.5')` is `DOE^JOHN`, `getRaw('PID.3')` includes every repetition (`1^^^MRN~2^^^SSN`), `getRaw('PID.3[2]')` is one repetition. |
 | `getText(path)` | Like `get`, but decodes HL7 escape sequences: `Smith \T\ Sons` is returned as `Smith & Sons`. Use it to read free text. `get` returns the value as it is encoded in the message. |
-| `set(path, value)` | Set a field by path. `^`, `~` and `&` in the value are kept, so a composite can be set in one call (`msg.set('OBX.3', 'CODE^Text')`). A `|` or a line break is always encoded so it cannot add fields or segments. |
+| `set(path, value)` | Replace whatever the path names: `set('PID.5', 'SMITH^ANNA')` replaces the whole field with every repetition and component, `set('PID.3[2]', ...)` one repetition, `set('PID.5.2', ...)` one component. Nothing that was there before is left behind, and `set('PID.5', '')` empties the field. `^`, `~` and `&` in the value are kept, so a composite can be set in one call (`msg.set('OBX.3', 'CODE^Text')`). A `|` or a line break is always encoded so it cannot add fields or segments. |
 | `setText(path, value)` | Store free text: every delimiter in the value is encoded, so it stays one value whatever it contains. |
 | `delete(path)` | Remove a field. |
 | `toString()` | Serialize back to an HL7 string. |

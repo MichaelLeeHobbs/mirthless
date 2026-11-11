@@ -70,7 +70,9 @@ export class Hl7Message {
   /**
    * Get a value at the given HL7 path, as it is encoded in the message (escape
    * sequences such as `\\T\\` are not decoded). Returns undefined if not found.
-   * Use {@link getText} to read free text.
+   * A path that stops above a single value returns the FIRST value below it:
+   * `PID.5` on `DOE^JOHN` is `DOE`, `PID.3` on `1^^^MRN~2^^^SSN` is `1`. Use
+   * {@link getRaw} for everything at that depth and {@link getText} to read free text.
    */
   get(path: string): string | undefined {
     const p = parsePath(path, true);
@@ -101,10 +103,41 @@ export class Hl7Message {
     return raw === undefined ? undefined : unescapeValue(raw, this._encoding);
   }
 
+  /**
+   * Get everything at the given path as it is encoded in the message, at the
+   * depth the path names: `PID.5` is the whole field with every repetition and
+   * component (`DOE^JOHN~ROE^JANE`), `PID.3[2]` one repetition, `PID.5.2` one
+   * component with its subcomponents. {@link get} returns only the first value.
+   */
+  getRaw(path: string): string | undefined {
+    const p = parsePath(path, false);
+    const segment = this.findSegment(p.segment, p.segmentIndex);
+    if (!segment) return undefined;
+    if (p.field === undefined) return serializeSegment(segment, this._encoding);
+    if (p.segment === 'MSH' && p.field <= 2) return asString(segment[String(p.field)]);
+
+    const fieldObj = segment[String(p.field)] as Record<string, unknown> | undefined;
+    if (!fieldObj) return undefined;
+    if (p.fieldRepetition === undefined) return serializeFieldRepetitions(fieldObj, this._encoding);
+
+    const repObj = fieldObj[String(p.fieldRepetition)] as Record<string, unknown> | undefined;
+    if (!repObj) return undefined;
+    if (p.component === undefined) return serializeComponents(repObj, this._encoding);
+
+    const compObj = repObj[String(p.component)] as Record<string, string> | undefined;
+    if (!compObj) return undefined;
+    if (p.subComponent === undefined) return serializeSubComponents(compObj, this._encoding);
+    return compObj[String(p.subComponent)];
+  }
+
   // ----- Set -----
 
   /**
-   * Set a value at the given HL7 path. Creates intermediate levels as needed.
+   * Replace whatever the path names with the value, at the depth it names:
+   * `PID.5` replaces the whole field (every repetition and component),
+   * `PID.3[2]` one repetition, `PID.5.2` one component and `PID.5.2.1` one
+   * subcomponent. Nothing that was there before is left behind. Missing
+   * levels above the path are created.
    *
    * Component, repetition and subcomponent separators in the value are kept,
    * so a composite can be set in one call (`set('OBX.3', 'CODE^Text')`). A
@@ -115,41 +148,56 @@ export class Hl7Message {
   set(path: string, value: string): void {
     const p = parsePath(path, false);
     const isDelimiterField = p.segment === 'MSH' && p.field !== undefined && p.field <= 2;
-    this.store(p, isDelimiterField ? value : escapeStructural(value, this._encoding));
+    if (isDelimiterField) {
+      this.segmentFor(p)[String(p.field)] = { '1': { '1': { '1': value } } };
+      return;
+    }
+    this.store(p, escapeStructural(value, this._encoding));
   }
 
-  /** Set free text at a path, encoding every delimiter so it stays one value. */
+  /** Replace whatever the path names with free text, encoding every delimiter so it stays one value. */
   setText(path: string, value: string): void {
     this.store(parsePath(path, false), escapeValue(value, this._encoding));
   }
 
-  private store(p: ReturnType<typeof parsePath>, value: string): void {
-
-    // Ensure segment exists
+  private segmentFor(p: ReturnType<typeof parsePath>): SegmentData {
     let segment = this.findSegment(p.segment, p.segmentIndex);
     if (!segment) {
       segment = { '0': p.segment };
       this.segments.push(segment);
     }
+    return segment;
+  }
 
+  /** Replace the node the path names with the parsed value. */
+  private store(p: ReturnType<typeof parsePath>, value: string): void {
+    const segment = this.segmentFor(p);
     if (p.field === undefined) return;
+    const enc = this._encoding;
 
-    // Resolve indices with defaults for set (auto-resolve=false means some may be undefined)
     const fieldKey = String(p.field);
-    const repKey = String(p.fieldRepetition ?? 1);
-    const compKey = String(p.component ?? 1);
-    const subKey = String(p.subComponent ?? 1);
-
+    if (p.fieldRepetition === undefined) {
+      segment[fieldKey] = parseFieldRepetitions(value, enc);
+      return;
+    }
     if (!segment[fieldKey]) segment[fieldKey] = {};
     const fieldObj = segment[fieldKey] as Record<string, unknown>;
 
+    const repKey = String(p.fieldRepetition);
+    if (p.component === undefined) {
+      fieldObj[repKey] = parseComponents(value, enc);
+      return;
+    }
     if (!fieldObj[repKey]) fieldObj[repKey] = {};
     const repObj = fieldObj[repKey] as Record<string, unknown>;
 
+    const compKey = String(p.component);
+    if (p.subComponent === undefined) {
+      repObj[compKey] = parseSubComponents(value, enc);
+      return;
+    }
     if (!repObj[compKey]) repObj[compKey] = {};
-    const compObj = repObj[compKey] as Record<string, unknown>;
-
-    compObj[subKey] = value;
+    (repObj[compKey] as Record<string, unknown>)[String(p.subComponent)] = value;
   }
 
   // ----- Delete -----

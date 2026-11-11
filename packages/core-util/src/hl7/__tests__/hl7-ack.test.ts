@@ -115,3 +115,14 @@ describe('createAck text escaping', () => {
     expect(ack.split('\r')[2]).toBe('ERR|x\\F\\y');
   });
 });
+
+describe('createAck with composite header fields', () => {
+  it('swaps the whole sending and receiving application and facility, not just the first component', () => {
+    const original = Hl7Message.parse('MSH|^~\\&|LAB^1.2.3^ISO|FAC^4.5^ISO|EHR^9.9^ISO|HOSP^8.8^ISO|20260101||ORU^R01|42|P^T|2.5');
+
+    const ack = createAck(original, { ackCode: 'AA' });
+
+    expect(ack.split('\r')[0]).toMatch(/^MSH\|\^~\\&\|EHR\^9\.9\^ISO\|HOSP\^8\.8\^ISO\|LAB\^1\.2\.3\^ISO\|FAC\^4\.5\^ISO\|/);
+    expect(ack.split('\r')[0]).toContain('|42|P^T|2.5');
+  });
+});

@@ -22,10 +22,10 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
   const enc = original.encoding;
 
   // Get original header fields
-  const sendApp = original.get('MSH.3') ?? '';
-  const sendFac = original.get('MSH.4') ?? '';
-  const recvApp = original.get('MSH.5') ?? '';
-  const recvFac = original.get('MSH.6') ?? '';
+  const sendApp = original.getRaw('MSH.3') ?? '';
+  const sendFac = original.getRaw('MSH.4') ?? '';
+  const recvApp = original.getRaw('MSH.5') ?? '';
+  const recvFac = original.getRaw('MSH.6') ?? '';
   const controlId = original.get('MSH.10') ?? '';
   const version = original.get('MSH.12') ?? '2.5.1';
 
@@ -43,7 +43,7 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
     '',
     `ACK${enc.componentSep}${original.get('MSH.9.2') ?? ''}`,
     controlId,
-    original.get('MSH.11') ?? 'P',
+    original.getRaw('MSH.11') ?? 'P',
     version,
   ].join(enc.fieldSep);
 
