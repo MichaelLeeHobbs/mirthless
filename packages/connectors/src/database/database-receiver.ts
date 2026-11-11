@@ -208,9 +208,9 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
    * instance) cannot select the same rows and double-process them. The locks
    * release on COMMIT.
    *
-   * Semantics: at-least-once. Rows are acked only after a successful dispatch
-   * (ON_SUCCESS) or unconditionally (ALWAYS); an unacked row is re-selected next
-   * cycle. A crash mid-transaction rolls back (no ack persisted) so the row is
+   * Semantics: at-least-once. Rows are acked once the pipeline has recorded the
+   * message (ON_SUCCESS) or unconditionally (ALWAYS); an unacked row is
+   * re-selected next cycle. A crash mid-transaction rolls back (no ack persisted) so the row is
    * retried — a message is never silently lost. The only duplication window is a
    * crash after dispatch but before COMMIT, inherent to any at-least-once claim.
    */
@@ -219,8 +219,8 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     const txResult = await this.pool.transaction(async (tx) => {
       const selectResult = await tx.query(lockedSelect, []);
       for (const row of this.capRows(selectResult.rows)) {
-        const dispatchOk = await this.dispatchRow(row);
-        await this.ackRow(tx, row, dispatchOk);
+        const recorded = await this.dispatchRow(row);
+        await this.ackRow(tx, row, recorded);
       }
     });
     if (!txResult.ok) {
@@ -232,7 +232,13 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /** Dispatch a single row as a JSON message. Returns whether dispatch succeeded. */
+  /**
+   * Dispatch a single row as a JSON message. Returns whether the pipeline
+   * RECORDED the message, which is what decides the ack: a message recorded with
+   * an ERROR status is in the message store, where it can be seen and
+   * reprocessed. Leaving its row unacked would read it again every poll and
+   * create a new message, and a new delivery to every healthy destination, each time.
+   */
   private async dispatchRow(row: Readonly<Record<string, unknown>>): Promise<boolean> {
     if (!this.dispatcher) return false;
 
@@ -252,16 +258,16 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     if (failure !== null) {
       this.logger.error(errorInfo(failure), 'Database row dispatch failed');
     }
-    return failure === null;
+    return result.ok;
   }
 
   /** Ack a claimed row inside the transaction per the configured update mode. */
   private async ackRow(
     tx: TxQuery,
     row: Readonly<Record<string, unknown>>,
-    dispatchOk: boolean,
+    recorded: boolean,
   ): Promise<void> {
-    if (this.config.updateMode === UPDATE_MODE.ON_SUCCESS && !dispatchOk) return;
+    if (this.config.updateMode === UPDATE_MODE.ON_SUCCESS && !recorded) return;
 
     const prepared = prepare(this.config.updateQuery, row as Record<string, unknown>);
     // A failed statement aborts a PostgreSQL transaction: every later

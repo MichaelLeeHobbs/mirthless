@@ -284,11 +284,13 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
   }
 }
 
-/** Map a dispatch result to an HL7 acknowledgement code. */
+/** Map a dispatch result to an HL7 acknowledgement code: AE for an error, AA otherwise (filtered included). */
 function ackCodeFor(result: Result<DispatchResult>): AckCode {
   if (!result.ok) return 'AE';
   const status = result.value.status;
   if (status === DISPATCH_STATUS.ERROR) return 'AE';
-  if (status === DISPATCH_STATUS.FILTERED) return 'AR';
+  // A filtered message was received and deliberately not routed. That is an
+  // accept: AR tells many sending systems to stop the interface or resend
+  // forever, and the HTTP listener answers 200 for the same case.
   return 'AA';
 }

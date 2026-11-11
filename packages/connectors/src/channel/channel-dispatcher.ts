@@ -6,7 +6,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
-import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { DISPATCH_STATUS, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { getChannelDispatcher, hasChannel } from './channel-registry.js';
 
 // ----- Config -----
@@ -88,6 +88,16 @@ export class ChannelDispatcher implements DestinationConnectorRuntime {
           status: 'ERROR' as const,
           content: '',
           errorMessage: result.error.message,
+        };
+      }
+
+      // The target took the message but recorded it with an error. Reporting
+      // SENT here would hide the failure from this channel's status and alerts.
+      if (result.value.status === DISPATCH_STATUS.ERROR) {
+        return {
+          status: 'ERROR' as const,
+          content: '',
+          errorMessage: `Target channel ${this.config.targetChannelId} recorded message ${String(result.value.messageId)} with an ERROR status`,
         };
       }
 
