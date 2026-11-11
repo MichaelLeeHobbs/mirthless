@@ -123,6 +123,8 @@ const backupConfigMapEntrySchema = z.object({
 const backupGlobalMapEntrySchema = z.object({
   key: z.string(),
   value: z.string().nullable(),
+  /** True when a script stored a non-text value as JSON. Absent in older backups. */
+  isJson: z.boolean().default(false),
 });
 
 const backupGroupMembershipSchema = z.object({

@@ -8,6 +8,7 @@ import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sand
 import { compileScript } from '../../sandbox/script-compiler.js';
 import { MessageProcessor, type PipelineConfig, type MessageStore, type SendToDestination, type ChannelScripts } from '../message-processor.js';
 import { GlobalChannelMap } from '../../runtime/global-channel-map.js';
+import { GlobalMapProxy } from '../../runtime/global-map-proxy.js';
 
 // ----- Helpers -----
 
@@ -243,6 +244,72 @@ describe('Pipeline Map Continuity', () => {
     if (!result.ok) return;
     expect(result.value.destinationResults).toHaveLength(2);
     expect(result.value.destinationResults.every((d) => d.status === 'SENT')).toBe(true);
+  });
+
+  it('connectorMap set in a destination filter is visible in that destination transformer only', async () => {
+    const destFilter = await compile('connectorMap["tag"] = "from-" + msg; return true;');
+    const destTransformer = await compile('msg = String(connectorMap["tag"]);');
+    const plainTransformer = await compile('msg = String(connectorMap["tag"]);');
+    const send = makeSendFn();
+    const config: PipelineConfig = {
+      channelId: 'ch-1', serverId: 'srv-1', dataType: 'RAW', scripts: {},
+      destinations: [
+        { metaDataId: 1, name: 'Dest1', enabled: true, scripts: { filter: destFilter, transformer: destTransformer }, queueMode: 'NEVER' },
+        { metaDataId: 2, name: 'Dest2', enabled: true, scripts: { transformer: plainTransformer }, queueMode: 'NEVER' },
+      ],
+    };
+    const processor = new MessageProcessor(executor, makeStore(), send, config, DEFAULT_EXECUTION_OPTIONS);
+    const result = await processor.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    const sent = (send as ReturnType<typeof vi.fn>).mock.calls.map((c: unknown[]) => [c[0], c[2]]);
+    expect(sent).toContainEqual([1, 'from-x']);
+    expect(sent).toContainEqual([2, 'undefined']);
+  });
+
+  it('responseMap written by a response transformer reaches the postprocessor', async () => {
+    const responseTransformer = await compile('responseMap["verdict"] = "accepted";');
+    const postprocessor = await compile('channelMap["seen"] = responseMap["verdict"]; globalChannelMap["seen"] = responseMap["verdict"];');
+    const gcm = new GlobalChannelMap();
+    const config: PipelineConfig = {
+      channelId: 'ch-1', serverId: 'srv-1', dataType: 'RAW', scripts: { postprocessor },
+      destinations: [
+        { metaDataId: 1, name: 'Dest1', enabled: true, scripts: { responseTransformer }, queueMode: 'NEVER' },
+      ],
+      globalChannelMap: gcm,
+    };
+    const processor = new MessageProcessor(executor, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
+    const result = await processor.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    expect(gcm.get('seen')).toBe('accepted');
+  });
+
+  it('two channels sharing one global map see each other\'s values', async () => {
+    const shared = new GlobalMapProxy({ save: vi.fn().mockResolvedValue(undefined), remove: vi.fn().mockResolvedValue(undefined), onFlushError: vi.fn() }, 60_000);
+    const writer = await compile('globalMap["lastPatient"] = { mrn: "00123" }; return msg;');
+    const reader = await compile('return globalMap["lastPatient"].mrn;');
+    const base = { serverId: 'srv-1', dataType: 'RAW', destinations: [], globalMapProxy: shared } as const;
+    const a = new MessageProcessor(executor, makeStore(), makeSendFn(), { ...base, channelId: 'ch-a', scripts: { preprocessor: writer } }, DEFAULT_EXECUTION_OPTIONS);
+    const storeB = makeStore();
+    const b = new MessageProcessor(executor, storeB, makeSendFn(), { ...base, channelId: 'ch-b', scripts: { sourceTransformer: reader } }, DEFAULT_EXECUTION_OPTIONS);
+
+    expect((await a.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(5_000))).ok).toBe(true);
+    expect((await b.processMessage({ rawContent: 'y', sourceMap: {} }, AbortSignal.timeout(5_000))).ok).toBe(true);
+
+    const calls = (storeB.storeContent as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.find((c: unknown[]) => c[3] === 3)![4]).toBe('00123');
+    await shared.dispose();
+  });
+
+  it('a script that deletes a globalChannelMap key removes it', async () => {
+    const gcm = new GlobalChannelMap();
+    gcm.put('stale', 1);
+    const preprocessor = await compile('delete globalChannelMap["stale"]; return msg;');
+    const config: PipelineConfig = { channelId: 'ch-1', serverId: 'srv-1', dataType: 'RAW', scripts: { preprocessor }, destinations: [], globalChannelMap: gcm };
+    const processor = new MessageProcessor(executor, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
+    expect((await processor.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(5_000))).ok).toBe(true);
+    expect(gcm.containsKey('stale')).toBe(false);
   });
 
   it('map shortcuts $ work in pipeline scripts', async () => {

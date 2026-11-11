@@ -13,7 +13,7 @@ vi.mock('@galvaniflow/engine', () => ({
   MessageProcessor: vi.fn(),
   DEFAULT_EXECUTION_OPTIONS: {},
   GlobalChannelMap: vi.fn(),
-  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
+  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyChanges: vi.fn(), set: vi.fn(), delete: vi.fn(), clear: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
   compileScript: vi.fn(),
   compileFilterRulesToScript: vi.fn(),
   compileTransformerStepsToScript: vi.fn(),

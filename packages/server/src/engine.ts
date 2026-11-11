@@ -373,6 +373,8 @@ export class EngineManager {
   private readonly serverId: string;
   /** Periodic NO_MESSAGES alert check; started on first deploy, cleared on dispose. */
   private silenceTimer: ReturnType<typeof setInterval> | undefined;
+  /** The one global map every channel shares; loaded on first deploy, flushed on dispose. */
+  private globalMap: Promise<GlobalMapProxy> | undefined;
 
   constructor(serverId?: string) {
     this.sandbox = new VmSandboxExecutor({
@@ -507,13 +509,13 @@ export class EngineManager {
     await this.wireJavaScriptDestinations(channel, destinations);
 
     // Load code templates, global scripts, alerts, filter/transformer data, configMap, and globalMap in parallel
-    const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts, configMapResult, globalMapResult] = await Promise.all([
+    const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts, configMapResult, globalMapProxyInstance] = await Promise.all([
       CodeTemplateService.listTemplates(),
       GlobalScriptService.getAll(),
       this.loadFilterTransformerData(channel.id),
       this.loadAlertsForChannel(channel.id),
       ConfigMapService.list(),
-      GlobalMapService.list(),
+      this.sharedGlobalMap(channel.id),
     ]);
 
     // Fail loud, never silent: a channel deployed without its code templates,
@@ -522,7 +524,6 @@ export class EngineManager {
     if (!templatesResult.ok) throw deployLoadError(channel.id, 'code templates', templatesResult.error);
     if (!globalScriptsResult.ok) throw deployLoadError(channel.id, 'global scripts', globalScriptsResult.error);
     if (!configMapResult.ok) throw deployLoadError(channel.id, 'the configuration map', configMapResult.error);
-    if (!globalMapResult.ok) throw deployLoadError(channel.id, 'the global map', globalMapResult.error);
 
     const templates: ReadonlyArray<CodeTemplateData> = templatesResult.value
       .map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }));
@@ -564,13 +565,6 @@ export class EngineManager {
     for (const entry of configMapResult.value) {
       configMapRecord[`${entry.category}.${entry.name}`] = entry.value;
     }
-
-    // Build globalMap proxy with flush-to-DB callback
-    const globalMapProxyInstance = new GlobalMapProxy(async (key, value) => {
-      await GlobalMapService.upsert(key, value);
-    });
-    globalMapProxyInstance.load(globalMapResult.value);
-    globalMapProxyInstance.start();
 
     // Build pipeline config
     const pipelineConfig: PipelineConfig = {
@@ -762,7 +756,8 @@ export class EngineManager {
 
     deployed.globalChannelMap.clear();
     deployed.alertManager.clearThrottleState();
-    await deployed.globalMapProxy.dispose();
+    // The global map belongs to every channel, so save it but keep it running.
+    await deployed.globalMapProxy.flush();
 
     const result = await deployed.runtime.undeploy();
     if (!result.ok) {
@@ -1054,12 +1049,28 @@ export class EngineManager {
     }
   }
 
+  /**
+   * The global map shared by every channel. Loaded from the database once; a
+   * failed load is not cached, so the next deploy tries again.
+   */
+  private async sharedGlobalMap(channelId: string): Promise<GlobalMapProxy> {
+    this.globalMap ??= loadGlobalMap();
+    const pending = this.globalMap;
+    try {
+      return await pending;
+    } catch (error) {
+      if (this.globalMap === pending) this.globalMap = undefined;
+      throw deployLoadError(channelId, 'the global map', error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
   /** Run a deploy/undeploy script in the sandbox with channel context. */
   private async runDeployScript(
     script: CompiledScript,
     channel: ChannelDetail,
     gcm: GlobalChannelMap,
   ): Promise<void> {
+    const gcmBefore = gcm.toRecord();
     const context = {
       msg: '',
       tmp: '',
@@ -1068,7 +1079,7 @@ export class EngineManager {
       channelMap: {},
       connectorMap: {},
       responseMap: {},
-      globalChannelMap: gcm.toRecord(),
+      globalChannelMap: gcmBefore,
       extras: {
         channelId: channel.id,
         channelName: channel.name,
@@ -1076,7 +1087,7 @@ export class EngineManager {
     };
     const result = await this.sandbox.execute(script, context, DEFAULT_EXECUTION_OPTIONS);
     if (result.ok) {
-      gcm.applyUpdates(result.value.mapUpdates.globalChannelMap);
+      gcm.applyChanges(gcmBefore, result.value.mapUpdates.globalChannelMap);
     } else {
       logger.error({ errMsg: result.error.message, stack: result.error.stack, channelId: channel.id }, 'Deploy/undeploy script execution failed');
     }
@@ -1218,6 +1229,11 @@ export class EngineManager {
   async dispose(): Promise<void> {
     if (this.silenceTimer) clearInterval(this.silenceTimer);
     this.silenceTimer = undefined;
+    if (this.globalMap) {
+      const proxy = await this.globalMap.catch(() => null);
+      this.globalMap = undefined;
+      if (proxy) await proxy.dispose();
+    }
     this.sandbox.dispose();
   }
 }
@@ -1264,6 +1280,33 @@ interface FilterTransformerData {
   readonly destinationFilterRules: ReadonlyMap<string, ReadonlyArray<FilterRuleRow>>;
   readonly sourceTransformerSteps: ReadonlyArray<TransformerStepRow>;
   readonly destinationTransformerSteps: ReadonlyMap<string, ReadonlyArray<TransformerStepRow>>;
+}
+
+/** Load the global map and keep it in step with edits made through the API. */
+async function loadGlobalMap(): Promise<GlobalMapProxy> {
+  const rows = await GlobalMapService.list();
+  if (!rows.ok) throw rows.error;
+  const proxy = new GlobalMapProxy({
+    save: async (key, value, isJson) => {
+      const result = await GlobalMapService.persist(key, value, isJson);
+      if (!result.ok) throw result.error;
+    },
+    remove: async (key) => {
+      const result = await GlobalMapService.persistRemoval(key);
+      if (!result.ok) throw result.error;
+    },
+    onFlushError: (key, error) => {
+      logger.error({ key, errMsg: error instanceof Error ? error.message : String(error) }, 'Failed to save a global map entry; it will be retried');
+    },
+  });
+  proxy.load(rows.value);
+  GlobalMapService.onChange((change) => {
+    if (change.type === 'set') proxy.set(change.row);
+    else if (change.type === 'delete') proxy.delete(change.key);
+    else proxy.clear();
+  });
+  proxy.start();
+  return proxy;
 }
 
 // ----- Singleton -----

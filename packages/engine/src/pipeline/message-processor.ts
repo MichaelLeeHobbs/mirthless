@@ -204,6 +204,8 @@ export interface PipelineConfig {
 interface PipelineMapState {
   channelMap: Record<string, unknown>;
   responseMap: Record<string, unknown>;
+  /** Scoped to one connector: the source, or a single destination. */
+  connectorMap: Record<string, unknown>;
 }
 
 // ----- Content Type Constants (duplicated to avoid cross-package import) -----
@@ -276,6 +278,7 @@ export class MessageProcessor {
       const mapState: PipelineMapState = {
         channelMap: {},
         responseMap: {},
+        connectorMap: {},
       };
 
       // Stage 1: Create message + source connector + raw content + stats
@@ -527,6 +530,12 @@ export class MessageProcessor {
     const { channelId, serverId, dataType } = this.config;
 
     const processDestination = async (dest: DestinationConfig): Promise<DestinationResult> => {
+      // Shares the message's channelMap and responseMap; connectorMap is this destination's own.
+      const destMaps: PipelineMapState = {
+        channelMap: mapState.channelMap,
+        responseMap: mapState.responseMap,
+        connectorMap: {},
+      };
       // A persistence failure here must fail the destination loudly (ERROR +
       // alert), never be ignored — otherwise the message is silently lost with
       // no dest row, no recovery, and a SENT source status.
@@ -539,12 +548,12 @@ export class MessageProcessor {
 
       let destContent = content;
 
-      // Destination filter — fresh connectorMap per destination.
+      // Destination filter.
       // A script error must fail the destination loudly, never fall through as
       // if the filter passed (which would send unfiltered PHI downstream).
       if (dest.scripts.filter) {
         const filterResult = await this.runScript(
-          dest.scripts.filter, destContent, input, signal, mapState,
+          dest.scripts.filter, destContent, input, signal, destMaps,
         );
         if (!filterResult.ok) {
           return this.destErrorOut(messageId, dest, 'destinationFilter', filterResult.error.message);
@@ -562,7 +571,7 @@ export class MessageProcessor {
       // Never send untransformed content downstream on a transformer failure.
       if (dest.scripts.transformer) {
         const txResult = await this.runScript(
-          dest.scripts.transformer, destContent, input, signal, mapState,
+          dest.scripts.transformer, destContent, input, signal, destMaps,
         );
         if (!txResult.ok) {
           return this.destErrorOut(messageId, dest, 'destinationTransformer', txResult.error.message);
@@ -620,7 +629,7 @@ export class MessageProcessor {
         let responseContent = response.content;
         if (dest.scripts.responseTransformer) {
           const rtResult = await this.runScript(
-            dest.scripts.responseTransformer, response.content, input, signal, mapState,
+            dest.scripts.responseTransformer, response.content, input, signal, destMaps,
           );
           if (rtResult.ok) {
             const transformed = rtResult.value.returnValue ?? rtResult.value.msg;
@@ -747,26 +756,30 @@ export class MessageProcessor {
     const base = createSandboxContext(parsedMsg, input.rawContent, parsedMsg);
     const gcm = this.config.globalChannelMap;
     const globalMapProxy = this.config.globalMapProxy;
+    // Snapshots of the shared maps as the script sees them. Only the keys the
+    // script changes are written back, so a slow script cannot overwrite what
+    // another message stored while it was running.
+    const gcmBefore = gcm?.toRecord();
+    const globalBefore = globalMapProxy?.toRecord();
     const context: SandboxContext = {
       ...base,
       channelMap: { ...mapState.channelMap },
       responseMap: { ...mapState.responseMap },
+      connectorMap: { ...mapState.connectorMap },
       sourceMap: input.sourceMap,
-      ...(gcm ? { globalChannelMap: gcm.toRecord() } : {}),
-      ...(globalMapProxy ? { globalMap: globalMapProxy.toRecord() } : {}),
+      ...(gcmBefore ? { globalChannelMap: gcmBefore } : {}),
+      ...(globalBefore ? { globalMap: globalBefore } : {}),
       ...(this.config.configMap ? { configMap: this.config.configMap } : {}),
       ...(extras ? { extras } : {}),
     };
     const result = await this.sandbox.execute(script, context, { ...this.execOptions, signal });
     if (result.ok) {
-      // Merge map updates back into pipeline state
-      Object.assign(mapState.channelMap, result.value.mapUpdates.channelMap);
-      if (gcm) {
-        gcm.applyUpdates(result.value.mapUpdates.globalChannelMap);
-      }
-      if (globalMapProxy) {
-        globalMapProxy.applyUpdates(result.value.mapUpdates.globalMap);
-      }
+      const updates = result.value.mapUpdates;
+      Object.assign(mapState.channelMap, updates.channelMap);
+      Object.assign(mapState.responseMap, updates.responseMap);
+      Object.assign(mapState.connectorMap, updates.connectorMap);
+      if (gcm && gcmBefore) gcm.applyChanges(gcmBefore, updates.globalChannelMap);
+      if (globalMapProxy && globalBefore) globalMapProxy.applyChanges(globalBefore, updates.globalMap);
     }
     return result;
   }

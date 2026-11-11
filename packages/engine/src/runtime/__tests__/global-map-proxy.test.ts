@@ -3,17 +3,22 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { GlobalMapProxy } from '../global-map-proxy.js';
+import { GlobalMapProxy, type GlobalMapStore } from '../global-map-proxy.js';
 
-// ----- Tests -----
+function makeStore(): { store: GlobalMapStore; save: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn>; onFlushError: ReturnType<typeof vi.fn> } {
+  const save = vi.fn().mockResolvedValue(undefined);
+  const remove = vi.fn().mockResolvedValue(undefined);
+  const onFlushError = vi.fn();
+  return { store: { save, remove, onFlushError }, save, remove, onFlushError };
+}
 
 describe('GlobalMapProxy', () => {
-  let mockFlush: ReturnType<typeof vi.fn>;
+  let s: ReturnType<typeof makeStore>;
   let proxy: GlobalMapProxy;
 
   beforeEach(() => {
-    mockFlush = vi.fn().mockResolvedValue(undefined);
-    proxy = new GlobalMapProxy(mockFlush, 60_000); // long interval to avoid auto-flush
+    s = makeStore();
+    proxy = new GlobalMapProxy(s.store, 60_000); // long interval to avoid auto-flush
   });
 
   afterEach(async () => {
@@ -21,135 +26,150 @@ describe('GlobalMapProxy', () => {
   });
 
   describe('load', () => {
-    it('loads initial entries from snapshot', () => {
+    it('loads plain text entries as strings, even when they look like numbers', () => {
       proxy.load([
-        { key: 'k1', value: 'v1' },
-        { key: 'k2', value: 'v2' },
+        { key: 'k1', value: 'v1', isJson: false },
+        { key: 'zip', value: '00501', isJson: false },
       ]);
+      expect(proxy.toRecord()).toEqual({ k1: 'v1', zip: '00501' });
+    });
 
-      const record = proxy.toRecord();
-      expect(record['k1']).toBe('v1');
-      expect(record['k2']).toBe('v2');
+    it('restores the original type of entries a script stored as JSON', () => {
+      proxy.load([
+        { key: 'count', value: '5', isJson: true },
+        { key: 'seen', value: '{"a":[1,2]}', isJson: true },
+        { key: 'flag', value: 'true', isJson: true },
+      ]);
+      expect(proxy.toRecord()).toEqual({ count: 5, seen: { a: [1, 2] }, flag: true });
+    });
+
+    it('keeps the raw text when a JSON entry cannot be parsed', () => {
+      proxy.load([{ key: 'bad', value: '{oops', isJson: true }]);
+      expect(proxy.toRecord()).toEqual({ bad: '{oops' });
     });
 
     it('handles null values in snapshot', () => {
-      proxy.load([{ key: 'k1', value: null }]);
-
-      const record = proxy.toRecord();
-      expect(record['k1']).toBeNull();
+      proxy.load([{ key: 'k1', value: null, isJson: false }]);
+      expect(proxy.toRecord()['k1']).toBeNull();
     });
   });
 
-  describe('toRecord', () => {
-    it('returns empty record when no entries loaded', () => {
-      expect(proxy.toRecord()).toEqual({});
-    });
-
-    it('returns snapshot of current state', () => {
-      proxy.load([{ key: 'a', value: 'b' }]);
-      const record = proxy.toRecord();
-      expect(record).toEqual({ a: 'b' });
-    });
-  });
-
-  describe('applyUpdates', () => {
-    it('adds new keys', () => {
-      proxy.applyUpdates({ newKey: 'newValue' });
+  describe('applyChanges', () => {
+    it('adds new keys and marks them for saving', async () => {
+      const before = proxy.toRecord();
+      proxy.applyChanges(before, { newKey: 'newValue' });
       expect(proxy.toRecord()['newKey']).toBe('newValue');
-    });
-
-    it('updates existing keys', () => {
-      proxy.load([{ key: 'k1', value: 'old' }]);
-      proxy.applyUpdates({ k1: 'new' });
-      expect(proxy.toRecord()['k1']).toBe('new');
-    });
-
-    it('marks changed keys as dirty', async () => {
-      proxy.applyUpdates({ k1: 'v1' });
       await proxy.flush();
-      expect(mockFlush).toHaveBeenCalledWith('k1', 'v1');
+      expect(s.save).toHaveBeenCalledWith('newKey', 'newValue', false);
     });
 
-    it('does not mark unchanged keys as dirty', async () => {
-      proxy.load([{ key: 'k1', value: 'same' }]);
-      proxy.applyUpdates({ k1: 'same' });
+    it('does not save keys the script left alone', async () => {
+      proxy.load([{ key: 'k', value: 'v', isJson: false }, { key: 'o', value: '{"a":1}', isJson: true }]);
+      const before = proxy.toRecord();
+      // The sandbox hands back JSON copies, so unchanged objects are new instances.
+      proxy.applyChanges(before, { k: 'v', o: { a: 1 } });
       await proxy.flush();
-      expect(mockFlush).not.toHaveBeenCalled();
+      expect(s.save).not.toHaveBeenCalled();
+    });
+
+    it('keeps a key another message wrote while this script was running', () => {
+      proxy.load([{ key: 'a', value: '1', isJson: false }]);
+      const beforeSlow = proxy.toRecord();
+      // A second message finishes first and writes key b.
+      proxy.applyChanges(proxy.toRecord(), { a: '1', b: 'fromFast' });
+      // The slow script only changed key c; its stale snapshot has no b.
+      proxy.applyChanges(beforeSlow, { a: '1', c: 'fromSlow' });
+      expect(proxy.toRecord()).toEqual({ a: '1', b: 'fromFast', c: 'fromSlow' });
+    });
+
+    it('removes keys the script deleted', async () => {
+      proxy.load([{ key: 'gone', value: 'x', isJson: false }]);
+      proxy.applyChanges(proxy.toRecord(), {});
+      expect('gone' in proxy.toRecord()).toBe(false);
+      await proxy.flush();
+      expect(s.remove).toHaveBeenCalledWith('gone');
+      expect(s.save).not.toHaveBeenCalled();
     });
   });
 
   describe('flush', () => {
-    it('does nothing when no dirty keys', async () => {
+    it('saves strings verbatim and everything else as JSON', async () => {
+      proxy.applyChanges({}, { text: '007', count: 7, obj: { a: [1] }, flag: false, nothing: null });
       await proxy.flush();
-      expect(mockFlush).not.toHaveBeenCalled();
+      expect(s.save).toHaveBeenCalledWith('text', '007', false);
+      expect(s.save).toHaveBeenCalledWith('count', '7', true);
+      expect(s.save).toHaveBeenCalledWith('obj', '{"a":[1]}', true);
+      expect(s.save).toHaveBeenCalledWith('flag', 'false', true);
+      expect(s.save).toHaveBeenCalledWith('nothing', 'null', true);
     });
 
-    it('flushes all dirty keys', async () => {
-      proxy.applyUpdates({ k1: 'v1', k2: 'v2' });
+    it('survives a save/load round trip with types intact', async () => {
+      proxy.applyChanges({}, { count: 7, text: '7' });
       await proxy.flush();
-      expect(mockFlush).toHaveBeenCalledTimes(2);
-      expect(mockFlush).toHaveBeenCalledWith('k1', 'v1');
-      expect(mockFlush).toHaveBeenCalledWith('k2', 'v2');
+      const rows = s.save.mock.calls.map((c) => ({ key: c[0] as string, value: c[1] as string, isJson: c[2] as boolean }));
+      const next = new GlobalMapProxy(makeStore().store, 60_000);
+      next.load(rows);
+      expect(next.toRecord()).toEqual({ count: 7, text: '7' });
     });
 
-    it('clears dirty set after flush', async () => {
-      proxy.applyUpdates({ k1: 'v1' });
+    it('does nothing when there are no changes', async () => {
       await proxy.flush();
-      mockFlush.mockClear();
-
-      await proxy.flush();
-      expect(mockFlush).not.toHaveBeenCalled();
+      expect(s.save).not.toHaveBeenCalled();
     });
 
-    it('converts non-string values to string', async () => {
-      proxy.applyUpdates({ num: 42 });
+    it('reports a failed save and retries it on the next flush', async () => {
+      s.save.mockRejectedValueOnce(new Error('db down'));
+      proxy.applyChanges({}, { k: 'v' });
       await proxy.flush();
-      expect(mockFlush).toHaveBeenCalledWith('num', '42');
+      expect(s.onFlushError).toHaveBeenCalledWith('k', expect.objectContaining({ message: 'db down' }));
+      await proxy.flush();
+      expect(s.save).toHaveBeenCalledTimes(2);
     });
 
-    it('converts null/undefined to empty string', async () => {
-      proxy.applyUpdates({ empty: null });
-      await proxy.flush();
-      expect(mockFlush).toHaveBeenCalledWith('empty', '');
+    it('never rejects, so the timer cannot raise an unhandled rejection', async () => {
+      s.save.mockRejectedValue(new Error('db down'));
+      proxy.applyChanges({}, { k: 'v' });
+      await expect(proxy.flush()).resolves.toBeUndefined();
     });
   });
 
-  describe('dispose', () => {
-    it('flushes remaining dirty keys on dispose', async () => {
-      proxy.applyUpdates({ k1: 'v1' });
-      await proxy.dispose();
-      expect(mockFlush).toHaveBeenCalledWith('k1', 'v1');
+  describe('edits made outside scripts', () => {
+    it('set replaces the value without saving it again', async () => {
+      proxy.applyChanges({}, { k: 'fromScript' });
+      proxy.set({ key: 'k', value: 'fromApi', isJson: false });
+      expect(proxy.toRecord()['k']).toBe('fromApi');
+      await proxy.flush();
+      expect(s.save).not.toHaveBeenCalled();
     });
 
-    it('stops the flush timer on dispose', async () => {
-      proxy.start();
-      proxy.applyUpdates({ k1: 'v1' });
-      await proxy.dispose();
-      // Dispose should have flushed the dirty key
-      expect(mockFlush).toHaveBeenCalledTimes(1);
-      mockFlush.mockClear();
-      // After dispose, further updates should not auto-flush
-      proxy.applyUpdates({ k2: 'v2' });
-      await new Promise((resolve) => { setTimeout(resolve, 100); });
-      // Timer is stopped, so no additional flush
-      expect(mockFlush).toHaveBeenCalledTimes(0);
+    it('delete and clear drop entries', () => {
+      proxy.load([{ key: 'a', value: '1', isJson: false }, { key: 'b', value: '2', isJson: false }]);
+      proxy.delete('a');
+      expect(proxy.toRecord()).toEqual({ b: '2' });
+      proxy.clear();
+      expect(proxy.toRecord()).toEqual({});
     });
   });
 
-  describe('periodic flush', () => {
-    it('starts periodic timer', async () => {
+  describe('timer', () => {
+    it('flushes on the interval and stops on dispose', async () => {
       vi.useFakeTimers();
-      const fastProxy = new GlobalMapProxy(mockFlush, 100);
-
-      fastProxy.start();
-      fastProxy.applyUpdates({ k1: 'v1' });
-
-      await vi.advanceTimersByTimeAsync(150);
-
-      expect(mockFlush).toHaveBeenCalled();
-
-      await fastProxy.dispose();
-      vi.useRealTimers();
+      try {
+        const t = makeStore();
+        const timed = new GlobalMapProxy(t.store, 100);
+        timed.start();
+        timed.start();
+        timed.applyChanges({}, { k: 'v' });
+        await vi.advanceTimersByTimeAsync(100);
+        expect(t.save).toHaveBeenCalledTimes(1);
+        timed.applyChanges({}, { k2: 'v2' });
+        await timed.dispose();
+        expect(t.save).toHaveBeenCalledTimes(2);
+        await vi.advanceTimersByTimeAsync(500);
+        expect(t.save).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

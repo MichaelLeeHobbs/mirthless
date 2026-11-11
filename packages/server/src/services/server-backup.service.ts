@@ -218,6 +218,7 @@ export class ServerBackupService {
         globalMap: globalMapResult.value.map((g) => ({
           key: g.key,
           value: g.value,
+          isJson: g.isJson,
         })),
         groupMemberships: membershipsResult.value.map((m) => ({
           channelGroupId: m.channelGroupId,
@@ -642,11 +643,11 @@ async function restoreGlobalMap(
       const existing = await GlobalMapService.getByKey(item.key);
       if (existing.ok) {
         if (mode === 'SKIP') { skipped++; continue; }
-        const res = await GlobalMapService.upsert(item.key, item.value ?? '');
+        const res = await GlobalMapService.upsert(item.key, item.value ?? '', undefined, item.isJson);
         if (!res.ok) throw res.error;
         updated++;
       } else {
-        const res = await GlobalMapService.upsert(item.key, item.value ?? '');
+        const res = await GlobalMapService.upsert(item.key, item.value ?? '', undefined, item.isJson);
         if (!res.ok) throw res.error;
         created++;
       }

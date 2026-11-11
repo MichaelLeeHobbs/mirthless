@@ -88,6 +88,7 @@ function makeEntry(overrides?: Partial<Record<string, unknown>>): Record<string,
   return {
     key: 'test.key',
     value: 'test-value',
+    isJson: false,
     updatedAt: NOW,
     ...overrides,
   };
@@ -228,6 +229,65 @@ describe('GlobalMapService', () => {
       const result = await GlobalMapService.clear();
 
       expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('persist (engine writes)', () => {
+    it('saves the value with its JSON flag and emits no audit event', async () => {
+      const { emitEvent } = await import('../../lib/event-emitter.js');
+      mockOnConflictDoUpdate.mockResolvedValueOnce(undefined);
+
+      const result = await GlobalMapService.persist('count', '7', true);
+
+      expect(result.ok).toBe(true);
+      expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ key: 'count', value: '7', isJson: true }));
+      expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(expect.objectContaining({ set: expect.objectContaining({ value: '7', isJson: true }) }));
+      expect(emitEvent).not.toHaveBeenCalled();
+    });
+
+    it('returns the error when the database rejects', async () => {
+      mockOnConflictDoUpdate.mockRejectedValueOnce(new Error('db down'));
+
+      const result = await GlobalMapService.persist('k', 'v', false);
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('persistRemoval deletes without requiring the key to exist', async () => {
+      const result = await GlobalMapService.persistRemoval('gone');
+
+      expect(result.ok).toBe(true);
+      expect(mockDeleteWhere).toHaveBeenCalledWith({ type: 'eq', val: 'gone' });
+    });
+  });
+
+  describe('change notifications', () => {
+    it('tells the listener about API edits, deletes and clears, but not engine writes', async () => {
+      const seen: unknown[] = [];
+      GlobalMapService.onChange((change) => { seen.push(change); });
+
+      mockReturning.mockResolvedValueOnce([makeEntry({ key: 'k', value: 'v' })]);
+      await GlobalMapService.upsert('k', 'v');
+      pushResponse([{ key: 'k' }]);
+      await GlobalMapService.delete('k');
+      mockDelete.mockResolvedValueOnce(undefined);
+      await GlobalMapService.clear();
+      mockOnConflictDoUpdate.mockResolvedValueOnce(undefined);
+      await GlobalMapService.persist('k', 'v', false);
+
+      expect(seen).toEqual([
+        { type: 'set', row: { key: 'k', value: 'v', isJson: false } },
+        { type: 'delete', key: 'k' },
+        { type: 'clear' },
+      ]);
+    });
+
+    it('an API upsert stores plain text even over a JSON entry', async () => {
+      mockReturning.mockResolvedValueOnce([makeEntry({ key: 'count', value: '7' })]);
+
+      await GlobalMapService.upsert('count', '7');
+
+      expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(expect.objectContaining({ set: expect.objectContaining({ isJson: false }) }));
     });
   });
 });

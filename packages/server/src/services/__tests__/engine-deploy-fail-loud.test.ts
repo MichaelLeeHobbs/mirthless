@@ -52,7 +52,7 @@ vi.mock('../message.service.js', () => ({
 
 const mockGlobalMapList = vi.fn();
 vi.mock('../global-map.service.js', () => ({
-  GlobalMapService: { list: mockGlobalMapList, upsert: vi.fn() },
+  GlobalMapService: { list: mockGlobalMapList, upsert: vi.fn(), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() },
 }));
 
 const mockConfigMapList = vi.fn();

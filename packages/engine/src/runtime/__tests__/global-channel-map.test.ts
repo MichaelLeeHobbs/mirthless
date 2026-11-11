@@ -65,16 +65,23 @@ describe('GlobalChannelMap', () => {
     expect(gcm.toRecord()).toEqual({});
   });
 
-  it('applyUpdates sets new keys and updates existing ones', () => {
+  it('applyChanges sets new keys and updates changed ones', () => {
     gcm.put('existing', 'old');
-    gcm.applyUpdates({ existing: 'updated', newKey: 'newVal' });
+    gcm.applyChanges(gcm.toRecord(), { existing: 'updated', newKey: 'newVal' });
     expect(gcm.get('existing')).toBe('updated');
     expect(gcm.get('newKey')).toBe('newVal');
   });
 
-  it('applyUpdates removes keys set to undefined', () => {
+  it('applyChanges removes keys the script deleted', () => {
     gcm.put('toRemove', 'val');
-    gcm.applyUpdates({ toRemove: undefined });
+    gcm.applyChanges(gcm.toRecord(), {});
     expect(gcm.containsKey('toRemove')).toBe(false);
+  });
+
+  it('applyChanges keeps a key written by another message since the snapshot', () => {
+    const stale = gcm.toRecord();
+    gcm.put('other', 1);
+    gcm.applyChanges(stale, { mine: 2 });
+    expect(gcm.toRecord()).toEqual({ other: 1, mine: 2 });
   });
 });

@@ -55,6 +55,7 @@ export interface ExecutionResult {
     readonly connectorMap: Readonly<Record<string, unknown>>;
     readonly globalChannelMap: Readonly<Record<string, unknown>>;
     readonly globalMap: Readonly<Record<string, unknown>>;
+    readonly responseMap: Readonly<Record<string, unknown>>;
   };
   readonly logs: readonly LogEntry[];
 }
@@ -592,6 +593,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
           connectorMap: (contextObj['connectorMap'] as Record<string, unknown>) ?? {},
           globalChannelMap: (contextObj['globalChannelMap'] as Record<string, unknown>) ?? {},
           globalMap: (contextObj['globalMap'] as Record<string, unknown>) ?? {},
+          responseMap: (contextObj['responseMap'] as Record<string, unknown>) ?? {},
         },
         logs: state.logs,
       };

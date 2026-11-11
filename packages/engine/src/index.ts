@@ -33,7 +33,7 @@ export { QueueConsumer } from './runtime/queue-consumer.js';
 export type { QueueConsumerConfig } from './runtime/queue-consumer.js';
 export { GlobalChannelMap } from './runtime/global-channel-map.js';
 export { GlobalMapProxy } from './runtime/global-map-proxy.js';
-export type { FlushCallback } from './runtime/global-map-proxy.js';
+export type { GlobalMapStore, GlobalMapRow } from './runtime/global-map-proxy.js';
 export { RecoveryManager } from './runtime/recovery-manager.js';
 export type { RecoveryStore, RecoveryResult, UnprocessedMessage, ConnectorMessageRecord, ReprocessSourceFn, RedispatchDestinationFn } from './runtime/recovery-manager.js';
 export { DestinationSet, createDestinationSetProxy } from './pipeline/destination-set.js';
