@@ -90,7 +90,7 @@ export function TrafficPage(): ReactNode {
 
       <Paper sx={{ mb: 2 }}>
         <Tabs value={tab} onChange={(_e, v: number) => { setTab(v); }} sx={{ px: 1 }}>
-          <Tab label={<Badge color="error" badgeContent={errorCount} max={999} sx={{ '& .MuiBadge-badge': { right: -14, top: 4 } }}>Needs Attention</Badge>} />
+          <Tab label={<Badge color="error" badgeContent={errorCount} max={999} sx={{ '& .MuiBadge-badge': { position: 'static', transform: 'none', ml: 1 } }}>Needs Attention</Badge>} />
           <Tab label="Search" />
         </Tabs>
       </Paper>

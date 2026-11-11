@@ -39,6 +39,7 @@ import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, Tra
 import { createDefaultFilter, createDefaultTransformer, transformerHasContent } from '../components/channels/source/types.js';
 import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
 import { PageHeader } from '../components/common/PageHeader.js';
+import { ChannelHealth } from '../components/channels/ChannelHealth.js';
 import Chip from '@mui/material/Chip';
 // ChannelGroupChips now rendered inside SummaryTab
 
@@ -616,6 +617,7 @@ export function ChannelEditorPage(): ReactNode {
           : 'Name the channel, pick its source, then add at least one destination.'}
         actions={
           <>
+            {id !== undefined ? <ChannelHealth channelId={id} /> : null}
             {isEditMode ? (
               <Chip variant="outlined" size="small" label={enabledValue ? 'Enabled' : 'Disabled'} />
             ) : null}
@@ -658,7 +660,7 @@ export function ChannelEditorPage(): ReactNode {
       {/* Tabs */}
       <Paper sx={{ mb: 2 }}>
         <Tabs value={activeTab} onChange={handleTabChange} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>
-          <Tab label="Channel Settings" />
+          <Tab label="Settings" />
           <Tab label="Source" />
           <Tab label="Destinations" />
           <Tab label="Scripts" />

@@ -178,6 +178,12 @@ function buildTheme(mode: PaletteMode): Theme {
           arrow: { color: isDark ? c.surfaceRaised : '#1f2937' },
         },
       },
+      MuiTab: {
+        styleOverrides: {
+          // Phones: tabs size to their label, so a four-tab bar fits without scrolling.
+          root: { '@media (max-width: 599.95px)': { minWidth: 0, paddingInline: 10 } },
+        },
+      },
       MuiTableContainer: {
         styleOverrides: { root: { borderRadius: 0 } },
       },
