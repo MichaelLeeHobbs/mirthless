@@ -142,7 +142,7 @@ export function TemplatesSection({ values, onChange }: TemplatesSectionProps): R
             }}
             fullWidth
             size="small"
-            helperText="Minimum time between alerts (leave empty for no limit)"
+            helperText="Minimum time between alerts. Empty means one a minute; 0 sends on every error."
           />
         </Grid>
         <Grid

@@ -8,6 +8,9 @@ import type { LoadedAlert, ChannelErrorEvent } from './alert-evaluator.js';
 import { evaluateAlerts } from './alert-evaluator.js';
 import { dispatchActions, type ActionDispatcherDeps } from './action-dispatcher.js';
 
+/** Shortest time between two sends of one alert when it sets no re-alert interval. */
+export const DEFAULT_REALERT_INTERVAL_MS = 60_000;
+
 // ----- Throttle State -----
 
 interface AlertThrottleState {
@@ -46,8 +49,10 @@ export class AlertManager {
       if (this.isThrottled(alert, event.timestamp)) continue;
       if (this.isMaxedOut(alert)) continue;
 
-      await dispatchActions(alert, event, this.deps);
+      // Record before sending: errors arrive in bursts, and the ones that
+      // arrive while this alert is still being sent must count as throttled.
       this.recordAlert(alert.id, event.timestamp);
+      await dispatchActions(alert, event, this.deps);
     }
   }
 
@@ -94,12 +99,15 @@ export class AlertManager {
     this.silenceAlertedFor.clear();
   }
 
-  /** Check if an alert is throttled by the re-alert interval. */
+  /** Check if an alert is throttled by its re-alert interval. */
   private isThrottled(alert: LoadedAlert, now: number): boolean {
-    if (alert.reAlertIntervalMs === null || alert.reAlertIntervalMs === 0) return false;
+    // No interval set: one alert a minute, so an outage that fails every
+    // message does not send an email per message. 0 asks for every event.
+    const interval = alert.reAlertIntervalMs ?? DEFAULT_REALERT_INTERVAL_MS;
+    if (interval === 0) return false;
     const state = this.throttleState.get(alert.id);
     if (!state) return false;
-    return (now - state.lastAlertAt) < alert.reAlertIntervalMs;
+    return (now - state.lastAlertAt) < interval;
   }
 
   /** Check if an alert has exceeded its max-alerts limit. */

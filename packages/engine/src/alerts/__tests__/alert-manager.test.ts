@@ -116,13 +116,30 @@ describe('AlertManager throttling', () => {
     expect(deps.logger.warn).toHaveBeenCalledTimes(2);
   });
 
-  it('does not throttle when reAlertIntervalMs is null', async () => {
+  it('sends at most one alert a minute when no re-alert interval is set', async () => {
     manager.loadAlerts([makeAlert({ reAlertIntervalMs: null })]);
 
-    await manager.handleEvent(makeEvent({ timestamp: 1000 }));
-    await manager.handleEvent(makeEvent({ timestamp: 1001 }));
+    await manager.handleEvent(makeEvent({ timestamp: 1_000 }));
+    await manager.handleEvent(makeEvent({ timestamp: 2_000 }));
+    await manager.handleEvent(makeEvent({ timestamp: 60_999 }));
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
 
+    await manager.handleEvent(makeEvent({ timestamp: 61_000 }));
     expect(deps.logger.warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends one alert when many errors arrive at once', async () => {
+    let release: () => void = () => undefined;
+    const emailSender = vi.fn().mockImplementation(() => new Promise<void>((resolve) => { release = resolve; }));
+    manager = new AlertManager({ ...deps, emailSender });
+    manager.loadAlerts([makeAlert({ reAlertIntervalMs: 5_000 })]);
+
+    const all = Promise.all([manager.handleEvent(makeEvent()), manager.handleEvent(makeEvent()), manager.handleEvent(makeEvent())]);
+    await Promise.resolve();
+    release();
+    await all;
+
+    expect(emailSender).toHaveBeenCalledTimes(1);
   });
 
   it('does not throttle when reAlertIntervalMs is 0', async () => {
@@ -139,7 +156,7 @@ describe('AlertManager throttling', () => {
 
 describe('AlertManager max alerts', () => {
   it('stops after maxAlerts is reached', async () => {
-    manager.loadAlerts([makeAlert({ maxAlerts: 2 })]);
+    manager.loadAlerts([makeAlert({ maxAlerts: 2, reAlertIntervalMs: 0 })]);
 
     await manager.handleEvent(makeEvent({ timestamp: 1 }));
     await manager.handleEvent(makeEvent({ timestamp: 2 }));
@@ -149,7 +166,7 @@ describe('AlertManager max alerts', () => {
   });
 
   it('does not limit when maxAlerts is null', async () => {
-    manager.loadAlerts([makeAlert({ maxAlerts: null })]);
+    manager.loadAlerts([makeAlert({ maxAlerts: null, reAlertIntervalMs: 0 })]);
 
     await manager.handleEvent(makeEvent({ timestamp: 1 }));
     await manager.handleEvent(makeEvent({ timestamp: 2 }));

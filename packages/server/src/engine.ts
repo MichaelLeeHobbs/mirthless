@@ -567,8 +567,30 @@ export class EngineManager {
     };
 
     // Create alert manager and load alerts for this channel
-    const alertManager = new AlertManager({ logger, emailSender, channelName: channel.name });
+    // CHANNEL alert action: hand the alert text to another deployed channel.
+    const channelSender = async (targetChannelId: string, content: string): Promise<void> => {
+      if (targetChannelId === channel.id) {
+        throw new Error('An alert cannot be sent into the channel it is about');
+      }
+      const target = this.runtimes.get(targetChannelId);
+      if (!target || target.runtime.getState() !== 'STARTED') {
+        throw new Error(`Alert target channel ${targetChannelId} is not deployed and started`);
+      }
+      const sent = await target.processMessage(content, { alertSourceChannelId: channel.id });
+      if (!sent.ok) throw sent.error;
+    };
+
+    const alertManager = new AlertManager({ logger, emailSender, channelSender, channelName: channel.name });
     alertManager.loadAlerts(loadedAlerts);
+
+    // Alerts are sent in the background. Awaiting them made every failing
+    // message wait on the mail server, and the sender on the message.
+    const raiseAlert = (event: Parameters<AlertManager['handleEvent']>[0]): Promise<void> => {
+      alertManager.handleEvent(event).catch((error: unknown) => {
+        logger.error({ channelId: channel.id, errMsg: error instanceof Error ? error.message : String(error) }, 'Alert handling failed');
+      });
+      return Promise.resolve();
+    };
 
     // Execute global deploy script (before channel deploy)
     if (scripts.globalDeploy) {
@@ -597,7 +619,7 @@ export class EngineManager {
       globalMapProxy: globalMapProxyInstance,
       configMap: Object.freeze(configMapRecord),
       scriptTimeoutMs: channel.scriptTimeoutSeconds * 1_000,
-      onError: async (event) => alertManager.handleEvent(event),
+      onError: raiseAlert,
       onStoreFailure: (failure) => {
         logger.error(
           { channelId: failure.channelId, messageId: failure.messageId, metaDataId: failure.metaDataId, what: failure.what, errMsg: failure.errorMessage },
@@ -640,7 +662,7 @@ export class EngineManager {
         retryIntervalMs: dest.retryIntervalMs ?? 10_000,
         batchSize: 10,
         pollIntervalMs: 1_000,
-        onError: async (event) => alertManager.handleEvent(event),
+        onError: raiseAlert,
       };
       queueConsumers.push(new QueueConsumer(queueConfig, store, sendFn));
     }
