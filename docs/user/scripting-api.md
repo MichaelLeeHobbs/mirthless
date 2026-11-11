@@ -9,6 +9,33 @@ exposed** to your scripts, sourced from `packages/engine/src/sandbox/sandbox-exe
 > Your code is wrapped in a `'use strict'` IIFE and executed with a timeout. The value you
 > `return` becomes the script result (a filter returns a boolean; a transformer typically
 > mutates `msg`/`tmp` and the maps).
+
+### What a script returns
+
+- **Filter.** Return `true` to accept the message. Anything else rejects it: `false`,
+  nothing, a string, a number. In a channel built from filter rules, a rule that returns
+  something other than `true` or `false` (most often a rule with no `return`) stops the
+  message with an error that names the rule, so a typo cannot let messages through or
+  drop them unseen.
+- **Transformer, preprocessor, response transformer.** Change `msg` (or `tmp`) in place;
+  no `return` is needed. If you do return a string or an object, it replaces the message.
+  `return true`, `return false` and a bare `return` keep the message as it is. Transformer
+  steps share one scope, so a `return` in one step skips the steps after it.
+- **Results are data.** What a script returns, and what it puts in a map, is carried out of
+  the sandbox as JSON. A value JSON cannot hold (a circular structure, a BigInt) is a script
+  error. Functions are dropped and a `Date` becomes its ISO string. An HL7 message object
+  put in a map is stored as its HL7 text.
+
+### How a changed message is written back
+
+- **XML** keeps the original document's element order, comments, CDATA sections and
+  whitespace. Elements you add are appended to their parent; elements you remove are
+  dropped. Values are always text, never converted to numbers.
+- **JSON** numbers you leave alone are written exactly as they arrived (`1.50` stays `1.50`).
+  A number a double cannot hold exactly, such as an integer above 2^53, reaches your script
+  as a string so no digit is lost, and goes back out as a number if you leave it at the same
+  place. If you move or copy it to another key it is written as a string.
+- A script that changes nothing passes the original bytes through.
 >
 > Design doc `docs/design/04` describes the original `isolated-vm` plan and says so at the
 > top. The engine uses `node:vm` (`VmSandboxExecutor`). Treat this page as current.
@@ -103,13 +130,16 @@ subject to SSRF protection: requests to loopback, private, link-local (including
 metadata at 169.254.169.254), CGNAT and other reserved addresses are blocked, both as IP
 literals and when a DNS name resolves to one. Redirects are **not** followed (the 3xx response
 is returned to your script), and response bodies are capped at 10 MB. To reach an internal
-system, use a destination connector rather than `httpFetch`.
+system, either use a destination connector or have the server administrator list the host in
+`SCRIPT_HTTP_ALLOWED_HOSTS` (comma separated host names or IP addresses, matched exactly).
+Listed hosts are reachable although their address is private; redirects are still not
+followed and the size cap still applies.
 
 | Function | Signature | Description |
 |---|---|---|
 | `httpFetch` | `httpFetch(url, { method, headers, body, timeout }?)` → `{ status, statusText, headers, body }` | Outbound HTTP request. |
 | `dbQuery` | `dbQuery(dataSourceName, sql, params?)` → rows | Parameterized query against a named [Data Source](#data-sources). Never string-interpolate values into `sql`. |
-| `routeMessage` | `routeMessage(channelName, rawData)` → `{ success, response? }` | Route a message to another channel. |
+| `routeMessage` | `routeMessage(channelName, rawData)` → `{ success, messageId, filtered, response? }` | Route a message to another channel. Throws when the target channel is not started or records the message with an error, so a failed hand-off cannot pass unnoticed. `filtered` is true when the target's filter rejected the message. |
 | `getResource` | `getResource(name)` → `string \| null` | Load a configured resource by name. |
 | `getCollection` | `getCollection(name)` → `{ store, find, update, delete }` | Read/write a durable keyed record store. See [Collections](#collections). |
 

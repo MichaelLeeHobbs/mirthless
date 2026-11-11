@@ -106,7 +106,7 @@ export interface DeployedChannel {
 /**
  * What the source connector learns about a dispatched message. `status` lets a
  * source connector build the right response (e.g. an MLLP receiver returns an AA
- * ACK for SENT, AE for ERROR, AR for FILTERED).
+ * ACK for SENT, AE for ERROR, AA for FILTERED).
  */
 export interface SourceDispatchOutcome {
   readonly messageId: number;
@@ -717,7 +717,7 @@ export class EngineManager {
       );
       if (!result.ok) return result;
       // Surface the pipeline's final status so the source connector can build the
-      // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AR), as the
+      // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AA), as the
       // channel's response mode defines it.
       const { messageId, response } = result.value;
       const status = toDispatchStatus(result.value, channel.responseMode);

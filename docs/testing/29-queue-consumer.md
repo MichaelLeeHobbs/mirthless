@@ -26,7 +26,9 @@
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 8 | Queue consumer uses destination-specific retry count | Destination configured with retryCount: 5 | Consumer retries failed messages up to 5 times | |
+| 8 | Queue consumer uses destination-specific retry count | Destination configured with retryCount: 5 | Consumer makes the first attempt and then up to 5 retries before the message is marked ERROR | |
+| 8a | Retry count 0 retries until delivered | Destination configured with retryCount: 0, destination down | Message stays QUEUED and is retried every interval; one alert on the first failure, none on the repeats | |
+| 8b | Skip Past a Failed Message | Enable the switch, queue two messages, make only the first fail | The second message is delivered while the first keeps retrying | |
 | 9 | Queue consumer uses destination-specific retry interval | Destination configured with retryIntervalMs: 3000 | Consumer waits 3 seconds between retries | |
 | 10 | Queue consumer batch size defaults to 10 | Deploy and start channel with queued destination | Consumer processes up to 10 messages per poll cycle | |
 | 11 | Queue consumer poll interval defaults to 1000ms | Deploy and start channel with queued destination | Consumer polls every 1 second | |

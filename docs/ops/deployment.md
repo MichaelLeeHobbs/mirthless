@@ -27,6 +27,9 @@ version you run is the commit you have checked out. Tag or pin that commit.
      your backups: losing it makes that data unreadable.
    - `FRONTEND_URL`: the URL users open, for CORS.
    - `TRUST_PROXY`: the number of proxies in front of the app (1 for the bundled nginx).
+   - `SCRIPT_HTTP_ALLOWED_HOSTS` (optional): internal hosts channel scripts may call with
+     `httpFetch`, comma separated, for example `lis.hospital.local,10.20.0.15`. Without it
+     scripts can reach public addresses only.
 2. Build and start:
 
    ```bash
