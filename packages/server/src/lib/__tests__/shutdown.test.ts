@@ -107,6 +107,16 @@ describe('createShutdownHandler', () => {
     expect(messages).toContain('Graceful shutdown complete');
   });
 
+  it('exits with the given code after a clean shutdown that followed a fatal error', async () => {
+    const handler = createShutdownHandler(createMockDeps());
+
+    handler('uncaughtException', 1);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(mockExit).not.toHaveBeenCalledWith(0);
+  });
+
   it('logs signal name on shutdown start', async () => {
     const deps = createMockDeps();
     const handler = createShutdownHandler(deps);

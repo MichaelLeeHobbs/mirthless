@@ -34,11 +34,14 @@ const DRAIN_TIMEOUT_MS = 30_000;
  * 4. Stop pruner scheduler
  * 5. Stop job queue (pgboss)
  * 6. Close DB pool (last -- engine/queue may need DB)
+ *
+ * `exitCode` is the code to exit with after a clean shutdown: 0 for a signal,
+ * non-zero when the shutdown was caused by a fatal error.
  */
-export function createShutdownHandler(deps: ShutdownDeps): (signal: string) => void {
+export function createShutdownHandler(deps: ShutdownDeps): (signal: string, exitCode?: number) => void {
   let shutting = false;
 
-  return (signal: string): void => {
+  return (signal: string, exitCode = 0): void => {
     if (shutting) {
       deps.logger.warn({ signal }, 'Duplicate shutdown signal ignored');
       return;
@@ -77,7 +80,7 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string) => v
         await deps.closePool();
 
         deps.logger.info({ phase: 'shutdown' }, 'Graceful shutdown complete');
-        process.exit(0);
+        process.exit(exitCode);
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         const stack = err instanceof Error ? err.stack : undefined;

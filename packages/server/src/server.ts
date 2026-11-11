@@ -16,6 +16,7 @@ import { DeploymentService } from './services/deployment.service.js';
 import { createShutdownHandler } from './lib/shutdown.js';
 import { dataSourcePoolManager } from './services/data-source-pool-manager.js';
 import { warnIfDefaultAdminPassword } from './lib/security-checks.js';
+import { installFatalHandlers } from './lib/fatal-handlers.js';
 
 const PORT = config.PORT;
 
@@ -76,3 +77,4 @@ const shutdown = createShutdownHandler({
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+installFatalHandlers({ proc: process, logger, shutdown });
