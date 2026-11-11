@@ -14,6 +14,8 @@ import { isBlockedHostname } from './ssrf.js';
 /** Proxy object returned by parseHL7 — closures over host-side Hl7Message. */
 export interface Hl7MessageProxy {
   get(path: string): string | undefined;
+  /** Everything at a path as encoded in the message: the whole field, repetition or component. */
+  getRaw(path: string): string | undefined;
   /** The decoded text at a path (escape sequences resolved). */
   getText(path: string): string | undefined;
   set(path: string, value: string): void;

@@ -159,6 +159,7 @@ function hl7Op(state: HostBridgeState, op: string, args: readonly unknown[]): un
   const proxy = getHl7(state, args[0]);
   switch (op) {
     case 'hl7.get': return proxy.get(str(args[1]));
+    case 'hl7.getRaw': return proxy.getRaw(str(args[1]));
     case 'hl7.getText': return proxy.getText(str(args[1]));
     case 'hl7.set': proxy.set(str(args[1]), str(args[2])); return undefined;
     case 'hl7.setText': proxy.setText(str(args[1]), str(args[2])); return undefined;
@@ -421,6 +422,7 @@ globalThis.__build = function (hostDispatch, payload) {
       __hl7Proxy: true,
       __handle: handle,
       get: function (p) { return dispatch('hl7.get', handle, text(p)); },
+      getRaw: function (p) { return dispatch('hl7.getRaw', handle, text(p)); },
       getText: function (p) { return dispatch('hl7.getText', handle, text(p)); },
       set: function (p, v) { dispatch('hl7.set', handle, text(p), text(v)); },
       setText: function (p, v) { dispatch('hl7.setText', handle, text(p), text(v)); },
