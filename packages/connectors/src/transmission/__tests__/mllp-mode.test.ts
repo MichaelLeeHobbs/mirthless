@@ -167,3 +167,47 @@ describe('MllpParser charset', () => {
     expect(messages[0]).not.toBe(name);
   });
 });
+
+describe('MllpParser chunking', () => {
+  const VT_B = 0x0b;
+  const FS_B = 0x1c;
+  const CR_B = 0x0d;
+  const frame = (text: string): Buffer => Buffer.concat([Buffer.from([VT_B]), Buffer.from(text), Buffer.from([FS_B, CR_B])]);
+
+  it('returns the same messages wherever the stream is cut', () => {
+    // The second payload holds a file separator that is not the end of a frame.
+    const stream = Buffer.concat([frame('MSH|one'), frame(`MSH|two${String.fromCharCode(FS_B)}x`), frame('MSH|three')]);
+    for (let size = 1; size <= stream.length; size++) {
+      const parser = new MllpParser();
+      const out: string[] = [];
+      for (let i = 0; i < stream.length; i += size) out.push(...parser.parse(stream.subarray(i, i + size)));
+      expect(out).toEqual(['MSH|one', `MSH|two${String.fromCharCode(FS_B)}x`, 'MSH|three']);
+    }
+  });
+
+  it('takes a large frame delivered in small chunks without copying it on every chunk', () => {
+    const size = 8 * 1024 * 1024;
+    const payload = Buffer.alloc(size, 0x41);
+    const stream = Buffer.concat([Buffer.from([VT_B]), payload, Buffer.from([FS_B, CR_B])]);
+    const parser = new MllpParser({ maxFrameBytes: 16 * 1024 * 1024 });
+    const out: string[] = [];
+
+    const started = Date.now();
+    for (let i = 0; i < stream.length; i += 64) out.push(...parser.parse(stream.subarray(i, i + 64)));
+    const elapsed = Date.now() - started;
+
+    expect(out).toHaveLength(1);
+    expect(out[0]!.length).toBe(size);
+    // 131,072 chunks. Re-copying the buffer per chunk moves about 500 GB and
+    // takes minutes; one copy at the end takes well under a second.
+    expect(elapsed).toBeLessThan(5_000);
+  }, 60_000);
+
+  it('still rejects a frame that grows past the limit across chunks', () => {
+    const parser = new MllpParser({ maxFrameBytes: 100 });
+    parser.parse(Buffer.concat([Buffer.from([VT_B]), Buffer.alloc(60, 0x41)]));
+    expect(() => parser.parse(Buffer.alloc(60, 0x41))).toThrow(/maximum size/);
+    // And is usable again afterwards.
+    expect(parser.parse(frame('MSH|ok'))).toEqual(['MSH|ok']);
+  });
+});

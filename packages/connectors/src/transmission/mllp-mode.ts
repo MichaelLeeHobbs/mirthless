@@ -50,6 +50,11 @@ export function wrapMllp(message: string, charset: BufferEncoding = 'utf-8'): Bu
  */
 export class MllpParser {
   private buffer: Buffer = Buffer.alloc(0);
+  /** Chunks of an unfinished frame that have not been joined to `buffer` yet. */
+  private pending: Buffer[] = [];
+  private pendingBytes = 0;
+  /** The last byte received was FS, so the next byte decides if the frame ended. */
+  private endsWithFs = false;
   private inFrame = false;
   private readonly maxFrameBytes: number;
   private readonly charset: BufferEncoding;
@@ -70,70 +75,73 @@ export class MllpParser {
    * @throws Error when buffered data exceeds the configured max frame size.
    */
   parse(chunk: Buffer): readonly string[] {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    if (this.buffer.length > this.maxFrameBytes) {
+    if (this.buffer.length + this.pendingBytes + chunk.length > this.maxFrameBytes) {
       this.reset();
       throw new Error(
         `MLLP frame exceeds maximum size of ${String(this.maxFrameBytes)} bytes`,
       );
     }
+    // A chunk in the middle of a frame cannot complete it unless it holds the
+    // end byte (or follows one). Set it aside instead of joining it to the
+    // buffer now: joining on every chunk copies the whole frame each time.
+    const canComplete = !this.inFrame || this.endsWithFs || chunk.includes(FS);
+    if (chunk.length > 0) this.endsWithFs = chunk[chunk.length - 1] === FS;
+    this.pending.push(chunk);
+    this.pendingBytes += chunk.length;
+    if (!canComplete) return [];
+
+    this.buffer = Buffer.concat([this.buffer, ...this.pending]);
+    this.pending = [];
+    this.pendingBytes = 0;
     const results: string[] = [];
 
-    let offset = 0;
-    while (offset < this.buffer.length) {
+    // `start` is where the unread data begins: the first payload byte when in
+    // a frame. It only moves when a frame completes, so a file separator inside
+    // a payload (one not followed by CR) costs nothing of the payload.
+    let start = 0;
+    while (start < this.buffer.length) {
       if (!this.inFrame) {
-        // Look for start byte
-        const vtIndex = this.buffer.indexOf(VT, offset);
+        const vtIndex = this.buffer.indexOf(VT, start);
         if (vtIndex === -1) {
-          // No start byte found, discard everything
-          offset = this.buffer.length;
+          // No start byte: nothing here belongs to a frame.
+          start = this.buffer.length;
           break;
         }
         this.inFrame = true;
-        offset = vtIndex + 1;
+        start = vtIndex + 1;
       }
 
-      if (this.inFrame) {
-        // Look for end sequence: FS + CR
-        const fsIndex = this.buffer.indexOf(FS, offset);
-        if (fsIndex === -1) {
-          // Incomplete frame, keep buffer from current position
-          break;
-        }
+      const end = this.findFrameEnd(start);
+      if (end === -1) break; // incomplete frame: keep it for the next chunk
 
-        // Verify CR follows FS
-        if (fsIndex + 1 >= this.buffer.length) {
-          // Need more data to confirm CR
-          break;
-        }
-
-        if (this.buffer[fsIndex + 1] !== CR) {
-          // FS without CR — skip past FS and continue searching
-          offset = fsIndex + 1;
-          continue;
-        }
-
-        // Complete frame found
-        const payload = this.buffer.subarray(offset, fsIndex).toString(this.charset);
-        results.push(payload);
-        this.inFrame = false;
-        offset = fsIndex + 2; // Skip past FS + CR
-      }
+      results.push(this.buffer.subarray(start, end).toString(this.charset));
+      this.inFrame = false;
+      start = end + 2; // past FS + CR
     }
 
-    // Keep unprocessed bytes
-    if (offset >= this.buffer.length) {
-      this.buffer = Buffer.alloc(0);
-    } else {
-      this.buffer = Buffer.from(this.buffer.subarray(offset));
-    }
+    this.buffer = start >= this.buffer.length ? Buffer.alloc(0) : Buffer.from(this.buffer.subarray(start));
+    this.endsWithFs = this.buffer.length > 0 && this.buffer[this.buffer.length - 1] === FS;
 
     return results;
+  }
+
+  /** Index of the FS that ends the frame starting at `from` (the FS followed by CR), or -1. */
+  private findFrameEnd(from: number): number {
+    let fsIndex = this.buffer.indexOf(FS, from);
+    while (fsIndex !== -1) {
+      if (fsIndex + 1 >= this.buffer.length) return -1; // need the next byte to know
+      if (this.buffer[fsIndex + 1] === CR) return fsIndex;
+      fsIndex = this.buffer.indexOf(FS, fsIndex + 1);
+    }
+    return -1;
   }
 
   /** Reset parser state. */
   reset(): void {
     this.buffer = Buffer.alloc(0);
+    this.pending = [];
+    this.pendingBytes = 0;
+    this.endsWithFs = false;
     this.inFrame = false;
   }
 }
