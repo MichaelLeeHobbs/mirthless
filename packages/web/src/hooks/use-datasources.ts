@@ -19,6 +19,7 @@ export interface DataSourceSummary {
   readonly database: string;
   readonly user: string;
   readonly readOnly: boolean;
+  readonly tls: boolean;
   readonly maxConnections: number;
   readonly statementTimeoutMs: number;
   readonly maxRows: number;

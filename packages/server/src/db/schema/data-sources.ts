@@ -19,6 +19,7 @@ export const dataSources = pgTable('data_sources', {
   /** content-crypto envelope; never returned by the API. */
   passwordEncrypted: text('password_encrypted').notNull(),
   readOnly: boolean('read_only').notNull().default(true),
+  tls: boolean('tls').notNull().default(false),
   maxConnections: integer('max_connections').notNull().default(5),
   statementTimeoutMs: integer('statement_timeout_ms').notNull().default(30_000),
   maxRows: integer('max_rows').notNull().default(10_000),

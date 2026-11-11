@@ -57,6 +57,7 @@ interface FormState {
   user: string;
   password: string;
   readOnly: boolean;
+  tls: boolean;
   maxConnections: string;
   statementTimeoutMs: string;
   maxRows: string;
@@ -64,7 +65,7 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   name: '', description: '', host: '', port: '5432', database: '', user: '', password: '',
-  readOnly: true, maxConnections: '5', statementTimeoutMs: '30000', maxRows: '10000',
+  readOnly: true, tls: false, maxConnections: '5', statementTimeoutMs: '30000', maxRows: '10000',
 };
 
 export function DataSourcesPage(): ReactNode {
@@ -102,7 +103,7 @@ export function DataSourcesPage(): ReactNode {
     setEditingId(s.id);
     setForm({
       name: s.name, description: s.description, host: s.host, port: String(s.port),
-      database: s.database, user: s.user, password: '', readOnly: s.readOnly,
+      database: s.database, user: s.user, password: '', readOnly: s.readOnly, tls: s.tls,
       maxConnections: String(s.maxConnections), statementTimeoutMs: String(s.statementTimeoutMs), maxRows: String(s.maxRows),
     });
     setDialogError(null);
@@ -119,7 +120,7 @@ export function DataSourcesPage(): ReactNode {
   const handleTest = (): void => {
     setTestResult(null);
     testSource.mutate(
-      { host: form.host, port: Number(form.port), database: form.database, user: form.user, password: form.password },
+      { host: form.host, port: Number(form.port), database: form.database, user: form.user, password: form.password, tls: form.tls },
       {
         onSuccess: (r) => { setTestResult({ ok: r.connected, message: r.connected ? 'Connected successfully.' : (r.error ?? 'Connection failed.') }); },
         onError: (e) => { setTestResult({ ok: false, message: e.message }); },
@@ -136,7 +137,7 @@ export function DataSourcesPage(): ReactNode {
       // Omit password when left blank so the stored credential is kept.
       const input = {
         name: form.name, description: form.description, host: form.host, port: Number(form.port),
-        database: form.database, user: form.user, readOnly: form.readOnly,
+        database: form.database, user: form.user, readOnly: form.readOnly, tls: form.tls,
         maxConnections: Number(form.maxConnections), statementTimeoutMs: Number(form.statementTimeoutMs), maxRows: Number(form.maxRows),
         ...(form.password ? { password: form.password } : {}),
       };
@@ -144,7 +145,7 @@ export function DataSourcesPage(): ReactNode {
     } else {
       createSource.mutate({
         name: form.name, description: form.description, driver: 'postgres', host: form.host, port: Number(form.port),
-        database: form.database, user: form.user, password: form.password, readOnly: form.readOnly,
+        database: form.database, user: form.user, password: form.password, readOnly: form.readOnly, tls: form.tls,
         maxConnections: Number(form.maxConnections), statementTimeoutMs: Number(form.statementTimeoutMs), maxRows: Number(form.maxRows),
       }, { onSuccess, onError });
     }
@@ -264,6 +265,11 @@ export function DataSourcesPage(): ReactNode {
           <FormControlLabel
             control={<Switch checked={form.readOnly} onChange={(e) => { setField('readOnly', e.target.checked); }} />}
             label="Read-only (recommended)"
+            sx={{ mt: 1 }}
+          />
+          <FormControlLabel
+            control={<Switch checked={form.tls} onChange={(e) => { setField('tls', e.target.checked); }} />}
+            label="Encrypt the connection (TLS)"
             sx={{ mt: 1 }}
           />
           <Stack direction="row" spacing={1}>

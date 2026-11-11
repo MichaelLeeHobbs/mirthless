@@ -53,6 +53,7 @@ export const DATABASE_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   database: '',
   username: '',
   password: '',
+  tls: false,
   selectQuery: '',
   updateQuery: '',
   updateMode: 'NEVER',

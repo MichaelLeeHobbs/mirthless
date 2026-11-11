@@ -304,4 +304,20 @@ describe('ConnectionPool', () => {
       pool = null;
     });
   });
+
+  describe('TLS', () => {
+    const base = { host: 'db', port: 5432, database: 'd', user: 'u', password: 'p', maxConnections: 1, idleTimeoutMs: 1, connectionTimeoutMs: 1 };
+
+    it('connects without TLS unless asked', async () => {
+      const pg = (await import('pg')).default;
+      await new ConnectionPool().create(base);
+      expect((pg.Pool as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]).toMatchObject({ ssl: false });
+    });
+
+    it('uses TLS and verifies the server certificate when tls is on', async () => {
+      const pg = (await import('pg')).default;
+      await new ConnectionPool().create({ ...base, tls: true });
+      expect((pg.Pool as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]).toMatchObject({ ssl: { rejectUnauthorized: true } });
+    });
+  });
 });

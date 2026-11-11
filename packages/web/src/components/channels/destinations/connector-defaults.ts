@@ -47,6 +47,7 @@ export const DATABASE_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   database: '',
   username: '',
   password: '',
+  tls: false,
   query: '',
   useTransaction: false,
   returnGeneratedKeys: false,

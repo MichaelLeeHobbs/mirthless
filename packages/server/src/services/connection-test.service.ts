@@ -385,8 +385,10 @@ const testDatabase: Tester = async (_mode, props) => {
     host,
     port,
     database,
-    user: typeof props['user'] === 'string' ? props['user'] : undefined,
+    // The connector forms save the account as `username`.
+    user: typeof props['username'] === 'string' ? props['username'] : undefined,
     password: typeof props['password'] === 'string' ? props['password'] : undefined,
+    ssl: props['tls'] === true ? { rejectUnauthorized: true } : false,
     connectionTimeoutMillis: TEST_TIMEOUT_MS,
   });
 

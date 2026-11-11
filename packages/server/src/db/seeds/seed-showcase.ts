@@ -250,6 +250,7 @@ async function seedDataSource(db: Db): Promise<void> {
     database: 'galvaniflow',
     user: 'galvaniflow',
     password: 'galvaniflow_dev',
+    tls: false,
     readOnly: true,
     maxConnections: 5,
     statementTimeoutMs: 30_000,

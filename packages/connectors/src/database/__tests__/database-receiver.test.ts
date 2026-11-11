@@ -68,6 +68,8 @@ function makeMockPool(): {
     try {
       const value = await fn({
         query: async (sql, params) => {
+          // Savepoint bookkeeping is not a query the tests count.
+          if (/^(SAVEPOINT|RELEASE SAVEPOINT|ROLLBACK TO SAVEPOINT) /.test(sql)) return { rows: [], rowCount: 0 };
           const r = await queryFn(sql, params);
           if (!r.ok) throw r.error;
           return r.value;
@@ -614,5 +616,29 @@ describe('DatabaseReceiver when the pipeline recorded an error', () => {
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(queryFn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('DatabaseReceiver row limit', () => {
+  it('dispatches at most 1,000 rows in one poll and says the query needs a LIMIT', async () => {
+    vi.useFakeTimers();
+    try {
+      const { pool, queryFn } = makeMockPool();
+      const rows = Array.from({ length: 1_001 }, (_, i) => ({ id: i + 1 }));
+      queryFn.mockResolvedValueOnce({ ok: true, value: { rows, rowCount: rows.length }, error: null });
+      const warn = vi.fn();
+      const dispatched: string[] = [];
+      const receiver = new DatabaseReceiver(makeConfig(), pool, { error: vi.fn(), warn, info: vi.fn(), debug: vi.fn() });
+      receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw.content); return { messageId: 1 }; }));
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await receiver.onStop();
+
+      expect(dispatched).toHaveLength(1_000);
+      expect(warn).toHaveBeenCalledWith(expect.objectContaining({ rows: 1_001, limit: 1_000 }), expect.stringContaining('add a LIMIT'));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

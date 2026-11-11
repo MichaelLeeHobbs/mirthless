@@ -109,6 +109,7 @@ const sourceFactories = new Map<string, SourceFactory>([
     updateMode: (props['updateMode'] as UpdateMode | undefined) ?? UPDATE_MODE.NEVER,
     pollingIntervalMs: num(props, 'pollingIntervalMs', 5_000),
     rowFormat: (props['rowFormat'] as RowFormat | undefined) ?? ROW_FORMAT.JSON,
+    tls: props['tls'] === true,
   })],
   ['JAVASCRIPT', (props): SourceConnectorRuntime => new JavaScriptReceiver({
     script: (props['script'] as string | undefined) ?? '',
@@ -200,6 +201,7 @@ const destinationFactories = new Map<string, DestinationFactory>([
     query: props['query'] as string,
     useTransaction: (props['useTransaction'] as boolean | undefined) ?? false,
     returnGeneratedKeys: (props['returnGeneratedKeys'] as boolean | undefined) ?? false,
+    tls: props['tls'] === true,
   })],
   ['JAVASCRIPT', (props): DestinationConnectorRuntime => new JavaScriptDispatcher({
     script: (props['script'] as string | undefined) ?? '',
