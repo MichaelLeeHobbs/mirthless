@@ -263,3 +263,122 @@ describe('field repetitions', () => {
     expect(msg.get('PID.3[2].1.1')).toBe('ID2');
   });
 });
+
+describe('delete removes everything at the depth the path names', () => {
+  const RAW = [
+    'MSH|^~\\&|A|B|C|D|20260101||ADT^A01|1|P|2.5',
+    'PID|1||111^^^MRN~222^^^SSN||DOE^JOHN^Q&JR||19800101|M|||1 MAIN ST^APT 2^BOSTON^MA^02134',
+  ].join('\r');
+
+  it('removes a whole composite field, not just its first component', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.delete('PID.5');
+
+    expect(msg.get('PID.5')).toBeUndefined();
+    expect(msg.get('PID.5.2')).toBeUndefined();
+    expect(msg.getSegmentString('PID')).toBe('PID|1||111^^^MRN~222^^^SSN||||19800101|M|||1 MAIN ST^APT 2^BOSTON^MA^02134');
+  });
+
+  it('removes every repetition of a repeating field', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.delete('PID.3');
+
+    expect(msg.toString()).not.toContain('111');
+    expect(msg.toString()).not.toContain('222');
+  });
+
+  it('removes a whole address', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.delete('PID.11');
+
+    expect(msg.getSegmentString('PID')).toBe('PID|1||111^^^MRN~222^^^SSN||DOE^JOHN^Q&JR||19800101|M');
+  });
+
+  it('removes one repetition and leaves the others', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.delete('PID.3[2]');
+
+    expect(msg.get('PID.3[1].1')).toBe('111');
+    expect(msg.get('PID.3[2].1')).toBeUndefined();
+    expect(msg.toString()).not.toContain('SSN');
+  });
+
+  it('removes one component, including its subcomponents', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.delete('PID.5.3');
+
+    expect(msg.getSegmentString('PID')).toContain('|DOE^JOHN|');
+  });
+
+  it('removes one subcomponent and leaves its siblings', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.delete('PID.5.3.2');
+
+    expect(msg.getSegmentString('PID')).toContain('|DOE^JOHN^Q|');
+  });
+
+  it('removes a component of a named repetition', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.delete('PID.3[2].4');
+
+    expect(msg.getSegmentString('PID')).toContain('|111^^^MRN~222|');
+  });
+
+  it.each(['PID.40', 'PID.3[9]', 'PID.5.9', 'PID.5.3.9', 'PID[2].5', 'ZZZ.1.1'])(
+    'does nothing for %s, which is not in the message',
+    (path) => {
+      const msg = Hl7Message.parse(RAW);
+      msg.delete(path);
+      expect(msg.toString()).toBe(RAW);
+    },
+  );
+});
+
+describe('parse accepts the line endings real feeds use', () => {
+  const SEGMENTS = ['MSH|^~\\&|A|B|C|D|20260101||ADT^A01|1|P|2.5', 'PID|1||000123||DOE^JOHN', 'PV1|1|I'];
+
+  it.each([
+    ['carriage return (the standard)', '\r'],
+    ['CRLF (Windows files)', '\r\n'],
+    ['line feed (Unix files)', '\n'],
+  ])('reads segments separated by %s', (_name, separator) => {
+    const msg = Hl7Message.parse(SEGMENTS.join(separator));
+
+    expect(msg.get('MSH.12')).toBe('2.5');
+    expect(msg.get('PID.5.2')).toBe('JOHN');
+    expect(msg.get('PV1.2')).toBe('I');
+    expect(msg.getSegmentCount('PID')).toBe(1);
+  });
+
+  it('reads a message with mixed line endings and a trailing newline', () => {
+    const msg = Hl7Message.parse(`${SEGMENTS[0]!}\r\n${SEGMENTS[1]!}\n${SEGMENTS[2]!}\r\r\n`);
+
+    expect(msg.get('PV1.2')).toBe('I');
+    expect(msg.toString()).toBe(SEGMENTS.join('\r'));
+  });
+
+  it('always writes the standard carriage return', () => {
+    expect(Hl7Message.parse(SEGMENTS.join('\n')).toString()).toBe(SEGMENTS.join('\r'));
+  });
+
+  it('ignores a byte order mark and leading blank lines', () => {
+    const msg = Hl7Message.parse(`${String.fromCharCode(0xFEFF)}\r\n  ${SEGMENTS.join('\r')}`);
+
+    expect(msg.messageControlId).toBe('1');
+    expect(msg.get('PID.3')).toBe('000123');
+  });
+
+  it('keeps a line feed that is inside a field when segments end in carriage returns', () => {
+    // Some senders put raw line breaks in free text. With CR segment ends the
+    // LF can only be field content, so it must not start a new segment.
+    const msg = Hl7Message.parse(`${SEGMENTS[0]!}\rNTE|1||line one\nline two\r${SEGMENTS[2]!}`);
+
+    expect(msg.get('NTE.3')).toBe('line one\nline two');
+    expect(msg.getSegmentCount('PV1')).toBe(1);
+  });
+
+  it('rejects text that is not an HL7 message', () => {
+    expect(() => Hl7Message.parse('PID|1')).toThrow('HL7 message must start with MSH');
+    expect(() => Hl7Message.parse('   ')).toThrow('HL7 message must start with MSH');
+  });
+});

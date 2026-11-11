@@ -42,6 +42,21 @@ function escapeRegex(char: string): string {
   return char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Split message text into segment lines.
+ *
+ * The standard separator is a carriage return, but files and HTTP bodies often
+ * arrive with CRLF or bare line feeds. A CR (with or without a following LF)
+ * always ends a segment. A bare LF ends one only when the next line starts like a
+ * segment (three-character ID then the field separator) or is blank, because
+ * some senders put raw line feeds inside free-text fields.
+ */
+export function splitSegments(text: string, enc: Hl7Encoding): string[] {
+  const sep = escapeRegex(enc.fieldSep);
+  const boundary = new RegExp(`\\r\\n?|\\n(?=[A-Z][A-Z0-9]{2}(?:${sep}|[\\r\\n]|$)|[\\r\\n])`);
+  return text.replace(/[\r\n]+$/, '').split(boundary).filter((line) => line.trim() !== '');
+}
+
 /** Escape a value for embedding in an HL7 field. */
 export function escapeValue(value: string, enc: Hl7Encoding): string {
   let result = value;
