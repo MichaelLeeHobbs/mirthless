@@ -27,7 +27,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 /**
  * Pages to shoot: name → route, or { url, keys, type } to press keys and type
  * after load (for dialogs like the command palette), { url, click } to click the
- * element showing some text (for a record editor), or { url, fill } to fill
+ * element showing some text (for a record editor), { url, scrollTo } to bring the
+ * element showing some text to the top (for a section below the fold), or { url, fill } to fill
  * fields by their label (for a form's edited state). Add one when a page joins
  * the visual language catalog.
  */
@@ -36,6 +37,8 @@ const PAGES = {
   dashboard: '/',
   'channel-new': '/channels/new',
   'channel-editor': '/channels/c1',
+  'channel-destinations': { url: '/channels/c1', click: 'Destinations' },
+  'destination-queue': { url: '/channels/c1', click: 'Destinations', scrollTo: 'Queue Settings' },
   'message-browser': '/channels/c1/messages',
   traffic: '/messages',
   alerts: '/alerts',
@@ -102,7 +105,7 @@ async function launch() {
 }
 
 async function shoot(browser, name, target, variantName) {
-  const { url, keys, type, click, fill } = typeof target === 'string' ? { url: target } : target;
+  const { url, keys, type, click, fill, scrollTo } = typeof target === 'string' ? { url: target } : target;
   const v = VARIANTS[variantName];
   const context = await browser.newContext({
     viewport: v.viewport, isMobile: v.isMobile ?? false, deviceScaleFactor: v.deviceScaleFactor ?? 1, reducedMotion: 'reduce',
@@ -131,7 +134,8 @@ async function shoot(browser, name, target, variantName) {
   if (type) await page.keyboard.type(type);
   if (click) await page.getByText(click, { exact: true }).first().click();
   for (const [label, value] of Object.entries(fill ?? {})) await page.getByLabel(label, { exact: true }).fill(value);
-  if (keys || type || click || fill) await page.waitForTimeout(300);
+  if (scrollTo) await page.getByText(scrollTo, { exact: true }).first().evaluate((el) => { el.scrollIntoView({ block: 'start' }); });
+  if (keys || type || click || fill || scrollTo) await page.waitForTimeout(300);
   const file = path.join(opts.out, `${name}.${variantName}.png`);
   await page.screenshot({ path: file });
   await context.close();

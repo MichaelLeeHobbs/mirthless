@@ -18,6 +18,12 @@ import { emitEvent } from '../lib/event-emitter.js';
 const REFRESH_TOKEN_DAYS = 7;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+/**
+ * A bcrypt hash (cost 12, like real ones) of a random value nobody knows. A
+ * login for a username that does not exist is compared against it so that it
+ * takes as long as a login for one that does.
+ */
+const UNKNOWN_USER_HASH = '$2b$12$HhlOWRMeDl0myMDRClZP7e/jD1W8DQWGrtRSTDJK5m6T22C3vyJLG';
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -79,6 +85,9 @@ export class AuthService {
         .where(eq(users.username, username));
 
       if (!user) {
+        // Spend the same time as a real password check, so the response time
+        // does not tell a caller which usernames exist.
+        await bcrypt.compare(password, UNKNOWN_USER_HASH);
         auditLoginFailure(username, null, 'unknown_user', metadata);
         throw new ServiceError('INVALID_CREDENTIALS', 'Invalid credentials');
       }

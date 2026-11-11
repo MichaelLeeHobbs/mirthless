@@ -64,6 +64,17 @@ describe('Bridge IO Functions', () => {
       expect(result.ok).toBe(false);
     });
 
+    it('lets a script reach a private host the administrator has allowed', async () => {
+      executor.dispose();
+      mockHttpFetch.mockResolvedValue({ status: 200, statusText: 'OK', headers: {}, body: '' });
+      executor = new VmSandboxExecutor({ httpFetch: mockHttpFetch, httpAllowedHosts: ['10.0.0.1'] });
+      const allowed = await executor.execute(makeScript('return (await httpFetch("http://10.0.0.1/api")).status;'), makeContext(), makeOptions());
+      const other = await executor.execute(makeScript('return await httpFetch("http://10.0.0.2/api");'), makeContext(), makeOptions());
+
+      expect(allowed.ok).toBe(true);
+      expect(other.ok).toBe(false);
+    });
+
     it('blocks requests to private IP ranges (10.x)', async () => {
       const script = makeScript('return await httpFetch("http://10.0.0.1/api");');
       const result = await executor.execute(script, makeContext(), makeOptions());

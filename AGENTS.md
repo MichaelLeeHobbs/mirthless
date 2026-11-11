@@ -112,12 +112,12 @@ Tests are mandatory, not optional. This is healthcare software.
 
 | Package | Statements | Branches | Functions | Lines |
 |---|---|---|---|---|
-| engine | 93 | 88 | 95 | 96 |
-| core-util | 93 | 79 | 92 | 96 |
-| connectors | 82 | 70 | 80 | 84 |
-| server | 54 | 53 | 67 | 55 |
+| engine | 93 | 89 | 96 | 96 |
+| core-util | 93 | 83 | 92 | 96 |
+| connectors | 83 | 71 | 80 | 85 |
+| server | 54 | 53 | 68 | 55 |
 | core-models | 40 | 49 | 54 | 39 |
-| cli | 28 | 22 | 45 | 28 |
+| cli | 34 | 31 | 52 | 34 |
 | web | 26 | 29 | 23 | 26 |
 
 The server number is low because the controllers, `engine.ts` and several services have few unit tests (the Postgres integration and Playwright suites exercise some of that code but are not counted here). The web number is low because most pages have no component tests. Raising both is on `docs/progress/ROADMAP.md`.

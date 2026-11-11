@@ -37,7 +37,8 @@ export interface RawMessage {
  * Outcome of a message through the pipeline, used by source connectors
  * to decide how to acknowledge (e.g. MLLP ACK vs NAK).
  * - PROCESSED: filter passed and destinations completed.
- * - FILTERED: rejected by a filter (application reject → NAK AR).
+ * - FILTERED: rejected by a filter. The message was received and deliberately
+ *   not routed, so a source still acknowledges it (ACK AA, HTTP 200).
  * - ERROR: a processing error occurred (→ NAK AE).
  */
 export const DISPATCH_STATUS = {

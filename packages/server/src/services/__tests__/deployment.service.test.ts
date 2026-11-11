@@ -26,6 +26,7 @@ const mockEngine = {
   }),
   getRuntime: vi.fn().mockImplementation((id: string) => deployedChannels.get(id)),
   getAll: vi.fn().mockReturnValue(deployedChannels),
+  checkScripts: vi.fn().mockResolvedValue(undefined),
   dispose: vi.fn(),
 };
 
@@ -120,7 +121,7 @@ describe('DeploymentService', () => {
 
     it('returns CONFLICT if channel already deployed', async () => {
       mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
 
       const result = await DeploymentService.deploy(CHANNEL_ID);
 
@@ -192,7 +193,7 @@ describe('DeploymentService', () => {
     const AUTO_START = { ...CHANNEL_DETAIL, initialState: 'STARTED' };
     const registerOnDeploy = (): void => {
       mockEngine.deploy.mockImplementationOnce(async () => {
-        deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: vi.fn() });
+        deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
       });
     };
 
@@ -227,11 +228,11 @@ describe('DeploymentService', () => {
 
   describe('redeploy of a running channel', () => {
     it('fails when the channel cannot be started again', async () => {
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: vi.fn() });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
       mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
       mockRuntime.getState.mockReturnValueOnce('STARTED').mockReturnValueOnce('STARTED').mockReturnValue('STOPPED');
       mockEngine.deploy.mockImplementationOnce(async () => {
-        deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: vi.fn() });
+        deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
       });
       mockRuntime.start.mockResolvedValue({ ok: false, value: null, error: new Error('Source start failed: port busy') });
 
@@ -245,7 +246,7 @@ describe('DeploymentService', () => {
 
   describe('start', () => {
     it('starts deployed channel and returns STARTED state', async () => {
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
       mockRuntime.getState.mockReturnValue('STARTED');
 
       const result = await DeploymentService.start(CHANNEL_ID);
@@ -256,23 +257,38 @@ describe('DeploymentService', () => {
       expect(mockRuntime.start).toHaveBeenCalledOnce();
     });
 
-    it('runs crash recovery after the runtime and queue consumers have started', async () => {
+    it('releases stale queue claims before the consumers start, and recovers after', async () => {
       const order: string[] = [];
       mockRuntime.start.mockImplementationOnce(async () => { order.push('runtime.start'); return { ok: true, value: undefined, error: null }; });
       const consumer = { start: vi.fn(() => { order.push('consumer.start'); }), stop: vi.fn() };
       const recoverOnce = vi.fn(async () => { order.push('recover'); });
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [consumer], recoverOnce });
+      const resetClaimsOnce = vi.fn(async () => { order.push('reset claims'); });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [consumer], recoverOnce, resetClaimsOnce });
       mockRuntime.getState.mockReturnValue('STARTED');
 
       await DeploymentService.start(CHANNEL_ID);
 
-      expect(order).toEqual(['runtime.start', 'consumer.start', 'recover']);
+      expect(order).toEqual(['runtime.start', 'reset claims', 'consumer.start', 'recover']);
+    });
+
+    it('does not wait for crash recovery, and a recovery failure does not fail the start', async () => {
+      let finish: (() => void) | undefined;
+      const recoverOnce = vi.fn(() => new Promise<void>((_resolve, reject) => { finish = (): void => { reject(new Error('recovery broke')); }; }));
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce, resetClaimsOnce: async () => {} });
+      mockRuntime.getState.mockReturnValue('STARTED');
+
+      const result = await DeploymentService.start(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      expect(recoverOnce).toHaveBeenCalledOnce();
+      finish?.();
+      await Promise.resolve();
     });
 
     it('does not run recovery when the runtime fails to start', async () => {
       mockRuntime.start.mockResolvedValueOnce({ ok: false, value: null, error: new Error('port in use') });
       const recoverOnce = vi.fn(async () => {});
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce, resetClaimsOnce: async () => {} });
 
       const result = await DeploymentService.start(CHANNEL_ID);
 
@@ -291,7 +307,7 @@ describe('DeploymentService', () => {
 
   describe('stop', () => {
     it('stops running channel', async () => {
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
       mockRuntime.getState.mockReturnValue('STOPPED');
 
       const result = await DeploymentService.stop(CHANNEL_ID);
@@ -304,7 +320,7 @@ describe('DeploymentService', () => {
 
   describe('undeploy', () => {
     it('undeploys stopped channel', async () => {
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
 
       const result = await DeploymentService.undeploy(CHANNEL_ID);
 
@@ -323,7 +339,7 @@ describe('DeploymentService', () => {
 
     it('returns CONFLICT if channel is still running', async () => {
       mockRuntime.getState.mockReturnValue('STARTED');
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
 
       const result = await DeploymentService.undeploy(CHANNEL_ID);
 
@@ -337,7 +353,7 @@ describe('DeploymentService', () => {
     it('re-applies config for a stopped deployed channel (undeploy then deploy)', async () => {
       mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
       mockRuntime.getState.mockReturnValue('STOPPED');
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
 
       const result = await DeploymentService.redeploy(CHANNEL_ID);
 
@@ -346,6 +362,34 @@ describe('DeploymentService', () => {
       expect(mockEngine.deploy).toHaveBeenCalledWith(CHANNEL_DETAIL);
       // Stopped channel is not stopped again.
       expect(mockRuntime.stop).not.toHaveBeenCalled();
+    });
+
+    it('leaves a running channel untouched when the saved scripts do not compile', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+      mockRuntime.getState.mockReturnValue('STARTED');
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
+      mockEngine.checkScripts.mockRejectedValueOnce(new Error('Script Test/sourceFilter.ts failed to compile: Unexpected token'));
+
+      const result = await DeploymentService.redeploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('failed to compile');
+      expect(mockRuntime.stop).not.toHaveBeenCalled();
+      expect(mockEngine.undeploy).not.toHaveBeenCalled();
+      expect(mockEngine.deploy).not.toHaveBeenCalled();
+      expect(deployedChannels.has(CHANNEL_ID)).toBe(true);
+    });
+
+    it('checks the saved scripts before stopping a running channel', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+      mockRuntime.getState.mockReturnValue('STARTED');
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
+
+      await DeploymentService.redeploy(CHANNEL_ID);
+
+      expect(mockEngine.checkScripts).toHaveBeenCalledWith(CHANNEL_DETAIL);
+      expect(mockEngine.checkScripts.mock.invocationCallOrder[0]!).toBeLessThan(mockRuntime.stop.mock.invocationCallOrder[0]!);
     });
 
     it('deploys directly when the channel is not currently deployed', async () => {
@@ -362,7 +406,7 @@ describe('DeploymentService', () => {
   describe('getStatus', () => {
     it('returns current state of deployed channel', async () => {
       mockRuntime.getState.mockReturnValue('STARTED');
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
 
       const result = await DeploymentService.getStatus(CHANNEL_ID);
 
@@ -382,7 +426,7 @@ describe('DeploymentService', () => {
   describe('getAllStatuses', () => {
     it('returns status of all deployed channels', async () => {
       mockRuntime.getState.mockReturnValue('STARTED');
-      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
 
       const result = await DeploymentService.getAllStatuses();
 

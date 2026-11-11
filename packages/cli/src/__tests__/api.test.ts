@@ -199,4 +199,23 @@ describe('ApiClient failures', () => {
     const result = await client.get('/x');
     expect(result.error?.message).toBe('Could not reach http://localhost:3000: no answer within 30 seconds');
   });
+
+  describe('expired session', () => {
+    it('tells the user to log in again when a signed-in request is refused', async () => {
+      mockFetch.mockResolvedValue(makeResponse(401, { success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } }));
+      const client = new ApiClient({ baseUrl: 'http://localhost:3000', token: 'old' });
+      const result = await client.get('/api/v1/channels');
+      expect(result.error?.code).toBe('SESSION_EXPIRED');
+      expect(result.error?.message).toContain('galvaniflow login');
+    });
+
+    it('passes a failed login through unchanged', async () => {
+      const body = { success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' } };
+      mockFetch.mockResolvedValue(makeResponse(401, body));
+      const withToken = new ApiClient({ baseUrl: 'http://localhost:3000', token: 'old' });
+      const noToken = new ApiClient({ baseUrl: 'http://localhost:3000', token: null });
+      expect(await withToken.post('/api/v1/auth/login', {})).toEqual(body);
+      expect(await noToken.get('/api/v1/channels')).toEqual(body);
+    });
+  });
 });

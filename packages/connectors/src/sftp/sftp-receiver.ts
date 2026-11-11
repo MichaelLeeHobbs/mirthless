@@ -8,6 +8,7 @@
 // quarantine ledger lives as a sidecar in the remote directory so a restart
 // (new instance) does not re-dispatch an already-dispatched file.
 
+import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
@@ -59,6 +60,8 @@ export interface SftpReceiverConfig extends SftpConnectionOptions {
   readonly afterProcessing: SftpPostAction;
   readonly moveToDirectory: string;
   readonly minFileAgeMs: number;
+  /** Character encoding of the remote files. Defaults to UTF-8. */
+  readonly charset?: string | undefined;
 }
 
 // ----- Remote path helper -----
@@ -78,7 +81,11 @@ export class SftpReceiver implements SourceConnectorRuntime {
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
+  /** False once stop or halt is asked for, so a poll cycle in progress takes no more files. */
+  private running = false;
   private client: SftpClient | null = null;
+  /** Quarantined files already reported in this run, so each is logged once, not every poll. */
+  private readonly quarantineReported = new Set<string>();
   /**
    * Files that dispatched successfully but whose post-action (delete/move)
    * failed. Tracked by name+modifyTime so they are NOT re-dispatched next
@@ -115,6 +122,11 @@ export class SftpReceiver implements SourceConnectorRuntime {
       if (this.config.afterProcessing === SFTP_POST_ACTION.MOVE && !this.config.moveToDirectory) {
         throw new Error('Move-to directory is required when afterProcessing is MOVE');
       }
+      // Reading a file in the wrong encoding corrupts every non-ASCII character,
+      // so an encoding this runtime cannot decode must stop the deploy.
+      if (this.config.charset !== undefined && !isKnownEncoding(this.config.charset)) {
+        throw new Error(unknownEncodingMessage(this.config.charset));
+      }
     });
   }
 
@@ -125,6 +137,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
       }
       await this.reconnect();
       await this.loadQuarantine();
+      this.running = true;
       this.pollTimer = setInterval(() => {
         void this.pollCycle();
       }, this.config.pollingIntervalMs);
@@ -133,6 +146,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
 
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
+      this.running = false;
       this.clearPollTimer();
       await this.safeDisconnect();
       this.client = null;
@@ -141,6 +155,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
 
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
+      this.running = false;
       this.clearPollTimer();
       await this.safeDisconnect();
       this.client = null;
@@ -161,8 +176,22 @@ export class SftpReceiver implements SourceConnectorRuntime {
     try {
       if (!this.client) await this.reconnect();
       const entries = await this.listMatchingFiles();
+      let failed = false;
       for (const entry of entries) {
-        await this.processFile(entry);
+        if (!this.running) break;
+        // One file that cannot be downloaded (permissions, a file removed
+        // mid-poll) must not stop the files after it, this cycle or any later one.
+        try {
+          await this.processFile(entry);
+        } catch (err) {
+          failed = true;
+          this.logger.error({ ...errorInfo(err), file: entry.name }, 'SFTP file could not be processed; continuing with the next file');
+        }
+      }
+      // The failure may have been the connection: start the next cycle on a fresh one.
+      if (failed) {
+        await this.safeDisconnect();
+        this.client = null;
       }
     } catch (err) {
       // A dropped SFTP connection or vanished directory otherwise leaves the
@@ -211,10 +240,13 @@ export class SftpReceiver implements SourceConnectorRuntime {
 
     const key = `${entry.name}:${String(entry.modifyTime)}`;
     if (this.quarantined.has(key)) {
-      this.logger.error(
-        { file: entry.name },
-        'File quarantined after an earlier dispatch; skipping to avoid duplicate delivery',
-      );
+      if (!this.quarantineReported.has(key)) {
+        this.quarantineReported.add(key);
+        this.logger.error(
+          { file: entry.name },
+          'File quarantined after an earlier dispatch; skipping to avoid duplicate delivery (reported once per start)',
+        );
+      }
       return;
     }
 
@@ -222,7 +254,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
     const buffer = await withTimeout(this.client.get(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP get');
 
     const raw: RawMessage = {
-      content: buffer.toString('utf8'),
+      content: buffer.toString(normalizeEncoding(this.config.charset)),
       sourceMap: {
         originalFilename: entry.name,
         remoteDirectory: this.config.remoteDirectory,

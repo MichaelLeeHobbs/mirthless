@@ -6,6 +6,7 @@ import { Router, type IRouter } from 'express';
 import { mirthImportSchema } from '@galvaniflow/core-models';
 import { MirthImportController } from '../controllers/mirth-import.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { largeJsonBody } from '../middleware/body-limit.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
@@ -13,6 +14,8 @@ const router: IRouter = Router();
 
 // All routes require authentication
 router.use(authenticate);
+// Large bodies are parsed here, after authentication, never before it.
+router.use(largeJsonBody);
 
 // POST /channels/import/mirth — Import from Mirth Connect XML
 router.post(

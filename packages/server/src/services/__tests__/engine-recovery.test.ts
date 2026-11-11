@@ -262,4 +262,34 @@ describe('EngineManager recovery', () => {
     );
     await engine.dispose();
   });
+
+  it('finishes the source of a message whose destination was redelivered', async () => {
+    ms.getUnprocessedMessages.mockResolvedValue(ok([{ id: 8, channelId: CHANNEL_ID }]));
+    ms.getConnectorMessages
+      .mockResolvedValueOnce(ok([{ messageId: 8, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 8, metaDataId: 1, status: 'RECEIVED' }]))
+      .mockResolvedValue(ok([{ messageId: 8, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 8, metaDataId: 1, status: 'SENT' }]));
+    ms.loadContent.mockImplementation(async (_c: string, _m: number, _d: number, contentType: number) => ok(contentType === 5 ? 'ready to send' : null));
+
+    const engine = await deployAndRecover();
+
+    expect(ms.updateConnectorMessageStatus).toHaveBeenCalledWith(CHANNEL_ID, 8, 0, 'SENT', undefined);
+    expect(ms.incrementStats).toHaveBeenCalledWith(CHANNEL_ID, 0, 'test-server', 'sent');
+    expect(ms.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 8);
+    await engine.dispose();
+  });
+
+  it('releases stale queue claims once, separately from recovery', async () => {
+    const engine = new EngineManager('test-server');
+    await engine.deploy(makeChannel({ inboundDataType: 'RAW', outboundDataType: 'RAW', destinations: [{ ...DEST, queueMode: 'ALWAYS' }] }));
+    const deployed = engine.getRuntime(CHANNEL_ID)!;
+
+    await deployed.resetClaimsOnce();
+    await deployed.resetClaimsOnce();
+    await deployed.runtime.start();
+    await deployed.recoverOnce();
+
+    expect(ms.resetPending).toHaveBeenCalledTimes(1);
+    expect(ms.resetPending).toHaveBeenCalledWith(CHANNEL_ID, 1);
+    await engine.dispose();
+  });
 });

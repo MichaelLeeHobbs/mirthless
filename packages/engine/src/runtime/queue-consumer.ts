@@ -13,8 +13,19 @@ export interface QueueConsumerConfig {
   readonly channelId: string;
   readonly metaDataId: number;
   readonly serverId: string;
+  /**
+   * Retries after the first failed attempt before the message is given up on
+   * (ERROR). 0 means never give up: a queued message is retried until it is
+   * delivered, so an outage of any length loses nothing.
+   */
   readonly retryCount: number;
   readonly retryIntervalMs: number;
+  /**
+   * When true a failed message does not hold the queue: the messages behind it
+   * are still attempted and the failed one goes to the back. Delivery order is
+   * no longer guaranteed. When false (default) the queue waits behind a failure.
+   */
+  readonly rotate?: boolean | undefined;
   readonly batchSize: number;
   readonly pollIntervalMs: number;
   /** Raised when a queued message is given up on (final ERROR), same as pipeline destination errors. */
@@ -50,6 +61,8 @@ export class QueueConsumer {
   /** No delivery is attempted before this time (set after a failed send). */
   private retryNotBefore = 0;
   private queueReadFailing = false;
+  /** A delivery failure has been alerted and nothing has been delivered since. */
+  private failureAlerted = false;
 
   constructor(
     config: QueueConsumerConfig,
@@ -90,14 +103,19 @@ export class QueueConsumer {
    * retried, the messages behind it are held and nothing is attempted again until
    * retryIntervalMs has passed, so an outage neither reorders the queue nor burns
    * through every message's retries in a few seconds.
+   *
+   * With `rotate` on, a failure does not hold the queue: the rest of the batch is
+   * still attempted, and the wait applies only when every message in it failed.
    */
   async poll(): Promise<void> {
     if (Date.now() < this.retryNotBefore) return;
 
+    const rotate = this.config.rotate === true;
     const dequeueResult = await this.store.dequeue(
       this.config.channelId,
       this.config.metaDataId,
       this.config.batchSize,
+      rotate,
     );
 
     if (!dequeueResult.ok) {
@@ -112,17 +130,23 @@ export class QueueConsumer {
 
     const messages = [...(dequeueResult.value as readonly QueuedMessage[])]
       .sort((a, b) => Number(a.messageId) - Number(b.messageId));
+    let failed = 0;
     for (let i = 0; i < messages.length; i++) {
       if (this.stopRequested) {
         await this.putBack(messages.slice(i));
         return;
       }
       const outcome = await this.processQueuedMessage(messages[i]!);
-      if (outcome === 'RETRY_LATER') {
-        this.retryNotBefore = Date.now() + this.config.retryIntervalMs;
-        await this.putBack(messages.slice(i + 1));
-        return;
-      }
+      if (outcome !== 'RETRY_LATER') continue;
+      failed += 1;
+      if (rotate) continue;
+      this.retryNotBefore = Date.now() + this.config.retryIntervalMs;
+      await this.putBack(messages.slice(i + 1));
+      return;
+    }
+    // Rotating: wait only when nothing in the batch could be delivered.
+    if (failed > 0 && failed === messages.length) {
+      this.retryNotBefore = Date.now() + this.config.retryIntervalMs;
     }
   }
 
@@ -161,7 +185,17 @@ export class QueueConsumer {
       msg.channelId, msg.messageId, msg.metaDataId, CT_SENT,
     );
 
-    if (!contentResult.ok || contentResult.value === null) {
+    if (!contentResult.ok) {
+      // The store could not be read just now. That says nothing about the
+      // message: put it back untouched and try again after the retry interval.
+      await this.putBack([msg]);
+      await this.alertOnce(
+        `Queued destination ${String(msg.metaDataId)} could not load message ${String(msg.messageId)} ` +
+        `to deliver it: ${contentResult.error.message}. It stays queued and is retried.`,
+      );
+      return 'RETRY_LATER';
+    }
+    if (contentResult.value === null) {
       await this.giveUp(msg, 'Queued message has no stored SENT content to deliver');
       return 'DONE';
     }
@@ -174,23 +208,33 @@ export class QueueConsumer {
     );
 
     if (sendResult.ok && sendResult.value.status === 'SENT') {
+      this.failureAlerted = false;
       await this.finishSent(msg, sendResult.value.content);
       return 'DONE';
     }
 
-    // Send failed — check retry count
+    // Send failed. retryCount is the number of retries AFTER the first attempt;
+    // 0 means keep retrying until the message is delivered.
     const attempts = (msg.sendAttempts ?? 0) + 1;
-    if (attempts >= this.config.retryCount) {
-      const reason = sendResult.ok
-        ? (sendResult.value.errorMessage ?? sendResult.value.content)
-        : sendResult.error.message;
+    const reason = sendResult.ok
+      ? (sendResult.value.errorMessage ?? sendResult.value.content)
+      : sendResult.error.message;
+    const retriesUsed = attempts - 1;
+    if (this.config.retryCount > 0 && retriesUsed >= this.config.retryCount) {
       await this.giveUp(msg, `Delivery failed after ${String(attempts)} attempt(s): ${reason}`);
       return 'DONE';
     }
 
+    // Nobody would otherwise hear about a destination that is down until the
+    // retries run out, which with retryCount 0 is never.
+    await this.alertOnce(
+      `Queued destination ${String(msg.metaDataId)} could not deliver message ${String(msg.messageId)}: ` +
+      `${reason}. It stays queued and is retried every ${String(Math.round(this.config.retryIntervalMs / 1000))} s.`,
+    );
+
     // Re-queue for retry. Transitioning back to QUEUED persists an incremented
-    // send_attempts (see MessageService.updateConnectorMessageStatus) so the
-    // retry cap above eventually trips and a poison message is not retried forever.
+    // send_attempts (see MessageService.updateConnectorMessageStatus), which the
+    // retry cap above counts.
     const requeued = await this.store.updateConnectorMessageStatus(
       this.config.channelId, msg.messageId, msg.metaDataId, 'QUEUED',
     );
@@ -235,6 +279,13 @@ export class QueueConsumer {
       `Queued destination ${String(msg.metaDataId)} could not save ${what} for message ` +
       `${String(msg.messageId)}: ${cause}. It stays PENDING and is re-queued on the next deploy.`,
     );
+  }
+
+  /** Alert on the first failure of a streak, not on every retry. */
+  private async alertOnce(errorMessage: string): Promise<void> {
+    if (this.failureAlerted) return;
+    this.failureAlerted = true;
+    await this.alert(errorMessage);
   }
 
   private async alert(errorMessage: string): Promise<void> {

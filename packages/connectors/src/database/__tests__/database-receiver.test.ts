@@ -587,7 +587,7 @@ describe('DatabaseReceiver', () => {
 });
 
 describe('DatabaseReceiver when the pipeline recorded an error', () => {
-  it('does not mark the row processed under ON_SUCCESS', async () => {
+  it('marks the row processed under ON_SUCCESS, so it is not read and recorded again every poll', async () => {
     const { pool, queryFn } = makeMockPool();
     queryFn.mockResolvedValue({ ok: true, value: { rows: [{ id: 1 }], rowCount: 1 }, error: null });
 
@@ -599,8 +599,24 @@ describe('DatabaseReceiver when the pipeline recorded an error', () => {
     await receiver.onStart();
     await vi.advanceTimersByTimeAsync(5_000);
 
-    // Only the SELECT: no UPDATE, so the row is offered again.
-    expect(queryFn).toHaveBeenCalledTimes(1);
+    const statements = queryFn.mock.calls.map((c) => String(c[0]));
+    expect(statements.some((sql) => sql.startsWith('UPDATE messages SET processed = true'))).toBe(true);
+  });
+
+  it('leaves the row for the next poll under ON_SUCCESS when the pipeline could not take the message', async () => {
+    const { pool, queryFn } = makeMockPool();
+    queryFn.mockResolvedValue({ ok: true, value: { rows: [{ id: 1 }], rowCount: 1 }, error: null });
+
+    receiver = new DatabaseReceiver(makeConfig({
+      updateMode: UPDATE_MODE.ON_SUCCESS,
+      updateQuery: 'UPDATE messages SET processed = true WHERE id = ${id}',
+    }), pool);
+    receiver.setDispatcher(async () => ({ ok: false as const, value: null, error: new Error('store down') }) as never);
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const statements = queryFn.mock.calls.map((c) => String(c[0]));
+    expect(statements.some((sql) => sql.startsWith('UPDATE'))).toBe(false);
   });
 
   it('marks a filtered row processed under ON_SUCCESS', async () => {

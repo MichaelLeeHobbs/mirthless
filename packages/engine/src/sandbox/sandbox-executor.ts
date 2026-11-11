@@ -20,9 +20,21 @@
 // `this.constructor.constructor`, `msg.get.constructor`, etc. all resolve to the
 // sandbox realm's Function, which — when invoked — runs in a context with no
 // `process`, `require`, `module`, or `globalThis`-host access.
+//
+// The boundary is closed in BOTH directions:
+//   * Script -> host: every bridge wrapper turns its arguments into primitives
+//     (String(), Number(), or a JSON string) INSIDE the sandbox, and the host
+//     dispatch refuses anything that is not a primitive. Host code therefore
+//     never calls a method on an object a script built, which would hand the
+//     script a host-realm argument (`value.replace(hostRegExp)`).
+//   * Host <- script: the return value, `msg` and the maps are serialised to one
+//     JSON string inside the sandbox, under the script timeout, and parsed on the
+//     host. The host never walks a sandbox object, so a `toJSON`, getter or
+//     `toString` a script wrote cannot run outside the time limit.
 
 import * as vm from 'node:vm';
 import { randomUUID } from 'node:crypto';
+import { types } from 'node:util';
 import type { Result } from '@galvaniflow/core-util';
 import { tryCatch } from '@galvaniflow/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
@@ -89,6 +101,44 @@ interface HostBridgeState {
   readonly hl7Handles: Map<number, Hl7MessageProxy>;
   readonly destSet: Record<string, unknown> | undefined;
   nextHandle: number;
+  /** Message of the error the script threw, reported from inside the sandbox. */
+  failure: string | undefined;
+}
+
+/** A bridge argument that must be a string. Sandbox wrappers already convert; this is the host's own check. */
+function str(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('Bridge argument must be a string');
+  return value;
+}
+
+/** A bridge argument that is a string or absent. */
+function optStr(value: unknown): string | undefined {
+  return value === undefined || value === null ? undefined : str(value);
+}
+
+/** Parse a JSON-encoded bridge argument into a host-realm value. */
+function fromJson(value: unknown): unknown {
+  return JSON.parse(str(value)) as unknown;
+}
+
+/** Parse a JSON-encoded bridge argument that must be a plain object. */
+function jsonObject(value: unknown): Record<string, unknown> {
+  const parsed = fromJson(value);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Bridge argument must be an object');
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/** Parse a JSON-encoded bridge argument that must be an array. */
+function jsonArray(value: unknown): readonly unknown[] {
+  const parsed = fromJson(value);
+  if (!Array.isArray(parsed)) throw new Error('Bridge argument must be an array');
+  return parsed as readonly unknown[];
+}
+
+function isPrimitive(value: unknown): boolean {
+  return value === null || (typeof value !== 'object' && typeof value !== 'function');
 }
 
 function registerHl7(state: HostBridgeState, proxy: Hl7MessageProxy): number {
@@ -108,16 +158,17 @@ function getHl7(state: HostBridgeState, id: unknown): Hl7MessageProxy {
 function hl7Op(state: HostBridgeState, op: string, args: readonly unknown[]): unknown {
   const proxy = getHl7(state, args[0]);
   switch (op) {
-    case 'hl7.get': return proxy.get(args[1] as string);
-    case 'hl7.getText': return proxy.getText(args[1] as string);
-    case 'hl7.set': proxy.set(args[1] as string, args[2] as string); return undefined;
-    case 'hl7.setText': proxy.setText(args[1] as string, args[2] as string); return undefined;
-    case 'hl7.delete': proxy.delete(args[1] as string); return undefined;
+    case 'hl7.get': return proxy.get(str(args[1]));
+    case 'hl7.getRaw': return proxy.getRaw(str(args[1]));
+    case 'hl7.getText': return proxy.getText(str(args[1]));
+    case 'hl7.set': proxy.set(str(args[1]), str(args[2])); return undefined;
+    case 'hl7.setText': proxy.setText(str(args[1]), str(args[2])); return undefined;
+    case 'hl7.delete': proxy.delete(str(args[1])); return undefined;
     case 'hl7.toString': return proxy.toString();
     case 'hl7.messageType': return proxy.messageType;
     case 'hl7.controlId': return proxy.messageControlId;
-    case 'hl7.segCount': return proxy.getSegmentCount(args[1] as string);
-    case 'hl7.segString': return proxy.getSegmentString(args[1] as string, args[2] as number | undefined);
+    case 'hl7.segCount': return proxy.getSegmentCount(str(args[1]));
+    case 'hl7.segString': return proxy.getSegmentString(str(args[1]), typeof args[2] === 'number' ? args[2] : undefined);
     default: return undefined;
   }
 }
@@ -130,10 +181,10 @@ function dsOp(state: HostBridgeState, op: string, args: readonly unknown[]): unk
     (set[name] as (...x: unknown[]) => unknown)(...a);
   switch (op) {
     case 'ds.removeAll': call('removeAll'); return undefined;
-    case 'ds.remove': call('remove', args[0]); return undefined;
-    case 'ds.removeAllExcept': call('removeAllExcept', args[0]); return undefined;
-    case 'ds.add': call('add', args[0]); return undefined;
-    case 'ds.contains': return call('contains', args[0]);
+    case 'ds.remove': call('remove', fromJson(args[0])); return undefined;
+    case 'ds.removeAllExcept': call('removeAllExcept', fromJson(args[0])); return undefined;
+    case 'ds.add': call('add', fromJson(args[0])); return undefined;
+    case 'ds.contains': return call('contains', fromJson(args[0]));
     case 'ds.getConnectorNames': return JSON.stringify(call('getConnectorNames'));
     default: return undefined;
   }
@@ -168,6 +219,12 @@ function makeNonThrowingDispatch(
       lastError = '';
       return message;
     }
+    // Checked before any host code sees the arguments: an object or function from
+    // the sandbox must never be touched on the host (see the security model).
+    if (typeof op !== 'string' || !args.every(isPrimitive)) {
+      lastError = 'Bridge arguments must be primitive values';
+      return errToken;
+    }
     try {
       return dispatch(op, ...args);
     } catch (e) {
@@ -187,29 +244,30 @@ function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown
       case 'log':
         state.logs.push({ level: args[0] as LogEntry['level'], message: String(args[1] ?? ''), timestamp: new Date() });
         return undefined;
+      case 'fail': state.failure = String(args[0] ?? ''); return undefined;
       case 'parseHL7': return registerHl7(state, bridges.parseHL7(args[0] as string));
-      case 'createACK': return bridges.createACK(args[0] as string, args[1] as string, args[2] as string | undefined);
-      case 'httpFetch': return ioDispatch(() => bridges.httpFetch!(args[0] as string, args[1] as HttpFetchOptions));
-      case 'dbQuery': return ioDispatch(() => bridges.dbQuery!(args[0] as string, args[1] as string, args[2] as readonly unknown[]));
-      case 'routeMessage': return ioDispatch(() => bridges.routeMessage!(args[0] as string, args[1] as string));
-      case 'getResource': return ioDispatch(() => bridges.getResource!(args[0] as string));
-      case 'collectionStore': return ioDispatch(() => bridges.collections!.store(
-        args[0] as string,
-        args[1] as Record<string, CollectionScalar>,
-        args[2] as string,
-        args[3] as CollectionStoreOptions,
+      case 'createACK': return bridges.createACK(str(args[0]), str(args[1]), optStr(args[2]));
+      case 'httpFetch': return ioDispatch(async () => bridges.httpFetch!(str(args[0]), jsonObject(args[1]) as HttpFetchOptions));
+      case 'dbQuery': return ioDispatch(async () => bridges.dbQuery!(str(args[0]), str(args[1]), jsonArray(args[2])));
+      case 'routeMessage': return ioDispatch(async () => bridges.routeMessage!(str(args[0]), str(args[1])));
+      case 'getResource': return ioDispatch(async () => bridges.getResource!(str(args[0])));
+      case 'collectionStore': return ioDispatch(async () => bridges.collections!.store(
+        str(args[0]),
+        jsonObject(args[1]) as Record<string, CollectionScalar>,
+        str(args[2]),
+        jsonObject(args[3]) as CollectionStoreOptions,
       ));
-      case 'collectionFind': return ioDispatch(() => bridges.collections!.find(
-        args[0] as string,
-        args[1] as Record<string, CollectionScalar>,
-        args[2] as CollectionFindOptions,
+      case 'collectionFind': return ioDispatch(async () => bridges.collections!.find(
+        str(args[0]),
+        jsonObject(args[1]) as Record<string, CollectionScalar>,
+        jsonObject(args[2]) as CollectionFindOptions,
       ));
-      case 'collectionUpdate': return ioDispatch(() => bridges.collections!.update(
-        args[0] as string,
-        args[1] as string,
-        args[2] as CollectionUpdateChanges,
+      case 'collectionUpdate': return ioDispatch(async () => bridges.collections!.update(
+        str(args[0]),
+        str(args[1]),
+        jsonObject(args[2]) as CollectionUpdateChanges,
       ));
-      case 'collectionDelete': return ioDispatch(() => bridges.collections!.delete(args[0] as string, args[1] as string));
+      case 'collectionDelete': return ioDispatch(async () => bridges.collections!.delete(str(args[0]), str(args[1])));
       default: return undefined;
     }
   };
@@ -284,6 +342,25 @@ globalThis.__build = function (hostDispatch, payload) {
   // host realm's Function). It returns errToken instead; the Error is created here,
   // in the sandbox realm.
   var errToken = payload.errToken;
+  // Captured before any user code runs, so a script that replaces the globals
+  // cannot change how values cross the boundary.
+  var S = String;
+  var N = Number;
+  var stringify = JSON.stringify;
+  // Every value handed to the host is converted here, in the sandbox, to a string,
+  // a number or a JSON string. The host refuses anything else.
+  function text(v) { return v == null ? '' : S(v); }
+  function json(v, fallback) {
+    var out = stringify(v === undefined || v === null ? fallback : v);
+    if (typeof out !== 'string') { throw new TypeError('Value cannot be converted to JSON'); }
+    return out;
+  }
+  function describe(e, asText) {
+    try {
+      if (asText) { return S(e); }
+      return (e !== null && typeof e === 'object' && 'message' in e) ? S(e.message) : S(e);
+    } catch (ignored) { return 'Script threw a value that could not be read'; }
+  }
   function dispatch() {
     var out = hostDispatch.apply(null, arguments);
     if (out === errToken) { throw new Error(hostDispatch('err.take')); }
@@ -307,23 +384,56 @@ globalThis.__build = function (hostDispatch, payload) {
   Object.defineProperty(globalThis, '__watch', { value: function (p) {
     p.then(
       function (v) { globalThis.__result = v; dispatch('io.done', true); },
-      function (e) { dispatch('io.done', false, e); }
+      function (e) { dispatch('io.done', false, describe(e, true)); }
     );
+  } });
+  // Runs a synchronous script. Whatever it throws is described here, under the
+  // timeout, so the host never reads a property of a thrown value.
+  Object.defineProperty(globalThis, '__run', { value: function (f) {
+    try { globalThis.__result = f(); } catch (e) { dispatch('fail', describe(e, false)); }
+  } });
+  // Hands the result, msg and maps to the host as one JSON string.
+  function enc(v) {
+    if (v === undefined || typeof v === 'function' || typeof v === 'symbol') { return { k: 'u' }; }
+    if (v !== null && typeof v === 'object' && v.__hl7Proxy === true && typeof v.__handle === 'number') {
+      return { k: 'h', v: v.__handle };
+    }
+    return { k: 'j', v: v };
+  }
+  Object.defineProperty(globalThis, '__collect', { value: function () {
+    try {
+      return stringify({
+        r: enc(globalThis.__result),
+        m: enc(globalThis.msg),
+        maps: {
+          channelMap: globalThis.channelMap || {},
+          connectorMap: globalThis.connectorMap || {},
+          globalChannelMap: globalThis.globalChannelMap || {},
+          globalMap: globalThis.globalMap || {},
+          responseMap: globalThis.responseMap || {}
+        }
+      });
+    } catch (e) {
+      return stringify({ err: 'Script result cannot be converted to JSON: ' + describe(e, false) });
+    }
   } });
   function makeHl7(handle) {
     return {
       __hl7Proxy: true,
       __handle: handle,
-      get: function (p) { return dispatch('hl7.get', handle, p); },
-      getText: function (p) { return dispatch('hl7.getText', handle, p); },
-      set: function (p, v) { dispatch('hl7.set', handle, p, v); },
-      setText: function (p, v) { dispatch('hl7.setText', handle, p, v); },
-      delete: function (p) { dispatch('hl7.delete', handle, p); },
+      get: function (p) { return dispatch('hl7.get', handle, text(p)); },
+      getRaw: function (p) { return dispatch('hl7.getRaw', handle, text(p)); },
+      getText: function (p) { return dispatch('hl7.getText', handle, text(p)); },
+      set: function (p, v) { dispatch('hl7.set', handle, text(p), text(v)); },
+      setText: function (p, v) { dispatch('hl7.setText', handle, text(p), text(v)); },
+      delete: function (p) { dispatch('hl7.delete', handle, text(p)); },
       toString: function () { return dispatch('hl7.toString', handle); },
+      // A message stored inside a map or another object is saved as its HL7 text.
+      toJSON: function () { return dispatch('hl7.toString', handle); },
       get messageType() { return dispatch('hl7.messageType', handle); },
       get messageControlId() { return dispatch('hl7.controlId', handle); },
-      getSegmentCount: function (n) { return dispatch('hl7.segCount', handle, n); },
-      getSegmentString: function (n, i) { return dispatch('hl7.segString', handle, n, i); }
+      getSegmentCount: function (n) { return dispatch('hl7.segCount', handle, text(n)); },
+      getSegmentString: function (n, i) { return dispatch('hl7.segString', handle, text(n), i == null ? undefined : N(i)); }
     };
   }
   globalThis.rawData = payload.rawData;
@@ -337,17 +447,18 @@ globalThis.__build = function (hostDispatch, payload) {
   globalThis.msg = payload.msgKind === 'hl7' ? makeHl7(payload.msgVal) : payload.msgVal;
   globalThis.tmp = payload.tmpKind === 'hl7' ? makeHl7(payload.tmpVal) : payload.tmpVal;
   globalThis.logger = {
-    info: function (m) { dispatch('log', 'INFO', String(m)); },
-    warn: function (m) { dispatch('log', 'WARN', String(m)); },
-    error: function (m) { dispatch('log', 'ERROR', String(m)); },
-    debug: function (m) { dispatch('log', 'DEBUG', String(m)); }
+    info: function (m) { dispatch('log', 'INFO', S(m)); },
+    warn: function (m) { dispatch('log', 'WARN', S(m)); },
+    error: function (m) { dispatch('log', 'ERROR', S(m)); },
+    debug: function (m) { dispatch('log', 'DEBUG', S(m)); }
   };
   globalThis.parseHL7 = function (raw) {
     if (raw && typeof raw === 'object' && raw.__hl7Proxy === true) { return raw; }
-    return makeHl7(dispatch('parseHL7', raw));
+    // null, undefined and numbers reach the host as they are and are rejected there.
+    return makeHl7(dispatch('parseHL7', (raw !== null && typeof raw === 'object') || typeof raw === 'function' ? S(raw) : raw));
   };
   globalThis.createACK = function (originalRaw, ackCode, textMessage) {
-    return dispatch('createACK', originalRaw, ackCode, textMessage);
+    return dispatch('createACK', text(originalRaw), text(ackCode), textMessage == null ? undefined : S(textMessage));
   };
   globalThis.$ = function (key) {
     var maps = [responseMap, connectorMap, channelMap, globalChannelMap, globalMap, configMap, sourceMap];
@@ -380,52 +491,53 @@ globalThis.__build = function (hostDispatch, payload) {
   globalThis.$cfg = function (key) { return configMap[key]; };
   if (payload.bridges.httpFetch) {
     globalThis.httpFetch = async function (url, options) {
-      var r = JSON.parse(await io('httpFetch', url, options || {}));
+      var r = JSON.parse(await io('httpFetch', text(url), json(options, {})));
       if (!r.ok) { throw new Error(r.e); }
       return r.v;
     };
   }
   if (payload.bridges.dbQuery) {
     globalThis.dbQuery = async function (dataSourceName, sqlText, params) {
-      var r = JSON.parse(await io('dbQuery', dataSourceName, sqlText, params || []));
+      var r = JSON.parse(await io('dbQuery', text(dataSourceName), text(sqlText), json(params, [])));
       if (!r.ok) { throw new Error(r.e); }
       return r.v;
     };
   }
   if (payload.bridges.routeMessage) {
     globalThis.routeMessage = async function (channelName, data) {
-      var r = JSON.parse(await io('routeMessage', channelName, data));
+      var r = JSON.parse(await io('routeMessage', text(channelName), text(data)));
       if (!r.ok) { throw new Error(r.e); }
       return r.v;
     };
   }
   if (payload.bridges.getResource) {
     globalThis.getResource = async function (name) {
-      var r = JSON.parse(await io('getResource', name));
+      var r = JSON.parse(await io('getResource', text(name)));
       if (!r.ok) { throw new Error(r.e); }
       return r.v;
     };
   }
   if (payload.bridges.getCollection) {
-    globalThis.getCollection = function (name) {
+    globalThis.getCollection = function (collectionName) {
+      var name = text(collectionName);
       return {
         store: async function (fields, payload, options) {
-          var r = JSON.parse(await io('collectionStore', name, fields || {}, String(payload == null ? '' : payload), options || {}));
+          var r = JSON.parse(await io('collectionStore', name, json(fields, {}), text(payload), json(options, {})));
           if (!r.ok) { throw new Error(r.e); }
           return r.v;
         },
         find: async function (match, options) {
-          var r = JSON.parse(await io('collectionFind', name, match || {}, options || {}));
+          var r = JSON.parse(await io('collectionFind', name, json(match, {}), json(options, {})));
           if (!r.ok) { throw new Error(r.e); }
           return r.v;
         },
         update: async function (id, changes) {
-          var r = JSON.parse(await io('collectionUpdate', name, String(id), changes || {}));
+          var r = JSON.parse(await io('collectionUpdate', name, text(id), json(changes, {})));
           if (!r.ok) { throw new Error(r.e); }
           return r.v;
         },
         delete: async function (id) {
-          var r = JSON.parse(await io('collectionDelete', name, String(id)));
+          var r = JSON.parse(await io('collectionDelete', name, text(id)));
           if (!r.ok) { throw new Error(r.e); }
           return r.v;
         }
@@ -435,10 +547,10 @@ globalThis.__build = function (hostDispatch, payload) {
   if (payload.hasDestinationSet) {
     globalThis.destinationSet = {
       removeAll: function () { dispatch('ds.removeAll'); },
-      remove: function (n) { dispatch('ds.remove', n); },
-      removeAllExcept: function (n) { dispatch('ds.removeAllExcept', n); },
-      add: function (n) { dispatch('ds.add', n); },
-      contains: function (n) { return dispatch('ds.contains', n); },
+      remove: function (n) { dispatch('ds.remove', json(n, null)); },
+      removeAllExcept: function (n) { dispatch('ds.removeAllExcept', json(n, null)); },
+      add: function (n) { dispatch('ds.add', json(n, null)); },
+      contains: function (n) { return dispatch('ds.contains', json(n, null)); },
       getConnectorNames: function () { return JSON.parse(dispatch('ds.getConnectorNames')); }
     };
   }
@@ -453,15 +565,40 @@ const INVOKE_SRC =
 
 // ----- Helpers -----
 
-/** Convert a returned sandbox HL7 wrapper back to the host proxy (so serialization/host code works). */
-function unwrap(state: HostBridgeState, value: unknown): unknown {
-  if (value !== null && typeof value === 'object') {
-    const rec = value as Record<string, unknown>;
-    if (rec['__hl7Proxy'] === true && typeof rec['__handle'] === 'number') {
-      return state.hl7Handles.get(rec['__handle']) ?? value;
-    }
+/** One value handed back by `__collect`: undefined, an HL7 handle, or JSON data. */
+interface Collected { readonly k: 'u' | 'h' | 'j'; readonly v?: unknown }
+
+/** Everything `__collect` returns, already parsed into host-realm objects. */
+interface CollectedResult {
+  readonly err?: string;
+  readonly r: Collected;
+  readonly m: Collected;
+  readonly maps: ExecutionResult['mapUpdates'];
+}
+
+/** Turn a collected value back into what host code expects (HL7 handle -> host proxy). */
+function restore(state: HostBridgeState, c: Collected): unknown {
+  if (c.k === 'u') return undefined;
+  if (c.k === 'h') return state.hl7Handles.get(c.v as number);
+  return c.v;
+}
+
+/**
+ * Convert something thrown out of `vm.runInContext` into a host Error.
+ *
+ * Script code runs inside sandbox-side try/catch blocks, so what reaches here was
+ * made by V8 (a timeout, a syntax error) or by the bootstrap. It is still a
+ * sandbox-realm object, so only its own `message` data property is read: no
+ * getter, prototype lookup or `toString` a script could have replaced.
+ */
+function toHostError(e: unknown): Error {
+  if (e instanceof Error) return e;
+  if (typeof e === 'string') return new Error(e);
+  if (e !== null && typeof e === 'object' && !types.isProxy(e)) {
+    const message = Object.getOwnPropertyDescriptor(e, 'message')?.value as unknown;
+    if (typeof message === 'string') return new Error(message);
   }
-  return value;
+  return new Error('Script failed');
 }
 
 /** Resolve a promise, rejecting early if the abort signal fires (async wall-clock timeout). */
@@ -472,7 +609,7 @@ function awaitWithSignal<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
     signal.addEventListener('abort', onAbort, { once: true });
     p.then(
       (v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
-      (e: unknown) => { signal.removeEventListener('abort', onAbort); reject(e instanceof Error ? e : new Error(String(e))); },
+      (e: unknown) => { signal.removeEventListener('abort', onAbort); reject(toHostError(e)); },
     );
   });
 }
@@ -498,7 +635,7 @@ class AsyncRun {
   wrap(dispatch: (op: string, ...args: unknown[]) => unknown): (op: string, ...args: unknown[]) => unknown {
     return (op: string, ...args: unknown[]): unknown => {
       if (op === 'io.next') return JSON.stringify(this.ioResults.shift() ?? [0, '']);
-      if (op === 'io.done') { this.finish(args[0] === true ? undefined : args[1], args[0] === true); return undefined; }
+      if (op === 'io.done') { this.finish(args[0] === true ? undefined : new Error(String(args[1])), args[0] === true); return undefined; }
       const out = dispatch(op, ...args);
       if (!(out instanceof Promise)) return out;
       if (this.finished) throw new Error('Script execution has already finished');
@@ -521,9 +658,27 @@ class AsyncRun {
     try {
       vm.runInContext('__settle()', this.contextObj, { timeout: Math.max(1, this.deadline - Date.now()) });
     } catch (e) {
-      this.finish(e, false);
+      this.finish(toHostError(e), false);
     }
   }
+}
+
+/** Run code in the sandbox context under a time limit; anything thrown becomes a host Error. */
+function runTimed(code: string, contextObj: vm.Context, timeout: number): unknown {
+  try {
+    return vm.runInContext(code, contextObj, { timeout: Math.max(1, timeout) }) as unknown;
+  } catch (e) {
+    throw toHostError(e);
+  }
+}
+
+/** Serialise the script's result inside the sandbox (still under the deadline) and parse it on the host. */
+function collect(contextObj: vm.Context, deadline: number): CollectedResult {
+  const out = runTimed('__collect()', contextObj, deadline - Date.now());
+  if (typeof out !== 'string') throw new Error('Script result could not be read');
+  const parsed = JSON.parse(out) as CollectedResult;
+  if (parsed.err !== undefined) throw new Error(parsed.err);
+  return parsed;
 }
 
 // ----- VM Implementation -----
@@ -563,6 +718,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
         hl7Handles: new Map(),
         destSet: context.extras?.['destinationSet'] as Record<string, unknown> | undefined,
         nextHandle: 1,
+        failure: undefined,
       };
       const dispatch = makeHostDispatch(state);
       const errToken = `__host_error_${randomUUID()}__`;
@@ -572,7 +728,8 @@ export class VmSandboxExecutor implements SandboxExecutor {
         this.deps?.httpFetch || this.deps?.dbQuery || this.deps?.routeMessage || this.deps?.getResource || this.deps?.collections,
       );
       const contextObj: Record<string, unknown> = vm.createContext({}, { microtaskMode: 'afterEvaluate' });
-      const run = new AsyncRun(contextObj, Date.now() + options.timeout);
+      const deadline = Date.now() + options.timeout;
+      const run = new AsyncRun(contextObj, deadline);
       contextObj['__dispatch'] = makeNonThrowingDispatch(run.wrap(dispatch), errToken);
       contextObj['__payloadJson'] = JSON.stringify(payload);
       vm.runInContext(BOOTSTRAP_SRC, contextObj, { timeout: options.timeout });
@@ -580,10 +737,11 @@ export class VmSandboxExecutor implements SandboxExecutor {
 
       const wrappedCode = hasAsyncBridges
         ? `'use strict'; __watch((async function() {\n${script.code}\n})());`
-        : `'use strict'; __result = (function() {\n${script.code}\n})();`;
+        : `'use strict'; __run(function() {\n${script.code}\n});`;
 
       try {
-        vm.runInContext(wrappedCode, contextObj, { timeout: options.timeout });
+        runTimed(wrappedCode, contextObj, options.timeout);
+        if (state.failure !== undefined) throw new Error(state.failure);
         if (hasAsyncBridges) {
           // Wait for the script to settle, enforcing the wall-clock timeout via the signal.
           await awaitWithSignal(run.done, signal);
@@ -592,16 +750,11 @@ export class VmSandboxExecutor implements SandboxExecutor {
         run.finish(undefined, true);
       }
 
+      const collected = collect(contextObj, deadline);
       return {
-        returnValue: unwrap(state, contextObj['__result']),
-        msg: unwrap(state, contextObj['msg']),
-        mapUpdates: {
-          channelMap: (contextObj['channelMap'] as Record<string, unknown>) ?? {},
-          connectorMap: (contextObj['connectorMap'] as Record<string, unknown>) ?? {},
-          globalChannelMap: (contextObj['globalChannelMap'] as Record<string, unknown>) ?? {},
-          globalMap: (contextObj['globalMap'] as Record<string, unknown>) ?? {},
-          responseMap: (contextObj['responseMap'] as Record<string, unknown>) ?? {},
-        },
+        returnValue: restore(state, collected.r),
+        msg: restore(state, collected.m),
+        mapUpdates: collected.maps,
         logs: state.logs,
       };
     });

@@ -152,6 +152,11 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] ~~Load testing — throughput benchmarks with realistic message volumes~~ (3-hour soak, 1.08M messages, 0 lost: `docs/ops/soak-test.md`, 2026-10-09)
 - [ ] E2E test suite refresh — 19 specs may need updates after recent UI changes (`message-flow.spec.ts` rewritten to assert real delivery, 2026-10-08)
 - [x] ~~Deep code review and fixes~~ (1 critical, 12 high, 15 medium, 10 low; all fixed 2026-11-11, D-206 to D-222)
+- [x] ~~Second deep code review and fixes~~ (1 critical, 4 high, 12 medium, 16 low; fixed 2026-11-11, D-223 to D-236, except the four items below)
+- [ ] Apply row limits in the database, not after the fetch: the Database Writer and `dbQuery` read a whole result before cutting it to the limit, so a huge SELECT can still use a lot of memory (needs a cursor; review item L21)
+- [ ] Stop copying the global and configuration maps into every script run: the cost of a script grows with the size of those maps (needs lazy map access across the sandbox boundary; review item L22)
+- [ ] An overall deadline for one message across all its stages. Each script and each send has its own limit, and a halt now cancels them, but nothing bounds their sum (review item L23)
+- [ ] CLI session refresh. A session lasts 15 minutes; the CLI now says to log in again but cannot renew it (review item L25)
 - [ ] Run scripts off the main thread (worker threads). A tight loop in a script blocks every channel until its timeout fires (D-212)
 - [ ] Mapper transformer steps. A channel with one does not deploy (D-207)
 - [ ] Attachment extraction and batch splitting: library code exists, no channel setting reaches it
@@ -274,6 +279,8 @@ Ideas that may become relevant. Not committed to any timeline.
 - Channel group is single-select but schema is many-to-many — consider schema migration
 - Extension system is static catalog — no runtime plugin loading yet
 - No HL7v2 serialization back from parsed object — roundtrip transforms incomplete
+- A changed XML message loses the line break after its `<?xml ...?>` declaration (the document is otherwise written as it arrived)
+- A message interrupted by a server stop and run again is counted as received twice, once per row in the message browser (D-233)
 - A queued delivery that finishes before the pipeline finalizes its message keeps its content until the pruner, even with "remove content on completion" on (safe side of a race)
 - Database connectors are PostgreSQL only
 

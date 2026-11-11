@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FileDispatcher, resolveOutputFilename, type FileDispatcherConfig } from '../file-dispatcher.js';
 import type { ConnectorMessage } from '../../base.js';
+import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 // ----- Mock node:fs/promises -----
 
@@ -204,6 +205,32 @@ describe('FileDispatcher', () => {
       const renameDst = mockRename.mock.calls[0]![1] as string;
       expect(renameSrc).toMatch(/\.tmp$/);
       expect(renameDst).not.toMatch(/\.tmp$/);
+    });
+
+    it('uses a different temp file for each write, so two messages for one file name cannot collide', async () => {
+      dispatcher = new FileDispatcher(makeConfig({ tempFileEnabled: true, outputPattern: 'latest.txt' }));
+      await dispatcher.onStart();
+
+      await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+      await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+      const first = mockWriteFile.mock.calls[0]![0] as string;
+      const second = mockWriteFile.mock.calls[1]![0] as string;
+      expect(first).not.toBe(second);
+    });
+
+    it('warns at deploy when every message would write the same file', async () => {
+      const { logger, warnings: warns } = makeMockLogger();
+      dispatcher = new FileDispatcher(makeConfig({ outputPattern: 'latest.txt' }), logger);
+      expect((await dispatcher.onDeploy()).ok).toBe(true);
+      expect(warns.some((w) => w.msg.includes('overwrites'))).toBe(true);
+    });
+
+    it('does not warn when the name has the message id or the file is appended to', async () => {
+      const { logger, warnings: warns } = makeMockLogger();
+      await new FileDispatcher(makeConfig(), logger).onDeploy();
+      await new FileDispatcher(makeConfig({ outputPattern: 'all.txt', appendMode: true }), logger).onDeploy();
+      expect(warns).toHaveLength(0);
     });
 
     it('writes file directly when tempFileEnabled is false', async () => {

@@ -259,7 +259,7 @@ describe('TcpMllpReceiver acknowledgements', () => {
     expect(response).toContain('MSA|AE|MSGID123');
   });
 
-  it('returns a NAK (AR) when the message is filtered/rejected', async () => {
+  it('acknowledges a filtered message with AA: it was received and deliberately not routed', async () => {
     receiver = new TcpMllpReceiver(makeConfig());
     receiver.setDispatcher(makeDispatcher(() => ({ messageId: 1, status: DISPATCH_STATUS.FILTERED })));
     await receiver.onDeploy();
@@ -267,7 +267,7 @@ describe('TcpMllpReceiver acknowledgements', () => {
 
     const response = await connectAndSend(TEST_PORT, VALID_HL7);
 
-    expect(response).toContain('MSA|AR|MSGID123');
+    expect(response).toContain('MSA|AA|MSGID123');
   });
 
   it('returns a NAK (AE) when status is ERROR even if the Result is ok', async () => {

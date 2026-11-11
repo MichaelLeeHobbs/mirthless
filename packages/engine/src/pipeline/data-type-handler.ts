@@ -5,7 +5,8 @@
 // and serialize sandbox results back to strings for storage/transport.
 
 import { Hl7Message } from '@galvaniflow/core-util';
-import { XMLParser, XMLBuilder } from 'fast-xml-parser';
+import { XMLParser } from 'fast-xml-parser';
+import { buildXmlInOriginalOrder } from './xml-order.js';
 import type { Hl7MessageProxy } from '../sandbox/bridge-functions.js';
 
 const HL7_PROXY_BRAND = '__hl7Proxy';
@@ -39,12 +40,6 @@ const xmlParser = new XMLParser({
   },
 });
 
-const xmlBuilder = new XMLBuilder({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  format: true,
-});
-
 /** Type guard: is this value an Hl7MessageProxy created by createHl7Proxy? */
 export function isHl7MessageProxy(value: unknown): value is Hl7MessageProxy {
   return typeof value === 'object' && value !== null && (value as Record<string, unknown>)[HL7_PROXY_BRAND] === true;
@@ -60,6 +55,7 @@ export function createHl7Proxy(msg: Hl7Message): Hl7MessageProxy {
   const proxy: Record<string, unknown> = {
     [HL7_PROXY_BRAND]: true,
     get: (path: string): string | undefined => msg.get(path),
+    getRaw: (path: string): string | undefined => msg.getRaw(path),
     getText: (path: string): string | undefined => msg.getText(path),
     set: (path: string, value: string): void => { msg.set(path, value); },
     setText: (path: string, value: string): void => { msg.setText(path, value); },
@@ -99,6 +95,72 @@ function keepInexactNumbersAsText(_key: string, value: unknown, context?: { sour
   return context.source;
 }
 
+/** A number in the original JSON text: how it was written and what scripts saw for it. */
+class NumberLiteral {
+  constructor(readonly text: string, readonly seen: unknown) {}
+}
+
+/** `JSON.rawJSON` (Node 22+): emit text as it stands inside JSON.stringify output. */
+const rawJson = (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON;
+
+/** The original document with every number replaced by its {@link NumberLiteral}, or undefined when it is not JSON. */
+function parseNumberLiterals(original: string): unknown {
+  try {
+    return JSON.parse(original, function (this: unknown, key: string, value: unknown, context?: { source?: string }): unknown {
+      if (typeof value !== 'number' || context?.source === undefined) return value;
+      return new NumberLiteral(context.source, keepInexactNumbersAsText(key, value, context));
+    }) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function childOf(source: unknown, key: string | number): unknown {
+  if (source === null || typeof source !== 'object' || source instanceof NumberLiteral) return undefined;
+  return Object.hasOwn(source, key) ? (source as Record<string | number, unknown>)[key] : undefined;
+}
+
+function put(holder: object, key: string | number, value: unknown): void {
+  Object.defineProperty(holder, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
+/**
+ * Serialize an edited JSON message so that every number the script left alone
+ * is written exactly as it was in the original: `1.50` stays `1.50`, and an
+ * integer past 2^53 (which scripts see as text, so it cannot lose digits) goes
+ * back out as a number, not a quoted string. A value is "left alone" when the
+ * same path still holds what the script was given. A number the script changes,
+ * moves to another path or adds is written as JSON.stringify writes it.
+ */
+function stringifyJsonKeepingNumbers(value: unknown, original: string): string {
+  const literals = parseNumberLiterals(original);
+  if (literals === undefined) return JSON.stringify(value);
+  const out: { root?: unknown } = {};
+  const stack: Array<{ holder: object; key: string | number; edited: unknown; source: unknown }> = [
+    { holder: out, key: 'root', edited: value, source: literals },
+  ];
+  while (stack.length > 0) {
+    const { holder, key, edited, source } = stack.pop()!;
+    if (source instanceof NumberLiteral && edited === source.seen) {
+      put(holder, key, rawJson(source.text));
+    } else if (Array.isArray(edited)) {
+      const copy: unknown[] = new Array<unknown>(edited.length);
+      put(holder, key, copy);
+      edited.forEach((item, index) => { stack.push({ holder: copy, key: index, edited: item, source: childOf(source, index) }); });
+    } else if (edited !== null && typeof edited === 'object') {
+      const copy = {};
+      put(holder, key, copy);
+      // Reverse, so keys are added to the copy in their original order.
+      for (const name of Object.keys(edited).reverse()) {
+        stack.push({ holder: copy, key: name, edited: (edited as Record<string, unknown>)[name], source: childOf(source, name) });
+      }
+    } else {
+      put(holder, key, edited);
+    }
+  }
+  return JSON.stringify(out.root);
+}
+
 /**
  * Parse raw string content into a sandbox-friendly object based on data type.
  * Throws on malformed content for typed data types (HL7V2, JSON, XML).
@@ -121,16 +183,33 @@ export function parseForSandbox(content: string, dataType: string): unknown {
   }
 }
 
+/** Parse XML into the object form scripts edit, or undefined when the text is not XML. */
+function parseXmlOrUndefined(text: string | undefined): unknown {
+  if (text === undefined) return undefined;
+  try {
+    return xmlParser.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Serialize a sandbox result back to a string for storage/transport.
  * Handles strings (pass-through), HL7 proxies (.toString()), and objects (JSON.stringify).
+ *
+ * @param original - The text the value was parsed from. For XML the output keeps
+ *   that document's element order, comments and whitespace (see xml-order.ts);
+ *   for JSON it keeps the spelling of every number the script left alone.
  */
-export function serializeFromSandbox(value: unknown, dataType: string): string {
+export function serializeFromSandbox(value: unknown, dataType: string, original?: string): string {
   if (typeof value === 'string') return value;
   if (value == null) return '';
   if (isHl7MessageProxy(value)) return value.toString();
   if (dataType === 'XML' && typeof value === 'object') {
-    return xmlBuilder.build(value) as string;
+    return buildXmlInOriginalOrder(value, parseXmlOrUndefined(original), original);
+  }
+  if (dataType === 'JSON' && typeof value === 'object' && original !== undefined) {
+    return stringifyJsonKeepingNumbers(value, original);
   }
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
@@ -140,15 +219,15 @@ export function serializeFromSandbox(value: unknown, dataType: string): string {
  * Serialize a transformer's result, keeping the original text when the script
  * did not change the message.
  *
- * Parsing and re-serializing is not always an exact round trip (XML mixed
- * content and formatting, JSON number formatting), so a transformer that only
+ * Parsing and re-serializing is not always an exact round trip (XML entity and
+ * empty-element spelling, JSON number formatting), so a transformer that only
  * reads the message, for example to set a map value, must not rewrite it.
  */
 export function serializeTransformed(value: unknown, original: string, dataType: string): string {
-  const serialized = serializeFromSandbox(value, dataType);
+  const serialized = serializeFromSandbox(value, dataType, original);
   if (typeof value === 'string') return serialized;
   try {
-    const untouched = serializeFromSandbox(parseForSandbox(original, dataType), dataType);
+    const untouched = serializeFromSandbox(parseForSandbox(original, dataType), dataType, original);
     return untouched === serialized ? original : serialized;
   } catch {
     // The original is not valid for this data type, so there is nothing to compare with.

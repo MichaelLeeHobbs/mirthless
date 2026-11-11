@@ -44,12 +44,24 @@ host-`globalThis`):
    `createACK`, the HL7 proxy methods, `destinationSet`) as well as the IO bridges.
 4. The HL7 message proxy is exposed via opaque numeric handles; its methods dispatch
    to the host proxy and only return primitives.
+5. **Arguments are primitives too.** A script-supplied object handed to host code is
+   as dangerous as a host object handed to the script: host code that calls a method
+   on it (`toString`, `toJSON`, `then`, a getter, pg's `toPostgres`) runs script code
+   with host objects in reach. Every sandbox wrapper converts its arguments to
+   strings, numbers or JSON text *inside* the sandbox, and the host dispatch refuses
+   any argument that is not a primitive ("Bridge arguments must be primitive values").
+6. **Results leave as JSON text.** The script's return value and its maps are
+   serialized inside the sandbox (`__collect`) and parsed on the host, so the host
+   never touches a sandbox object, getter or Proxy. A result JSON cannot hold is a
+   script error. A thrown value is reduced to its message string in the sandbox;
+   the host reads nothing from it but an own `message` data property.
 
 Result: `logger.info.constructor`, `({}).constructor.constructor`,
 `this.constructor.constructor`, `msg.get.constructor`, a caught IO error's
 `.constructor`, etc. all resolve to the sandbox realm's `Function`, which sees no
 `process`. Covered by the `escape prevention` tests in
-`__tests__/sandbox-executor.test.ts`.
+`__tests__/sandbox-executor.test.ts` and, for arguments and results, by
+`__tests__/sandbox-boundary.test.ts`.
 
 ## Timeouts
 

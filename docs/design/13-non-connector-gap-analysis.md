@@ -105,7 +105,7 @@ GalvaniFlow reproduces the *coarse* model well (5 `MessageStorageMode` levels, q
 | Storage modes | 5 modes + ~20 per-content-type `StorageSettings` booleans | Same 5 modes, gating collapses to 3 fixed content sets (`shouldStoreContent`) | 🟡 |
 | **Custom metadata columns** | Defined, **populated via MetaDataReplacer**, typed, **searchable** | Table + `mappingExpression` stored, **never populated in pipeline, not in search** | 🔴 half-built |
 | **Message pruner** | Separate `pruneContentDays` vs `pruneMetaDataDays`, **archive-then-prune**, skipIncomplete, events | Whole-message age delete; `pruningArchiveEnabled` flag exists but **no archiver**; no content/metadata split | 🔴 half-built |
-| **Destination queue** | queueEnabled, retryCount/interval, **threadCount buckets + groupBy hashing, rotate, queueBufferSize** | queueMode/retry + `rotateQueue`/`threadCount` **in schema but consumer ignores them** (single poll loop) | 🔴 half-built |
+| **Destination queue** | queueEnabled, retryCount/interval, **threadCount buckets + groupBy hashing, rotate, queueBufferSize** | queueMode/retry + `rotateQueue` honoured since 2026-11-11 (D-230); `threadCount` **in schema but consumer ignores it** (single poll loop) | 🟡 partial |
 | **Message search operators** | regex text, metadata operators (EQ/GT/LT/CONTAINS), error, send-attempt range, id ranges, content-type search | status, date, id, metaDataId, content **ILIKE substring only** | 🔴 daily-use gap |
 | Reprocess / resend | reprocess, **reimport**, resend individual destination, per-destination-subset | reprocess, bulk, resendDestination (queue-enabled only); **no reimport, no subset** | 🟡 |
 | Durability toggles | durable / rawDurable / recovery flags | Implicit via Postgres txn | 🟢 low |

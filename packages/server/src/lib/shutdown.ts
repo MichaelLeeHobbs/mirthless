@@ -90,3 +90,30 @@ export function createShutdownHandler(deps: ShutdownDeps): (signal: string, exit
     })();
   };
 }
+
+/** What {@link undeployAll} needs from the engine. */
+export interface UndeployableEngine {
+  getAll(): ReadonlyMap<string, unknown>;
+  undeploy(channelId: string): Promise<void>;
+}
+
+/**
+ * Undeploy every channel for shutdown. One channel that fails to undeploy is
+ * logged and the rest still undeploy, so a single bad channel cannot leave the
+ * others running or skip the steps that follow (the global map flush).
+ */
+export async function undeployAll(
+  engine: UndeployableEngine,
+  log: { error(obj: object, msg: string): void },
+): Promise<void> {
+  for (const id of [...engine.getAll().keys()]) {
+    try {
+      await engine.undeploy(id);
+    } catch (err) {
+      log.error(
+        { channelId: id, errMsg: err instanceof Error ? err.message : String(err) },
+        'Channel failed to undeploy during shutdown',
+      );
+    }
+  }
+}

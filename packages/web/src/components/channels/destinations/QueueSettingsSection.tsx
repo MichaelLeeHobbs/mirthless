@@ -54,14 +54,14 @@ export function QueueSettingsSection({ destination, onChange }: QueueSettingsSec
           {queueEnabled ? (
             <>
               <TextField
-                label="Retry Count"
+                label="Retries Before Giving Up"
                 type="number"
                 value={destination.retryCount}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => {
                   const parsed = parseInt(e.target.value, 10);
                   onChange({ retryCount: Number.isNaN(parsed) ? 0 : parsed });
                 }}
-                helperText="Number of retry attempts (0 = no retries)"
+                helperText="0 keeps retrying until the message is delivered"
                 fullWidth
                 sx={{ mb: 2 }}
                 slotProps={{ htmlInput: { min: 0 } }}
@@ -80,6 +80,20 @@ export function QueueSettingsSection({ destination, onChange }: QueueSettingsSec
                 sx={{ mb: 2 }}
                 slotProps={{ htmlInput: { min: 0 } }}
               />
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={destination.rotateQueue}
+                    onChange={(_e, checked) => { onChange({ rotateQueue: checked }); }}
+                  />
+                }
+                label="Skip Past a Failed Message"
+                sx={{ display: 'block' }}
+              />
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Off: the queue waits behind a message that fails, so order is kept. On: later messages are still sent and the failed one is retried after them.
+              </Typography>
             </>
           ) : null}
         </Grid>

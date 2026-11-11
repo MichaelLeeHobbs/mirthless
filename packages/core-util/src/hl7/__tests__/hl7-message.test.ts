@@ -435,3 +435,119 @@ describe('Hl7Message MSH-2', () => {
     expect(msg.toString()).toBe(raw);
   });
 });
+
+describe('set replaces everything at the depth the path names', () => {
+  const RAW = 'MSH|^~\\&|A|B|C|D|20260101||ADT^A01|1|P|2.5\rPID|1||111^^^MRN~222^^^SSN||DOE^JOHN^Q&X||19800101';
+
+  it('replaces a whole field that had more components than the new value', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('PID.5', 'SMITH^ANNA');
+
+    expect(msg.getSegmentString('PID')).toBe('PID|1||111^^^MRN~222^^^SSN||SMITH^ANNA||19800101');
+    expect(msg.get('PID.5.2')).toBe('ANNA');
+    expect(msg.get('PID.5.3')).toBeUndefined();
+  });
+
+  it('replaces every repetition when the path names the field', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('PID.3', '999^^^MRN');
+
+    expect(msg.getRaw('PID.3')).toBe('999^^^MRN');
+    expect(msg.get('PID.3[2]')).toBeUndefined();
+  });
+
+  it('keeps repetitions in the new value addressable', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('PID.3', 'A^^^X~B^^^Y');
+
+    expect(msg.get('PID.3[2].1')).toBe('B');
+    expect(msg.get('PID.3[2].4')).toBe('Y');
+  });
+
+  it('clears a field when set to an empty string', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('PID.5', '');
+
+    expect(msg.getSegmentString('PID')).toBe('PID|1||111^^^MRN~222^^^SSN||||19800101');
+  });
+
+  it('replaces one repetition and leaves the others', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('PID.3[2]', '333');
+
+    expect(msg.getRaw('PID.3')).toBe('111^^^MRN~333');
+  });
+
+  it('replaces one component with all its subcomponents', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('PID.5.3', 'Z');
+
+    expect(msg.getRaw('PID.5')).toBe('DOE^JOHN^Z');
+  });
+
+  it('replaces one subcomponent and leaves its siblings', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('PID.5.3.1', 'R');
+
+    expect(msg.getRaw('PID.5')).toBe('DOE^JOHN^R&X');
+  });
+
+  it('setText replaces the whole field with one encoded value', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.setText('PID.5', 'A^B');
+
+    expect(msg.getRaw('PID.5')).toBe('A\\S\\B');
+    expect(msg.getText('PID.5')).toBe('A^B');
+    expect(msg.get('PID.5.2')).toBeUndefined();
+  });
+
+  it('creates a field, repetition and component that did not exist', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('PID.11[2].3', 'CITY');
+    msg.set('ZZZ.2', 'new');
+
+    expect(msg.getRaw('PID.11')).toBe('~^^CITY');
+    expect(msg.getSegmentString('ZZZ')).toBe('ZZZ||new');
+  });
+
+  it('still stores MSH.2 exactly as given', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('MSH.2', '^~\\&#');
+
+    expect(msg.getRaw('MSH.2')).toBe('^~\\&#');
+  });
+});
+
+describe('getRaw', () => {
+  const RAW = 'MSH|^~\\&|APP^1.2.3^ISO|B|C|D|20260101||ADT^A01|1|P|2.5\rPID|1||111^^^MRN~222^^^SSN||DOE^JOHN^Q&X';
+
+  it('returns everything at the depth the path names', () => {
+    const msg = Hl7Message.parse(RAW);
+
+    expect(msg.getRaw('PID.3')).toBe('111^^^MRN~222^^^SSN');
+    expect(msg.getRaw('PID.3[2]')).toBe('222^^^SSN');
+    expect(msg.getRaw('PID.5.3')).toBe('Q&X');
+    expect(msg.getRaw('PID.5.3.2')).toBe('X');
+    expect(msg.getRaw('MSH.3')).toBe('APP^1.2.3^ISO');
+    expect(msg.getRaw('PID')).toBe('PID|1||111^^^MRN~222^^^SSN||DOE^JOHN^Q&X');
+    expect(msg.getRaw('MSH.1')).toBe('|');
+  });
+
+  it('returns undefined for anything that is not there', () => {
+    const msg = Hl7Message.parse(RAW);
+
+    expect(msg.getRaw('ZZZ')).toBeUndefined();
+    expect(msg.getRaw('ZZZ.1')).toBeUndefined();
+    expect(msg.getRaw('PID.9')).toBeUndefined();
+    expect(msg.getRaw('PID.3[5]')).toBeUndefined();
+    expect(msg.getRaw('PID.5.9')).toBeUndefined();
+    expect(msg.getRaw('PID.5.3.9')).toBeUndefined();
+  });
+
+  it('get still returns only the first value', () => {
+    const msg = Hl7Message.parse(RAW);
+
+    expect(msg.get('PID.3')).toBe('111');
+    expect(msg.get('PID.5')).toBe('DOE');
+  });
+});

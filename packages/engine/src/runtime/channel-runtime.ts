@@ -138,6 +138,16 @@ export class ChannelRuntime {
     });
   }
 
+  /**
+   * Aborted when the channel is halted. Work started for a message (scripts,
+   * sends) takes this signal, so a halt cancels it instead of waiting for it.
+   * A new signal is issued after each halt; read this once per message.
+   */
+  get haltSignal(): AbortSignal {
+    this.abortController ??= new AbortController();
+    return this.abortController.signal;
+  }
+
   /** Halt: force-stop via AbortController. STARTED|PAUSED → STOPPED. */
   async halt(): Promise<Result<void>> {
     return tryCatch(async () => {

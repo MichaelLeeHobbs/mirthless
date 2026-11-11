@@ -2,6 +2,40 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-11 — Fix the findings of the second deep review (branch `claude/project-thread-qav7nb`)
+
+Michael asked for a second deep review after the first round of fixes merged, then: "please fix all the issues." The review found 1 critical, 4 high, 12 medium and 16 low issues, and that 3 of the first round's 38 fixes covered the reported case only. 29 are fixed here and 4 lows are on the roadmap with reasons (L21, L22, and the remainders of L23 and L25). Decisions D-223 to D-236.
+
+### Critical
+- **Sandbox escape through bridge arguments (C2).** D-206 stopped host errors reaching scripts, but a script could still pass an object where a bridge expected a string, and host code that touched it ran script code with host objects in reach. Nothing but primitives and JSON text crosses the boundary now, in either direction (D-223). A result with a getter or Proxy that never returns no longer hangs the server past the script timeout (M17).
+
+### Messages that were changed, lost or misreported
+- **HL7 `set` merged instead of replacing** (H13): overwriting a field kept the old value's other components and repetitions. It replaces now; `getRaw` reads a whole field (D-224).
+- **XML came back reordered** when a transformer changed it (H14). The original order, comments, CDATA and whitespace are kept (D-225). JSON numbers a script left alone keep their spelling, and a big integer goes back out as a number (L11).
+- **HTTP destination followed redirects** and reported SENT (H15). A 3xx is an error now (D-227).
+- **Filters accepted unless they returned exactly `false`** (H16), and `return true` in a transformer replaced the message with "true" (M16). Only `true` accepts; booleans from a transformer are ignored (D-226).
+- **An unexpected exception mid-message** left the row unfinished (M18). It is recorded as ERROR and alerted (D-228).
+- **Queue**: "retry count 0" made one attempt instead of retrying forever, the rotate setting was ignored, and a queue that never gave up never alerted (M19, D-230). The editor label and help now say what happens, with a "Skip Past a Failed Message" switch.
+- **Deploy scripts that failed were logged and ignored; JavaScript connectors had no code templates or maps; a redeploy stopped the channel before finding a script that could not compile** (M20, M24, D-229). Global scripts and code templates that do not compile are refused on save.
+- **Channel Writer and `routeMessage` reported success for a message the target recorded as ERROR; the database reader re-read such rows forever; MLLP answered AR for a filtered message** (M21 to M23, D-231).
+- **Message browser bulk delete failed, storing content twice failed, and CLI `users list` crashed** (M25 to M27, D-232).
+- **Recovery** left a redelivered message's source at TRANSFORMED, blocked the start on the backlog and reset queue claims after the consumers had started (L13, D-233).
+
+### Hardening
+- Large bodies are parsed after authentication (L15, D-234). Scripts can reach administrator-listed internal hosts with `httpFetch` (L19, D-235, `SCRIPT_HTTP_ALLOWED_HOSTS`).
+- SFTP reader: charset setting, stop flag, a bad file no longer ends the poll (L16). Quarantined files are logged once (L18). File writer: unique temp files, a deploy warning for a fixed file name (L17). HTTP listener honours the request charset, 415 for an unknown one (L20). Shutdown survives a failed undeploy (L14). Login time no longer reveals usernames (L24). A halt cancels scripts and sends in progress (L23). The CLI says to log in again when the session has expired (L25). `LISTENER_PORT_RANGE` names the published listener range for every protocol, and the deployment guide says a listener outside it is unreachable (L26). The generated ACK keeps whole MSH-3 to MSH-6 fields (L12).
+
+### Behaviour changes to know about
+- A filter rule that returns nothing now stops the message with an error. Before, it accepted.
+- A destination with retry count 0 and queueing on now retries until delivered. Before, it gave up after one attempt.
+- An HTTP destination pointed at a URL that redirects now errors. Point it at the final URL.
+- A deploy script that throws now fails the deploy.
+- `set('PID.5', value)` now replaces the whole field.
+- The MLLP listener answers AA, not AR, for a filtered message.
+
+### Not done
+- L21 (row limits applied after the fetch) and L22 (maps copied into every script run) need a cursor and lazy map access; both are on the roadmap. No overall per-message deadline (rest of L23) and no CLI session refresh (rest of L25).
+
 ## 2026-11-11 — Fix every finding of the deep code review (branch `claude/project-thread-ji5t3p`)
 
 Michael asked for a systematic review of the codebase, then: "fix all the issues. I suspect the XML issues come from treating things that look like numbers as numbers. That is not safe." The review found 1 critical, 12 high, 15 medium and 10 low issues. All are fixed here, one concern per commit, each bug with a test that failed first (the few written together with the fix are named in the pull request). Decisions D-206 to D-222.

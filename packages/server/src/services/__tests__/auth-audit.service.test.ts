@@ -45,6 +45,13 @@ describe('AuthService.login audit', () => {
     expectFailureAudit(null, 'unknown_user');
   });
 
+  it('does a password comparison for an unknown username, so timing does not reveal which accounts exist', async () => {
+    selectResult = [];
+    const bcrypt = (await import('bcryptjs')).default;
+    await AuthService.login('alice', 'pw', META);
+    expect(bcrypt.compare).toHaveBeenCalledWith('pw', expect.stringMatching(/^\$2b\$12\$/));
+  });
+
   it('records a login attempt against a locked account', async () => {
     selectResult = [user({ lockedUntil: new Date(Date.now() + 60_000) })];
     await AuthService.login('alice', 'pw', META);

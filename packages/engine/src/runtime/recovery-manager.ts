@@ -33,6 +33,11 @@ export interface RecoveryStore {
   getConnectorMessages(channelId: string, messageId: number): Promise<Result<readonly ConnectorMessageRecord[]>>;
   /** Mark a message processed once nothing in it is left to recover. */
   markProcessed(channelId: string, messageId: number): Promise<Result<void>>;
+  /**
+   * Give the source connector its final status, as the pipeline would have at
+   * the end of the message: ERROR when a destination failed, SENT otherwise.
+   */
+  finishSource(channelId: string, messageId: number, status: 'SENT' | 'ERROR'): Promise<Result<void>>;
 }
 
 /** Callback to reprocess a message from source. */
@@ -142,11 +147,33 @@ export class RecoveryManager {
     }
 
     if (!reprocessed && !pending && errors === 0) {
-      const marked = await this.store.markProcessed(channelId, messageId);
-      if (!marked.ok) errors++;
+      if (!(await this.closeMessage(channelId, messageId, connectors))) errors++;
     }
 
     return { recovered: messageRecovered ? 1 : 0, errors, skipped };
+  }
+
+  /**
+   * Close a message with nothing left to recover. A source that had routed the
+   * message (TRANSFORMED) never reached its final status because the server
+   * stopped first; give it one now, from the destinations as they stand after
+   * recovery, so the message does not sit in the browser looking unfinished.
+   */
+  private async closeMessage(
+    channelId: string,
+    messageId: number,
+    before: readonly ConnectorMessageRecord[],
+  ): Promise<boolean> {
+    const source = before.find((c) => c.metaDataId === 0);
+    if (source?.status === 'TRANSFORMED') {
+      const now = await this.store.getConnectorMessages(channelId, messageId);
+      if (!now.ok) return false;
+      const failed = now.value.some((c) => c.metaDataId > 0 && c.status === 'ERROR');
+      const finished = await this.store.finishSource(channelId, messageId, failed ? 'ERROR' : 'SENT');
+      if (!finished.ok) return false;
+    }
+    const marked = await this.store.markProcessed(channelId, messageId);
+    return marked.ok;
   }
 
   private async recoverConnector(

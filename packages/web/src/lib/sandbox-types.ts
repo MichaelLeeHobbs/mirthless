@@ -15,10 +15,16 @@ export const SANDBOX_TYPE_DEFS = `
  * Provides path-based access to HL7 fields.
  */
 interface Hl7MessageProxy {
-  /** Get field value by HL7 path (e.g., "MSH.9.1", "PID.3"). */
+  /** Get the first value at an HL7 path (e.g., "MSH.9.1", "PID.3"). */
   get(path: string): string | undefined;
-  /** Set field value by HL7 path. */
+  /** Get everything at an HL7 path as encoded: the whole field, repetition or component. */
+  getRaw(path: string): string | undefined;
+  /** Get the decoded text at an HL7 path (escape sequences resolved). */
+  getText(path: string): string | undefined;
+  /** Replace whatever the path names (field, repetition, component or subcomponent) with the value. */
   set(path: string, value: string): void;
+  /** Replace whatever the path names with free text; every delimiter is encoded. */
+  setText(path: string, value: string): void;
   /** Delete a field by HL7 path. */
   delete(path: string): void;
   /** Serialize back to HL7 pipe-delimited format. */

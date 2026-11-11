@@ -6,13 +6,19 @@ import { describe, it, expect, afterEach } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { jsonBody, isLargeBodyRoute } from '../body-limit.middleware.js';
+import { jsonBody, largeJsonBody, isLargeBodyRoute } from '../body-limit.middleware.js';
 
 let server: Server | null = null;
 
-async function post(path: string, bytes: number): Promise<number> {
+async function post(path: string, bytes: number, signedIn = true): Promise<number> {
   const app = express();
   app.use(jsonBody);
+  // Stands in for the routers: authentication first, then the large parser.
+  app.use((req, res, next) => {
+    if (!signedIn) { res.status(401).json({ parsed: req.body !== undefined }); return; }
+    next();
+  });
+  app.use(largeJsonBody);
   app.post(/.*/, (req, res) => { res.json({ size: JSON.stringify(req.body).length }); });
   server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -50,6 +56,21 @@ describe('jsonBody', () => {
     '/api/v1/system/backup/extra',
   ])('rejects a 2 MB body on %s', async (path) => {
     expect(await post(path, TWO_MB)).toBe(413);
+  });
+
+  it('does not parse a large body for a caller who is not signed in', async () => {
+    const app = express();
+    app.use(jsonBody);
+    app.post(/.*/, (req, res) => { res.json({ parsed: req.body !== undefined }); });
+    server = app.listen(0);
+    const { port } = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${String(port)}/api/v1/system/backup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', connection: 'close' },
+      body: JSON.stringify({ content: 'x'.repeat(TWO_MB) }),
+    });
+    expect(await response.json()).toEqual({ parsed: false });
+    expect(await post('/api/v1/system/backup', TWO_MB, false)).toBe(401);
   });
 
   it('still accepts a small body everywhere', async () => {

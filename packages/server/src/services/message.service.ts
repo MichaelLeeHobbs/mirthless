@@ -115,7 +115,14 @@ export class MessageService {
     });
   }
 
-  /** Store message content (raw, transformed, sent, response, etc.). */
+  /**
+   * Store message content (raw, transformed, sent, response, etc.).
+   *
+   * There is one row per connector message and content type. Storing the same
+   * type again replaces it (a response after a queued retry, a later error), so
+   * the row always holds the most recent value instead of the write failing on
+   * the primary key and the newer content being lost.
+   */
   static async storeContent(
     channelId: string,
     messageId: number,
@@ -134,6 +141,9 @@ export class MessageService {
         content,
         dataType,
         isEncrypted: encrypted ?? false,
+      }).onConflictDoUpdate({
+        target: [messageContent.channelId, messageContent.messageId, messageContent.metaDataId, messageContent.contentType],
+        set: { content, dataType, isEncrypted: encrypted ?? false },
       });
     });
   }
@@ -187,14 +197,19 @@ export class MessageService {
    * double-dispatch it). FOR UPDATE SKIP LOCKED lets multiple consumers claim
    * disjoint batches without blocking each other. Columns are aliased to
    * camelCase so the returned rows match the QueuedMessage shape the consumer reads.
+   * @param rotate - Order by fewest send attempts first (a rotating queue).
    * @see QueueManagerService for advanced queue operations (requeueFailed, getQueueDepth).
    */
   static async dequeue(
     channelId: string,
     metaDataId: number,
     batchSize: number,
+    rotate = false,
   ): Promise<Result<readonly ConnectorMessage[]>> {
     return tryCatch(async () => {
+      // Rotating queues take the least-attempted messages first, so one that
+      // keeps failing sinks behind messages that have not been tried yet.
+      const order = rotate ? sql`send_attempts ASC, message_id ASC` : sql`message_id ASC`;
       const result = await db.execute<{
         channelId: string; messageId: number; metaDataId: number;
         connectorName: string | null; status: string; sendAttempts: number; errorCode: number;
@@ -207,7 +222,7 @@ export class MessageService {
           WHERE channel_id = ${channelId}
             AND meta_data_id = ${metaDataId}
             AND status = 'QUEUED'
-          ORDER BY message_id ASC
+          ORDER BY ${order}
           LIMIT ${batchSize}
           FOR UPDATE SKIP LOCKED
         )

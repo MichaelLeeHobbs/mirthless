@@ -82,6 +82,14 @@ export class ApiClient {
       return { success: true };
     }
 
+    // A session lasts 15 minutes. Say what to do, not just "Unauthorized".
+    if (response.status === 401 && this.token && !path.includes('/auth/')) {
+      return {
+        success: false,
+        error: { code: 'SESSION_EXPIRED', message: 'Your session has expired or is not valid. Run "galvaniflow login" and try again.' },
+      };
+    }
+
     try {
       return await (response.json() as Promise<ApiResponse<T>>);
     } catch {

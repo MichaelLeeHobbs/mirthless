@@ -601,7 +601,7 @@ describe('EngineManager', () => {
 
       const engine = new EngineManager('test-server');
 
-      await expect(engine.deploy(channel as never)).rejects.toThrow('JavaScript source script failed to compile: Syntax error');
+      await expect(engine.deploy(channel as never)).rejects.toThrow('js-source.js failed to compile');
       expect(mockSetScriptRunner).not.toHaveBeenCalled();
       expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
     });

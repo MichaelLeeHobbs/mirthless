@@ -13,7 +13,7 @@ import { setLogCaptureStream } from './lib/logger.js';
 import { LogStreamService } from './services/log-stream.service.js';
 import { PrunerSchedulerService } from './services/pruner-scheduler.service.js';
 import { DeploymentService } from './services/deployment.service.js';
-import { createShutdownHandler } from './lib/shutdown.js';
+import { createShutdownHandler, undeployAll } from './lib/shutdown.js';
 import { dataSourcePoolManager } from './services/data-source-pool-manager.js';
 import { warnIfDefaultAdminPassword } from './lib/security-checks.js';
 import { installFatalHandlers } from './lib/fatal-handlers.js';
@@ -62,10 +62,7 @@ const shutdown = createShutdownHandler({
     const { getEngine } = await import('./engine.js');
     const engine = getEngine();
     // Undeploy all channels (flushes global maps, runs undeploy scripts)
-    const channelIds = [...engine.getAll().keys()];
-    for (const id of channelIds) {
-      await engine.undeploy(id);
-    }
+    await undeployAll(engine, logger);
     await engine.dispose();
   },
   stopSocketIO: shutdownSocketIO,

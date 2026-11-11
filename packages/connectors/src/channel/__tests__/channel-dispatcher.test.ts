@@ -193,6 +193,29 @@ describe('ChannelDispatcher.send', () => {
     }
   });
 
+  it('returns ERROR when the target channel recorded the message with an ERROR status', async () => {
+    registerChannel('target-ch-001', async () => ({ ok: true as const, value: { messageId: 9, status: 'ERROR' as const }, error: null }));
+    const dispatcher = new ChannelDispatcher(makeConfig());
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.errorMessage).toContain('recorded message 9 with an ERROR status');
+  });
+
+  it('returns SENT when the target channel filtered the message', async () => {
+    registerChannel('target-ch-001', async () => ({ ok: true as const, value: { messageId: 9, status: 'FILTERED' as const }, error: null }));
+    const dispatcher = new ChannelDispatcher(makeConfig());
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), makeSignal());
+
+    expect(result.ok && result.value.status).toBe('SENT');
+  });
+
   it('returns response when waitForResponse is true', async () => {
     registerChannel('target-ch-001', async () => ({
       ok: true as const,

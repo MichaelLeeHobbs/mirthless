@@ -105,7 +105,8 @@ export interface MessageStore {
   markProcessed(channelId: string, messageId: number): Promise<Result<void>>;
   enqueue(channelId: string, messageId: number, metaDataId: number): Promise<Result<void>>;
   loadContent(channelId: string, messageId: number, metaDataId: number, contentType: number): Promise<Result<string | null>>;
-  dequeue(channelId: string, metaDataId: number, batchSize: number): Promise<Result<readonly unknown[]>>;
+  /** `rotate`: least-attempted messages first, so a message that keeps failing goes to the back. */
+  dequeue(channelId: string, metaDataId: number, batchSize: number, rotate?: boolean): Promise<Result<readonly unknown[]>>;
   release(channelId: string, messageId: number, metaDataId: number, newStatus: string): Promise<Result<void>>;
   incrementStats(channelId: string, metaDataId: number, serverId: string, field: 'received' | 'filtered' | 'sent' | 'errored'): Promise<Result<void>>;
   storeAttachment?(channelId: string, messageId: number, attachmentId: string, mimeType: string, content: string, size: number): Promise<Result<void>>;
@@ -238,12 +239,13 @@ const CT_SOURCE_MAP = 9;
 const CT_PROCESSING_ERROR = 13;
 
 /**
- * Resolve a preprocessor's replacement message. A preprocessor returns the new
- * message content; a boolean return (e.g. the filter-style `return true`) is a
- * common mistake that must NOT overwrite the message with the string "true".
- * Boolean returns fall back to the (possibly mutated) `msg` variable.
+ * Resolve the message a preprocessor or transformer produced. A script may
+ * return the new message content; a boolean return (e.g. the filter-style
+ * `return true`) is a common mistake that must NOT overwrite the message with
+ * the string "true". Boolean and empty returns fall back to the (possibly
+ * mutated) `msg` variable.
  */
-function preprocessorReplacement(returnValue: unknown, msg: unknown): unknown {
+function scriptReplacement(returnValue: unknown, msg: unknown): unknown {
   if (returnValue != null && typeof returnValue !== 'boolean') return returnValue;
   return msg;
 }
@@ -328,6 +330,11 @@ export class MessageProcessor {
       }
       mark('initialize');
 
+      // From here the message exists in the store. Whatever goes wrong below must
+      // leave it finished with an ERROR status, never sitting in RECEIVED where a
+      // polling source would read the same input again and recovery would retry it
+      // on every deploy.
+      try {
       let content = input.rawContent;
 
       // Validate inbound data type — parse to verify format is valid
@@ -378,9 +385,9 @@ export class MessageProcessor {
           this.config.scripts.globalPreprocessor, content, input, signal, mapState,
         );
         if (!gpreResult.ok) return errorOut('globalPreprocessor', gpreResult.error.message);
-        const gpreVal = preprocessorReplacement(gpreResult.value.returnValue, gpreResult.value.msg);
+        const gpreVal = scriptReplacement(gpreResult.value.returnValue, gpreResult.value.msg);
         if (gpreVal != null) {
-          content = serializeFromSandbox(gpreVal, dataType);
+          content = serializeFromSandbox(gpreVal, dataType, content);
         }
         mark('globalPreprocessor');
       }
@@ -391,9 +398,9 @@ export class MessageProcessor {
           this.config.scripts.preprocessor, content, input, signal, mapState,
         );
         if (!preResult.ok) return errorOut('preprocessor', preResult.error.message);
-        const preVal = preprocessorReplacement(preResult.value.returnValue, preResult.value.msg);
+        const preVal = scriptReplacement(preResult.value.returnValue, preResult.value.msg);
         if (preVal != null) {
-          content = serializeFromSandbox(preVal, dataType);
+          content = serializeFromSandbox(preVal, dataType, content);
         }
         mark('preprocessor');
       }
@@ -412,7 +419,7 @@ export class MessageProcessor {
         );
         if (!filterResult.ok) return errorOut('sourceFilter', filterResult.error.message);
         mark('sourceFilter');
-        if (filterResult.value.returnValue === false) {
+        if (filterResult.value.returnValue !== true) {
           await Promise.all([
             this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'FILTERED'),
             this.store.incrementStats(channelId, 0, serverId, 'filtered'),
@@ -431,7 +438,7 @@ export class MessageProcessor {
         );
         if (!txResult.ok) return errorOut('sourceTransformer', txResult.error.message);
         // Use explicit return value if present, otherwise fall back to msg variable
-        const transformed = txResult.value.returnValue ?? txResult.value.msg;
+        const transformed = scriptReplacement(txResult.value.returnValue, txResult.value.msg);
         content = serializeTransformed(transformed, content, dataType);
         mark('sourceTransformer');
       }
@@ -464,7 +471,9 @@ export class MessageProcessor {
       mark('destinations');
 
       const destHasError = destResults.some((r) => r.status === 'ERROR');
-      let postprocessorFailed = false;
+      // Both postprocessors can fail for one message. Their errors are stored
+      // together: the store keeps one error text per connector message.
+      const postErrors: string[] = [];
 
       // Stage 7a: Channel postprocessor (receives responseMap populated with dest responses)
       if (this.config.scripts.postprocessor) {
@@ -472,8 +481,7 @@ export class MessageProcessor {
           this.config.scripts.postprocessor, content, input, signal, mapState,
         );
         if (!postResult.ok) {
-          postprocessorFailed = true;
-          await this.storeAndAlertPostError(messageId, 'postprocessor', postResult.error.message);
+          postErrors.push(`Script error in postprocessor: ${postResult.error.message}`);
         }
         mark('postprocessor');
       }
@@ -484,12 +492,13 @@ export class MessageProcessor {
           this.config.scripts.globalPostprocessor, content, input, signal, mapState,
         );
         if (!gpostResult.ok) {
-          postprocessorFailed = true;
-          await this.storeAndAlertPostError(messageId, 'globalPostprocessor', gpostResult.error.message);
+          postErrors.push(`Script error in globalPostprocessor: ${gpostResult.error.message}`);
         }
         mark('globalPostprocessor');
       }
 
+      const postprocessorFailed = postErrors.length > 0;
+      if (postprocessorFailed) await this.storeAndAlertPostError(messageId, postErrors.join('\n'));
       const hasError = destHasError || postprocessorFailed;
 
       // Stage 8: Finalize source connector. Do NOT record the source as SENT when a
@@ -548,7 +557,27 @@ export class MessageProcessor {
         return { ...result, response: firstResponse };
       }
       return result;
+      } catch (unexpected) {
+        const reason = unexpected instanceof Error ? unexpected.message : String(unexpected);
+        await this.failUnexpected(messageId, reason);
+        return { messageId, correlationId, status: 'ERROR' as const, errorStage: 'SOURCE' as const, destinationResults: [] };
+      }
     });
+  }
+
+  /** Finish a message that failed with an error no stage handled. */
+  private async failUnexpected(messageId: number, reason: string): Promise<void> {
+    const { channelId, serverId } = this.config;
+    const errorMessage = `Unexpected error while processing: ${reason}`;
+    await this.saved(messageId, 0, 'the ERROR status of a failed message', [
+      this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, errorMessage, 'TEXT'),
+      this.store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+      this.store.incrementStats(channelId, 0, serverId, 'errored'),
+      this.store.markProcessed(channelId, messageId),
+    ]);
+    if (this.config.onError) {
+      await this.config.onError({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage, timestamp: Date.now() });
+    }
   }
 
   /** Route message to its active destinations, whose connector rows already exist. */
@@ -582,7 +611,7 @@ export class MessageProcessor {
         if (!filterResult.ok) {
           return this.destErrorOut(messageId, dest, 'destinationFilter', filterResult.error.message);
         }
-        if (filterResult.value.returnValue === false) {
+        if (filterResult.value.returnValue !== true) {
           await Promise.all([
             this.store.updateConnectorMessageStatus(channelId, messageId, dest.metaDataId, 'FILTERED'),
             this.store.incrementStats(channelId, dest.metaDataId, serverId, 'filtered'),
@@ -600,7 +629,7 @@ export class MessageProcessor {
         if (!txResult.ok) {
           return this.destErrorOut(messageId, dest, 'destinationTransformer', txResult.error.message);
         }
-        const transformed = txResult.value.returnValue ?? txResult.value.msg;
+        const transformed = scriptReplacement(txResult.value.returnValue, txResult.value.msg);
         destContent = serializeTransformed(transformed, destContent, dataType);
       }
 
@@ -658,8 +687,8 @@ export class MessageProcessor {
             dest.scripts.responseTransformer, response.content, input, signal, destMaps,
           );
           if (rtResult.ok) {
-            const transformed = rtResult.value.returnValue ?? rtResult.value.msg;
-            responseContent = serializeFromSandbox(transformed, dataType);
+            const transformed = scriptReplacement(rtResult.value.returnValue, rtResult.value.msg);
+            responseContent = serializeFromSandbox(transformed, dataType, response.content);
             await this.store.storeContent(
               channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
             );
@@ -747,19 +776,14 @@ export class MessageProcessor {
     return { metaDataId: dest.metaDataId, status: 'ERROR' as const };
   }
 
-  /** Store a postprocessor script error against the source connector and raise an alert event. */
-  private async storeAndAlertPostError(
-    messageId: number,
-    stage: string,
-    errMsg: string,
-  ): Promise<void> {
+  /** Store postprocessor script errors against the source connector and raise an alert event. */
+  private async storeAndAlertPostError(messageId: number, errorMessage: string): Promise<void> {
     const { channelId } = this.config;
-    await this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, `Script error in ${stage}: ${errMsg}`, 'TEXT');
+    await this.saved(messageId, 0, 'a postprocessor error', [
+      this.store.storeContent(channelId, messageId, 0, CT_PROCESSING_ERROR, errorMessage, 'TEXT'),
+    ]);
     if (this.config.onError) {
-      await this.config.onError({
-        channelId, errorType: 'SOURCE_CONNECTOR',
-        errorMessage: `Script error in ${stage}: ${errMsg}`, timestamp: Date.now(),
-      });
+      await this.config.onError({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage, timestamp: Date.now() });
     }
   }
 

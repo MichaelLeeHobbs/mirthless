@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { isBlockedAddress, isBlockedHostname } from '../ssrf.js';
+import { isBlockedAddress, isBlockedHostname, isAllowedHost } from '../ssrf.js';
 
 describe('isBlockedAddress', () => {
   it.each([
@@ -37,5 +37,20 @@ describe('isBlockedHostname', () => {
 
   it.each(['example.com', '[2606:4700:4700::1111]', '8.8.8.8'])('allows %s', (host) => {
     expect(isBlockedHostname(host)).toBe(false);
+  });
+});
+
+describe('isAllowedHost', () => {
+  it('matches the exact host, ignoring case, brackets and a trailing dot', () => {
+    expect(isAllowedHost('LIS.hospital.local.', ['lis.hospital.local'])).toBe(true);
+    expect(isAllowedHost('10.1.2.3', [' 10.1.2.3 '])).toBe(true);
+    expect(isAllowedHost('[fd00::1]', ['fd00::1'])).toBe(true);
+  });
+
+  it('does not match other hosts, subdomains or an empty list', () => {
+    expect(isAllowedHost('evil.lis.hospital.local', ['lis.hospital.local'])).toBe(false);
+    expect(isAllowedHost('10.1.2.4', ['10.1.2.3'])).toBe(false);
+    expect(isAllowedHost('10.1.2.3', [])).toBe(false);
+    expect(isAllowedHost('10.1.2.3', undefined)).toBe(false);
   });
 });

@@ -68,6 +68,17 @@ describe('safeHttpFetch — policy', () => {
     },
   );
 
+  it('reaches a private host the administrator has allowed, and only that host', async () => {
+    const res = await safeHttpFetch(`http://127.0.0.1:${String(port)}/ok`, { method: 'POST', body: 'hi' }, ['127.0.0.1']);
+    expect(res.status).toBe(201);
+    await expect(safeHttpFetch(`http://127.0.0.2:${String(port)}/ok`, {}, ['127.0.0.1'])).rejects.toThrow(/SSRF blocked/);
+  });
+
+  it('does not follow a redirect from an allowed host', async () => {
+    const res = await safeHttpFetch(`http://127.0.0.1:${String(port)}/redirect`, {}, ['127.0.0.1']);
+    expect(res.status).toBe(302);
+  });
+
   it('refuses a DNS name that resolves to a private address', async () => {
     resolveTo.address = '10.0.0.5';
     await expect(safeHttpFetch('http://internal.example/', {})).rejects.toThrow(/resolves to a disallowed address/);

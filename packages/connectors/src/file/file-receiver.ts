@@ -115,6 +115,8 @@ export class FileReceiver implements SourceConnectorRuntime {
    * not re-dispatch an already-dispatched-but-post-action-failed file.
    */
   private readonly quarantined = new Set<string>();
+  /** Quarantined files already reported in this run. */
+  private readonly quarantineReported = new Set<string>();
   /** Absolute path to the on-disk quarantine ledger. */
   private readonly ledgerPath: string;
 
@@ -198,7 +200,13 @@ export class FileReceiver implements SourceConnectorRuntime {
       const sorted = this.sortEntries(entries);
       for (const entry of sorted) {
         if (!this.running) break;
-        await this.processFile(entry);
+        // One file that cannot be read (permissions, a file removed mid-poll)
+        // must not stop the files after it, this cycle or any later one.
+        try {
+          await this.processFile(entry);
+        } catch (err) {
+          this.logger.error({ ...errorInfo(err), file: entry.fullPath }, 'File could not be processed; continuing with the next file');
+        }
       }
     } catch (err) {
       // Non-fatal (next cycle retries) but MUST be visible: a vanished
@@ -264,12 +272,15 @@ export class FileReceiver implements SourceConnectorRuntime {
     const key = `${entry.name}:${String(entry.mtime)}`;
     if (this.quarantined.has(key)) {
       // Already dispatched: its post-action failed, or the pipeline recorded an
-      // error for it. Skip to avoid a duplicate delivery. Surface loudly until an
-      // operator resolves it.
-      this.logger.error(
-        { file: entry.fullPath },
-        'File quarantined after an earlier dispatch; skipping to avoid duplicate delivery',
-      );
+      // error for it. Skip to avoid a duplicate delivery. Reported once per
+      // start, not on every poll, so the log stays readable.
+      if (!this.quarantineReported.has(key)) {
+        this.quarantineReported.add(key);
+        this.logger.error(
+          { file: entry.fullPath },
+          'File quarantined after an earlier dispatch; skipping to avoid duplicate delivery (reported once per start)',
+        );
+      }
       return;
     }
 

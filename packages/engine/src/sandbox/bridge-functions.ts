@@ -7,13 +7,15 @@
 
 import { Hl7Message, createAck, type AckOptions } from '@galvaniflow/core-util';
 import { isHl7MessageProxy, createHl7Proxy } from '../pipeline/data-type-handler.js';
-import { isBlockedHostname } from './ssrf.js';
+import { isAllowedHost, isBlockedHostname } from './ssrf.js';
 
 // ----- Types -----
 
 /** Proxy object returned by parseHL7 — closures over host-side Hl7Message. */
 export interface Hl7MessageProxy {
   get(path: string): string | undefined;
+  /** Everything at a path as encoded in the message: the whole field, repetition or component. */
+  getRaw(path: string): string | undefined;
   /** The decoded text at a path (escape sequences resolved). */
   getText(path: string): string | undefined;
   set(path: string, value: string): void;
@@ -46,6 +48,10 @@ export interface HttpFetchResult {
 /** Result from routeMessage bridge function. */
 export interface RouteMessageResult {
   readonly success: boolean;
+  /** The id the target channel gave the message. */
+  readonly messageId?: number;
+  /** True when the target channel's source filter rejected the message. */
+  readonly filtered?: boolean;
   readonly response?: string;
 }
 
@@ -104,6 +110,8 @@ export interface CollectionBridge {
 /** Host-side dependency callbacks for IO bridge functions. */
 export interface BridgeDependencies {
   readonly httpFetch?: (url: string, options: HttpFetchOptions) => Promise<HttpFetchResult>;
+  /** Hosts scripts may reach although their address is private. */
+  readonly httpAllowedHosts?: ReadonlyArray<string>;
   readonly dbQuery?: (dataSourceName: string, sql: string, params: readonly unknown[]) => Promise<readonly Record<string, unknown>[]>;
   readonly routeMessage?: (channelName: string, rawData: string) => Promise<RouteMessageResult>;
   readonly getResource?: (name: string) => Promise<string | null>;
@@ -148,7 +156,7 @@ export function createBridgeFunctions(deps?: BridgeDependencies): BridgeFunction
     ...(deps?.httpFetch ? {
       httpFetch: async (url: string, options?: HttpFetchOptions): Promise<HttpFetchResult> => {
         const parsed = new URL(url);
-        if (isBlockedHostname(parsed.hostname)) {
+        if (!isAllowedHost(parsed.hostname, deps.httpAllowedHosts) && isBlockedHostname(parsed.hostname)) {
           throw new Error(`SSRF blocked: requests to ${parsed.hostname} are not allowed`);
         }
         return deps.httpFetch!(url, options ?? {});

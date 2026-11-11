@@ -164,6 +164,16 @@ describe('GlobalScriptService', () => {
       expect(mockUpdate).toHaveBeenCalled();
     });
 
+    it('refuses a script that does not compile and saves nothing', async () => {
+      const result = await GlobalScriptService.update({ deploy: 'return 1;', preprocessor: 'if (x {' });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('The global preprocessor script does not compile and was not saved');
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockInsert).not.toHaveBeenCalled();
+    });
+
     it('inserts when script row does not exist', async () => {
       // For preprocessor field: select().from().where() — not found
       pushFromResponse([]);

@@ -7,8 +7,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ----- Mock DB -----
 
 const mockInsertReturning = vi.fn();
+const mockOnConflict = vi.fn();
 const mockInsertValues = vi.fn().mockImplementation(() => ({
   returning: mockInsertReturning,
+  onConflictDoUpdate: mockOnConflict,
 }));
 const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 
@@ -107,7 +109,9 @@ beforeEach(() => {
   resetSelectState();
   mockInsertValues.mockImplementation(() => ({
     returning: mockInsertReturning,
+    onConflictDoUpdate: mockOnConflict,
   }));
+  mockOnConflict.mockResolvedValue(undefined);
   mockInsertReturning.mockResolvedValue([{ messageId: MESSAGE_ID }]);
   mockSet.mockReturnValue({ where: mockUpdateWhere });
   mockUpdateWhere.mockResolvedValue(undefined);
@@ -222,19 +226,17 @@ describe('MessageService', () => {
   // ========== STORE CONTENT ==========
   describe('storeContent', () => {
     it('stores RAW content', async () => {
-      mockInsertValues.mockResolvedValue(undefined);
-
       const result = await MessageService.storeContent(
         CHANNEL_ID, MESSAGE_ID, 0, 1, 'MSH|^~\\&|...', 'HL7V2',
       );
 
       expect(result.ok).toBe(true);
       expect(mockInsert).toHaveBeenCalled();
+      // The same content written again (a retried attempt, a recovered message) replaces the row.
+      expect(mockOnConflict).toHaveBeenCalledWith(expect.objectContaining({ set: { content: 'MSH|^~\\&|...', dataType: 'HL7V2', isEncrypted: false } }));
     });
 
     it('stores content with encryption flag', async () => {
-      mockInsertValues.mockResolvedValue(undefined);
-
       const result = await MessageService.storeContent(
         CHANNEL_ID, MESSAGE_ID, 0, 1, 'encrypted-data', 'HL7V2', true,
       );
@@ -243,8 +245,6 @@ describe('MessageService', () => {
     });
 
     it('stores RESPONSE content for destination', async () => {
-      mockInsertValues.mockResolvedValue(undefined);
-
       const result = await MessageService.storeContent(
         CHANNEL_ID, MESSAGE_ID, 1, 6, 'MSA|AA|12345', 'HL7V2',
       );
@@ -253,7 +253,7 @@ describe('MessageService', () => {
     });
 
     it('returns error on DB failure', async () => {
-      mockInsertValues.mockRejectedValue(new Error('Disk full'));
+      mockOnConflict.mockRejectedValue(new Error('Disk full'));
 
       const result = await MessageService.storeContent(
         CHANNEL_ID, MESSAGE_ID, 0, 1, 'data', 'HL7V2',

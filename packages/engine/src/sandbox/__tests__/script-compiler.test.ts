@@ -401,3 +401,42 @@ describe('script cache', () => {
     expect(newest.ok).toBe(true);
   }, 30_000);
 });
+
+describe('compiled filter rules insist on a boolean', () => {
+  async function runFilter(rules: Parameters<typeof compileFilterRulesToScript>[0]): Promise<{ ok: boolean; value?: unknown; message?: string }> {
+    const compiled = compileFilterRulesToScript(rules);
+    if (!compiled.ok || compiled.value === null) throw new Error('expected a script');
+    const { VmSandboxExecutor } = await import('../sandbox-executor.js');
+    const { createSandboxContext } = await import('../sandbox-context.js');
+    const result = await new VmSandboxExecutor().execute({ code: compiled.value }, createSandboxContext({}, ''), { timeout: 2_000 });
+    return result.ok ? { ok: true, value: result.value.returnValue } : { ok: false, message: result.error.message };
+  }
+  const js = (script: string, operator = 'AND'): { enabled: boolean; operator: string; type: string; script: string } =>
+    ({ enabled: true, operator, type: 'JAVASCRIPT', script });
+
+  it('fails with the rule number when a rule returns nothing', async () => {
+    const out = await runFilter([js('return true;'), js('var x = 1;')]);
+
+    expect(out.ok).toBe(false);
+    expect(out.message).toBe('Filter rule 2 returned nothing. A filter rule must return true or false.');
+  });
+
+  it.each([
+    ['null', 'return null;', 'null'],
+    ['a number', 'return 1;', 'a number'],
+    ['text', "return 'true';", 'a string'],
+  ])('fails when a rule returns %s', async (_name, script, described) => {
+    const out = await runFilter([js(script)]);
+
+    expect(out.message).toContain(`returned ${described}`);
+  });
+
+  it('combines boolean rules as before', async () => {
+    expect((await runFilter([js('return true;'), js('return false;')])).value).toBe(false);
+    expect((await runFilter([js('return false;'), js('return true;', 'OR')])).value).toBe(true);
+  });
+
+  it('accepts a rule that ends in a line comment', async () => {
+    expect((await runFilter([js('return true; // accept everything')])).value).toBe(true);
+  });
+});

@@ -627,6 +627,43 @@ describe('FileReceiver', () => {
       expect(errors.some((e) => e.msg.includes('quarantining'))).toBe(true);
     });
 
+    it('reports a quarantined file once, not on every poll', async () => {
+      const { logger, errors } = makeMockLogger();
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7', true)] as never);
+      mockStat.mockResolvedValue(makeStatResult(Date.now() - 5_000, 100) as never);
+      mockReadFile.mockResolvedValue('MSH|^~\\&|X');
+      mockUnlink.mockRejectedValue(new Error('EPERM: unlink failed'));
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      expect(errors.filter((e) => e.msg.includes('skipping to avoid duplicate delivery'))).toHaveLength(1);
+    });
+
+    it('keeps going when one file cannot be read', async () => {
+      const { logger, errors } = makeMockLogger();
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7'), makeDirent('b.hl7'), makeDirent('c.hl7')] as never);
+      mockStat.mockResolvedValue(makeStatResult(Date.now() - 5_000, 100) as never);
+      mockReadFile.mockImplementation((async (path: unknown) => {
+        const name = String(path);
+        if (name.endsWith('.json')) throw new Error('ENOENT');
+        if (name.endsWith('b.hl7')) throw new Error('EACCES: permission denied');
+        return name.endsWith('a.hl7') ? 'A' : 'C';
+      }) as never);
+      mockUnlink.mockResolvedValue(undefined as never);
+      const seen: string[] = [];
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher((raw) => { seen.push(raw.content); return { messageId: 1 }; }));
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(seen).toEqual(['A', 'C']);
+      expect(errors.length).toBeGreaterThan(0);
+    });
+
     it('persists the quarantine to the sidecar ledger on quarantine', async () => {
       const { logger } = makeMockLogger();
       const now = Date.now();

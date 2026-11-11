@@ -4,7 +4,7 @@
 // Reprocessing and bulk deletion of messages.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -251,7 +251,7 @@ export class MessageReprocessService {
         .where(
           and(
             eq(messages.channelId, channelId),
-            sql`id = ANY(${ids})`,
+            inArray(messages.id, ids),
           ),
         );
 

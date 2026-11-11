@@ -228,6 +228,17 @@ describe('ChannelRuntime', () => {
       expect(dest.onHalt).toHaveBeenCalledOnce();
     });
 
+    it('aborts the signal work in progress was given, and issues a fresh one', async () => {
+      await runtime.deploy(makeConfig());
+      await runtime.start();
+      const inFlight = runtime.haltSignal;
+
+      await runtime.halt();
+
+      expect(inFlight.aborted).toBe(true);
+      expect(runtime.haltSignal.aborted).toBe(false);
+    });
+
     it('cannot halt when stopped', async () => {
       await runtime.deploy(makeConfig());
 
