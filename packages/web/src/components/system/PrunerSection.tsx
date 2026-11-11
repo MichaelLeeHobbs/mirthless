@@ -103,8 +103,11 @@ export function PrunerSection(): ReactNode {
       )}
 
       {runNowMutation.isSuccess && (
-        <Alert severity="info" sx={{ mb: 2 }}>
+        <Alert severity={runNowMutation.data.failedChannelIds.length > 0 ? 'error' : 'info'} sx={{ mb: 2 }}>
           Pruning complete: {runNowMutation.data.channelsPruned} channels pruned, {runNowMutation.data.totalDeleted} messages deleted
+          {runNowMutation.data.failedChannelIds.length > 0
+            ? `. Pruning failed for ${String(runNowMutation.data.failedChannelIds.length)} channels; see the server log.`
+            : ''}
         </Alert>
       )}
 

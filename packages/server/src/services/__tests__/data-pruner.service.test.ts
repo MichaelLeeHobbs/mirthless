@@ -57,6 +57,10 @@ vi.mock('../../lib/db.js', () => ({
   default: mockDb,
 }));
 
+vi.mock('../../lib/logger.js', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
@@ -70,6 +74,7 @@ vi.mock('drizzle-orm', () => ({
     (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values, type: 'sql' }),
     {
       raw: (s: string) => ({ raw: s }),
+      identifier: (name: string) => ({ identifier: name }),
       join: (chunks: unknown[], sep: unknown) => ({ type: 'sql_join', chunks, sep }),
     },
   ),
@@ -81,6 +86,31 @@ const { emitEvent } = await import('../../lib/event-emitter.js');
 
 // ----- Fixtures -----
 
+/** True when a mocked sql`` object is the pruner's "next batch of ids" query. */
+function isBatchSelect(query: unknown): boolean {
+  const strings = (query as { strings?: readonly string[] }).strings ?? [];
+  return strings.join('').includes('SELECT m.id FROM messages');
+}
+
+/**
+ * Queue the id batches the pruner will read, in order (one per channel, or several
+ * for one channel). A batch may be an Error to make that read fail. Every other
+ * statement (the deletes) succeeds unless a test overrides it.
+ */
+let staleBatches: Array<readonly number[] | Error> = [];
+let deleteStatements = 0;
+function queueStale(...batches: Array<readonly number[] | Error>): void {
+  staleBatches = [...batches];
+}
+function installExecute(): void {
+  mockExecute.mockImplementation(async (query: unknown) => {
+    if (!isBatchSelect(query)) { deleteStatements += 1; return { rows: [] }; }
+    const next = staleBatches.shift() ?? [];
+    if (next instanceof Error) throw next;
+    return { rows: next.map((id) => ({ id })) };
+  });
+}
+
 const CHANNEL_ID_1 = '00000000-0000-0000-0000-000000000001';
 const CHANNEL_ID_2 = '00000000-0000-0000-0000-000000000002';
 
@@ -89,7 +119,9 @@ const CHANNEL_ID_2 = '00000000-0000-0000-0000-000000000002';
 beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
-  mockExecute.mockResolvedValue({ rows: [] });
+  staleBatches = [];
+  deleteStatements = 0;
+  installExecute();
   mockDeleteWhere.mockResolvedValue(undefined);
   mockSelectWhere.mockImplementation(() => {
     const fn = selectResponses[selectCallIndex];
@@ -104,37 +136,47 @@ beforeEach(() => {
 describe('DataPrunerService', () => {
   // ========== PRUNE CHANNEL ==========
   describe('pruneChannel', () => {
-    it('calculates cutoff date and deletes old messages', async () => {
-      // First call: select stale message IDs
-      pushSelectResponse([{ id: 100 }, { id: 200 }, { id: 300 }]);
+    it('deletes the old messages and their child rows', async () => {
+      queueStale([100, 200, 300]);
 
       const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 7);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.deletedCount).toBe(3);
+      // attachments, custom metadata, content, connector_messages, messages
+      expect(deleteStatements).toBe(5);
+    });
 
-      // 5 execute calls: attachments, custom metadata, content, connector_messages, messages
-      expect(mockExecute).toHaveBeenCalledTimes(5);
+    it('keeps reading batches until one comes back short', async () => {
+      const full = Array.from({ length: 1000 }, (_, i) => i + 1);
+      queueStale(full, full.map((id) => id + 1000), [5000]);
+
+      const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 7);
+
+      expect(result.ok && result.value.deletedCount).toBe(2001);
+      expect(deleteStatements).toBe(15);
+    });
+
+    it('stops after a full batch when nothing is left', async () => {
+      queueStale(Array.from({ length: 1000 }, (_, i) => i + 1), []);
+
+      const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 7);
+
+      expect(result.ok && result.value.deletedCount).toBe(1000);
     });
 
     it('returns zero when no messages are old enough', async () => {
-      pushSelectResponse([]);
-
       const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 30);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.deletedCount).toBe(0);
-
-      // No execute calls needed when nothing to delete
-      expect(mockExecute).not.toHaveBeenCalled();
+      expect(deleteStatements).toBe(0);
     });
 
     it('returns error on DB failure during message select', async () => {
-      selectResponses.push(() => {
-        throw new Error('DB connection lost');
-      });
+      queueStale(new Error('DB connection lost'));
 
       const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 7);
 
@@ -142,8 +184,10 @@ describe('DataPrunerService', () => {
     });
 
     it('returns error on DB failure during delete execution', async () => {
-      pushSelectResponse([{ id: 100 }]);
-      mockExecute.mockRejectedValueOnce(new Error('Delete failed'));
+      mockExecute.mockImplementation(async (query: unknown) => {
+        if (isBatchSelect(query)) return { rows: [{ id: 100 }] };
+        throw new Error('Delete failed');
+      });
 
       const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 7);
 
@@ -151,7 +195,7 @@ describe('DataPrunerService', () => {
     });
 
     it('emits audit event on success', async () => {
-      pushSelectResponse([{ id: 100 }]);
+      queueStale([100]);
 
       const context = { userId: 'user-1', ipAddress: '127.0.0.1' };
       const result = await DataPrunerService.pruneChannel(CHANNEL_ID_1, 14, context);
@@ -166,23 +210,6 @@ describe('DataPrunerService', () => {
         }),
       );
     });
-
-    it('uses correct cutoff date calculation', async () => {
-      pushSelectResponse([]);
-
-      const before = Date.now();
-      await DataPrunerService.pruneChannel(CHANNEL_ID_1, 10);
-      const after = Date.now();
-
-      // Verify lt() was called with a Date close to 10 days ago
-      const { lt } = await import('drizzle-orm');
-      const ltCall = (lt as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(ltCall).toBeDefined();
-      const cutoff = ltCall![1] as Date;
-      const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
-      expect(cutoff.getTime()).toBeGreaterThanOrEqual(before - tenDaysMs);
-      expect(cutoff.getTime()).toBeLessThanOrEqual(after - tenDaysMs);
-    });
   });
 
   // ========== PRUNE ALL ==========
@@ -193,10 +220,7 @@ describe('DataPrunerService', () => {
         { id: CHANNEL_ID_1, pruningMaxAgeDays: 7 },
         { id: CHANNEL_ID_2, pruningMaxAgeDays: 14 },
       ]);
-      // Second call: stale messages for channel 1
-      pushSelectResponse([{ id: 100 }, { id: 200 }]);
-      // Third call: stale messages for channel 2
-      pushSelectResponse([{ id: 300 }]);
+      queueStale([100, 200], [300]);
 
       const result = await DataPrunerService.pruneAll();
 
@@ -219,7 +243,7 @@ describe('DataPrunerService', () => {
 
     it('uses default 30-day retention when pruningMaxAgeDays is null', async () => {
       pushSelectResponse([{ id: CHANNEL_ID_1, pruningMaxAgeDays: null }]);
-      pushSelectResponse([{ id: 500 }]);
+      queueStale([500]);
 
       const result = await DataPrunerService.pruneAll();
 
@@ -233,10 +257,7 @@ describe('DataPrunerService', () => {
         { id: CHANNEL_ID_1, pruningMaxAgeDays: 7 },
         { id: CHANNEL_ID_2, pruningMaxAgeDays: 14 },
       ]);
-      // Channel 1 has stale messages
-      pushSelectResponse([{ id: 100 }]);
-      // Channel 2 has no stale messages
-      pushSelectResponse([]);
+      queueStale([100], []);
 
       const result = await DataPrunerService.pruneAll();
 
@@ -258,7 +279,7 @@ describe('DataPrunerService', () => {
 
     it('emits audit event with aggregate counts', async () => {
       pushSelectResponse([{ id: CHANNEL_ID_1, pruningMaxAgeDays: 7 }]);
-      pushSelectResponse([{ id: 100 }, { id: 200 }]);
+      queueStale([100, 200]);
 
       await DataPrunerService.pruneAll({ userId: 'admin-1', ipAddress: '10.0.0.1' });
 
@@ -270,6 +291,24 @@ describe('DataPrunerService', () => {
           attributes: expect.objectContaining({ channelsPruned: 1, totalDeleted: 2 }),
         }),
       );
+    });
+  
+    it('keeps pruning the other channels when one channel fails', async () => {
+      pushSelectResponse([
+        { id: CHANNEL_ID_1, pruningMaxAgeDays: 7 },
+        { id: CHANNEL_ID_2, pruningMaxAgeDays: 14 },
+      ]);
+      queueStale(new Error('lock timeout'), [300, 400]);
+
+      const result = await DataPrunerService.pruneAll();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toEqual({ channelsPruned: 1, totalDeleted: 2, failedChannelIds: [CHANNEL_ID_1] });
+      expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'FAILURE',
+        attributes: expect.objectContaining({ failedChannelIds: [CHANNEL_ID_1] }),
+      }));
     });
   });
 

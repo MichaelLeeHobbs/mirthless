@@ -69,7 +69,11 @@ export class PrunerSchedulerService {
               totalDeleted: result.value.totalDeleted,
               completedAt: now,
             };
-            logger.info({ result: result.value }, 'Auto data pruner completed');
+            if (result.value.failedChannelIds.length > 0) {
+              logger.error({ result: result.value }, 'Auto data pruner completed, but some channels could not be pruned');
+            } else {
+              logger.info({ result: result.value }, 'Auto data pruner completed');
+            }
           } else {
             lastRunResult = { channelsPruned: 0, totalDeleted: 0, completedAt: now };
             logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Auto data pruner failed');

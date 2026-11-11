@@ -6,14 +6,12 @@
 // All methods return Result<T> using tryCatch from stderr-lib.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, lt, isNull, sql } from 'drizzle-orm';
+import { eq, and, isNull, sql, type SQL } from 'drizzle-orm';
 import { db } from '../lib/db.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
-import {
-  channels,
-  messages,
-} from '../db/schema/index.js';
-import { deleteMessagesByIds } from './message-delete-helper.js';
+import logger from '../lib/logger.js';
+import { channels } from '../db/schema/index.js';
+import { deleteMessagesByIds, DELETE_BATCH_SIZE } from './message-delete-helper.js';
 
 // ----- Constants -----
 
@@ -29,6 +27,8 @@ export interface PruneChannelResult {
 export interface PruneAllResult {
   readonly channelsPruned: number;
   readonly totalDeleted: number;
+  /** Channels whose prune failed. The others were still pruned. */
+  readonly failedChannelIds: readonly string[];
 }
 
 export interface PrunableChannelStats {
@@ -43,35 +43,47 @@ function computeCutoffDate(maxAgeDays: number): Date {
 }
 
 /**
- * Delete all message-related records older than cutoffDate for a channel.
- * Deletes in dependency order: attachments, custom metadata, content,
- * connector messages, then messages.
+ * Messages of a channel that are old enough AND finished. A message that is still
+ * unprocessed, or has a destination waiting in the queue, is never pruned however
+ * old it is: deleting it would silently lose a message that was never delivered.
+ */
+function prunableWhere(channelId: string, cutoffDate: Date): SQL {
+  return sql`
+    m.channel_id = ${channelId}
+    AND m.received_at < ${cutoffDate.toISOString()}
+    AND m.processed = true
+    AND NOT EXISTS (
+      SELECT 1 FROM connector_messages cm
+      WHERE cm.channel_id = m.channel_id
+        AND cm.message_id = m.id
+        AND cm.status IN ('QUEUED', 'PENDING')
+    )
+  `;
+}
+
+/**
+ * Delete finished messages older than cutoffDate for a channel, one bounded batch
+ * at a time, so the work never depends on how many messages there are.
  */
 async function deleteOldMessages(
   channelId: string,
   cutoffDate: Date,
 ): Promise<number> {
-  // Find message IDs to prune
-  const staleMessages = await db
-    .select({ id: messages.id })
-    .from(messages)
-    .where(
-      and(
-        eq(messages.channelId, channelId),
-        lt(messages.receivedAt, cutoffDate),
-      ),
-    );
+  let deleted = 0;
+  for (;;) {
+    const batch = await db.execute<{ id: number | string }>(sql`
+      SELECT m.id FROM messages m
+      WHERE ${prunableWhere(channelId, cutoffDate)}
+      ORDER BY m.id
+      LIMIT ${DELETE_BATCH_SIZE}
+    `);
+    const messageIds = batch.rows.map((row) => Number(row.id));
+    if (messageIds.length === 0) return deleted;
 
-  if (staleMessages.length === 0) {
-    return 0;
+    await deleteMessagesByIds(channelId, messageIds);
+    deleted += messageIds.length;
+    if (messageIds.length < DELETE_BATCH_SIZE) return deleted;
   }
-
-  const messageIds = staleMessages.map((m) => m.id);
-
-  // Delete in dependency order (transactional)
-  await deleteMessagesByIds(channelId, messageIds);
-
-  return messageIds.length;
 }
 
 // ----- Service -----
@@ -128,29 +140,36 @@ export class DataPrunerService {
 
       let totalDeleted = 0;
       let channelsPruned = 0;
+      const failedChannelIds: string[] = [];
 
       for (const ch of prunableChannels) {
         const maxAge = ch.pruningMaxAgeDays ?? DEFAULT_MAX_AGE_DAYS;
         const cutoff = computeCutoffDate(maxAge);
-        const deleted = await deleteOldMessages(ch.id, cutoff);
-        if (deleted > 0) {
+        // One channel failing must not stop the others from being pruned.
+        const pruned = await tryCatch(deleteOldMessages(ch.id, cutoff));
+        if (!pruned.ok) {
+          failedChannelIds.push(ch.id);
+          logger.error({ channelId: ch.id, errMsg: pruned.error.message }, 'Data pruner failed for channel');
+          continue;
+        }
+        if (pruned.value > 0) {
           channelsPruned++;
-          totalDeleted += deleted;
+          totalDeleted += pruned.value;
         }
       }
 
       emitEvent({
-        level: 'INFO',
+        level: failedChannelIds.length > 0 ? 'ERROR' : 'INFO',
         name: 'DATA_PRUNER_RAN',
-        outcome: 'SUCCESS',
+        outcome: failedChannelIds.length > 0 ? 'FAILURE' : 'SUCCESS',
         userId: context?.userId ?? null,
         channelId: null,
         serverId: null,
         ipAddress: context?.ipAddress ?? null,
-        attributes: { channelsPruned, totalDeleted },
+        attributes: { channelsPruned, totalDeleted, failedChannelIds },
       });
 
-      return { channelsPruned, totalDeleted };
+      return { channelsPruned, totalDeleted, failedChannelIds };
     });
   }
 
@@ -181,9 +200,8 @@ export class DataPrunerService {
 
         const countResult = await db.execute<{ count: string }>(sql`
           SELECT COUNT(*) as count
-          FROM messages
-          WHERE channel_id = ${ch.id}
-            AND received_at < ${cutoff.toISOString()}
+          FROM messages m
+          WHERE ${prunableWhere(ch.id, cutoff)}
         `);
 
         const prunableCount = Number(countResult.rows[0]?.count ?? 0);
