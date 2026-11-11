@@ -151,6 +151,15 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] ~~Connection testing — "Test Connection" button per connector type~~
 - [x] ~~Load testing — throughput benchmarks with realistic message volumes~~ (3-hour soak, 1.08M messages, 0 lost: `docs/ops/soak-test.md`, 2026-10-09)
 - [ ] E2E test suite refresh — 19 specs may need updates after recent UI changes (`message-flow.spec.ts` rewritten to assert real delivery, 2026-10-08)
+- [x] ~~Deep code review and fixes~~ (1 critical, 12 high, 15 medium, 10 low; all fixed 2026-11-11, D-206 to D-222)
+- [ ] Run scripts off the main thread (worker threads). A tight loop in a script blocks every channel until its timeout fires (D-212)
+- [ ] Mapper transformer steps. A channel with one does not deploy (D-207)
+- [ ] Attachment extraction and batch splitting: library code exists, no channel setting reaches it
+- [ ] `${originalFilename}` for file and SFTP destinations: needs the source map passed to destinations (D-219)
+- [ ] Apply a channel's outbound data type. Destination content is serialized as the inbound type
+- [ ] Persist alert throttle state, so a restart cannot send an extra alert (D-217)
+- [ ] Bundle the Monaco editor with the web app. It is fetched from a public CDN at runtime, so script editors do not load on a network without internet access
+- [ ] Raise unit coverage of the server (controllers, `engine.ts`) and the web pages toward the 95% aim (D-222)
 - [ ] Security review — HIPAA checklist written (`docs/ops/hipaa-security-checklist.md`, 2026-10-09, lists the open gaps); penetration testing not done
 
 ---
@@ -265,6 +274,8 @@ Ideas that may become relevant. Not committed to any timeline.
 - Channel group is single-select but schema is many-to-many — consider schema migration
 - Extension system is static catalog — no runtime plugin loading yet
 - No HL7v2 serialization back from parsed object — roundtrip transforms incomplete
+- A queued delivery that finishes before the pipeline finalizes its message keeps its content until the pruner, even with "remove content on completion" on (safe side of a race)
+- Database connectors are PostgreSQL only
 
 ---
 
