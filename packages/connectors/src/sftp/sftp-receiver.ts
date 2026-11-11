@@ -10,6 +10,7 @@
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { matchGlob } from '../file/file-receiver.js';
 import { withTimeout } from '../timeout.js';
@@ -212,7 +213,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
     if (this.quarantined.has(key)) {
       this.logger.error(
         { file: entry.name },
-        'File quarantined after post-action failure; skipping to avoid duplicate delivery',
+        'File quarantined after an earlier dispatch; skipping to avoid duplicate delivery',
       );
       return;
     }
@@ -231,18 +232,31 @@ export class SftpReceiver implements SourceConnectorRuntime {
     };
 
     const result = await this.dispatcher(raw);
+    // Not taken by the pipeline at all: leave the file for the next poll.
+    if (!result.ok) return;
 
-    if (result.ok) {
-      try {
-        await this.postProcess(entry);
-      } catch (err) {
-        this.quarantined.add(key);
-        await this.persistQuarantine();
-        this.logger.error(
-          { ...errorInfo(err), file: entry.name },
-          'Post-action failed after successful dispatch; quarantining file',
-        );
-      }
+    const failure = dispatchFailure(result);
+    if (failure !== null) {
+      // Recorded with an error. Do not delete or move the file (that would report
+      // success), and do not read it again (that would process it twice).
+      this.quarantined.add(key);
+      await this.persistQuarantine();
+      this.logger.error(
+        { ...errorInfo(failure), file: entry.name },
+        'Pipeline recorded an error for this file; file kept in place and quarantined so it is not read again',
+      );
+      return;
+    }
+
+    try {
+      await this.postProcess(entry);
+    } catch (err) {
+      this.quarantined.add(key);
+      await this.persistQuarantine();
+      this.logger.error(
+        { ...errorInfo(err), file: entry.name },
+        'Post-action failed after successful dispatch; quarantining file',
+      );
     }
   }
 

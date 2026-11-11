@@ -745,3 +745,152 @@ describe('FileReceiver', () => {
     });
   });
 });
+
+describe('FileReceiver when the pipeline recorded an error', () => {
+  it('keeps the file and does not read it again', async () => {
+    const now = Date.now();
+    mockReaddir.mockResolvedValue([makeDirent('file.hl7')] as never);
+    mockStat.mockResolvedValue(makeStatResult(now - 5_000, 100) as never);
+    mockReadFile.mockResolvedValue('content');
+    const dispatched: string[] = [];
+
+    receiver = new FileReceiver(makeConfig({ postAction: FILE_POST_ACTION.DELETE }));
+    receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw.content); return { messageId: 9, status: 'ERROR' }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(mockUnlink).not.toHaveBeenCalled();
+    expect(mockRename).not.toHaveBeenCalled();
+    expect(dispatched).toEqual(['content']);
+  });
+
+  it('still applies the post-action to a filtered message', async () => {
+    const now = Date.now();
+    mockReaddir.mockResolvedValue([makeDirent('file.hl7')] as never);
+    mockStat.mockResolvedValue(makeStatResult(now - 5_000, 100) as never);
+    mockReadFile.mockResolvedValue('content');
+    mockUnlink.mockResolvedValue(undefined);
+
+    receiver = new FileReceiver(makeConfig({ postAction: FILE_POST_ACTION.DELETE }));
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 9, status: 'FILTERED' })));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(mockUnlink).toHaveBeenCalledWith(expect.stringContaining('file.hl7'));
+  });
+});
+
+// ----- Faults that must not stop the rest of the directory -----
+
+describe('FileReceiver faults', () => {
+  it('refuses a character set it does not know instead of reading as UTF-8', async () => {
+    receiver = new FileReceiver(makeConfig({ charset: 'windows-1252' as BufferEncoding }), makeMockLogger().logger);
+    const result = await receiver.onDeploy();
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
+    expect(result.error.message).toContain('windows-1252');
+  });
+
+  it('accepts the IANA names the editor offers', async () => {
+    for (const charset of ['utf-8', 'ISO-8859-1', 'US-ASCII', 'utf-16le']) {
+      const r = new FileReceiver(makeConfig({ charset: charset as BufferEncoding }), makeMockLogger().logger);
+      expect((await r.onDeploy()).ok).toBe(true);
+    }
+  });
+
+  function listFiles(...names: string[]): void {
+    mockReaddir.mockResolvedValue(names.map((n) => makeDirent(n)) as never);
+    mockStat.mockResolvedValue(makeStatResult(Date.now() - 60_000, 10) as never);
+    mockUnlink.mockResolvedValue(undefined);
+  }
+
+  it('reads the later files when one file cannot be read, and reports the bad one', async () => {
+    listFiles('a.hl7', 'b.hl7', 'c.hl7');
+    mockReadFile.mockImplementation((async (file: unknown) => {
+      if (String(file).endsWith('a.hl7')) throw new Error('EACCES: permission denied');
+      if (String(file).endsWith('.json')) throw new Error('ENOENT');
+      return `content of ${String(file)}`;
+    }) as never);
+    const log = makeMockLogger();
+    const seen: unknown[] = [];
+
+    receiver = new FileReceiver(makeConfig(), log.logger);
+    receiver.setDispatcher(makeDispatcher((raw) => { seen.push(raw.sourceMap['originalFilename']); return { messageId: 1 }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(seen).toEqual(['b.hl7', 'c.hl7']);
+    expect(log.errors).toHaveLength(1);
+    expect(String(log.errors[0]!.obj['file'])).toContain('a.hl7');
+    expect(log.errors[0]!.msg).toContain('could not be read');
+  });
+
+  it('skips a file that vanishes between the listing and the stat', async () => {
+    listFiles('gone.hl7', 'here.hl7');
+    mockStat.mockImplementation((async (file: unknown) => {
+      if (String(file).endsWith('gone.hl7')) throw new Error('ENOENT');
+      return makeStatResult(Date.now() - 60_000, 10);
+    }) as never);
+    mockReadFile.mockImplementation((async (file: unknown) => {
+      if (String(file).endsWith('.json')) throw new Error('ENOENT');
+      return 'content';
+    }) as never);
+    const seen: unknown[] = [];
+
+    receiver = new FileReceiver(makeConfig(), makeMockLogger().logger);
+    receiver.setDispatcher(makeDispatcher((raw) => { seen.push(raw.sourceMap['originalFilename']); return { messageId: 1 }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(seen).toEqual(['here.hl7']);
+  });
+
+  it('dispatches no further files once the channel is stopped mid-cycle', async () => {
+    listFiles('a.hl7', 'b.hl7', 'c.hl7');
+    mockReadFile.mockImplementation((async (file: unknown) => {
+      if (String(file).endsWith('.json')) throw new Error('ENOENT');
+      return 'content';
+    }) as never);
+    const seen: unknown[] = [];
+    let stopping: Promise<unknown> | null = null;
+
+    const r = new FileReceiver(makeConfig(), makeMockLogger().logger);
+    receiver = r;
+    r.setDispatcher(makeDispatcher((raw) => {
+      seen.push(raw.sourceMap['originalFilename']);
+      stopping ??= r.onStop();
+      return { messageId: 1 };
+    }));
+    await r.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await stopping;
+
+    expect(seen).toEqual(['a.hl7']);
+  });
+
+  it('waits for the file in flight before stop resolves', async () => {
+    listFiles('a.hl7');
+    mockReadFile.mockImplementation((async (file: unknown) => {
+      if (String(file).endsWith('.json')) throw new Error('ENOENT');
+      return 'content';
+    }) as never);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+
+    const r = new FileReceiver(makeConfig(), makeMockLogger().logger);
+    receiver = r;
+    r.setDispatcher(async () => { await gate; return { ok: true as const, value: { messageId: 1 }, error: null }; });
+    await r.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    let stopped = false;
+    const stop = r.onStop().then(() => { stopped = true; });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(stopped).toBe(false);
+
+    release();
+    await stop;
+    expect(stopped).toBe(true);
+    expect(mockUnlink).toHaveBeenCalledTimes(1);
+  });
+});

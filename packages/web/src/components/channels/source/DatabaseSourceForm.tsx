@@ -7,6 +7,8 @@ import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { DATABASE_SOURCE_DEFAULTS } from './connector-defaults.js';
@@ -109,6 +111,17 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
           onChange={handleText('password')}
           fullWidth
           sx={{ mb: 2 }}
+        />
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={properties['tls'] === true}
+              onChange={(e) => { update('tls', e.target.checked); }}
+            />
+          }
+          label="Encrypt the connection (TLS)"
+          sx={{ mb: 2, display: 'block' }}
         />
       </Grid>
 

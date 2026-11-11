@@ -23,8 +23,27 @@ const DEFAULT_COMPILE_OPTIONS: CompileOptions = {
 
 // ----- Compiler -----
 
-/** Script cache keyed by source code hash. */
+/** Most compiled scripts kept. A server with more distinct scripts recompiles the oldest on next deploy. */
+export const SCRIPT_CACHE_LIMIT = 1_000;
+
+/**
+ * Compiled scripts by compile options and source. Bounded: a long-running
+ * server sees a new entry for every edit of every script, and nothing else
+ * ever removed them. A Map keeps insertion order, so the first key is the oldest.
+ */
 const scriptCache = new Map<string, CompiledScript>();
+
+/** Number of scripts in the cache. */
+export function scriptCacheSize(): number {
+  return scriptCache.size;
+}
+
+function remember(key: string, compiled: CompiledScript): void {
+  scriptCache.set(key, compiled);
+  if (scriptCache.size <= SCRIPT_CACHE_LIMIT) return;
+  const oldest = scriptCache.keys().next();
+  if (!oldest.done) scriptCache.delete(oldest.value);
+}
 
 /** Compile TypeScript source to JavaScript via esbuild. */
 export async function compileScript(
@@ -32,10 +51,11 @@ export async function compileScript(
   options?: CompileOptions,
 ): Promise<Result<CompiledScript>> {
   return tryCatch(async () => {
-    const cached = scriptCache.get(code);
-    if (cached) return cached;
-
     const opts = { ...DEFAULT_COMPILE_OPTIONS, ...options };
+    // The options change the output (source map, file name), so they are part of the key.
+    const key = `${opts.sourcemap ? '1' : '0'}\u0000${opts.sourcefile ?? ''}\u0000${code}`;
+    const cached = scriptCache.get(key);
+    if (cached) return cached;
 
     const transformOptions: Parameters<typeof transform>[1] = {
       loader: 'ts',
@@ -52,7 +72,7 @@ export async function compileScript(
       ? { code: result.code, sourceMap: result.map }
       : { code: result.code };
 
-    scriptCache.set(code, compiled);
+    remember(key, compiled);
     return compiled;
   });
 }
@@ -63,6 +83,19 @@ export function clearScriptCache(): void {
 }
 
 // ----- Filter/Transformer Compilation -----
+// A rule or step the engine cannot run is an error, never a skip: dropping a filter
+// rule lets every message through, and dropping a transformer step forwards data
+// that was meant to be changed or removed.
+
+const OK_NULL: Result<string | null> = { ok: true, value: null, error: null };
+
+function okScript(value: string): Result<string | null> {
+  return { ok: true, value, error: null };
+}
+
+function unsupported(message: string): Result<never> {
+  return { ok: false, value: null, error: new Error(message) } as Result<never>;
+}
 
 /** A single filter rule for compilation. */
 export interface FilterRuleInput {
@@ -70,33 +103,99 @@ export interface FilterRuleInput {
   readonly operator: string;
   readonly type: string;
   readonly script: string | null;
+  /** Rule Builder: HL7 path (`MSH.9.1`) or dotted property path into `msg`. */
+  readonly field?: string | null | undefined;
+  /** Rule Builder: one of RULE_BUILDER_CONDITIONS. */
+  readonly condition?: string | null | undefined;
+  /** Rule Builder: values the field is compared with. */
+  readonly values?: ReadonlyArray<string> | null | undefined;
 }
 
-/** Compile filter rules into a single boolean-returning script. */
-export function compileFilterRulesToScript(
-  rules: ReadonlyArray<FilterRuleInput>,
-): string | null {
-  const jsRules = rules.filter((r) => r.enabled && r.type === 'JAVASCRIPT' && r.script);
-  if (jsRules.length === 0) return null;
+/** Rule Builder conditions mapped to a JavaScript test of `s` (the field text) against `vals`. */
+const RULE_BUILDER_CONDITIONS: Readonly<Record<string, string>> = {
+  EQUALS: 'vals.indexOf(s) !== -1',
+  NOT_EQUALS: 'vals.indexOf(s) === -1',
+  CONTAINS: 'vals.some(function (v) { return s.indexOf(v) !== -1; })',
+  NOT_CONTAINS: '!vals.some(function (v) { return s.indexOf(v) !== -1; })',
+  EXISTS: "s !== ''",
+  NOT_EXISTS: "s === ''",
+  STARTS_WITH: 'vals.some(function (v) { return s.lastIndexOf(v, 0) === 0; })',
+  ENDS_WITH: 'vals.some(function (v) { return v.length <= s.length && s.indexOf(v, s.length - v.length) !== -1; })',
+  REGEX: 'vals.some(function (v) { return new RegExp(v).test(s); })',
+};
 
-  if (jsRules.length === 1) {
-    return `return (function() { ${jsRules[0]!.script!} })();`;
-  }
+const CONDITIONS_WITHOUT_VALUES: ReadonlySet<string> = new Set(['EXISTS', 'NOT_EXISTS']);
 
-  // Combine rules with their operators (first rule's operator is ignored, subsequent rules define connector)
-  const parts: string[] = [];
-  for (let i = 0; i < jsRules.length; i++) {
-    const rule = jsRules[i]!;
-    const wrapped = `(function() { ${rule.script!} })()`;
-    if (i === 0) {
-      parts.push(wrapped);
-    } else {
-      const op = rule.operator === 'OR' ? '||' : '&&';
-      parts.push(` ${op} ${wrapped}`);
+/** Reject a Rule Builder regex at deploy time instead of on the first message. */
+function firstInvalidRegex(values: ReadonlyArray<string>): string | null {
+  for (const value of values) {
+    try {
+      new RegExp(value);
+    } catch {
+      return value;
     }
   }
+  return null;
+}
 
-  return `return ${parts.join('')};`;
+/** Generate the body of a Rule Builder rule. User text is embedded only as JSON literals. */
+function ruleBuilderBody(rule: FilterRuleInput, position: number): Result<string> {
+  const field = rule.field?.trim() ?? '';
+  const condition = rule.condition ?? '';
+  const values = rule.values ?? [];
+  const test = Object.hasOwn(RULE_BUILDER_CONDITIONS, condition) ? RULE_BUILDER_CONDITIONS[condition] : undefined;
+  if (field === '') return unsupported(`Filter rule ${String(position)} (Rule Builder) has no field`);
+  if (test === undefined) return unsupported(`Filter rule ${String(position)} (Rule Builder) has an unknown condition "${condition}"`);
+  if (!CONDITIONS_WITHOUT_VALUES.has(condition) && values.length === 0) {
+    return unsupported(`Filter rule ${String(position)} (Rule Builder) needs at least one value for ${condition}`);
+  }
+  if (condition === 'REGEX') {
+    const bad = firstInvalidRegex(values);
+    if (bad !== null) return unsupported(`Filter rule ${String(position)} (Rule Builder) has an invalid regular expression "${bad}"`);
+  }
+  const body =
+    `var f = ${JSON.stringify(field)}; var vals = ${JSON.stringify(values)};` +
+    " var raw = (msg !== null && typeof msg === 'object' && typeof msg.get === 'function')" +
+    ' ? msg.get(f)' +
+    " : f.split('.').reduce(function (o, k) { return o === null || o === undefined ? undefined : o[k]; }, msg);" +
+    " var s = raw === null || raw === undefined ? '' : String(raw);" +
+    ` return ${test};`;
+  return { ok: true, value: body, error: null };
+}
+
+/** Turn one enabled filter rule into a function body, or explain why it cannot run. */
+function filterRuleBody(rule: FilterRuleInput, position: number): Result<string | null> {
+  if (rule.type === 'RULE_BUILDER') return ruleBuilderBody(rule, position);
+  const script = rule.script ?? '';
+  if (rule.type === 'JAVASCRIPT') return script === '' ? OK_NULL : okScript(script);
+  // Any other type (for example an imported rule) runs only if it carries a script.
+  if (script.trim() === '') {
+    return unsupported(`Filter rule ${String(position)} has type ${rule.type}, which this engine cannot run`);
+  }
+  return okScript(script);
+}
+
+/**
+ * Compile filter rules into a single boolean-returning script.
+ * Returns null when there is nothing to run, and an error when an enabled rule
+ * cannot be run (so the caller can refuse to deploy).
+ */
+export function compileFilterRulesToScript(
+  rules: ReadonlyArray<FilterRuleInput>,
+): Result<string | null> {
+  const parts: string[] = [];
+  for (let i = 0; i < rules.length; i++) {
+    const rule = rules[i]!;
+    if (!rule.enabled) continue;
+    const body = filterRuleBody(rule, i + 1);
+    if (!body.ok) return body;
+    if (body.value === null) continue;
+    const wrapped = `(function() { ${body.value} })()`;
+    // The first rule's operator is ignored; later rules say how they join.
+    parts.push(parts.length === 0 ? wrapped : ` ${rule.operator === 'OR' ? '||' : '&&'} ${wrapped}`);
+  }
+  if (parts.length === 0) return OK_NULL;
+  return okScript(`return ${parts.join('')};`);
 }
 
 /** A single transformer step for compilation. */
@@ -106,13 +205,26 @@ export interface TransformerStepInput {
   readonly script: string | null;
 }
 
-/** Compile transformer steps into a sequential execution script. */
+/**
+ * Compile transformer steps into a sequential execution script.
+ * Returns null when there is nothing to run, and an error when an enabled step
+ * cannot be run. JavaScript and Message Builder steps are scripts; any other type
+ * runs only if it carries a script.
+ */
 export function compileTransformerStepsToScript(
   steps: ReadonlyArray<TransformerStepInput>,
-): string | null {
-  const jsSteps = steps.filter((s) => s.enabled && s.type === 'JAVASCRIPT' && s.script);
-  if (jsSteps.length === 0) return null;
-
-  const lines = jsSteps.map((s) => s.script!);
-  return `${lines.join('\n')}\nreturn msg;`;
+): Result<string | null> {
+  const lines: string[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    if (!step.enabled) continue;
+    const script = step.script ?? '';
+    if (script.trim() === '') {
+      if (step.type === 'JAVASCRIPT' || step.type === 'MESSAGE_BUILDER') continue;
+      return unsupported(`Transformer step ${String(i + 1)} has type ${step.type}, which this engine cannot run`);
+    }
+    lines.push(script);
+  }
+  if (lines.length === 0) return OK_NULL;
+  return okScript(`${lines.join('\n')}\nreturn msg;`);
 }

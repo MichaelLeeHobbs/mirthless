@@ -11,7 +11,7 @@
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { withTimeoutSignal } from '../timeout.js';
-import { resolveOutputFilename } from '../file/file-dispatcher.js';
+import { resolveOutputFilename, unknownPlaceholders, unknownPlaceholderMessage } from '../file/file-dispatcher.js';
 import { joinRemote } from './sftp-receiver.js';
 import {
   createSsh2SftpClient,
@@ -55,6 +55,8 @@ export class SftpDispatcher implements DestinationConnectorRuntime {
       if (authError) throw new Error(authError);
       if (!this.config.remoteDirectory) throw new Error('Remote directory is required');
       if (!this.config.fileNameTemplate) throw new Error('File name template is required');
+      const unknown = unknownPlaceholders(this.config.fileNameTemplate);
+      if (unknown.length > 0) throw new Error(unknownPlaceholderMessage(unknown));
     });
   }
 

@@ -17,6 +17,8 @@ We need:
 
 ## Approach: `isolated-vm`
 
+> **Status (2026-11): superseded.** Scripts run in `node:vm` through `VmSandboxExecutor`, not `isolated-vm`, and on the main thread, not in a worker pool. `isolated-vm` is no longer a dependency. The decisions are D-018, D-129 and D-184 in `docs/progress/DECISIONS.md`; the security model is in `packages/engine/src/sandbox/README.md`. The text below is the original design and is kept for the reasoning.
+
 **Primary choice: `isolated-vm`** — V8 isolates with separate heaps.
 
 ### Why isolated-vm

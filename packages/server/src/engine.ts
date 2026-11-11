@@ -59,6 +59,7 @@ import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { resolveHttpSourceTls, resolveHttpDestinationTls } from './services/connector-tls-resolver.js';
 import { db } from './lib/db.js';
+import { ServiceError } from './lib/service-error.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
@@ -99,11 +100,29 @@ export interface SourceDispatchOutcome {
   readonly response?: string;
 }
 
-/** Map the pipeline's message status to the source-connector dispatch status. */
-function toDispatchStatus(status: 'SENT' | 'FILTERED' | 'ERROR'): DispatchStatus {
-  if (status === 'FILTERED') return DISPATCH_STATUS.FILTERED;
-  if (status === 'ERROR') return DISPATCH_STATUS.ERROR;
-  return DISPATCH_STATUS.PROCESSED;
+/** Response modes that answer the sender once the source has accepted the message. */
+const RESPOND_BEFORE_DESTINATIONS: ReadonlySet<string> = new Set(['AUTO_BEFORE', 'AUTO_AFTER_TRANSFORMER']);
+
+/**
+ * Map the pipeline's outcome to what the source connector tells the sender.
+ *
+ * The channel's response mode decides whether a destination failure counts:
+ * - AUTO_BEFORE / AUTO_AFTER_TRANSFORMER: no. The message was accepted and
+ *   recorded, so the sender gets a success and does not resend (a resend would
+ *   deliver a second copy to the destinations that worked).
+ * - every other mode (AUTO_AFTER_DESTINATIONS is the default): yes.
+ * An error before routing is always reported: nothing was delivered.
+ */
+export function toDispatchStatus(
+  outcome: { readonly status: 'SENT' | 'FILTERED' | 'ERROR'; readonly errorStage?: 'SOURCE' | 'DESTINATION' | undefined },
+  responseMode: string,
+): DispatchStatus {
+  if (outcome.status === 'FILTERED') return DISPATCH_STATUS.FILTERED;
+  if (outcome.status !== 'ERROR') return DISPATCH_STATUS.PROCESSED;
+  if (outcome.errorStage === 'DESTINATION' && RESPOND_BEFORE_DESTINATIONS.has(responseMode)) {
+    return DISPATCH_STATUS.PROCESSED;
+  }
+  return DISPATCH_STATUS.ERROR;
 }
 
 // ----- Storage Policy -----
@@ -181,6 +200,15 @@ export function storageModeSupportsQueue(mode: MessageStorageMode): boolean {
 export function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
   const mode = config?.messageStorageMode ?? MESSAGE_STORAGE_MODE.DEVELOPMENT;
   const encrypt = config?.encryptData ?? false;
+  const removesOnCompletion = Boolean(config?.removeContentOnCompletion) || Boolean(config?.removeAttachmentsOnCompletion);
+  /** Apply the channel's remove-on-completion settings to one finished message. */
+  const removeContent = async (channelId: string, messageId: number): Promise<Result<void>> => {
+    const deletes: Promise<Result<void>>[] = [];
+    if (config?.removeContentOnCompletion) deletes.push(MessageService.deleteContent(channelId, messageId));
+    if (config?.removeAttachmentsOnCompletion) deletes.push(MessageService.deleteAttachments(channelId, messageId));
+    const results = await Promise.all(deletes);
+    return results.find((r) => !r.ok) ?? OK_VOID;
+  };
   return {
     createMessage: (channelId, serverId, correlationId) =>
       MessageService.createMessage(channelId, serverId, correlationId),
@@ -207,20 +235,15 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
     // removal happens via removeCompletedContent, called by the pipeline only on
     // full successful completion.
     markProcessed: (channelId, messageId) => MessageService.markProcessed(channelId, messageId),
-    removeCompletedContent: async (channelId, messageId) => {
-      if (!config?.removeContentOnCompletion && !config?.removeAttachmentsOnCompletion) {
-        return OK_VOID;
-      }
-      const deletes: Promise<Result<void>>[] = [];
-      if (config?.removeContentOnCompletion) {
-        deletes.push(MessageService.deleteContent(channelId, messageId));
-      }
-      if (config?.removeAttachmentsOnCompletion) {
-        deletes.push(MessageService.deleteAttachments(channelId, messageId));
-      }
-      const results = await Promise.all(deletes);
-      const failed = results.find((r) => !r.ok);
-      return failed ?? OK_VOID;
+    removeCompletedContent: (channelId, messageId) => removeContent(channelId, messageId),
+    // A queued delivery finished. The consumer knows one destination, so check
+    // the whole message here: content goes only when every connector is done
+    // and none failed.
+    removeContentIfDelivered: async (channelId, messageId) => {
+      if (!removesOnCompletion) return OK_VOID;
+      const delivered = await MessageService.isFullyDelivered(channelId, messageId);
+      if (!delivered.ok) return fail<void>(delivered.error);
+      return delivered.value ? removeContent(channelId, messageId) : OK_VOID;
     },
     enqueue: (channelId, messageId, metaDataId) =>
       MessageService.enqueue(channelId, messageId, metaDataId),
@@ -348,6 +371,9 @@ const routeDepthStore = new AsyncLocalStorage<number>();
 
 /** How often deployed channels are checked for NO_MESSAGES alerts. */
 const SILENCE_CHECK_INTERVAL_MS = 30_000;
+/** Longest a destination send may take when the connector sets no shorter timeout of its own. */
+const SEND_BACKSTOP_MS = 300_000;
+const NEVER_RAN_MESSAGE = 'Not delivered: the server stopped before this destination ran. Reprocess the message to deliver it.';
 
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
@@ -355,6 +381,10 @@ export class EngineManager {
   private readonly serverId: string;
   /** Periodic NO_MESSAGES alert check; started on first deploy, cleared on dispose. */
   private silenceTimer: ReturnType<typeof setInterval> | undefined;
+  /** The one global map every channel shares; loaded on first deploy, flushed on dispose. */
+  private globalMap: Promise<GlobalMapProxy> | undefined;
+  /** Channels with a deploy in progress. */
+  private readonly deploying = new Set<string>();
 
   constructor(serverId?: string) {
     this.sandbox = new VmSandboxExecutor({
@@ -413,6 +443,21 @@ export class EngineManager {
     if (this.runtimes.has(channel.id)) {
       throw new Error(`Channel ${channel.id} is already deployed`);
     }
+    // Deploy awaits many things before the runtime is registered, so two
+    // requests for the same channel could otherwise both get this far and
+    // open the same port twice.
+    if (this.deploying.has(channel.id)) {
+      throw new Error(`Channel ${channel.id} is already being deployed`);
+    }
+    this.deploying.add(channel.id);
+    try {
+      await this.deployChannel(channel);
+    } finally {
+      this.deploying.delete(channel.id);
+    }
+  }
+
+  private async deployChannel(channel: ChannelDetail): Promise<void> {
 
     // Fail loud, never silent: a channel that asks for at-rest encryption must
     // not deploy (and store PHI as plaintext) when no key is configured.
@@ -489,22 +534,28 @@ export class EngineManager {
     await this.wireJavaScriptDestinations(channel, destinations);
 
     // Load code templates, global scripts, alerts, filter/transformer data, configMap, and globalMap in parallel
-    const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts, configMapResult, globalMapResult] = await Promise.all([
+    const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts, configMapResult, globalMapProxyInstance] = await Promise.all([
       CodeTemplateService.listTemplates(),
       GlobalScriptService.getAll(),
       this.loadFilterTransformerData(channel.id),
       this.loadAlertsForChannel(channel.id),
       ConfigMapService.list(),
-      GlobalMapService.list(),
+      this.sharedGlobalMap(channel.id),
     ]);
 
-    const templates: ReadonlyArray<CodeTemplateData> = templatesResult.ok
-      ? templatesResult.value.map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }))
-      : [];
+    // Fail loud, never silent: a channel deployed without its code templates,
+    // global scripts, config map or global map would run with different behaviour
+    // from the one it was configured with.
+    if (!templatesResult.ok) throw deployLoadError(channel.id, 'code templates', templatesResult.error);
+    if (!globalScriptsResult.ok) throw deployLoadError(channel.id, 'global scripts', globalScriptsResult.error);
+    if (!configMapResult.ok) throw deployLoadError(channel.id, 'the configuration map', configMapResult.error);
+
+    const templates: ReadonlyArray<CodeTemplateData> = templatesResult.value
+      .map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }));
 
     // Compile all channel scripts (source + destinations + global)
     const scripts = await this.compileChannelScripts(
-      channel, templates, globalScriptsResult, filterTransformerData,
+      channel, templates, globalScriptsResult.value, filterTransformerData,
     );
 
     // Build destination configs with compiled scripts
@@ -521,8 +572,30 @@ export class EngineManager {
     };
 
     // Create alert manager and load alerts for this channel
-    const alertManager = new AlertManager({ logger, emailSender, channelName: channel.name });
+    // CHANNEL alert action: hand the alert text to another deployed channel.
+    const channelSender = async (targetChannelId: string, content: string): Promise<void> => {
+      if (targetChannelId === channel.id) {
+        throw new Error('An alert cannot be sent into the channel it is about');
+      }
+      const target = this.runtimes.get(targetChannelId);
+      if (!target || target.runtime.getState() !== 'STARTED') {
+        throw new Error(`Alert target channel ${targetChannelId} is not deployed and started`);
+      }
+      const sent = await target.processMessage(content, { alertSourceChannelId: channel.id });
+      if (!sent.ok) throw sent.error;
+    };
+
+    const alertManager = new AlertManager({ logger, emailSender, channelSender, channelName: channel.name });
     alertManager.loadAlerts(loadedAlerts);
+
+    // Alerts are sent in the background. Awaiting them made every failing
+    // message wait on the mail server, and the sender on the message.
+    const raiseAlert = (event: Parameters<AlertManager['handleEvent']>[0]): Promise<void> => {
+      alertManager.handleEvent(event).catch((error: unknown) => {
+        logger.error({ channelId: channel.id, errMsg: error instanceof Error ? error.message : String(error) }, 'Alert handling failed');
+      });
+      return Promise.resolve();
+    };
 
     // Execute global deploy script (before channel deploy)
     if (scripts.globalDeploy) {
@@ -536,20 +609,9 @@ export class EngineManager {
 
     // Build configMap record (key format: "category.name")
     const configMapRecord: Record<string, unknown> = {};
-    if (configMapResult.ok) {
-      for (const entry of configMapResult.value) {
-        configMapRecord[`${entry.category}.${entry.name}`] = entry.value;
-      }
+    for (const entry of configMapResult.value) {
+      configMapRecord[`${entry.category}.${entry.name}`] = entry.value;
     }
-
-    // Build globalMap proxy with flush-to-DB callback
-    const globalMapProxyInstance = new GlobalMapProxy(async (key, value) => {
-      await GlobalMapService.upsert(key, value);
-    });
-    if (globalMapResult.ok) {
-      globalMapProxyInstance.load(globalMapResult.value);
-    }
-    globalMapProxyInstance.start();
 
     // Build pipeline config
     const pipelineConfig: PipelineConfig = {
@@ -561,7 +623,14 @@ export class EngineManager {
       globalChannelMap: gcm,
       globalMapProxy: globalMapProxyInstance,
       configMap: Object.freeze(configMapRecord),
-      onError: async (event) => alertManager.handleEvent(event),
+      scriptTimeoutMs: channel.scriptTimeoutSeconds * 1_000,
+      onError: raiseAlert,
+      onStoreFailure: (failure) => {
+        logger.error(
+          { channelId: failure.channelId, messageId: failure.messageId, metaDataId: failure.metaDataId, what: failure.what, errMsg: failure.errorMessage },
+          'Message store write failed: part of a message status could not be saved',
+        );
+      },
       onTiming: logger.level === 'debug' || logger.level === 'trace'
         ? (messageId, totalMs, stages) => {
             logger.debug(
@@ -578,10 +647,12 @@ export class EngineManager {
       if (!connector) {
         return tryCatch(() => { throw new Error(`Destination ${String(metaDataId)} not found`); });
       }
+      // Connectors apply their own configured timeouts; this is the backstop
+      // that keeps a send from hanging forever if one does not.
       return connector.send({
         channelId: channel.id, messageId, metaDataId, content,
         dataType: channel.inboundDataType, correlationId,
-      }, signal);
+      }, AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]));
     };
 
     // Create queue consumers for queued destinations
@@ -596,7 +667,7 @@ export class EngineManager {
         retryIntervalMs: dest.retryIntervalMs ?? 10_000,
         batchSize: 10,
         pollIntervalMs: 1_000,
-        onError: async (event) => alertManager.handleEvent(event),
+        onError: raiseAlert,
       };
       queueConsumers.push(new QueueConsumer(queueConfig, store, sendFn));
     }
@@ -607,9 +678,6 @@ export class EngineManager {
     );
 
     // Build the processMessage callback (used by both source connector and sendMessage API)
-    const scriptTimeoutMs = channel.scriptTimeoutSeconds
-      ? channel.scriptTimeoutSeconds * 1000
-      : 30_000;
     const activity = { lastAt: Date.now() };
     const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
       activity.lastAt = Date.now();
@@ -619,13 +687,16 @@ export class EngineManager {
         : undefined;
       const result = await processor.processMessage(
         { rawContent, sourceMap: sourceMap ?? {}, correlationId },
-        AbortSignal.timeout(scriptTimeoutMs),
+        // No deadline for the message as a whole: each script is limited by the
+        // channel's script timeout and each send by its connector's timeout.
+        new AbortController().signal,
       );
       if (!result.ok) return result;
       // Surface the pipeline's final status so the source connector can build the
-      // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AR).
+      // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AR), as the
+      // channel's response mode defines it.
       const { messageId, response } = result.value;
-      const status = toDispatchStatus(result.value.status);
+      const status = toDispatchStatus(result.value, channel.responseMode);
       return { ok: true, value: response === undefined ? { messageId, status } : { messageId, status, response }, error: null };
     };
 
@@ -637,9 +708,13 @@ export class EngineManager {
       onMessage: async (raw) => processMessage(raw.content, raw.sourceMap),
     };
 
+    // Taken before the channel can receive anything: every unprocessed message
+    // up to this id was left by an earlier run.
+    const recoveryHorizon = await MessageService.getLatestMessageId(channel.id);
+
     const result = await runtime.deploy(runtimeConfig);
     if (!result.ok) {
-      throw new Error('Failed to deploy channel runtime');
+      throw new Error(`Failed to deploy channel runtime: ${result.error.message}`);
     }
 
     // Recover messages left unprocessed by a prior crash/restart on the first
@@ -648,7 +723,7 @@ export class EngineManager {
     const recoverOnce = async (): Promise<void> => {
       if (recovered) return;
       recovered = true;
-      await this.recoverChannel(channel, store, processMessage, sendFn);
+      await this.recoverChannel(channel, store, processMessage, sendFn, recoveryHorizon);
     };
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage, recoverOnce, activity });
@@ -710,6 +785,11 @@ export class EngineManager {
       throw new Error(`Channel ${channelId} is not deployed`);
     }
 
+    // Stop queue consumers before the connectors: stop() waits for the send in
+    // flight, so no queued delivery fails (and burns a retry) because its
+    // destination was stopped underneath it.
+    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
+
     // Stop the running channel first — runtime.undeploy() requires STOPPED, and
     // shutdown/undeploy must never throw on a STARTED channel (that would sever
     // in-flight messages and skip the rest of the teardown). Stopping first
@@ -723,9 +803,6 @@ export class EngineManager {
       }
     }
 
-    // Stop all queue consumers before cleanup
-    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
-
     // Execute channel undeploy script (before cleanup)
     if (deployed.scripts.undeploy) {
       await this.runDeployScript(deployed.scripts.undeploy, deployed.config, deployed.globalChannelMap);
@@ -738,7 +815,8 @@ export class EngineManager {
 
     deployed.globalChannelMap.clear();
     deployed.alertManager.clearThrottleState();
-    await deployed.globalMapProxy.dispose();
+    // The global map belongs to every channel, so save it but keep it running.
+    await deployed.globalMapProxy.flush();
 
     const result = await deployed.runtime.undeploy();
     if (!result.ok) {
@@ -762,7 +840,16 @@ export class EngineManager {
     store: MessageStore,
     processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>,
     sendFn: SendToDestination,
+    horizon: Result<number>,
   ): Promise<void> {
+    // Without the horizon there is no telling a leftover message from one the
+    // running channel is working on right now, and recovering the latter would
+    // process it twice. Skip, and say so.
+    if (!horizon.ok) {
+      logger.error({ channelId: channel.id, errMsg: horizon.error.message }, 'Channel recovery skipped: could not read the newest message id at deploy');
+      return;
+    }
+    const maxId = horizon.value;
     // Reset stale PENDING claims for every queued destination.
     for (const dest of channel.destinations) {
       if (dest.queueMode === 'NEVER') continue;
@@ -773,8 +860,8 @@ export class EngineManager {
     }
 
     const recoveryStore: RecoveryStore = {
-      getUnprocessedMessages: async (channelId) => {
-        const r = await MessageService.getUnprocessedMessages(channelId);
+      getUnprocessedMessages: async (channelId, afterId, limit) => {
+        const r = await MessageService.getUnprocessedMessages(channelId, { afterId, maxId }, limit);
         if (!r.ok) return r;
         return { ok: true, value: r.value.map((m) => ({ messageId: m.id, channelId: m.channelId })), error: null };
       },
@@ -812,16 +899,42 @@ export class EngineManager {
         // Marking it here would silently lose the message forever.
         return { ok: false, value: null, error: processed.error } as Result<void>;
       }
-      // Reprocess succeeded (a new message row was created and run through the
-      // pipeline). Mark the original processed so it is not recovered again.
-      await MessageService.markProcessed(channelId, messageId);
+      // Run again as a new message. Close the original so it is not recovered a
+      // second time and does not sit in the browser looking like a message that
+      // is still being received: mark it ERROR with a note naming the new one.
+      // It adds nothing to the statistics; the new message is the one counted.
+      const note = `Interrupted by a server stop before it finished. Run again as message ${String(processed.value.messageId)}.`;
+      const closed = await Promise.all([
+        store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, note, 'TEXT'),
+        store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+        MessageService.markProcessed(channelId, messageId),
+      ]);
+      const failed = closed.find((r) => !r.ok);
+      if (failed && !failed.ok) {
+        logger.error({ channelId, messageId, errMsg: failed.error.message }, 'Recovered message could not be closed; it may be run again on the next deploy');
+        return { ok: false, value: null, error: failed.error } as Result<void>;
+      }
       return OK_VOID;
     };
 
     const redispatchDestination = async (channelId: string, messageId: number, metaDataId: number): Promise<Result<void>> => {
       const sent = await store.loadContent(channelId, messageId, metaDataId, CT_SENT);
-      if (!sent.ok || sent.value === null) {
-        return { ok: false, value: null, error: new Error('Sent content unavailable for recovery') } as Result<void>;
+      if (!sent.ok) {
+        return { ok: false, value: null, error: sent.error } as Result<void>;
+      }
+      if (sent.value === null) {
+        // The server stopped before this destination's filter and transformer
+        // ran, so there is nothing ready to send. Running them now would need
+        // the maps of a message that no longer exists in memory; record the
+        // destination as failed so it shows up and can be reprocessed.
+        logger.error({ channelId, messageId, metaDataId }, 'Destination never ran before the server stopped; marked ERROR, reprocess the message to deliver it');
+        await Promise.all([
+          store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.PROCESSING_ERROR, NEVER_RAN_MESSAGE, 'TEXT'),
+          store.updateConnectorMessageStatus(channelId, messageId, metaDataId, 'ERROR'),
+          store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+          store.incrementStats(channelId, metaDataId, this.serverId, 'errored'),
+        ]);
+        return OK_VOID;
       }
       const sendResult = await sendFn(metaDataId, messageId, sent.value, AbortSignal.timeout(30_000));
       const success = sendResult.ok && sendResult.value.status === 'SENT';
@@ -848,17 +961,22 @@ export class EngineManager {
     context: string,
     templates: ReadonlyArray<CodeTemplateData>,
     sourcefile: string,
-  ): Promise<CompiledScript | undefined> {
+  ): Promise<CompiledScript> {
     const withTemplates = prependTemplates(source, templates, context);
     const result = await compileScript(withTemplates, { sourcefile });
-    return result.ok ? result.value : undefined;
+    // Fail loud, never silent: returning nothing here would deploy the channel
+    // without this filter, transformer or script, and let PHI through untouched.
+    if (!result.ok) {
+      throw new ServiceError('INVALID_INPUT', `Script ${sourcefile} failed to compile (it includes the code templates for ${context}): ${result.error.message}`);
+    }
+    return result.value;
   }
 
   /** Compile channel scripts from stored configuration + DB filter/transformer data + global scripts. */
   private async compileChannelScripts(
     channel: ChannelDetail,
     templates: ReadonlyArray<CodeTemplateData>,
-    globalScriptsResult: Awaited<ReturnType<typeof GlobalScriptService.getAll>>,
+    gs: GlobalScripts,
     ftData: FilterTransformerData,
   ): Promise<ChannelScripts> {
     const scripts: Record<string, CompiledScript | undefined> = {};
@@ -875,7 +993,7 @@ export class EngineManager {
     }
 
     // Source filter from filter rules (connectorId IS NULL)
-    const sourceFilterScript = compileFilterRulesToScript(ftData.sourceFilterRules);
+    const sourceFilterScript = unwrapGenerated(compileFilterRulesToScript(ftData.sourceFilterRules), `${channel.name} source filter`);
     if (sourceFilterScript) {
       scripts['sourceFilter'] = await this.compileWithTemplates(
         sourceFilterScript, 'sourceFilter', templates, `${channel.name}/sourceFilter.ts`,
@@ -883,7 +1001,7 @@ export class EngineManager {
     }
 
     // Source transformer from transformer steps (connectorId IS NULL)
-    const sourceTransformerScript = compileTransformerStepsToScript(ftData.sourceTransformerSteps);
+    const sourceTransformerScript = unwrapGenerated(compileTransformerStepsToScript(ftData.sourceTransformerSteps), `${channel.name} source transformer`);
     if (sourceTransformerScript) {
       scripts['sourceTransformer'] = await this.compileWithTemplates(
         sourceTransformerScript, 'sourceTransformer', templates, `${channel.name}/sourceTransformer.ts`,
@@ -891,28 +1009,25 @@ export class EngineManager {
     }
 
     // Global preprocessor/postprocessor/deploy/undeploy
-    if (globalScriptsResult.ok) {
-      const gs = globalScriptsResult.value;
-      if (gs.preprocessor) {
-        scripts['globalPreprocessor'] = await this.compileWithTemplates(
-          gs.preprocessor, 'globalPreprocessor', templates, 'global/preprocessor.ts',
-        );
-      }
-      if (gs.postprocessor) {
-        scripts['globalPostprocessor'] = await this.compileWithTemplates(
-          gs.postprocessor, 'globalPostprocessor', templates, 'global/postprocessor.ts',
-        );
-      }
-      if (gs.deploy) {
-        scripts['globalDeploy'] = await this.compileWithTemplates(
-          gs.deploy, 'globalDeploy', templates, 'global/deploy.ts',
-        );
-      }
-      if (gs.undeploy) {
-        scripts['globalUndeploy'] = await this.compileWithTemplates(
-          gs.undeploy, 'globalUndeploy', templates, 'global/undeploy.ts',
-        );
-      }
+    if (gs.preprocessor) {
+      scripts['globalPreprocessor'] = await this.compileWithTemplates(
+        gs.preprocessor, 'globalPreprocessor', templates, 'global/preprocessor.ts',
+      );
+    }
+    if (gs.postprocessor) {
+      scripts['globalPostprocessor'] = await this.compileWithTemplates(
+        gs.postprocessor, 'globalPostprocessor', templates, 'global/postprocessor.ts',
+      );
+    }
+    if (gs.deploy) {
+      scripts['globalDeploy'] = await this.compileWithTemplates(
+        gs.deploy, 'globalDeploy', templates, 'global/deploy.ts',
+      );
+    }
+    if (gs.undeploy) {
+      scripts['globalUndeploy'] = await this.compileWithTemplates(
+        gs.undeploy, 'globalUndeploy', templates, 'global/undeploy.ts',
+      );
     }
 
     // Remove undefined entries
@@ -937,7 +1052,7 @@ export class EngineManager {
       // Destination filter
       const destFilterRules = ftData.destinationFilterRules.get(d.id);
       if (destFilterRules) {
-        const filterScript = compileFilterRulesToScript(destFilterRules);
+        const filterScript = unwrapGenerated(compileFilterRulesToScript(destFilterRules), `${channel.name}/${d.name} filter`);
         if (filterScript) {
           destScripts['filter'] = await this.compileWithTemplates(
             filterScript, 'destinationFilter', templates, `${channel.name}/${d.name}/filter.ts`,
@@ -948,7 +1063,7 @@ export class EngineManager {
       // Destination transformer
       const destTransformerSteps = ftData.destinationTransformerSteps.get(d.id);
       if (destTransformerSteps) {
-        const txScript = compileTransformerStepsToScript(destTransformerSteps);
+        const txScript = unwrapGenerated(compileTransformerStepsToScript(destTransformerSteps), `${channel.name}/${d.name} transformer`);
         if (txScript) {
           destScripts['transformer'] = await this.compileWithTemplates(
             txScript, 'destinationTransformer', templates, `${channel.name}/${d.name}/transformer.ts`,
@@ -992,13 +1107,12 @@ export class EngineManager {
     const sourceScript = (channel.sourceConnectorProperties as { script: string }).script;
     const compiled = await compileScript(sourceScript, { sourcefile: `${channel.name}/js-source.js` });
     if (!compiled.ok) {
-      logger.error({ errMsg: compiled.error.message, stack: compiled.error.stack }, 'Failed to compile JS source script');
-      return;
+      throw new Error(`Channel ${channel.id} JavaScript source script failed to compile: ${compiled.error.message}`);
     }
     const cachedScript = compiled.value;
     jsReceiver.setScriptRunner(async (_script) => {
       const ctx = { msg: '', tmp: '', rawData: '', sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {} };
-      const execResult = await this.sandbox.execute(cachedScript, ctx, DEFAULT_EXECUTION_OPTIONS);
+      const execResult = await this.sandbox.execute(cachedScript, ctx, { timeout: channel.scriptTimeoutSeconds * 1_000 });
       if (!execResult.ok) return execResult;
       return { ok: true as const, value: execResult.value.returnValue, error: null };
     });
@@ -1017,16 +1131,30 @@ export class EngineManager {
       const destScript = (dest.properties as { script: string }).script;
       const compiled = await compileScript(destScript, { sourcefile: `${channel.name}/js-dest-${String(dest.metaDataId)}.js` });
       if (!compiled.ok) {
-        logger.error({ errMsg: compiled.error.message, stack: compiled.error.stack, metaDataId: dest.metaDataId }, 'Failed to compile JS dest script');
-        continue;
+        throw new Error(`Channel ${channel.id} destination ${String(dest.metaDataId)} JavaScript script failed to compile: ${compiled.error.message}`);
       }
       const cachedScript = compiled.value;
       jsDispatcher.setScriptRunner(async (_script, content, connectorMessage) => {
         const ctx = { msg: content, tmp: content, rawData: content, sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {}, extras: { connectorMessage } };
-        const execResult = await this.sandbox.execute(cachedScript, ctx, DEFAULT_EXECUTION_OPTIONS);
+        const execResult = await this.sandbox.execute(cachedScript, ctx, { timeout: channel.scriptTimeoutSeconds * 1_000 });
         if (!execResult.ok) return execResult;
         return { ok: true as const, value: execResult.value.returnValue, error: null };
       });
+    }
+  }
+
+  /**
+   * The global map shared by every channel. Loaded from the database once; a
+   * failed load is not cached, so the next deploy tries again.
+   */
+  private async sharedGlobalMap(channelId: string): Promise<GlobalMapProxy> {
+    this.globalMap ??= loadGlobalMap();
+    const pending = this.globalMap;
+    try {
+      return await pending;
+    } catch (error) {
+      if (this.globalMap === pending) this.globalMap = undefined;
+      throw deployLoadError(channelId, 'the global map', error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -1036,6 +1164,7 @@ export class EngineManager {
     channel: ChannelDetail,
     gcm: GlobalChannelMap,
   ): Promise<void> {
+    const gcmBefore = gcm.toRecord();
     const context = {
       msg: '',
       tmp: '',
@@ -1044,15 +1173,15 @@ export class EngineManager {
       channelMap: {},
       connectorMap: {},
       responseMap: {},
-      globalChannelMap: gcm.toRecord(),
+      globalChannelMap: gcmBefore,
       extras: {
         channelId: channel.id,
         channelName: channel.name,
       },
     };
-    const result = await this.sandbox.execute(script, context, DEFAULT_EXECUTION_OPTIONS);
+    const result = await this.sandbox.execute(script, context, { timeout: channel.scriptTimeoutSeconds * 1_000 });
     if (result.ok) {
-      gcm.applyUpdates(result.value.mapUpdates.globalChannelMap);
+      gcm.applyChanges(gcmBefore, result.value.mapUpdates.globalChannelMap);
     } else {
       logger.error({ errMsg: result.error.message, stack: result.error.stack, channelId: channel.id }, 'Deploy/undeploy script execution failed');
     }
@@ -1061,7 +1190,7 @@ export class EngineManager {
   /** Load alerts applicable to a channel from the database. */
   private async loadAlertsForChannel(channelId: string): Promise<readonly LoadedAlert[]> {
     const listResult = await AlertService.list({ page: 1, pageSize: 1000 });
-    if (!listResult.ok) return [];
+    if (!listResult.ok) throw deployLoadError(channelId, 'alerts', listResult.error);
 
     const enabledAlerts = listResult.value.data.filter((a) => a.enabled);
     if (enabledAlerts.length === 0) return [];
@@ -1069,7 +1198,7 @@ export class EngineManager {
     // Batch fetch all enabled alert details in a single query
     const ids = enabledAlerts.map((a) => a.id);
     const detailsResult = await AlertService.getByIds(ids);
-    if (!detailsResult.ok) return [];
+    if (!detailsResult.ok) throw deployLoadError(channelId, 'alerts', detailsResult.error);
 
     return this.filterAlertsForChannel(detailsResult.value, channelId);
   }
@@ -1116,6 +1245,9 @@ export class EngineManager {
           operator: filterRules.operator,
           type: filterRules.type,
           script: filterRules.script,
+          field: filterRules.field,
+          condition: filterRules.condition,
+          values: filterRules.values,
         })
         .from(channelFilters)
         .leftJoin(filterRules, eq(filterRules.filterId, channelFilters.id))
@@ -1149,6 +1281,9 @@ export class EngineManager {
         operator: row.operator ?? 'AND',
         type: row.type ?? 'JAVASCRIPT',
         script: row.script ?? null,
+        field: row.field ?? null,
+        condition: row.condition ?? null,
+        values: row.values ?? null,
       };
       if (row.connectorId === null) {
         sourceFilterRules.push(rule);
@@ -1188,6 +1323,11 @@ export class EngineManager {
   async dispose(): Promise<void> {
     if (this.silenceTimer) clearInterval(this.silenceTimer);
     this.silenceTimer = undefined;
+    if (this.globalMap) {
+      const proxy = await this.globalMap.catch(() => null);
+      this.globalMap = undefined;
+      if (proxy) await proxy.dispose();
+    }
     this.sandbox.dispose();
   }
 }
@@ -1199,6 +1339,28 @@ interface FilterRuleRow {
   readonly operator: string;
   readonly type: string;
   readonly script: string | null;
+  readonly field: string | null;
+  readonly condition: string | null;
+  readonly values: ReadonlyArray<string> | null;
+}
+
+/** The four global scripts, as GlobalScriptService returns them. */
+interface GlobalScripts {
+  readonly preprocessor: string;
+  readonly postprocessor: string;
+  readonly deploy: string;
+  readonly undeploy: string;
+}
+
+/** Error for configuration a deploy depends on and could not load. */
+function deployLoadError(channelId: string, what: string, cause: Error): Error {
+  return new Error(`Channel ${channelId} cannot deploy: failed to load ${what}: ${cause.message}`);
+}
+
+/** Unwrap a generated filter/transformer script, refusing to deploy when a rule or step cannot run. */
+function unwrapGenerated(result: Result<string | null>, where: string): string | null {
+  if (!result.ok) throw new ServiceError('INVALID_INPUT', `${where}: ${result.error.message}`);
+  return result.value;
 }
 
 interface TransformerStepRow {
@@ -1212,6 +1374,33 @@ interface FilterTransformerData {
   readonly destinationFilterRules: ReadonlyMap<string, ReadonlyArray<FilterRuleRow>>;
   readonly sourceTransformerSteps: ReadonlyArray<TransformerStepRow>;
   readonly destinationTransformerSteps: ReadonlyMap<string, ReadonlyArray<TransformerStepRow>>;
+}
+
+/** Load the global map and keep it in step with edits made through the API. */
+async function loadGlobalMap(): Promise<GlobalMapProxy> {
+  const rows = await GlobalMapService.list();
+  if (!rows.ok) throw rows.error;
+  const proxy = new GlobalMapProxy({
+    save: async (key, value, isJson) => {
+      const result = await GlobalMapService.persist(key, value, isJson);
+      if (!result.ok) throw result.error;
+    },
+    remove: async (key) => {
+      const result = await GlobalMapService.persistRemoval(key);
+      if (!result.ok) throw result.error;
+    },
+    onFlushError: (key, error) => {
+      logger.error({ key, errMsg: error instanceof Error ? error.message : String(error) }, 'Failed to save a global map entry; it will be retried');
+    },
+  });
+  proxy.load(rows.value);
+  GlobalMapService.onChange((change) => {
+    if (change.type === 'set') proxy.set(change.row);
+    else if (change.type === 'delete') proxy.delete(change.key);
+    else proxy.clear();
+  });
+  proxy.start();
+  return proxy;
 }
 
 // ----- Singleton -----

@@ -6,6 +6,7 @@
 
 import { Hl7Message } from './hl7-message.js';
 import { formatTimestamp } from './hl7-timestamp.js';
+import { escapeValue } from './hl7-encoding.js';
 
 export interface AckOptions {
   readonly ackCode: 'AA' | 'AE' | 'AR';
@@ -53,7 +54,8 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
     controlId,
   ];
   if (options.textMessage) {
-    msaParts.push(options.textMessage);
+    // Free text: a delimiter or line break in it must not start a new field or segment.
+    msaParts.push(escapeValue(options.textMessage, enc));
   }
   const msa = msaParts.join(enc.fieldSep);
 
@@ -61,7 +63,7 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
 
   // Build ERR segment if error
   if ((options.ackCode === 'AE' || options.ackCode === 'AR') && options.errorCode) {
-    const err = ['ERR', options.errorCode].join(enc.fieldSep);
+    const err = ['ERR', escapeValue(options.errorCode, enc)].join(enc.fieldSep);
     segments.push(err);
   }
 

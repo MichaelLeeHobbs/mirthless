@@ -23,7 +23,7 @@ vi.mock('@galvaniflow/engine', () => ({
   MessageProcessor: vi.fn(),
   DEFAULT_EXECUTION_OPTIONS: {},
   GlobalChannelMap: vi.fn(),
-  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
+  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyChanges: vi.fn(), set: vi.fn(), delete: vi.fn(), clear: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
   compileScript: vi.fn(),
   compileFilterRulesToScript: vi.fn(),
   compileTransformerStepsToScript: vi.fn(),
@@ -64,6 +64,7 @@ vi.mock('../message.service.js', () => ({
     deleteAttachments: vi.fn(),
     resetPending: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
+    getLatestMessageId: vi.fn().mockResolvedValue({ ok: true, value: 0, error: null }),
     getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
     initializeMessage: mockInitializeMessage,
     finalizeMessage: vi.fn(),
@@ -71,7 +72,7 @@ vi.mock('../message.service.js', () => ({
 }));
 
 vi.mock('../global-script.service.js', () => ({ GlobalScriptService: { getAll: vi.fn() } }));
-vi.mock('../global-map.service.js', () => ({ GlobalMapService: { list: vi.fn(), upsert: vi.fn() } }));
+vi.mock('../global-map.service.js', () => ({ GlobalMapService: { list: vi.fn(), upsert: vi.fn(), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() } }));
 vi.mock('../config-map.service.js', () => ({ ConfigMapService: { list: vi.fn() } }));
 vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplates: vi.fn() } }));
 vi.mock('../alert.service.js', () => ({ AlertService: { list: vi.fn(), getByIds: vi.fn() } }));

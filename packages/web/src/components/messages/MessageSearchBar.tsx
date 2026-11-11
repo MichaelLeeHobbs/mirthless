@@ -23,6 +23,8 @@ interface MessageSearchBarProps {
   readonly metaDataId: string;
   readonly messageId: string;
   readonly contentSearch: string;
+  /** The channel encrypts stored content, which a text search cannot read. */
+  readonly contentEncrypted?: boolean;
   /** Actual destination connectors (metaDataId + name) to populate the filter. */
   readonly connectors?: readonly { readonly metaDataId: number; readonly name: string }[];
   readonly onReceivedFromChange: (value: string) => void;
@@ -40,6 +42,7 @@ export function MessageSearchBar({
   metaDataId,
   messageId,
   contentSearch,
+  contentEncrypted = false,
   connectors,
   onReceivedFromChange,
   onReceivedToChange,
@@ -118,7 +121,9 @@ export function MessageSearchBar({
         size="small"
         value={contentSearch}
         onChange={(e) => onContentSearchChange(e.target.value)}
-        sx={{ width: 220 }}
+        disabled={contentEncrypted}
+        helperText={contentEncrypted ? 'Not available: this channel encrypts stored content.' : undefined}
+        sx={{ width: contentEncrypted ? 320 : 220 }}
       />
     </Box>
   );

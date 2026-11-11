@@ -11,6 +11,7 @@ import { db } from '../lib/db.js';
 import { ServiceError } from '../lib/service-error.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { deleteMessagesByIds } from './message-delete-helper.js';
+import { containsPattern } from '../lib/like.js';
 import {
   messages,
   connectorMessages,
@@ -126,7 +127,7 @@ export class MessageQueryService {
       }
 
       if (hasContentSearch) {
-        const searchTerm = `%${filters.contentSearch!}%`;
+        const searchTerm = containsPattern(filters.contentSearch!);
         conditions.push(
           sql`${messages.id} IN (SELECT DISTINCT mc.message_id FROM message_content mc WHERE mc.channel_id = ${channelId} AND mc.content ILIKE ${searchTerm})`
         );

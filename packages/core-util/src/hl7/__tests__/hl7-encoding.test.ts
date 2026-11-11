@@ -127,3 +127,18 @@ describe('round-trip escape/unescape', () => {
     expect(unescaped).toBe(original);
   });
 });
+
+describe('unescapeValue round trip', () => {
+  const enc = detectEncoding('MSH|^~\\&|');
+
+  it('decodes text that itself looks like an escape sequence', () => {
+    // The literal text \F\ is encoded as \E\F\E\ and must come back unchanged.
+    for (const text of ['\\F\\', '\\S\\ and \\T\\', 'a\\E\\b', '\\X0D\\', 'C:\\Files\\Report']) {
+      expect(unescapeValue(escapeValue(text, enc), enc)).toBe(text);
+    }
+  });
+
+  it('leaves an unknown sequence as it is', () => {
+    expect(unescapeValue('a\\H\\bold\\N\\', enc)).toBe('a\\H\\bold\\N\\');
+  });
+});

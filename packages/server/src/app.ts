@@ -16,6 +16,7 @@ import apiDocsRoutes from './routes/api-docs.routes.js';
 import { requestId } from './middleware/request-id.middleware.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import { apiRateLimiter } from './middleware/rate-limit.middleware.js';
+import { jsonBody } from './middleware/body-limit.middleware.js';
 import { authenticate } from './middleware/auth.middleware.js';
 import { requirePermission } from './middleware/permission.middleware.js';
 import { checkDatabase, getHealthStatus } from './services/health.service.js';
@@ -48,7 +49,7 @@ app.use(compression({ threshold: 1024 }));
 app.use(cookieParser());
 
 // Request parsing
-app.use(express.json({ limit: '1mb' }));
+app.use(jsonBody);
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Request ID tracking (before logging so requestId appears in logs)
@@ -132,7 +133,8 @@ if (apiDocsEnabled) {
   app.use('/api-docs', apiDocsRoutes);
 }
 
-// Global API rate limiter (100 req/min per IP)
+// Global API rate limiter: 600 requests a minute per client address in
+// production, or API_RATE_LIMIT_MAX (see rate-limit.middleware.ts)
 app.use('/api/v1', apiRateLimiter);
 
 // API routes

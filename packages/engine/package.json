@@ -24,8 +24,7 @@
     "@galvaniflow/core-models": "workspace:*",
     "@galvaniflow/core-util": "workspace:*",
     "esbuild": "^0.28.2",
-    "fast-xml-parser": "^5.11.2",
-    "isolated-vm": "^7.0.1"
+    "fast-xml-parser": "^5.11.2"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

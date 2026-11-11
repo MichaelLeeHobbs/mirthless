@@ -90,23 +90,17 @@ export class AttachmentHandler {
       return { content, attachments: [] };
     }
 
-    // Reset lastIndex for reuse of the global regex
-    this.compiledRegex.lastIndex = 0;
     const attachments: ExtractedAttachment[] = [];
-    let modifiedContent = content;
-
-    let match = this.compiledRegex.exec(content);
-    while (match !== null) {
-      const matchedContent = match[0];
+    const mimeType = this.config.mimeType ?? 'application/octet-stream';
+    // replace() walks a global pattern safely: it steps past empty matches
+    // (a manual exec loop never advances on one and hangs the server) and
+    // swaps each match where it was found.
+    const modifiedContent = content.replace(this.compiledRegex, (matched: string) => {
+      if (matched === '') return matched;
       const id = crypto.randomUUID();
-      const mimeType = this.config.mimeType ?? 'application/octet-stream';
-      const size = Buffer.byteLength(matchedContent);
-
-      attachments.push({ id, mimeType, content: matchedContent, size });
-      modifiedContent = modifiedContent.replace(matchedContent, `\${ATTACH:${id}}`);
-
-      match = this.compiledRegex.exec(content);
-    }
+      attachments.push({ id, mimeType, content: matched, size: Buffer.byteLength(matched) });
+      return `\${ATTACH:${id}}`;
+    });
 
     return { content: modifiedContent, attachments };
   }
@@ -124,8 +118,10 @@ export class AttachmentHandler {
 
     const result: Result<ExecutionResult> = await this.sandbox.execute(this.config.script, context, options);
 
+    // Fail loud: carrying on would store the message with its attachments
+    // still inline, as if extraction had been configured off.
     if (!result.ok) {
-      return { content, attachments: [] };
+      throw new Error(`Attachment script failed: ${result.error.message}`);
     }
 
     const returned = result.value.returnValue as { content?: string; attachments?: readonly { mimeType?: string; content: string }[] } | undefined;

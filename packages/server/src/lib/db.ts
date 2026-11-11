@@ -22,13 +22,24 @@ export function buildDbSslConfig(): false | { rejectUnauthorized: boolean; ca?: 
   };
 }
 
-const pool = new pg.Pool({
-  connectionString: config.DATABASE_URL,
-  max: 20,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
-  ssl: buildDbSslConfig(),
-});
+/**
+ * Pool settings. Every statement gets a server-side time limit
+ * (DATABASE_STATEMENT_TIMEOUT_MS, 0 for none): without one a query stuck
+ * behind a lock holds its connection for good, and twenty of those stop the
+ * server.
+ */
+export function buildPoolConfig(): pg.PoolConfig {
+  return {
+    connectionString: config.DATABASE_URL,
+    max: 20,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+    ssl: buildDbSslConfig(),
+    ...(config.DATABASE_STATEMENT_TIMEOUT_MS > 0 ? { statement_timeout: config.DATABASE_STATEMENT_TIMEOUT_MS } : {}),
+  };
+}
+
+const pool = new pg.Pool(buildPoolConfig());
 
 pool.on('error', (err) => {
   logger.error({ errMsg: err.message, stack: err.stack }, 'Unexpected database pool error');

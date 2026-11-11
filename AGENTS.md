@@ -51,7 +51,7 @@ The simplest solution that works correctly is the best solution.
 ### Security First
 
 - **No raw SQL** — Always parameterized queries via Drizzle ORM
-- **No `eval()`, `new Function()`** — User code runs in isolated-vm sandbox only
+- **No `eval()`, `new Function()`** — User code runs only in the engine sandbox (hardened `node:vm`, see `packages/engine/src/sandbox/README.md`)
 - **No credential logging** — Never log passwords, tokens, API keys, or PHI in plain text
 - **Input validation at every boundary** — API endpoints, WebSocket messages, file uploads, user scripts
 - **XSS prevention** — React handles this by default; never use `dangerouslySetInnerHTML`
@@ -100,11 +100,27 @@ Tests are mandatory, not optional. This is healthcare software.
 
 1. **Every new function/module gets tests.** No exceptions. Write tests alongside implementation, not as an afterthought.
 2. **Test behavior, not implementation.** Tests should survive refactoring. Test what a function does, not how it does it.
-3. **Target 95%+ branch coverage.** This is the floor, not the ceiling.
+3. **Aim for 95% branch coverage in code you write or change.** The gate enforces lower, per-package minimums (below), because several packages are well short of the target. Those minimums only move up.
 4. **Test the unhappy path.** Error cases, edge cases, invalid inputs, timeouts, and failures matter more than the happy path.
 5. **No mocking of things you own.** If you need to mock your own service, the design is wrong. Mock external boundaries (DB, network, filesystem).
 6. **Tests must be fast.** Unit tests should run in <100ms each. Use in-memory or faked dependencies.
 7. **Test names describe behavior.** `it('returns error when channel ID is invalid')` not `it('test1')`.
+
+### Coverage Minimums
+
+`pnpm gate` fails a package whose coverage drops below these. They sit one point under what each package measured on 2026-11-11. When your change raises a package's coverage, raise its numbers in `packages/<name>/vitest.config.ts` and here. Never lower one to get green: add the missing tests.
+
+| Package | Statements | Branches | Functions | Lines |
+|---|---|---|---|---|
+| engine | 93 | 88 | 95 | 96 |
+| core-util | 93 | 79 | 92 | 96 |
+| connectors | 82 | 70 | 80 | 84 |
+| server | 54 | 53 | 67 | 55 |
+| core-models | 40 | 49 | 54 | 39 |
+| cli | 28 | 22 | 45 | 28 |
+| web | 26 | 29 | 23 | 26 |
+
+The server number is low because the controllers, `engine.ts` and several services have few unit tests (the Postgres integration and Playwright suites exercise some of that code but are not counted here). The web number is low because most pages have no component tests. Raising both is on `docs/progress/ROADMAP.md`.
 
 ### Test Structure
 
@@ -204,7 +220,7 @@ Key rules:
 - Explicit function return types
 - Cyclomatic complexity ≤10
 - TSDoc on all public APIs
-- Full source: `C:\Users\mhobb\WebstormProjects\mission-critical-ts`
+- The copies in `docs/standards/` are what applies here. Their upstream is the mission-critical-ts project (see Related Projects).
 
 ---
 
@@ -328,31 +344,39 @@ All packages extend the base tsconfig with these strict settings:
 ## Module Structure
 
 ```
-mirthless/
+galvaniflow/             — repository root (the GitHub repository is still named mirthless)
 ├── packages/
 │   ├── core-models/     — Shared TS types, Zod schemas, branded types
 │   ├── core-util/       — Shared utilities (HL7 parsing, serialization, date helpers)
 │   ├── engine/          — Message processing: channel runtime, routing, queuing, sandbox
-│   ├── connectors/      — Protocol adapters (tcp-mllp, http, file, database, dicom, fhir, smtp, js)
+│   ├── connectors/      — Protocol adapters (tcp-mllp, http, file, sftp, database, dicom, fhir, smtp, js)
 │   ├── server/          — Express API, auth, channel deployment, config management
 │   ├── web/             — React + MUI admin: channel editor, message browser, dashboard
 │   └── cli/             — CLI for server management
-├── docker/              — Docker Compose (Postgres, server, web)
-├── docs/design/         — Design documents (00-08)
+├── e2e/                 — Playwright specs (`pnpm test:e2e`)
+├── docker/              — Dockerfiles, Compose (development and production), nginx
+├── docs/design/         — Design documents (00-16)
+├── docs/ops/            — Deployment, TLS, backup, upgrade, soak test
+├── docs/progress/       — Roadmap, changelog, decisions
 ├── docs/standards/      — Coding, logging, and config standards
-├── scripts/             — DB init, benchmarks, migration utilities
+├── docs/testing/        — Manual test scenarios
+├── docs/user/           — User documentation (scripting API)
+├── scripts/             — DB init, benchmarks, soak test, screenshots (`scripts/shots`)
+├── .claude/             — Agent skills, hooks and settings (see Agent Tooling)
 ├── reference/           — Mirth Connect source + code samples (git-ignored)
 └── pnpm-workspace.yaml
 ```
 
 ## Related Projects
 
-| Project | Location | Use For |
-|---|---|---|
-| **fullstack-template** | `C:\Users\mhobb\WebstormProjects\fullstack-template` | Base monorepo structure, Express patterns, React+MUI, auth, Drizzle |
-| **mission-critical-ts** | `C:\Users\mhobb\WebstormProjects\mission-critical-ts` | Coding standards (apply strictly) |
-| **standardize-error** | `C:\Users\mhobb\WebstormProjects\_published\standardize-error` | Error normalization (npm: `stderr-lib`) |
-| **dcmtk.js** | `C:\Users\mhobb\WebstormProjects\dcmtk.js` | DICOM connector foundation |
+These live on Michael's Windows machine under `C:\Users\mhobb\WebstormProjects\`. They are not in this repository, so a cloud session or another contributor cannot read them; everything this project needs from them is already here.
+
+| Project | Folder | Used For | In this repository as |
+|---|---|---|---|
+| **fullstack-template** | `fullstack-template` | Base monorepo structure, Express patterns, React+MUI, auth, Drizzle | The package layout |
+| **mission-critical-ts** | `mission-critical-ts` | Coding standards (apply strictly) | `docs/standards/` |
+| **standardize-error** | `_published\standardize-error` | Error normalization | npm dependency `stderr-lib` |
+| **dcmtk.js** | `dcmtk.js` | The first DICOM connector | No longer used: the connector runs on `dcmjs-dimse` |
 
 ## Reference Source
 
@@ -378,5 +402,5 @@ When creating diagrams, use **Mermaid** format with dark-mode-friendly colors.
 
 ## GitHub
 
-- CLI: `"/c/Program Files/GitHub CLI/gh.exe"`
+- CLI on Michael's Windows machine: `"/c/Program Files/GitHub CLI/gh.exe"`. Elsewhere use `gh` from the PATH, or the GitHub tools the session provides.
 - Account: MichaelLeeHobbs

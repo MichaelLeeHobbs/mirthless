@@ -7,6 +7,7 @@
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { dispatchFailure } from '../base.js';
 import { ConnectionPool, type PoolConfig, type TxQuery } from './connection-pool.js';
 import { prepare } from './query-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
@@ -25,6 +26,9 @@ const ROW_FORMAT = {
 } as const;
 type RowFormat = typeof ROW_FORMAT[keyof typeof ROW_FORMAT];
 
+/** Most rows one poll dispatches. */
+export const MAX_ROWS_PER_POLL = 1_000;
+
 // ----- Config -----
 
 export interface DatabaseReceiverConfig {
@@ -38,6 +42,8 @@ export interface DatabaseReceiverConfig {
   readonly updateMode: UpdateMode;
   readonly pollingIntervalMs: number;
   readonly rowFormat: RowFormat;
+  /** Connect with TLS and verify the server certificate. */
+  readonly tls?: boolean;
 }
 
 export { UPDATE_MODE, ROW_FORMAT };
@@ -55,6 +61,7 @@ function toPoolConfig(config: DatabaseReceiverConfig): PoolConfig {
     maxConnections: 5,
     idleTimeoutMs: 30_000,
     connectionTimeoutMs: 10_000,
+    tls: config.tls === true,
     statementTimeoutMs: 30_000,
   };
 }
@@ -189,7 +196,7 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
       );
       return;
     }
-    for (const row of queryResult.value.rows) {
+    for (const row of this.capRows(queryResult.value.rows)) {
       await this.dispatchRow(row);
     }
   }
@@ -211,7 +218,7 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     const lockedSelect = appendLockClause(this.config.selectQuery);
     const txResult = await this.pool.transaction(async (tx) => {
       const selectResult = await tx.query(lockedSelect, []);
-      for (const row of selectResult.rows) {
+      for (const row of this.capRows(selectResult.rows)) {
         const dispatchOk = await this.dispatchRow(row);
         await this.ackRow(tx, row, dispatchOk);
       }
@@ -241,7 +248,11 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     };
 
     const result = await this.dispatcher(raw);
-    return result.ok;
+    const failure = dispatchFailure(result);
+    if (failure !== null) {
+      this.logger.error(errorInfo(failure), 'Database row dispatch failed');
+    }
+    return failure === null;
   }
 
   /** Ack a claimed row inside the transaction per the configured update mode. */
@@ -253,14 +264,33 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     if (this.config.updateMode === UPDATE_MODE.ON_SUCCESS && !dispatchOk) return;
 
     const prepared = prepare(this.config.updateQuery, row as Record<string, unknown>);
+    // A failed statement aborts a PostgreSQL transaction: every later
+    // statement fails and COMMIT turns into ROLLBACK, undoing the acks of rows
+    // already dispatched. The savepoint confines the failure to this row, so
+    // the rest of the batch still commits; this row stays unprocessed and is
+    // read again next cycle.
+    await tx.query('SAVEPOINT ack_row', []);
     try {
       await tx.query(prepared.sql, prepared.params);
+      await tx.query('RELEASE SAVEPOINT ack_row', []);
     } catch (err) {
-      // Swallow a single row's ack failure so the rest of the batch still
-      // commits (avoids rolling back — and thus re-dispatching — rows that
-      // already succeeded). The row stays unprocessed and retries next cycle.
       this.logger.error(errorInfo(err), 'Database mark-as-processed UPDATE failed');
+      await tx.query('ROLLBACK TO SAVEPOINT ack_row', []);
     }
+  }
+
+  /**
+   * Limit one poll to MAX_ROWS_PER_POLL rows. The rest are not dispatched or
+   * acked, so they are read again next cycle. This bounds how long row locks
+   * are held while messages are dispatched.
+   */
+  private capRows(rows: readonly Record<string, unknown>[]): readonly Record<string, unknown>[] {
+    if (rows.length <= MAX_ROWS_PER_POLL) return rows;
+    this.logger.warn(
+      { database: this.config.database, rows: rows.length, limit: MAX_ROWS_PER_POLL },
+      'Database poll returned more rows than one poll processes; add a LIMIT to the SELECT query',
+    );
+    return rows.slice(0, MAX_ROWS_PER_POLL);
   }
 
   /** Clear the poll interval timer. */

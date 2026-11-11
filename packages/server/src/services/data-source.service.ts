@@ -27,6 +27,7 @@ export interface DataSourceSummary {
   readonly database: string;
   readonly user: string;
   readonly readOnly: boolean;
+  readonly tls: boolean;
   readonly maxConnections: number;
   readonly statementTimeoutMs: number;
   readonly maxRows: number;
@@ -41,6 +42,7 @@ export interface TestConnectionInput {
   readonly database: string;
   readonly user: string;
   readonly password: string;
+  readonly tls: boolean;
 }
 
 // ----- Helpers -----
@@ -56,6 +58,7 @@ function toSummary(row: typeof dataSources.$inferSelect): DataSourceSummary {
     database: row.database,
     user: row.dbUser,
     readOnly: row.readOnly,
+    tls: row.tls,
     maxConnections: row.maxConnections,
     statementTimeoutMs: row.statementTimeoutMs,
     maxRows: row.maxRows,
@@ -111,6 +114,7 @@ export class DataSourceService {
           dbUser: input.user,
           passwordEncrypted,
           readOnly: input.readOnly,
+          tls: input.tls,
           maxConnections: input.maxConnections,
           statementTimeoutMs: input.statementTimeoutMs,
           maxRows: input.maxRows,
@@ -141,6 +145,7 @@ export class DataSourceService {
       if (input.user !== undefined) updates['dbUser'] = input.user;
       if (input.password !== undefined) updates['passwordEncrypted'] = encryptPassword(input.password);
       if (input.readOnly !== undefined) updates['readOnly'] = input.readOnly;
+      if (input.tls !== undefined) updates['tls'] = input.tls;
       if (input.maxConnections !== undefined) updates['maxConnections'] = input.maxConnections;
       if (input.statementTimeoutMs !== undefined) updates['statementTimeoutMs'] = input.statementTimeoutMs;
       if (input.maxRows !== undefined) updates['maxRows'] = input.maxRows;
@@ -178,6 +183,7 @@ export class DataSourceService {
         user: row.dbUser,
         password: pw.value,
         readOnly: row.readOnly,
+        tls: row.tls,
         maxConnections: row.maxConnections,
         statementTimeoutMs: row.statementTimeoutMs,
         maxRows: row.maxRows,
@@ -197,6 +203,7 @@ export class DataSourceService {
         database: input.database,
         user: input.user,
         password: input.password,
+        tls: input.tls,
         maxConnections: 1,
         idleTimeoutMs: 5_000,
         connectionTimeoutMs: 8_000,

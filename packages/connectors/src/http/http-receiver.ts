@@ -10,6 +10,7 @@ import * as https from 'node:https';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { dispatchFailure } from '../base.js';
 import type { TlsServerOptions } from '../tls.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
@@ -66,6 +67,23 @@ class BodyTooLargeError extends Error {
 }
 
 // ----- Receiver -----
+
+/** Headers that carry credentials. Their values never reach the source map. */
+const CREDENTIAL_HEADERS: ReadonlySet<string> = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-api-key']);
+
+/**
+ * Copy request headers for the source map with credential values replaced.
+ * The source map is stored with the message and shown in the message
+ * browser, so a bearer token or session cookie must not be in it. The header
+ * name is kept so a script can still tell that one was sent.
+ */
+function withoutCredentials(headers: http.IncomingHttpHeaders): Record<string, string | string[] | undefined> {
+  const safe: Record<string, string | string[] | undefined> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    safe[name] = CREDENTIAL_HEADERS.has(name) ? '[redacted]' : value;
+  }
+  return safe;
+}
 
 export class HttpReceiver implements SourceConnectorRuntime {
   private readonly config: HttpReceiverConfig;
@@ -208,15 +226,16 @@ export class HttpReceiver implements SourceConnectorRuntime {
     const raw = this.buildRawMessage(req, body, reqPath);
     const result = await this.dispatcher!(raw);
 
-    if (result.ok) {
+    const failure = dispatchFailure(result);
+    if (result.ok && failure === null) {
       res.writeHead(this.config.responseStatusCode, { 'Content-Type': this.config.responseContentType });
       res.end(result.value.response ?? '');
       return;
     }
 
-    // Pipeline failed — surface an error status so the sender never believes
-    // the message was accepted.
-    this.logger.error(errorInfo(result.error), 'Pipeline dispatch failed');
+    // The pipeline failed, or took the message and recorded an error. Either
+    // way surface an error status so the sender never believes it succeeded.
+    this.logger.error(errorInfo(failure), 'Pipeline dispatch failed');
     res.writeHead(this.config.errorStatusCode, { 'Content-Type': this.config.responseContentType });
     res.end();
   }
@@ -234,7 +253,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
         remoteAddress: req.socket.remoteAddress,
         method: req.method,
         path: reqPath,
-        headers: req.headers,
+        headers: withoutCredentials(req.headers),
         queryString,
         contentType: req.headers['content-type'],
       },

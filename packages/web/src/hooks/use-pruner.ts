@@ -27,6 +27,8 @@ interface UpdatePrunerScheduleInput {
 interface PruneAllResult {
   readonly channelsPruned: number;
   readonly totalDeleted: number;
+  /** Channels whose prune failed; the others were still pruned. */
+  readonly failedChannelIds: readonly string[];
 }
 
 // ----- Query Keys -----

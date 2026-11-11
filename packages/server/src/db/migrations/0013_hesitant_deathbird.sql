@@ -1,0 +1,1 @@
+ALTER TABLE "data_sources" ADD COLUMN "tls" boolean DEFAULT false NOT NULL;

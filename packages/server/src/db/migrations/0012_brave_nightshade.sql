@@ -1,0 +1,1 @@
+ALTER TABLE "global_map_entries" ADD COLUMN "is_json" boolean DEFAULT false NOT NULL;

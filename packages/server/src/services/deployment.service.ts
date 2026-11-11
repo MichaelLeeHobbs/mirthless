@@ -30,6 +30,16 @@ function emitStateChange(channelId: string, state: ChannelState): void {
   emitToAll(SOCKET_EVENT.CHANNEL_STATE, { channelId, state });
 }
 
+/**
+ * The error for a channel that deployed but would not start. The channel stays
+ * deployed and stopped so it can be started once the cause is fixed.
+ */
+function notRunning(action: 'deployed' | 'redeployed', channelId: string, cause: Error): ServiceError {
+  logger.error({ channelId, errMsg: cause.message }, `Channel was ${action} but could not start`);
+  emitStateChange(channelId, CHANNEL_STATE.STOPPED);
+  return new ServiceError('CONFLICT', `Channel was ${action} but is stopped. ${cause.message}`);
+}
+
 // ----- Service -----
 
 export class DeploymentService {
@@ -93,13 +103,15 @@ export class DeploymentService {
       const currentState = deployed?.runtime.getState() ?? 'STOPPED';
       let finalState: ChannelState = currentState as ChannelState;
       if ((channel.initialState === 'STARTED' || channel.initialState === 'PAUSED') && currentState === 'STOPPED') {
+        // Fail loud: a channel set to start on deploy that cannot start (a port
+        // in use, an unreachable host) must not report a successful deploy.
         const startResult = await DeploymentService.start(channelId, context);
-        if (startResult.ok) {
-          finalState = CHANNEL_STATE.STARTED;
-          if (channel.initialState === 'PAUSED') {
-            const pauseResult = await DeploymentService.pause(channelId, context);
-            if (pauseResult.ok) finalState = CHANNEL_STATE.PAUSED;
-          }
+        if (!startResult.ok) throw notRunning('deployed', channelId, startResult.error);
+        finalState = CHANNEL_STATE.STARTED;
+        if (channel.initialState === 'PAUSED') {
+          const pauseResult = await DeploymentService.pause(channelId, context);
+          if (!pauseResult.ok) throw pauseResult.error;
+          finalState = CHANNEL_STATE.PAUSED;
         }
       }
 
@@ -167,13 +179,16 @@ export class DeploymentService {
       let state = deployResult.value.state;
       if (priorState === 'STARTED' && state !== 'STARTED') {
         const r = await DeploymentService.start(channelId, context);
-        if (r.ok) state = r.value.state;
+        if (!r.ok) throw notRunning('redeployed', channelId, r.error);
+        state = r.value.state;
       } else if (priorState === 'PAUSED' && state !== 'PAUSED') {
-        const started = state === 'STARTED' ? { ok: true as const } : await DeploymentService.start(channelId, context);
-        if (started.ok) {
-          const p = await DeploymentService.pause(channelId, context);
-          if (p.ok) state = p.value.state;
+        if (state !== 'STARTED') {
+          const started = await DeploymentService.start(channelId, context);
+          if (!started.ok) throw notRunning('redeployed', channelId, started.error);
         }
+        const p = await DeploymentService.pause(channelId, context);
+        if (!p.ok) throw p.error;
+        state = p.value.state;
       }
 
       return { channelId, state };
@@ -354,7 +369,7 @@ export class DeploymentService {
     for (const ch of channels) {
       const deployResult = await DeploymentService.deploy(ch.id);
       if (!deployResult.ok) {
-        logger.warn({ channelId: ch.id, channelName: ch.name, errMsg: deployResult.error.message }, 'Failed to auto-deploy channel');
+        logger.error({ channelId: ch.id, channelName: ch.name, errMsg: deployResult.error.message }, 'Failed to auto-deploy channel');
         continue;
       }
 

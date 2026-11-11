@@ -15,8 +15,8 @@ logger.info.constructor('return process')()   // -> host process, process.env (D
 This works whenever a user script can reach **any host-realm function or object**,
 because `someHostFn.constructor` is the host realm's `Function`, and
 `Function('return process')()` then runs with the host global scope in view.
-`isolated-vm` (a real isolate boundary) does not build on Windows / Node 24 in this
-project, so we cannot rely on it.
+`isolated-vm` (a real isolate boundary) did not build on Windows / Node 24 in this
+project, so it is not used and is no longer a dependency.
 
 ## Defense: expose nothing from the host realm
 
@@ -35,8 +35,13 @@ host-`globalThis`):
    that is passed as an argument and then **deleted from the global scope** before
    user code runs, so it is never reachable as a property.
 3. **Return values** from `dispatch` are primitives (realm-agnostic) or JSON strings
-   that the sandbox wrapper `JSON.parse`s. IO-bridge errors are re-thrown as
-   **sandbox-realm** `Error`s so a caught error's `.constructor` cannot leak either.
+   that the sandbox wrapper `JSON.parse`s. The host dispatch **never throws** into
+   the sandbox: a host `Error` is a host-realm object, and
+   `e.constructor.constructor('return process')()` on a caught one is a full escape.
+   `makeNonThrowingDispatch` catches every host failure and returns a per-execution
+   random token; the sandbox wrapper turns that into a **sandbox-realm** `Error`
+   with the same message. This covers the synchronous bridges (`parseHL7`,
+   `createACK`, the HL7 proxy methods, `destinationSet`) as well as the IO bridges.
 4. The HL7 message proxy is exposed via opaque numeric handles; its methods dispatch
    to the host proxy and only return primitives.
 

@@ -33,7 +33,7 @@ const mockChannelRuntime = {
 const MockChannelRuntime = vi.fn().mockImplementation(function () { return mockChannelRuntime; });
 
 // Mock GlobalChannelMap
-const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn() };
+const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyChanges: vi.fn() };
 const MockGlobalChannelMap = vi.fn().mockImplementation(function () { return mockGcm; });
 
 // Mock SandboxExecutor
@@ -67,10 +67,10 @@ vi.mock('@galvaniflow/engine', () => ({
   }),
   DEFAULT_EXECUTION_OPTIONS: { timeout: 30000, memoryLimit: 134217728, signal: AbortSignal.timeout(30000) },
   GlobalChannelMap: MockGlobalChannelMap,
-  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
+  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyChanges: vi.fn(), set: vi.fn(), delete: vi.fn(), clear: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
   compileScript: mockCompileScript,
-  compileFilterRulesToScript: vi.fn().mockReturnValue(null),
-  compileTransformerStepsToScript: vi.fn().mockReturnValue(null),
+  compileFilterRulesToScript: vi.fn().mockReturnValue({ ok: true, value: null, error: null }),
+  compileTransformerStepsToScript: vi.fn().mockReturnValue({ ok: true, value: null, error: null }),
   prependTemplates: vi.fn().mockImplementation((src: string) => src),
   AlertManager: MockAlertManagerCtor,
   RecoveryManager: vi.fn().mockImplementation(function () {
@@ -168,11 +168,20 @@ vi.mock('../message.service.js', () => ({
     deleteAttachments: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     resetPending: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
+    getLatestMessageId: vi.fn().mockResolvedValue({ ok: true, value: 0, error: null }),
     getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
   },
 }));
 
 // Mock CodeTemplateService
+vi.mock('../global-map.service.js', () => ({
+  GlobalMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }), upsert: vi.fn(), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() },
+}));
+
+vi.mock('../config-map.service.js', () => ({
+  ConfigMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) },
+}));
+
 vi.mock('../code-template.service.js', () => ({
   CodeTemplateService: {
     listTemplates: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
@@ -421,21 +430,18 @@ describe('EngineManager', () => {
       expect((loadedAlerts[0] as { id: string }).id).toBe(ALERT_ID);
     });
 
-    it('continues without alerts if AlertService.list fails', async () => {
+    it('refuses to deploy when the alert list cannot be loaded', async () => {
       mockAlertServiceList.mockResolvedValue({
         ok: false, value: null, error: { code: 'INTERNAL', message: 'DB error' },
       });
 
       const engine = new EngineManager('test-server');
 
-      // Should not throw
-      await engine.deploy(makeChannel() as never);
-
-      // AlertManager should be created but with empty alerts
-      expect(mockAlertManager.loadAlerts).toHaveBeenCalledWith([]);
+      await expect(engine.deploy(makeChannel() as never)).rejects.toThrow('failed to load alerts: DB error');
+      expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
     });
 
-    it('returns empty alerts when getByIds fails', async () => {
+    it('refuses to deploy when alert details cannot be loaded', async () => {
       mockAlertServiceList.mockResolvedValue({
         ok: true,
         value: {
@@ -452,10 +458,8 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(makeChannel() as never);
 
-      // Should fall back to empty alerts
-      expect(mockAlertManager.loadAlerts).toHaveBeenCalledWith([]);
+      await expect(engine.deploy(makeChannel() as never)).rejects.toThrow('failed to load alerts: DB error');
     });
 
     it('passes onError callback to PipelineConfig', async () => {
@@ -585,7 +589,7 @@ describe('EngineManager', () => {
       expect(result.value).toBe('test-result');
     });
 
-    it('does not wire ScriptRunner when source script compile fails', async () => {
+    it('refuses to deploy when the source script does not compile', async () => {
       mockCompileScript.mockResolvedValueOnce({
         ok: false, value: null, error: { code: 'COMPILE_ERROR', message: 'Syntax error' },
       });
@@ -596,10 +600,10 @@ describe('EngineManager', () => {
       });
 
       const engine = new EngineManager('test-server');
-      await engine.deploy(channel as never);
 
-      // ScriptRunner not set because compile failed at deploy time
+      await expect(engine.deploy(channel as never)).rejects.toThrow('JavaScript source script failed to compile: Syntax error');
       expect(mockSetScriptRunner).not.toHaveBeenCalled();
+      expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
     });
 
     it('compiles dest script once at deploy and reuses in ScriptRunner', async () => {

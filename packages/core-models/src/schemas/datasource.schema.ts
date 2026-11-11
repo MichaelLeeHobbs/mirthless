@@ -36,6 +36,8 @@ export const createDataSourceSchema = z.object({
   password: z.string(),
   /** Read-only unless explicitly set false (enforced by the DB role + read-only txn). */
   readOnly: z.boolean().default(true),
+  /** Connect with TLS and verify the server certificate. */
+  tls: z.boolean().default(false),
   maxConnections: maxConnectionsSchema.default(5),
   statementTimeoutMs: statementTimeoutSchema.default(30_000),
   maxRows: maxRowsSchema.default(10_000),
@@ -53,6 +55,7 @@ export const updateDataSourceSchema = z.object({
   /** Omit to leave the stored password unchanged. */
   password: z.string().optional(),
   readOnly: z.boolean().optional(),
+  tls: z.boolean().optional(),
   maxConnections: maxConnectionsSchema.optional(),
   statementTimeoutMs: statementTimeoutSchema.optional(),
   maxRows: maxRowsSchema.optional(),
@@ -77,6 +80,7 @@ export const testDataSourceSchema = z.object({
   database: z.string().min(1).max(255),
   user: z.string().min(1).max(255),
   password: z.string(),
+  tls: z.boolean().default(false),
 });
 
 export type TestDataSourceInput = z.infer<typeof testDataSourceSchema>;

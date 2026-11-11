@@ -2,10 +2,60 @@
 // Global Scripts E2E Tests
 // ===========================================
 
-import { test, expect } from '@playwright/test';
+import { test, expect, request, type APIRequestContext, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
+import { ADMIN_USER } from './fixtures/test-data.js';
+
+const API_BASE = 'http://localhost:3000/api/v1';
+
+interface GlobalScripts {
+  readonly deploy: string;
+  readonly undeploy: string;
+  readonly preprocessor: string;
+  readonly postprocessor: string;
+}
+
+let api: APIRequestContext;
+let original: GlobalScripts;
+
+async function savedScripts(): Promise<GlobalScripts> {
+  const res = await api.get(`${API_BASE}/global-scripts`);
+  expect(res.ok(), `GET /global-scripts returned ${String(res.status())}`).toBeTruthy();
+  return (await res.json() as { data: GlobalScripts }).data;
+}
+
+/**
+ * Add a line at the end of the open editor and save. The text goes in as one
+ * edit: typing it key by key raced the editor and saved a script with
+ * characters missing, which then could not compile.
+ */
+async function appendLineAndSave(page: Page, line: string): Promise<void> {
+  const editor = page.locator('.monaco-editor').first();
+  await expect(editor.locator('.view-line').first()).toBeVisible();
+  await editor.click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.insertText(`\n${line}`);
+  await page.getByRole('button', { name: /save/i }).click();
+  await expect(page.getByText('Global scripts saved')).toBeVisible();
+}
 
 test.describe('Global Scripts', () => {
+  test.beforeAll(async () => {
+    const loginCtx = await request.newContext();
+    const loginRes = await loginCtx.post(`${API_BASE}/auth/login`, { data: ADMIN_USER });
+    expect(loginRes.ok(), `Admin login failed: ${String(loginRes.status())}`).toBeTruthy();
+    const { accessToken } = (await loginRes.json() as { data: { accessToken: string } }).data;
+    await loginCtx.dispose();
+    api = await request.newContext({ extraHTTPHeaders: { Authorization: `Bearer ${accessToken}` } });
+    original = await savedScripts();
+  });
+
+  // The scripts are server-wide: put them back so later specs deploy with the seeded ones.
+  test.afterAll(async () => {
+    if (original) await api.put(`${API_BASE}/global-scripts`, { data: original });
+    await api?.dispose();
+  });
+
   test.beforeEach(async ({ page }) => {
     await login(page);
   });
@@ -26,27 +76,15 @@ test.describe('Global Scripts', () => {
     // Deploy tab should be active by default
     await expect(page.getByRole('tab', { name: 'Deploy', exact: true, selected: true })).toBeVisible();
 
-    // Type into Monaco editor
-    const editor = page.locator('.monaco-editor').first();
-    await editor.click();
-    await page.keyboard.type('// E2E test deploy script');
+    await appendLineAndSave(page, '// E2E test deploy script');
 
-    // Save
-    await page.getByRole('button', { name: /save/i }).click();
-    await page.waitForTimeout(1_000);
+    expect((await savedScripts()).deploy).toBe(`${original.deploy}\n// E2E test deploy script`);
   });
 
   test('code persists after page refresh', async ({ page }) => {
     await page.goto('/global-scripts');
-    await page.waitForTimeout(2_000);
 
-    // The editor should contain the text we typed
-    const editorContent = page.locator('.monaco-editor .view-line');
-    if (await editorContent.first().isVisible()) {
-      const text = await editorContent.first().textContent();
-      // Just verify the editor loaded with some content
-      expect(text).toBeDefined();
-    }
+    await expect(page.locator('.monaco-editor').first()).toContainText('E2E test deploy script');
   });
 
   test('switch to preprocessor tab and edit', async ({ page }) => {
@@ -55,13 +93,8 @@ test.describe('Global Scripts', () => {
     // Click Preprocessor tab
     await page.getByRole('tab', { name: 'Preprocessor' }).click();
 
-    // Type into Monaco editor
-    const editor = page.locator('.monaco-editor').first();
-    await editor.click();
-    await page.keyboard.type('// E2E preprocessor');
+    await appendLineAndSave(page, '// E2E preprocessor');
 
-    // Save
-    await page.getByRole('button', { name: /save/i }).click();
-    await page.waitForTimeout(1_000);
+    expect((await savedScripts()).preprocessor).toBe(`${original.preprocessor}\n// E2E preprocessor`);
   });
 });

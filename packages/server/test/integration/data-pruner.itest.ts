@@ -22,16 +22,23 @@ describeIntegration('DataPruner (real Postgres)', () => {
   });
 
   /** Insert a message (with connector + content children) at a given age. */
-  async function seedMessage(channelId: string, ageDays: number): Promise<number> {
+  async function seedMessage(
+    channelId: string,
+    ageDays: number,
+    state: { processed?: boolean; destinationStatus?: 'SENT' | 'QUEUED' | 'PENDING' | 'ERROR' } = {},
+  ): Promise<number> {
     const { db, schema, MessageService } = mods;
     const receivedAt = new Date(Date.now() - ageDays * DAY_MS);
     const [row] = await db
       .insert(schema.messages)
-      .values({ channelId, serverId: 'itest', receivedAt })
+      .values({ channelId, serverId: 'itest', receivedAt, processed: state.processed ?? true })
       .returning({ id: schema.messages.id });
     const messageId = row!.id;
 
     unwrap(await MessageService.createConnectorMessage(channelId, messageId, 0, 'source', 'SENT'));
+    if (state.destinationStatus) {
+      unwrap(await MessageService.createConnectorMessage(channelId, messageId, 1, 'dest', state.destinationStatus));
+    }
     unwrap(await MessageService.storeContent(channelId, messageId, 0, 1, 'MSH|^~\\&|', 'HL7V2'));
     return messageId;
   }
@@ -72,5 +79,70 @@ describeIntegration('DataPruner (real Postgres)', () => {
       .from(schema.messageContent)
       .where(and(eq(schema.messageContent.channelId, channelId), eq(schema.messageContent.messageId, recentId)));
     expect(keptContent.length).toBeGreaterThan(0);
+  });
+
+  async function remainingIds(channelId: string): Promise<number[]> {
+    const { db, schema, eq } = mods;
+    const rows = await db.select({ id: schema.messages.id }).from(schema.messages).where(eq(schema.messages.channelId, channelId));
+    return rows.map((r) => r.id).sort((a, b) => a - b);
+  }
+
+  // One bind parameter per message id hit Postgres's 65,535-parameter limit, so a
+  // channel with more aged-out messages than that could never be pruned at all.
+  it('prunes a channel with more aged-out messages than one statement can bind', async () => {
+    const { db, sql, DataPrunerService } = mods;
+    const channelId = randomUUID();
+    const total = 70_000;
+    await db.execute(sql`
+      INSERT INTO messages (channel_id, server_id, received_at, processed)
+      SELECT ${channelId}::uuid, 'itest', now() - interval '40 days', true
+      FROM generate_series(1, ${total})
+    `);
+    const recentId = await seedMessage(channelId, 1);
+
+    const result = await DataPrunerService.pruneChannel(channelId, 30);
+
+    expect(result.ok ? result.value.deletedCount : result.error.message).toBe(total);
+    expect(await remainingIds(channelId)).toEqual([recentId]);
+  }, 120_000);
+
+  it('keeps an aged-out message that has not finished processing', async () => {
+    const { DataPrunerService } = mods;
+    const channelId = randomUUID();
+    const finished = await seedMessage(channelId, 40, { destinationStatus: 'SENT' });
+    const errored = await seedMessage(channelId, 40, { destinationStatus: 'ERROR' });
+    const unprocessed = await seedMessage(channelId, 40, { processed: false });
+    const queued = await seedMessage(channelId, 40, { destinationStatus: 'QUEUED' });
+    const pending = await seedMessage(channelId, 40, { destinationStatus: 'PENDING' });
+
+    const result = unwrap(await DataPrunerService.pruneChannel(channelId, 30));
+
+    expect(result.deletedCount).toBe(2);
+    expect(await remainingIds(channelId)).toEqual([unprocessed, queued, pending].sort((a, b) => a - b));
+    expect([finished, errored]).not.toEqual(expect.arrayContaining(await remainingIds(channelId)));
+  });
+
+  it('counts only messages it would actually prune in the statistics', async () => {
+    const { db, schema, eq, DataPrunerService } = mods;
+    const [channel] = await db
+      .insert(schema.channels)
+      .values({
+        name: `itest-prune-${randomUUID().slice(0, 8)}`, sourceConnectorType: 'HTTP', sourceConnectorProperties: {},
+        inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
+        pruningEnabled: true, pruningMaxAgeDays: 30,
+      } as never)
+      .returning({ id: schema.channels.id });
+    const channelId = channel!.id;
+    await seedMessage(channelId, 40);
+    await seedMessage(channelId, 40, { destinationStatus: 'QUEUED' });
+    await seedMessage(channelId, 1);
+
+    const stats = unwrap(await DataPrunerService.getStatistics());
+
+    expect(stats.find((s) => s.channelId === channelId)?.prunableCount).toBe(1);
+    const all = unwrap(await DataPrunerService.pruneAll());
+    expect(all.failedChannelIds).toEqual([]);
+    expect(await remainingIds(channelId)).toHaveLength(2);
+    await db.delete(schema.channels).where(eq(schema.channels.id, channelId));
   });
 });

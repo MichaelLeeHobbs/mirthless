@@ -117,6 +117,17 @@ export function DatabaseDestinationForm({ properties, onChange }: DestConnectorF
           fullWidth
           sx={{ mb: 2 }}
         />
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={properties['tls'] === true}
+              onChange={(e) => { update('tls', e.target.checked); }}
+            />
+          }
+          label="Encrypt the connection (TLS)"
+          sx={{ mb: 2, display: 'block' }}
+        />
       </Grid>
 
       {/* Right column — Query settings */}

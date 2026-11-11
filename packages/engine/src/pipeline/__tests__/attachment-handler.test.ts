@@ -55,6 +55,28 @@ describe('AttachmentHandler', () => {
       expect(result.value.content).not.toContain('base64');
     });
 
+    it('finishes on a pattern that can match nothing, and extracts only real matches', async () => {
+      const handler = new AttachmentHandler({ mode: ATTACHMENT_MODE.REGEX, pattern: '[A-Z]*' });
+
+      const result = await handler.extract('ab CD ef');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.attachments.map((a) => a.content)).toEqual(['CD']);
+      expect(result.value.content).toMatch(/^ab \$\{ATTACH:[0-9a-f-]+\} ef$/);
+    });
+
+    it('replaces each occurrence where it was found when the same text appears twice', async () => {
+      const handler = new AttachmentHandler({ mode: ATTACHMENT_MODE.REGEX, pattern: 'X+' });
+
+      const result = await handler.extract('aXXbXXc');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const ids = result.value.attachments.map((a) => a.id);
+      expect(result.value.content).toBe(`a\${ATTACH:${ids[0]!}}b\${ATTACH:${ids[1]!}}c`);
+    });
+
     it('returns original content when no pattern provided', async () => {
       const config: AttachmentConfig = { mode: ATTACHMENT_MODE.REGEX };
       const handler = new AttachmentHandler(config);
@@ -185,7 +207,7 @@ describe('AttachmentHandler', () => {
       expect(result.value.attachments).toHaveLength(0);
     });
 
-    it('returns original content when script execution fails', async () => {
+    it('fails when the extraction script fails, so the message is not stored unextracted in silence', async () => {
       const script = await compile('throw new Error("boom");');
 
       const config: AttachmentConfig = {
@@ -196,10 +218,8 @@ describe('AttachmentHandler', () => {
 
       const result = await handler.extract('test content');
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.content).toBe('test content');
-      expect(result.value.attachments).toHaveLength(0);
+      expect(result.ok).toBe(false);
+      expect(result.ok ? '' : result.error.message).toContain('Attachment script failed: ');
     });
 
     it('returns original content when no sandbox provided', async () => {

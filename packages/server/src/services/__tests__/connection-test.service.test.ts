@@ -383,6 +383,26 @@ describe('ConnectionTestService', () => {
       expect(result.value.message).toContain('db.example.com');
     });
 
+    it('signs in with the account and TLS setting the connector form saves', async () => {
+      const seen: Array<Record<string, unknown>> = [];
+      setPoolFactory((config) => {
+        seen.push(config as unknown as Record<string, unknown>);
+        return { query: mockPoolQuery, end: mockPoolEnd };
+      });
+      mockPoolQuery.mockResolvedValue({ rows: [] });
+      mockPoolEnd.mockResolvedValue(undefined);
+
+      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
+        host: 'db.example.com', port: 5432, database: 'testdb', username: 'reader', password: 'pw', tls: true,
+      });
+      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
+        host: 'db.example.com', port: 5432, database: 'testdb', username: 'reader', password: 'pw',
+      });
+
+      expect(seen[0]).toMatchObject({ user: 'reader', password: 'pw', ssl: { rejectUnauthorized: true } });
+      expect(seen[1]).toMatchObject({ user: 'reader', ssl: false });
+    });
+
     it('returns failure when database connection fails', async () => {
       mockPoolQuery.mockRejectedValueOnce(new Error('connection refused'));
       mockPoolEnd.mockResolvedValueOnce(undefined);

@@ -6,6 +6,7 @@
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Config -----
@@ -100,7 +101,12 @@ export class JavaScriptReceiver implements SourceConnectorRuntime {
           content,
           sourceMap: { connectorType: 'JAVASCRIPT', executedAt: Date.now() },
         };
-        await this.dispatcher(raw);
+        const failure = dispatchFailure(await this.dispatcher(raw));
+        if (failure !== null) {
+          // The script already produced the message, so there is nothing to keep
+          // for a retry here; make sure the failure is at least visible.
+          this.logger.error(errorInfo(failure), 'JavaScript source message dispatch failed');
+        }
       }
     } catch (err) {
       // Non-fatal but MUST be visible so a broken source script does not leave

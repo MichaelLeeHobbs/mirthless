@@ -213,6 +213,33 @@ describe('VmSandboxExecutor', () => {
 
   // ----- Sandbox escape hardening (CRITICAL: no host realm reachable) -----
 
+  describe('per-script time limit', () => {
+    it('stops a script waiting on slow IO at its own timeout, even when the caller passes a longer-lived signal', async () => {
+      const slow = new VmSandboxExecutor({
+        httpFetch: () => new Promise((resolve) => { setTimeout(() => { resolve({ status: 200, headers: {}, body: 'late' }); }, 400); }),
+      });
+      const script = makeScript("await httpFetch('https://example.com'); return 'finished';");
+      const started = Date.now();
+
+      const result = await slow.execute(script, makeContext(), { timeout: 50, signal: new AbortController().signal });
+
+      expect(result.ok).toBe(false);
+      expect(result.ok ? '' : result.error.message).toBe('Script execution timed out');
+      expect(Date.now() - started).toBeLessThan(300);
+    });
+
+    it('still stops when the caller cancels first', async () => {
+      const slow = new VmSandboxExecutor({
+        httpFetch: () => new Promise((resolve) => { setTimeout(() => { resolve({ status: 200, headers: {}, body: 'late' }); }, 400); }),
+      });
+      const script = makeScript("await httpFetch('https://example.com'); return 'finished';");
+
+      const result = await slow.execute(script, makeContext(), { timeout: 5_000, signal: AbortSignal.timeout(30) });
+
+      expect(result.ok).toBe(false);
+    });
+  });
+
   describe('escape prevention', () => {
     it('does not expose host process/require/module/globalThis', async () => {
       const script = makeScript(
@@ -275,5 +302,96 @@ describe('VmSandboxExecutor', () => {
       if (!result.ok) return;
       expect(result.value.returnValue).toBe('undefined');
     });
+
+    // Every synchronous bridge that can fail on the host. Each script makes the
+    // bridge throw, then tries to climb from the caught error to the host Function.
+    const SYNC_THROWERS: ReadonlyArray<readonly [string, string]> = [
+      ['parseHL7 with a non-string', 'parseHL7(123)'],
+      ['parseHL7 with invalid HL7', "parseHL7('not hl7')"],
+      ['createACK with invalid HL7', "createACK('not hl7', 'AA')"],
+      ['an HL7 get with no path', 'msg.get()'],
+      ['an HL7 set with an empty path', "msg.set('', 'x')"],
+    ];
+
+    it.each(SYNC_THROWERS)('a host error thrown by %s cannot leak the host Function', async (_name, body) => {
+      const hl7 = Hl7Message.parse('MSH|^~\\&|A|B|C|D|20260101||ADT^A01|1|P|2.5\rPID|1||99999');
+      const context = makeContext({ msg: createHl7Proxy(hl7) });
+      const script = makeScript(
+        `try { ${body}; return 'no-throw'; }` +
+        " catch (e) { return [e instanceof Error, e.constructor.constructor('return typeof process')()].join(','); }",
+      );
+      const result = await executor.execute(script, context, makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('true,undefined');
+    });
+
+    it('reports the host error message to the script', async () => {
+      const script = makeScript("try { parseHL7(123); return 'no-throw'; } catch (e) { return e.message; }");
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('parseHL7 expects a string or HL7 message proxy');
+    });
+
+    it('an uncaught bridge error still fails the script with its message', async () => {
+      const result = await executor.execute(makeScript('parseHL7(123);'), makeContext(), makeOptions());
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('parseHL7 expects a string');
+    });
+
+    it('a stack trace hook cannot reach host functions through call sites', async () => {
+      const script = makeScript(
+        "Error.prepareStackTrace = function (_e, sites) { return sites; };" +
+        "var found = 'none';" +
+        "try { parseHL7(123); } catch (e) { /* ignore */ }" +
+        "var sites = new Error('x').stack;" +
+        "for (var i = 0; i < sites.length; i++) {" +
+        "  var fn = sites[i].getFunction && sites[i].getFunction();" +
+        "  if (fn) { var r = fn.constructor('return typeof process')(); if (r !== 'undefined') { found = r; } }" +
+        "}" +
+        "return found;",
+      );
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('none');
+    });
+  });
+});
+
+describe('HL7 message in scripts', () => {
+  const HL7 = 'MSH|^~\\&|S|F|R|F|20260329||ADT^A01|C1|P|2.5\rOBX|1|TX|NOTE||Smith \\T\\ Sons';
+  let hl7Executor: VmSandboxExecutor;
+
+  beforeEach(() => { hl7Executor = new VmSandboxExecutor(); });
+  afterEach(() => { hl7Executor.dispose(); });
+
+  async function run(body: string): Promise<unknown> {
+    const context = makeContext({ msg: createHl7Proxy(Hl7Message.parse(HL7)) });
+    const result = await hl7Executor.execute(makeScript(body), context, makeOptions());
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value.returnValue;
+  }
+
+  it('messageType and messageControlId follow edits made by the script', async () => {
+    expect(await run(
+      "msg.set('MSH.9', 'ORU'); msg.set('MSH.10', 'NEW1'); return msg.messageType + '|' + msg.messageControlId;",
+    )).toBe('ORU|NEW1');
+  });
+
+  it('getText decodes escape sequences and get does not', async () => {
+    expect(await run("return msg.getText('OBX.5') + ' / ' + msg.get('OBX.5');")).toBe('Smith & Sons / Smith \\T\\ Sons');
+  });
+
+  it('setText stores text with delimiters as one value', async () => {
+    expect(await run(
+      "msg.setText('OBX.5', 'a|b^c'); return msg.getText('OBX.5') + ' ' + msg.toString().split('\\r')[1].split('|').length;",
+    )).toBe('a|b^c 6');
   });
 });

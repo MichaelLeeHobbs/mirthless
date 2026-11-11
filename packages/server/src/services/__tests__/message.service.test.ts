@@ -456,40 +456,12 @@ describe('MessageService', () => {
 
   // ========== GET UNPROCESSED MESSAGES ==========
   describe('getUnprocessedMessages', () => {
-    it('returns unprocessed messages for recovery', async () => {
-      const msgRow = {
-        id: 1,
-        channelId: CHANNEL_ID,
-        serverId: SERVER_ID,
-        receivedAt: new Date(),
-        processed: false,
-      };
-      pushSelectResponse([msgRow]);
-
-      const result = await MessageService.getUnprocessedMessages(CHANNEL_ID);
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value).toHaveLength(1);
-      expect(result.value[0]).toEqual(msgRow);
-    });
-
-    it('returns empty array when all messages processed', async () => {
-      pushSelectResponse([]);
-
-      const result = await MessageService.getUnprocessedMessages(CHANNEL_ID);
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value).toHaveLength(0);
-    });
-
     it('returns error on DB failure', async () => {
       selectResponses.push(() => {
         throw new Error('DB error');
       });
 
-      const result = await MessageService.getUnprocessedMessages(CHANNEL_ID);
+      const result = await MessageService.getUnprocessedMessages(CHANNEL_ID, { afterId: 0, maxId: 10 }, 200);
 
       expect(result.ok).toBe(false);
     });

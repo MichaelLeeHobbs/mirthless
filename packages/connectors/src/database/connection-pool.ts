@@ -23,6 +23,13 @@ export interface PoolConfig {
    * Defaults to 30s when omitted.
    */
   readonly statementTimeoutMs?: number;
+  /**
+   * Encrypt the connection with TLS and verify the server certificate against
+   * the system trust store. Off by default; turn it on for any database that
+   * is not on the same host, since rows and credentials otherwise travel in
+   * plain text.
+   */
+  readonly tls?: boolean;
 }
 
 /** Default statement/query timeout when a PoolConfig does not specify one. */
@@ -63,6 +70,7 @@ export class ConnectionPool {
         connectionTimeoutMillis: config.connectionTimeoutMs,
         // Server-side cancel of any statement exceeding the budget, plus a
         // client-side guard in case the socket itself hangs.
+        ssl: config.tls === true ? { rejectUnauthorized: true } : false,
         statement_timeout: timeoutMs,
         query_timeout: timeoutMs,
       });

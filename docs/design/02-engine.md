@@ -612,7 +612,7 @@ class DeploymentOrchestrator {
 
 1. **Queue: LISTEN/NOTIFY + polling fallback** — Primary: Postgres `pg_notify('queue:{channelId}:{metaDataId}', messageId)` on enqueue, consumers `LISTEN` and dequeue immediately on notification. Fallback: poll with `SKIP LOCKED` every `queuePollIntervalMs` (default 5000ms) as a safety net to catch missed notifications. Config: `queuePollIntervalMs`, `queueNotifyEnabled` (default true).
 
-2. **Shared worker thread pool for sandbox execution** — A single shared pool (not per-channel). Default size: `os.cpus().length - 1` (leave 1 core for the event loop). Configurable via `sandboxWorkerPoolSize`. Workers are only for CPU-bound `isolated-vm` execution — all I/O is async on the main event loop. Idle channels don't hold workers.
+2. **Shared worker thread pool for sandbox execution** (not built: scripts run on the main thread in `node:vm`, limited by the channel script timeout; see D-184 and D-212) — A single shared pool (not per-channel). Default size: `os.cpus().length - 1` (leave 1 core for the event loop). Configurable via `sandboxWorkerPoolSize`. Workers are only for CPU-bound `isolated-vm` execution — all I/O is async on the main event loop. Idle channels don't hold workers.
 
 3. **Backpressure via bounded concurrency** — Per-channel concurrency limit using `p-limit`. Source connector dispatch is wrapped in the limiter. When the limit is reached, new messages wait (TCP connections stay open, HTTP requests queue, poll-based sources naturally slow). Config: `maxConcurrentMessages` per channel (default 10).
 

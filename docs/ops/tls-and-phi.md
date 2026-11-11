@@ -15,7 +15,9 @@ both:
 The production stack ships **nginx listening on port 80** (`docker/nginx/default.conf`),
 serving the built web UI and reverse-proxying `/api/`, `/health`, `/socket.io/`, and
 `/metrics` to the server on `:3000`. Port 80 is plaintext — you must terminate TLS in
-front of it.
+front of it. For that reason `docker/docker-compose.prod.yml` publishes it on
+`127.0.0.1` only: out of the box it is reachable from the host itself and from nothing
+else. `WEB_BIND` and `WEB_PORT` in `.env` change the address and port.
 
 Two supported options:
 
@@ -37,13 +39,17 @@ server {
 ```
 
 Mount the certs into the web container (e.g. a volume at `/etc/nginx/certs`) and, in the
-port-80 block, `return 301 https://$host$request_uri;`.
+port-80 block, `return 301 https://$host$request_uri;`. Publish 443 from the `web`
+service (`"443:443"` under `ports`) and set `WEB_BIND=0.0.0.0` so the redirect is
+reachable.
 
 ### Option B — terminate upstream
 
 Put a TLS-terminating load balancer / ingress (ALB, Cloudflare, Traefik, another nginx)
 in front and forward plaintext to the web container on port 80 **inside a trusted
-network only**. The server already honors `X-Forwarded-*` headers — keep `TRUST_PROXY`
+network only**. A proxy on the same host needs no change (it reaches `127.0.0.1:80`);
+for one on another machine set `WEB_BIND` to the address of the trusted interface, or
+`0.0.0.0`. The server already honors `X-Forwarded-*` headers — keep `TRUST_PROXY`
 set appropriately (`true` behind a single proxy, or a hop count) so rate limiting and
 client-IP logging work.
 

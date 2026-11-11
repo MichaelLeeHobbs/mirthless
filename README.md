@@ -57,7 +57,9 @@ cp .env.production.example .env   # set POSTGRES_PASSWORD, JWT_SECRET, etc.
 docker compose -f docker/docker-compose.prod.yml up -d --build
 ```
 
-The API is served behind nginx on port 80; interactive API docs (Swagger UI) are at
+The UI and API are served by nginx on port 80 of the host itself (`127.0.0.1`), because that
+port is plain HTTP. See [TLS & PHI in transit](docs/ops/tls-and-phi.md) for putting TLS in
+front of it, or set `WEB_BIND=0.0.0.0` in `.env` to try it from another machine. Interactive API docs (Swagger UI) are at
 **`/api-docs`** (served by the server at `:3000/api-docs`).
 
 ### Documentation

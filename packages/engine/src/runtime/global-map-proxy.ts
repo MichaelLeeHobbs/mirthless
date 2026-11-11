@@ -1,33 +1,60 @@
 // ===========================================
 // Global Map Proxy
 // ===========================================
-// In-memory cache of the global map with dirty tracking
-// and debounced flush to database via a callback.
+// The one in-memory copy of the global map, shared by every deployed channel.
+// Tracks which keys scripts changed and saves them to the database on a timer.
+
+import { diffMap } from './map-diff.js';
 
 // ----- Types -----
 
-/** Callback to persist a single key-value pair to the database. */
-export type FlushCallback = (key: string, value: string) => Promise<void>;
+/** Where the global map is persisted. */
+export interface GlobalMapStore {
+  /** Save one entry. `isJson` is false for plain text, true for any other value stored as JSON. */
+  readonly save: (key: string, value: string, isJson: boolean) => Promise<void>;
+  /** Remove one entry. */
+  readonly remove: (key: string) => Promise<void>;
+  /** Called when a save or remove fails. The key stays pending and is retried on the next flush. */
+  readonly onFlushError: (key: string, error: unknown) => void;
+}
+
+/** A persisted global map entry. */
+export interface GlobalMapRow {
+  readonly key: string;
+  readonly value: string | null;
+  readonly isJson: boolean;
+}
+
+const DEFAULT_FLUSH_INTERVAL_MS = 5_000;
+
+function fromRow(row: GlobalMapRow): unknown {
+  if (!row.isJson || row.value === null) return row.value;
+  try {
+    return JSON.parse(row.value) as unknown;
+  } catch {
+    return row.value;
+  }
+}
 
 // ----- Implementation -----
 
-/** In-memory proxy for the global map with dirty-tracking and periodic flush. */
+/** In-memory global map with change tracking and periodic flush. */
 export class GlobalMapProxy {
   private readonly store = new Map<string, unknown>();
   private readonly dirty = new Set<string>();
-  private readonly flushCb: FlushCallback;
+  private readonly persistence: GlobalMapStore;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private readonly flushIntervalMs: number;
 
-  constructor(flushCb: FlushCallback, flushIntervalMs?: number) {
-    this.flushCb = flushCb;
-    this.flushIntervalMs = flushIntervalMs ?? 5_000;
+  constructor(persistence: GlobalMapStore, flushIntervalMs?: number) {
+    this.persistence = persistence;
+    this.flushIntervalMs = flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
   }
 
-  /** Initialize from a snapshot of key-value pairs. */
-  load(entries: ReadonlyArray<{ readonly key: string; readonly value: string | null }>): void {
+  /** Initialize from persisted entries. Plain text stays text; JSON entries get their type back. */
+  load(entries: ReadonlyArray<GlobalMapRow>): void {
     for (const entry of entries) {
-      this.store.set(entry.key, entry.value);
+      this.store.set(entry.key, fromRow(entry));
     }
   }
 
@@ -48,39 +75,76 @@ export class GlobalMapProxy {
     return record;
   }
 
-  /** Apply updates from sandbox execution. Marks changed keys as dirty. */
-  applyUpdates(updates: Readonly<Record<string, unknown>>): void {
-    for (const [key, value] of Object.entries(updates)) {
-      const current = this.store.get(key);
-      if (current !== value) {
-        this.store.set(key, value);
-        this.dirty.add(key);
-      }
+  /**
+   * Apply what a script changed. `before` is the snapshot the script was given
+   * and `after` is the map it left; only keys that differ are written.
+   */
+  applyChanges(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): void {
+    const changes = diffMap(before, after);
+    for (const [key, value] of changes.set) {
+      this.store.set(key, value);
+      this.dirty.add(key);
+    }
+    for (const key of changes.removed) {
+      this.store.delete(key);
+      this.dirty.add(key);
     }
   }
 
-  /** Flush all dirty keys to the database. */
+  /** Take an entry that is already persisted (an edit made through the API). */
+  set(row: GlobalMapRow): void {
+    this.store.set(row.key, fromRow(row));
+    this.dirty.delete(row.key);
+  }
+
+  /** Drop an entry that is already removed from the database. */
+  delete(key: string): void {
+    this.store.delete(key);
+    this.dirty.delete(key);
+  }
+
+  /** Drop every entry; the database is already cleared. */
+  clear(): void {
+    this.store.clear();
+    this.dirty.clear();
+  }
+
+  /** Save every changed key. Never rejects: failures are reported and retried next time. */
   async flush(): Promise<void> {
     if (this.dirty.size === 0) return;
 
-    const keysToFlush = [...this.dirty];
+    const keys = [...this.dirty];
     this.dirty.clear();
 
-    const promises = keysToFlush.map((key) => {
-      const value = this.store.get(key);
-      const stringValue = value === null || value === undefined ? '' : String(value);
-      return this.flushCb(key, stringValue);
+    const results = await Promise.allSettled(keys.map((key) => this.persistKey(key)));
+    results.forEach((result, i) => {
+      const key = keys[i];
+      if (result.status === 'rejected' && key !== undefined) {
+        this.dirty.add(key);
+        this.persistence.onFlushError(key, result.reason);
+      }
     });
-
-    await Promise.all(promises);
   }
 
-  /** Stop the flush timer and flush any remaining dirty keys. */
+  /** Stop the flush timer and flush any remaining changes. */
   async dispose(): Promise<void> {
     if (this.flushTimer !== null) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
     }
     await this.flush();
+  }
+
+  private async persistKey(key: string): Promise<void> {
+    if (!this.store.has(key)) {
+      await this.persistence.remove(key);
+      return;
+    }
+    const value = this.store.get(key);
+    if (typeof value === 'string') {
+      await this.persistence.save(key, value, false);
+    } else {
+      await this.persistence.save(key, JSON.stringify(value) ?? 'null', true);
+    }
   }
 }

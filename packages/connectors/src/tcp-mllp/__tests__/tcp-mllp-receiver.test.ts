@@ -358,3 +358,99 @@ describe('TcpMllpReceiver acknowledgements', () => {
     expect(errors.some((e) => e.msg.includes('frame rejected'))).toBe(true);
   });
 });
+
+describe('TcpMllpReceiver stop', () => {
+  /** Open a connection that stays open, as real HL7 senders do. */
+  async function openPersistent(port: number): Promise<{ client: net.Socket; acks: string[]; closed: Promise<void> }> {
+    const acks: string[] = [];
+    const parser = new MllpParser();
+    const client = net.createConnection({ host: '127.0.0.1', port });
+    client.on('data', (chunk: Buffer) => { acks.push(...parser.parse(chunk)); });
+    client.on('error', () => { /* a reset during stop is expected */ });
+    const closed = new Promise<void>((resolve) => { client.once('close', () => { resolve(); }); });
+    await new Promise<void>((resolve) => { client.once('connect', () => { resolve(); }); });
+    return { client, acks, closed };
+  }
+
+  it('stops promptly while a sender keeps its connection open', async () => {
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onStart();
+    const { client, closed } = await openPersistent(TEST_PORT);
+
+    const started = Date.now();
+    const result = await receiver.onStop();
+
+    expect(result.ok).toBe(true);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    await closed;
+    client.destroy();
+  });
+
+  it('accepts no message once stop has been requested', async () => {
+    const received: string[] = [];
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(makeDispatcher((raw) => { received.push(raw.content); return { messageId: 1 }; }));
+    await receiver.onStart();
+    const { client, acks, closed } = await openPersistent(TEST_PORT);
+
+    const stopping = receiver.onStop();
+    client.write(wrapMllp(VALID_HL7));
+    await stopping;
+    await closed;
+
+    // Not dispatched and not acknowledged, so the sender keeps the message and resends it.
+    expect(received).toEqual([]);
+    expect(acks).toEqual([]);
+  });
+
+  it('finishes and acknowledges the message in flight before it stops', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let dispatched!: () => void;
+    const entered = new Promise<void>((resolve) => { dispatched = resolve; });
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(async () => {
+      dispatched();
+      await gate;
+      return { ok: true as const, value: { messageId: 1 }, error: null };
+    });
+    await receiver.onStart();
+    const { client, acks, closed } = await openPersistent(TEST_PORT);
+    client.write(wrapMllp(VALID_HL7));
+    await entered;
+
+    let stopped = false;
+    const stopping = receiver.onStop().then(() => { stopped = true; });
+    await new Promise((resolve) => { setTimeout(resolve, 100); });
+    expect(stopped).toBe(false);
+
+    release();
+    await stopping;
+    await closed;
+
+    expect(acks).toHaveLength(1);
+    expect(acks[0]).toContain('MSA|AA|MSGID123');
+  });
+
+  it('refuses new connections after stop', async () => {
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onStart();
+    await receiver.onStop();
+
+    await expect(connectAndSend(TEST_PORT, VALID_HL7)).rejects.toThrow();
+  });
+
+  it('can be started again after a stop', async () => {
+    receiver = new TcpMllpReceiver(makeConfig());
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onStart();
+    const first = await openPersistent(TEST_PORT);
+    await receiver.onStop();
+    await first.closed;
+
+    expect((await receiver.onStart()).ok).toBe(true);
+    expect(await connectAndSend(TEST_PORT, VALID_HL7)).toContain('MSA|AA|MSGID123');
+  });
+});

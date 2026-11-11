@@ -481,7 +481,7 @@ describe('ServerBackupService', () => {
 
     it('restores global map entries in OVERWRITE mode', async () => {
       const backup = makeMinimalBackup({
-        globalMap: [{ key: 'counter', value: '42' }],
+        globalMap: [{ key: 'counter', value: '42', isJson: false }],
       });
       mockGlobalMapGetByKey.mockResolvedValue(okResult({ key: 'counter', value: '10' }));
       mockGlobalMapUpsert.mockResolvedValue(okResult({ key: 'counter', value: '42' }));
@@ -494,6 +494,22 @@ describe('ServerBackupService', () => {
       if (!result.ok) return;
       const gmSection = result.value.sections.find((s) => s.section === 'globalMap');
       expect(gmSection?.updated).toBe(1);
+    });
+
+    it('restores a global map entry with the type a script stored it as', async () => {
+      const backup = makeMinimalBackup({
+        globalMap: [{ key: 'counter', value: '42', isJson: true }, { key: 'zip', value: '00501', isJson: false }],
+      });
+      mockGlobalMapGetByKey.mockResolvedValue({ ok: false, value: null, error: new Error('not found') });
+      mockGlobalMapUpsert.mockResolvedValue(okResult({ key: 'counter', value: '42' }));
+      mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+      mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+
+      const result = await ServerBackupService.restoreBackup(backup, 'OVERWRITE');
+
+      expect(result.ok).toBe(true);
+      expect(mockGlobalMapUpsert).toHaveBeenCalledWith('counter', '42', undefined, true);
+      expect(mockGlobalMapUpsert).toHaveBeenCalledWith('zip', '00501', undefined, false);
     });
 
     it('restores config map entries', async () => {
@@ -564,7 +580,7 @@ describe('ServerBackupService', () => {
           { key: 'a', value: '1', type: 'string', description: null, category: null },
           { key: 'b', value: '2', type: 'string', description: null, category: null },
         ],
-        globalMap: [{ key: 'x', value: 'y' }],
+        globalMap: [{ key: 'x', value: 'y', isJson: false }],
       });
       mockSettingsGetByKey.mockResolvedValue(errResult('NOT_FOUND'));
       mockSettingsUpsert.mockResolvedValue(okResult({}));

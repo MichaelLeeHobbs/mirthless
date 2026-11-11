@@ -5,6 +5,8 @@
 // across messages within a single deployment.
 // Cleared when the channel is undeployed.
 
+import { diffMap } from './map-diff.js';
+
 /** Per-channel map persisting across messages within a deployment. */
 export class GlobalChannelMap {
   private readonly store = new Map<string, unknown>();
@@ -43,14 +45,18 @@ export class GlobalChannelMap {
     return record;
   }
 
-  /** Apply updates from sandbox execution back to the store. */
-  applyUpdates(updates: Readonly<Record<string, unknown>>): void {
-    for (const [key, value] of Object.entries(updates)) {
-      if (value === undefined) {
-        this.store.delete(key);
-      } else {
-        this.store.set(key, value);
-      }
+  /**
+   * Apply what a script changed. `before` is the snapshot the script was given
+   * and `after` is the map it left; only keys that differ are written, so a
+   * key another message changed in the meantime is kept.
+   */
+  applyChanges(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): void {
+    const changes = diffMap(before, after);
+    for (const [key, value] of changes.set) {
+      this.store.set(key, value);
+    }
+    for (const key of changes.removed) {
+      this.store.delete(key);
     }
   }
 }

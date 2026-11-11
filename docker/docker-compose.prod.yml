@@ -64,7 +64,12 @@ services:
     depends_on:
       - server
     ports:
-      - "80:80"
+      # The UI and API are plain HTTP on this port and carry logins and PHI.
+      # By default it is reachable from this host only, for a TLS-terminating
+      # proxy or load balancer on the same machine. Set WEB_BIND=0.0.0.0 only
+      # when TLS is terminated in front of this host, or enable the TLS server
+      # block in docker/nginx/default.conf. See docs/ops/tls-and-phi.md.
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-80}:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://localhost:80/ || exit 1"]
       interval: 15s

@@ -20,6 +20,8 @@ export interface DatabaseDispatcherConfig {
   readonly query: string;
   readonly useTransaction: boolean;
   readonly returnGeneratedKeys: boolean;
+  /** Connect with TLS and verify the server certificate. */
+  readonly tls?: boolean;
 }
 
 // ----- Default Pool Config -----
@@ -34,6 +36,7 @@ function toPoolConfig(config: DatabaseDispatcherConfig): PoolConfig {
     maxConnections: 5,
     idleTimeoutMs: 30_000,
     connectionTimeoutMs: 10_000,
+    tls: config.tls === true,
   };
 }
 

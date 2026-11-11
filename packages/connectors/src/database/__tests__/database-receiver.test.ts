@@ -68,6 +68,8 @@ function makeMockPool(): {
     try {
       const value = await fn({
         query: async (sql, params) => {
+          // Savepoint bookkeeping is not a query the tests count.
+          if (/^(SAVEPOINT|RELEASE SAVEPOINT|ROLLBACK TO SAVEPOINT) /.test(sql)) return { rows: [], rowCount: 0 };
           const r = await queryFn(sql, params);
           if (!r.ok) throw r.error;
           return r.value;
@@ -581,5 +583,62 @@ describe('DatabaseReceiver', () => {
 
       expect(errors.some((e) => e.msg.includes('UPDATE failed'))).toBe(true);
     });
+  });
+});
+
+describe('DatabaseReceiver when the pipeline recorded an error', () => {
+  it('does not mark the row processed under ON_SUCCESS', async () => {
+    const { pool, queryFn } = makeMockPool();
+    queryFn.mockResolvedValue({ ok: true, value: { rows: [{ id: 1 }], rowCount: 1 }, error: null });
+
+    receiver = new DatabaseReceiver(makeConfig({
+      updateMode: UPDATE_MODE.ON_SUCCESS,
+      updateQuery: 'UPDATE messages SET processed = true WHERE id = ${id}',
+    }), pool);
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 4, status: 'ERROR' })));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    // Only the SELECT: no UPDATE, so the row is offered again.
+    expect(queryFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks a filtered row processed under ON_SUCCESS', async () => {
+    const { pool, queryFn } = makeMockPool();
+    queryFn.mockResolvedValue({ ok: true, value: { rows: [{ id: 1 }], rowCount: 1 }, error: null });
+
+    receiver = new DatabaseReceiver(makeConfig({
+      updateMode: UPDATE_MODE.ON_SUCCESS,
+      updateQuery: 'UPDATE messages SET processed = true WHERE id = ${id}',
+    }), pool);
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 4, status: 'FILTERED' })));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(queryFn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('DatabaseReceiver row limit', () => {
+  it('dispatches at most 1,000 rows in one poll and says the query needs a LIMIT', async () => {
+    vi.useFakeTimers();
+    try {
+      const { pool, queryFn } = makeMockPool();
+      const rows = Array.from({ length: 1_001 }, (_, i) => ({ id: i + 1 }));
+      queryFn.mockResolvedValueOnce({ ok: true, value: { rows, rowCount: rows.length }, error: null });
+      const warn = vi.fn();
+      const dispatched: string[] = [];
+      const receiver = new DatabaseReceiver(makeConfig(), pool, { error: vi.fn(), warn, info: vi.fn(), debug: vi.fn() });
+      receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw.content); return { messageId: 1 }; }));
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await receiver.onStop();
+
+      expect(dispatched).toHaveLength(1_000);
+      expect(warn).toHaveBeenCalledWith(expect.objectContaining({ rows: 1_001, limit: 1_000 }), expect.stringContaining('add a LIMIT'));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -22,6 +22,7 @@
 // `process`, `require`, `module`, or `globalThis`-host access.
 
 import * as vm from 'node:vm';
+import { randomUUID } from 'node:crypto';
 import type { Result } from '@galvaniflow/core-util';
 import { tryCatch } from '@galvaniflow/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
@@ -54,6 +55,7 @@ export interface ExecutionResult {
     readonly connectorMap: Readonly<Record<string, unknown>>;
     readonly globalChannelMap: Readonly<Record<string, unknown>>;
     readonly globalMap: Readonly<Record<string, unknown>>;
+    readonly responseMap: Readonly<Record<string, unknown>>;
   };
   readonly logs: readonly LogEntry[];
 }
@@ -107,7 +109,9 @@ function hl7Op(state: HostBridgeState, op: string, args: readonly unknown[]): un
   const proxy = getHl7(state, args[0]);
   switch (op) {
     case 'hl7.get': return proxy.get(args[1] as string);
+    case 'hl7.getText': return proxy.getText(args[1] as string);
     case 'hl7.set': proxy.set(args[1] as string, args[2] as string); return undefined;
+    case 'hl7.setText': proxy.setText(args[1] as string, args[2] as string); return undefined;
     case 'hl7.delete': proxy.delete(args[1] as string); return undefined;
     case 'hl7.toString': return proxy.toString();
     case 'hl7.messageType': return proxy.messageType;
@@ -142,6 +146,35 @@ async function ioDispatch(fn: () => Promise<unknown>): Promise<string> {
   } catch (e) {
     return JSON.stringify({ ok: false, e: e instanceof Error ? e.message : String(e) });
   }
+}
+
+/**
+ * Make a dispatch function that can never throw into the sandbox.
+ *
+ * An Error thrown by host code is a host-realm object: a script that catches it can
+ * reach the host `Function` through `e.constructor.constructor` and from there
+ * `process`. So a failure is recorded on the host and reported as `errToken`, a
+ * random string only this execution knows. The sandbox wrapper sees the token, asks
+ * for the message with `err.take`, and throws a sandbox-realm Error.
+ */
+function makeNonThrowingDispatch(
+  dispatch: (op: string, ...args: unknown[]) => unknown,
+  errToken: string,
+): (op: string, ...args: unknown[]) => unknown {
+  let lastError = '';
+  return (op: string, ...args: unknown[]): unknown => {
+    if (op === 'err.take') {
+      const message = lastError;
+      lastError = '';
+      return message;
+    }
+    try {
+      return dispatch(op, ...args);
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+      return errToken;
+    }
+  };
 }
 
 /** Build the single host dispatch function invoked by every sandbox bridge. */
@@ -186,6 +219,8 @@ function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown
 
 /** Serializable payload injected into the sandbox and rebuilt in-realm by the bootstrap. */
 interface SandboxPayload {
+  /** Value the host dispatch returns in place of throwing (see makeNonThrowingDispatch). */
+  readonly errToken: string;
   readonly rawData: string;
   readonly msgKind: 'hl7' | 'data';
   readonly msgVal: unknown;
@@ -203,7 +238,12 @@ interface SandboxPayload {
   readonly bridges: { httpFetch: boolean; dbQuery: boolean; routeMessage: boolean; getResource: boolean; getCollection: boolean };
 }
 
-function buildPayload(state: HostBridgeState, context: SandboxContext, deps: BridgeDependencies | undefined): SandboxPayload {
+function buildPayload(
+  state: HostBridgeState,
+  context: SandboxContext,
+  deps: BridgeDependencies | undefined,
+  errToken: string,
+): SandboxPayload {
   const msgIsHl7 = isHl7MessageProxy(context.msg);
   const tmpIsHl7 = isHl7MessageProxy(context.tmp);
   const extrasData: Record<string, unknown> = {};
@@ -211,6 +251,7 @@ function buildPayload(state: HostBridgeState, context: SandboxContext, deps: Bri
     if (k !== 'destinationSet') extrasData[k] = v;
   }
   return {
+    errToken,
     rawData: context.rawData,
     msgKind: msgIsHl7 ? 'hl7' : 'data',
     msgVal: msgIsHl7 ? registerHl7(state, context.msg as Hl7MessageProxy) : context.msg,
@@ -238,7 +279,16 @@ function buildPayload(state: HostBridgeState, context: SandboxContext, deps: Bri
 // ----- Bootstrap (runs INSIDE the vm context; every function it defines is sandbox-realm) -----
 
 const BOOTSTRAP_SRC = `'use strict';
-globalThis.__build = function (dispatch, payload) {
+globalThis.__build = function (hostDispatch, payload) {
+  // The host never throws across the boundary (a host Error would hand the script the
+  // host realm's Function). It returns errToken instead; the Error is created here,
+  // in the sandbox realm.
+  var errToken = payload.errToken;
+  function dispatch() {
+    var out = hostDispatch.apply(null, arguments);
+    if (out === errToken) { throw new Error(hostDispatch('err.take')); }
+    return out;
+  }
   // IO bridges: the host returns a ticket id synchronously and later settles it by
   // running __settle() in this context. Awaiting a sandbox-realm promise keeps every
   // continuation on this context's microtask queue, which only drains inside a
@@ -265,11 +315,13 @@ globalThis.__build = function (dispatch, payload) {
       __hl7Proxy: true,
       __handle: handle,
       get: function (p) { return dispatch('hl7.get', handle, p); },
+      getText: function (p) { return dispatch('hl7.getText', handle, p); },
       set: function (p, v) { dispatch('hl7.set', handle, p, v); },
+      setText: function (p, v) { dispatch('hl7.setText', handle, p, v); },
       delete: function (p) { dispatch('hl7.delete', handle, p); },
       toString: function () { return dispatch('hl7.toString', handle); },
-      messageType: dispatch('hl7.messageType', handle),
-      messageControlId: dispatch('hl7.controlId', handle),
+      get messageType() { return dispatch('hl7.messageType', handle); },
+      get messageControlId() { return dispatch('hl7.controlId', handle); },
       getSegmentCount: function (n) { return dispatch('hl7.segCount', handle, n); },
       getSegmentString: function (n, i) { return dispatch('hl7.segString', handle, n, i); }
     };
@@ -481,8 +533,8 @@ class AsyncRun {
  *
  * All host data and functions are re-materialized inside the vm context so user
  * scripts cannot reach the host realm (see the security model at the top of this
- * file and ./README.md). isolated-vm is not used because it does not build on
- * Windows/Node 24 in this project; this executor hardens node:vm instead.
+ * file and ./README.md). isolated-vm is not used (it did not build on
+ * Windows/Node 24 in this project); this executor hardens node:vm instead.
  */
 export class VmSandboxExecutor implements SandboxExecutor {
   private readonly deps: BridgeDependencies | undefined;
@@ -497,7 +549,10 @@ export class VmSandboxExecutor implements SandboxExecutor {
     options: ExecutionOptions,
   ): Promise<Result<ExecutionResult>> {
     return tryCatch(async () => {
-      const signal = options.signal ?? AbortSignal.timeout(options.timeout);
+      // Each script gets its own wall-clock limit. A caller's signal can cancel
+      // it sooner, but can never let it run longer than `timeout`.
+      const limit = AbortSignal.timeout(options.timeout);
+      const signal = options.signal ? AbortSignal.any([options.signal, limit]) : limit;
       if (signal.aborted) {
         throw new Error('Execution aborted before start');
       }
@@ -510,14 +565,15 @@ export class VmSandboxExecutor implements SandboxExecutor {
         nextHandle: 1,
       };
       const dispatch = makeHostDispatch(state);
-      const payload = buildPayload(state, context, this.deps);
+      const errToken = `__host_error_${randomUUID()}__`;
+      const payload = buildPayload(state, context, this.deps, errToken);
 
       const hasAsyncBridges = Boolean(
         this.deps?.httpFetch || this.deps?.dbQuery || this.deps?.routeMessage || this.deps?.getResource || this.deps?.collections,
       );
       const contextObj: Record<string, unknown> = vm.createContext({}, { microtaskMode: 'afterEvaluate' });
       const run = new AsyncRun(contextObj, Date.now() + options.timeout);
-      contextObj['__dispatch'] = run.wrap(dispatch);
+      contextObj['__dispatch'] = makeNonThrowingDispatch(run.wrap(dispatch), errToken);
       contextObj['__payloadJson'] = JSON.stringify(payload);
       vm.runInContext(BOOTSTRAP_SRC, contextObj, { timeout: options.timeout });
       vm.runInContext(INVOKE_SRC, contextObj, { timeout: options.timeout });
@@ -544,6 +600,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
           connectorMap: (contextObj['connectorMap'] as Record<string, unknown>) ?? {},
           globalChannelMap: (contextObj['globalChannelMap'] as Record<string, unknown>) ?? {},
           globalMap: (contextObj['globalMap'] as Record<string, unknown>) ?? {},
+          responseMap: (contextObj['responseMap'] as Record<string, unknown>) ?? {},
         },
         logs: state.logs,
       };

@@ -1,0 +1,9 @@
+# Actions are pinned to a commit, so a moved tag cannot change what runs in CI.
+# Dependabot proposes the new commit (and updates the version comment) when an
+# action releases.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

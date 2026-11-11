@@ -22,7 +22,7 @@ export const jwtDuration = z
   )
   .transform((v) => v as NonNullable<SignOptions['expiresIn']>);
 
-const configSchema = z.object({
+export const configSchema = z.object({
   // Application
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
@@ -37,6 +37,14 @@ const configSchema = z.object({
   // Escape hatch to disable cert verification (INSECURE — MITM-able PHI link).
   // Defaults to verifying. Only set 'false' for a throwaway/self-signed dev setup.
   DATABASE_SSL_REJECT_UNAUTHORIZED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  // Server-side limit for one SQL statement, in milliseconds. 0 turns it off.
+  // Two minutes leaves room for pruning and backup queries.
+  DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(120_000),
+
+  // API requests one client address may make per minute. Read by the rate
+  // limiter; declared here so a value that is not a positive whole number stops
+  // the server at startup instead of being ignored.
+  API_RATE_LIMIT_MAX: z.coerce.number().int().positive().optional(),
 
   // Authentication
   JWT_SECRET: z.string().min(32),
@@ -79,14 +87,17 @@ const configSchema = z.object({
  * A JWT secret is unusable in production if it is a shipped placeholder or an
  * obviously low-entropy value. `min(32)` alone passes the 45-char placeholder in
  * .env.production.example, which would give every un-edited deployment the same
- * publicly-known signing key (admin-token forgery). We reject those in production.
+ * publicly-known signing key (admin-token forgery). We reject those in production,
+ * along with the development secret shipped in .env.example.
  */
 export function isWeakJwtSecret(secret: string): boolean {
   const lower = secret.toLowerCase();
-  const placeholderMarkers = ['change_me', 'changeme', 'change-me', 'your-secret', 'your_secret', 'replace', 'example', 'insecure', 'placeholder'];
+  const placeholderMarkers = ['change_me', 'changeme', 'change-me', 'your-secret', 'your_secret', 'super-secret', 'change-in-production', 'replace', 'example', 'insecure', 'placeholder'];
   if (placeholderMarkers.some((m) => lower.includes(m))) return true;
-  // Fewer than 16 distinct characters => very low entropy for a 32+ char secret.
-  if (new Set(secret).size < 16) return true;
+  // Very few distinct characters means a repeated or patterned value. The bar
+  // is 10, not 16: a random hex secret has at most 16 distinct characters and
+  // about one in four of them misses at least one digit.
+  if (new Set(secret).size < 10) return true;
   return false;
 }
 

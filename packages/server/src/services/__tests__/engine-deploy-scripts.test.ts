@@ -30,7 +30,7 @@ const MockChannelRuntime = vi.fn().mockImplementation(function () {
   };
 });
 
-const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn() };
+const mockGcm = { clear: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyChanges: vi.fn() };
 const MockGlobalChannelMap = vi.fn().mockImplementation(function () { return mockGcm; });
 
 const mockSandboxExecute = vi.fn().mockResolvedValue({
@@ -62,10 +62,10 @@ vi.mock('@galvaniflow/engine', () => ({
   }),
   DEFAULT_EXECUTION_OPTIONS: { timeout: 30000, memoryLimit: 134217728, signal: AbortSignal.timeout(30000) },
   GlobalChannelMap: MockGlobalChannelMap,
-  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
+  GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyChanges: vi.fn(), set: vi.fn(), delete: vi.fn(), clear: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
   compileScript: mockCompileScript,
-  compileFilterRulesToScript: vi.fn().mockReturnValue(null),
-  compileTransformerStepsToScript: vi.fn().mockReturnValue(null),
+  compileFilterRulesToScript: vi.fn().mockReturnValue({ ok: true, value: null, error: null }),
+  compileTransformerStepsToScript: vi.fn().mockReturnValue({ ok: true, value: null, error: null }),
   prependTemplates: vi.fn().mockImplementation((src: string) => src),
   AlertManager: MockAlertManagerCtor,
   RecoveryManager: vi.fn().mockImplementation(function () {
@@ -112,8 +112,17 @@ vi.mock('../message.service.js', () => ({
     deleteAttachments: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     resetPending: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
     getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
+    getLatestMessageId: vi.fn().mockResolvedValue({ ok: true, value: 0, error: null }),
     getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
   },
+}));
+
+vi.mock('../global-map.service.js', () => ({
+  GlobalMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }), upsert: vi.fn(), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() },
+}));
+
+vi.mock('../config-map.service.js', () => ({
+  ConfigMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) },
 }));
 
 vi.mock('../code-template.service.js', () => ({
@@ -267,7 +276,7 @@ describe('EngineManager deploy/undeploy scripts', () => {
       const engine = new EngineManager('test-server');
       await engine.deploy(channel as never);
 
-      expect(mockGcm.applyUpdates).toHaveBeenCalledWith({ deployKey: 'deployValue' });
+      expect(mockGcm.applyChanges).toHaveBeenCalledWith({}, { deployKey: 'deployValue' });
     });
 
     it('does not execute deploy script when no deploy script exists', async () => {

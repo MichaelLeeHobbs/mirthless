@@ -2,6 +2,39 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-11 — Fix every finding of the deep code review (branch `claude/project-thread-ji5t3p`)
+
+Michael asked for a systematic review of the codebase, then: "fix all the issues. I suspect the XML issues come from treating things that look like numbers as numbers. That is not safe." The review found 1 critical, 12 high, 15 medium and 10 low issues. All are fixed here, one concern per commit, each bug with a test that failed first (the few written together with the fix are named in the pull request). Decisions D-206 to D-222.
+
+### Critical
+- **Sandbox escape.** A synchronous bridge (`parseHL7`, `createACK`, the HL7 methods) threw a host Error into the script, and `e.constructor.constructor` reached the host `Function`, `process` and its environment. The host side never throws now; the sandbox raises its own Error (D-206).
+
+### Messages that were lost, duplicated or changed
+- **A script that failed to compile was dropped** and the channel ran without that filter or transformer; Rule Builder rules and Mapper steps were skipped, so such a filter let everything through. Deploy now fails with the script and the error, and the API returns it as a 400 so the page can show it (a first version returned a bare 500, which CI caught: the Global Scripts end-to-end spec typed faster than the editor accepted and had been saving a script that could not compile on every run). Rule Builder compiles to JavaScript; a Mapper step (or any step type that carries no script) blocks the deploy and the editor says so (D-207).
+- **XML and JSON values.** XML text that looked like a number was converted (`000123` to `123`, `02134` to `2134`, `1.0` to `1`) and trimmed. XML values are always text now. A JSON number a double cannot hold is kept as text. A transformer that changes nothing passes the original bytes through (D-208).
+- **HL7.** `delete('PID.5')` removed one subcomponent; CRLF and LF messages lost segments; `\F\` as literal text decoded to a field separator; a `|` or line break passed to `set` added fields and segments; MSH-2's fifth character was dropped. All fixed; scripts get `getText` and `setText` for free text (D-218).
+- **Pruner** failed on a channel with more than 65,534 aged-out messages, and deleted unfinished messages. It works in batches of 1,000 and skips anything unprocessed, queued or pending (D-209).
+- **Queue** ignored the retry interval, so a short outage burned every message's retries. It waits, keeps order, and a stop or redeploy no longer counts an attempt (D-210). "Remove content on completion" now applies after a queued delivery too.
+- **Every source connector** except MLLP answered success for a message that ended in ERROR (HTTP 200, file deleted, row marked). All use one rule now, and the channel's response mode is honoured (D-211).
+- **Recovery** could skip a chained destination, run a message twice on a running channel and load the whole backlog at once. Destination rows are created up front, recovery is limited to messages that existed at deploy, and it pages (D-213). The pipeline checks its store writes.
+- **Global map** was per channel and saved every value with `String()`. One shared map, changed keys only, values keep their type (migration 0012, D-214).
+- **Database reader**: one failed ack rolled back the others and the batch was sent again. Each ack runs in a savepoint; a poll takes at most 1,000 rows; connections get a TLS switch (migration 0013, D-216).
+- **File connectors**: one unreadable file blocked the rest; stop kept dispatching; `${originalFilename}` wrote every message to a file named "message"; an unknown charset was read as UTF-8 (D-219).
+- **MLLP**: stop hung on open sender connections; a large frame in small chunks took quadratic time; a file separator inside a payload cut the message. An ACK for a different message (MSA-2) now counts as a failure (D-220).
+
+### Operations and security
+- Script timeout is per script, not one deadline for the whole message (D-212). Deploy and start roll back on failure, and a channel that will not start is reported (D-215). Alerts go out in the background, one a minute by default, and the CHANNEL action works (D-217).
+- CLI login never saved a token (it read `token`, the server sends `accessToken`); password hidden; config file 0600.
+- HTTP source no longer stores Authorization, Cookie or API key headers with the message. JSON body limit is 50 MB on restore, import and send-message. The `.env.example` JWT secret is refused in production. Unhandled rejections are logged; an uncaught exception shuts down in order. SQL statements have a two-minute limit. The production compose file binds the plain-HTTP port to 127.0.0.1 (D-221). Content search escapes `%` and `_`, and is turned off with a reason on an encrypted channel.
+- `isolated-vm` removed (never imported; its native build broke `pnpm install`). CI actions pinned to commits; Docker images built on pull requests that touch them.
+
+### Docs and agent tooling
+- `.claude/` was git-ignored, so the skills, hooks and settings AGENTS.md describes were never in the repository. They are now.
+- Coverage minimums raised to today's numbers and listed in AGENTS.md (D-222). AGENTS.md module tree, design-doc list and Windows-only paths corrected; the second design doc numbered 15 is now 16.
+
+### Verified
+`pnpm gate` (build, lint, 3,107 unit tests with coverage), `pnpm test:integration` (63 tests against Postgres 16), `pnpm shots` for the pages touched, and the Playwright suite (112 passed; the 2 global-scripts specs could not load the Monaco editor, which the browser fetches from a CDN the cloud sandbox cannot reach). The Docker images were not built locally (no Docker daemon); the new pull-request job builds them.
+
 ## 2026-10-27 — Rename to GalvaniFlow (branch `claude/project-thread-fxf1aq`)
 
 Michael: the app will be renamed GalvaniFlow; do it before tagging v0.1.0.

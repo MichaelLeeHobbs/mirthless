@@ -324,4 +324,88 @@ describe('ChannelRuntime', () => {
       expect(source.setDispatcher).toHaveBeenCalledWith(config.onMessage);
     });
   });
+
+  describe('rollback on failure', () => {
+    const failed = (message: string): Result<void> => ({ ok: false, value: null, error: new Error(message) }) as unknown as Result<void>;
+
+    it('undeploys the connectors already deployed when a destination fails to deploy', async () => {
+      const source = makeSource();
+      const first = makeConnector();
+      const second = makeConnector();
+      (second.onDeploy as ReturnType<typeof vi.fn>).mockResolvedValue(failed('bad host'));
+
+      const result = await runtime.deploy(makeConfig({ source, destinations: new Map([[1, first], [2, second]]) }));
+
+      expect(result.ok ? '' : result.error.message).toBe('Destination 2 deploy failed: bad host');
+      expect(source.onUndeploy).toHaveBeenCalledTimes(1);
+      expect(first.onUndeploy).toHaveBeenCalledTimes(1);
+      expect(second.onUndeploy).not.toHaveBeenCalled();
+      expect(runtime.getState()).toBe('UNDEPLOYED');
+    });
+
+    it('can be deployed again after a failed deploy', async () => {
+      const source = makeSource();
+      (source.onDeploy as ReturnType<typeof vi.fn>).mockResolvedValueOnce(failed('boom'));
+      const config = makeConfig({ source });
+
+      expect((await runtime.deploy(config)).ok).toBe(false);
+      expect((await runtime.deploy(config)).ok).toBe(true);
+      expect(runtime.getState()).toBe('STOPPED');
+    });
+
+    it('stops the destinations already started when the source fails to start', async () => {
+      const source = makeSource();
+      const first = makeConnector();
+      const second = makeConnector();
+      (source.onStart as ReturnType<typeof vi.fn>).mockResolvedValue(failed('listen EADDRINUSE: address already in use :::6661'));
+      await runtime.deploy(makeConfig({ source, destinations: new Map([[1, first], [2, second]]) }));
+
+      const result = await runtime.start();
+
+      expect(result.ok ? '' : result.error.message).toBe('Source start failed: listen EADDRINUSE: address already in use :::6661');
+      expect(first.onStop).toHaveBeenCalledTimes(1);
+      expect(second.onStop).toHaveBeenCalledTimes(1);
+      expect(runtime.getState()).toBe('STOPPED');
+    });
+
+    it('stops only the destinations that started when a later one fails', async () => {
+      const first = makeConnector();
+      const second = makeConnector();
+      const third = makeConnector();
+      const source = makeSource();
+      (second.onStart as ReturnType<typeof vi.fn>).mockResolvedValue(failed('no route'));
+      await runtime.deploy(makeConfig({ source, destinations: new Map([[1, first], [2, second], [3, third]]) }));
+
+      const result = await runtime.start();
+
+      expect(result.ok ? '' : result.error.message).toBe('Destination 2 start failed: no route');
+      expect(first.onStop).toHaveBeenCalledTimes(1);
+      expect(third.onStart).not.toHaveBeenCalled();
+      expect(source.onStart).not.toHaveBeenCalled();
+    });
+
+    it('can be started again once the cause is fixed', async () => {
+      const source = makeSource();
+      (source.onStart as ReturnType<typeof vi.fn>).mockResolvedValueOnce(failed('port busy'));
+      await runtime.deploy(makeConfig({ source }));
+
+      expect((await runtime.start()).ok).toBe(false);
+      expect((await runtime.start()).ok).toBe(true);
+      expect(runtime.getState()).toBe('STARTED');
+    });
+
+    it('reports a connector that fails to stop but still stops the rest', async () => {
+      const source = makeSource();
+      const dest = makeConnector();
+      (source.onStop as ReturnType<typeof vi.fn>).mockResolvedValue(failed('socket stuck'));
+      await runtime.deploy(makeConfig({ source, destinations: new Map([[1, dest]]) }));
+      await runtime.start();
+
+      const result = await runtime.stop();
+
+      expect(result.ok ? '' : result.error.message).toBe('Source stop failed: socket stuck');
+      expect(dest.onStop).toHaveBeenCalledTimes(1);
+      expect(runtime.getState()).toBe('STOPPED');
+    });
+  });
 });
