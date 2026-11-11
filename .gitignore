@@ -33,8 +33,10 @@ pnpm-debug.log*
 # IDE
 .idea/
 
-# Claude Code
-.claude/
+# Claude Code: skills, hooks and settings.json are shared and checked in;
+# only per-machine files are ignored.
+.claude/settings.local.json
+.claude/worktrees/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
