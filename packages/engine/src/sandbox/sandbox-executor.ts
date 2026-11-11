@@ -529,8 +529,8 @@ class AsyncRun {
  *
  * All host data and functions are re-materialized inside the vm context so user
  * scripts cannot reach the host realm (see the security model at the top of this
- * file and ./README.md). isolated-vm is not used because it does not build on
- * Windows/Node 24 in this project; this executor hardens node:vm instead.
+ * file and ./README.md). isolated-vm is not used (it did not build on
+ * Windows/Node 24 in this project); this executor hardens node:vm instead.
  */
 export class VmSandboxExecutor implements SandboxExecutor {
   private readonly deps: BridgeDependencies | undefined;

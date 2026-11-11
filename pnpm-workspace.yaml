@@ -4,7 +4,6 @@ packages:
 # Dependencies allowed to run install scripts. Everything else is denied.
 allowBuilds:
   esbuild: true
-  isolated-vm: true
   cpu-features: true
   ssh2: true
   '@scarf/scarf': false

@@ -95,7 +95,7 @@ Channels can declare dependencies on other channels. The deployment system uses 
 ### Problem 7: Rhino JavaScript Engine
 **Connect:** Uses patched Mozilla Rhino with full Java interop. User scripts can access any Java class. No sandbox. Runs in interpreted mode for debugging.
 
-**GalvaniFlow:** Sandboxed JS/TS execution via `isolated-vm` or Node.js worker threads. TypeScript support with on-the-fly transpilation. Explicit API surface — no uncontrolled access to host runtime.
+**GalvaniFlow:** Sandboxed JS/TS execution in hardened `node:vm` contexts (the original plan was `isolated-vm` or worker threads; see D-018 and D-129). TypeScript support with on-the-fly transpilation. Explicit API surface — no uncontrolled access to host runtime.
 
 ### Problem 8: Complex Thread Management
 **Connect:** Manual thread pools, acceptor threads, reader threads, queue threads. Busy-wait polling for drain. `synchronized` blocks everywhere. The stop sequence for a channel is ~100 lines of careful thread coordination.
@@ -221,7 +221,7 @@ Raw Message
 
 1. **No "donkey" naming** — just `engine`
 2. **TypeScript transformers** — not just JavaScript
-3. **Sandboxed execution** — isolated-vm or worker threads with explicit API
+3. **Sandboxed execution** — hardened `node:vm` contexts with an explicit API
 4. **Async-first** — pipeline stages are async with AbortController timeouts
 5. **Result<T> throughout** — pipeline errors are values, not thrown exceptions
 6. **Proper relational message storage** — not per-channel tables
@@ -384,6 +384,8 @@ This replaces Connect's in-memory `LinkedHashMap` queue buffer backed by JDBC qu
 5. TypeScript support with on-the-fly transpilation
 
 ### Approach: `isolated-vm` (Primary) or Worker Threads (Fallback)
+
+> **Status (2026-11): superseded.** Scripts run in `node:vm` through `VmSandboxExecutor`, not `isolated-vm`, and on the main thread, not in a worker pool. `isolated-vm` is no longer a dependency. The decisions are D-018, D-129 and D-184 in `docs/progress/DECISIONS.md`; the security model is in `packages/engine/src/sandbox/README.md`. The text below is the original design and is kept for the reasoning.
 
 **`isolated-vm`**: V8 isolates with separate heaps. True memory/CPU isolation. Can transfer data via structured clone. No access to Node.js APIs unless explicitly provided.
 

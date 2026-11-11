@@ -15,8 +15,8 @@ logger.info.constructor('return process')()   // -> host process, process.env (D
 This works whenever a user script can reach **any host-realm function or object**,
 because `someHostFn.constructor` is the host realm's `Function`, and
 `Function('return process')()` then runs with the host global scope in view.
-`isolated-vm` (a real isolate boundary) does not build on Windows / Node 24 in this
-project, so we cannot rely on it.
+`isolated-vm` (a real isolate boundary) did not build on Windows / Node 24 in this
+project, so it is not used and is no longer a dependency.
 
 ## Defense: expose nothing from the host realm
 

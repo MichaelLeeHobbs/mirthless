@@ -10,8 +10,8 @@ exposed** to your scripts, sourced from `packages/engine/src/sandbox/sandbox-exe
 > `return` becomes the script result (a filter returns a boolean; a transformer typically
 > mutates `msg`/`tmp` and the maps).
 >
-> Design doc `docs/design/04` predates this and still references `isolated-vm`. That is
-> **stale** — the engine uses `node:vm` (`VmSandboxExecutor`). Treat this page as current.
+> Design doc `docs/design/04` describes the original `isolated-vm` plan and says so at the
+> top. The engine uses `node:vm` (`VmSandboxExecutor`). Treat this page as current.
 
 ## Message data
 

@@ -51,7 +51,7 @@ The simplest solution that works correctly is the best solution.
 ### Security First
 
 - **No raw SQL** — Always parameterized queries via Drizzle ORM
-- **No `eval()`, `new Function()`** — User code runs in isolated-vm sandbox only
+- **No `eval()`, `new Function()`** — User code runs only in the engine sandbox (hardened `node:vm`, see `packages/engine/src/sandbox/README.md`)
 - **No credential logging** — Never log passwords, tokens, API keys, or PHI in plain text
 - **Input validation at every boundary** — API endpoints, WebSocket messages, file uploads, user scripts
 - **XSS prevention** — React handles this by default; never use `dangerouslySetInnerHTML`
