@@ -95,3 +95,23 @@ describe('createAck', () => {
     expect(original.toString()).toBe(originalStr);
   });
 });
+
+describe('createAck text escaping', () => {
+  const ORIGINAL = 'MSH|^~\\&|SEND|FAC|RECV|FAC|20260101120000||ADT^A01|CTRL1|P|2.5.1\rPID|1||123';
+
+  it('escapes delimiters in the MSA text so it stays one field', () => {
+    const ack = createAck(Hl7Message.parse(ORIGINAL), { ackCode: 'AE', textMessage: 'Bad value a|b^c & d\rnext line' });
+    const parsed = Hl7Message.parse(ack);
+
+    expect(parsed.get('MSA.1')).toBe('AE');
+    expect(parsed.get('MSA.2')).toBe('CTRL1');
+    expect(ack.split('\r')).toHaveLength(2);
+    expect(ack.split('\r')[1]!.split('|')).toHaveLength(4);
+    expect(ack).toContain('a\\F\\b\\S\\c \\T\\ d\\X0D\\next line');
+  });
+
+  it('escapes delimiters in the ERR code', () => {
+    const ack = createAck(Hl7Message.parse(ORIGINAL), { ackCode: 'AR', errorCode: 'x|y' });
+    expect(ack.split('\r')[2]).toBe('ERR|x\\F\\y');
+  });
+});

@@ -6,7 +6,7 @@
 // destination connector must treat a NAK (MSA-1 = AE/AR/CE/CR) as an ERROR,
 // not a silent SENT.
 
-import { Hl7Message, createAck, formatTimestamp } from '@galvaniflow/core-util';
+import { Hl7Message, createAck, formatTimestamp, escapeValue, type Hl7Encoding } from '@galvaniflow/core-util';
 
 /** HL7 acknowledgement codes we emit. */
 export type AckCode = 'AA' | 'AE' | 'AR';
@@ -31,13 +31,18 @@ export function buildAck(inbound: string, ackCode: AckCode, textMessage?: string
   }
 }
 
+const DEFAULT_ENCODING: Hl7Encoding = {
+  fieldSep: '|', componentSep: '^', repetitionSep: '~', escapeChar: '\\', subComponentSep: '&', segmentSep: '\r',
+};
+
 /** Minimal ACK used when the inbound message is not parseable HL7. */
 function buildFallbackAck(ackCode: AckCode, textMessage?: string): string {
   const timestamp = formatTimestamp(new Date());
-  const controlId = `GALVANIFLOW${String(Date.now())}`;
+  // MSH-10 holds at most 20 characters: "GF" plus the millisecond clock is 15.
+  const controlId = `GF${String(Date.now())}`;
   const msh = ['MSH', '^~\\&', '', '', '', '', timestamp, '', 'ACK', controlId, 'P', '2.5.1'].join('|');
   const msaParts = ['MSA', ackCode, controlId];
-  if (textMessage !== undefined) msaParts.push(textMessage);
+  if (textMessage !== undefined) msaParts.push(escapeValue(textMessage, DEFAULT_ENCODING));
   return [msh, msaParts.join('|')].join('\r');
 }
 
@@ -53,9 +58,15 @@ export interface AckClassification {
  * Accepts on MSA-1 = AA or CA; everything else (AE/AR/CE/CR, missing MSA,
  * or unparseable) is a failure so the message surfaces and can retry.
  *
+ * A positive acknowledgement that names a different message (MSA-2 differs
+ * from the control ID that was sent) is also a failure: on a reused connection
+ * it means the reply belongs to something else, and counting it would mark an
+ * undelivered message SENT. An acknowledgement with no MSA-2 is accepted.
+ *
  * @param response - The raw HL7 acknowledgement received.
+ * @param sentControlId - MSH-10 of the message that was sent, when it has one.
  */
-export function classifyAckResponse(response: string): AckClassification {
+export function classifyAckResponse(response: string, sentControlId?: string): AckClassification {
   const extracted = extractMsa(response);
   if (extracted === undefined) {
     return { accepted: false, ackCode: '', errorMessage: 'Unparseable acknowledgement response' };
@@ -63,6 +74,14 @@ export function classifyAckResponse(response: string): AckClassification {
 
   const ackCode = extracted.code.toUpperCase();
   if (ackCode === 'AA' || ackCode === 'CA') {
+    const ackedId = extracted.controlId ?? '';
+    if (sentControlId && ackedId !== '' && ackedId !== sentControlId) {
+      return {
+        accepted: false,
+        ackCode,
+        errorMessage: `Acknowledgement is for a different message (MSA-2=${ackedId}, sent ${sentControlId})`,
+      };
+    }
     return { accepted: true, ackCode };
   }
   if (ackCode === '') {
@@ -80,13 +99,14 @@ export function classifyAckResponse(response: string): AckClassification {
  * (MSH + MSA) via the parser, and falls back to a manual segment scan for
  * degenerate responses that omit MSH (be liberal in what we accept).
  */
-function extractMsa(response: string): { code: string; text?: string } | undefined {
+function extractMsa(response: string): { code: string; controlId?: string; text?: string } | undefined {
   try {
     const msg = Hl7Message.parse(response);
     const code = msg.get('MSA.1');
     if (code !== undefined) {
+      const controlId = msg.get('MSA.2');
       const text = msg.get('MSA.3');
-      return text !== undefined ? { code, text } : { code };
+      return { code, ...(controlId !== undefined ? { controlId } : {}), ...(text !== undefined ? { text } : {}) };
     }
   } catch {
     // No MSH / not parseable as a full message — try a manual scan below.
@@ -94,8 +114,18 @@ function extractMsa(response: string): { code: string; text?: string } | undefin
   for (const seg of response.split(/[\r\n]+/)) {
     if (seg.startsWith('MSA')) {
       const fields = seg.split('|');
-      return { code: fields[1] ?? '', ...(fields[3] ? { text: fields[3] } : {}) };
+      return { code: fields[1] ?? '', ...(fields[2] ? { controlId: fields[2] } : {}), ...(fields[3] ? { text: fields[3] } : {}) };
     }
   }
   return undefined;
+}
+
+/** MSH-10 of an outbound message, or undefined when it is not HL7 or has none. */
+export function controlIdOf(message: string): string | undefined {
+  try {
+    const id = Hl7Message.parse(message).get('MSH.10');
+    return id !== undefined && id !== '' ? id : undefined;
+  } catch {
+    return undefined;
+  }
 }

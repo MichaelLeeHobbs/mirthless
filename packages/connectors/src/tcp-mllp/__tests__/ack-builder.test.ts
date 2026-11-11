@@ -66,3 +66,45 @@ describe('classifyAckResponse', () => {
     expect(classifyAckResponse('MSA|AA|123').accepted).toBe(true);
   });
 });
+
+describe('fallback ACK', () => {
+  it('uses a control id that fits the 20 character limit of MSH-10', () => {
+    const ack = buildAck('not hl7 at all', 'AE');
+    const controlId = ack.split('\r')[0]!.split('|')[9]!;
+    expect(controlId.length).toBeGreaterThan(0);
+    expect(controlId.length).toBeLessThanOrEqual(20);
+    expect(ack.split('\r')[1]!.split('|')[2]).toBe(controlId);
+  });
+
+  it('escapes delimiters in the text', () => {
+    const ack = buildAck('not hl7 at all', 'AE', 'bad|text\rMSA|AA');
+    const lines = ack.split('\r');
+    expect(lines).toHaveLength(2);
+    expect(lines[1]!.split('|')).toHaveLength(4);
+  });
+});
+
+describe('classifyAckResponse control id check', () => {
+  const ack = (code: string, id: string): string =>
+    `MSH|^~\\&|R|F|S|F|20260101||ACK|X1|P|2.5.1\rMSA|${code}|${id}`;
+
+  it('accepts a positive acknowledgement for the message that was sent', () => {
+    expect(classifyAckResponse(ack('AA', 'CTRL1'), 'CTRL1').accepted).toBe(true);
+  });
+
+  it('rejects a positive acknowledgement for a different message', () => {
+    const result = classifyAckResponse(ack('AA', 'OTHER'), 'CTRL1');
+    expect(result.accepted).toBe(false);
+    expect(result.errorMessage).toContain('OTHER');
+    expect(result.errorMessage).toContain('CTRL1');
+  });
+
+  it('accepts when the acknowledgement carries no control id', () => {
+    expect(classifyAckResponse(ack('AA', ''), 'CTRL1').accepted).toBe(true);
+  });
+
+  it('accepts when the sent content had no control id to compare', () => {
+    expect(classifyAckResponse(ack('AA', 'ANY')).accepted).toBe(true);
+    expect(classifyAckResponse(ack('AA', 'ANY'), '').accepted).toBe(true);
+  });
+});

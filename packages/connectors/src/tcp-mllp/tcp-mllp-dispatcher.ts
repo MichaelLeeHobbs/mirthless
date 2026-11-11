@@ -13,7 +13,7 @@ import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { MllpParser, wrapMllp } from '../transmission/mllp-mode.js';
 import type { TlsClientOptions } from '../tls.js';
-import { classifyAckResponse } from './ack-builder.js';
+import { classifyAckResponse, controlIdOf } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Config -----
@@ -217,6 +217,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     return new Promise<ConnectorResponse>((resolve, reject) => {
       const parser = new MllpParser({ charset: this.config.charset });
       const timeout = this.config.responseTimeout;
+      const sentControlId = controlIdOf(content);
 
       const timer = setTimeout(() => {
         cleanup();
@@ -239,7 +240,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
         }
         if (msgs.length > 0) {
           cleanup();
-          resolve(toResponse(msgs[0]!));
+          resolve(toResponse(msgs[0]!, sentControlId));
         }
       };
 
@@ -274,8 +275,8 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
 }
 
 /** Convert an acknowledgement frame into a connector response. */
-function toResponse(ack: string): ConnectorResponse {
-  const classification = classifyAckResponse(ack);
+function toResponse(ack: string, sentControlId: string | undefined): ConnectorResponse {
+  const classification = classifyAckResponse(ack, sentControlId);
   if (classification.accepted) {
     return { status: 'SENT', content: ack };
   }
