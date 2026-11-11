@@ -176,6 +176,23 @@ function filterRuleBody(rule: FilterRuleInput, position: number): Result<string 
 }
 
 /**
+ * Call one filter rule and insist on a boolean. A rule that returns nothing (a
+ * forgotten `return`), null, a number or text is a mistake: treating it as
+ * "accept" would send messages the filter was written to stop, and treating it
+ * as "reject" would drop them quietly. It fails the message instead, so it shows
+ * as an error with the reason.
+ */
+function filterRuleCall(body: string, position: number): string {
+  const n = String(position);
+  return (
+    `(function () { var r = (function () { ${body}\n})();` +
+    " if (r !== true && r !== false) { throw new Error('Filter rule " + n + " returned ' +" +
+    " (r === undefined ? 'nothing' : r === null ? 'null' : 'a ' + typeof r) + '. A filter rule must return true or false.'); }" +
+    ' return r; })()'
+  );
+}
+
+/**
  * Compile filter rules into a single boolean-returning script.
  * Returns null when there is nothing to run, and an error when an enabled rule
  * cannot be run (so the caller can refuse to deploy).
@@ -190,7 +207,7 @@ export function compileFilterRulesToScript(
     const body = filterRuleBody(rule, i + 1);
     if (!body.ok) return body;
     if (body.value === null) continue;
-    const wrapped = `(function() { ${body.value} })()`;
+    const wrapped = filterRuleCall(body.value, i + 1);
     // The first rule's operator is ignored; later rules say how they join.
     parts.push(parts.length === 0 ? wrapped : ` ${rule.operator === 'OR' ? '||' : '&&'} ${wrapped}`);
   }

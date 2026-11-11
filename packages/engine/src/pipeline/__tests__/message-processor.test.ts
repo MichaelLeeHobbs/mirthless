@@ -1327,3 +1327,126 @@ describe('MessageProcessor reports where an error happened', () => {
     });
   });
 });
+
+describe('MessageProcessor script results', () => {
+  async function run(config: PipelineConfig, sendFn: SendToDestination = makeSendFn(), store: MessageStore = makeStore()): Promise<{ status: string; store: MessageStore; sendFn: SendToDestination }> {
+    const processor = new MessageProcessor(sandbox, store, sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+    const result = await processor.processMessage(makeInput('original'), AbortSignal.timeout(5_000));
+    if (!result.ok) throw new Error(result.error.message);
+    return { status: result.value.status, store, sendFn };
+  }
+
+  it.each([
+    ['nothing', 'var x = 1;'],
+    ['null', 'return null;'],
+    ['zero', 'return 0;'],
+    ['a truthy value', "return 'yes';"],
+  ])('does not send a message whose source filter returns %s', async (_name, code) => {
+    const { status, sendFn } = await run(makeConfig({ scripts: { sourceFilter: { code } } }));
+
+    expect(status).toBe('FILTERED');
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('does not send to a destination whose filter returns nothing', async () => {
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: { filter: { code: 'var x = 1;' } }, queueMode: 'NEVER' }],
+    });
+
+    const { sendFn } = await run(config);
+
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('sends when the filter returns true', async () => {
+    const { status, sendFn } = await run(makeConfig({ scripts: { sourceFilter: { code: 'return true;' } } }));
+
+    expect(status).toBe('SENT');
+    expect(sendFn).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['true', 'return true;'],
+    ['false', 'return false;'],
+    ['nothing', 'return;'],
+  ])('keeps the message when a source transformer returns %s', async (_name, code) => {
+    const { sendFn } = await run(makeConfig({ scripts: { sourceTransformer: { code } } }));
+
+    expect(vi.mocked(sendFn).mock.calls[0]![2]).toBe('original');
+  });
+
+  it('keeps the message when a destination transformer returns true', async () => {
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: { transformer: { code: 'return true;' } }, queueMode: 'NEVER' }],
+    });
+
+    const { sendFn } = await run(config);
+
+    expect(vi.mocked(sendFn).mock.calls[0]![2]).toBe('original');
+  });
+
+  it('still lets a transformer replace the message by returning text', async () => {
+    const { sendFn } = await run(makeConfig({ scripts: { sourceTransformer: { code: "return 'replaced';" } } }));
+
+    expect(vi.mocked(sendFn).mock.calls[0]![2]).toBe('replaced');
+  });
+
+  it('keeps the response when a response transformer returns true', async () => {
+    const store = makeStore();
+    const config = makeConfig({
+      destinations: [{ metaDataId: 1, name: 'Dest 1', enabled: true, scripts: { responseTransformer: { code: 'return true;' } }, queueMode: 'NEVER' }],
+    });
+
+    await run(config, makeSendFn({ status: 'SENT', content: 'the response' }), store);
+
+    const stored = vi.mocked(store.storeContent).mock.calls.find((c) => c[3] === 7);
+    expect(stored?.[4]).toBe('the response');
+  });
+
+  it('stores both postprocessor errors as one error text', async () => {
+    const store = makeStore();
+    const config = makeConfig({
+      scripts: { postprocessor: { code: "throw new Error('first');" }, globalPostprocessor: { code: "throw new Error('second');" } },
+    });
+
+    const { status } = await run(config, makeSendFn(), store);
+
+    const errors = vi.mocked(store.storeContent).mock.calls.filter((c) => c[3] === 13);
+    expect(status).toBe('ERROR');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]![4]).toContain('postprocessor: first');
+    expect(errors[0]![4]).toContain('globalPostprocessor: second');
+  });
+});
+
+describe('MessageProcessor finishes a message that fails unexpectedly', () => {
+  it('marks the message ERROR and processed when a stage throws after the message was created', async () => {
+    const store = makeStore();
+    const onError = vi.fn().mockResolvedValue(undefined);
+    const sendFn: SendToDestination = vi.fn().mockRejectedValue(new Error('connector blew up'));
+    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig({ onError }), DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.messageId).toBe(1);
+    expect(store.updateConnectorMessageStatus).toHaveBeenCalledWith(expect.anything(), 1, 0, 'ERROR');
+    expect(store.markProcessed).toHaveBeenCalledWith(expect.anything(), 1);
+    const errorText = vi.mocked(store.storeContent).mock.calls.find((c) => c[3] === 13)?.[4];
+    expect(errorText).toContain('connector blew up');
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ errorMessage: expect.stringContaining('connector blew up') as string }));
+  });
+
+  it('fails the message when a transformer returns something that cannot be stored', async () => {
+    const store = makeStore();
+    const config = makeConfig({ scripts: { sourceTransformer: { code: 'var a = {}; a.self = a; return a;' } } });
+    const processor = new MessageProcessor(sandbox, store, makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+    expect(result.ok && result.value.status).toBe('ERROR');
+    expect(store.markProcessed).toHaveBeenCalledOnce();
+  });
+});
