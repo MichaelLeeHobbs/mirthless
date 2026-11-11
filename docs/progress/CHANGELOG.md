@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-11 — UI hill climb for looks and workflow (branch `claude/ui-hill-climb-e18d5c`)
+
+Michael asked to hill climb the web UI for looks and usability. A blind judge agent scored 9 pages (27 `pnpm shots` images: light, dark, phone) on six criteria: hierarchy, spacing, dark mode, phone, status at a glance, and seven operator task paths. Only changes that beat the best score by more than the judge's noise floor were kept.
+
+- **Phone**: list tables drop secondary columns, traffic row actions become icons, cells use half the padding, the channel editor title wraps instead of reading "A…", editor tabs fit, destination fields stack, KPI tiles fit three a row.
+- **Dashboard** leads with a Needs attention panel (stopped and erroring channels, worst first, each with a link to its failed messages); New Channel is the one primary header action and the table controls sit beside the table.
+- **Message browser**: an Errors-only toggle, failed rows marked with a critical edge, filters on one row (behind a Filters button on phones), status options in words.
+- **Channel editor** uses `PageHeader` and shows the channel's state and a "View N failed messages" link. System Info moved into the Overview nav. The Traffic attention badge no longer clips. A field scrolled into view stops above the sticky save bar.
+- Two candidate rounds were not kept (the judge did not score them past the noise): a flatter editor header with underline tabs, and a phone pager fix. They are in the PR description.
+
 ## 2026-11-11 — Fix the findings of the second deep review (branch `claude/project-thread-qav7nb`)
 
 Michael asked for a second deep review after the first round of fixes merged, then: "please fix all the issues." The review found 1 critical, 4 high, 12 medium and 16 low issues, and that 3 of the first round's 38 fixes covered the reported case only. 29 are fixed here and 4 lows are on the roadmap with reasons (L21, L22, and the remainders of L23 and L25). Decisions D-223 to D-236.
