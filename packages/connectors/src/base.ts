@@ -58,6 +58,25 @@ export interface DispatchResult {
   readonly status?: DispatchStatus | undefined;
 }
 
+/**
+ * Why a source must not treat a dispatched message as handled, or null when the
+ * pipeline accepted it (processed or filtered).
+ *
+ * Two different failures share this answer, and `result.ok` tells them apart:
+ * - `!result.ok`: the pipeline could not take the message at all. Nothing was
+ *   recorded, so the source must keep it and offer it again.
+ * - `result.ok` with status ERROR: the message was recorded with an error. The
+ *   source must still not report success (no 200, no ACK AA, no delete), but
+ *   offering it again would process it twice.
+ */
+export function dispatchFailure(result: Result<DispatchResult>): Error | null {
+  if (!result.ok) return result.error;
+  if (result.value.status === DISPATCH_STATUS.ERROR) {
+    return new Error(`Message ${String(result.value.messageId)} was recorded with an ERROR status`);
+  }
+  return null;
+}
+
 /** Callback provided by the engine to process incoming messages. */
 export type MessageDispatcher = (raw: RawMessage) => Promise<Result<DispatchResult>>;
 

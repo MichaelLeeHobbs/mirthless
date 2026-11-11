@@ -351,3 +351,26 @@ function httpsPost(port: number, body: string): Promise<{ status: number; body: 
     req.end(body);
   });
 }
+
+describe('HttpReceiver reports the pipeline outcome', () => {
+  it('returns the error status when the pipeline recorded the message with an error', async () => {
+    receiver = new HttpReceiver(makeConfig({ errorStatusCode: 502 }));
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 7, status: 'ERROR', response: 'partial' })));
+    await receiver.onStart();
+
+    const res = await sendRequest(TEST_PORT, { body: 'msg' });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toBe('');
+  });
+
+  it('returns the success status for a filtered message', async () => {
+    receiver = new HttpReceiver(makeConfig());
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 7, status: 'FILTERED' })));
+    await receiver.onStart();
+
+    const res = await sendRequest(TEST_PORT, { body: 'msg' });
+
+    expect(res.status).toBe(200);
+  });
+});

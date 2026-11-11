@@ -1192,3 +1192,44 @@ describe('groupDestinationChains', () => {
     expect(ids(groupDestinationChains([dest(1, true), dest(2, true)]))).toEqual([[1, 2]]);
   });
 });
+
+describe('MessageProcessor reports where an error happened', () => {
+  let localSandbox: VmSandboxExecutor;
+  beforeEach(() => { localSandbox = new VmSandboxExecutor(); });
+  afterEach(() => { localSandbox.dispose(); });
+
+  async function run(config: PipelineConfig, sendFn: SendToDestination = makeSendFn(), content?: string): Promise<{ status: string; errorStage: string | undefined }> {
+    const processor = new MessageProcessor(localSandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+    const result = await processor.processMessage(makeInput(content), AbortSignal.timeout(5_000));
+    if (!result.ok) throw new Error(result.error.message);
+    return { status: result.value.status, errorStage: result.value.errorStage };
+  }
+
+  it('has no error stage for a delivered message', async () => {
+    expect(await run(makeConfig())).toEqual({ status: 'SENT', errorStage: undefined });
+  });
+
+  it('is SOURCE when the content is not valid for the data type', async () => {
+    expect(await run(makeConfig({ dataType: 'JSON' }), makeSendFn(), 'not json')).toEqual({ status: 'ERROR', errorStage: 'SOURCE' });
+  });
+
+  it('is SOURCE when the source transformer throws, and nothing is sent', async () => {
+    const sendFn = makeSendFn();
+    const config = makeConfig({ scripts: { sourceTransformer: { code: 'throw new Error("boom");' } } });
+
+    expect(await run(config, sendFn)).toEqual({ status: 'ERROR', errorStage: 'SOURCE' });
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
+  it('is DESTINATION when a destination send fails', async () => {
+    const sendFn = vi.fn().mockResolvedValue({ ok: false, value: null, error: new Error('conn refused') }) as SendToDestination;
+
+    expect(await run(makeConfig(), sendFn)).toEqual({ status: 'ERROR', errorStage: 'DESTINATION' });
+  });
+
+  it('is DESTINATION when the postprocessor throws after delivery', async () => {
+    const config = makeConfig({ scripts: { postprocessor: { code: 'throw new Error("late");' } } });
+
+    expect(await run(config)).toEqual({ status: 'ERROR', errorStage: 'DESTINATION' });
+  });
+});

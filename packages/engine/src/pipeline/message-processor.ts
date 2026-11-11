@@ -149,6 +149,13 @@ export interface ProcessedMessage {
   readonly messageId: number;
   readonly correlationId: string;
   readonly status: 'SENT' | 'FILTERED' | 'ERROR';
+  /**
+   * Where an ERROR happened. SOURCE: before routing (invalid content, or a
+   * preprocessor, source filter or source transformer failed), so nothing was
+   * sent. DESTINATION: the source accepted the message and a destination or
+   * postprocessor failed afterwards. Absent unless status is ERROR.
+   */
+  readonly errorStage?: 'SOURCE' | 'DESTINATION';
   readonly response?: string;
   readonly destinationResults: readonly DestinationResult[];
 }
@@ -318,7 +325,7 @@ export class MessageProcessor {
           });
         }
         if (timing) timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
-        return { messageId, correlationId, status: 'ERROR' as const, destinationResults: [] };
+        return { messageId, correlationId, status: 'ERROR' as const, errorStage: 'SOURCE' as const, destinationResults: [] };
       }
 
       // Helper: mark source as errored and return ERROR result
@@ -337,7 +344,7 @@ export class MessageProcessor {
           });
         }
         if (timing) timing(messageId, stages.reduce((s, t) => s + t.durationMs, 0), stages);
-        return { messageId, correlationId, status: 'ERROR' as const, destinationResults: [] };
+        return { messageId, correlationId, status: 'ERROR' as const, errorStage: 'SOURCE' as const, destinationResults: [] };
       };
 
       // Stage 2a: Global preprocessor
@@ -497,6 +504,7 @@ export class MessageProcessor {
         messageId,
         correlationId,
         status: hasError ? 'ERROR' as const : 'SENT' as const,
+        ...(hasError ? { errorStage: 'DESTINATION' as const } : {}),
         destinationResults: destResults,
       };
       if (firstResponse) {

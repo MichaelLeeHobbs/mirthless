@@ -7,6 +7,7 @@
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
 import { createRequire } from 'node:module';
@@ -115,6 +116,8 @@ export class EmailReceiver implements SourceConnectorRuntime {
    * Backs up {@link DISPATCHED_KEYWORD} for mailboxes that reject custom keywords.
    */
   private readonly awaitingPostAction = new Set<number>();
+  /** UIDs the pipeline recorded with an error: no post-action and no second dispatch. */
+  private readonly heldAfterError = new Set<number>();
   private warnedNoKeywords = false;
 
   constructor(config: EmailReceiverConfig, createClient?: ImapClientFactory, logger?: ConnectorLogger) {
@@ -240,6 +243,8 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private async processMessage(msg: EmailMessage): Promise<void> {
     if (!this.dispatcher || !this.client) return;
 
+    if (this.heldAfterError.has(msg.uid)) return;
+
     if (!msg.dispatched && !this.awaitingPostAction.has(msg.uid)) {
       const raw: RawMessage = {
         content: msg.body,
@@ -256,6 +261,17 @@ export class EmailReceiver implements SourceConnectorRuntime {
       if (!result.ok) {
         // Left unread on the server, so the next poll retries it.
         this.logger.error({ ...errorInfo(result.error), uid: msg.uid }, 'Email dispatch failed; message left unread for retry');
+        return;
+      }
+      const failure = dispatchFailure(result);
+      if (failure !== null) {
+        // Recorded with an error: no post-action (it would report success) and no
+        // second dispatch while this channel stays deployed.
+        this.heldAfterError.add(msg.uid);
+        this.logger.error(
+          { ...errorInfo(failure), uid: msg.uid },
+          'Pipeline recorded an error for this email; it is left untouched in the mailbox and not read again until the channel is redeployed',
+        );
         return;
       }
       this.awaitingPostAction.add(msg.uid);

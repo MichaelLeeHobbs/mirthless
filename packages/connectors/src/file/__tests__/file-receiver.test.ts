@@ -745,3 +745,37 @@ describe('FileReceiver', () => {
     });
   });
 });
+
+describe('FileReceiver when the pipeline recorded an error', () => {
+  it('keeps the file and does not read it again', async () => {
+    const now = Date.now();
+    mockReaddir.mockResolvedValue([makeDirent('file.hl7')] as never);
+    mockStat.mockResolvedValue(makeStatResult(now - 5_000, 100) as never);
+    mockReadFile.mockResolvedValue('content');
+    const dispatched: string[] = [];
+
+    receiver = new FileReceiver(makeConfig({ postAction: FILE_POST_ACTION.DELETE }));
+    receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw.content); return { messageId: 9, status: 'ERROR' }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(mockUnlink).not.toHaveBeenCalled();
+    expect(mockRename).not.toHaveBeenCalled();
+    expect(dispatched).toEqual(['content']);
+  });
+
+  it('still applies the post-action to a filtered message', async () => {
+    const now = Date.now();
+    mockReaddir.mockResolvedValue([makeDirent('file.hl7')] as never);
+    mockStat.mockResolvedValue(makeStatResult(now - 5_000, 100) as never);
+    mockReadFile.mockResolvedValue('content');
+    mockUnlink.mockResolvedValue(undefined);
+
+    receiver = new FileReceiver(makeConfig({ postAction: FILE_POST_ACTION.DELETE }));
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 9, status: 'FILTERED' })));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(mockUnlink).toHaveBeenCalledWith(expect.stringContaining('file.hl7'));
+  });
+});

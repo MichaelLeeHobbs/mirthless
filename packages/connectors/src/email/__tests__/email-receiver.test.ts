@@ -676,3 +676,28 @@ describe('EmailReceiver', () => {
     });
   });
 });
+
+describe('EmailReceiver when the pipeline recorded an error', () => {
+  it('leaves the email untouched and does not dispatch it again', async () => {
+    const msg = makeMessage({ uid: 77 });
+    const client = makeMockClient([msg]);
+    let dispatches = 0;
+
+    receiver = new EmailReceiver(
+      makeConfig({ postAction: EMAIL_POST_ACTION.DELETE }),
+      makeClientFactory(client),
+    );
+    receiver.setDispatcher(async () => {
+      dispatches += 1;
+      return { ok: true as const, value: { messageId: 5, status: 'ERROR' as const }, error: null };
+    });
+    await receiver.onStart();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(client.deleteMessage).not.toHaveBeenCalled();
+    expect(client.markRead).not.toHaveBeenCalled();
+    expect(client.moveMessage).not.toHaveBeenCalled();
+    expect(dispatches).toBe(1);
+  });
+});

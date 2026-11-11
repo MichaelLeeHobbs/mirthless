@@ -9,6 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { dispatchFailure } from '../base.js';
 import { normalizeEncoding } from '../encoding.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
@@ -245,11 +246,12 @@ export class FileReceiver implements SourceConnectorRuntime {
 
     const key = `${entry.name}:${String(entry.mtime)}`;
     if (this.quarantined.has(key)) {
-      // Already dispatched; post-action failed previously. Skip to avoid a
-      // duplicate delivery. Surface loudly until an operator resolves it.
+      // Already dispatched: its post-action failed, or the pipeline recorded an
+      // error for it. Skip to avoid a duplicate delivery. Surface loudly until an
+      // operator resolves it.
       this.logger.error(
         { file: entry.fullPath },
-        'File quarantined after post-action failure; skipping to avoid duplicate delivery',
+        'File quarantined after an earlier dispatch; skipping to avoid duplicate delivery',
       );
       return;
     }
@@ -269,18 +271,31 @@ export class FileReceiver implements SourceConnectorRuntime {
     };
 
     const result = await this.dispatcher(raw);
+    // Not taken by the pipeline at all: leave the file for the next poll.
+    if (!result.ok) return;
 
-    if (result.ok) {
-      try {
-        await this.postProcess(entry);
-      } catch (err) {
-        this.quarantined.add(key);
-        await this.persistQuarantine();
-        this.logger.error(
-          { ...errorInfo(err), file: entry.fullPath },
-          'Post-action failed after successful dispatch; quarantining file',
-        );
-      }
+    const failure = dispatchFailure(result);
+    if (failure !== null) {
+      // Recorded with an error. Do not delete or move the file (that would report
+      // success), and do not read it again (that would process it twice).
+      this.quarantined.add(key);
+      await this.persistQuarantine();
+      this.logger.error(
+        { ...errorInfo(failure), file: entry.fullPath },
+        'Pipeline recorded an error for this file; file kept in place and quarantined so it is not read again',
+      );
+      return;
+    }
+
+    try {
+      await this.postProcess(entry);
+    } catch (err) {
+      this.quarantined.add(key);
+      await this.persistQuarantine();
+      this.logger.error(
+        { ...errorInfo(err), file: entry.fullPath },
+        'Post-action failed after successful dispatch; quarantining file',
+      );
     }
   }
 

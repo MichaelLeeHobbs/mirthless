@@ -583,3 +583,36 @@ describe('DatabaseReceiver', () => {
     });
   });
 });
+
+describe('DatabaseReceiver when the pipeline recorded an error', () => {
+  it('does not mark the row processed under ON_SUCCESS', async () => {
+    const { pool, queryFn } = makeMockPool();
+    queryFn.mockResolvedValue({ ok: true, value: { rows: [{ id: 1 }], rowCount: 1 }, error: null });
+
+    receiver = new DatabaseReceiver(makeConfig({
+      updateMode: UPDATE_MODE.ON_SUCCESS,
+      updateQuery: 'UPDATE messages SET processed = true WHERE id = ${id}',
+    }), pool);
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 4, status: 'ERROR' })));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    // Only the SELECT: no UPDATE, so the row is offered again.
+    expect(queryFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks a filtered row processed under ON_SUCCESS', async () => {
+    const { pool, queryFn } = makeMockPool();
+    queryFn.mockResolvedValue({ ok: true, value: { rows: [{ id: 1 }], rowCount: 1 }, error: null });
+
+    receiver = new DatabaseReceiver(makeConfig({
+      updateMode: UPDATE_MODE.ON_SUCCESS,
+      updateQuery: 'UPDATE messages SET processed = true WHERE id = ${id}',
+    }), pool);
+    receiver.setDispatcher(makeDispatcher(() => ({ messageId: 4, status: 'FILTERED' })));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(queryFn).toHaveBeenCalledTimes(2);
+  });
+});

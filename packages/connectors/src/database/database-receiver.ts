@@ -7,6 +7,7 @@
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { dispatchFailure } from '../base.js';
 import { ConnectionPool, type PoolConfig, type TxQuery } from './connection-pool.js';
 import { prepare } from './query-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
@@ -241,7 +242,11 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
     };
 
     const result = await this.dispatcher(raw);
-    return result.ok;
+    const failure = dispatchFailure(result);
+    if (failure !== null) {
+      this.logger.error(errorInfo(failure), 'Database row dispatch failed');
+    }
+    return failure === null;
   }
 
   /** Ack a claimed row inside the transaction per the configured update mode. */

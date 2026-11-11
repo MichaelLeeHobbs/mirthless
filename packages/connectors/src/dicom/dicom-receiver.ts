@@ -9,6 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { createDimseReceiver } from './dcmjs-dimse-adapter.js';
 
@@ -212,15 +213,15 @@ export class DicomReceiver implements SourceConnectorRuntime {
       },
     };
 
-    const result = await this.dispatcher(raw);
-    if (result.ok) {
+    const failure = dispatchFailure(await this.dispatcher(raw));
+    if (failure === null) {
       await this.applyPostAction(data.filePath);
     } else {
       // Pipeline rejected the file. This is event-driven (not polled), so the file
       // is never re-dispatched — surface it loudly and leave the file in place
       // (no post-action) for manual recovery instead of losing it silently.
       this.logger.error(
-        { ...errorInfo(result.error), filePath: data.filePath, callingAE: data.callingAE },
+        { ...errorInfo(failure), filePath: data.filePath, callingAE: data.callingAE },
         'DICOM file dispatch failed; file retained for manual recovery',
       );
     }
@@ -243,8 +244,8 @@ export class DicomReceiver implements SourceConnectorRuntime {
       },
     };
 
-    const result = await this.dispatcher(raw);
-    if (result.ok) {
+    const failure = dispatchFailure(await this.dispatcher(raw));
+    if (failure === null) {
       const postActions: Promise<void>[] = [];
       for (let i = 0; i < data.files.length; i++) {
         const filePath = data.files[i];
@@ -255,7 +256,7 @@ export class DicomReceiver implements SourceConnectorRuntime {
       await Promise.allSettled(postActions);
     } else {
       this.logger.error(
-        { ...errorInfo(result.error), associationId: data.associationId, fileCount: data.files.length },
+        { ...errorInfo(failure), associationId: data.associationId, fileCount: data.files.length },
         'DICOM association dispatch failed; files retained for manual recovery',
       );
     }

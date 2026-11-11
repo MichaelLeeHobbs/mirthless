@@ -99,11 +99,29 @@ export interface SourceDispatchOutcome {
   readonly response?: string;
 }
 
-/** Map the pipeline's message status to the source-connector dispatch status. */
-function toDispatchStatus(status: 'SENT' | 'FILTERED' | 'ERROR'): DispatchStatus {
-  if (status === 'FILTERED') return DISPATCH_STATUS.FILTERED;
-  if (status === 'ERROR') return DISPATCH_STATUS.ERROR;
-  return DISPATCH_STATUS.PROCESSED;
+/** Response modes that answer the sender once the source has accepted the message. */
+const RESPOND_BEFORE_DESTINATIONS: ReadonlySet<string> = new Set(['AUTO_BEFORE', 'AUTO_AFTER_TRANSFORMER']);
+
+/**
+ * Map the pipeline's outcome to what the source connector tells the sender.
+ *
+ * The channel's response mode decides whether a destination failure counts:
+ * - AUTO_BEFORE / AUTO_AFTER_TRANSFORMER: no. The message was accepted and
+ *   recorded, so the sender gets a success and does not resend (a resend would
+ *   deliver a second copy to the destinations that worked).
+ * - every other mode (AUTO_AFTER_DESTINATIONS is the default): yes.
+ * An error before routing is always reported: nothing was delivered.
+ */
+export function toDispatchStatus(
+  outcome: { readonly status: 'SENT' | 'FILTERED' | 'ERROR'; readonly errorStage?: 'SOURCE' | 'DESTINATION' | undefined },
+  responseMode: string,
+): DispatchStatus {
+  if (outcome.status === 'FILTERED') return DISPATCH_STATUS.FILTERED;
+  if (outcome.status !== 'ERROR') return DISPATCH_STATUS.PROCESSED;
+  if (outcome.errorStage === 'DESTINATION' && RESPOND_BEFORE_DESTINATIONS.has(responseMode)) {
+    return DISPATCH_STATUS.PROCESSED;
+  }
+  return DISPATCH_STATUS.ERROR;
 }
 
 // ----- Storage Policy -----
@@ -626,9 +644,10 @@ export class EngineManager {
       );
       if (!result.ok) return result;
       // Surface the pipeline's final status so the source connector can build the
-      // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AR).
+      // right response (MLLP: PROCESSED→AA, ERROR→AE, FILTERED→AR), as the
+      // channel's response mode defines it.
       const { messageId, response } = result.value;
-      const status = toDispatchStatus(result.value.status);
+      const status = toDispatchStatus(result.value, channel.responseMode);
       return { ok: true, value: response === undefined ? { messageId, status } : { messageId, status, response }, error: null };
     };
 

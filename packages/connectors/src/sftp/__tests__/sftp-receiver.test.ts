@@ -453,3 +453,19 @@ describe('lifecycle', () => {
     receiver = null;
   });
 });
+
+describe('SftpReceiver when the pipeline recorded an error', () => {
+  it('keeps the file and does not read it again', async () => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'X', Date.now() - 10_000);
+    let dispatches = 0;
+    receiver = new SftpReceiver(makeConfig({ afterProcessing: SFTP_POST_ACTION.DELETE }), factoryFor(state));
+    receiver.setDispatcher(makeDispatcher(() => { dispatches += 1; return { messageId: 3, status: 'ERROR' }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(state.deleted).toHaveLength(0);
+    expect(state.files.has('a.hl7')).toBe(true);
+    expect(dispatches).toBe(1);
+  });
+});

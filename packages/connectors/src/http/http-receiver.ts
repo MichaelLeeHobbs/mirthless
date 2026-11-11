@@ -10,6 +10,7 @@ import * as https from 'node:https';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import { dispatchFailure } from '../base.js';
 import type { TlsServerOptions } from '../tls.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
@@ -208,15 +209,16 @@ export class HttpReceiver implements SourceConnectorRuntime {
     const raw = this.buildRawMessage(req, body, reqPath);
     const result = await this.dispatcher!(raw);
 
-    if (result.ok) {
+    const failure = dispatchFailure(result);
+    if (result.ok && failure === null) {
       res.writeHead(this.config.responseStatusCode, { 'Content-Type': this.config.responseContentType });
       res.end(result.value.response ?? '');
       return;
     }
 
-    // Pipeline failed — surface an error status so the sender never believes
-    // the message was accepted.
-    this.logger.error(errorInfo(result.error), 'Pipeline dispatch failed');
+    // The pipeline failed, or took the message and recorded an error. Either
+    // way surface an error status so the sender never believes it succeeded.
+    this.logger.error(errorInfo(failure), 'Pipeline dispatch failed');
     res.writeHead(this.config.errorStatusCode, { 'Content-Type': this.config.responseContentType });
     res.end();
   }
