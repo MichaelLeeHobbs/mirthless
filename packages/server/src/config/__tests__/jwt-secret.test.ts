@@ -10,6 +10,10 @@ describe('isWeakJwtSecret', () => {
     expect(isWeakJwtSecret('CHANGE_ME_TO_A_RANDOM_STRING_AT_LEAST_32_CHARS')).toBe(true);
   });
 
+  it('rejects the secret shipped in .env.example', () => {
+    expect(isWeakJwtSecret('your-super-secret-key-change-in-production-minimum-32-chars')).toBe(true);
+  });
+
   it('rejects common placeholder markers regardless of length', () => {
     for (const s of [
       'your-secret-value-goes-here-please-change',

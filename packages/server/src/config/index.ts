@@ -79,11 +79,12 @@ const configSchema = z.object({
  * A JWT secret is unusable in production if it is a shipped placeholder or an
  * obviously low-entropy value. `min(32)` alone passes the 45-char placeholder in
  * .env.production.example, which would give every un-edited deployment the same
- * publicly-known signing key (admin-token forgery). We reject those in production.
+ * publicly-known signing key (admin-token forgery). We reject those in production,
+ * along with the development secret shipped in .env.example.
  */
 export function isWeakJwtSecret(secret: string): boolean {
   const lower = secret.toLowerCase();
-  const placeholderMarkers = ['change_me', 'changeme', 'change-me', 'your-secret', 'your_secret', 'replace', 'example', 'insecure', 'placeholder'];
+  const placeholderMarkers = ['change_me', 'changeme', 'change-me', 'your-secret', 'your_secret', 'super-secret', 'change-in-production', 'replace', 'example', 'insecure', 'placeholder'];
   if (placeholderMarkers.some((m) => lower.includes(m))) return true;
   // Fewer than 16 distinct characters => very low entropy for a 32+ char secret.
   if (new Set(secret).size < 16) return true;
