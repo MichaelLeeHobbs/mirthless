@@ -275,5 +275,65 @@ describe('VmSandboxExecutor', () => {
       if (!result.ok) return;
       expect(result.value.returnValue).toBe('undefined');
     });
+
+    // Every synchronous bridge that can fail on the host. Each script makes the
+    // bridge throw, then tries to climb from the caught error to the host Function.
+    const SYNC_THROWERS: ReadonlyArray<readonly [string, string]> = [
+      ['parseHL7 with a non-string', 'parseHL7(123)'],
+      ['parseHL7 with invalid HL7', "parseHL7('not hl7')"],
+      ['createACK with invalid HL7', "createACK('not hl7', 'AA')"],
+      ['an HL7 get with no path', 'msg.get()'],
+      ['an HL7 set with an empty path', "msg.set('', 'x')"],
+    ];
+
+    it.each(SYNC_THROWERS)('a host error thrown by %s cannot leak the host Function', async (_name, body) => {
+      const hl7 = Hl7Message.parse('MSH|^~\\&|A|B|C|D|20260101||ADT^A01|1|P|2.5\rPID|1||99999');
+      const context = makeContext({ msg: createHl7Proxy(hl7) });
+      const script = makeScript(
+        `try { ${body}; return 'no-throw'; }` +
+        " catch (e) { return [e instanceof Error, e.constructor.constructor('return typeof process')()].join(','); }",
+      );
+      const result = await executor.execute(script, context, makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('true,undefined');
+    });
+
+    it('reports the host error message to the script', async () => {
+      const script = makeScript("try { parseHL7(123); return 'no-throw'; } catch (e) { return e.message; }");
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('parseHL7 expects a string or HL7 message proxy');
+    });
+
+    it('an uncaught bridge error still fails the script with its message', async () => {
+      const result = await executor.execute(makeScript('parseHL7(123);'), makeContext(), makeOptions());
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('parseHL7 expects a string');
+    });
+
+    it('a stack trace hook cannot reach host functions through call sites', async () => {
+      const script = makeScript(
+        "Error.prepareStackTrace = function (_e, sites) { return sites; };" +
+        "var found = 'none';" +
+        "try { parseHL7(123); } catch (e) { /* ignore */ }" +
+        "var sites = new Error('x').stack;" +
+        "for (var i = 0; i < sites.length; i++) {" +
+        "  var fn = sites[i].getFunction && sites[i].getFunction();" +
+        "  if (fn) { var r = fn.constructor('return typeof process')(); if (r !== 'undefined') { found = r; } }" +
+        "}" +
+        "return found;",
+      );
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('none');
+    });
   });
 });
