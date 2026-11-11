@@ -100,11 +100,27 @@ Tests are mandatory, not optional. This is healthcare software.
 
 1. **Every new function/module gets tests.** No exceptions. Write tests alongside implementation, not as an afterthought.
 2. **Test behavior, not implementation.** Tests should survive refactoring. Test what a function does, not how it does it.
-3. **Target 95%+ branch coverage.** This is the floor, not the ceiling.
+3. **Aim for 95% branch coverage in code you write or change.** The gate enforces lower, per-package minimums (below), because several packages are well short of the target. Those minimums only move up.
 4. **Test the unhappy path.** Error cases, edge cases, invalid inputs, timeouts, and failures matter more than the happy path.
 5. **No mocking of things you own.** If you need to mock your own service, the design is wrong. Mock external boundaries (DB, network, filesystem).
 6. **Tests must be fast.** Unit tests should run in <100ms each. Use in-memory or faked dependencies.
 7. **Test names describe behavior.** `it('returns error when channel ID is invalid')` not `it('test1')`.
+
+### Coverage Minimums
+
+`pnpm gate` fails a package whose coverage drops below these. They sit one point under what each package measured on 2026-11-11. When your change raises a package's coverage, raise its numbers in `packages/<name>/vitest.config.ts` and here. Never lower one to get green: add the missing tests.
+
+| Package | Statements | Branches | Functions | Lines |
+|---|---|---|---|---|
+| engine | 93 | 88 | 95 | 96 |
+| core-util | 93 | 79 | 92 | 96 |
+| connectors | 82 | 70 | 80 | 84 |
+| server | 54 | 53 | 67 | 55 |
+| core-models | 40 | 49 | 54 | 39 |
+| cli | 28 | 22 | 45 | 28 |
+| web | 26 | 29 | 23 | 26 |
+
+The server number is low because the controllers, `engine.ts` and several services have few unit tests (the Postgres integration and Playwright suites exercise some of that code but are not counted here). The web number is low because most pages have no component tests. Raising both is on `docs/progress/ROADMAP.md`.
 
 ### Test Structure
 
