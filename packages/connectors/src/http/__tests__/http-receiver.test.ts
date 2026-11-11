@@ -52,7 +52,7 @@ async function sendRequest(
   options: {
     method?: string;
     path?: string;
-    body?: string;
+    body?: string | Uint8Array;
     headers?: Record<string, string>;
   } = {},
 ): Promise<{ status: number; body: string; headers: Record<string, string> }> {
@@ -399,5 +399,45 @@ describe('HttpReceiver reports the pipeline outcome', () => {
     const res = await sendRequest(TEST_PORT, { body: 'msg' });
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe('HttpReceiver request character set', () => {
+  it('decodes the body in the charset the Content-Type declares', async () => {
+    const seen: string[] = [];
+    receiver = new HttpReceiver(makeConfig());
+    receiver.setDispatcher(makeDispatcher((raw) => { seen.push(raw.content); return { messageId: 1 }; }));
+    await receiver.onStart();
+
+    const res = await sendRequest(TEST_PORT, {
+      body: Buffer.from('PID|1||Müller', 'latin1'),
+      headers: { 'content-type': 'text/plain; charset=ISO-8859-1' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(seen).toEqual(['PID|1||Müller']);
+  });
+
+  it('reads UTF-8 when no charset is declared', async () => {
+    const seen: string[] = [];
+    receiver = new HttpReceiver(makeConfig());
+    receiver.setDispatcher(makeDispatcher((raw) => { seen.push(raw.content); return { messageId: 1 }; }));
+    await receiver.onStart();
+
+    await sendRequest(TEST_PORT, { body: 'PID|1||Müller', headers: { 'content-type': 'application/hl7-v2' } });
+
+    expect(seen).toEqual(['PID|1||Müller']);
+  });
+
+  it('answers 415 and dispatches nothing for a charset it cannot decode', async () => {
+    let dispatched = 0;
+    receiver = new HttpReceiver(makeConfig());
+    receiver.setDispatcher(makeDispatcher(() => { dispatched++; return { messageId: 1 }; }));
+    await receiver.onStart();
+
+    const res = await sendRequest(TEST_PORT, { body: 'x', headers: { 'content-type': 'text/plain; charset=klingon' } });
+
+    expect(res.status).toBe(415);
+    expect(dispatched).toBe(0);
   });
 });

@@ -7,9 +7,11 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
+import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
 
 // ----- Config -----
 
@@ -63,10 +65,12 @@ export function unknownPlaceholderMessage(names: readonly string[]): string {
 
 export class FileDispatcher implements DestinationConnectorRuntime {
   private readonly config: FileDispatcherConfig;
+  private readonly logger: ConnectorLogger;
   private started = false;
 
-  constructor(config: FileDispatcherConfig) {
+  constructor(config: FileDispatcherConfig, logger?: ConnectorLogger) {
     this.config = config;
+    this.logger = logger ?? createConnectorLogger('FILE');
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -83,6 +87,14 @@ export class FileDispatcher implements DestinationConnectorRuntime {
       }
       if (!this.config.binary && !isKnownEncoding(this.config.charset)) {
         throw new Error(unknownEncodingMessage(this.config.charset));
+      }
+      // Allowed (a "latest result" file is a real use), but said out loud: with
+      // the same name for every message, each one replaces the one before it.
+      if (!this.config.appendMode && !this.config.outputPattern.includes('${messageId}')) {
+        this.logger.warn(
+          { directory: this.config.directory, outputPattern: this.config.outputPattern },
+          'File name pattern has no ${messageId} and append is off: a message that resolves to an existing file name overwrites it',
+        );
       }
     });
   }
@@ -143,9 +155,13 @@ export class FileDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /** Write content to a temp file, then rename to final path. */
+  /**
+   * Write content to a temp file, then rename to final path. The temp name is
+   * unique per write: two messages that resolve to the same file name must not
+   * write into one temp file at the same time.
+   */
   private async writeViaTempFile(outputPath: string, content: string): Promise<void> {
-    const tmpPath = outputPath + '.tmp';
+    const tmpPath = `${outputPath}.${randomUUID()}.tmp`;
     await this.writeFile(tmpPath, content);
     await fs.rename(tmpPath, outputPath);
   }

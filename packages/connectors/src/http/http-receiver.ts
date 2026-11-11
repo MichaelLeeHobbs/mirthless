@@ -7,6 +7,7 @@
 
 import * as http from 'node:http';
 import * as https from 'node:https';
+import { TextDecoder } from 'node:util';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
@@ -59,6 +60,28 @@ export interface HttpReceiverConfig {
 }
 
 /** Sentinel raised when a request body exceeds the configured cap. */
+/** The request declares a character set this server cannot decode. */
+class UnsupportedCharsetError extends Error {
+  constructor(contentType: string) {
+    super(`Unsupported character set in Content-Type: ${contentType}`);
+  }
+}
+
+/**
+ * A decoder for the charset a Content-Type header declares, UTF-8 when it
+ * declares none, or null when the charset is unknown. Decoding a body in the
+ * wrong character set corrupts every non-ASCII character without any error, so
+ * an unknown one is refused (415). A byte order mark is kept, as before.
+ */
+export function decoderFor(contentType: string | undefined): TextDecoder | null {
+  const match = /;\s*charset\s*=\s*"?([^";\s]+)"?/i.exec(contentType ?? '');
+  try {
+    return new TextDecoder(match?.[1] ?? 'utf-8', { ignoreBOM: true });
+  } catch {
+    return null;
+  }
+}
+
 class BodyTooLargeError extends Error {
   constructor() {
     super('Request body exceeds maximum size');
@@ -213,6 +236,11 @@ export class HttpReceiver implements SourceConnectorRuntime {
     try {
       body = await this.readBody(req);
     } catch (err) {
+      if (err instanceof UnsupportedCharsetError) {
+        this.logger.warn({ remoteAddress: req.socket.remoteAddress, contentType: req.headers['content-type'] }, 'Rejected a body in a character set this server cannot decode');
+        this.writePlain(res, 415, err.message);
+        return;
+      }
       if (err instanceof BodyTooLargeError) {
         this.logger.warn({ remoteAddress: req.socket.remoteAddress }, 'Rejected oversized body');
         this.writePlain(res, 413, 'Payload Too Large');
@@ -281,9 +309,18 @@ export class HttpReceiver implements SourceConnectorRuntime {
     res.end(message);
   }
 
-  /** Read the full request body as a string, enforcing the size cap. */
+  /**
+   * Read the full request body as a string, enforcing the size cap. The body is
+   * decoded in the character set the sender declared (UTF-8 when none is given).
+   */
   private readBody(req: http.IncomingMessage): Promise<string> {
     return new Promise<string>((resolve, reject) => {
+      const decoder = decoderFor(req.headers['content-type']);
+      if (decoder === null) {
+        req.resume();
+        reject(new UnsupportedCharsetError(req.headers['content-type'] ?? ''));
+        return;
+      }
       const chunks: Buffer[] = [];
       let size = 0;
       let rejected = false;
@@ -300,7 +337,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
         }
         chunks.push(chunk);
       });
-      req.on('end', () => { resolve(Buffer.concat(chunks).toString('utf-8')); });
+      req.on('end', () => { resolve(decoder.decode(Buffer.concat(chunks))); });
       req.on('error', reject);
     });
   }

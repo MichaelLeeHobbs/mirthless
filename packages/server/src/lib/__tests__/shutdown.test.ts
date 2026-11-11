@@ -248,3 +248,26 @@ describe('createShutdownHandler', () => {
     expect(mockExit).not.toHaveBeenCalledWith(1);
   });
 });
+
+describe('undeployAll', () => {
+  it('undeploys the remaining channels when one fails, and logs the failure', async () => {
+    const { undeployAll } = await import('../shutdown.js');
+    const undeployed: string[] = [];
+    const engine = {
+      getAll: () => new Map([['a', {}], ['b', {}], ['c', {}]]),
+      undeploy: async (id: string): Promise<void> => {
+        if (id === 'b') throw new Error('undeploy script failed');
+        undeployed.push(id);
+      },
+    };
+    const error = vi.fn();
+
+    await undeployAll(engine, { error });
+
+    expect(undeployed).toEqual(['a', 'c']);
+    expect(error).toHaveBeenCalledWith(
+      { channelId: 'b', errMsg: 'undeploy script failed' },
+      'Channel failed to undeploy during shutdown',
+    );
+  });
+});
