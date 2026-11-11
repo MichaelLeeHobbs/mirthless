@@ -279,3 +279,23 @@ describe('EngineManager.deploy refuses to start a channel it cannot run as confi
     expect(await deployError()).toBe(`Channel ${CHANNEL_ID} cannot deploy: failed to load ${what}: connection refused`);
   });
 });
+
+describe('EngineManager.deploy of one channel twice at once', () => {
+  it('rejects the second request while the first is still deploying', async () => {
+    const engine = new EngineManager('test-server');
+
+    const outcomes = await Promise.allSettled([engine.deploy(makeChannel()), engine.deploy(makeChannel())]);
+
+    expect(outcomes.map((o) => o.status)).toEqual(['fulfilled', 'rejected']);
+    expect((outcomes[1] as PromiseRejectedResult).reason).toHaveProperty('message', `Channel ${CHANNEL_ID} is already being deployed`);
+  });
+
+  it('allows a new deploy after a failed one', async () => {
+    transformerRows = [stepRow({ script: 'msg.delete("PID.19"' })];
+    const engine = new EngineManager('test-server');
+    await expect(engine.deploy(makeChannel())).rejects.toThrow();
+
+    transformerRows = [];
+    await expect(engine.deploy(makeChannel())).resolves.toBeUndefined();
+  });
+});

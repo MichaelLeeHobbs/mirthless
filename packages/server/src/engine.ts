@@ -378,6 +378,8 @@ export class EngineManager {
   private silenceTimer: ReturnType<typeof setInterval> | undefined;
   /** The one global map every channel shares; loaded on first deploy, flushed on dispose. */
   private globalMap: Promise<GlobalMapProxy> | undefined;
+  /** Channels with a deploy in progress. */
+  private readonly deploying = new Set<string>();
 
   constructor(serverId?: string) {
     this.sandbox = new VmSandboxExecutor({
@@ -436,6 +438,21 @@ export class EngineManager {
     if (this.runtimes.has(channel.id)) {
       throw new Error(`Channel ${channel.id} is already deployed`);
     }
+    // Deploy awaits many things before the runtime is registered, so two
+    // requests for the same channel could otherwise both get this far and
+    // open the same port twice.
+    if (this.deploying.has(channel.id)) {
+      throw new Error(`Channel ${channel.id} is already being deployed`);
+    }
+    this.deploying.add(channel.id);
+    try {
+      await this.deployChannel(channel);
+    } finally {
+      this.deploying.delete(channel.id);
+    }
+  }
+
+  private async deployChannel(channel: ChannelDetail): Promise<void> {
 
     // Fail loud, never silent: a channel that asks for at-rest encryption must
     // not deploy (and store PHI as plaintext) when no key is configured.
@@ -670,7 +687,7 @@ export class EngineManager {
 
     const result = await runtime.deploy(runtimeConfig);
     if (!result.ok) {
-      throw new Error('Failed to deploy channel runtime');
+      throw new Error(`Failed to deploy channel runtime: ${result.error.message}`);
     }
 
     // Recover messages left unprocessed by a prior crash/restart on the first

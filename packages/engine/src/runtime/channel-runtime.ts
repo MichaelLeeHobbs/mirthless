@@ -45,34 +45,45 @@ export class ChannelRuntime {
     return this.state;
   }
 
-  /** Deploy: load config, init connectors. UNDEPLOYED → STOPPED. */
+  /**
+   * Deploy: load config, init connectors. UNDEPLOYED → STOPPED. If a connector
+   * fails, the ones already deployed are undeployed again and the channel
+   * stays UNDEPLOYED.
+   */
   async deploy(config: ChannelRuntimeConfig): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'UNDEPLOYED') {
         throw new Error(`Cannot deploy: channel is ${this.state}`);
       }
 
-      this.config = config;
-      this.abortController = new AbortController();
-
-      // Deploy source
-      const srcResult = await config.source.onDeploy();
-      if (!srcResult.ok) throw new Error('Source deploy failed');
-
-      // Deploy destinations
-      for (const [, dest] of config.destinations) {
-        const destResult = await dest.onDeploy();
-        if (!destResult.ok) throw new Error('Destination deploy failed');
+      const deployed: RuntimeConnector[] = [];
+      const connectors: ReadonlyArray<readonly [string, RuntimeConnector]> = [
+        ['Source', config.source],
+        ...[...config.destinations].map(([id, dest]) => [`Destination ${String(id)}`, dest] as const),
+      ];
+      for (const [name, connector] of connectors) {
+        const result = await connector.onDeploy();
+        if (!result.ok) {
+          await Promise.all(deployed.map((c) => c.onUndeploy()));
+          throw new Error(`${name} deploy failed: ${result.error.message}`);
+        }
+        deployed.push(connector);
       }
 
       // Wire source dispatcher
       config.source.setDispatcher(config.onMessage);
 
+      this.config = config;
+      this.abortController = new AbortController();
       this.state = 'STOPPED';
     });
   }
 
-  /** Start: start destinations first, then source. STOPPED → STARTED. */
+  /**
+   * Start: start destinations first, then source. STOPPED → STARTED. If a
+   * connector fails, the ones already started are stopped again and the
+   * channel stays STOPPED, so a failed start leaves nothing listening.
+   */
   async start(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'STOPPED') {
@@ -80,21 +91,29 @@ export class ChannelRuntime {
       }
       if (!this.config) throw new Error('Channel not deployed');
 
-      // Start destinations first
-      for (const [, dest] of this.config.destinations) {
-        const result = await dest.onStart();
-        if (!result.ok) throw new Error('Destination start failed');
+      const started: RuntimeConnector[] = [];
+      const connectors: ReadonlyArray<readonly [string, RuntimeConnector]> = [
+        ...[...this.config.destinations].map(([id, dest]) => [`Destination ${String(id)}`, dest] as const),
+        ['Source', this.config.source],
+      ];
+      for (const [name, connector] of connectors) {
+        const result = await connector.onStart();
+        if (!result.ok) {
+          await Promise.all(started.map((c) => c.onStop()));
+          throw new Error(`${name} start failed: ${result.error.message}`);
+        }
+        started.push(connector);
       }
-
-      // Start source
-      const srcResult = await this.config.source.onStart();
-      if (!srcResult.ok) throw new Error('Source start failed');
 
       this.state = 'STARTED';
     });
   }
 
-  /** Stop: stop source first, then destinations. STARTED → STOPPED. */
+  /**
+   * Stop: stop source first, then destinations. STARTED → STOPPED. Every
+   * connector is asked to stop even if an earlier one fails; the first
+   * failure is returned.
+   */
   async stop(): Promise<Result<void>> {
     return tryCatch(async () => {
       if (this.state !== 'STARTED' && this.state !== 'PAUSED') {
@@ -102,15 +121,20 @@ export class ChannelRuntime {
       }
       if (!this.config) throw new Error('Channel not deployed');
 
+      const failures: string[] = [];
+
       // Stop source first (no new messages)
-      await this.config.source.onStop();
+      const srcResult = await this.config.source.onStop();
+      if (!srcResult.ok) failures.push(`Source stop failed: ${srcResult.error.message}`);
 
       // Stop destinations
-      for (const [, dest] of this.config.destinations) {
-        await dest.onStop();
+      for (const [id, dest] of this.config.destinations) {
+        const result = await dest.onStop();
+        if (!result.ok) failures.push(`Destination ${String(id)} stop failed: ${result.error.message}`);
       }
 
       this.state = 'STOPPED';
+      if (failures[0] !== undefined) throw new Error(failures[0]);
     });
   }
 

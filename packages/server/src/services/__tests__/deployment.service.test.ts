@@ -188,6 +188,61 @@ describe('DeploymentService', () => {
     });
   });
 
+  describe('deploy with a channel set to start on deploy', () => {
+    const AUTO_START = { ...CHANNEL_DETAIL, initialState: 'STARTED' };
+    const registerOnDeploy = (): void => {
+      mockEngine.deploy.mockImplementationOnce(async () => {
+        deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: vi.fn() });
+      });
+    };
+
+    it('starts the channel', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(AUTO_START));
+      registerOnDeploy();
+      mockRuntime.start.mockImplementation(async () => {
+        mockRuntime.getState.mockReturnValue('STARTED');
+        return { ok: true, value: undefined, error: null };
+      });
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok && result.value.state).toBe('STARTED');
+    });
+
+    it('fails, saying why, when the channel cannot start, and leaves it deployed and stopped', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(AUTO_START));
+      registerOnDeploy();
+      mockRuntime.start.mockResolvedValue({ ok: false, value: null, error: new Error('Source start failed: listen EADDRINUSE :::6661') });
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toBe(
+        'Channel was deployed but is stopped. Cannot start channel: Source start failed: listen EADDRINUSE :::6661',
+      );
+      expect(deployedChannels.has(CHANNEL_ID)).toBe(true);
+    });
+  });
+
+  describe('redeploy of a running channel', () => {
+    it('fails when the channel cannot be started again', async () => {
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: vi.fn() });
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+      mockRuntime.getState.mockReturnValueOnce('STARTED').mockReturnValueOnce('STARTED').mockReturnValue('STOPPED');
+      mockEngine.deploy.mockImplementationOnce(async () => {
+        deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: vi.fn() });
+      });
+      mockRuntime.start.mockResolvedValue({ ok: false, value: null, error: new Error('Source start failed: port busy') });
+
+      const result = await DeploymentService.redeploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('Channel was redeployed but is stopped. Cannot start channel: Source start failed: port busy');
+    });
+  });
+
   describe('start', () => {
     it('starts deployed channel and returns STARTED state', async () => {
       deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
