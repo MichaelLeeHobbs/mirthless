@@ -588,3 +588,72 @@ describe('QueueConsumer', () => {
     });
   });
 });
+
+// ----- Content removal after a queued delivery -----
+
+describe('QueueConsumer content removal', () => {
+  const CH = '00000000-0000-0000-0000-000000000001';
+  const queued = { channelId: CH, messageId: 10, metaDataId: 1, sendAttempts: 0 };
+
+  function storeWith(removal: ReturnType<typeof vi.fn>): MessageStore {
+    const store = { ...makeStore(), removeContentIfDelivered: removal };
+    (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queued]));
+    return store;
+  }
+
+  it('asks the store to apply the removal policy once a queued message is delivered', async () => {
+    const removal = vi.fn().mockResolvedValue(ok(undefined));
+    const store = storeWith(removal);
+
+    consumer = new QueueConsumer(makeConfig(), store, makeSendFn());
+    await consumer.poll();
+
+    expect(store.release).toHaveBeenCalledWith(CH, 10, 1, 'SENT');
+    expect(removal).toHaveBeenCalledWith(CH, 10);
+  });
+
+  it('keeps the content when the delivery fails and will be retried', async () => {
+    const removal = vi.fn().mockResolvedValue(ok(undefined));
+    const store = storeWith(removal);
+
+    consumer = new QueueConsumer(makeConfig(), store, makeSendFn({ status: 'ERROR', content: '', errorMessage: 'down' }));
+    await consumer.poll();
+
+    expect(removal).not.toHaveBeenCalled();
+  });
+
+  it('keeps the content when the queue gives up, so the failure can be investigated', async () => {
+    const removal = vi.fn().mockResolvedValue(ok(undefined));
+    const store = storeWith(removal);
+
+    consumer = new QueueConsumer(makeConfig({ retryCount: 1 }), store, makeSendFn({ status: 'ERROR', content: '', errorMessage: 'down' }));
+    await consumer.poll();
+
+    expect(store.release).toHaveBeenCalledWith(CH, 10, 1, 'ERROR');
+    expect(removal).not.toHaveBeenCalled();
+  });
+
+  it('keeps the content when SENT could not be saved (the message is delivered again)', async () => {
+    const removal = vi.fn().mockResolvedValue(ok(undefined));
+    const store = storeWith(removal);
+    (store.release as ReturnType<typeof vi.fn>).mockResolvedValue(fail('db down'));
+
+    consumer = new QueueConsumer(makeConfig(), store, makeSendFn());
+    await consumer.poll();
+
+    expect(removal).not.toHaveBeenCalled();
+  });
+
+  it('raises an alert when the removal itself fails', async () => {
+    const removal = vi.fn().mockResolvedValue(fail('delete failed'));
+    const store = storeWith(removal);
+    const onError = vi.fn().mockResolvedValue(undefined);
+
+    consumer = new QueueConsumer(makeConfig({ onError }), store, makeSendFn());
+    await consumer.poll();
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      errorMessage: expect.stringContaining('delete failed'),
+    }));
+  });
+});

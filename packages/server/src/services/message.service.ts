@@ -431,6 +431,24 @@ export class MessageService {
     });
   }
 
+  /**
+   * Whether every connector of a message (source and destinations) finished
+   * without an error: all rows SENT or FILTERED. False while anything is
+   * queued, in flight or failed, and for a message with no rows.
+   */
+  static async isFullyDelivered(channelId: string, messageId: number): Promise<Result<boolean>> {
+    return tryCatch(async () => {
+      const [row] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          unfinished: sql<number>`count(*) filter (where ${connectorMessages.status} not in ('SENT', 'FILTERED'))::int`,
+        })
+        .from(connectorMessages)
+        .where(and(eq(connectorMessages.channelId, channelId), eq(connectorMessages.messageId, messageId)));
+      return row !== undefined && row.total > 0 && row.unfinished === 0;
+    });
+  }
+
   /** Delete all stored content for a message. */
   static async deleteContent(
     channelId: string,

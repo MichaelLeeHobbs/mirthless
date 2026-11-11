@@ -133,6 +133,14 @@ export interface MessageStore {
    * races the queue consumer or destroys content needed to investigate a failure.
    */
   removeCompletedContent?(channelId: string, messageId: number): Promise<Result<void>>;
+
+  /**
+   * Optional: called by a queue consumer after it delivers a queued message.
+   * The store applies the same removal policy, but only if every destination
+   * of the message has now finished without an error. The consumer sees one
+   * destination and cannot tell; the store can.
+   */
+  removeContentIfDelivered?(channelId: string, messageId: number): Promise<Result<void>>;
 }
 
 /** Input to the pipeline. */

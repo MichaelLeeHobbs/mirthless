@@ -199,6 +199,15 @@ export function storageModeSupportsQueue(mode: MessageStorageMode): boolean {
 export function createMessageStoreAdapter(config?: StorageConfig): MessageStore {
   const mode = config?.messageStorageMode ?? MESSAGE_STORAGE_MODE.DEVELOPMENT;
   const encrypt = config?.encryptData ?? false;
+  const removesOnCompletion = Boolean(config?.removeContentOnCompletion) || Boolean(config?.removeAttachmentsOnCompletion);
+  /** Apply the channel's remove-on-completion settings to one finished message. */
+  const removeContent = async (channelId: string, messageId: number): Promise<Result<void>> => {
+    const deletes: Promise<Result<void>>[] = [];
+    if (config?.removeContentOnCompletion) deletes.push(MessageService.deleteContent(channelId, messageId));
+    if (config?.removeAttachmentsOnCompletion) deletes.push(MessageService.deleteAttachments(channelId, messageId));
+    const results = await Promise.all(deletes);
+    return results.find((r) => !r.ok) ?? OK_VOID;
+  };
   return {
     createMessage: (channelId, serverId, correlationId) =>
       MessageService.createMessage(channelId, serverId, correlationId),
@@ -225,20 +234,15 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
     // removal happens via removeCompletedContent, called by the pipeline only on
     // full successful completion.
     markProcessed: (channelId, messageId) => MessageService.markProcessed(channelId, messageId),
-    removeCompletedContent: async (channelId, messageId) => {
-      if (!config?.removeContentOnCompletion && !config?.removeAttachmentsOnCompletion) {
-        return OK_VOID;
-      }
-      const deletes: Promise<Result<void>>[] = [];
-      if (config?.removeContentOnCompletion) {
-        deletes.push(MessageService.deleteContent(channelId, messageId));
-      }
-      if (config?.removeAttachmentsOnCompletion) {
-        deletes.push(MessageService.deleteAttachments(channelId, messageId));
-      }
-      const results = await Promise.all(deletes);
-      const failed = results.find((r) => !r.ok);
-      return failed ?? OK_VOID;
+    removeCompletedContent: (channelId, messageId) => removeContent(channelId, messageId),
+    // A queued delivery finished. The consumer knows one destination, so check
+    // the whole message here: content goes only when every connector is done
+    // and none failed.
+    removeContentIfDelivered: async (channelId, messageId) => {
+      if (!removesOnCompletion) return OK_VOID;
+      const delivered = await MessageService.isFullyDelivered(channelId, messageId);
+      if (!delivered.ok) return fail<void>(delivered.error);
+      return delivered.value ? removeContent(channelId, messageId) : OK_VOID;
     },
     enqueue: (channelId, messageId, metaDataId) =>
       MessageService.enqueue(channelId, messageId, metaDataId),

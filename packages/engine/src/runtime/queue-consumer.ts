@@ -211,6 +211,18 @@ export class QueueConsumer {
       return;
     }
     await this.store.incrementStats(channelId, msg.metaDataId, serverId, 'sent');
+    await this.removeDeliveredContent(msg);
+  }
+
+  /** Apply the channel's remove-content-on-completion setting now that this delivery is done. */
+  private async removeDeliveredContent(msg: QueuedMessage): Promise<void> {
+    if (!this.store.removeContentIfDelivered) return;
+    const removed = await this.store.removeContentIfDelivered(this.config.channelId, msg.messageId);
+    if (removed.ok) return;
+    await this.alert(
+      `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)} but its stored ` +
+      `content could not be removed: ${removed.error.message}. The content stays until the pruner removes it.`,
+    );
   }
 
   /**
