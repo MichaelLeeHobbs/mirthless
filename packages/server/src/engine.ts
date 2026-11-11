@@ -713,6 +713,11 @@ export class EngineManager {
       throw new Error(`Channel ${channelId} is not deployed`);
     }
 
+    // Stop queue consumers before the connectors: stop() waits for the send in
+    // flight, so no queued delivery fails (and burns a retry) because its
+    // destination was stopped underneath it.
+    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
+
     // Stop the running channel first — runtime.undeploy() requires STOPPED, and
     // shutdown/undeploy must never throw on a STARTED channel (that would sever
     // in-flight messages and skip the rest of the teardown). Stopping first
@@ -725,9 +730,6 @@ export class EngineManager {
         await deployed.runtime.halt();
       }
     }
-
-    // Stop all queue consumers before cleanup
-    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
 
     // Execute channel undeploy script (before cleanup)
     if (deployed.scripts.undeploy) {

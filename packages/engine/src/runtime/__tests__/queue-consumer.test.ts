@@ -388,6 +388,190 @@ describe('QueueConsumer', () => {
     });
   });
 
+  describe('retry interval and ordering', () => {
+    const CH = '00000000-0000-0000-0000-000000000001';
+    const queued = (messageId: number, sendAttempts = 0): Record<string, unknown> =>
+      ({ channelId: CH, messageId, metaDataId: 1, sendAttempts });
+
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('waits the retry interval before trying a failed message again', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000);
+      const store = makeStore();
+      const sendFn: SendToDestination = vi.fn().mockResolvedValue(fail('Connection refused'));
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queued(10)]));
+      consumer = new QueueConsumer(makeConfig({ retryIntervalMs: 10_000 }), store, sendFn);
+
+      await consumer.poll();
+      expect(sendFn).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(1_000_000 + 9_999);
+      await consumer.poll();
+      expect(sendFn).toHaveBeenCalledTimes(1);
+      expect(store.dequeue).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(1_000_000 + 10_000);
+      await consumer.poll();
+      expect(sendFn).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not wait after a successful send', async () => {
+      const store = makeStore();
+      const sendFn = makeSendFn();
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queued(10)]));
+      consumer = new QueueConsumer(makeConfig({ retryIntervalMs: 10_000 }), store, sendFn);
+
+      await consumer.poll();
+      await consumer.poll();
+
+      expect(sendFn).toHaveBeenCalledTimes(2);
+    });
+
+    it('sends a batch in message order whatever order the store returns', async () => {
+      const store = makeStore();
+      const sendFn = makeSendFn();
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queued(12), queued(10), queued(11)]));
+      consumer = new QueueConsumer(makeConfig(), store, sendFn);
+
+      await consumer.poll();
+
+      const sentIds = (sendFn as ReturnType<typeof vi.fn>).mock.calls.map((c: unknown[]) => c[1]);
+      expect(sentIds).toEqual([10, 11, 12]);
+    });
+
+    it('holds later messages behind a failed one so delivery stays in order', async () => {
+      const store = makeStore();
+      const sendFn: SendToDestination = vi.fn().mockResolvedValue(fail('Connection refused'));
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queued(10), queued(11), queued(12)]));
+      consumer = new QueueConsumer(makeConfig(), store, sendFn);
+
+      await consumer.poll();
+
+      expect(sendFn).toHaveBeenCalledTimes(1);
+      // The failed message counts an attempt; the ones behind it do not.
+      expect(store.updateConnectorMessageStatus).toHaveBeenCalledTimes(1);
+      expect(store.updateConnectorMessageStatus).toHaveBeenCalledWith(CH, 10, 1, 'QUEUED');
+      expect(store.release).toHaveBeenCalledWith(CH, 11, 1, 'QUEUED');
+      expect(store.release).toHaveBeenCalledWith(CH, 12, 1, 'QUEUED');
+    });
+
+    it('moves on to the next message once it gives up on one', async () => {
+      const store = makeStore();
+      const sendFn: SendToDestination = vi.fn()
+        .mockResolvedValueOnce(fail('bad message'))
+        .mockResolvedValue(ok({ status: 'SENT', content: 'ACK' }));
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queued(10, 2), queued(11)]));
+      consumer = new QueueConsumer(makeConfig({ retryCount: 3 }), store, sendFn);
+
+      await consumer.poll();
+
+      expect(store.release).toHaveBeenCalledWith(CH, 10, 1, 'ERROR');
+      expect(store.release).toHaveBeenCalledWith(CH, 11, 1, 'SENT');
+    });
+
+    it('alerts when a held message could not be put back on the queue', async () => {
+      const store = makeStore();
+      const onError = vi.fn().mockResolvedValue(undefined);
+      const sendFn: SendToDestination = vi.fn().mockResolvedValue(fail('Connection refused'));
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queued(10), queued(11)]));
+      (store.release as ReturnType<typeof vi.fn>).mockResolvedValue(fail('db down'));
+      consumer = new QueueConsumer(makeConfig({ onError }), store, sendFn);
+
+      await consumer.poll();
+
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+        errorMessage: expect.stringContaining('could not save QUEUED for message 11'),
+      }));
+    });
+
+    it('alerts once when the queue cannot be read, and again only after it recovers', async () => {
+      const store = makeStore();
+      const onError = vi.fn().mockResolvedValue(undefined);
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(fail('db down'));
+      consumer = new QueueConsumer(makeConfig({ onError }), store, makeSendFn());
+
+      await consumer.poll();
+      await consumer.poll();
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+        errorMessage: expect.stringContaining('could not read its queue: db down'),
+      }));
+
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValueOnce(ok([]));
+      await consumer.poll();
+      await consumer.poll();
+      expect(onError).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('stop', () => {
+    const CH = '00000000-0000-0000-0000-000000000001';
+
+    it('waits for the send in flight before it resolves', async () => {
+      vi.useFakeTimers();
+      const store = makeStore();
+      let finishSend!: (r: Result<DestinationResponse>) => void;
+      const sendFn: SendToDestination = vi.fn().mockReturnValue(
+        new Promise<Result<DestinationResponse>>((resolve) => { finishSend = resolve; }),
+      );
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(
+        ok([{ channelId: CH, messageId: 10, metaDataId: 1, sendAttempts: 0 }, { channelId: CH, messageId: 11, metaDataId: 1, sendAttempts: 0 }]),
+      );
+      const local = new QueueConsumer(makeConfig(), store, sendFn);
+      local.start();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(sendFn).toHaveBeenCalledTimes(1);
+
+      let stopped = false;
+      const stopping = local.stop().then(() => { stopped = true; });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(stopped).toBe(false);
+
+      finishSend(ok({ status: 'SENT', content: 'ACK' }));
+      await stopping;
+      vi.useRealTimers();
+
+      // The message in flight is finished; the one behind it goes back on the queue unsent.
+      expect(store.release).toHaveBeenCalledWith(CH, 10, 1, 'SENT');
+      expect(store.release).toHaveBeenCalledWith(CH, 11, 1, 'QUEUED');
+      expect(sendFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not poll again after stop', async () => {
+      vi.useFakeTimers();
+      const store = makeStore();
+      const local = new QueueConsumer(makeConfig(), store, makeSendFn());
+      local.start();
+      await vi.advanceTimersByTimeAsync(100);
+      await local.stop();
+      const polls = (store.dequeue as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      vi.useRealTimers();
+
+      expect((store.dequeue as ReturnType<typeof vi.fn>).mock.calls.length).toBe(polls);
+    });
+
+    it('keeps polling after a poll throws, and raises an alert', async () => {
+      vi.useFakeTimers();
+      const store = makeStore();
+      const onError = vi.fn().mockResolvedValue(undefined);
+      (store.dequeue as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockResolvedValue(ok([]));
+      const local = new QueueConsumer(makeConfig({ onError }), store, makeSendFn());
+      local.start();
+
+      await vi.advanceTimersByTimeAsync(250);
+      await local.stop();
+      vi.useRealTimers();
+
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ errorMessage: expect.stringContaining('boom') }));
+      expect((store.dequeue as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   describe('start/stop', () => {
     it('starts and stops without error', async () => {
       const store = makeStore();

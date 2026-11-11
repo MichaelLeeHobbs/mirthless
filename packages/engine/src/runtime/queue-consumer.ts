@@ -35,12 +35,21 @@ interface QueuedMessage {
 
 // ----- Consumer -----
 
+/** What happened to one queued message. RETRY_LATER means it failed and is back on the queue. */
+type Outcome = 'DONE' | 'RETRY_LATER';
+
 export class QueueConsumer {
   private readonly config: QueueConsumerConfig;
   private readonly store: MessageStore;
   private readonly sendFn: SendToDestination;
   private running = false;
+  private stopRequested = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** The poll cycle currently running, so stop() can wait for it. */
+  private inFlight: Promise<void> | null = null;
+  /** No delivery is attempted before this time (set after a failed send). */
+  private retryNotBefore = 0;
+  private queueReadFailing = false;
 
   constructor(
     config: QueueConsumerConfig,
@@ -56,43 +65,96 @@ export class QueueConsumer {
   start(): void {
     if (this.running) return;
     this.running = true;
+    this.stopRequested = false;
     this.schedulePoll();
   }
 
-  /** Stop polling and wait for current batch to finish. */
+  /**
+   * Stop polling and wait for the send in flight to finish. Messages already
+   * claimed but not yet sent go back on the queue without counting an attempt.
+   */
   async stop(): Promise<void> {
     this.running = false;
+    this.stopRequested = true;
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    if (this.inFlight) await this.inFlight;
   }
 
-  /** Execute one poll cycle. Exposed for testing. */
+  /**
+   * Execute one poll cycle. Exposed for testing.
+   *
+   * Messages are delivered in message order. When a send fails and will be
+   * retried, the messages behind it are held and nothing is attempted again until
+   * retryIntervalMs has passed, so an outage neither reorders the queue nor burns
+   * through every message's retries in a few seconds.
+   */
   async poll(): Promise<void> {
+    if (Date.now() < this.retryNotBefore) return;
+
     const dequeueResult = await this.store.dequeue(
       this.config.channelId,
       this.config.metaDataId,
       this.config.batchSize,
     );
 
-    if (!dequeueResult.ok) return;
+    if (!dequeueResult.ok) {
+      // Alert on the first failure of a streak, not on every poll.
+      if (!this.queueReadFailing) {
+        this.queueReadFailing = true;
+        await this.alert(`Queued destination ${String(this.config.metaDataId)} could not read its queue: ${dequeueResult.error.message}`);
+      }
+      return;
+    }
+    this.queueReadFailing = false;
 
-    const messages = dequeueResult.value as readonly QueuedMessage[];
+    const messages = [...(dequeueResult.value as readonly QueuedMessage[])]
+      .sort((a, b) => Number(a.messageId) - Number(b.messageId));
+    for (let i = 0; i < messages.length; i++) {
+      if (this.stopRequested) {
+        await this.putBack(messages.slice(i));
+        return;
+      }
+      const outcome = await this.processQueuedMessage(messages[i]!);
+      if (outcome === 'RETRY_LATER') {
+        this.retryNotBefore = Date.now() + this.config.retryIntervalMs;
+        await this.putBack(messages.slice(i + 1));
+        return;
+      }
+    }
+  }
+
+  /** Return claimed-but-unsent messages to the queue. No attempt was made, so none is counted. */
+  private async putBack(messages: readonly QueuedMessage[]): Promise<void> {
     for (const msg of messages) {
-      await this.processQueuedMessage(msg);
+      const released = await this.store.release(this.config.channelId, msg.messageId, msg.metaDataId, 'QUEUED');
+      if (!released.ok) await this.reportUnrecorded(msg, 'QUEUED', released.error.message);
     }
   }
 
   private schedulePoll(): void {
     if (!this.running) return;
-    this.timer = setTimeout(async () => {
-      await this.poll();
-      this.schedulePoll();
+    this.timer = setTimeout(() => {
+      this.inFlight = this.pollSafely().finally(() => {
+        this.inFlight = null;
+        this.schedulePoll();
+      });
     }, this.config.pollIntervalMs);
   }
 
-  private async processQueuedMessage(msg: QueuedMessage): Promise<void> {
+  /** A poll that throws must not end the polling loop or go unreported. */
+  private async pollSafely(): Promise<void> {
+    try {
+      await this.poll();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      await this.alert(`Queued destination ${String(this.config.metaDataId)} poll failed: ${message}`).catch(() => undefined);
+    }
+  }
+
+  private async processQueuedMessage(msg: QueuedMessage): Promise<Outcome> {
     const signal = AbortSignal.timeout(30_000);
 
     const contentResult = await this.store.loadContent(
@@ -101,7 +163,7 @@ export class QueueConsumer {
 
     if (!contentResult.ok || contentResult.value === null) {
       await this.giveUp(msg, 'Queued message has no stored SENT content to deliver');
-      return;
+      return 'DONE';
     }
 
     const sendResult: Result<DestinationResponse> = await this.sendFn(
@@ -113,7 +175,7 @@ export class QueueConsumer {
 
     if (sendResult.ok && sendResult.value.status === 'SENT') {
       await this.finishSent(msg, sendResult.value.content);
-      return;
+      return 'DONE';
     }
 
     // Send failed — check retry count
@@ -123,7 +185,7 @@ export class QueueConsumer {
         ? (sendResult.value.errorMessage ?? sendResult.value.content)
         : sendResult.error.message;
       await this.giveUp(msg, `Delivery failed after ${String(attempts)} attempt(s): ${reason}`);
-      return;
+      return 'DONE';
     }
 
     // Re-queue for retry. Transitioning back to QUEUED persists an incremented
@@ -133,6 +195,7 @@ export class QueueConsumer {
       this.config.channelId, msg.messageId, msg.metaDataId, 'QUEUED',
     );
     if (!requeued.ok) await this.reportUnrecorded(msg, 'QUEUED', requeued.error.message);
+    return 'RETRY_LATER';
   }
 
   /** Delivered: keep the response, mark SENT, then count it. */
