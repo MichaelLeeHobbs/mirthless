@@ -34,6 +34,7 @@ function makeStore(
       },
     ),
     markProcessed: vi.fn().mockResolvedValue(ok(undefined)),
+    finishSource: vi.fn().mockResolvedValue(ok(undefined)),
   };
 }
 
@@ -282,6 +283,62 @@ describe('RecoveryManager', () => {
     await mgr.recover(CHANNEL_ID);
 
     expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 22);
+  });
+
+  it('gives a routed source its final status: SENT when every destination delivered', async () => {
+    const msgs: UnprocessedMessage[] = [{ messageId: 30, channelId: CHANNEL_ID }];
+    const conns = new Map<number, ConnectorMessageRecord[]>([
+      [30, [{ messageId: 30, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 30, metaDataId: 1, status: 'RECEIVED' }]],
+    ]);
+    const store = makeStore(msgs, conns);
+    const redispatch = vi.fn().mockImplementation(async () => {
+      conns.set(30, [{ messageId: 30, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 30, metaDataId: 1, status: 'SENT' }]);
+      return ok(undefined);
+    });
+
+    await new RecoveryManager(store, vi.fn(), redispatch).recover(CHANNEL_ID);
+
+    expect(store.finishSource).toHaveBeenCalledWith(CHANNEL_ID, 30, 'SENT');
+    expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 30);
+  });
+
+  it('gives a routed source ERROR when a destination ended in error', async () => {
+    const msgs: UnprocessedMessage[] = [{ messageId: 31, channelId: CHANNEL_ID }];
+    const conns = new Map<number, ConnectorMessageRecord[]>([
+      [31, [{ messageId: 31, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 31, metaDataId: 1, status: 'SENT' }, { messageId: 31, metaDataId: 2, status: 'ERROR' }]],
+    ]);
+    const store = makeStore(msgs, conns);
+
+    await new RecoveryManager(store, vi.fn(), vi.fn()).recover(CHANNEL_ID);
+
+    expect(store.finishSource).toHaveBeenCalledWith(CHANNEL_ID, 31, 'ERROR');
+  });
+
+  it('does not touch a source that already has its final status', async () => {
+    const msgs: UnprocessedMessage[] = [{ messageId: 32, channelId: CHANNEL_ID }];
+    const conns = new Map<number, ConnectorMessageRecord[]>([
+      [32, [{ messageId: 32, metaDataId: 0, status: 'SENT' }, { messageId: 32, metaDataId: 1, status: 'SENT' }]],
+    ]);
+    const store = makeStore(msgs, conns);
+
+    await new RecoveryManager(store, vi.fn(), vi.fn()).recover(CHANNEL_ID);
+
+    expect(store.finishSource).not.toHaveBeenCalled();
+    expect(store.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 32);
+  });
+
+  it('leaves the message unprocessed when the final source status cannot be saved', async () => {
+    const msgs: UnprocessedMessage[] = [{ messageId: 33, channelId: CHANNEL_ID }];
+    const conns = new Map<number, ConnectorMessageRecord[]>([
+      [33, [{ messageId: 33, metaDataId: 0, status: 'TRANSFORMED' }, { messageId: 33, metaDataId: 1, status: 'SENT' }]],
+    ]);
+    const store = makeStore(msgs, conns);
+    vi.mocked(store.finishSource).mockResolvedValue(fail('db down'));
+
+    const result = await new RecoveryManager(store, vi.fn(), vi.fn()).recover(CHANNEL_ID);
+
+    expect(store.markProcessed).not.toHaveBeenCalled();
+    expect(result.ok && result.value.errors).toBe(1);
   });
 
   it('leaves a message unprocessed while a destination is still QUEUED or a step failed', async () => {

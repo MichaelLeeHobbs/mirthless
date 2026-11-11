@@ -97,6 +97,8 @@ export interface DeployedChannel {
    * marked every pending destination ERROR. Later calls are no-ops.
    */
   readonly recoverOnce: () => Promise<void>;
+  /** Releases queue claims left by a server stop. Run before the queue consumers start. */
+  readonly resetClaimsOnce: () => Promise<void>;
   /** When the channel last received a message (or last (re)started); drives NO_MESSAGES alerts. */
   readonly activity: { lastAt: number };
 }
@@ -739,6 +741,22 @@ export class EngineManager {
 
     // Recover messages left unprocessed by a prior crash/restart on the first
     // start. Best-effort: failures are logged, never allowed to abort a start.
+    // Claims a queue consumer held when the server stopped go back to QUEUED.
+    // This must finish before the consumers start: reset afterwards, it would
+    // also release a message a consumer had just claimed, and send it twice.
+    let claimsReset = false;
+    const resetClaimsOnce = async (): Promise<void> => {
+      if (claimsReset) return;
+      claimsReset = true;
+      for (const dest of channel.destinations) {
+        if (dest.queueMode === 'NEVER') continue;
+        const reset = await MessageService.resetPending(channel.id, dest.metaDataId);
+        if (!reset.ok) {
+          logger.error({ channelId: channel.id, metaDataId: dest.metaDataId, errMsg: reset.error.message }, 'Failed to reset PENDING messages');
+        }
+      }
+    };
+
     let recovered = false;
     const recoverOnce = async (): Promise<void> => {
       if (recovered) return;
@@ -746,7 +764,7 @@ export class EngineManager {
       await this.recoverChannel(channel, store, processMessage, sendFn, recoveryHorizon);
     };
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, recoverOnce, activity });
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, recoverOnce, resetClaimsOnce, activity });
     this.silenceTimer ??= setInterval(() => { void this.checkSilentChannels(); }, SILENCE_CHECK_INTERVAL_MS).unref();
   }
 
@@ -873,14 +891,6 @@ export class EngineManager {
       return;
     }
     const maxId = horizon.value;
-    // Reset stale PENDING claims for every queued destination.
-    for (const dest of channel.destinations) {
-      if (dest.queueMode === 'NEVER') continue;
-      const reset = await MessageService.resetPending(channel.id, dest.metaDataId);
-      if (!reset.ok) {
-        logger.error({ channelId: channel.id, metaDataId: dest.metaDataId, errMsg: reset.error.message }, 'Failed to reset PENDING messages');
-      }
-    }
 
     const recoveryStore: RecoveryStore = {
       getUnprocessedMessages: async (channelId, afterId, limit) => {
@@ -890,6 +900,11 @@ export class EngineManager {
       },
       getConnectorMessages: (channelId, messageId) => MessageService.getConnectorMessages(channelId, messageId),
       markProcessed: (channelId, messageId) => MessageService.markProcessed(channelId, messageId),
+      finishSource: async (channelId, messageId, status) => {
+        const updated = await store.updateConnectorMessageStatus(channelId, messageId, 0, status);
+        if (!updated.ok) return updated;
+        return store.incrementStats(channelId, 0, this.serverId, status === 'SENT' ? 'sent' : 'errored');
+      },
     };
 
     const CT_RAW = 1;
@@ -925,7 +940,9 @@ export class EngineManager {
       // Run again as a new message. Close the original so it is not recovered a
       // second time and does not sit in the browser looking like a message that
       // is still being received: mark it ERROR with a note naming the new one.
-      // It adds nothing to the statistics; the new message is the one counted.
+      // Both rows stay in the browser and both were counted as received when
+      // they were created. The original adds no error to the statistics: only
+      // the outcome of the new message is counted.
       const note = `Interrupted by a server stop before it finished. Run again as message ${String(processed.value.messageId)}.`;
       const closed = await Promise.all([
         store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, note, 'TEXT'),

@@ -418,6 +418,7 @@ describe('QueueConsumer wiring', () => {
         runtime: mockRuntime,
         queueConsumers: [mockConsumer],
         recoverOnce: async () => {},
+        resetClaimsOnce: async () => {},
       });
 
       const { getEngine: getEngineFn } = await import('../../engine.js');
@@ -450,6 +451,7 @@ describe('QueueConsumer wiring', () => {
         runtime: mockRuntime,
         queueConsumers: [mockConsumer],
         recoverOnce: async () => {},
+        resetClaimsOnce: async () => {},
       });
 
       const { getEngine: getEngineFn } = await import('../../engine.js');

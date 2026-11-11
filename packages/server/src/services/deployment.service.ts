@@ -211,12 +211,18 @@ export class DeploymentService {
         throw new ServiceError('CONFLICT', `Cannot start channel: ${result.error.message}`);
       }
 
-      // Start queue consumers after runtime starts
+      // Start queue consumers after runtime starts, and only once claims left
+      // by a server stop have been released.
+      await deployed.resetClaimsOnce();
       deployed.queueConsumers.forEach((c) => c.start());
 
       // Crash recovery needs started destination dispatchers, so it runs here
-      // (once per deploy), not at deploy time.
-      await deployed.recoverOnce();
+      // (once per deploy), not at deploy time. It runs in the background: a
+      // large backlog must not hold up the start, and the channel is already
+      // taking new messages. Recovery logs its own failures.
+      void deployed.recoverOnce().catch((err: unknown) => {
+        logger.error({ channelId, errMsg: err instanceof Error ? err.message : String(err) }, 'Channel recovery failed');
+      });
 
       emitEvent({
         level: 'INFO', name: 'CHANNEL_STARTED', outcome: 'SUCCESS',
