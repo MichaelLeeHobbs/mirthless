@@ -22,7 +22,7 @@ export const jwtDuration = z
   )
   .transform((v) => v as NonNullable<SignOptions['expiresIn']>);
 
-const configSchema = z.object({
+export const configSchema = z.object({
   // Application
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
@@ -37,6 +37,14 @@ const configSchema = z.object({
   // Escape hatch to disable cert verification (INSECURE — MITM-able PHI link).
   // Defaults to verifying. Only set 'false' for a throwaway/self-signed dev setup.
   DATABASE_SSL_REJECT_UNAUTHORIZED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  // Server-side limit for one SQL statement, in milliseconds. 0 turns it off.
+  // Two minutes leaves room for pruning and backup queries.
+  DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(120_000),
+
+  // API requests one client address may make per minute. Read by the rate
+  // limiter; declared here so a value that is not a positive whole number stops
+  // the server at startup instead of being ignored.
+  API_RATE_LIMIT_MAX: z.coerce.number().int().positive().optional(),
 
   // Authentication
   JWT_SECRET: z.string().min(32),

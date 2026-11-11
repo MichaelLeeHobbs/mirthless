@@ -50,7 +50,10 @@ Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside th
 
 - Publish one contiguous range with `MLLP_PORT_RANGE` in `.env` (default `6661-6670`),
   and give each inbound channel a port inside it.
-- The API and UI do not need extra ports; they go through nginx on :80.
+- The API and UI do not need extra ports; they go through nginx on :80. That port is plain
+  HTTP, so the compose file publishes it on `127.0.0.1` only. Put a TLS-terminating proxy on
+  the same host in front of it, or set `WEB_BIND=0.0.0.0` in `.env` when TLS is terminated
+  on another machine in front of this one. `WEB_PORT` changes the port.
 - Put TLS in front of the published listener ports (a TLS-terminating load balancer or
   the connector's own TLS settings), per [TLS & PHI-in-transit](tls-and-phi.md).
 - Outbound connectors need no published ports, but your firewall must allow the server

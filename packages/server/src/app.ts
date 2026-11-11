@@ -133,7 +133,8 @@ if (apiDocsEnabled) {
   app.use('/api-docs', apiDocsRoutes);
 }
 
-// Global API rate limiter (100 req/min per IP)
+// Global API rate limiter: 600 requests a minute per client address in
+// production, or API_RATE_LIMIT_MAX (see rate-limit.middleware.ts)
 app.use('/api/v1', apiRateLimiter);
 
 // API routes
