@@ -10,7 +10,6 @@ import type { SandboxContext } from '../sandbox/sandbox-context.js';
 import { createSandboxContext } from '../sandbox/sandbox-context.js';
 import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
 import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
-import type { AttachmentConfig } from './attachment-handler.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
 import { parseForSandbox, serializeFromSandbox, serializeTransformed } from './data-type-handler.js';
 
@@ -196,7 +195,6 @@ export interface PipelineConfig {
   readonly globalMapProxy?: GlobalMapProxy | undefined;
   readonly configMap?: Readonly<Record<string, unknown>> | undefined;
   readonly onError?: AlertEventHandler | undefined;
-  readonly attachmentConfig?: AttachmentConfig | undefined;
   readonly onTiming?: TimingCallback | undefined;
   /** Called when a message store write fails after the point where the message can still be failed cleanly. */
   readonly onStoreFailure?: ((failure: StoreFailure) => void) | undefined;
