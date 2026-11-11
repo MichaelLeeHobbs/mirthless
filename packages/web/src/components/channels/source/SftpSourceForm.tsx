@@ -18,6 +18,14 @@ import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 
 const AFTER_PROCESSING = ['DELETE', 'MOVE', 'NONE'] as const;
 
+// Values must be encodings the server can decode (see connectors/src/encoding.ts).
+const CHARSETS: readonly { value: string; label: string }[] = [
+  { value: 'utf-8', label: 'UTF-8' },
+  { value: 'latin1', label: 'ISO-8859-1 (Latin-1)' },
+  { value: 'ascii', label: 'US-ASCII' },
+  { value: 'utf16le', label: 'UTF-16 LE' },
+];
+
 function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
   const val = props[key];
   return typeof val === 'string' ? val : fallback;
@@ -177,6 +185,20 @@ export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProp
           fullWidth
           sx={{ mb: 2 }}
         />
+
+        <TextField
+          label="Charset"
+          value={getStr(properties, 'charset', 'utf-8')}
+          onChange={handleText('charset')}
+          helperText="Character encoding of the remote files"
+          select
+          fullWidth
+          sx={{ mb: 2 }}
+        >
+          {CHARSETS.map((c) => (
+            <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>
+          ))}
+        </TextField>
 
         <TextField
           label="Polling Interval (ms)"

@@ -158,6 +158,7 @@ const sourceFactories = new Map<string, SourceFactory>([
     minFileAgeMs: num(props, 'minFileAgeMs', 1_000),
     strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
     hostKey: props['hostKey'] as string | undefined,
+    charset: (props['charset'] as string | undefined) ?? 'utf-8',
   })],
 ]);
 

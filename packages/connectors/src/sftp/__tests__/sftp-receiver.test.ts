@@ -469,3 +469,77 @@ describe('SftpReceiver when the pipeline recorded an error', () => {
     expect(dispatches).toBe(1);
   });
 });
+
+// ----- Robustness (L16, L18) -----
+
+describe('robustness', () => {
+  it('refuses to deploy with a charset it cannot decode', async () => {
+    receiver = new SftpReceiver(makeConfig({ charset: 'klingon' }), factoryFor(new RemoteState()));
+    const result = await receiver.onDeploy();
+    expect(result.ok).toBe(false);
+  });
+
+  it('decodes files in the configured charset', async () => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'x', Date.now() - 10_000);
+    state.files.get('a.hl7')!.bytes = Buffer.from('PID|1||Müller', 'latin1');
+    const seen: string[] = [];
+    receiver = new SftpReceiver(makeConfig({ charset: 'ISO-8859-1' }), factoryFor(state));
+    receiver.setDispatcher(makeDispatcher((raw) => { seen.push(raw.content); return { messageId: 1 }; }));
+    expect((await receiver.onDeploy()).ok).toBe(true);
+    await receiver.onStart();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(seen).toEqual(['PID|1||Müller']);
+  });
+
+  it('keeps going when one file cannot be downloaded', async () => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'A', Date.now() - 10_000);
+    state.addFile('b.hl7', 'B', Date.now() - 10_000);
+    state.addFile('c.hl7', 'C', Date.now() - 10_000);
+    const { logger, errors } = makeMockLogger();
+    const seen: string[] = [];
+    receiver = new SftpReceiver(makeConfig(), factoryFor(state, { getNames: ['b.hl7'] }), logger);
+    receiver.setDispatcher(makeDispatcher((raw) => { seen.push(raw.content); return { messageId: 1 }; }));
+    await receiver.onStart();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(seen).toEqual(['A', 'C']);
+    expect(errors.some((e) => e.msg.includes('could not be processed'))).toBe(true);
+    expect(state.files.has('b.hl7')).toBe(true);
+  });
+
+  it('takes no more files once it is stopped during a poll', async () => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'A', Date.now() - 10_000);
+    state.addFile('b.hl7', 'B', Date.now() - 10_000);
+    const seen: string[] = [];
+    const r = new SftpReceiver(makeConfig(), factoryFor(state));
+    r.setDispatcher(async (raw) => {
+      seen.push(raw.content);
+      await r.onStop();
+      return { ok: true as const, value: { messageId: 1 }, error: null };
+    });
+    await r.onStart();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(seen).toEqual(['A']);
+  });
+
+  it('reports a quarantined file once, not on every poll', async () => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'X', Date.now() - 10_000);
+    const { logger, errors } = makeMockLogger();
+    receiver = new SftpReceiver(makeConfig(), factoryFor(state, { delete: true }), logger);
+    receiver.setDispatcher(makeDispatcher());
+    await receiver.onStart();
+
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(errors.filter((e) => e.msg.includes('skipping to avoid duplicate delivery'))).toHaveLength(1);
+  });
+});

@@ -16,6 +16,8 @@ export interface RemoteFile {
   size: number;
   modifyTime: number;
   content: string;
+  /** Exact bytes to serve, for files that are not UTF-8. */
+  bytes?: Buffer;
 }
 
 /** Options to force specific operations to fail (for unhappy-path tests). */
@@ -26,6 +28,8 @@ export interface MockFailures {
   put?: boolean;
   delete?: boolean;
   rename?: boolean;
+  /** File names whose download fails while every other file works. */
+  getNames?: readonly string[];
 }
 
 /** Shared, persistent remote-filesystem state for a directory. */
@@ -82,7 +86,8 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
       }
       const f = state.files.get(name);
       if (!f) throw new Error(`no such file: ${name}`);
-      return Buffer.from(f.content, 'utf8');
+      if (failures.getNames?.includes(name)) throw new Error(`SFTP get failed: ${name}`);
+      return f.bytes ?? Buffer.from(f.content, 'utf8');
     },
     async put(data: Buffer, remotePath: string): Promise<void> {
       if (failures.put) throw new Error('SFTP put failed');
