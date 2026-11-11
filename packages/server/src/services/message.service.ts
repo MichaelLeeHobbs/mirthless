@@ -6,7 +6,7 @@
 // All methods return Result<T> using tryCatch from stderr-lib.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, gt, lte, asc, max } from 'drizzle-orm';
 import { SOCKET_EVENT, type ContentType, type MessageStatus } from '@galvaniflow/core-models';
 import { db } from '../lib/db.js';
 import { emitToRoom } from '../lib/socket.js';
@@ -341,9 +341,34 @@ export class MessageService {
     });
   }
 
-  /** Get unprocessed messages for recovery after restart. */
+  /**
+   * The newest message id a channel has, or 0 when it has none. Taken at
+   * deploy, before the channel starts, it marks which messages are left over
+   * from an earlier run and so are safe to recover.
+   */
+  static async getLatestMessageId(channelId: string): Promise<Result<number>> {
+    return tryCatch(async () => {
+      const [row] = await db
+        .select({ latest: max(messages.id) })
+        .from(messages)
+        .where(eq(messages.channelId, channelId));
+      return row?.latest ?? 0;
+    });
+  }
+
+  /**
+   * One page of unprocessed messages for recovery, in id order.
+   *
+   * @param channelId - Channel to read.
+   * @param range - Ids above `afterId` and up to `maxId`. `maxId` is the id from
+   *   getLatestMessageId at deploy, so messages the running channel is still
+   *   working on are never returned.
+   * @param limit - Page size.
+   */
   static async getUnprocessedMessages(
     channelId: string,
+    range: { readonly afterId: number; readonly maxId: number },
+    limit: number,
   ): Promise<Result<readonly Message[]>> {
     return tryCatch(async () => {
       const rows = await db
@@ -353,8 +378,12 @@ export class MessageService {
           and(
             eq(messages.channelId, channelId),
             eq(messages.processed, false),
+            gt(messages.id, range.afterId),
+            lte(messages.id, range.maxId),
           ),
-        );
+        )
+        .orderBy(asc(messages.id))
+        .limit(limit);
       return rows;
     });
   }

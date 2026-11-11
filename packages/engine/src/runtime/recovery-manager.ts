@@ -24,7 +24,12 @@ export interface ConnectorMessageRecord {
 
 /** Store interface needed by the recovery manager. */
 export interface RecoveryStore {
-  getUnprocessedMessages(channelId: string): Promise<Result<readonly UnprocessedMessage[]>>;
+  /**
+   * One page of unprocessed messages with an id above `afterMessageId`, in id
+   * order. The store must only return messages that were already there when
+   * the channel was deployed, never ones the running channel is still working on.
+   */
+  getUnprocessedMessages(channelId: string, afterMessageId: number, limit: number): Promise<Result<readonly UnprocessedMessage[]>>;
   getConnectorMessages(channelId: string, messageId: number): Promise<Result<readonly ConnectorMessageRecord[]>>;
   /** Mark a message processed once nothing in it is left to recover. */
   markProcessed(channelId: string, messageId: number): Promise<Result<void>>;
@@ -43,6 +48,11 @@ export interface RecoveryResult {
   readonly skipped: number;
 }
 
+/** Messages read per query. */
+const PAGE_SIZE = 200;
+/** Messages recovered at the same time. */
+const CONCURRENCY = 5;
+
 // ----- Manager -----
 
 export class RecoveryManager {
@@ -60,31 +70,37 @@ export class RecoveryManager {
     this.redispatchDestination = redispatchDestination;
   }
 
-  /** Recover all unprocessed messages for a channel. */
+  /**
+   * Recover all unprocessed messages for a channel, a page at a time and a
+   * few messages at once, so a large backlog cannot exhaust memory or the
+   * database pool.
+   */
   async recover(channelId: string): Promise<Result<RecoveryResult>> {
     return tryCatch(async () => {
-      const msgResult = await this.store.getUnprocessedMessages(channelId);
-      if (!msgResult.ok) {
-        throw new Error(`Failed to get unprocessed messages: ${msgResult.error.message}`);
+      const total = { recovered: 0, errors: 0, skipped: 0 };
+      let afterMessageId = 0;
+      let more = true;
+      while (more) {
+        const page = await this.store.getUnprocessedMessages(channelId, afterMessageId, PAGE_SIZE);
+        if (!page.ok) {
+          throw new Error(`Failed to get unprocessed messages: ${page.error.message}`);
+        }
+        for (let i = 0; i < page.value.length; i += CONCURRENCY) {
+          const results = await Promise.all(
+            page.value.slice(i, i + CONCURRENCY).map(async (msg) => this.recoverMessage(channelId, msg.messageId)),
+          );
+          for (const r of results) {
+            total.recovered += r.recovered;
+            total.errors += r.errors;
+            total.skipped += r.skipped;
+          }
+        }
+        // Page by id, not by offset: a message that fails stays unprocessed
+        // and must not be read again in this run.
+        afterMessageId = page.value.at(-1)?.messageId ?? afterMessageId;
+        more = page.value.length === PAGE_SIZE;
       }
-
-      const messages = msgResult.value;
-
-      // Process messages concurrently — they are independent
-      const results = await Promise.all(
-        messages.map(async (msg) => this.recoverMessage(channelId, msg.messageId)),
-      );
-
-      let recovered = 0;
-      let errors = 0;
-      let skipped = 0;
-      for (const r of results) {
-        recovered += r.recovered;
-        errors += r.errors;
-        skipped += r.skipped;
-      }
-
-      return { recovered, errors, skipped };
+      return total;
     });
   }
 

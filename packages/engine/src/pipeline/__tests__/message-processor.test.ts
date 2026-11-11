@@ -608,22 +608,6 @@ describe('MessageProcessor', () => {
     expect(sendFn).not.toHaveBeenCalled();
   });
 
-  it('errors the destination when createConnectorMessage fails', async () => {
-    const store = makeStore();
-    (store.createConnectorMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: false, value: null, error: new Error('no row'),
-    });
-    const sendFn = makeSendFn();
-    const processor = new MessageProcessor(sandbox, store, sendFn, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
-
-    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.destinationResults[0]!.status).toBe('ERROR');
-    expect(sendFn).not.toHaveBeenCalled();
-  });
-
   it('preprocessor and postprocessor scripts execute', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
@@ -1231,5 +1215,104 @@ describe('MessageProcessor reports where an error happened', () => {
     const config = makeConfig({ scripts: { postprocessor: { code: 'throw new Error("late");' } } });
 
     expect(await run(config)).toEqual({ status: 'ERROR', errorStage: 'DESTINATION' });
+  });
+
+  // ----- Crash safety and store failures -----
+
+  describe('destination rows and store failures', () => {
+    const twoChained = [
+      { metaDataId: 1, name: 'Dest 1', enabled: true, scripts: {}, queueMode: 'NEVER' as const },
+      { metaDataId: 2, name: 'Dest 2', enabled: true, scripts: {}, queueMode: 'NEVER' as const, waitForPrevious: true },
+    ];
+
+    it('creates every destination row before the source is marked TRANSFORMED and before any send', async () => {
+      const order: string[] = [];
+      const store = makeStore();
+      (store.createConnectorMessage as ReturnType<typeof vi.fn>).mockImplementation(async (_c: string, _m: number, metaDataId: number) => {
+        order.push(`row:${String(metaDataId)}`);
+        return ok(undefined);
+      });
+      (store.updateConnectorMessageStatus as ReturnType<typeof vi.fn>).mockImplementation(async (_c: string, _m: number, metaDataId: number, status: string) => {
+        order.push(`status:${String(metaDataId)}:${status}`);
+        return ok(undefined);
+      });
+      const send = vi.fn().mockImplementation(async (metaDataId: number) => {
+        order.push(`send:${String(metaDataId)}`);
+        return ok({ status: 'SENT' as const, content: 'ACK' });
+      });
+      const processor = new MessageProcessor(sandbox, store, send, makeConfig({ destinations: twoChained }), DEFAULT_EXECUTION_OPTIONS);
+
+      await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+      const transformedAt = order.indexOf('status:0:TRANSFORMED');
+      const firstSend = order.indexOf('send:1');
+      expect(order.indexOf('row:1')).toBeLessThan(transformedAt);
+      expect(order.indexOf('row:2')).toBeLessThan(transformedAt);
+      expect(transformedAt).toBeLessThan(firstSend);
+    });
+
+    it('errors the message and sends nothing when a destination row cannot be created', async () => {
+      const store = makeStore();
+      (store.createConnectorMessage as ReturnType<typeof vi.fn>).mockImplementation(async (_c: string, _m: number, metaDataId: number) =>
+        metaDataId === 2 ? { ok: false, value: null, error: new Error('db down') } : ok(undefined));
+      const send = makeSendFn();
+      const processor = new MessageProcessor(sandbox, store, send, makeConfig({ destinations: twoChained }), DEFAULT_EXECUTION_OPTIONS);
+
+      const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+      expect(result.ok && result.value.status).toBe('ERROR');
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('errors the message and sends nothing when the TRANSFORMED status cannot be saved', async () => {
+      const store = makeStore();
+      (store.updateConnectorMessageStatus as ReturnType<typeof vi.fn>).mockImplementation(async (_c: string, _m: number, _d: number, status: string) =>
+        status === 'TRANSFORMED' ? { ok: false, value: null, error: new Error('db down') } : ok(undefined));
+      const send = makeSendFn();
+      const processor = new MessageProcessor(sandbox, store, send, makeConfig({ destinations: twoChained }), DEFAULT_EXECUTION_OPTIONS);
+
+      const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+      expect(result.ok && result.value.status).toBe('ERROR');
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('reports a delivered destination whose SENT status could not be saved', async () => {
+      const store = makeStore();
+      (store.updateConnectorMessageStatus as ReturnType<typeof vi.fn>).mockImplementation(async (_c: string, _m: number, metaDataId: number, status: string) =>
+        metaDataId === 1 && status === 'SENT' ? { ok: false, value: null, error: new Error('db down') } : ok(undefined));
+      const onStoreFailure = vi.fn();
+      const processor = new MessageProcessor(sandbox, store, makeSendFn(), makeConfig({ onStoreFailure }), DEFAULT_EXECUTION_OPTIONS);
+
+      const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+      expect(result.ok && result.value.destinationResults[0]?.status).toBe('SENT');
+      expect(onStoreFailure).toHaveBeenCalledWith(expect.objectContaining({
+        channelId: '00000000-0000-0000-0000-000000000001', metaDataId: 1, what: 'the SENT status of a delivered destination', errorMessage: 'db down',
+      }));
+    });
+
+    it('reports a message whose final status could not be saved', async () => {
+      const store = makeStore();
+      (store.markProcessed as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, value: null, error: new Error('db down') });
+      const onStoreFailure = vi.fn();
+      const processor = new MessageProcessor(sandbox, store, makeSendFn(), makeConfig({ onStoreFailure }), DEFAULT_EXECUTION_OPTIONS);
+
+      await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+      expect(onStoreFailure).toHaveBeenCalledWith(expect.objectContaining({ metaDataId: 0, what: 'the final message status' }));
+    });
+
+    it('fails the message when its first rows cannot be saved', async () => {
+      const store = makeStore();
+      (store.storeContent as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, value: null, error: new Error('db down') });
+      const send = makeSendFn();
+      const processor = new MessageProcessor(sandbox, store, send, makeConfig(), DEFAULT_EXECUTION_OPTIONS);
+
+      const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+
+      expect(result.ok).toBe(false);
+      expect(send).not.toHaveBeenCalled();
+    });
   });
 });

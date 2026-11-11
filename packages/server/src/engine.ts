@@ -368,6 +368,7 @@ const routeDepthStore = new AsyncLocalStorage<number>();
 const SILENCE_CHECK_INTERVAL_MS = 30_000;
 /** Longest a destination send may take when the connector sets no shorter timeout of its own. */
 const SEND_BACKSTOP_MS = 300_000;
+const NEVER_RAN_MESSAGE = 'Not delivered: the server stopped before this destination ran. Reprocess the message to deliver it.';
 
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
@@ -580,6 +581,12 @@ export class EngineManager {
       configMap: Object.freeze(configMapRecord),
       scriptTimeoutMs: channel.scriptTimeoutSeconds * 1_000,
       onError: async (event) => alertManager.handleEvent(event),
+      onStoreFailure: (failure) => {
+        logger.error(
+          { channelId: failure.channelId, messageId: failure.messageId, metaDataId: failure.metaDataId, what: failure.what, errMsg: failure.errorMessage },
+          'Message store write failed: part of a message status could not be saved',
+        );
+      },
       onTiming: logger.level === 'debug' || logger.level === 'trace'
         ? (messageId, totalMs, stages) => {
             logger.debug(
@@ -657,6 +664,10 @@ export class EngineManager {
       onMessage: async (raw) => processMessage(raw.content, raw.sourceMap),
     };
 
+    // Taken before the channel can receive anything: every unprocessed message
+    // up to this id was left by an earlier run.
+    const recoveryHorizon = await MessageService.getLatestMessageId(channel.id);
+
     const result = await runtime.deploy(runtimeConfig);
     if (!result.ok) {
       throw new Error('Failed to deploy channel runtime');
@@ -668,7 +679,7 @@ export class EngineManager {
     const recoverOnce = async (): Promise<void> => {
       if (recovered) return;
       recovered = true;
-      await this.recoverChannel(channel, store, processMessage, sendFn);
+      await this.recoverChannel(channel, store, processMessage, sendFn, recoveryHorizon);
     };
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage, recoverOnce, activity });
@@ -785,7 +796,16 @@ export class EngineManager {
     store: MessageStore,
     processMessage: (rawContent: string, sourceMap?: Record<string, unknown>) => Promise<Result<{ messageId: number }>>,
     sendFn: SendToDestination,
+    horizon: Result<number>,
   ): Promise<void> {
+    // Without the horizon there is no telling a leftover message from one the
+    // running channel is working on right now, and recovering the latter would
+    // process it twice. Skip, and say so.
+    if (!horizon.ok) {
+      logger.error({ channelId: channel.id, errMsg: horizon.error.message }, 'Channel recovery skipped: could not read the newest message id at deploy');
+      return;
+    }
+    const maxId = horizon.value;
     // Reset stale PENDING claims for every queued destination.
     for (const dest of channel.destinations) {
       if (dest.queueMode === 'NEVER') continue;
@@ -796,8 +816,8 @@ export class EngineManager {
     }
 
     const recoveryStore: RecoveryStore = {
-      getUnprocessedMessages: async (channelId) => {
-        const r = await MessageService.getUnprocessedMessages(channelId);
+      getUnprocessedMessages: async (channelId, afterId, limit) => {
+        const r = await MessageService.getUnprocessedMessages(channelId, { afterId, maxId }, limit);
         if (!r.ok) return r;
         return { ok: true, value: r.value.map((m) => ({ messageId: m.id, channelId: m.channelId })), error: null };
       },
@@ -843,8 +863,22 @@ export class EngineManager {
 
     const redispatchDestination = async (channelId: string, messageId: number, metaDataId: number): Promise<Result<void>> => {
       const sent = await store.loadContent(channelId, messageId, metaDataId, CT_SENT);
-      if (!sent.ok || sent.value === null) {
-        return { ok: false, value: null, error: new Error('Sent content unavailable for recovery') } as Result<void>;
+      if (!sent.ok) {
+        return { ok: false, value: null, error: sent.error } as Result<void>;
+      }
+      if (sent.value === null) {
+        // The server stopped before this destination's filter and transformer
+        // ran, so there is nothing ready to send. Running them now would need
+        // the maps of a message that no longer exists in memory; record the
+        // destination as failed so it shows up and can be reprocessed.
+        logger.error({ channelId, messageId, metaDataId }, 'Destination never ran before the server stopped; marked ERROR, reprocess the message to deliver it');
+        await Promise.all([
+          store.storeContent(channelId, messageId, metaDataId, CONTENT_TYPE.PROCESSING_ERROR, NEVER_RAN_MESSAGE, 'TEXT'),
+          store.updateConnectorMessageStatus(channelId, messageId, metaDataId, 'ERROR'),
+          store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+          store.incrementStats(channelId, metaDataId, this.serverId, 'errored'),
+        ]);
+        return OK_VOID;
       }
       const sendResult = await sendFn(metaDataId, messageId, sent.value, AbortSignal.timeout(30_000));
       const success = sendResult.ok && sendResult.value.status === 'SENT';

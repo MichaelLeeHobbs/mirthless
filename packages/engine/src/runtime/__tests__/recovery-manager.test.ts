@@ -23,7 +23,10 @@ function makeStore(
   connectorMap: ReadonlyMap<number, readonly ConnectorMessageRecord[]>,
 ): RecoveryStore {
   return {
-    getUnprocessedMessages: vi.fn().mockResolvedValue(ok(messages)),
+    getUnprocessedMessages: vi.fn().mockImplementation(
+      (_channelId: string, afterMessageId: number, limit: number) =>
+        Promise.resolve(ok(messages.filter((m) => m.messageId > afterMessageId).slice(0, limit))),
+    ),
     getConnectorMessages: vi.fn().mockImplementation(
       (_channelId: string, messageId: number) => {
         const conns = connectorMap.get(messageId) ?? [];
@@ -296,5 +299,51 @@ describe('RecoveryManager', () => {
     await mgr.recover(CHANNEL_ID);
 
     expect(store.markProcessed).not.toHaveBeenCalled();
+  });
+
+  it('reads unprocessed messages a page at a time and recovers them all', async () => {
+    const msgs: UnprocessedMessage[] = Array.from({ length: 450 }, (_, i) => ({ messageId: i + 1, channelId: CHANNEL_ID }));
+    const conns = new Map<number, ConnectorMessageRecord[]>(msgs.map((m) => [m.messageId, [{ messageId: m.messageId, metaDataId: 0, status: 'RECEIVED' }]]));
+    const store = makeStore(msgs, conns);
+    const reprocess = vi.fn().mockResolvedValue(ok(undefined));
+    const mgr = new RecoveryManager(store, reprocess, vi.fn());
+
+    const result = await mgr.recover(CHANNEL_ID);
+
+    expect(result.ok && result.value.recovered).toBe(450);
+    const calls = (store.getUnprocessedMessages as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.map((c: unknown[]) => [c[1], c[2]])).toEqual([[0, 200], [200, 200], [400, 200]]);
+  });
+
+  it('does not loop forever on messages that keep failing', async () => {
+    const msgs: UnprocessedMessage[] = Array.from({ length: 200 }, (_, i) => ({ messageId: i + 1, channelId: CHANNEL_ID }));
+    const conns = new Map<number, ConnectorMessageRecord[]>(msgs.map((m) => [m.messageId, [{ messageId: m.messageId, metaDataId: 0, status: 'RECEIVED' }]]));
+    const store = makeStore(msgs, conns);
+    const mgr = new RecoveryManager(store, vi.fn().mockResolvedValue(fail('still broken')), vi.fn());
+
+    const result = await mgr.recover(CHANNEL_ID);
+
+    expect(result.ok && result.value.errors).toBe(200);
+    expect(store.getUnprocessedMessages).toHaveBeenCalledTimes(2);
+  });
+
+  it('recovers at most a few messages at once', async () => {
+    const msgs: UnprocessedMessage[] = Array.from({ length: 40 }, (_, i) => ({ messageId: i + 1, channelId: CHANNEL_ID }));
+    const conns = new Map<number, ConnectorMessageRecord[]>(msgs.map((m) => [m.messageId, [{ messageId: m.messageId, metaDataId: 0, status: 'RECEIVED' }]]));
+    let running = 0;
+    let peak = 0;
+    const reprocess = vi.fn().mockImplementation(async () => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => { setTimeout(resolve, 1); });
+      running -= 1;
+      return ok(undefined);
+    });
+    const mgr = new RecoveryManager(makeStore(msgs, conns), reprocess, vi.fn());
+
+    await mgr.recover(CHANNEL_ID);
+
+    expect(reprocess).toHaveBeenCalledTimes(40);
+    expect(peak).toBeLessThanOrEqual(5);
   });
 });
