@@ -23,7 +23,7 @@ import {
 const SFTP_SOURCE_KEYS = [
   'host', 'port', 'username', 'password', 'privateKey', 'passphrase',
   'remoteDirectory', 'filePattern', 'pollingIntervalMs', 'afterProcessing',
-  'moveToDirectory', 'minFileAgeMs', 'strictHostKey', 'hostKey',
+  'moveToDirectory', 'minFileAgeMs', 'strictHostKey', 'hostKey', 'charset',
 ];
 
 const SFTP_DEST_KEYS = [

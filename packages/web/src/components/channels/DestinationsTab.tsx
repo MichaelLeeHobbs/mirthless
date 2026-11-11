@@ -65,11 +65,11 @@ export function DestinationsTab({ destinations, onChange }: DestinationsTabProps
   const selected = destinations[selectedIndex];
 
   return (
-    <Box sx={{ display: 'flex', gap: 2, minHeight: 500 }}>
+    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2, minHeight: { md: 500 } }}>
       {/* Left panel — destination list */}
       <Paper
         variant="outlined"
-        sx={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column' }}
+        sx={{ width: { xs: '100%', md: 260 }, flexShrink: 0, display: 'flex', flexDirection: 'column' }}
       >
         <DestinationListPanel
           destinations={destinations}
