@@ -3,8 +3,14 @@
 // ===========================================
 // Filter controls for the message browser: date range, status, connector, content search.
 
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import ToggleButton from '@mui/material/ToggleButton';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import { humanize } from '../../lib/format.js';
 import TextField from '@mui/material/TextField';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
@@ -51,13 +57,45 @@ export function MessageSearchBar({
   onMessageIdChange,
   onContentSearchChange,
 }: MessageSearchBarProps): ReactNode {
-  const handleStatusChange = (event: SelectChangeEvent<string[]>): void => {
+  const isPhone = useMediaQuery(useTheme().breakpoints.down('sm'));
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const handleStatusChange =(event: SelectChangeEvent<string[]>): void => {
     const val = event.target.value;
     onStatusesChange(typeof val === 'string' ? val.split(',') : val);
   };
 
+  const errorsOnly = statuses.length === 1 && statuses[0] === 'ERROR';
+  const advancedCount = [receivedFrom, receivedTo, metaDataId, messageId].filter((v) => v !== '').length
+    + (statuses.length > 0 && !errorsOnly ? 1 : 0);
+  const showAdvanced = !isPhone || filtersOpen;
+
   return (
-    <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+    <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+      <TextField
+        label="Search content"
+        size="small"
+        value={contentSearch}
+        onChange={(e) => onContentSearchChange(e.target.value)}
+        disabled={contentEncrypted}
+        helperText={contentEncrypted ? 'Not available: this channel encrypts stored content.' : undefined}
+        sx={{ flex: '1 1 160px', minWidth: 150, maxWidth: { sm: contentEncrypted ? 360 : 280 } }}
+      />
+      <ToggleButton
+        value="errors"
+        size="small"
+        selected={errorsOnly}
+        onChange={() => { onStatusesChange(errorsOnly ? [] : ['ERROR']); }}
+        sx={{ px: 1.5, whiteSpace: 'nowrap', color: 'text.primary' }}
+      >
+        Errors only
+      </ToggleButton>
+      {isPhone ? (
+        <Button size="small" startIcon={<FilterListIcon />} onClick={() => { setFiltersOpen((o) => !o); }} aria-expanded={filtersOpen}>
+          {advancedCount > 0 ? `Filters (${String(advancedCount)})` : 'Filters'}
+        </Button>
+      ) : null}
+      {showAdvanced ? (
+        <>
       <TextField
         label="From"
         type="datetime-local"
@@ -65,7 +103,7 @@ export function MessageSearchBar({
         value={receivedFrom}
         onChange={(e) => onReceivedFromChange(e.target.value)}
         slotProps={{ inputLabel: { shrink: true } }}
-        sx={{ width: 200 }}
+        sx={{ width: { xs: '100%', sm: 180 } }}
       />
       <TextField
         label="To"
@@ -74,21 +112,21 @@ export function MessageSearchBar({
         value={receivedTo}
         onChange={(e) => onReceivedToChange(e.target.value)}
         slotProps={{ inputLabel: { shrink: true } }}
-        sx={{ width: 200 }}
+        sx={{ width: { xs: '100%', sm: 180 } }}
       />
-      <FormControl size="small" sx={{ width: 180 }}>
+      <FormControl size="small" sx={{ width: 160 }}>
         <InputLabel>Status</InputLabel>
         <Select
           multiple
           value={statuses as string[]}
           onChange={handleStatusChange}
           label="Status"
-          renderValue={(selected) => (selected as string[]).join(', ')}
+          renderValue={(selected) => (selected as string[]).map(humanize).join(', ')}
         >
           {STATUS_OPTIONS.map((s) => (
             <MenuItem key={s} value={s}>
               <Checkbox checked={statuses.includes(s)} size="small" />
-              <ListItemText primary={s} />
+              <ListItemText primary={humanize(s)} />
             </MenuItem>
           ))}
         </Select>
@@ -116,15 +154,8 @@ export function MessageSearchBar({
         slotProps={{ htmlInput: { min: 1, 'aria-label': 'Search by message ID' } }}
         sx={{ width: 140 }}
       />
-      <TextField
-        label="Search content"
-        size="small"
-        value={contentSearch}
-        onChange={(e) => onContentSearchChange(e.target.value)}
-        disabled={contentEncrypted}
-        helperText={contentEncrypted ? 'Not available: this channel encrypts stored content.' : undefined}
-        sx={{ width: contentEncrypted ? 320 : 220 }}
-      />
+        </>
+      ) : null}
     </Box>
   );
 }

@@ -19,6 +19,7 @@ import InboxIcon from '@mui/icons-material/Inbox';
 import type { MessageSummary } from '../../hooks/use-messages.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 import { HIDE_ON_PHONE } from '../../lib/responsive.js';
+import { messageStatusLevel } from '../../lib/status.js';
 
 interface MessageTableProps {
   readonly items: readonly MessageSummary[];
@@ -122,7 +123,11 @@ export function MessageTable({
                     hover
                     selected={selectedId === msg.messageId}
                     onClick={() => onSelect(msg.messageId)}
-                    sx={{ cursor: 'pointer' }}
+                    // A failed message carries a critical edge, so it stands out in a long list.
+                    sx={(t) => ({
+                      cursor: 'pointer',
+                      boxShadow: messageStatusLevel(worstStatus) === 'critical' ? `inset 3px 0 0 ${t.palette.status.critical}` : 'none',
+                    })}
                   >
                     <TableCell padding="checkbox" sx={HIDE_ON_PHONE}>
                       <Checkbox

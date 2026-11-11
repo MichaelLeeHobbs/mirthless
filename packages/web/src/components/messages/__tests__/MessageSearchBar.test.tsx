@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { darkTheme } from '../../../styles/theme.js';
 import { MessageSearchBar } from '../MessageSearchBar.js';
@@ -29,6 +29,28 @@ describe('MessageSearchBar', () => {
   it('offers content search on a channel that stores readable content', () => {
     renderBar(false);
     expect((screen.getByLabelText('Search content') as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it('Errors only filters to errored messages, and a second click clears the filter', () => {
+    const calls: (readonly string[])[] = [];
+    const renderWith = (statuses: readonly string[]): void => {
+      cleanup();
+      render(
+        <ThemeProvider theme={darkTheme}>
+          <MessageSearchBar
+            receivedFrom="" receivedTo="" statuses={statuses} metaDataId="" messageId="" contentSearch=""
+            onReceivedFromChange={noop} onReceivedToChange={noop} onStatusesChange={(v) => { calls.push(v); }}
+            onMetaDataIdChange={noop} onMessageIdChange={noop} onContentSearchChange={noop}
+          />
+        </ThemeProvider>,
+      );
+    };
+    renderWith([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Errors only' }));
+    renderWith(['ERROR']);
+    expect(screen.getByRole('button', { name: 'Errors only' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Errors only' }));
+    expect(calls).toEqual([['ERROR'], []]);
   });
 
   it('turns content search off and says why on a channel that encrypts stored content', () => {
