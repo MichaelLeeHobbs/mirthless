@@ -545,7 +545,10 @@ export class VmSandboxExecutor implements SandboxExecutor {
     options: ExecutionOptions,
   ): Promise<Result<ExecutionResult>> {
     return tryCatch(async () => {
-      const signal = options.signal ?? AbortSignal.timeout(options.timeout);
+      // Each script gets its own wall-clock limit. A caller's signal can cancel
+      // it sooner, but can never let it run longer than `timeout`.
+      const limit = AbortSignal.timeout(options.timeout);
+      const signal = options.signal ? AbortSignal.any([options.signal, limit]) : limit;
       if (signal.aborted) {
         throw new Error('Execution aborted before start');
       }

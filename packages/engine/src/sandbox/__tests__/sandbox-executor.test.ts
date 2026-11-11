@@ -213,6 +213,33 @@ describe('VmSandboxExecutor', () => {
 
   // ----- Sandbox escape hardening (CRITICAL: no host realm reachable) -----
 
+  describe('per-script time limit', () => {
+    it('stops a script waiting on slow IO at its own timeout, even when the caller passes a longer-lived signal', async () => {
+      const slow = new VmSandboxExecutor({
+        httpFetch: () => new Promise((resolve) => { setTimeout(() => { resolve({ status: 200, headers: {}, body: 'late' }); }, 400); }),
+      });
+      const script = makeScript("await httpFetch('https://example.com'); return 'finished';");
+      const started = Date.now();
+
+      const result = await slow.execute(script, makeContext(), { timeout: 50, signal: new AbortController().signal });
+
+      expect(result.ok).toBe(false);
+      expect(result.ok ? '' : result.error.message).toBe('Script execution timed out');
+      expect(Date.now() - started).toBeLessThan(300);
+    });
+
+    it('still stops when the caller cancels first', async () => {
+      const slow = new VmSandboxExecutor({
+        httpFetch: () => new Promise((resolve) => { setTimeout(() => { resolve({ status: 200, headers: {}, body: 'late' }); }, 400); }),
+      });
+      const script = makeScript("await httpFetch('https://example.com'); return 'finished';");
+
+      const result = await slow.execute(script, makeContext(), { timeout: 5_000, signal: AbortSignal.timeout(30) });
+
+      expect(result.ok).toBe(false);
+    });
+  });
+
   describe('escape prevention', () => {
     it('does not expose host process/require/module/globalThis', async () => {
       const script = makeScript(

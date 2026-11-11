@@ -366,6 +366,8 @@ const routeDepthStore = new AsyncLocalStorage<number>();
 
 /** How often deployed channels are checked for NO_MESSAGES alerts. */
 const SILENCE_CHECK_INTERVAL_MS = 30_000;
+/** Longest a destination send may take when the connector sets no shorter timeout of its own. */
+const SEND_BACKSTOP_MS = 300_000;
 
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
@@ -576,6 +578,7 @@ export class EngineManager {
       globalChannelMap: gcm,
       globalMapProxy: globalMapProxyInstance,
       configMap: Object.freeze(configMapRecord),
+      scriptTimeoutMs: channel.scriptTimeoutSeconds * 1_000,
       onError: async (event) => alertManager.handleEvent(event),
       onTiming: logger.level === 'debug' || logger.level === 'trace'
         ? (messageId, totalMs, stages) => {
@@ -593,10 +596,12 @@ export class EngineManager {
       if (!connector) {
         return tryCatch(() => { throw new Error(`Destination ${String(metaDataId)} not found`); });
       }
+      // Connectors apply their own configured timeouts; this is the backstop
+      // that keeps a send from hanging forever if one does not.
       return connector.send({
         channelId: channel.id, messageId, metaDataId, content,
         dataType: channel.inboundDataType, correlationId,
-      }, signal);
+      }, AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]));
     };
 
     // Create queue consumers for queued destinations
@@ -622,9 +627,6 @@ export class EngineManager {
     );
 
     // Build the processMessage callback (used by both source connector and sendMessage API)
-    const scriptTimeoutMs = channel.scriptTimeoutSeconds
-      ? channel.scriptTimeoutSeconds * 1000
-      : 30_000;
     const activity = { lastAt: Date.now() };
     const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
       activity.lastAt = Date.now();
@@ -634,7 +636,9 @@ export class EngineManager {
         : undefined;
       const result = await processor.processMessage(
         { rawContent, sourceMap: sourceMap ?? {}, correlationId },
-        AbortSignal.timeout(scriptTimeoutMs),
+        // No deadline for the message as a whole: each script is limited by the
+        // channel's script timeout and each send by its connector's timeout.
+        new AbortController().signal,
       );
       if (!result.ok) return result;
       // Surface the pipeline's final status so the source connector can build the
@@ -1018,7 +1022,7 @@ export class EngineManager {
     const cachedScript = compiled.value;
     jsReceiver.setScriptRunner(async (_script) => {
       const ctx = { msg: '', tmp: '', rawData: '', sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {} };
-      const execResult = await this.sandbox.execute(cachedScript, ctx, DEFAULT_EXECUTION_OPTIONS);
+      const execResult = await this.sandbox.execute(cachedScript, ctx, { timeout: channel.scriptTimeoutSeconds * 1_000 });
       if (!execResult.ok) return execResult;
       return { ok: true as const, value: execResult.value.returnValue, error: null };
     });
@@ -1042,7 +1046,7 @@ export class EngineManager {
       const cachedScript = compiled.value;
       jsDispatcher.setScriptRunner(async (_script, content, connectorMessage) => {
         const ctx = { msg: content, tmp: content, rawData: content, sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {}, extras: { connectorMessage } };
-        const execResult = await this.sandbox.execute(cachedScript, ctx, DEFAULT_EXECUTION_OPTIONS);
+        const execResult = await this.sandbox.execute(cachedScript, ctx, { timeout: channel.scriptTimeoutSeconds * 1_000 });
         if (!execResult.ok) return execResult;
         return { ok: true as const, value: execResult.value.returnValue, error: null };
       });
@@ -1085,7 +1089,7 @@ export class EngineManager {
         channelName: channel.name,
       },
     };
-    const result = await this.sandbox.execute(script, context, DEFAULT_EXECUTION_OPTIONS);
+    const result = await this.sandbox.execute(script, context, { timeout: channel.scriptTimeoutSeconds * 1_000 });
     if (result.ok) {
       gcm.applyChanges(gcmBefore, result.value.mapUpdates.globalChannelMap);
     } else {
