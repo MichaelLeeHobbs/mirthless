@@ -283,3 +283,51 @@ describe('serializeTransformed', () => {
     expect(serializeTransformed({ a: 1 }, 'not json', 'JSON')).toBe('{"a":1}');
   });
 });
+
+describe('JSON numbers a script left alone keep their original spelling (L11)', () => {
+  const original = '{"id":9007199254740993,"price":1.50,"qty":2,"items":[1e3,{"n":0.10}],"name":"x"}';
+
+  function edit(change: (msg: Record<string, unknown>) => void): string {
+    const msg = parseForSandbox(original, 'JSON') as Record<string, unknown>;
+    change(msg);
+    return serializeFromSandbox(msg, 'JSON', original);
+  }
+
+  it('writes an integer past 2^53 back as a number, with every digit', () => {
+    const out = edit((msg) => { msg['name'] = 'y'; });
+    expect(out).toBe('{"id":9007199254740993,"price":1.50,"qty":2,"items":[1e3,{"n":0.10}],"name":"y"}');
+  });
+
+  it('writes a number the script changed the normal way', () => {
+    const out = edit((msg) => { msg['price'] = 2.5; msg['qty'] = 3; });
+    expect(out).toContain('"price":2.5,"qty":3');
+    expect(out).toContain('"id":9007199254740993');
+  });
+
+  it('keeps a big integer the script moved as text, so no digit is lost', () => {
+    const out = edit((msg) => { msg['copy'] = msg['id']; delete msg['id']; });
+    expect(out).toContain('"copy":"9007199254740993"');
+    expect(out).not.toContain('"id"');
+  });
+
+  it('does not treat a string the script wrote as a number because it looks like one', () => {
+    const out = edit((msg) => { msg['qty'] = '2'; });
+    expect(out).toContain('"qty":"2"');
+  });
+
+  it('handles added keys, arrays that changed length and a replaced object', () => {
+    const out = edit((msg) => { (msg['items'] as unknown[]).unshift(7); msg['extra'] = { a: [1.0] }; });
+    expect(JSON.parse(out)).toMatchObject({ items: [7, 1000, { n: 0.1 }], extra: { a: [1] } });
+  });
+
+  it('keeps a key named __proto__ as data', () => {
+    const src = '{"__proto__":{"a":1.0},"b":1}';
+    const out = serializeFromSandbox(parseForSandbox(src, 'JSON'), 'JSON', src);
+    expect(out).toBe(src);
+  });
+
+  it('falls back to plain JSON when there is no original or it is not JSON', () => {
+    expect(serializeFromSandbox({ a: 1 }, 'JSON')).toBe('{"a":1}');
+    expect(serializeFromSandbox({ a: 1 }, 'JSON', 'not json')).toBe('{"a":1}');
+  });
+});
