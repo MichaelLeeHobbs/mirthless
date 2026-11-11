@@ -154,6 +154,33 @@ describe('HttpReceiver', () => {
     expect(capturedRaw!.content).toBe('Hello HL7');
   });
 
+  it('keeps credentials out of the stored source map', async () => {
+    let capturedRaw: RawMessage | null = null;
+    receiver = new HttpReceiver(makeConfig());
+    receiver.setDispatcher(makeDispatcher((raw) => {
+      capturedRaw = raw;
+      return { messageId: 1, response: 'OK' };
+    }));
+    await receiver.onDeploy();
+    await receiver.onStart();
+
+    await sendRequest(TEST_PORT, {
+      body: 'test',
+      headers: {
+        Authorization: 'Bearer s3cret-token', 'Proxy-Authorization': 'Basic dTpw', Cookie: 'session=abc',
+        'X-Api-Key': 'key-123', 'X-Custom': 'foo',
+      },
+    });
+
+    const headers = capturedRaw!.sourceMap['headers'] as Record<string, string>;
+    expect(headers['authorization']).toBe('[redacted]');
+    expect(headers['proxy-authorization']).toBe('[redacted]');
+    expect(headers['cookie']).toBe('[redacted]');
+    expect(headers['x-api-key']).toBe('[redacted]');
+    expect(headers['x-custom']).toBe('foo');
+    expect(JSON.stringify(capturedRaw!.sourceMap)).not.toMatch(/s3cret-token|dTpw|session=abc|key-123/);
+  });
+
   it('passes sourceMap with HTTP metadata', async () => {
     let capturedRaw: RawMessage | null = null;
 

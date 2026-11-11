@@ -68,6 +68,23 @@ class BodyTooLargeError extends Error {
 
 // ----- Receiver -----
 
+/** Headers that carry credentials. Their values never reach the source map. */
+const CREDENTIAL_HEADERS: ReadonlySet<string> = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-api-key']);
+
+/**
+ * Copy request headers for the source map with credential values replaced.
+ * The source map is stored with the message and shown in the message
+ * browser, so a bearer token or session cookie must not be in it. The header
+ * name is kept so a script can still tell that one was sent.
+ */
+function withoutCredentials(headers: http.IncomingHttpHeaders): Record<string, string | string[] | undefined> {
+  const safe: Record<string, string | string[] | undefined> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    safe[name] = CREDENTIAL_HEADERS.has(name) ? '[redacted]' : value;
+  }
+  return safe;
+}
+
 export class HttpReceiver implements SourceConnectorRuntime {
   private readonly config: HttpReceiverConfig;
   private readonly logger: ConnectorLogger;
@@ -236,7 +253,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
         remoteAddress: req.socket.remoteAddress,
         method: req.method,
         path: reqPath,
-        headers: req.headers,
+        headers: withoutCredentials(req.headers),
         queryString,
         contentType: req.headers['content-type'],
       },
