@@ -204,7 +204,7 @@ Key rules:
 - Explicit function return types
 - Cyclomatic complexity ≤10
 - TSDoc on all public APIs
-- Full source: `C:\Users\mhobb\WebstormProjects\mission-critical-ts`
+- The copies in `docs/standards/` are what applies here. Their upstream is the mission-critical-ts project (see Related Projects).
 
 ---
 
@@ -328,31 +328,39 @@ All packages extend the base tsconfig with these strict settings:
 ## Module Structure
 
 ```
-mirthless/
+galvaniflow/             — repository root (the GitHub repository is still named mirthless)
 ├── packages/
 │   ├── core-models/     — Shared TS types, Zod schemas, branded types
 │   ├── core-util/       — Shared utilities (HL7 parsing, serialization, date helpers)
 │   ├── engine/          — Message processing: channel runtime, routing, queuing, sandbox
-│   ├── connectors/      — Protocol adapters (tcp-mllp, http, file, database, dicom, fhir, smtp, js)
+│   ├── connectors/      — Protocol adapters (tcp-mllp, http, file, sftp, database, dicom, fhir, smtp, js)
 │   ├── server/          — Express API, auth, channel deployment, config management
 │   ├── web/             — React + MUI admin: channel editor, message browser, dashboard
 │   └── cli/             — CLI for server management
-├── docker/              — Docker Compose (Postgres, server, web)
-├── docs/design/         — Design documents (00-08)
+├── e2e/                 — Playwright specs (`pnpm test:e2e`)
+├── docker/              — Dockerfiles, Compose (development and production), nginx
+├── docs/design/         — Design documents (00-16)
+├── docs/ops/            — Deployment, TLS, backup, upgrade, soak test
+├── docs/progress/       — Roadmap, changelog, decisions
 ├── docs/standards/      — Coding, logging, and config standards
-├── scripts/             — DB init, benchmarks, migration utilities
+├── docs/testing/        — Manual test scenarios
+├── docs/user/           — User documentation (scripting API)
+├── scripts/             — DB init, benchmarks, soak test, screenshots (`scripts/shots`)
+├── .claude/             — Agent skills, hooks and settings (see Agent Tooling)
 ├── reference/           — Mirth Connect source + code samples (git-ignored)
 └── pnpm-workspace.yaml
 ```
 
 ## Related Projects
 
-| Project | Location | Use For |
-|---|---|---|
-| **fullstack-template** | `C:\Users\mhobb\WebstormProjects\fullstack-template` | Base monorepo structure, Express patterns, React+MUI, auth, Drizzle |
-| **mission-critical-ts** | `C:\Users\mhobb\WebstormProjects\mission-critical-ts` | Coding standards (apply strictly) |
-| **standardize-error** | `C:\Users\mhobb\WebstormProjects\_published\standardize-error` | Error normalization (npm: `stderr-lib`) |
-| **dcmtk.js** | `C:\Users\mhobb\WebstormProjects\dcmtk.js` | DICOM connector foundation |
+These live on Michael's Windows machine under `C:\Users\mhobb\WebstormProjects\`. They are not in this repository, so a cloud session or another contributor cannot read them; everything this project needs from them is already here.
+
+| Project | Folder | Used For | In this repository as |
+|---|---|---|---|
+| **fullstack-template** | `fullstack-template` | Base monorepo structure, Express patterns, React+MUI, auth, Drizzle | The package layout |
+| **mission-critical-ts** | `mission-critical-ts` | Coding standards (apply strictly) | `docs/standards/` |
+| **standardize-error** | `_published\standardize-error` | Error normalization | npm dependency `stderr-lib` |
+| **dcmtk.js** | `dcmtk.js` | The first DICOM connector | No longer used: the connector runs on `dcmjs-dimse` |
 
 ## Reference Source
 
@@ -378,5 +386,5 @@ When creating diagrams, use **Mermaid** format with dark-mode-friendly colors.
 
 ## GitHub
 
-- CLI: `"/c/Program Files/GitHub CLI/gh.exe"`
+- CLI on Michael's Windows machine: `"/c/Program Files/GitHub CLI/gh.exe"`. Elsewhere use `gh` from the PATH, or the GitHub tools the session provides.
 - Account: MichaelLeeHobbs

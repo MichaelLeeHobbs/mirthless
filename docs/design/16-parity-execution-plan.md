@@ -1,4 +1,4 @@
-# 15 — Connector Parity Execution Plan (phased)
+# 16 — Connector Parity Execution Plan (phased)
 
 > **Status:** Draft for review · **Date:** 2026-07-15 · **Owner:** Michael Hobbs
 > Turns the ranked gaps in [`12-connector-parity-gap-analysis.md`](./12-connector-parity-gap-analysis.md) into review-sized phases. Decisions locked in **D-182**.
