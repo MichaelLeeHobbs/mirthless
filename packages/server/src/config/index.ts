@@ -94,8 +94,10 @@ export function isWeakJwtSecret(secret: string): boolean {
   const lower = secret.toLowerCase();
   const placeholderMarkers = ['change_me', 'changeme', 'change-me', 'your-secret', 'your_secret', 'super-secret', 'change-in-production', 'replace', 'example', 'insecure', 'placeholder'];
   if (placeholderMarkers.some((m) => lower.includes(m))) return true;
-  // Fewer than 16 distinct characters => very low entropy for a 32+ char secret.
-  if (new Set(secret).size < 16) return true;
+  // Very few distinct characters means a repeated or patterned value. The bar
+  // is 10, not 16: a random hex secret has at most 16 distinct characters and
+  // about one in four of them misses at least one digit.
+  if (new Set(secret).size < 10) return true;
   return false;
 }
 
