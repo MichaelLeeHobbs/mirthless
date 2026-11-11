@@ -11,6 +11,7 @@ import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQue
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
+import { containsPattern } from '../lib/like.js';
 import { certificates } from '../db/schema/index.js';
 
 // ----- Response Types -----
@@ -108,7 +109,7 @@ export class CertificateService {
         conditions.push(eq(certificates.type, query.type));
       }
       if (query?.search) {
-        conditions.push(ilike(certificates.name, `%${query.search}%`));
+        conditions.push(ilike(certificates.name, containsPattern(query.search)));
       }
       if (query?.expiringSoon) {
         const threshold = new Date();
