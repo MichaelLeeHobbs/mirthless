@@ -5,11 +5,11 @@
 // CLI for GalvaniFlow server management.
 
 import { Command } from 'commander';
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { ApiClient } from './lib/api.js';
 import { configDir, configFileToRead } from './lib/config-path.js';
+import { saveConfig, type CliConfig } from './lib/config-store.js';
 import { registerChannelCommands } from './commands/channels.js';
 import { registerDeployCommands } from './commands/deploy.js';
 import { registerExportImportCommands } from './commands/export-import.js';
@@ -18,12 +18,6 @@ import { registerLoginCommand } from './commands/login.js';
 
 /** Config file location in the user's home directory. */
 const CONFIG_DIR = configDir(homedir());
-const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
-
-interface CliConfig {
-  url?: string;
-  token?: string;
-}
 
 /** Load CLI configuration from disk. */
 function loadConfig(): CliConfig {
@@ -34,14 +28,6 @@ function loadConfig(): CliConfig {
   } catch {
     return {};
   }
-}
-
-/** Persist CLI configuration to disk. */
-export function saveConfig(config: CliConfig): void {
-  if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true });
-  }
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
 const program = new Command();
@@ -65,6 +51,7 @@ registerChannelCommands(program, getClient);
 registerDeployCommands(program, getClient);
 registerExportImportCommands(program, getClient);
 registerUserCommands(program, getClient);
-registerLoginCommand(program, getClient, saveConfig);
+// Merge so a login without --url keeps the server URL saved earlier.
+registerLoginCommand(program, getClient, (config) => { saveConfig(CONFIG_DIR, { ...loadConfig(), ...config }); });
 
 program.parse();

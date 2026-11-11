@@ -3,6 +3,9 @@
 // ===========================================
 // HTTP client for the GalvaniFlow server API.
 
+/** Every request gives up after this long. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 /** Configuration for the API client. */
 export interface ApiClientConfig {
   readonly baseUrl: string;
@@ -18,7 +21,8 @@ export interface ApiResponse<T> {
 
 /**
  * Thin HTTP client for communicating with the GalvaniFlow server API.
- * Handles auth headers, JSON serialization, and 204 responses.
+ * Handles auth headers, JSON serialization, and 204 responses. Never throws:
+ * a network failure, a timeout or a non-JSON answer comes back as an error response.
  */
 export class ApiClient {
   private readonly baseUrl: string;
@@ -62,17 +66,36 @@ export class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const init: RequestInit = { method, headers };
+    const init: RequestInit = { method, headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) };
     if (body !== undefined) {
       init.body = JSON.stringify(body);
     }
 
-    const response = await fetch(url, init);
+    let response: Response;
+    try {
+      response = await fetch(url, init);
+    } catch (error) {
+      return { success: false, error: { code: 'NETWORK', message: `Could not reach ${this.baseUrl}: ${describe(error)}` } };
+    }
 
     if (response.status === 204) {
       return { success: true };
     }
 
-    return response.json() as Promise<ApiResponse<T>>;
+    try {
+      return await (response.json() as Promise<ApiResponse<T>>);
+    } catch {
+      return {
+        success: false,
+        error: { code: 'BAD_RESPONSE', message: `The server answered HTTP ${String(response.status)} with something other than JSON` },
+      };
+    }
   }
+}
+
+function describe(error: unknown): string {
+  if (error instanceof Error && error.name === 'TimeoutError') {
+    return `no answer within ${String(REQUEST_TIMEOUT_MS / 1_000)} seconds`;
+  }
+  return error instanceof Error ? error.message : String(error);
 }

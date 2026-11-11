@@ -157,3 +157,46 @@ describe('ApiClient', () => {
     });
   });
 });
+
+describe('ApiClient failures', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it('returns an error instead of throwing when the server cannot be reached', async () => {
+    mockFetch.mockRejectedValue(new TypeError('fetch failed'));
+    const client = new ApiClient({ baseUrl: 'http://localhost:3000', token: null });
+
+    expect(await client.get('/api/v1/channels')).toEqual({
+      success: false,
+      error: { code: 'NETWORK', message: 'Could not reach http://localhost:3000: fetch failed' },
+    });
+  });
+
+  it('returns an error when the response is not JSON, such as a proxy error page', async () => {
+    mockFetch.mockResolvedValue({ status: 502, json: () => Promise.reject(new SyntaxError('Unexpected token <')) } as Response);
+    const client = new ApiClient({ baseUrl: 'http://localhost:3000', token: null });
+
+    expect(await client.get('/api/v1/channels')).toEqual({
+      success: false,
+      error: { code: 'BAD_RESPONSE', message: 'The server answered HTTP 502 with something other than JSON' },
+    });
+  });
+
+  it('gives every request a timeout', async () => {
+    mockFetch.mockResolvedValue({ status: 200, json: () => Promise.resolve({ success: true }) } as Response);
+    const client = new ApiClient({ baseUrl: 'http://localhost:3000', token: null });
+    await client.get('/x');
+
+    const init = mockFetch.mock.calls[0]![1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('says so when the request times out', async () => {
+    mockFetch.mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+    const client = new ApiClient({ baseUrl: 'http://localhost:3000', token: null });
+
+    const result = await client.get('/x');
+    expect(result.error?.message).toBe('Could not reach http://localhost:3000: no answer within 30 seconds');
+  });
+});
