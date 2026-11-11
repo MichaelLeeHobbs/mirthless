@@ -709,9 +709,11 @@ export class EngineManager {
         : undefined;
       const result = await processor.processMessage(
         { rawContent, sourceMap: sourceMap ?? {}, correlationId },
-        // No deadline for the message as a whole: each script is limited by the
-        // channel's script timeout and each send by its connector's timeout.
-        new AbortController().signal,
+        // Aborted by a halt, which cancels the scripts and sends in progress.
+        // There is no deadline for the message as a whole: each script is
+        // limited by the channel's script timeout and each send by its
+        // connector's timeout.
+        runtime.haltSignal,
       );
       if (!result.ok) return result;
       // Surface the pipeline's final status so the source connector can build the

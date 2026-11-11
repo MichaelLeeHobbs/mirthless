@@ -42,10 +42,13 @@ services:
       # do NOT need to be published here, but source connectors bind their own ports
       # inside the container and are otherwise unreachable from sending systems.
       #
-      # Publish the range your channels listen on. The default 6661-6670 matches the
-      # example channels; edit MLLP_PORT_RANGE in .env (or this list) to fit your
-      # deployment. See docs/ops/deployment.md for the listener-port strategy.
-      - "${MLLP_PORT_RANGE:-6661-6670}:${MLLP_PORT_RANGE:-6661-6670}"
+      # Publish the range your channels listen on, whatever their protocol: a
+      # listener (MLLP, HTTP, DICOM) on a port outside it starts without error
+      # and is simply unreachable. The default 6661-6670 matches the example
+      # channels; set LISTENER_PORT_RANGE in .env (MLLP_PORT_RANGE, the older
+      # name, still works) or add lines here for ports outside one range.
+      # See docs/ops/deployment.md for the listener-port strategy.
+      - "${LISTENER_PORT_RANGE:-${MLLP_PORT_RANGE:-6661-6670}}:${LISTENER_PORT_RANGE:-${MLLP_PORT_RANGE:-6661-6670}}"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/health/live || exit 1"]
       interval: 15s

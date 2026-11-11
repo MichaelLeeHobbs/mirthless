@@ -48,8 +48,13 @@ anything that will carry real data.
 Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside the
 `server` container. Sending systems can only reach the ports you publish.
 
-- Publish one contiguous range with `MLLP_PORT_RANGE` in `.env` (default `6661-6670`),
-  and give each inbound channel a port inside it.
+- Publish one contiguous range with `LISTENER_PORT_RANGE` in `.env` (default `6661-6670`;
+  the older name `MLLP_PORT_RANGE` still works), and give each inbound channel a port
+  inside it. The range is for every kind of listener, not only MLLP: an HTTP Listener or
+  DICOM listener channel needs a port inside it too. A channel that listens on a port
+  outside the range deploys and starts without any error, and nothing can reach it.
+- For ports that do not fit one range (for example DICOM on 104 or 11112), add a line
+  per port under `server.ports` in `docker/docker-compose.prod.yml`.
 - The API and UI do not need extra ports; they go through nginx on :80. That port is plain
   HTTP, so the compose file publishes it on `127.0.0.1` only. Put a TLS-terminating proxy on
   the same host in front of it, or set `WEB_BIND=0.0.0.0` in `.env` when TLS is terminated
