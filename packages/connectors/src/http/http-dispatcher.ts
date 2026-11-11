@@ -47,6 +47,12 @@ function hasActiveTlsOptions(tls: TlsClientOptions | undefined): boolean {
 
 // ----- Dispatcher -----
 
+/** Error text for a redirect answer, which is never followed (see send). */
+function redirectMessage(status: number, location: string | null): string {
+  const target = location ? ` to ${location}` : '';
+  return `HTTP ${String(status)}: the server redirected${target}. Redirects are not followed; set the destination URL to the final address.`;
+}
+
 export class HttpDispatcher implements DestinationConnectorRuntime {
   private readonly config: HttpDispatcherConfig;
   private started = false;
@@ -115,10 +121,21 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
         },
         ...(bodyAllowed ? { body: message.content } : {}),
         signal: combinedSignal,
+        // Never follow a redirect. fetch would re-send a POST as a GET without
+        // the body, and the page it lands on (often a login form) answers 200,
+        // so a message that went nowhere would be recorded as SENT.
+        redirect: 'manual',
       });
 
       const responseBody = await response.text();
 
+      if (response.status >= 300 && response.status < 400) {
+        return {
+          status: 'ERROR' as const,
+          content: responseBody,
+          errorMessage: redirectMessage(response.status, response.headers.get('location')),
+        };
+      }
       if (response.ok) {
         return { status: 'SENT' as const, content: responseBody };
       }
@@ -164,6 +181,11 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
             const status = res.statusCode ?? 0;
             if (status >= 200 && status < 300) {
               resolve({ status: 'SENT', content: responseBody });
+              return;
+            }
+            if (status >= 300 && status < 400) {
+              const location = res.headers.location;
+              resolve({ status: 'ERROR', content: responseBody, errorMessage: redirectMessage(status, location ?? null) });
               return;
             }
             resolve({

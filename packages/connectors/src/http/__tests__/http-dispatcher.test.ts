@@ -378,3 +378,59 @@ describe('HttpDispatcher', () => {
     expect(received).toBe('PAYLOAD-42');
   });
 });
+
+describe('HttpDispatcher redirects', () => {
+  const REDIRECT_PORT = 18664;
+
+  /** A server that redirects POST /receive to /login, where a login page answers 200. */
+  function createRedirectingServer(port: number, status: number): MockServer {
+    const requests: MockServer['requests'] = [];
+    const server = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => { chunks.push(chunk); });
+      req.on('end', () => {
+        requests.push({ method: req.method ?? '', url: req.url ?? '', body: Buffer.concat(chunks).toString('utf-8'), headers: req.headers });
+        if (req.url === '/login') { res.writeHead(200); res.end('<html>Please sign in</html>'); return; }
+        res.writeHead(status, { Location: '/login' });
+        res.end();
+      });
+    });
+    server.listen(port, '127.0.0.1');
+    return { server, requests, close: () => new Promise<void>((resolve) => { server.close(() => { resolve(); }); }) };
+  }
+
+  it.each([301, 302, 303, 307, 308])('reports a %i redirect as an error and does not follow it', async (status) => {
+    mockServer = createRedirectingServer(REDIRECT_PORT, status);
+    dispatcher = new HttpDispatcher(makeConfig({ url: `http://127.0.0.1:${String(REDIRECT_PORT)}/receive` }));
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.errorMessage).toContain(`HTTP ${String(status)}`);
+    expect(result.value.errorMessage).toContain('/login');
+    expect(mockServer.requests.map((r) => r.url)).toEqual(['/receive']);
+  });
+
+  it('reports a redirect as an error on the HTTPS path too', async () => {
+    const server = https.createServer({ cert: TEST_CERT_PEM, key: TEST_KEY_PEM }, (_req, res) => {
+      res.writeHead(302, { Location: 'https://elsewhere.example/login' });
+      res.end();
+    });
+    server.listen(DEST_HTTPS_PORT, '127.0.0.1');
+    mockHttpsServer = { server, close: () => new Promise<void>((resolve) => { server.close(() => { resolve(); }); }) };
+    dispatcher = new HttpDispatcher(makeConfig({
+      url: `https://127.0.0.1:${String(DEST_HTTPS_PORT)}/receive`, scheme: 'HTTPS', tls: { rejectUnauthorized: false },
+    }));
+    await dispatcher.onDeploy();
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.ok && result.value.status).toBe('ERROR');
+    expect(result.ok && result.value.errorMessage).toContain('https://elsewhere.example/login');
+  });
+});
