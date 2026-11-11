@@ -52,6 +52,7 @@ import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
 import { GlobalMapService } from './services/global-map.service.js';
 import { ConfigMapService } from './services/config-map.service.js';
+import { config } from './config/index.js';
 import { CodeTemplateService } from './services/code-template.service.js';
 import { CollectionService, type CollectionRecordResult } from './services/collection.service.js';
 import { ResourceService } from './services/resource.service.js';
@@ -369,7 +370,7 @@ function createDbQueryBridge(): NonNullable<BridgeDependencies['dbQuery']> {
  * DNS name or redirect cannot reach a blocked address the hostname check missed.
  */
 export function createHttpFetchBridge(): NonNullable<BridgeDependencies['httpFetch']> {
-  return (url, options) => safeHttpFetch(url, options);
+  return (url, options) => safeHttpFetch(url, options, config.SCRIPT_HTTP_ALLOWED_HOSTS);
 }
 
 // ----- Engine Manager -----
@@ -402,6 +403,7 @@ export class EngineManager {
       collections: createCollectionBridge(),
       getResource: createResourceBridge(),
       httpFetch: createHttpFetchBridge(),
+      httpAllowedHosts: config.SCRIPT_HTTP_ALLOWED_HOSTS,
       dbQuery: createDbQueryBridge(),
       routeMessage: this.createRouteMessageBridge(),
     });

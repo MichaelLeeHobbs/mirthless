@@ -40,7 +40,23 @@ export function isBlockedAddress(address: string): boolean {
  * returns (e.g. `[::1]`) and a trailing root dot (e.g. `localhost.`).
  */
 export function isBlockedHostname(hostname: string): boolean {
-  const bare = hostname.replace(/^\[(.*)\]$/, '$1').replace(/\.$/, '').toLowerCase();
+  const bare = bareHost(hostname);
   if (bare === 'localhost' || bare.endsWith('.localhost')) return true;
   return isBlockedAddress(bare);
+}
+
+/** A URL hostname without IPv6 brackets or a trailing root dot, in lower case. */
+function bareHost(hostname: string): string {
+  return hostname.replace(/^\[(.*)\]$/, '$1').replace(/\.$/, '').toLowerCase();
+}
+
+/**
+ * True when an administrator has named this host as one scripts may reach even
+ * though its address is private (`SCRIPT_HTTP_ALLOWED_HOSTS`). The match is on
+ * the exact host name or IP literal in the URL, never on what a name resolves to.
+ */
+export function isAllowedHost(hostname: string, allowed: ReadonlyArray<string> | undefined): boolean {
+  if (allowed === undefined || allowed.length === 0) return false;
+  const bare = bareHost(hostname);
+  return allowed.some((entry) => bareHost(entry.trim()) === bare);
 }

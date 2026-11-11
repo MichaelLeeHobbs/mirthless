@@ -9,12 +9,14 @@
 //     address that was checked (no second lookup, so no DNS rebinding);
 //   * redirects: never followed — a 3xx is returned to the script as-is;
 //   * unbounded responses: the body is capped at MAX_RESPONSE_BYTES.
+// An administrator can open named internal hosts with SCRIPT_HTTP_ALLOWED_HOSTS;
+// redirects are still not followed and the size cap still applies to them.
 
 import * as dns from 'node:dns';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import type { LookupFunction } from 'node:net';
-import { isBlockedAddress, isBlockedHostname, type HttpFetchOptions, type HttpFetchResult } from '@galvaniflow/engine';
+import { isAllowedHost, isBlockedAddress, isBlockedHostname, type HttpFetchOptions, type HttpFetchResult } from '@galvaniflow/engine';
 
 /** Cap on a response body read into a script (bytes). */
 export const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
@@ -36,13 +38,16 @@ const guardedLookup: LookupFunction = (hostname, options, callback) => {
   });
 };
 
-/** Parse and vet the URL before any network activity. */
-function vetUrl(url: string): URL {
+/**
+ * Parse and vet the URL before any network activity. A host on the
+ * administrator's allowlist skips the address checks, here and in the lookup.
+ */
+function vetUrl(url: string, allowedHosts: ReadonlyArray<string>): URL {
   const parsed = new URL(url);
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new Error(`httpFetch only supports http and https URLs, not ${parsed.protocol}`);
   }
-  if (isBlockedHostname(parsed.hostname)) {
+  if (!isAllowedHost(parsed.hostname, allowedHosts) && isBlockedHostname(parsed.hostname)) {
     throw new Error(`SSRF blocked: requests to ${parsed.hostname} are not allowed`);
   }
   return parsed;
@@ -74,15 +79,24 @@ function toHeaders(res: http.IncomingMessage): Record<string, string> {
   return headers;
 }
 
-/** Perform one outbound request for a script under the SSRF policy above. */
-export function safeHttpFetch(url: string, options: HttpFetchOptions): Promise<HttpFetchResult> {
+/**
+ * Perform one outbound request for a script under the SSRF policy above.
+ * `allowedHosts` are host names or IP literals an administrator has opened to
+ * scripts (`SCRIPT_HTTP_ALLOWED_HOSTS`): internal systems a channel has to call.
+ */
+export function safeHttpFetch(
+  url: string,
+  options: HttpFetchOptions,
+  allowedHosts: ReadonlyArray<string> = [],
+): Promise<HttpFetchResult> {
   return new Promise((resolve, reject) => {
-    const parsed = vetUrl(url);
+    const parsed = vetUrl(url, allowedHosts);
+    const allowed = isAllowedHost(parsed.hostname, allowedHosts);
     const client = parsed.protocol === 'https:' ? https : http;
     const req = client.request(parsed, {
       method: options.method ?? 'GET',
       headers: { ...(options.headers ?? {}) },
-      lookup: guardedLookup,
+      ...(allowed ? {} : { lookup: guardedLookup }),
       signal: AbortSignal.timeout(options.timeout ?? DEFAULT_TIMEOUT_MS),
     }, (res) => {
       readCapped(res).then(

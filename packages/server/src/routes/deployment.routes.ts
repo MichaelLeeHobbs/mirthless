@@ -7,6 +7,7 @@ import { z } from 'zod/v4';
 import { sendMessageInputSchema } from '@galvaniflow/core-models';
 import { DeploymentController } from '../controllers/deployment.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { largeJsonBody } from '../middleware/body-limit.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
@@ -18,6 +19,8 @@ const router: IRouter = Router();
 
 // All deployment routes require authentication + deployer permission
 router.use(authenticate);
+// Large bodies are parsed here, after authentication, never before it.
+router.use(largeJsonBody);
 
 // Channel-specific actions
 router.post('/:id/deploy', requirePermission('channels:deploy'), validate({ params: uuidParamsSchema }), DeploymentController.deploy);

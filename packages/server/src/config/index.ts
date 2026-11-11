@@ -61,6 +61,12 @@ export const configSchema = z.object({
       return v;
     }),
 
+  // Internal hosts (names or IP literals, comma separated) that channel scripts
+  // may call with httpFetch although their address is private. Empty: public
+  // addresses only.
+  SCRIPT_HTTP_ALLOWED_HOSTS: z.string().default('')
+    .transform((v): ReadonlyArray<string> => v.split(',').map((h) => h.trim().toLowerCase()).filter((h) => h.length > 0)),
+
   // Logging
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   LOG_HTTP_HEADERS: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
