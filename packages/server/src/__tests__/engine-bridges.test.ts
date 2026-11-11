@@ -40,6 +40,30 @@ describe('EngineManager.routeMessage', () => {
     expect(processMessage).toHaveBeenCalledWith('MSH|raw');
   });
 
+  it('fails when the target channel recorded the message with an ERROR status', async () => {
+    const engine = new EngineManager();
+    const { deployed, processMessage } = fakeDeployed('Target');
+    processMessage.mockResolvedValue({ ok: true, value: { messageId: 7, status: 'ERROR' } });
+    internals(engine).runtimes.set('id-Target', deployed);
+
+    const result = await engine.routeMessage('Target', 'MSH|raw');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('recorded message 7 with an ERROR status');
+  });
+
+  it('reports a message the target channel filtered', async () => {
+    const engine = new EngineManager();
+    const { deployed, processMessage } = fakeDeployed('Target');
+    processMessage.mockResolvedValue({ ok: true, value: { messageId: 8, status: 'FILTERED' } });
+    internals(engine).runtimes.set('id-Target', deployed);
+
+    const result = await engine.routeMessage('Target', 'MSH|raw');
+
+    expect(result.ok && result.value.status).toBe('FILTERED');
+  });
+
   it('fails when no deployed channel has that name', async () => {
     const engine = new EngineManager();
     const result = await engine.routeMessage('Missing', 'x');

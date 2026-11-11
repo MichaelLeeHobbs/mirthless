@@ -26,6 +26,7 @@ const mockEngine = {
   }),
   getRuntime: vi.fn().mockImplementation((id: string) => deployedChannels.get(id)),
   getAll: vi.fn().mockReturnValue(deployedChannels),
+  checkScripts: vi.fn().mockResolvedValue(undefined),
   dispose: vi.fn(),
 };
 
@@ -346,6 +347,34 @@ describe('DeploymentService', () => {
       expect(mockEngine.deploy).toHaveBeenCalledWith(CHANNEL_DETAIL);
       // Stopped channel is not stopped again.
       expect(mockRuntime.stop).not.toHaveBeenCalled();
+    });
+
+    it('leaves a running channel untouched when the saved scripts do not compile', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+      mockRuntime.getState.mockReturnValue('STARTED');
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
+      mockEngine.checkScripts.mockRejectedValueOnce(new Error('Script Test/sourceFilter.ts failed to compile: Unexpected token'));
+
+      const result = await DeploymentService.redeploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('failed to compile');
+      expect(mockRuntime.stop).not.toHaveBeenCalled();
+      expect(mockEngine.undeploy).not.toHaveBeenCalled();
+      expect(mockEngine.deploy).not.toHaveBeenCalled();
+      expect(deployedChannels.has(CHANNEL_ID)).toBe(true);
+    });
+
+    it('checks the saved scripts before stopping a running channel', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+      mockRuntime.getState.mockReturnValue('STARTED');
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {} });
+
+      await DeploymentService.redeploy(CHANNEL_ID);
+
+      expect(mockEngine.checkScripts).toHaveBeenCalledWith(CHANNEL_DETAIL);
+      expect(mockEngine.checkScripts.mock.invocationCallOrder[0]!).toBeLessThan(mockRuntime.stop.mock.invocationCallOrder[0]!);
     });
 
     it('deploys directly when the channel is not currently deployed', async () => {

@@ -446,9 +446,9 @@ describe('EngineManager deploy/undeploy scripts', () => {
   });
 
   describe('error handling', () => {
-    it('continues deploy when deploy script execution fails', async () => {
+    it('fails the deploy when the deploy script fails', async () => {
       mockSandboxExecute.mockResolvedValueOnce({
-        ok: false, value: null, error: { code: 'EXECUTION_ERROR', message: 'Script error' },
+        ok: false, value: null, error: { code: 'EXECUTION_ERROR', message: 'lookup table unavailable' },
       });
 
       const channel = makeChannel({
@@ -456,10 +456,21 @@ describe('EngineManager deploy/undeploy scripts', () => {
       });
 
       const engine = new EngineManager('test-server');
-      // Should not throw — deploy continues even if deploy script fails
+
+      await expect(engine.deploy(channel as never)).rejects.toThrow('the deploy script failed: lookup table unavailable');
+      expect(engine.getRuntime(CHANNEL_ID)).toBeUndefined();
+    });
+
+    it('gives the deploy script the global and configuration maps', async () => {
+      const channel = makeChannel({ scripts: [{ scriptType: 'DEPLOY', script: '$g("k", 1);' }] });
+
+      const engine = new EngineManager('test-server');
       await engine.deploy(channel as never);
 
-      expect(engine.getRuntime(CHANNEL_ID)).toBeDefined();
+      const ctx = mockSandboxExecute.mock.calls[0]![1] as Record<string, unknown>;
+      expect(ctx['globalMap']).toBeDefined();
+      expect(ctx['configMap']).toBeDefined();
+      expect(ctx['globalChannelMap']).toBeDefined();
     });
 
     it('continues undeploy when undeploy script execution fails', async () => {

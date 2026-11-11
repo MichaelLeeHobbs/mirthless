@@ -356,6 +356,42 @@ describe('CodeTemplateService', () => {
     });
   });
 
+  describe('templates that do not compile', () => {
+    const input = {
+      libraryId: LIB_ID, name: 'broken', description: '', language: 'JAVASCRIPT' as const,
+      code: 'function broken( { return 1; }', contexts: ['SOURCE_FILTER_TRANSFORMER' as const],
+    };
+
+    it('refuses to create a FUNCTION template with a syntax error', async () => {
+      pushResponse([{ id: LIB_ID }]);
+
+      const result = await CodeTemplateService.createTemplate({ ...input, type: 'FUNCTION' });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('Code template "broken" does not compile and was not saved');
+    });
+
+    it('still saves a CODE_BLOCK snippet, which is never compiled into a channel', async () => {
+      pushResponse([{ id: LIB_ID }]);
+      mockReturning.mockResolvedValueOnce([makeTmplRow()]);
+
+      const result = await CodeTemplateService.createTemplate({ ...input, type: 'CODE_BLOCK' });
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('refuses an update that breaks an existing FUNCTION template', async () => {
+      pushResponse([makeTmplRow()]);
+
+      const result = await CodeTemplateService.updateTemplate(TMPL_ID, { revision: 1, code: 'function x( {' });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('does not compile and was not saved');
+    });
+  });
+
   describe('updateTemplate', () => {
     it('updates template with correct revision', async () => {
       const tmpl = makeTmplRow();
