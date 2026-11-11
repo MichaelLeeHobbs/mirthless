@@ -25,6 +25,7 @@ import {
   type DestinationConfig,
   type DestinationScripts,
   type SandboxExecutor,
+  type ExecutionResult,
   type BridgeDependencies,
   type MessageStore,
   type SendToDestination,
@@ -68,12 +69,22 @@ import type { ChannelDetail } from './services/channel.service.js';
 
 // ----- Types -----
 
+/** The maps a channel's own scripts (deploy, undeploy, JavaScript connectors) share with its pipeline. */
+interface ChannelMaps {
+  readonly gcm: GlobalChannelMap;
+  readonly globalMap: GlobalMapProxy;
+  readonly configMap: Readonly<Record<string, unknown>>;
+}
+
+
 export interface DeployedChannel {
   readonly channelId: string;
   readonly runtime: ChannelRuntime;
   readonly config: ChannelDetail;
   readonly globalChannelMap: GlobalChannelMap;
   readonly globalMapProxy: GlobalMapProxy;
+  /** The configuration map as it was at deploy time. */
+  readonly configMap: Readonly<Record<string, unknown>>;
   readonly alertManager: AlertManager;
   readonly queueConsumers: readonly QueueConsumer[];
   readonly scripts: ChannelScripts;
@@ -410,7 +421,7 @@ export class EngineManager {
    * hop-depth cap so a routing cycle (A→B→A) fails loud instead of recursing until
    * timeout on every hop.
    */
-  async routeMessage(channelName: string, rawData: string): Promise<Result<{ messageId: number }>> {
+  async routeMessage(channelName: string, rawData: string): Promise<Result<SourceDispatchOutcome>> {
     return tryCatch(async () => {
       // Depth is tracked per message chain (AsyncLocalStorage follows the awaited
       // routeMessage -> processMessage -> script -> routeMessage path), so
@@ -425,6 +436,11 @@ export class EngineManager {
       }
       const result = await routeDepthStore.run(depth + 1, () => this.sendMessage(targetId, rawData));
       if (!result.ok) throw new Error(result.error.message);
+      // The target took the message but could not process it. That is a failed
+      // route, not a success: the calling script must be able to see it.
+      if (result.value.status === DISPATCH_STATUS.ERROR) {
+        throw new Error(`routeMessage: channel "${channelName}" recorded message ${String(result.value.messageId)} with an ERROR status`);
+      }
       return result.value;
     });
   }
@@ -434,7 +450,9 @@ export class EngineManager {
     return async (channelName, rawData) => {
       const result = await this.routeMessage(channelName, rawData);
       if (!result.ok) throw new Error(result.error.message);
-      return { success: true };
+      const { messageId, status, response } = result.value;
+      const filtered = status === DISPATCH_STATUS.FILTERED;
+      return response === undefined ? { success: true, messageId, filtered } : { success: true, messageId, filtered, response };
     };
   }
 
@@ -527,12 +545,6 @@ export class EngineManager {
       destinations.set(dest.metaDataId, connector);
     }
 
-    // Wire JavaScript source script runner (compile once at deploy)
-    await this.wireJavaScriptSource(channel, source);
-
-    // Wire JavaScript destination script runners (compile once at deploy)
-    await this.wireJavaScriptDestinations(channel, destinations);
-
     // Load code templates, global scripts, alerts, filter/transformer data, configMap, and globalMap in parallel
     const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts, configMapResult, globalMapProxyInstance] = await Promise.all([
       CodeTemplateService.listTemplates(),
@@ -597,20 +609,25 @@ export class EngineManager {
       return Promise.resolve();
     };
 
-    // Execute global deploy script (before channel deploy)
-    if (scripts.globalDeploy) {
-      await this.runDeployScript(scripts.globalDeploy, channel, gcm);
-    }
-
-    // Execute channel deploy script
-    if (scripts.deploy) {
-      await this.runDeployScript(scripts.deploy, channel, gcm);
-    }
-
     // Build configMap record (key format: "category.name")
     const configMapRecord: Record<string, unknown> = {};
     for (const entry of configMapResult.value) {
       configMapRecord[`${entry.category}.${entry.name}`] = entry.value;
+    }
+    const maps: ChannelMaps = { gcm, globalMap: globalMapProxyInstance, configMap: Object.freeze(configMapRecord) };
+
+    // JavaScript connectors run their scripts with the same code templates and
+    // maps as the rest of the channel (compiled once, here).
+    await this.wireJavaScriptSource(channel, source, templates, maps);
+    await this.wireJavaScriptDestinations(channel, destinations, templates, maps);
+
+    // Deploy scripts set the channel up (lookup tables, counters), so a channel
+    // whose deploy script failed must not start half-configured: fail the deploy.
+    if (scripts.globalDeploy) {
+      await this.runDeployScript(scripts.globalDeploy, channel, maps, 'global deploy');
+    }
+    if (scripts.deploy) {
+      await this.runDeployScript(scripts.deploy, channel, maps, 'deploy');
     }
 
     // Build pipeline config
@@ -622,7 +639,7 @@ export class EngineManager {
       destinations: destConfigs,
       globalChannelMap: gcm,
       globalMapProxy: globalMapProxyInstance,
-      configMap: Object.freeze(configMapRecord),
+      configMap: maps.configMap,
       scriptTimeoutMs: channel.scriptTimeoutSeconds * 1_000,
       onError: raiseAlert,
       onStoreFailure: (failure) => {
@@ -727,7 +744,7 @@ export class EngineManager {
       await this.recoverChannel(channel, store, processMessage, sendFn, recoveryHorizon);
     };
 
-    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, alertManager, queueConsumers, scripts, processMessage, recoverOnce, activity });
+    this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, recoverOnce, activity });
     this.silenceTimer ??= setInterval(() => { void this.checkSilentChannels(); }, SILENCE_CHECK_INTERVAL_MS).unref();
   }
 
@@ -761,7 +778,7 @@ export class EngineManager {
   }
 
   /** Send a raw message to a deployed, started channel. */
-  async sendMessage(channelId: string, content: string): Promise<Result<{ messageId: number }>> {
+  async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
     return tryCatch(async () => {
       const deployed = this.runtimes.get(channelId);
       if (!deployed) {
@@ -805,13 +822,16 @@ export class EngineManager {
     }
 
     // Execute channel undeploy script (before cleanup)
-    if (deployed.scripts.undeploy) {
-      await this.runDeployScript(deployed.scripts.undeploy, deployed.config, deployed.globalChannelMap);
-    }
-
-    // Execute global undeploy script
-    if (deployed.scripts.globalUndeploy) {
-      await this.runDeployScript(deployed.scripts.globalUndeploy, deployed.config, deployed.globalChannelMap);
+    // A failing undeploy script is logged and the teardown carries on: refusing
+    // to undeploy would leave a channel nobody can stop.
+    const maps: ChannelMaps = { gcm: deployed.globalChannelMap, globalMap: deployed.globalMapProxy, configMap: deployed.configMap };
+    for (const [script, name] of [[deployed.scripts.undeploy, 'undeploy'], [deployed.scripts.globalUndeploy, 'global undeploy']] as const) {
+      if (!script) continue;
+      try {
+        await this.runDeployScript(script, deployed.config, maps, name);
+      } catch (error) {
+        logger.error({ errMsg: error instanceof Error ? error.message : String(error), channelId }, 'Undeploy script failed; continuing with undeploy');
+      }
     }
 
     deployed.globalChannelMap.clear();
@@ -1102,18 +1122,15 @@ export class EngineManager {
   private async wireJavaScriptSource(
     channel: ChannelDetail,
     source: SourceConnectorRuntime,
+    templates: ReadonlyArray<CodeTemplateData>,
+    maps: ChannelMaps,
   ): Promise<void> {
     if (channel.sourceConnectorType !== 'JAVASCRIPT') return;
     const jsReceiver = source as JavaScriptReceiver;
     const sourceScript = (channel.sourceConnectorProperties as { script: string }).script;
-    const compiled = await compileScript(sourceScript, { sourcefile: `${channel.name}/js-source.js` });
-    if (!compiled.ok) {
-      throw new Error(`Channel ${channel.id} JavaScript source script failed to compile: ${compiled.error.message}`);
-    }
-    const cachedScript = compiled.value;
+    const cachedScript = await this.compileWithTemplates(sourceScript, 'sourceReceiver', templates, `${channel.name}/js-source.js`);
     jsReceiver.setScriptRunner(async (_script) => {
-      const ctx = { msg: '', tmp: '', rawData: '', sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {} };
-      const execResult = await this.sandbox.execute(cachedScript, ctx, { timeout: channel.scriptTimeoutSeconds * 1_000 });
+      const execResult = await this.runChannelScript(cachedScript, channel, maps, '', {});
       if (!execResult.ok) return execResult;
       return { ok: true as const, value: execResult.value.returnValue, error: null };
     });
@@ -1123,6 +1140,8 @@ export class EngineManager {
   private async wireJavaScriptDestinations(
     channel: ChannelDetail,
     destinations: Map<number, DestinationConnectorRuntime>,
+    templates: ReadonlyArray<CodeTemplateData>,
+    maps: ChannelMaps,
   ): Promise<void> {
     for (const dest of channel.destinations) {
       if (dest.connectorType !== 'JAVASCRIPT') continue;
@@ -1130,14 +1149,11 @@ export class EngineManager {
       if (!connector) continue;
       const jsDispatcher = connector as JavaScriptDispatcher;
       const destScript = (dest.properties as { script: string }).script;
-      const compiled = await compileScript(destScript, { sourcefile: `${channel.name}/js-dest-${String(dest.metaDataId)}.js` });
-      if (!compiled.ok) {
-        throw new Error(`Channel ${channel.id} destination ${String(dest.metaDataId)} JavaScript script failed to compile: ${compiled.error.message}`);
-      }
-      const cachedScript = compiled.value;
+      const cachedScript = await this.compileWithTemplates(
+        destScript, 'destinationDispatcher', templates, `${channel.name}/js-dest-${String(dest.metaDataId)}.js`,
+      );
       jsDispatcher.setScriptRunner(async (_script, content, connectorMessage) => {
-        const ctx = { msg: content, tmp: content, rawData: content, sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {}, extras: { connectorMessage } };
-        const execResult = await this.sandbox.execute(cachedScript, ctx, { timeout: channel.scriptTimeoutSeconds * 1_000 });
+        const execResult = await this.runChannelScript(cachedScript, channel, maps, content, { connectorMessage });
         if (!execResult.ok) return execResult;
         return { ok: true as const, value: execResult.value.returnValue, error: null };
       });
@@ -1159,32 +1175,68 @@ export class EngineManager {
     }
   }
 
-  /** Run a deploy/undeploy script in the sandbox with channel context. */
-  private async runDeployScript(
+  /**
+   * Run one of a channel's own scripts (deploy, undeploy, JavaScript connector)
+   * with the channel's maps. Changes the script makes to the global and global
+   * channel maps are kept, key by key, as they are for pipeline scripts.
+   */
+  private async runChannelScript(
     script: CompiledScript,
     channel: ChannelDetail,
-    gcm: GlobalChannelMap,
-  ): Promise<void> {
-    const gcmBefore = gcm.toRecord();
+    maps: ChannelMaps,
+    content: string,
+    extras: Readonly<Record<string, unknown>>,
+  ): Promise<Result<ExecutionResult>> {
+    const gcmBefore = maps.gcm.toRecord();
+    const globalBefore = maps.globalMap.toRecord();
     const context = {
-      msg: '',
-      tmp: '',
-      rawData: '',
-      sourceMap: {},
-      channelMap: {},
-      connectorMap: {},
-      responseMap: {},
-      globalChannelMap: gcmBefore,
-      extras: {
-        channelId: channel.id,
-        channelName: channel.name,
-      },
+      msg: content, tmp: content, rawData: content,
+      sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {},
+      globalChannelMap: gcmBefore, globalMap: globalBefore, configMap: maps.configMap,
+      extras: { channelId: channel.id, channelName: channel.name, ...extras },
     };
     const result = await this.sandbox.execute(script, context, { timeout: channel.scriptTimeoutSeconds * 1_000 });
     if (result.ok) {
-      gcm.applyChanges(gcmBefore, result.value.mapUpdates.globalChannelMap);
-    } else {
-      logger.error({ errMsg: result.error.message, stack: result.error.stack, channelId: channel.id }, 'Deploy/undeploy script execution failed');
+      maps.gcm.applyChanges(gcmBefore, result.value.mapUpdates.globalChannelMap);
+      maps.globalMap.applyChanges(globalBefore, result.value.mapUpdates.globalMap);
+    }
+    return result;
+  }
+
+  /** Run a deploy or undeploy script. Throws when the script fails. */
+  private async runDeployScript(script: CompiledScript, channel: ChannelDetail, maps: ChannelMaps, name: string): Promise<void> {
+    const result = await this.runChannelScript(script, channel, maps, '', {});
+    if (!result.ok) {
+      throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: the ${name} script failed: ${result.error.message}`);
+    }
+  }
+
+  /**
+   * Compile every script a channel would deploy with, without deploying it.
+   * Throws the same error deploy would. Used before a running channel is
+   * stopped for a redeploy, so a script that does not compile cannot take a
+   * working channel offline.
+   */
+  async checkScripts(channel: ChannelDetail): Promise<void> {
+    const [templatesResult, globalScriptsResult, ftData] = await Promise.all([
+      CodeTemplateService.listTemplates(),
+      GlobalScriptService.getAll(),
+      this.loadFilterTransformerData(channel.id),
+    ]);
+    if (!templatesResult.ok) throw deployLoadError(channel.id, 'code templates', templatesResult.error);
+    if (!globalScriptsResult.ok) throw deployLoadError(channel.id, 'global scripts', globalScriptsResult.error);
+    const templates: ReadonlyArray<CodeTemplateData> = templatesResult.value
+      .map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }));
+    await this.compileChannelScripts(channel, templates, globalScriptsResult.value, ftData);
+    await this.buildDestinationConfigs(channel, templates, ftData);
+    if (channel.sourceConnectorType === 'JAVASCRIPT') {
+      const script = (channel.sourceConnectorProperties as { script: string }).script;
+      await this.compileWithTemplates(script, 'sourceReceiver', templates, `${channel.name}/js-source.js`);
+    }
+    for (const dest of channel.destinations) {
+      if (dest.connectorType !== 'JAVASCRIPT') continue;
+      const script = (dest.properties as { script: string }).script;
+      await this.compileWithTemplates(script, 'destinationDispatcher', templates, `${channel.name}/js-dest-${String(dest.metaDataId)}.js`);
     }
   }
 
@@ -1415,3 +1467,4 @@ export function getEngine(): EngineManager {
   }
   return engineInstance;
 }
+

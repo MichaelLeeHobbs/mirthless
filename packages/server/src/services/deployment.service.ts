@@ -163,6 +163,13 @@ export class DeploymentService {
       const priorState: ChannelState = (existing?.runtime.getState() ?? 'UNDEPLOYED') as ChannelState;
 
       if (existing) {
+        // Compile the saved configuration BEFORE touching the running channel.
+        // A script that does not compile then fails the redeploy and the
+        // channel keeps running on its current configuration.
+        const saved = await ChannelService.getById(channelId);
+        if (!saved.ok) throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
+        await engine.checkScripts(saved.value);
+
         if (priorState === 'STARTED' || priorState === 'PAUSED') {
           const stopResult = await DeploymentService.stop(channelId, context);
           if (!stopResult.ok) throw stopResult.error;

@@ -4,6 +4,7 @@
 // Business logic for global scripts (deploy, undeploy, preprocessor, postprocessor).
 // All methods return Result<T> using tryCatch from stderr-lib.
 
+import { assertScriptCompiles } from './script-validation.service.js';
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq } from 'drizzle-orm';
 import type { UpdateGlobalScriptsInput } from '@galvaniflow/core-models';
@@ -54,6 +55,12 @@ export class GlobalScriptService {
         { key: GLOBAL_SCRIPT_TYPE.PREPROCESSOR, field: 'preprocessor' },
         { key: GLOBAL_SCRIPT_TYPE.POSTPROCESSOR, field: 'postprocessor' },
       ];
+
+      // Check every script before saving any, so a bad one changes nothing.
+      for (const entry of entries) {
+        const value = input[entry.field];
+        if (value !== undefined) await assertScriptCompiles(value, `The global ${entry.field} script`);
+      }
 
       for (const entry of entries) {
         const value = input[entry.field];

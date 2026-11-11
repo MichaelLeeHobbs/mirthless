@@ -48,6 +48,10 @@ export interface HttpFetchResult {
 /** Result from routeMessage bridge function. */
 export interface RouteMessageResult {
   readonly success: boolean;
+  /** The id the target channel gave the message. */
+  readonly messageId?: number;
+  /** True when the target channel's source filter rejected the message. */
+  readonly filtered?: boolean;
   readonly response?: string;
 }
 

@@ -4,6 +4,7 @@
 // Business logic for code template library + template CRUD.
 // All methods return Result<T> using tryCatch from stderr-lib.
 
+import { assertScriptCompiles } from './script-validation.service.js';
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, count, asc } from 'drizzle-orm';
 import type {
@@ -294,6 +295,9 @@ export class CodeTemplateService {
         throw new ServiceError('NOT_FOUND', `Library ${input.libraryId} not found`);
       }
 
+      // Only FUNCTION templates are compiled into channel scripts.
+      if (input.type === 'FUNCTION') await assertScriptCompiles(input.code, `Code template "${input.name}"`);
+
       const [row] = await db
         .insert(codeTemplates)
         .values({
@@ -348,6 +352,10 @@ export class CodeTemplateService {
 
       if (existing.revision !== input.revision) {
         throw new ServiceError('CONFLICT', 'Template has been modified by another user');
+      }
+
+      if ((input.type ?? existing.type) === 'FUNCTION') {
+        await assertScriptCompiles(input.code ?? existing.code, `Code template "${input.name ?? existing.name}"`);
       }
 
       const updates: Record<string, unknown> = {

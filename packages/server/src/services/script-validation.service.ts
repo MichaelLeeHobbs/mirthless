@@ -8,6 +8,8 @@
 
 import { transform } from 'esbuild';
 import type { Result } from 'stderr-lib';
+import { compileScript } from '@galvaniflow/engine';
+import { ServiceError } from '../lib/service-error.js';
 
 // ----- Types -----
 
@@ -39,6 +41,21 @@ export class ScriptValidationService {
       const errors = extractEsbuildErrors(err);
       return { ok: true, value: { valid: false, errors }, error: null };
     }
+  }
+}
+
+/**
+ * Refuse to save a script every channel depends on when it does not compile.
+ *
+ * Code templates and global scripts are compiled into every channel at deploy,
+ * so one syntax error in them stops every deploy, including the automatic one
+ * after a restart. Uses the same compiler as deploy. Throws INVALID_INPUT.
+ */
+export async function assertScriptCompiles(script: string, what: string): Promise<void> {
+  if (script.trim().length === 0) return;
+  const compiled = await compileScript(script, { sourcefile: what });
+  if (!compiled.ok) {
+    throw new ServiceError('INVALID_INPUT', `${what} does not compile and was not saved: ${compiled.error.message}`);
   }
 }
 
