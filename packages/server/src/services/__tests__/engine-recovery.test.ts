@@ -232,6 +232,23 @@ describe('EngineManager recovery', () => {
     await engine.dispose();
   });
 
+  it('closes the interrupted original when it runs the message again, pointing at the new one', async () => {
+    ms.getUnprocessedMessages.mockResolvedValue(ok([{ id: 7, channelId: CHANNEL_ID }]));
+    ms.getConnectorMessages.mockResolvedValue(ok([{ messageId: 7, metaDataId: 0, status: 'RECEIVED' }]));
+    ms.loadContent.mockImplementation(async (_c: string, _m: number, _d: number, contentType: number) => ok(contentType === 1 ? 'payload' : null));
+
+    const engine = await deployAndRecover();
+
+    // The original is no longer left looking like a message still being received.
+    expect(ms.updateConnectorMessageStatus).toHaveBeenCalledWith(CHANNEL_ID, 7, 0, 'ERROR', undefined);
+    expect(ms.storeContent.mock.calls.map((c: unknown[]) => c.slice(0, 5)))
+      .toContainEqual([CHANNEL_ID, 7, 0, 13, expect.stringContaining('message 99')]);
+    expect(ms.markProcessed).toHaveBeenCalledWith(CHANNEL_ID, 7);
+    // Counted once, as the new message: the original adds no error to the statistics.
+    expect(ms.incrementStats).not.toHaveBeenCalledWith(CHANNEL_ID, 0, 'test-server', 'errored');
+    await engine.dispose();
+  });
+
   it('logs a store failure the pipeline reports', async () => {
     const logger = (await import('../../lib/logger.js')).default;
     ms.finalizeMessage.mockResolvedValue({ ok: false, value: null, error: new Error('db down') });

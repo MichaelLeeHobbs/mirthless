@@ -898,9 +898,21 @@ export class EngineManager {
         // Marking it here would silently lose the message forever.
         return { ok: false, value: null, error: processed.error } as Result<void>;
       }
-      // Reprocess succeeded (a new message row was created and run through the
-      // pipeline). Mark the original processed so it is not recovered again.
-      await MessageService.markProcessed(channelId, messageId);
+      // Run again as a new message. Close the original so it is not recovered a
+      // second time and does not sit in the browser looking like a message that
+      // is still being received: mark it ERROR with a note naming the new one.
+      // It adds nothing to the statistics; the new message is the one counted.
+      const note = `Interrupted by a server stop before it finished. Run again as message ${String(processed.value.messageId)}.`;
+      const closed = await Promise.all([
+        store.storeContent(channelId, messageId, 0, CONTENT_TYPE.PROCESSING_ERROR, note, 'TEXT'),
+        store.updateConnectorMessageStatus(channelId, messageId, 0, 'ERROR'),
+        MessageService.markProcessed(channelId, messageId),
+      ]);
+      const failed = closed.find((r) => !r.ok);
+      if (failed && !failed.ok) {
+        logger.error({ channelId, messageId, errMsg: failed.error.message }, 'Recovered message could not be closed; it may be run again on the next deploy');
+        return { ok: false, value: null, error: failed.error } as Result<void>;
+      }
       return OK_VOID;
     };
 

@@ -547,6 +547,17 @@ describe('MessageProcessor', () => {
     expect(store.incrementStats).not.toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 1, 'server-01', 'errored');
   });
 
+  it('stores what a destination answered as text, not as the inbound data type', async () => {
+    const store = makeStore();
+    const processor = new MessageProcessor(sandbox, store, makeSendFn(), makeConfig({ dataType: 'HL7V2' }), DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput('MSH|^~\\&|A|B|C|D|20260101||ADT^A01|1|P|2.5'), AbortSignal.timeout(5_000));
+
+    const responses = (store.storeContent as ReturnType<typeof vi.fn>).mock.calls.filter((c: unknown[]) => c[3] === 6);
+    expect(responses).toHaveLength(1);
+    expect(responses[0]![5]).toBe('TEXT');
+  });
+
   it('runs removeCompletedContent on full success', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();

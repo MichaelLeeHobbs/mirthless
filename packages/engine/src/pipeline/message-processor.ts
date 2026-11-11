@@ -638,8 +638,10 @@ export class MessageProcessor {
       const response = sendResult.value;
 
       if (response.status === 'SENT') {
+        // What the destination answered is in its own format (an ACK, an HTTP
+        // body, a file path), not the channel's inbound data type.
         await this.store.storeContent(
-          channelId, messageId, dest.metaDataId, CT_RESPONSE, response.content, dataType,
+          channelId, messageId, dest.metaDataId, CT_RESPONSE, response.content, 'TEXT',
         );
 
         // Populate responseMap with destination response
