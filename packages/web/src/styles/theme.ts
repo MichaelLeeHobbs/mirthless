@@ -82,6 +82,9 @@ function buildTheme(mode: PaletteMode): Theme {
         styleOverrides: {
           ':root': {
             colorScheme: mode,
+            // A field scrolled into view (focus, validation) stops above the
+            // sticky UnsavedChangesBar, which is two lines tall on phones.
+            scrollPaddingBottom: 140,
           },
           body: {
             backgroundColor: c.background.default,

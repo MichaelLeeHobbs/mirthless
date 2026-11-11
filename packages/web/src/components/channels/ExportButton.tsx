@@ -31,7 +31,7 @@ export function ExportButton({ channelId }: ExportButtonProps): ReactNode {
 
   return (
     <Button
-      variant="outlined"
+      size="small"
       startIcon={<DownloadIcon />}
       onClick={handleExport}
       disabled={loading}
