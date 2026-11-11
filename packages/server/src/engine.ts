@@ -59,6 +59,7 @@ import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
 import { resolveHttpSourceTls, resolveHttpDestinationTls } from './services/connector-tls-resolver.js';
 import { db } from './lib/db.js';
+import { ServiceError } from './lib/service-error.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
@@ -966,7 +967,7 @@ export class EngineManager {
     // Fail loud, never silent: returning nothing here would deploy the channel
     // without this filter, transformer or script, and let PHI through untouched.
     if (!result.ok) {
-      throw new Error(`Script ${sourcefile} failed to compile (it includes the code templates for ${context}): ${result.error.message}`);
+      throw new ServiceError('INVALID_INPUT', `Script ${sourcefile} failed to compile (it includes the code templates for ${context}): ${result.error.message}`);
     }
     return result.value;
   }
@@ -1358,7 +1359,7 @@ function deployLoadError(channelId: string, what: string, cause: Error): Error {
 
 /** Unwrap a generated filter/transformer script, refusing to deploy when a rule or step cannot run. */
 function unwrapGenerated(result: Result<string | null>, where: string): string | null {
-  if (!result.ok) throw new Error(`${where}: ${result.error.message}`);
+  if (!result.ok) throw new ServiceError('INVALID_INPUT', `${where}: ${result.error.message}`);
   return result.value;
 }
 

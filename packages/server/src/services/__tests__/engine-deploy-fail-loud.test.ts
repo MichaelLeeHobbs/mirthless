@@ -6,6 +6,7 @@
 // the database, the services that read it and the connectors that open sockets.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { isServiceError } from '../../lib/service-error.js';
 
 // ----- Mock Dependencies -----
 
@@ -251,6 +252,25 @@ describe('EngineManager.deploy refuses to start a channel it cannot run as confi
     filterRows = [filterRow({ type: 'RULE_BUILDER', field: 'MSH.9.1', condition: 'EQUALS', values: [] })];
 
     expect(await deployError()).toBe('Labs source filter: Filter rule 1 (Rule Builder) needs at least one value for EQUALS');
+  });
+
+  it('reports a script that will not compile as invalid input, so the API can say why', async () => {
+    mockGlobalScriptGetAll.mockResolvedValue({
+      ok: true, value: { deploy: "logger.info('x');/ E2E test", undeploy: '', preprocessor: '', postprocessor: '' }, error: null,
+    });
+
+    const error: unknown = await new EngineManager('test-server').deploy(makeChannel()).catch((e: unknown) => e);
+
+    expect(isServiceError(error, 'INVALID_INPUT')).toBe(true);
+    expect((error as Error).message).toMatch(/^Script global\/deploy\.ts failed to compile/);
+  });
+
+  it('reports a rule the engine cannot run as invalid input', async () => {
+    filterRows = [filterRow({ type: 'RULE_BUILDER', field: 'MSH.9.1', condition: 'EQUALS', values: [] })];
+
+    const error: unknown = await new EngineManager('test-server').deploy(makeChannel()).catch((e: unknown) => e);
+
+    expect(isServiceError(error, 'INVALID_INPUT')).toBe(true);
   });
 
   it('deploys a Rule Builder rule as a running filter', async () => {
