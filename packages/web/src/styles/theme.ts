@@ -188,6 +188,9 @@ function buildTheme(mode: PaletteMode): Theme {
           root: {
             borderColor: c.divider,
             fontVariantNumeric: 'tabular-nums',
+            // Phones (under MUI `sm`): half the side padding, so a list's name,
+            // status and actions fit in 390px without scrolling sideways.
+            '@media (max-width: 599.95px)': { paddingInline: 8 },
           },
           head: {
             fontSize: '0.6875rem',

@@ -30,6 +30,7 @@ import { PERMISSION } from '../lib/permissions.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { humanize } from '../lib/format.js';
+import { HIDE_ON_PHONE } from '../lib/responsive.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
@@ -88,9 +89,9 @@ export function AlertsPage(): ReactNode {
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
-              <TableCell>Trigger</TableCell>
-              <TableCell align="center">Channels</TableCell>
-              <TableCell align="center">Notifies</TableCell>
+              <TableCell sx={HIDE_ON_PHONE}>Trigger</TableCell>
+              <TableCell align="center" sx={HIDE_ON_PHONE}>Channels</TableCell>
+              <TableCell align="center" sx={HIDE_ON_PHONE}>Notifies</TableCell>
               <TableCell align="center">Enabled</TableCell>
               <TableCell align="right" aria-label="Row actions" />
             </TableRow>
@@ -124,11 +125,11 @@ export function AlertsPage(): ReactNode {
                         }}>{alert.description}</Typography>
                       ) : null}
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={HIDE_ON_PHONE}>
                       {humanize(alert.triggerType)}
                     </TableCell>
-                    <TableCell align="center">{alert.channelCount}</TableCell>
-                    <TableCell align="center">{alert.actionCount}</TableCell>
+                    <TableCell align="center" sx={HIDE_ON_PHONE}>{alert.channelCount}</TableCell>
+                    <TableCell align="center" sx={HIDE_ON_PHONE}>{alert.actionCount}</TableCell>
                     <TableCell align="center">
                       <Tooltip title={canWrite ? '' : 'Requires alerts:write permission'}>
                         <span>
@@ -144,7 +145,7 @@ export function AlertsPage(): ReactNode {
                         </span>
                       </Tooltip>
                     </TableCell>
-                    <TableCell align="right">
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       {canWrite ? (
                         <Tooltip title="Edit">
                           <IconButton aria-label="Edit alert" size="small" onClick={() => { navigate(`/alerts/${alert.id}`); }}>

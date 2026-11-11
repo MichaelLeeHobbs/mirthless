@@ -56,7 +56,7 @@ export function DestinationSettingsPanel({ destination, onChange }: DestinationS
         General
       </Typography>
 
-      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mb: 2 }}>
         <TextField
           label="Destination Name"
           value={destination.name}

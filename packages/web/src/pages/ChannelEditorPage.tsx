@@ -9,7 +9,6 @@ import { useParams, useNavigate, useBlocker } from 'react-router';
 import { useForm } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
-import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Tab from '@mui/material/Tab';
@@ -39,6 +38,8 @@ import type { DestinationFormValues } from '../components/channels/destinations/
 import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, TransformerStepFormValues } from '../components/channels/source/types.js';
 import { createDefaultFilter, createDefaultTransformer, transformerHasContent } from '../components/channels/source/types.js';
 import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
+import { PageHeader } from '../components/common/PageHeader.js';
+import Chip from '@mui/material/Chip';
 // ChannelGroupChips now rendered inside SummaryTab
 
 // ----- Form Data Type -----
@@ -608,55 +609,39 @@ export function ChannelEditorPage(): ReactNode {
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, overflow: 'hidden' }}>
-        <IconButton onClick={() => { navigate('/channels'); }} aria-label="back to channels" sx={{ flexShrink: 0 }}>
-          <ArrowBackIcon />
-        </IconButton>
-        <Typography
-          variant="h5"
-          component="h1"
-          title={pageTitle}
-          sx={{ fontWeight: 600, flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}
-        >
-          {pageTitle}
-        </Typography>
-        {isEditMode ? (
-          <Typography
-            variant="body2"
-            sx={{
-              px: 1.5,
-              py: 0.5,
-              borderRadius: 1,
-              flexShrink: 0,
-              bgcolor: enabledValue ? 'success.dark' : 'action.disabledBackground',
-              color: enabledValue ? 'success.contrastText' : 'text.secondary',
-            }}
-          >
-            {enabledValue ? 'Enabled' : 'Disabled'}
-          </Typography>
-        ) : null}
-        {isEditMode ? (
-          <Tooltip title="Revision History">
-            <IconButton onClick={() => { setHistoryOpen(true); }} aria-label="revision history" sx={{ flexShrink: 0 }}>
-              <HistoryIcon />
-            </IconButton>
-          </Tooltip>
-        ) : null}
-        <Tooltip title={canWrite ? '' : 'Requires channels:write permission'}>
-          <span>
-            <Button
-              variant="contained"
-              startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
-              disabled={isSaving || (!isDirty && isEditMode) || !canWrite}
-              onClick={handleSubmit(onSubmit)}
-              sx={{ flexShrink: 0 }}
-            >
-              {isEditMode ? 'Save' : 'Create'}
-            </Button>
-          </span>
-        </Tooltip>
-      </Box>
+      <PageHeader
+        title={pageTitle}
+        description={isEditMode
+          ? 'Where this channel receives messages, how it transforms them and where it sends them.'
+          : 'Name the channel, pick its source, then add at least one destination.'}
+        actions={
+          <>
+            {isEditMode ? (
+              <Chip variant="outlined" size="small" label={enabledValue ? 'Enabled' : 'Disabled'} />
+            ) : null}
+            {isEditMode ? (
+              <Tooltip title="Revision History">
+                <IconButton size="small" onClick={() => { setHistoryOpen(true); }} aria-label="revision history">
+                  <HistoryIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            ) : null}
+            <Tooltip title={canWrite ? '' : 'Requires channels:write permission'}>
+              <span>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
+                  disabled={isSaving || (!isDirty && isEditMode) || !canWrite}
+                  onClick={handleSubmit(onSubmit)}
+                >
+                  {isEditMode ? 'Save' : 'Create'}
+                </Button>
+              </span>
+            </Tooltip>
+          </>
+        }
+      />
 
       {/* Status messages */}
       {saveError ? (
@@ -672,7 +657,7 @@ export function ChannelEditorPage(): ReactNode {
 
       {/* Tabs */}
       <Paper sx={{ mb: 2 }}>
-        <Tabs value={activeTab} onChange={handleTabChange}>
+        <Tabs value={activeTab} onChange={handleTabChange} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>
           <Tab label="Channel Settings" />
           <Tab label="Source" />
           <Tab label="Destinations" />

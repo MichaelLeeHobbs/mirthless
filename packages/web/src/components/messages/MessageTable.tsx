@@ -18,6 +18,7 @@ import { EmptyState } from '../common/states/EmptyState.js';
 import InboxIcon from '@mui/icons-material/Inbox';
 import type { MessageSummary } from '../../hooks/use-messages.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
+import { HIDE_ON_PHONE } from '../../lib/responsive.js';
 
 interface MessageTableProps {
   readonly items: readonly MessageSummary[];
@@ -79,7 +80,7 @@ export function MessageTable({
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell padding="checkbox">
+              <TableCell padding="checkbox" sx={HIDE_ON_PHONE}>
                 <Checkbox
                   size="small"
                   checked={allChecked}
@@ -93,9 +94,9 @@ export function MessageTable({
               <TableCell width={80}>Message ID</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Received</TableCell>
-              <TableCell align="right">Duration</TableCell>
-              <TableCell align="right">Connectors</TableCell>
-              <TableCell align="right">Send Attempts</TableCell>
+              <TableCell align="right" sx={HIDE_ON_PHONE}>Duration</TableCell>
+              <TableCell align="right" sx={HIDE_ON_PHONE}>Connectors</TableCell>
+              <TableCell align="right" sx={HIDE_ON_PHONE}>Send Attempts</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -123,7 +124,7 @@ export function MessageTable({
                     onClick={() => onSelect(msg.messageId)}
                     sx={{ cursor: 'pointer' }}
                   >
-                    <TableCell padding="checkbox">
+                    <TableCell padding="checkbox" sx={HIDE_ON_PHONE}>
                       <Checkbox
                         size="small"
                         checked={checkedIds.has(msg.messageId)}
@@ -139,9 +140,9 @@ export function MessageTable({
                       <MessageStatusChip status={worstStatus} />
                     </TableCell>
                     <TableCell>{formatTime(msg.receivedAt)}</TableCell>
-                    <TableCell align="right">{formatDuration(msg.receivedAt, msg.processedAt)}</TableCell>
-                    <TableCell align="right">{msg.connectors.length}</TableCell>
-                    <TableCell align="right">{totalAttempts}</TableCell>
+                    <TableCell align="right" sx={HIDE_ON_PHONE}>{formatDuration(msg.receivedAt, msg.processedAt)}</TableCell>
+                    <TableCell align="right" sx={HIDE_ON_PHONE}>{msg.connectors.length}</TableCell>
+                    <TableCell align="right" sx={HIDE_ON_PHONE}>{totalAttempts}</TableCell>
                   </TableRow>
                 );
               })
