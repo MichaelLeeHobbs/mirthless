@@ -14,9 +14,8 @@ interface UserSummary {
   readonly enabled: boolean;
 }
 
-interface UserListResponse {
-  readonly data: ReadonlyArray<UserSummary>;
-}
+/** GET /users answers with the list itself (UserController.list), not a page object. */
+type UserListResponse = ReadonlyArray<UserSummary>;
 
 /** Register user management commands on the program. */
 export function registerUserCommands(
@@ -45,7 +44,7 @@ export function registerUserCommands(
         process.stdout.write(formatJson(result.data) + '\n');
         return;
       }
-      const rows = result.data.data.map((u) => [
+      const rows = result.data.map((u) => [
         u.id.slice(0, 8),
         u.username,
         u.role,

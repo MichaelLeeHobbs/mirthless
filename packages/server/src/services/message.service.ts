@@ -115,7 +115,14 @@ export class MessageService {
     });
   }
 
-  /** Store message content (raw, transformed, sent, response, etc.). */
+  /**
+   * Store message content (raw, transformed, sent, response, etc.).
+   *
+   * There is one row per connector message and content type. Storing the same
+   * type again replaces it (a response after a queued retry, a later error), so
+   * the row always holds the most recent value instead of the write failing on
+   * the primary key and the newer content being lost.
+   */
   static async storeContent(
     channelId: string,
     messageId: number,
@@ -134,6 +141,9 @@ export class MessageService {
         content,
         dataType,
         isEncrypted: encrypted ?? false,
+      }).onConflictDoUpdate({
+        target: [messageContent.channelId, messageContent.messageId, messageContent.metaDataId, messageContent.contentType],
+        set: { content, dataType, isEncrypted: encrypted ?? false },
       });
     });
   }
