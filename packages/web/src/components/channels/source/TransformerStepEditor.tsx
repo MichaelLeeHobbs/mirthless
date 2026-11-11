@@ -15,6 +15,7 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
+import Alert from '@mui/material/Alert';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
@@ -92,7 +93,8 @@ export function TransformerStepEditor({
             sx={{ minWidth: 170 }}
           >
             <MenuItem value="JAVASCRIPT">JavaScript</MenuItem>
-            <MenuItem value="MAPPER">Mapper</MenuItem>
+            {/* The engine cannot run Mapper steps, so it is only listed for a step that already is one. */}
+            {step.type === 'MAPPER' ? <MenuItem value="MAPPER">Mapper (not supported)</MenuItem> : null}
             <MenuItem value="MESSAGE_BUILDER">Message Builder</MenuItem>
           </TextField>
           <FormControlLabel
@@ -107,6 +109,12 @@ export function TransformerStepEditor({
           />
         </Box>
 
+        {step.type === 'MAPPER' && step.enabled ? (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            The engine cannot run Mapper steps, and the channel will not deploy while this step is enabled.
+            Change the type to JavaScript and write the mapping as a script, or disable the step.
+          </Alert>
+        ) : null}
         {step.type === 'JAVASCRIPT' || step.type === 'MESSAGE_BUILDER' ? (
           <ScriptEditor
             height="200px"

@@ -8,7 +8,12 @@ import {
   clearScriptCache,
   compileFilterRulesToScript,
   compileTransformerStepsToScript,
+  type FilterRuleInput,
 } from '../script-compiler.js';
+import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../sandbox-executor.js';
+import { createSandboxContext } from '../sandbox-context.js';
+import { createHl7Proxy } from '../../pipeline/data-type-handler.js';
+import { Hl7Message } from '@galvaniflow/core-util';
 
 beforeEach(() => {
   clearScriptCache();
@@ -121,50 +126,68 @@ describe('compileScript', () => {
   });
 });
 
+/** Unwrap a successful compile, failing the test otherwise. */
+function script(result: ReturnType<typeof compileFilterRulesToScript>): string | null {
+  if (!result.ok) throw new Error(`expected ok, got: ${result.error.message}`);
+  return result.value;
+}
+
+/** Run a generated filter script against a message and return its verdict. */
+async function runFilter(code: string | null, msg: unknown): Promise<unknown> {
+  if (code === null) throw new Error('no script generated');
+  const executor = new VmSandboxExecutor();
+  const result = await executor.execute({ code }, createSandboxContext(msg, ''), DEFAULT_EXECUTION_OPTIONS);
+  if (!result.ok) throw new Error(result.error.message);
+  return result.value.returnValue;
+}
+
+const ADT = createHl7Proxy(Hl7Message.parse('MSH|^~\\&|LAB|FAC|EHR|FAC|20260101||ADT^A01|1|P|2.5\rPID|1||000123'));
+
+function builder(condition: string, values: string[], field = 'MSH.9.1'): FilterRuleInput {
+  return { enabled: true, operator: 'AND', type: 'RULE_BUILDER', script: null, field, condition, values };
+}
+
 describe('compileFilterRulesToScript', () => {
   it('returns null for empty rules array', () => {
-    expect(compileFilterRulesToScript([])).toBeNull();
+    expect(script(compileFilterRulesToScript([]))).toBeNull();
   });
 
   it('returns null when all rules are disabled', () => {
     const rules = [
       { enabled: false, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;' },
+      { enabled: false, operator: 'AND', type: 'RULE_BUILDER', script: null },
     ];
-    expect(compileFilterRulesToScript(rules)).toBeNull();
+    expect(script(compileFilterRulesToScript(rules))).toBeNull();
   });
 
-  it('returns null when no rules are JAVASCRIPT type', () => {
-    const rules = [
-      { enabled: true, operator: 'AND', type: 'RULE_BUILDER', script: null },
-    ];
-    expect(compileFilterRulesToScript(rules)).toBeNull();
+  it('skips an enabled JavaScript rule with an empty script', () => {
+    const rules = [{ enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: '' }];
+    expect(script(compileFilterRulesToScript(rules))).toBeNull();
   });
 
   it('compiles single JS rule into a return statement', () => {
     const rules = [
       { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return msg.type === "ADT";' },
     ];
-    const result = compileFilterRulesToScript(rules);
+    const result = script(compileFilterRulesToScript(rules));
     expect(result).toContain('return');
     expect(result).toContain('msg.type === "ADT"');
   });
 
-  it('combines multiple rules with AND operator', () => {
+  it('combines multiple rules with AND operator', async () => {
     const rules = [
       { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;' },
       { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return false;' },
     ];
-    const result = compileFilterRulesToScript(rules);
-    expect(result).toContain('&&');
+    expect(await runFilter(script(compileFilterRulesToScript(rules)), {})).toBe(false);
   });
 
-  it('combines multiple rules with OR operator', () => {
+  it('combines multiple rules with OR operator', async () => {
     const rules = [
       { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;' },
       { enabled: true, operator: 'OR', type: 'JAVASCRIPT', script: 'return false;' },
     ];
-    const result = compileFilterRulesToScript(rules);
-    expect(result).toContain('||');
+    expect(await runFilter(script(compileFilterRulesToScript(rules)), {})).toBe(true);
   });
 
   it('skips disabled rules in combination', () => {
@@ -173,29 +196,120 @@ describe('compileFilterRulesToScript', () => {
       { enabled: false, operator: 'AND', type: 'JAVASCRIPT', script: 'return false;' },
       { enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;' },
     ];
-    const result = compileFilterRulesToScript(rules);
+    const result = script(compileFilterRulesToScript(rules));
     expect(result).toContain('&&');
     expect(result).not.toContain('return false');
+  });
+
+  describe('Rule Builder', () => {
+    it.each([
+      ['EQUALS', ['ADT'], true],
+      ['EQUALS', ['ORU', 'ADT'], true],
+      ['EQUALS', ['ORU'], false],
+      ['NOT_EQUALS', ['ORU'], true],
+      ['NOT_EQUALS', ['ADT'], false],
+      ['CONTAINS', ['D'], true],
+      ['CONTAINS', ['X'], false],
+      ['NOT_CONTAINS', ['X'], true],
+      ['NOT_CONTAINS', ['D'], false],
+      ['STARTS_WITH', ['AD'], true],
+      ['STARTS_WITH', ['DT'], false],
+      ['ENDS_WITH', ['DT'], true],
+      ['ENDS_WITH', ['AD'], false],
+      ['REGEX', ['^A.T$'], true],
+      ['REGEX', ['^O'], false],
+      ['EXISTS', [], true],
+      ['NOT_EXISTS', [], false],
+    ] as const)('%s %j on an HL7 field gives %s', async (condition, values, expected) => {
+      const code = script(compileFilterRulesToScript([builder(condition, [...values])]));
+      expect(await runFilter(code, ADT)).toBe(expected);
+    });
+
+    it('treats a missing HL7 field as empty text', async () => {
+      const exists = script(compileFilterRulesToScript([builder('EXISTS', [], 'PID.19')]));
+      const notExists = script(compileFilterRulesToScript([builder('NOT_EXISTS', [], 'PID.19')]));
+      expect(await runFilter(exists, ADT)).toBe(false);
+      expect(await runFilter(notExists, ADT)).toBe(true);
+    });
+
+    it('compares text, so an identifier keeps its leading zeros', async () => {
+      const code = script(compileFilterRulesToScript([builder('EQUALS', ['000123'], 'PID.3')]));
+      expect(await runFilter(code, ADT)).toBe(true);
+      const numeric = script(compileFilterRulesToScript([builder('EQUALS', ['123'], 'PID.3')]));
+      expect(await runFilter(numeric, ADT)).toBe(false);
+    });
+
+    it('reads a dotted path from a JSON message', async () => {
+      const code = script(compileFilterRulesToScript([builder('EQUALS', ['final'], 'report.status')]));
+      expect(await runFilter(code, { report: { status: 'final' } })).toBe(true);
+      expect(await runFilter(code, { report: null })).toBe(false);
+      expect(await runFilter(code, {})).toBe(false);
+    });
+
+    it('cannot be used to inject code through the field or values', async () => {
+      const evil = '"); globalThis.hacked = true; ("';
+      const code = script(compileFilterRulesToScript([builder('EQUALS', [evil], evil)]));
+      expect(await runFilter(`${code!.replace(/^return /, 'var verdict = ')} return [verdict, typeof hacked].join();`, {}))
+        .toBe('false,undefined');
+    });
+
+    it('joins with a JavaScript rule', async () => {
+      const rules = [
+        builder('EQUALS', ['ORU']),
+        { enabled: true, operator: 'OR', type: 'JAVASCRIPT', script: 'return msg.get("PID.3") === "000123";' },
+      ];
+      expect(await runFilter(script(compileFilterRulesToScript(rules)), ADT)).toBe(true);
+    });
+
+    it.each([
+      ['no field', { ...builder('EQUALS', ['A']), field: '  ' }, 'has no field'],
+      ['a null field', { ...builder('EQUALS', ['A']), field: null }, 'has no field'],
+      ['an unknown condition', builder('SOUNDS_LIKE', ['A']), 'unknown condition "SOUNDS_LIKE"'],
+      ['a condition named like an Object method', builder('constructor', ['A']), 'unknown condition'],
+      ['a missing condition', { ...builder('EQUALS', ['A']), condition: null }, 'unknown condition'],
+      ['no values', builder('EQUALS', []), 'needs at least one value'],
+      ['null values', { ...builder('CONTAINS', []), values: null }, 'needs at least one value'],
+      ['an invalid regular expression', builder('REGEX', ['(']), 'invalid regular expression "("'],
+    ])('fails when a rule has %s', (_name, rule, message) => {
+      const result = compileFilterRulesToScript([{ enabled: true, operator: 'AND', type: 'JAVASCRIPT', script: 'return true;' }, rule]);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('Filter rule 2');
+      expect(result.error.message).toContain(message);
+    });
+  });
+
+  it('fails for an enabled rule of a type the engine cannot run', () => {
+    const result = compileFilterRulesToScript([{ enabled: true, operator: 'AND', type: 'EXTERNAL_SCRIPT', script: null }]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe('Filter rule 1 has type EXTERNAL_SCRIPT, which this engine cannot run');
+  });
+
+  it('runs a rule of another type when it carries a script', async () => {
+    const rules = [{ enabled: true, operator: 'AND', type: 'IMPORTED', script: 'return false;' }];
+    expect(await runFilter(script(compileFilterRulesToScript(rules)), {})).toBe(false);
   });
 });
 
 describe('compileTransformerStepsToScript', () => {
   it('returns null for empty steps array', () => {
-    expect(compileTransformerStepsToScript([])).toBeNull();
+    expect(script(compileTransformerStepsToScript([]))).toBeNull();
   });
 
   it('returns null when all steps are disabled', () => {
     const steps = [
       { enabled: false, type: 'JAVASCRIPT', script: 'tmp.x = 1;' },
+      { enabled: false, type: 'MAPPER', script: null },
     ];
-    expect(compileTransformerStepsToScript(steps)).toBeNull();
+    expect(script(compileTransformerStepsToScript(steps))).toBeNull();
   });
 
   it('compiles single step into script ending with return msg', () => {
     const steps = [
       { enabled: true, type: 'JAVASCRIPT', script: 'tmp.x = 1;' },
     ];
-    const result = compileTransformerStepsToScript(steps);
+    const result = script(compileTransformerStepsToScript(steps));
     expect(result).toContain('tmp.x = 1;');
     expect(result).toContain('return msg;');
   });
@@ -205,7 +319,7 @@ describe('compileTransformerStepsToScript', () => {
       { enabled: true, type: 'JAVASCRIPT', script: 'tmp.a = 1;' },
       { enabled: true, type: 'JAVASCRIPT', script: 'tmp.b = 2;' },
     ];
-    const result = compileTransformerStepsToScript(steps);
+    const result = script(compileTransformerStepsToScript(steps));
     expect(result).toContain('tmp.a = 1;');
     expect(result).toContain('tmp.b = 2;');
     expect(result).toContain('return msg;');
@@ -216,8 +330,37 @@ describe('compileTransformerStepsToScript', () => {
       { enabled: true, type: 'JAVASCRIPT', script: 'tmp.a = 1;' },
       { enabled: false, type: 'JAVASCRIPT', script: 'tmp.b = 2;' },
     ];
-    const result = compileTransformerStepsToScript(steps);
+    const result = script(compileTransformerStepsToScript(steps));
     expect(result).toContain('tmp.a = 1;');
     expect(result).not.toContain('tmp.b = 2;');
+  });
+
+  it('runs a Message Builder step, which is a script', () => {
+    const steps = [{ enabled: true, type: 'MESSAGE_BUILDER', script: 'tmp.built = true;' }];
+    expect(script(compileTransformerStepsToScript(steps))).toContain('tmp.built = true;');
+  });
+
+  it('skips an enabled script step with nothing in it', () => {
+    const steps = [
+      { enabled: true, type: 'JAVASCRIPT', script: '   ' },
+      { enabled: true, type: 'MESSAGE_BUILDER', script: null },
+    ];
+    expect(script(compileTransformerStepsToScript(steps))).toBeNull();
+  });
+
+  it('fails for an enabled Mapper step, which has no script to run', () => {
+    const steps = [
+      { enabled: true, type: 'JAVASCRIPT', script: 'tmp.a = 1;' },
+      { enabled: true, type: 'MAPPER', script: null },
+    ];
+    const result = compileTransformerStepsToScript(steps);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe('Transformer step 2 has type MAPPER, which this engine cannot run');
+  });
+
+  it('runs a step of another type when it carries a script', () => {
+    const steps = [{ enabled: true, type: 'MAPPER', script: 'tmp.mapped = msg.a;' }];
+    expect(script(compileTransformerStepsToScript(steps))).toContain('tmp.mapped = msg.a;');
   });
 });

@@ -73,8 +73,8 @@ vi.mock('@galvaniflow/engine', () => ({
   GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyUpdates: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
   QueueConsumer: MockQueueConsumerCtor,
   compileScript: vi.fn().mockResolvedValue({ ok: true, value: { code: 'compiled' }, error: null }),
-  compileFilterRulesToScript: vi.fn().mockReturnValue(null),
-  compileTransformerStepsToScript: vi.fn().mockReturnValue(null),
+  compileFilterRulesToScript: vi.fn().mockReturnValue({ ok: true, value: null, error: null }),
+  compileTransformerStepsToScript: vi.fn().mockReturnValue({ ok: true, value: null, error: null }),
   prependTemplates: vi.fn().mockImplementation((src: string) => src),
   AlertManager: MockAlertManagerCtor,
   RecoveryManager: vi.fn().mockImplementation(function () {
@@ -124,6 +124,14 @@ vi.mock('../message.service.js', () => ({
     getUnprocessedMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
     getConnectorMessages: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
   },
+}));
+
+vi.mock('../global-map.service.js', () => ({
+  GlobalMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }), upsert: vi.fn() },
+}));
+
+vi.mock('../config-map.service.js', () => ({
+  ConfigMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) },
 }));
 
 vi.mock('../code-template.service.js', () => ({

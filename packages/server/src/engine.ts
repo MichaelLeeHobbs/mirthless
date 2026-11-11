@@ -498,13 +498,20 @@ export class EngineManager {
       GlobalMapService.list(),
     ]);
 
-    const templates: ReadonlyArray<CodeTemplateData> = templatesResult.ok
-      ? templatesResult.value.map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }))
-      : [];
+    // Fail loud, never silent: a channel deployed without its code templates,
+    // global scripts, config map or global map would run with different behaviour
+    // from the one it was configured with.
+    if (!templatesResult.ok) throw deployLoadError(channel.id, 'code templates', templatesResult.error);
+    if (!globalScriptsResult.ok) throw deployLoadError(channel.id, 'global scripts', globalScriptsResult.error);
+    if (!configMapResult.ok) throw deployLoadError(channel.id, 'the configuration map', configMapResult.error);
+    if (!globalMapResult.ok) throw deployLoadError(channel.id, 'the global map', globalMapResult.error);
+
+    const templates: ReadonlyArray<CodeTemplateData> = templatesResult.value
+      .map((t) => ({ code: t.code, type: t.type, contexts: t.contexts }));
 
     // Compile all channel scripts (source + destinations + global)
     const scripts = await this.compileChannelScripts(
-      channel, templates, globalScriptsResult, filterTransformerData,
+      channel, templates, globalScriptsResult.value, filterTransformerData,
     );
 
     // Build destination configs with compiled scripts
@@ -536,19 +543,15 @@ export class EngineManager {
 
     // Build configMap record (key format: "category.name")
     const configMapRecord: Record<string, unknown> = {};
-    if (configMapResult.ok) {
-      for (const entry of configMapResult.value) {
-        configMapRecord[`${entry.category}.${entry.name}`] = entry.value;
-      }
+    for (const entry of configMapResult.value) {
+      configMapRecord[`${entry.category}.${entry.name}`] = entry.value;
     }
 
     // Build globalMap proxy with flush-to-DB callback
     const globalMapProxyInstance = new GlobalMapProxy(async (key, value) => {
       await GlobalMapService.upsert(key, value);
     });
-    if (globalMapResult.ok) {
-      globalMapProxyInstance.load(globalMapResult.value);
-    }
+    globalMapProxyInstance.load(globalMapResult.value);
     globalMapProxyInstance.start();
 
     // Build pipeline config
@@ -848,17 +851,22 @@ export class EngineManager {
     context: string,
     templates: ReadonlyArray<CodeTemplateData>,
     sourcefile: string,
-  ): Promise<CompiledScript | undefined> {
+  ): Promise<CompiledScript> {
     const withTemplates = prependTemplates(source, templates, context);
     const result = await compileScript(withTemplates, { sourcefile });
-    return result.ok ? result.value : undefined;
+    // Fail loud, never silent: returning nothing here would deploy the channel
+    // without this filter, transformer or script, and let PHI through untouched.
+    if (!result.ok) {
+      throw new Error(`Script ${sourcefile} failed to compile (it includes the code templates for ${context}): ${result.error.message}`);
+    }
+    return result.value;
   }
 
   /** Compile channel scripts from stored configuration + DB filter/transformer data + global scripts. */
   private async compileChannelScripts(
     channel: ChannelDetail,
     templates: ReadonlyArray<CodeTemplateData>,
-    globalScriptsResult: Awaited<ReturnType<typeof GlobalScriptService.getAll>>,
+    gs: GlobalScripts,
     ftData: FilterTransformerData,
   ): Promise<ChannelScripts> {
     const scripts: Record<string, CompiledScript | undefined> = {};
@@ -875,7 +883,7 @@ export class EngineManager {
     }
 
     // Source filter from filter rules (connectorId IS NULL)
-    const sourceFilterScript = compileFilterRulesToScript(ftData.sourceFilterRules);
+    const sourceFilterScript = unwrapGenerated(compileFilterRulesToScript(ftData.sourceFilterRules), `${channel.name} source filter`);
     if (sourceFilterScript) {
       scripts['sourceFilter'] = await this.compileWithTemplates(
         sourceFilterScript, 'sourceFilter', templates, `${channel.name}/sourceFilter.ts`,
@@ -883,7 +891,7 @@ export class EngineManager {
     }
 
     // Source transformer from transformer steps (connectorId IS NULL)
-    const sourceTransformerScript = compileTransformerStepsToScript(ftData.sourceTransformerSteps);
+    const sourceTransformerScript = unwrapGenerated(compileTransformerStepsToScript(ftData.sourceTransformerSteps), `${channel.name} source transformer`);
     if (sourceTransformerScript) {
       scripts['sourceTransformer'] = await this.compileWithTemplates(
         sourceTransformerScript, 'sourceTransformer', templates, `${channel.name}/sourceTransformer.ts`,
@@ -891,28 +899,25 @@ export class EngineManager {
     }
 
     // Global preprocessor/postprocessor/deploy/undeploy
-    if (globalScriptsResult.ok) {
-      const gs = globalScriptsResult.value;
-      if (gs.preprocessor) {
-        scripts['globalPreprocessor'] = await this.compileWithTemplates(
-          gs.preprocessor, 'globalPreprocessor', templates, 'global/preprocessor.ts',
-        );
-      }
-      if (gs.postprocessor) {
-        scripts['globalPostprocessor'] = await this.compileWithTemplates(
-          gs.postprocessor, 'globalPostprocessor', templates, 'global/postprocessor.ts',
-        );
-      }
-      if (gs.deploy) {
-        scripts['globalDeploy'] = await this.compileWithTemplates(
-          gs.deploy, 'globalDeploy', templates, 'global/deploy.ts',
-        );
-      }
-      if (gs.undeploy) {
-        scripts['globalUndeploy'] = await this.compileWithTemplates(
-          gs.undeploy, 'globalUndeploy', templates, 'global/undeploy.ts',
-        );
-      }
+    if (gs.preprocessor) {
+      scripts['globalPreprocessor'] = await this.compileWithTemplates(
+        gs.preprocessor, 'globalPreprocessor', templates, 'global/preprocessor.ts',
+      );
+    }
+    if (gs.postprocessor) {
+      scripts['globalPostprocessor'] = await this.compileWithTemplates(
+        gs.postprocessor, 'globalPostprocessor', templates, 'global/postprocessor.ts',
+      );
+    }
+    if (gs.deploy) {
+      scripts['globalDeploy'] = await this.compileWithTemplates(
+        gs.deploy, 'globalDeploy', templates, 'global/deploy.ts',
+      );
+    }
+    if (gs.undeploy) {
+      scripts['globalUndeploy'] = await this.compileWithTemplates(
+        gs.undeploy, 'globalUndeploy', templates, 'global/undeploy.ts',
+      );
     }
 
     // Remove undefined entries
@@ -937,7 +942,7 @@ export class EngineManager {
       // Destination filter
       const destFilterRules = ftData.destinationFilterRules.get(d.id);
       if (destFilterRules) {
-        const filterScript = compileFilterRulesToScript(destFilterRules);
+        const filterScript = unwrapGenerated(compileFilterRulesToScript(destFilterRules), `${channel.name}/${d.name} filter`);
         if (filterScript) {
           destScripts['filter'] = await this.compileWithTemplates(
             filterScript, 'destinationFilter', templates, `${channel.name}/${d.name}/filter.ts`,
@@ -948,7 +953,7 @@ export class EngineManager {
       // Destination transformer
       const destTransformerSteps = ftData.destinationTransformerSteps.get(d.id);
       if (destTransformerSteps) {
-        const txScript = compileTransformerStepsToScript(destTransformerSteps);
+        const txScript = unwrapGenerated(compileTransformerStepsToScript(destTransformerSteps), `${channel.name}/${d.name} transformer`);
         if (txScript) {
           destScripts['transformer'] = await this.compileWithTemplates(
             txScript, 'destinationTransformer', templates, `${channel.name}/${d.name}/transformer.ts`,
@@ -992,8 +997,7 @@ export class EngineManager {
     const sourceScript = (channel.sourceConnectorProperties as { script: string }).script;
     const compiled = await compileScript(sourceScript, { sourcefile: `${channel.name}/js-source.js` });
     if (!compiled.ok) {
-      logger.error({ errMsg: compiled.error.message, stack: compiled.error.stack }, 'Failed to compile JS source script');
-      return;
+      throw new Error(`Channel ${channel.id} JavaScript source script failed to compile: ${compiled.error.message}`);
     }
     const cachedScript = compiled.value;
     jsReceiver.setScriptRunner(async (_script) => {
@@ -1017,8 +1021,7 @@ export class EngineManager {
       const destScript = (dest.properties as { script: string }).script;
       const compiled = await compileScript(destScript, { sourcefile: `${channel.name}/js-dest-${String(dest.metaDataId)}.js` });
       if (!compiled.ok) {
-        logger.error({ errMsg: compiled.error.message, stack: compiled.error.stack, metaDataId: dest.metaDataId }, 'Failed to compile JS dest script');
-        continue;
+        throw new Error(`Channel ${channel.id} destination ${String(dest.metaDataId)} JavaScript script failed to compile: ${compiled.error.message}`);
       }
       const cachedScript = compiled.value;
       jsDispatcher.setScriptRunner(async (_script, content, connectorMessage) => {
@@ -1061,7 +1064,7 @@ export class EngineManager {
   /** Load alerts applicable to a channel from the database. */
   private async loadAlertsForChannel(channelId: string): Promise<readonly LoadedAlert[]> {
     const listResult = await AlertService.list({ page: 1, pageSize: 1000 });
-    if (!listResult.ok) return [];
+    if (!listResult.ok) throw deployLoadError(channelId, 'alerts', listResult.error);
 
     const enabledAlerts = listResult.value.data.filter((a) => a.enabled);
     if (enabledAlerts.length === 0) return [];
@@ -1069,7 +1072,7 @@ export class EngineManager {
     // Batch fetch all enabled alert details in a single query
     const ids = enabledAlerts.map((a) => a.id);
     const detailsResult = await AlertService.getByIds(ids);
-    if (!detailsResult.ok) return [];
+    if (!detailsResult.ok) throw deployLoadError(channelId, 'alerts', detailsResult.error);
 
     return this.filterAlertsForChannel(detailsResult.value, channelId);
   }
@@ -1116,6 +1119,9 @@ export class EngineManager {
           operator: filterRules.operator,
           type: filterRules.type,
           script: filterRules.script,
+          field: filterRules.field,
+          condition: filterRules.condition,
+          values: filterRules.values,
         })
         .from(channelFilters)
         .leftJoin(filterRules, eq(filterRules.filterId, channelFilters.id))
@@ -1149,6 +1155,9 @@ export class EngineManager {
         operator: row.operator ?? 'AND',
         type: row.type ?? 'JAVASCRIPT',
         script: row.script ?? null,
+        field: row.field ?? null,
+        condition: row.condition ?? null,
+        values: row.values ?? null,
       };
       if (row.connectorId === null) {
         sourceFilterRules.push(rule);
@@ -1199,6 +1208,28 @@ interface FilterRuleRow {
   readonly operator: string;
   readonly type: string;
   readonly script: string | null;
+  readonly field: string | null;
+  readonly condition: string | null;
+  readonly values: ReadonlyArray<string> | null;
+}
+
+/** The four global scripts, as GlobalScriptService returns them. */
+interface GlobalScripts {
+  readonly preprocessor: string;
+  readonly postprocessor: string;
+  readonly deploy: string;
+  readonly undeploy: string;
+}
+
+/** Error for configuration a deploy depends on and could not load. */
+function deployLoadError(channelId: string, what: string, cause: Error): Error {
+  return new Error(`Channel ${channelId} cannot deploy: failed to load ${what}: ${cause.message}`);
+}
+
+/** Unwrap a generated filter/transformer script, refusing to deploy when a rule or step cannot run. */
+function unwrapGenerated(result: Result<string | null>, where: string): string | null {
+  if (!result.ok) throw new Error(`${where}: ${result.error.message}`);
+  return result.value;
 }
 
 interface TransformerStepRow {
