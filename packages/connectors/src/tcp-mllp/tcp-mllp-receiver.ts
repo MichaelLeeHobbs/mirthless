@@ -23,6 +23,20 @@ import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logge
 /** Close an inbound MLLP connection after this long with no traffic. */
 const IDLE_SOCKET_TIMEOUT_MS = 300_000;
 
+/** On stop, how long messages already being processed get to finish and be acknowledged. */
+const STOP_DRAIN_MS = 5_000;
+
+/** On stop, how long to wait for sockets to close once they have been told to. */
+const STOP_CLOSE_MS = 2_000;
+
+/** Resolve when `work` settles or after `ms`, whichever is first. */
+async function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); });
+  await Promise.race([work.then(() => undefined, () => undefined), timeout]);
+  clearTimeout(timer);
+}
+
 // ----- Config -----
 
 /**
@@ -58,6 +72,9 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
   private server: net.Server | null = null;
   private dispatcher: MessageDispatcher | null = null;
   private readonly connections = new Set<net.Socket>();
+  /** Per-connection processing chain, so stop can wait for work in flight. */
+  private readonly chains = new Map<net.Socket, Promise<void>>();
+  private stopping = false;
 
   constructor(config: TcpMllpReceiverConfig, logger?: ConnectorLogger) {
     this.config = config;
@@ -85,6 +102,7 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
+      this.stopping = false;
       this.server = this.createServer();
       this.server.maxConnections = this.config.maxConnections;
 
@@ -118,35 +136,37 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     return net.createServer(onConnection);
   }
 
+  /**
+   * Stop gracefully. HL7 senders hold their connection open, and `server.close`
+   * only completes once every connection is gone, so the order matters:
+   *   1. stop accepting connections and stop reading new messages,
+   *   2. let messages already being processed finish and send their ACK,
+   *   3. close the connections, then wait for the listener to close.
+   * A message that arrives after step 1 is neither processed nor acknowledged,
+   * so the sender still holds it and resends it elsewhere or later.
+   */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
-      if (!this.server) return;
+      const server = this.server;
+      if (!server) return;
 
-      await new Promise<void>((resolve) => {
-        this.server!.close(() => { resolve(); });
-      });
+      this.stopping = true;
+      const listenerClosed = new Promise<void>((resolve) => { server.close(() => { resolve(); }); });
 
+      await settleWithin(Promise.all([...this.chains.values()]), STOP_DRAIN_MS);
+
+      // destroySoon flushes a pending ACK before closing the socket.
       for (const socket of this.connections) {
-        socket.end();
+        socket.destroySoon();
       }
-
-      if (this.connections.size > 0) {
-        await Promise.race([
-          new Promise<void>((resolve) => {
-            const check = (): void => {
-              if (this.connections.size === 0) { resolve(); return; }
-              setTimeout(check, 50);
-            };
-            check();
-          }),
-          new Promise<void>((resolve) => { setTimeout(resolve, 5_000); }),
-        ]);
-      }
+      await settleWithin(listenerClosed, STOP_CLOSE_MS);
 
       for (const socket of this.connections) {
         socket.destroy();
       }
       this.connections.clear();
+      this.chains.clear();
+      await listenerClosed;
       this.server = null;
     });
   }
@@ -155,12 +175,14 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     return tryCatch(async () => {
       if (!this.server) return;
 
+      this.stopping = true;
       this.server.close();
 
       for (const socket of this.connections) {
         socket.destroy();
       }
       this.connections.clear();
+      this.chains.clear();
       this.server = null;
     });
   }
@@ -192,6 +214,11 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     let chain: Promise<void> = Promise.resolve();
 
     socket.on('data', (chunk: Buffer) => {
+      // Stopping: take no new work. Unacknowledged, the message stays with the sender.
+      if (this.stopping) {
+        socket.destroy();
+        return;
+      }
       let msgs: readonly string[];
       try {
         msgs = parser.parse(chunk);
@@ -210,10 +237,12 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
             this.logger.error(errorInfo(err), 'Unexpected error processing MLLP message');
           });
       }
+      this.chains.set(socket, chain);
     });
 
     socket.on('close', () => {
       this.connections.delete(socket);
+      this.chains.delete(socket);
     });
 
     socket.on('error', (err) => {
