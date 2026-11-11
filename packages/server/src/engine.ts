@@ -251,8 +251,8 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
       MessageService.loadContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.loadContent>[3]),
     incrementStats: (channelId, metaDataId, serverId, field) =>
       MessageService.incrementStats(channelId, metaDataId, serverId, field),
-    dequeue: (channelId, metaDataId, batchSize) =>
-      MessageService.dequeue(channelId, metaDataId, batchSize),
+    dequeue: (channelId, metaDataId, batchSize, rotate) =>
+      MessageService.dequeue(channelId, metaDataId, batchSize, rotate === true),
     release: (channelId, messageId, metaDataId, newStatus) =>
       MessageService.release(channelId, messageId, metaDataId, newStatus as Parameters<typeof MessageService.release>[3]),
     storeAttachment: (channelId, messageId, attachmentId, mimeType, content, size) =>
@@ -663,7 +663,8 @@ export class EngineManager {
         channelId: channel.id,
         metaDataId: dest.metaDataId,
         serverId: this.serverId,
-        retryCount: dest.retryCount ?? 3,
+        retryCount: dest.retryCount ?? 0,
+        rotate: dest.rotateQueue === true,
         retryIntervalMs: dest.retryIntervalMs ?? 10_000,
         batchSize: 10,
         pollIntervalMs: 1_000,

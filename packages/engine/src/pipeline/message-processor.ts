@@ -105,7 +105,8 @@ export interface MessageStore {
   markProcessed(channelId: string, messageId: number): Promise<Result<void>>;
   enqueue(channelId: string, messageId: number, metaDataId: number): Promise<Result<void>>;
   loadContent(channelId: string, messageId: number, metaDataId: number, contentType: number): Promise<Result<string | null>>;
-  dequeue(channelId: string, metaDataId: number, batchSize: number): Promise<Result<readonly unknown[]>>;
+  /** `rotate`: least-attempted messages first, so a message that keeps failing goes to the back. */
+  dequeue(channelId: string, metaDataId: number, batchSize: number, rotate?: boolean): Promise<Result<readonly unknown[]>>;
   release(channelId: string, messageId: number, metaDataId: number, newStatus: string): Promise<Result<void>>;
   incrementStats(channelId: string, metaDataId: number, serverId: string, field: 'received' | 'filtered' | 'sent' | 'errored'): Promise<Result<void>>;
   storeAttachment?(channelId: string, messageId: number, attachmentId: string, mimeType: string, content: string, size: number): Promise<Result<void>>;
