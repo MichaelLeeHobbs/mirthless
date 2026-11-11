@@ -5,7 +5,9 @@
 // Uses a nested numeric-indexed internal representation
 // proven from the reference implementation.
 
-import { type Hl7Encoding, detectEncoding, encodingCharsString, splitSegments } from './hl7-encoding.js';
+import {
+  type Hl7Encoding, detectEncoding, encodingCharsString, splitSegments, escapeValue, unescapeValue, escapeStructural,
+} from './hl7-encoding.js';
 import { parsePath } from './hl7-path.js';
 
 // ----- Internal types -----
@@ -65,7 +67,11 @@ export class Hl7Message {
 
   // ----- Get -----
 
-  /** Get a value at the given HL7 path. Returns undefined if not found. */
+  /**
+   * Get a value at the given HL7 path, as it is encoded in the message (escape
+   * sequences such as `\\T\\` are not decoded). Returns undefined if not found.
+   * Use {@link getText} to read free text.
+   */
   get(path: string): string | undefined {
     const p = parsePath(path, true);
 
@@ -89,11 +95,35 @@ export class Hl7Message {
     return asString(value);
   }
 
+  /** Get the decoded text at a path: escape sequences become the characters they stand for. */
+  getText(path: string): string | undefined {
+    const raw = this.get(path);
+    return raw === undefined ? undefined : unescapeValue(raw, this._encoding);
+  }
+
   // ----- Set -----
 
-  /** Set a value at the given HL7 path. Creates intermediate levels as needed. */
+  /**
+   * Set a value at the given HL7 path. Creates intermediate levels as needed.
+   *
+   * Component, repetition and subcomponent separators in the value are kept,
+   * so a composite can be set in one call (`set('OBX.3', 'CODE^Text')`). A
+   * field separator or line break is always encoded: it can never be part of a
+   * value and would otherwise add fields or segments to the message. Use
+   * {@link setText} to store free text.
+   */
   set(path: string, value: string): void {
     const p = parsePath(path, false);
+    const isDelimiterField = p.segment === 'MSH' && p.field !== undefined && p.field <= 2;
+    this.store(p, isDelimiterField ? value : escapeStructural(value, this._encoding));
+  }
+
+  /** Set free text at a path, encoding every delimiter so it stays one value. */
+  setText(path: string, value: string): void {
+    this.store(parsePath(path, false), escapeValue(value, this._encoding));
+  }
+
+  private store(p: ReturnType<typeof parsePath>, value: string): void {
 
     // Ensure segment exists
     let segment = this.findSegment(p.segment, p.segmentIndex);
@@ -243,14 +273,15 @@ function parseSegment(line: string, enc: Hl7Encoding): SegmentData {
 function parseMshSegment(line: string, enc: Hl7Encoding): SegmentData {
   const fields = line.split(enc.fieldSep);
   fields.shift(); // Remove 'MSH'
-  fields.shift(); // Remove encoding chars field
 
   const result: SegmentData = { '0': 'MSH' };
 
   // MSH.1 = field separator
   result['1'] = { '1': { '1': { '1': enc.fieldSep } } };
-  // MSH.2 = encoding characters
-  result['2'] = { '1': { '1': { '1': encodingCharsString(enc) } } };
+  // MSH.2 = encoding characters, kept as sent: HL7 2.7 adds a fifth
+  // (truncation) character after the four delimiters.
+  const encodingField = fields.shift() ?? encodingCharsString(enc);
+  result['2'] = { '1': { '1': { '1': encodingField } } };
 
   // Remaining fields start at index 3 (offset 2)
   for (let i = 0; i < fields.length; i++) {
@@ -314,8 +345,8 @@ function serializeSegment(segment: SegmentData, enc: Hl7Encoding): string {
       continue;
     }
     if (isMsh && f === 2) {
-      // MSH.2 is the encoding characters string
-      parts.push(encodingCharsString(enc));
+      // MSH.2 is the encoding characters string, as parsed or set
+      parts.push(asString(segment['2']) ?? encodingCharsString(enc));
       continue;
     }
     const fieldObj = segment[String(f)] as Record<string, unknown> | undefined;

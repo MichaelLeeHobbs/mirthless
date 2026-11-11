@@ -75,11 +75,13 @@ The returned object exposes:
 | Member | Description |
 |---|---|
 | `get(path)` | Read a field by path, e.g. `msg.get('PID.3.1')`. `get('MSH.9')` auto-resolves to the first subcomponent — use `get('MSH.9.2')` for the trigger event. |
-| `set(path, value)` | Set a field by path. |
+| `getText(path)` | Like `get`, but decodes HL7 escape sequences: `Smith \T\ Sons` is returned as `Smith & Sons`. Use it to read free text. `get` returns the value as it is encoded in the message. |
+| `set(path, value)` | Set a field by path. `^`, `~` and `&` in the value are kept, so a composite can be set in one call (`msg.set('OBX.3', 'CODE^Text')`). A `|` or a line break is always encoded so it cannot add fields or segments. |
+| `setText(path, value)` | Store free text: every delimiter in the value is encoded, so it stays one value whatever it contains. |
 | `delete(path)` | Remove a field. |
 | `toString()` | Serialize back to an HL7 string. |
-| `messageType` | Message type (read-only). |
-| `messageControlId` | MSH-10 control ID (read-only). |
+| `messageType` | Message type (read-only). Follows edits to `MSH.9`. |
+| `messageControlId` | MSH-10 control ID (read-only). Follows edits to `MSH.10`. |
 | `getSegmentCount(name)` | Number of segments with the given name. |
 | `getSegmentString(name, index?)` | Raw string of the Nth segment (default first). |
 

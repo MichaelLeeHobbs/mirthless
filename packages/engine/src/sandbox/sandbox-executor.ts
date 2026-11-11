@@ -109,7 +109,9 @@ function hl7Op(state: HostBridgeState, op: string, args: readonly unknown[]): un
   const proxy = getHl7(state, args[0]);
   switch (op) {
     case 'hl7.get': return proxy.get(args[1] as string);
+    case 'hl7.getText': return proxy.getText(args[1] as string);
     case 'hl7.set': proxy.set(args[1] as string, args[2] as string); return undefined;
+    case 'hl7.setText': proxy.setText(args[1] as string, args[2] as string); return undefined;
     case 'hl7.delete': proxy.delete(args[1] as string); return undefined;
     case 'hl7.toString': return proxy.toString();
     case 'hl7.messageType': return proxy.messageType;
@@ -313,11 +315,13 @@ globalThis.__build = function (hostDispatch, payload) {
       __hl7Proxy: true,
       __handle: handle,
       get: function (p) { return dispatch('hl7.get', handle, p); },
+      getText: function (p) { return dispatch('hl7.getText', handle, p); },
       set: function (p, v) { dispatch('hl7.set', handle, p, v); },
+      setText: function (p, v) { dispatch('hl7.setText', handle, p, v); },
       delete: function (p) { dispatch('hl7.delete', handle, p); },
       toString: function () { return dispatch('hl7.toString', handle); },
-      messageType: dispatch('hl7.messageType', handle),
-      messageControlId: dispatch('hl7.controlId', handle),
+      get messageType() { return dispatch('hl7.messageType', handle); },
+      get messageControlId() { return dispatch('hl7.controlId', handle); },
       getSegmentCount: function (n) { return dispatch('hl7.segCount', handle, n); },
       getSegmentString: function (n, i) { return dispatch('hl7.segString', handle, n, i); }
     };

@@ -71,24 +71,39 @@ export function escapeValue(value: string, enc: Hl7Encoding): string {
   return result;
 }
 
-/** Unescape HL7 escape sequences back to their original characters. */
+/**
+ * Unescape HL7 escape sequences back to their original characters.
+ *
+ * One pass over the text, so a decoded escape character can never join the
+ * characters after it into a second sequence (the literal text `\F\` is
+ * encoded as `\E\F\E\` and must decode to itself). Sequences this function
+ * does not know, such as the formatting commands `\H\` and `\.br\`, are kept.
+ */
 export function unescapeValue(value: string, enc: Hl7Encoding): string {
   const e = escapeRegex(enc.escapeChar);
-  let result = value;
-  result = result.replace(new RegExp(`${e}E${e}`, 'g'), enc.escapeChar);
-  result = result.replace(new RegExp(`${e}F${e}`, 'g'), enc.fieldSep);
-  result = result.replace(new RegExp(`${e}S${e}`, 'g'), enc.componentSep);
-  result = result.replace(new RegExp(`${e}T${e}`, 'g'), enc.subComponentSep);
-  result = result.replace(new RegExp(`${e}R${e}`, 'g'), enc.repetitionSep);
-  result = result.replace(new RegExp(`${e}X0D${e}`, 'g'), '\r');
-  result = result.replace(new RegExp(`${e}X0A${e}`, 'g'), '\n');
-  // Hex escape: \Xnn\ where nn is hex
-  result = result.replace(new RegExp(`${e}X([0-9A-Fa-f]{2,})${e}`, 'g'), (_match, hex: string) => {
+  const single: Readonly<Record<string, string>> = {
+    E: enc.escapeChar, F: enc.fieldSep, S: enc.componentSep, T: enc.subComponentSep, R: enc.repetitionSep,
+  };
+  return value.replace(new RegExp(`${e}([EFSTR]|X(?:[0-9A-Fa-f]{2})+)${e}`, 'g'), (_match, code: string) => {
+    const known = single[code];
+    if (known !== undefined) return known;
     let out = '';
-    for (let i = 0; i < hex.length; i += 2) {
-      out += String.fromCharCode(parseInt(hex.substring(i, i + 2), 16));
+    for (let i = 1; i < code.length; i += 2) {
+      out += String.fromCharCode(parseInt(code.substring(i, i + 2), 16));
     }
     return out;
   });
-  return result;
+}
+
+/**
+ * Escape only what can never be part of a value: the field separator and line
+ * breaks. Used when a caller sets a value that may be a deliberate composite
+ * (`CODE^Text`), where the other delimiters are structure and must be kept.
+ */
+export function escapeStructural(value: string, enc: Hl7Encoding): string {
+  const x = enc.escapeChar;
+  return value
+    .split(enc.fieldSep).join(`${x}F${x}`)
+    .replace(/\r/g, `${x}X0D${x}`)
+    .replace(/\n/g, `${x}X0A${x}`);
 }

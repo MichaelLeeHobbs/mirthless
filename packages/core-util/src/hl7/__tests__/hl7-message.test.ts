@@ -382,3 +382,56 @@ describe('parse accepts the line endings real feeds use', () => {
     expect(() => Hl7Message.parse('   ')).toThrow('HL7 message must start with MSH');
   });
 });
+
+describe('Hl7Message escaping', () => {
+  const RAW = 'MSH|^~\\&|APP|FAC|||20260101||ORU^R01|C1|P|2.5.1\rOBX|1|TX|NOTE||Smith \\T\\ Sons\\F\\Ltd';
+
+  it('get returns the field as encoded in the message', () => {
+    expect(Hl7Message.parse(RAW).get('OBX.5')).toBe('Smith \\T\\ Sons\\F\\Ltd');
+  });
+
+  it('getText returns the decoded text', () => {
+    expect(Hl7Message.parse(RAW).getText('OBX.5')).toBe('Smith & Sons|Ltd');
+  });
+
+  it('getText is undefined for a missing path', () => {
+    expect(Hl7Message.parse(RAW).getText('ZZZ.1')).toBeUndefined();
+  });
+
+  it('setText encodes every delimiter so the value stays one field', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.setText('OBX.5', 'a|b^c&d~e\\f\r\ng');
+
+    const out = msg.toString();
+    expect(out.split('\r')).toHaveLength(2);
+    expect(Hl7Message.parse(out).getText('OBX.5')).toBe('a|b^c&d~e\\f\r\ng');
+    expect(Hl7Message.parse(out).get('OBX.6')).toBeUndefined();
+  });
+
+  it('set keeps component separators (a composite can be set in one call)', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('OBX.3', 'CODE^Text^L');
+    expect(Hl7Message.parse(msg.toString()).get('OBX.3.2')).toBe('Text');
+  });
+
+  it('set never lets a value add a field or a segment', () => {
+    const msg = Hl7Message.parse(RAW);
+    msg.set('OBX.5', 'one|two\rPID|1||999\nZZZ|x');
+
+    const out = msg.toString();
+    expect(out.split('\r')).toHaveLength(2);
+    expect(Hl7Message.parse(out).getSegmentCount('PID')).toBe(0);
+    expect(Hl7Message.parse(out).getText('OBX.5')).toBe('one|two\rPID|1||999\nZZZ|x');
+  });
+});
+
+describe('Hl7Message MSH-2', () => {
+  it('keeps the truncation character of HL7 2.7 and later', () => {
+    const raw = 'MSH|^~\\&#|APP|FAC|||20260101||ADT^A01|C1|P|2.7\rPID|1';
+    const msg = Hl7Message.parse(raw);
+
+    expect(msg.get('MSH.2')).toBe('^~\\&#');
+    expect(msg.get('MSH.3')).toBe('APP');
+    expect(msg.toString()).toBe(raw);
+  });
+});

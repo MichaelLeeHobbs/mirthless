@@ -364,3 +364,34 @@ describe('VmSandboxExecutor', () => {
     });
   });
 });
+
+describe('HL7 message in scripts', () => {
+  const HL7 = 'MSH|^~\\&|S|F|R|F|20260329||ADT^A01|C1|P|2.5\rOBX|1|TX|NOTE||Smith \\T\\ Sons';
+  let hl7Executor: VmSandboxExecutor;
+
+  beforeEach(() => { hl7Executor = new VmSandboxExecutor(); });
+  afterEach(() => { hl7Executor.dispose(); });
+
+  async function run(body: string): Promise<unknown> {
+    const context = makeContext({ msg: createHl7Proxy(Hl7Message.parse(HL7)) });
+    const result = await hl7Executor.execute(makeScript(body), context, makeOptions());
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value.returnValue;
+  }
+
+  it('messageType and messageControlId follow edits made by the script', async () => {
+    expect(await run(
+      "msg.set('MSH.9', 'ORU'); msg.set('MSH.10', 'NEW1'); return msg.messageType + '|' + msg.messageControlId;",
+    )).toBe('ORU|NEW1');
+  });
+
+  it('getText decodes escape sequences and get does not', async () => {
+    expect(await run("return msg.getText('OBX.5') + ' / ' + msg.get('OBX.5');")).toBe('Smith & Sons / Smith \\T\\ Sons');
+  });
+
+  it('setText stores text with delimiters as one value', async () => {
+    expect(await run(
+      "msg.setText('OBX.5', 'a|b^c'); return msg.getText('OBX.5') + ' ' + msg.toString().split('\\r')[1].split('|').length;",
+    )).toBe('a|b^c 6');
+  });
+});
