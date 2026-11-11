@@ -10,7 +10,7 @@ import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
-import { normalizeEncoding } from '../encoding.js';
+import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Constants -----
@@ -103,6 +103,10 @@ export class FileReceiver implements SourceConnectorRuntime {
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
+  /** False once stop or halt is requested: the cycle in flight takes no more files. */
+  private running = false;
+  /** The poll cycle in flight, so stop can wait for the file being processed. */
+  private cycle: Promise<void> | null = null;
   /**
    * Files that dispatched successfully but whose post-action (delete/move)
    * failed. Tracked by name+mtime so they are NOT re-dispatched next cycle,
@@ -138,6 +142,9 @@ export class FileReceiver implements SourceConnectorRuntime {
       if (this.config.postAction === FILE_POST_ACTION.MOVE && !this.config.moveToDirectory) {
         throw new Error('Move-to directory is required when postAction is MOVE');
       }
+      if (!this.config.binary && !isKnownEncoding(this.config.charset)) {
+        throw new Error(unknownEncodingMessage(this.config.charset));
+      }
     });
   }
 
@@ -151,20 +158,27 @@ export class FileReceiver implements SourceConnectorRuntime {
       // still skipped (never re-dispatched).
       await this.loadQuarantine();
 
+      this.running = true;
       this.pollTimer = setInterval(() => {
-        void this.pollCycle();
+        if (this.polling) return;
+        this.cycle = this.pollCycle();
       }, this.config.pollingIntervalMs);
     });
   }
 
+  /** Stop taking files and wait for the one being processed to finish. */
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
+      this.running = false;
       this.clearPollTimer();
+      if (this.cycle !== null) await this.cycle;
     });
   }
 
+  /** Stop taking files without waiting for the one being processed. */
   async onHalt(): Promise<Result<void>> {
     return tryCatch(async () => {
+      this.running = false;
       this.clearPollTimer();
     });
   }
@@ -183,6 +197,7 @@ export class FileReceiver implements SourceConnectorRuntime {
       const entries = await this.listMatchingFiles();
       const sorted = this.sortEntries(entries);
       for (const entry of sorted) {
+        if (!this.running) break;
         await this.processFile(entry);
       }
     } catch (err) {
@@ -210,7 +225,9 @@ export class FileReceiver implements SourceConnectorRuntime {
       if (!matchGlob(this.config.fileFilter, entry.name)) continue;
 
       const fullPath = path.join(this.config.directory, entry.name);
-      const stat = await fs.stat(fullPath);
+      const stat = await fs.stat(fullPath).catch(() => null);
+      // Gone since the listing (another reader took it): nothing to process.
+      if (stat === null) continue;
 
       if (this.config.checkFileAge) {
         const age = now - stat.mtimeMs;
@@ -256,9 +273,8 @@ export class FileReceiver implements SourceConnectorRuntime {
       return;
     }
 
-    const content = this.config.binary
-      ? (await fs.readFile(entry.fullPath)).toString('base64')
-      : await fs.readFile(entry.fullPath, { encoding: normalizeEncoding(this.config.charset) });
+    const content = await this.readContent(entry);
+    if (content === null) return;
 
     const raw: RawMessage = {
       content,
@@ -296,6 +312,24 @@ export class FileReceiver implements SourceConnectorRuntime {
         { ...errorInfo(err), file: entry.fullPath },
         'Post-action failed after successful dispatch; quarantining file',
       );
+    }
+  }
+
+  /**
+   * Read one file. A file that cannot be read is reported and skipped, so it
+   * does not hold up the files after it; it is tried again on the next poll.
+   */
+  private async readContent(entry: FileEntry): Promise<string | null> {
+    try {
+      return this.config.binary
+        ? (await fs.readFile(entry.fullPath)).toString('base64')
+        : await fs.readFile(entry.fullPath, { encoding: normalizeEncoding(this.config.charset) });
+    } catch (err) {
+      this.logger.error(
+        { ...errorInfo(err), file: entry.fullPath },
+        'File could not be read; skipping it this poll and continuing with the next file',
+      );
+      return null;
     }
   }
 

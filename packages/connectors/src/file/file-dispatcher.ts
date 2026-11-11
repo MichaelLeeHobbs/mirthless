@@ -9,7 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
-import { normalizeEncoding } from '../encoding.js';
+import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 
 // ----- Config -----
 
@@ -39,6 +39,26 @@ export function resolveOutputFilename(
   return result;
 }
 
+/** Placeholders an output filename pattern can use. */
+export const FILENAME_PLACEHOLDERS: readonly string[] = ['messageId', 'timestamp'];
+
+/**
+ * Names of the `${...}` placeholders in a pattern that cannot be filled. A
+ * pattern with one is refused at deploy: left in place it would be written
+ * into the filename as literal text.
+ */
+export function unknownPlaceholders(pattern: string): readonly string[] {
+  const found = [...pattern.matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1] ?? '');
+  return [...new Set(found.filter((name) => !FILENAME_PLACEHOLDERS.includes(name)))];
+}
+
+/** Error text for a pattern that failed {@link unknownPlaceholders}. */
+export function unknownPlaceholderMessage(names: readonly string[]): string {
+  const bad = names.map((n) => '${' + n + '}').join(', ');
+  const good = FILENAME_PLACEHOLDERS.map((n) => '${' + n + '}').join(' and ');
+  return `The filename pattern uses ${bad}, which is not available. Use ${good}.`;
+}
+
 // ----- Dispatcher -----
 
 export class FileDispatcher implements DestinationConnectorRuntime {
@@ -56,6 +76,13 @@ export class FileDispatcher implements DestinationConnectorRuntime {
       }
       if (!this.config.outputPattern) {
         throw new Error('Output pattern is required');
+      }
+      const unknown = unknownPlaceholders(this.config.outputPattern);
+      if (unknown.length > 0) {
+        throw new Error(unknownPlaceholderMessage(unknown));
+      }
+      if (!this.config.binary && !isKnownEncoding(this.config.charset)) {
+        throw new Error(unknownEncodingMessage(this.config.charset));
       }
     });
   }
@@ -81,7 +108,6 @@ export class FileDispatcher implements DestinationConnectorRuntime {
       const context: Record<string, string> = {
         messageId: String(message.messageId),
         timestamp: String(Date.now()),
-        originalFilename: 'message',
       };
 
       const filename = resolveOutputFilename(this.config.outputPattern, context);

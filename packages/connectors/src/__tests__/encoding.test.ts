@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeEncoding } from '../encoding.js';
+import { normalizeEncoding, isKnownEncoding } from '../encoding.js';
 
 describe('normalizeEncoding', () => {
   it('maps IANA/human charset names to valid Node Buffer encodings', () => {
@@ -24,6 +24,20 @@ describe('normalizeEncoding', () => {
   it('returns only encodings Node actually accepts', () => {
     for (const input of ['ISO-8859-1', 'US-ASCII', 'UTF-8', 'utf-16le', 'weird']) {
       expect(Buffer.isEncoding(normalizeEncoding(input))).toBe(true);
+    }
+  });
+});
+
+describe('isKnownEncoding', () => {
+  it('knows the supported names in any case, and an empty value (the UTF-8 default)', () => {
+    for (const name of ['utf-8', 'UTF8', 'ISO-8859-1', 'latin1', 'us-ascii', 'utf-16le', '', undefined, null]) {
+      expect(isKnownEncoding(name)).toBe(true);
+    }
+  });
+
+  it('does not know character sets Node cannot decode', () => {
+    for (const name of ['windows-1252', 'shift_jis', 'utf-9']) {
+      expect(isKnownEncoding(name)).toBe(false);
     }
   });
 });

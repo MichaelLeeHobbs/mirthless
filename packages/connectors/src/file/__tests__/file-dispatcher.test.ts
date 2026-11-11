@@ -116,6 +116,25 @@ describe('FileDispatcher', () => {
       expect(result.ok).toBe(false);
     });
 
+    it('refuses a pattern with a placeholder it cannot fill, naming it', async () => {
+      // ${originalFilename} used to become the literal "message", so every
+      // file written through such a pattern replaced the one before it.
+      dispatcher = new FileDispatcher(makeConfig({ outputPattern: '${originalFilename}.hl7' }));
+      const result = await dispatcher.onDeploy();
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected failure');
+      expect(result.error.message).toContain('${originalFilename}');
+      expect(result.error.message).toContain('${messageId}');
+    });
+
+    it('refuses a character set it does not know instead of writing UTF-8', async () => {
+      dispatcher = new FileDispatcher(makeConfig({ charset: 'windows-1252' as BufferEncoding }));
+      const result = await dispatcher.onDeploy();
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected failure');
+      expect(result.error.message).toContain('windows-1252');
+    });
+
     it('deploys with valid config', async () => {
       dispatcher = new FileDispatcher(makeConfig());
       const result = await dispatcher.onDeploy();

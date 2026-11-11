@@ -87,7 +87,7 @@ export function FileDestinationForm({ properties, onChange }: DestConnectorFormP
           label="Output Pattern"
           value={getStr(properties, 'outputPattern', '${messageId}.txt')}
           onChange={handleText('outputPattern')}
-          helperText="Filename pattern (${messageId}, ${timestamp}, ${originalFilename})"
+          helperText="Use ${messageId} or ${timestamp} so each message gets its own file. A fixed name is replaced by every message unless Append Mode is on."
           fullWidth
           sx={{ mb: 2 }}
         />

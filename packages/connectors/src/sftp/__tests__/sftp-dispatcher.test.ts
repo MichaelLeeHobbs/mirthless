@@ -50,6 +50,14 @@ beforeEach(() => {
 // ----- onDeploy -----
 
 describe('onDeploy', () => {
+  it('refuses a file name template with a placeholder it cannot fill', async () => {
+    const d = new SftpDispatcher(makeConfig({ fileNameTemplate: '${originalFilename}.hl7' }), factoryFor(new RemoteState()));
+    const result = await d.onDeploy();
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
+    expect(result.error.message).toContain('${originalFilename}');
+  });
+
   it('validates host is required', async () => {
     const d = new SftpDispatcher(makeConfig({ host: '' }), factoryFor(new RemoteState()));
     expect((await d.onDeploy()).ok).toBe(false);
