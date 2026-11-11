@@ -12,7 +12,7 @@ import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
 import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
 import type { AttachmentConfig } from './attachment-handler.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
-import { parseForSandbox, serializeFromSandbox } from './data-type-handler.js';
+import { parseForSandbox, serializeFromSandbox, serializeTransformed } from './data-type-handler.js';
 
 // ----- Types -----
 
@@ -400,7 +400,7 @@ export class MessageProcessor {
         if (!txResult.ok) return errorOut('sourceTransformer', txResult.error.message);
         // Use explicit return value if present, otherwise fall back to msg variable
         const transformed = txResult.value.returnValue ?? txResult.value.msg;
-        content = serializeFromSandbox(transformed, dataType);
+        content = serializeTransformed(transformed, content, dataType);
         mark('sourceTransformer');
       }
 
@@ -560,7 +560,7 @@ export class MessageProcessor {
           return this.destErrorOut(messageId, dest, 'destinationTransformer', txResult.error.message);
         }
         const transformed = txResult.value.returnValue ?? txResult.value.msg;
-        destContent = serializeFromSandbox(transformed, dataType);
+        destContent = serializeTransformed(transformed, destContent, dataType);
       }
 
       // Persist the outbound (SENT) content BEFORE queuing/sending. A queued
