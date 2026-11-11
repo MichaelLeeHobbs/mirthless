@@ -23,8 +23,27 @@ const DEFAULT_COMPILE_OPTIONS: CompileOptions = {
 
 // ----- Compiler -----
 
-/** Script cache keyed by source code hash. */
+/** Most compiled scripts kept. A server with more distinct scripts recompiles the oldest on next deploy. */
+export const SCRIPT_CACHE_LIMIT = 1_000;
+
+/**
+ * Compiled scripts by compile options and source. Bounded: a long-running
+ * server sees a new entry for every edit of every script, and nothing else
+ * ever removed them. A Map keeps insertion order, so the first key is the oldest.
+ */
 const scriptCache = new Map<string, CompiledScript>();
+
+/** Number of scripts in the cache. */
+export function scriptCacheSize(): number {
+  return scriptCache.size;
+}
+
+function remember(key: string, compiled: CompiledScript): void {
+  scriptCache.set(key, compiled);
+  if (scriptCache.size <= SCRIPT_CACHE_LIMIT) return;
+  const oldest = scriptCache.keys().next();
+  if (!oldest.done) scriptCache.delete(oldest.value);
+}
 
 /** Compile TypeScript source to JavaScript via esbuild. */
 export async function compileScript(
@@ -32,10 +51,11 @@ export async function compileScript(
   options?: CompileOptions,
 ): Promise<Result<CompiledScript>> {
   return tryCatch(async () => {
-    const cached = scriptCache.get(code);
-    if (cached) return cached;
-
     const opts = { ...DEFAULT_COMPILE_OPTIONS, ...options };
+    // The options change the output (source map, file name), so they are part of the key.
+    const key = `${opts.sourcemap ? '1' : '0'}\u0000${opts.sourcefile ?? ''}\u0000${code}`;
+    const cached = scriptCache.get(key);
+    if (cached) return cached;
 
     const transformOptions: Parameters<typeof transform>[1] = {
       loader: 'ts',
@@ -52,7 +72,7 @@ export async function compileScript(
       ? { code: result.code, sourceMap: result.map }
       : { code: result.code };
 
-    scriptCache.set(code, compiled);
+    remember(key, compiled);
     return compiled;
   });
 }

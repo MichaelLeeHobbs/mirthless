@@ -9,6 +9,8 @@ import {
   compileFilterRulesToScript,
   compileTransformerStepsToScript,
   type FilterRuleInput,
+  SCRIPT_CACHE_LIMIT,
+  scriptCacheSize,
 } from '../script-compiler.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../sandbox-executor.js';
 import { createSandboxContext } from '../sandbox-context.js';
@@ -363,4 +365,39 @@ describe('compileTransformerStepsToScript', () => {
     const steps = [{ enabled: true, type: 'MAPPER', script: 'tmp.mapped = msg.a;' }];
     expect(script(compileTransformerStepsToScript(steps))).toContain('tmp.mapped = msg.a;');
   });
+});
+
+describe('script cache', () => {
+  it('does not reuse a script compiled with other options', async () => {
+    clearScriptCache();
+    const withMap = await compileScript('return 1;', { sourcemap: true, sourcefile: 'a.ts' });
+    const withoutMap = await compileScript('return 1;', { sourcemap: false, sourcefile: 'a.ts' });
+    const otherFile = await compileScript('return 1;', { sourcemap: true, sourcefile: 'b.ts' });
+    if (!withMap.ok || !withoutMap.ok || !otherFile.ok) throw new Error('compile failed');
+
+    expect(withMap.value.code).toContain('sourceMappingURL');
+    expect(withoutMap.value.code).not.toContain('sourceMappingURL');
+    expect(otherFile.value.code).not.toBe(withMap.value.code);
+  });
+
+  it('returns the cached script for the same code and options', async () => {
+    clearScriptCache();
+    const first = await compileScript('return 2;');
+    const second = await compileScript('return 2;');
+    if (!first.ok || !second.ok) throw new Error('compile failed');
+    expect(second.value).toBe(first.value);
+  });
+
+  it('stops growing at its limit, dropping the oldest entries', async () => {
+    clearScriptCache();
+    for (let i = 0; i < SCRIPT_CACHE_LIMIT + 5; i++) {
+      await compileScript(`return ${String(i)};`, { sourcemap: false });
+    }
+    expect(scriptCacheSize()).toBe(SCRIPT_CACHE_LIMIT);
+
+    // The newest is still cached; the oldest was dropped and compiles afresh.
+    const newest = await compileScript(`return ${String(SCRIPT_CACHE_LIMIT + 4)};`, { sourcemap: false });
+    expect(scriptCacheSize()).toBe(SCRIPT_CACHE_LIMIT);
+    expect(newest.ok).toBe(true);
+  }, 30_000);
 });
