@@ -213,6 +213,27 @@ async function overwriteChannel(entry: ChannelExportEntry): Promise<void> {
   });
 }
 
+interface ConnectorRef {
+  readonly connectorId: string | null;
+  readonly metaDataId?: number | null | undefined;
+}
+
+/**
+ * The new connector row a filter or transformer belongs to: null for the
+ * source, else the destination its metaDataId names. A reference by the
+ * exporting server's row id alone cannot be resolved here, so it fails the
+ * channel's import rather than attaching the script to the wrong connector.
+ */
+export function resolveConnectorId(ref: ConnectorRef, destIdByMetaDataId: ReadonlyMap<number, string>, what: string): string | null {
+  if (ref.metaDataId !== undefined && ref.metaDataId !== null) {
+    const id = destIdByMetaDataId.get(ref.metaDataId);
+    if (!id) throw new Error(`${what} belongs to destination ${String(ref.metaDataId)}, which the channel does not have`);
+    return id;
+  }
+  if (ref.connectorId === null) return null;
+  throw new Error(`${what} names its destination only by a connector id from another server; export the channel again`);
+}
+
 async function insertRelations(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   channelId: string,
@@ -230,8 +251,9 @@ async function insertRelations(
   }
 
   // Destinations
+  const destIdByMetaDataId = new Map<number, string>();
   if (entry.destinations.length > 0) {
-    await tx.insert(channelConnectors).values(
+    const insertedDestinations = await tx.insert(channelConnectors).values(
       entry.destinations.map((d) => ({
         channelId,
         metaDataId: d.metaDataId,
@@ -246,8 +268,11 @@ async function insertRelations(
         queueThreadCount: d.queueThreadCount,
         waitForPrevious: d.waitForPrevious,
       })),
-    );
+    ).returning({ id: channelConnectors.id, metaDataId: channelConnectors.metaDataId });
+    for (const row of insertedDestinations) destIdByMetaDataId.set(row.metaDataId, row.id);
   }
+  const connectorFor = (ref: ConnectorRef, what: string): string | null =>
+    resolveConnectorId(ref, destIdByMetaDataId, `${what} of "${entry.name}"`);
 
   // Metadata columns
   if (entry.metadataColumns.length > 0) {
@@ -265,7 +290,7 @@ async function insertRelations(
   for (const filter of entry.filters) {
     const [inserted] = await tx
       .insert(channelFilters)
-      .values({ channelId, connectorId: filter.connectorId })
+      .values({ channelId, connectorId: connectorFor(filter, 'a filter') })
       .returning({ id: channelFilters.id });
 
     if (inserted && filter.rules.length > 0) {
@@ -292,7 +317,7 @@ async function insertRelations(
       .insert(channelTransformers)
       .values({
         channelId,
-        connectorId: transformer.connectorId,
+        connectorId: connectorFor(transformer, 'a transformer'),
         inboundDataType: transformer.inboundDataType,
         outboundDataType: transformer.outboundDataType,
         inboundProperties: transformer.inboundProperties,

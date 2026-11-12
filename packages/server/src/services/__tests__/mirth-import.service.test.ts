@@ -230,7 +230,7 @@ describe('MirthImportService.convertXml', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const filters = result.value.channels[0]?.filters ?? [];
-    const sourceFilter = filters.find((f) => f.connectorId === null);
+    const sourceFilter = filters.find((f) => (f.metaDataId ?? null) === null);
     expect(sourceFilter).toBeDefined();
     expect(sourceFilter?.rules).toHaveLength(1);
     expect(sourceFilter?.rules[0]?.name).toBe('Accept ADT only');
@@ -244,7 +244,7 @@ describe('MirthImportService.convertXml', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const filters = result.value.channels[0]?.filters ?? [];
-    const destFilter = filters.find((f) => f.connectorId === '2');
+    const destFilter = filters.find((f) => f.metaDataId === 2);
     expect(destFilter).toBeDefined();
     expect(destFilter?.rules).toHaveLength(1);
     expect(destFilter?.rules[0]?.name).toBe('Only A01 events');
@@ -257,7 +257,7 @@ describe('MirthImportService.convertXml', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const transformers = result.value.channels[0]?.transformers ?? [];
-    const sourceTransformer = transformers.find((t) => t.connectorId === null);
+    const sourceTransformer = transformers.find((t) => (t.metaDataId ?? null) === null);
     expect(sourceTransformer).toBeDefined();
     expect(sourceTransformer?.steps).toHaveLength(2);
     expect(sourceTransformer?.steps[0]?.name).toBe('Set patient name');
@@ -273,7 +273,7 @@ describe('MirthImportService.convertXml', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const transformers = result.value.channels[0]?.transformers ?? [];
-    const destTransformer = transformers.find((t) => t.connectorId === '2');
+    const destTransformer = transformers.find((t) => t.metaDataId === 2);
     expect(destTransformer).toBeDefined();
     expect(destTransformer?.steps).toHaveLength(1);
     expect(destTransformer?.steps[0]?.name).toBe('Log message type');
@@ -442,7 +442,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
 
   it('decodes XML entities and character references in scripts', () => {
     const channel = convert4x();
-    const source = channel.transformers.find((t) => t.connectorId === null);
+    const source = channel.transformers.find((t) => (t.metaDataId ?? null) === null);
     expect(source?.steps[0]?.script).toBe('if (1 < 2 && true) { channelMap.put(\'ack\', "MSA|AA"); }\r\nvar done = true;');
     expect(channel.scripts.find((s) => s.scriptType === 'POSTPROCESSOR')?.script).toBe("return $c('ack');");
   });
@@ -452,20 +452,20 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
   });
 
   it('reads transformer steps from <elements> in sequence order', () => {
-    const source = convert4x().transformers.find((t) => t.connectorId === null);
+    const source = convert4x().transformers.find((t) => (t.metaDataId ?? null) === null);
     expect(source?.steps.map((s) => [s.name, s.type])).toEqual([['Build ACK', 'JAVASCRIPT'], ['Second step', 'JAVASCRIPT']]);
   });
 
   it('reads filter rules from the <filter> next to the transformer', () => {
     const filters = convert4x().filters;
-    expect(filters.find((f) => f.connectorId === null)?.rules[0]).toMatchObject({ name: 'Not A08', type: 'JAVASCRIPT' });
-    expect(filters.find((f) => f.connectorId === '1')?.rules[0]?.name).toBe('Only ORM');
+    expect(filters.find((f) => (f.metaDataId ?? null) === null)?.rules[0]).toMatchObject({ name: 'Not A08', type: 'JAVASCRIPT' });
+    expect(filters.find((f) => f.metaDataId === 1)?.rules[0]?.name).toBe('Only ORM');
   });
 
   it('keys destinations, their filters and transformers by the metaDataId in the export', () => {
     const channel = convert4x();
     expect(channel.destinations.map((d) => d.metaDataId)).toEqual([1, 3]);
-    expect(channel.transformers.find((t) => t.connectorId === '1')?.steps[0]?.name).toBe('Stamp');
+    expect(channel.transformers.find((t) => t.metaDataId === 1)?.steps[0]?.name).toBe('Stamp');
   });
 
   it('reads queue settings from destinationConnectorProperties', () => {

@@ -11,6 +11,12 @@ import { ChannelService, type ChannelDetail } from './channel.service.js';
 
 // ----- Helpers -----
 
+/** The metaDataId of the destination a filter or transformer row belongs to; null for the source. */
+function destinationMetaDataId(detail: ChannelDetail, connectorId: string | null): number | null {
+  if (connectorId === null) return null;
+  return detail.destinations.find((d) => d.id === connectorId)?.metaDataId ?? null;
+}
+
 function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
   return {
     id: detail.id,
@@ -58,6 +64,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
     })),
     filters: detail.filters.map((f) => ({
       connectorId: f.connectorId,
+      metaDataId: destinationMetaDataId(detail, f.connectorId),
       rules: f.rules.map((r) => ({
         enabled: r.enabled,
         name: r.name,
@@ -71,6 +78,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
     })),
     transformers: detail.transformers.map((t) => ({
       connectorId: t.connectorId,
+      metaDataId: destinationMetaDataId(detail, t.connectorId),
       inboundDataType: t.inboundDataType,
       outboundDataType: t.outboundDataType,
       inboundProperties: t.inboundProperties,

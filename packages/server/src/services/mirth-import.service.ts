@@ -616,8 +616,8 @@ function convertFilters(mirthChannel: Record<string, unknown>): ChannelExportEnt
   if (sourceFilter) filters.push(sourceFilter);
 
   // Destination connector filters
-  for (const [connectorId, conn] of destinationConnectorsById(mirthChannel)) {
-    const filter = extractFilterFromConnector(conn, connectorId);
+  for (const [metaDataId, conn] of destinationConnectorsById(mirthChannel)) {
+    const filter = extractFilterFromConnector(conn, metaDataId);
     if (filter) filters.push(filter);
   }
 
@@ -625,11 +625,11 @@ function convertFilters(mirthChannel: Record<string, unknown>): ChannelExportEnt
 }
 
 /** Destination connector nodes keyed by their metaDataId, as filters and transformers refer to them. */
-function destinationConnectorsById(mirthChannel: Record<string, unknown>): ReadonlyArray<readonly [string, Record<string, unknown>]> {
+function destinationConnectorsById(mirthChannel: Record<string, unknown>): ReadonlyArray<readonly [number, Record<string, unknown>]> {
   const destConnectors = mirthChannel['destinationConnectors'];
   if (!isRecord(destConnectors)) return [];
   const connectorList = toRecordList(destConnectors['connector']);
-  return connectorList.map((conn, idx) => [String(destinationMetaDataId(conn, idx)), conn] as const);
+  return connectorList.map((conn, idx) => [destinationMetaDataId(conn, idx), conn] as const);
 }
 
 /** A parsed child that may be one element or many. */
@@ -668,7 +668,7 @@ function scriptElements(container: Record<string, unknown>, legacyKey: 'steps' |
 
 function extractFilterFromConnector(
   connector: unknown,
-  connectorId: string | null,
+  metaDataId: number | null,
 ): ChannelExportEntry['filters'][number] | null {
   if (!isRecord(connector)) return null;
 
@@ -690,7 +690,7 @@ function extractFilterFromConnector(
 
   if (rules.length === 0) return null;
 
-  return { connectorId, rules };
+  return { connectorId: null, metaDataId, rules };
 }
 
 function mapFilterRuleType(type: string | null): string {
@@ -721,8 +721,8 @@ function convertTransformers(mirthChannel: Record<string, unknown>): ChannelExpo
   if (sourceTransformer) transformers.push(sourceTransformer);
 
   // Destination connector transformers
-  for (const [connectorId, conn] of destinationConnectorsById(mirthChannel)) {
-    const transformer = extractTransformerFromConnector(conn, connectorId);
+  for (const [metaDataId, conn] of destinationConnectorsById(mirthChannel)) {
+    const transformer = extractTransformerFromConnector(conn, metaDataId);
     if (transformer) transformers.push(transformer);
   }
 
@@ -731,7 +731,7 @@ function convertTransformers(mirthChannel: Record<string, unknown>): ChannelExpo
 
 function extractTransformerFromConnector(
   connector: unknown,
-  connectorId: string | null,
+  metaDataId: number | null,
 ): ChannelExportEntry['transformers'][number] | null {
   if (!isRecord(connector)) return null;
 
@@ -758,7 +758,8 @@ function extractTransformerFromConnector(
   }
 
   return {
-    connectorId,
+    connectorId: null,
+    metaDataId,
     inboundDataType,
     outboundDataType,
     inboundProperties: extractDataTypeProperties(transformer, 'inboundProperties'),
