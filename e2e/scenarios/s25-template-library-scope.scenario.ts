@@ -7,6 +7,7 @@
 import { expect } from '@playwright/test';
 import { serverBackup, tcpListener, jsWriter, type ChannelSpec } from './support/mirth-xml.js';
 import { sendMllp } from './support/net.js';
+import { API_BASE, type Api } from './support/api.js';
 import { scenario, mirthId } from './support/scenario.js';
 
 const NORTH = mirthId(25, 1);
@@ -27,7 +28,27 @@ const channel = (name: string, id: string, port: number): ChannelSpec => ({
 
 const orm = (ctl: string): string => `MSH|^~\\&|RIS|SITE25|VNS|VNS|20261110120000||ORM^O01|${ctl}|P|2.3\rORC|NW|ACC025`;
 
+/**
+ * Remove this scenario's libraries. While templates are not scoped, their
+ * colliding declarations would break every channel deployed after this one.
+ */
+async function removeLibraries(api: Api): Promise<void> {
+  const libraries = await api.get<ReadonlyArray<{ id: string; name: string }>>('/code-templates/libraries');
+  for (const lib of libraries.filter((l) => l.name.startsWith('S25 '))) {
+    const res = await api.ctx.delete(`${API_BASE}/code-templates/libraries/${lib.id}`);
+    expect(res.ok(), `delete library ${lib.name}: ${String(res.status())}`).toBe(true);
+  }
+}
+
 scenario('S25 code template libraries apply only to the channels Mirth enabled them for', async (api) => {
+  try {
+    await runS25(api);
+  } finally {
+    await removeLibraries(api);
+  }
+});
+
+async function runS25(api: Api): Promise<void> {
   await api.importAndDeploy(serverBackup(
     [channel('S25 North Orders', NORTH, 16625), channel('S25 South Orders', SOUTH, 16635)],
     [
@@ -44,4 +65,4 @@ scenario('S25 code template libraries apply only to the channels Mirth enabled t
 
   expect(await sendMllp(16625, orm('S25N'))).toContain('MSA|AA|S25N|NORTH-SITE25');
   expect(await sendMllp(16635, orm('S25S'))).toContain('MSA|AA|S25S|SOUTH-SITE25');
-});
+}
