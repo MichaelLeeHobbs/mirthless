@@ -1,6 +1,8 @@
-// S08: a JavaScript Writer reports its outcome with ResponseFactory.
+// S08: a JavaScript Writer reports its outcome.
 // Production pattern: "Propelyx Orders" writer, which returns
 // ResponseFactory.getSentResponse / getErrorResponse after calling an API.
+// Rewritten for GalvaniFlow (D-244): a returned value is the SENT response and
+// a thrown error makes the destination ERROR with that text.
 
 import { expect } from '@playwright/test';
 import { channelExport, tcpListener, jsWriter } from './support/mirth-xml.js';
@@ -10,12 +12,11 @@ import { scenario, mirthId } from './support/scenario.js';
 const PORT = 16608;
 
 const WRITER = [
-  'var raw = String(connectorMessage.getEncodedData());',
-  "var accession = raw.split('ORC|NW|')[1].split('\\r')[0];",
+  "var accession = msg.get('ORC.2');",
   "if (accession == 'BAD') {",
-  "  return ResponseFactory.getErrorResponse('rejected by downstream');",
+  "  throw new Error('rejected by downstream');",
   '}',
-  "return ResponseFactory.getSentResponse('stored ' + accession);",
+  "return 'stored ' + accession;",
 ].join('\n');
 
 const orm = (accession: string): string => [
@@ -23,7 +24,7 @@ const orm = (accession: string): string => [
   `ORC|NW|${accession}`,
 ].join('\r');
 
-scenario('S08 JavaScript Writer sets SENT or ERROR through ResponseFactory', async (api) => {
+scenario('S08 JavaScript Writer reports SENT with a reply, or ERROR by throwing', async (api) => {
   const ids = await api.importAndDeploy(channelExport({
     id: mirthId(8),
     name: 'S08 Orders Writer',

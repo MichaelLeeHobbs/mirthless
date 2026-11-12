@@ -1,6 +1,7 @@
 // S19: a CSV file is read with the Delimited data type and mapped through msg.
-// Gap doc 13 N2: Mirth serializes delimited text to XML, so a transformer reads
-// msg['row']['column'] by the configured column names.
+// Gap doc 13 N2: Mirth serializes delimited text to XML and a transformer reads
+// msg['row']['column']. GalvaniFlow has no E4X (D-244); the expectation here is
+// that a Delimited message is an object keyed by the configured column names.
 
 import { expect } from '@playwright/test';
 import { channelExport, fileReader, tcpSender } from './support/mirth-xml.js';
@@ -10,7 +11,7 @@ import { scenario, mirthId } from './support/scenario.js';
 
 const SINK = 16669;
 
-scenario('S19 Delimited CSV rows are mapped by column name', async (api) => {
+scenario('S19 Delimited CSV rows are read by column name', async (api) => {
   const dir = dropFolder('s19');
   const sink = new MllpSink(SINK);
   await sink.listen();
@@ -27,9 +28,9 @@ scenario('S19 Delimited CSV rows are mapped by column name', async (api) => {
         steps: [{
           name: 'Row to PID',
           script: [
-            "var mrn = msg['row']['mrn'].toString();",
-            "var name = msg['row']['family'].toString() + '^' + msg['row']['given'].toString();",
-            "channelMap.put('hl7', 'MSH|^~\\\\&|CSV|S19|VNS|V|20261110120000||ADT^A04|' + mrn + '|P|2.5\\rPID|||' + mrn + '||' + name);",
+            "var mrn = msg.mrn;",
+            "var name = msg.family + '^' + msg.given;",
+            "$c('hl7','MSH|^~\\\\&|CSV|S19|VNS|V|20261110120000||ADT^A04|' + mrn + '|P|2.5\\rPID|||' + mrn + '||' + name);",
           ].join('\n'),
         }],
       },

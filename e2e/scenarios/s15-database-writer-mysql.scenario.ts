@@ -35,9 +35,8 @@ scenario('S15 Database Writer inserts rows into MySQL', async (api) => {
       steps: [{
         name: 'Fields',
         script: [
-          "var raw = String(connectorMessage.getRawData());",
-          "channelMap.put('accession', raw.split('OBR|1|')[1].split('|')[0]);",
-          "channelMap.put('impression', raw.split('OBX|1|TX|IMP||')[1].split('\\r')[0]);",
+          "$c('accession', msg.get('OBR.2'));",
+          "$c('impression', msg.get('OBX.5'));",
         ].join('\n'),
       }],
     },

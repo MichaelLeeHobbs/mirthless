@@ -1,6 +1,6 @@
 # Migration scenario suite
 
-Can an operator who runs Mirth Connect in production move their real channels here and run them without workarounds? This suite answers that with a number. Each scenario imports a Mirth Connect 4.5 channel export (or a full server backup), deploys it on a real server with a real Postgres database, sends real messages through real connectors to real partner systems, and checks what arrived.
+Can an operator who runs Mirth Connect in production move their channels here, rewriting only the scripts, and run them? This suite answers that with a number. Each scenario imports a Mirth Connect 4.5 channel export (or a full server backup), deploys it on a real server with a real Postgres database, sends real messages through real connectors to real partner systems, and checks what arrived.
 
 The score is the weighted share of scenarios that pass. Weight 3 means most production integrations need it, 2 common, 1 occasional. The weights and scenarios are in [`e2e/scenarios/manifest.json`](../../e2e/scenarios/manifest.json).
 
@@ -18,7 +18,7 @@ SCENARIO_DATABASE_URL=postgresql://<user>:<password>@localhost:5432/galvaniflow_
 
 ## How it is built
 
-- `e2e/scenarios/support/mirth-xml.ts` writes exports in the shape Mirth Connect 4.5 produces. The element names, property classes and nesting follow a real 4.5 server backup. Scripts inside are written the way a Mirth (Rhino) channel writes them: `msg['PID']['PID.5']`, `channelMap.put`, `destinationSet.removeAllExcept`, `ResponseFactory`, `$gc`, `DateUtil`.
+- `e2e/scenarios/support/mirth-xml.ts` writes exports in the shape Mirth Connect 4.5 produces. The element names, property classes and nesting follow a real 4.5 server backup, including Mirth's own default scripts. The scripts a scenario adds are the production ones rewritten for GalvaniFlow's scripting API (`msg.get`/`msg.set`, `$c`, `$gc`, `rawData`, `destinationSet`, `routeMessage`), as an operator rewrites them when moving: GalvaniFlow is Mirth-like and does not run E4X or Mirth's script APIs (D-244). What the import must carry is everything else: connectors, queues, routing, response settings, metadata columns and code template libraries.
 - Partner systems are real sockets and servers: MLLP and HTTP sinks in `support/net.ts`, a `partner` schema in the scenario database, and the SFTP, GreenMail and MySQL test containers.
 - `harness.scenario.ts` checks each partner helper against a real counterpart and builds one channel natively through this product's API. It is not scored. If it fails, a scenario failure may be a harness fault, so fix the harness before reading the score.
 

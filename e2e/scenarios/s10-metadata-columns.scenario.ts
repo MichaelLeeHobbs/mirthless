@@ -34,9 +34,8 @@ scenario('S10 messages are found by their ACCESSION metadata column', async (api
       steps: [{
         name: 'Metadata',
         script: [
-          "var raw = String(connectorMessage.getRawData());",
-          "channelMap.put('accession', raw.split('ORC|NW|')[1].split('\\r')[0]);",
-          "channelMap.put('institution', raw.split('\\r')[0].split('|')[3]);",
+          "$c('accession', msg.get('ORC.2'));",
+          "$c('institution', msg.get('MSH.4'));",
         ].join('\n'),
       }],
     },

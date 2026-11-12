@@ -1,7 +1,7 @@
 // S09: the target channel is chosen at run time.
 // Production pattern: Gov "Message Router" (Channel Writer to
 // ${destinationChannelId}) and channelUtils.routeJsonMsg (router.routeMessage
-// by channel name).
+// by channel name, which is routeMessage in GalvaniFlow).
 
 import { expect } from '@playwright/test';
 import { serverBackup, tcpListener, channelReader, channelWriter, jsWriter, type ChannelSpec } from './support/mirth-xml.js';
@@ -27,14 +27,13 @@ const router: ChannelSpec = {
     steps: [{
       name: 'Pick target',
       script: [
-        "var site = String(connectorMessage.getRawData()).split('\\r')[0].split('|')[5];",
-        `channelMap.put('destinationChannelId', site == 'A' ? '${mirthId(9, 1)}' : '${mirthId(9, 2)}');`,
+        `$c('destinationChannelId', msg.get('MSH.6') == 'A' ? '${mirthId(9, 1)}' : '${mirthId(9, 2)}');`,
       ].join('\n'),
     }],
   },
   destinations: [
     { name: 'To site', ...channelWriter('${destinationChannelId}') },
-    { name: 'Audit', ...jsWriter("router.routeMessage('S09 Audit', String(connectorMessage.getRawData()));\nreturn;") },
+    { name: 'Audit', ...jsWriter("await routeMessage('S09 Audit', rawData);\nreturn;") },
   ],
 };
 

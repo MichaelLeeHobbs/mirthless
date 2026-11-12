@@ -31,13 +31,12 @@ const listener: ChannelSpec = {
     steps: [{
       name: 'Pick lane',
       script: [
-        "var msh = String(connectorMessage.getRawData()).split('\\r')[0].split('|');",
-        "var type = msh[8].split('^')[0];",
+        "var type = msg.get('MSH.9.1');",
         "if (type == 'ADT') {",
         '  destinationSet.removeAll();',
         "} else if (type == 'ORU') {",
         "  destinationSet.removeAllExcept(['Priors']);",
-        "} else if (msh[10] == 'S') {",
+        "} else if (msg.get('MSH.11') == 'S') {",
         "  destinationSet.removeAllExcept(['Priority']);",
         '} else {',
         "  destinationSet.removeAllExcept(['Orders']);",

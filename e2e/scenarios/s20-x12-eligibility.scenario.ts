@@ -1,6 +1,8 @@
 // S20: an X12 270 eligibility request is read with the EDI/X12 data type.
-// Gap doc 13 N1. Mirth serializes X12 to XML with one element per segment and
-// numbered child elements, so NM1's member id is msg['NM1'][n]['NM1.09'].
+// Gap doc 13 N1. Mirth serializes X12 to XML and scripts read
+// msg['NM1'][2]['NM1.09']. GalvaniFlow has no E4X (D-244); the expectation here
+// is that X12 is read with the same path API as HL7: the third NM1's ninth
+// element is msg.get('NM1[3].9').
 
 import { expect } from '@playwright/test';
 import { channelExport, fileReader, tcpSender } from './support/mirth-xml.js';
@@ -27,7 +29,7 @@ const X12_270 = [
   'IEA*1*000000020~',
 ].join('');
 
-scenario('S20 X12 270 member id is read through msg', async (api) => {
+scenario('S20 X12 270 member id is read with msg.get', async (api) => {
   const dir = dropFolder('s20');
   const sink = new MllpSink(SINK);
   await sink.listen();
@@ -43,8 +45,8 @@ scenario('S20 X12 270 member id is read through msg', async (api) => {
         steps: [{
           name: 'Member',
           script: [
-            "var member = msg['NM1'][2]['NM1.09'].toString();",
-            "channelMap.put('out', 'MSH|^~\\\\&|X12|S20|VNS|V|20261110120000||ZEL^Z01|S20|P|2.5\\rZEL|' + member);",
+            "var member = msg.get('NM1[3].9');",
+            "$c('out','MSH|^~\\\\&|X12|S20|VNS|V|20261110120000||ZEL^Z01|S20|P|2.5\\rZEL|' + member);",
           ].join('\n'),
         }],
       },

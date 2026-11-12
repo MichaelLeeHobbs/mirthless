@@ -28,15 +28,13 @@ scenario('S01 MLLP listener returns the ACK its postprocessor builds', async (ap
       steps: [{
         name: 'Build ACK',
         script: [
-          'var raw = String(connectorMessage.getRawData());',
-          "var msh = raw.split('\\r')[0].split('|');",
-          "var ack = 'MSH|^~\\\\&|VNS|VNS|' + msh[2] + '|' + msh[3] + '|20261110120001||ACK|' + msh[9] + '|P|' + msh[11] + '\\r' + 'MSA|AA|' + msh[9] + '|Accepted by S01';",
-          "channelMap.put('ack', ack);",
+          "var ack = 'MSH|^~\\\\&|VNS|VNS|' + msg.get('MSH.3') + '|' + msg.get('MSH.4') + '|20261110120001||ACK|' + msg.get('MSH.10') + '|P|' + msg.get('MSH.12') + '\\r' + 'MSA|AA|' + msg.get('MSH.10') + '|Accepted by S01';",
+          "$c('ack', ack);",
         ].join('\n'),
       }],
     },
     destinations: [{ name: 'Store', ...jsWriter('// nothing to send') }],
-    preprocessor: "return String(message).replace(/[\\x00-\\x08]/g, '');",
+    preprocessor: "return rawData.replace(/[\\x00-\\x08]/g, '');",
     postprocessor: "return $c('ack');",
   }), [NAME]);
 

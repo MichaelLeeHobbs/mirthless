@@ -1,7 +1,8 @@
-// S03: transformer reads and edits HL7 through Mirth's E4X msg object.
+// S03: transformer reads and edits HL7 fields and deletes a segment.
 // Production pattern: Gov "Message Router". It reads a custom ZBD envelope
 // segment, stores values in the channel map, edits a field and deletes the
-// segment before sending on with ${message.encodedData}.
+// segment before sending on with ${message.encodedData}. The script is the
+// production one rewritten for GalvaniFlow's msg.get/set/delete (D-244).
 
 import { expect } from '@playwright/test';
 import { channelExport, tcpListener, tcpSender } from './support/mirth-xml.js';
@@ -19,7 +20,7 @@ const ORU = [
   'OBX|1|TX|IMP||No acute findings',
 ].join('\r');
 
-scenario('S03 E4X transformer edits HL7 fields and deletes a segment', async (api) => {
+scenario('S03 transformer edits HL7 fields and deletes a segment', async (api) => {
   const sink = new MllpSink(SINK);
   await sink.listen();
   try {
@@ -33,12 +34,11 @@ scenario('S03 E4X transformer edits HL7 fields and deletes a segment', async (ap
         steps: [{
           name: 'Read envelope',
           script: [
-            "var target = msg['ZBD']['ZBD.1']['ZBD.1.1'].toString();",
-            "channelMap.put('target', target);",
-            "channelMap.put('accession', msg['ZBD']['ZBD.2']['ZBD.2.1'].toString());",
-            "$c('institution', msg['MSH']['MSH.4']['MSH.4.1'].toString());",
-            "msg['PID']['PID.5']['PID.5.1'] = msg['PID']['PID.5']['PID.5.1'].toString().toUpperCase();",
-            "delete msg['ZBD'];",
+            "$c('target', msg.get('ZBD.1.1'));",
+            "$c('accession', msg.get('ZBD.2.1'));",
+            "$c('institution', msg.get('MSH.4.1'));",
+            "msg.set('PID.5.1', msg.get('PID.5.1').toUpperCase());",
+            "msg.delete('ZBD');",
           ].join('\n'),
         }],
       },

@@ -272,6 +272,8 @@ export interface ChannelSpec {
   readonly deploy?: string;
   readonly metaDataColumns?: readonly MetaDataColumn[];
   readonly storageMode?: 'DEVELOPMENT' | 'PRODUCTION' | 'RAW' | 'METADATA' | 'DISABLED';
+  /** Mirth 4.x keeps a channel's enabled flag in exportData/metadata, not on the channel element. */
+  readonly enabled?: boolean;
 }
 
 function connectorXml(c: Connector, metaDataId: number, mode: 'SOURCE' | 'DESTINATION', channelInbound: DataType): string {
@@ -333,7 +335,7 @@ ${columnsXml}
 <attachmentProperties version="${V}"><type>None</type><properties/></attachmentProperties>
 ${RESOURCE_IDS}
 </properties>
-<exportData><metadata><enabled>true</enabled><lastModified><time>1790000000000</time><timezone>America/New_York</timezone></lastModified><pruningSettings><pruneMetaDataDays>30</pruneMetaDataDays><archiveEnabled>false</archiveEnabled><pruneErroredMessages>false</pruneErroredMessages></pruningSettings></metadata></exportData>
+<exportData><metadata><enabled>${String(spec.enabled ?? true)}</enabled><lastModified><time>1790000000000</time><timezone>America/New_York</timezone></lastModified><pruningSettings><pruneMetaDataDays>30</pruneMetaDataDays><archiveEnabled>false</archiveEnabled><pruneErroredMessages>false</pruneErroredMessages></pruningSettings></metadata></exportData>
 </channel>`;
 }
 

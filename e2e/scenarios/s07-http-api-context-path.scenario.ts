@@ -12,7 +12,7 @@ const PORT = 16607;
 
 const route = (name: string): { name: string; script: string } => ({
   name: `${name} handler`,
-  script: `channelMap.put('response', { route: '${name}', accession: msg.accession });`,
+  script: `$c('response', { route: '${name}', accession: msg.accession });`,
 });
 
 scenario('S07 HTTP listener routes on context path and returns the postprocessor JSON', async (api) => {

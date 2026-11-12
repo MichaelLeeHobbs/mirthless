@@ -1,7 +1,9 @@
 // S14: a Database Reader polls a Postgres table and marks rows it has read.
 // Gap doc 12 (Database connector). The select/update pair is Mirth's
 // "run update statement after each message" mode; ${id} in the update refers to
-// the current row's column.
+// the current row's column. Mirth hands the row to scripts as XML; GalvaniFlow
+// reads rows as JSON objects, so the export keeps Mirth's XML data type and the
+// rewritten script reads msg.accession.
 
 import { expect } from '@playwright/test';
 import { channelExport, dbReader, tcpSender } from './support/mirth-xml.js';
@@ -29,7 +31,7 @@ scenario('S14 Database Reader turns new rows into HL7 and marks them sent', asyn
         inbound: 'XML',
         steps: [{
           name: 'To ORM',
-          script: "channelMap.put('hl7', 'MSH|^~\\\\&|DB|S14|VNS|VNS|20261110120000||ORM^O01|' + msg['accession'].toString() + '|P|2.3\\rORC|NW|' + msg['accession'].toString());",
+          script: "$c('hl7', 'MSH|^~\\\\&|DB|S14|VNS|VNS|20261110120000||ORM^O01|' + msg.accession + '|P|2.3\\rORC|NW|' + msg.accession);",
         }],
       },
       destinations: [{ name: 'RIS', ...tcpSender('127.0.0.1', String(SINK), undefined, '${hl7}') }],

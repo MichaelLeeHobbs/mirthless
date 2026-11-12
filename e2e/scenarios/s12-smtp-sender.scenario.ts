@@ -20,7 +20,7 @@ scenario('S12 SMTP Sender sends a mail with a subject from the channel map', asy
       inbound: 'HL7V2',
       steps: [{
         name: 'Subject',
-        script: "var acc = String(connectorMessage.getRawData()).split('ORC|NW|')[1].split('\\r')[0];\nchannelMap.put('subject', 'S12 report ' + acc);",
+        script: "$c('subject', 'S12 report ' + msg.get('ORC.2'));",
       }],
     },
     destinations: [{

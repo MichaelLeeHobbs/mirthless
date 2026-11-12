@@ -9,7 +9,7 @@ import { scenario, mirthId } from './support/scenario.js';
 const POLLER = [
   "var n = $gc('ticks');",
   'n = (n == null ? 0 : n) + 1;',
-  "globalChannelMap.put('ticks', n);",
+  "$gc('ticks', n);",
   "return 'tick ' + n;",
 ].join('\n');
 
