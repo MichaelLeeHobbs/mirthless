@@ -89,19 +89,6 @@ beforeEach(() => {
 // ----- Preprocessor -----
 
 describe('channel preprocessor', () => {
-  it('runs Mirth\'s default preprocessor, which returns the global `message`', async () => {
-    const sendFn = makeSendFn();
-    const config = makeConfig({
-      scripts: { preprocessor: { code: '// Modify the message variable below to pre process data\nreturn message;' } },
-    });
-    const processor = new MessageProcessor(sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS);
-
-    const result = await processor.processMessage(makeInput('PRE_INPUT'), AbortSignal.timeout(5_000));
-
-    expect(result.ok && result.value.status).toBe('SENT');
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'PRE_INPUT', expect.any(AbortSignal), expect.any(String));
-  });
-
   it('happy path: a returned string replaces the message for all downstream stages', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();

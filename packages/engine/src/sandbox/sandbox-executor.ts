@@ -437,35 +437,13 @@ globalThis.__build = function (hostDispatch, payload) {
     };
   }
   globalThis.rawData = payload.rawData;
-  // Mirth names: a preprocessor reads and returns \`message\`, and any script can
-  // call connectorMessage.getRawData().
-  globalThis.message = payload.rawData;
-  globalThis.connectorMessage = Object.freeze({
-    getRawData: function () { return payload.rawData; }
-  });
-  // Scripts written for Mirth use the maps as Java maps: channelMap.put(k, v),
-  // .get(k), .containsKey(k), .remove(k). The methods are not enumerable, so they
-  // never reach the host with the map's values.
-  function javaMap(m, writable) {
-    var has = function (k) { return Object.prototype.hasOwnProperty.call(m, S(k)); };
-    var methods = {
-      get: function (k) { return has(k) ? m[S(k)] : null; },
-      containsKey: has
-    };
-    if (writable) {
-      methods.put = function (k, v) { var prev = methods.get(k); m[S(k)] = v; return prev; };
-      methods.remove = function (k) { var prev = methods.get(k); delete m[S(k)]; return prev; };
-    }
-    for (var name in methods) { Object.defineProperty(m, name, { value: methods[name], enumerable: false }); }
-    return m;
-  }
-  globalThis.channelMap = javaMap(payload.channelMap, true);
-  globalThis.connectorMap = javaMap(payload.connectorMap, true);
-  globalThis.globalChannelMap = javaMap(payload.globalChannelMap, true);
-  globalThis.globalMap = javaMap(payload.globalMap, true);
-  globalThis.responseMap = javaMap(payload.responseMap, true);
-  globalThis.sourceMap = javaMap(payload.sourceMap, false);
-  globalThis.configMap = Object.freeze(javaMap(payload.configMap, false));
+  globalThis.channelMap = payload.channelMap;
+  globalThis.connectorMap = payload.connectorMap;
+  globalThis.globalChannelMap = payload.globalChannelMap;
+  globalThis.globalMap = payload.globalMap;
+  globalThis.responseMap = payload.responseMap;
+  globalThis.sourceMap = payload.sourceMap;
+  globalThis.configMap = Object.freeze(payload.configMap);
   globalThis.msg = payload.msgKind === 'hl7' ? makeHl7(payload.msgVal) : payload.msgVal;
   globalThis.tmp = payload.tmpKind === 'hl7' ? makeHl7(payload.tmpVal) : payload.tmpVal;
   globalThis.logger = {

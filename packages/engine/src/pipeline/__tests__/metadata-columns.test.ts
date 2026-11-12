@@ -63,7 +63,7 @@ describe('the pipeline stores metadata columns', () => {
   it('stores the source values a transformer put in the channel map', async () => {
     const store = makeStore();
     const processor = new MessageProcessor(new VmSandboxExecutor(), store, vi.fn().mockResolvedValue(ok({ status: 'SENT', content: '' })), config({
-      scripts: { sourceTransformer: { code: 'channelMap.put("accession", "ACC-9"); $c("site", "NORTH");' } },
+      scripts: { sourceTransformer: { code: 'channelMap["accession"] = "ACC-9"; $c("site", "NORTH");' } },
       metadataColumns: [
         { name: 'ACCESSION', dataType: 'STRING', mapping: 'accession' },
         { name: 'SITE', dataType: 'STRING', mapping: 'site' },
