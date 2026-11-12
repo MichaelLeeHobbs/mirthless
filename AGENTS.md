@@ -86,6 +86,7 @@ Run what matches the files you touched. `pnpm gate` runs build, lint and every p
 | SQL, queues, pruning, partitions | `pnpm test:integration` | |
 | Engine pipeline or a connector | The package's tests (`pnpm --filter @galvaniflow/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes |
 | Throughput or memory | `pnpm soak` (see `docs/ops/soak-test.md`) | Compare with the recorded baseline |
+| The Mirth importer, or behaviour a migrated channel relies on | `pnpm test:scenarios` (needs Postgres and the test containers, see `docs/testing/migration-scenarios.md`) | Compare the score with the last recorded one; nothing that passed may fail |
 | Docs only | Check the commands and paths you mention exist | |
 
 If a check can't run in your environment (no Postgres, no browser), say so in your verdict. Don't mark it passed.
@@ -173,6 +174,7 @@ pnpm gate                             # build + lint + tests with coverage (what
 pnpm test                             # Run all tests
 pnpm test:coverage                    # Run with coverage
 pnpm shots                            # Screenshot web pages against a fake API (needs pnpm dev:web)
+pnpm test:scenarios                   # Mirth migration scenario suite and score (needs SCENARIO_DATABASE_URL)
 
 # Single package
 pnpm --filter @galvaniflow/server dev
