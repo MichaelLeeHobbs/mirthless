@@ -46,6 +46,12 @@ export interface HttpReceiverConfig {
   readonly host: string;
   readonly port: number;
   readonly path: string;
+  /**
+   * Accept any path under `path` too, as Mirth's HTTP Listener does with its
+   * context path (default false: `path` only). The request path is in the
+   * source map as `path` and, under Mirth's name, `contextPath`.
+   */
+  readonly matchSubpaths?: boolean | undefined;
   readonly method: string;
   readonly responseContentType: string;
   readonly responseStatusCode: number;
@@ -207,7 +213,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
     }
 
     const reqPath = (req.url ?? '/').split('?')[0] ?? '/';
-    if (reqPath !== this.config.path) {
+    if (!this.acceptsPath(reqPath)) {
       this.writePlain(res, 404, 'Not Found');
       return;
     }
@@ -224,6 +230,14 @@ export class HttpReceiver implements SourceConnectorRuntime {
     }
 
     await this.dispatchRequest(req, res, reqPath);
+  }
+
+  /** The configured path, or with matchSubpaths any path below it (`/api` takes `/api/report`, not `/apix`). */
+  private acceptsPath(reqPath: string): boolean {
+    const base = this.config.path;
+    if (reqPath === base) return true;
+    if (!this.config.matchSubpaths) return false;
+    return reqPath.startsWith(base.endsWith('/') ? base : `${base}/`);
   }
 
   /** Read the body, dispatch, and respond with the appropriate status. */
@@ -281,6 +295,7 @@ export class HttpReceiver implements SourceConnectorRuntime {
         remoteAddress: req.socket.remoteAddress,
         method: req.method,
         path: reqPath,
+        contextPath: reqPath,
         headers: withoutCredentials(req.headers),
         queryString,
         contentType: req.headers['content-type'],

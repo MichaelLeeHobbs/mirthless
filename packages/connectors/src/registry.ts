@@ -78,6 +78,7 @@ const sourceFactories = new Map<string, SourceFactory>([
     host: (props['host'] as string | undefined) ?? '0.0.0.0',
     port: num(props, 'port', 0),
     path: (props['path'] as string | undefined) ?? '/',
+    matchSubpaths: props['matchSubpaths'] === true,
     method: (props['method'] as string | undefined) ?? 'POST',
     responseContentType: (props['responseContentType'] as string | undefined) ?? 'text/plain',
     responseStatusCode: num(props, 'responseStatusCode', 200),

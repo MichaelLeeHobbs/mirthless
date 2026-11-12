@@ -306,6 +306,44 @@ describe('HttpReceiver', () => {
   });
 });
 
+describe('HttpReceiver paths', () => {
+  async function start(config: Partial<HttpReceiverConfig>, seen: string[]): Promise<void> {
+    receiver = new HttpReceiver(makeConfig(config));
+    receiver.setDispatcher(makeDispatcher((raw) => {
+      seen.push(String(raw.sourceMap['contextPath']));
+      return { messageId: 1, response: 'OK' };
+    }));
+    await receiver.onDeploy();
+    await receiver.onStart();
+  }
+
+  it('takes only its own path by default', async () => {
+    const seen: string[] = [];
+    await start({ path: '/api' }, seen);
+
+    expect((await sendRequest(TEST_PORT, { path: '/api', body: 'a' })).status).toBe(200);
+    expect((await sendRequest(TEST_PORT, { path: '/api/report', body: 'b' })).status).toBe(404);
+    expect(seen).toEqual(['/api']);
+  });
+
+  it('with matchSubpaths takes every path below its own and reports it as contextPath', async () => {
+    const seen: string[] = [];
+    await start({ path: '/api', matchSubpaths: true }, seen);
+
+    expect((await sendRequest(TEST_PORT, { path: '/api/report?x=1', body: 'a' })).status).toBe(200);
+    expect((await sendRequest(TEST_PORT, { path: '/apix', body: 'b' })).status).toBe(404);
+    expect(seen).toEqual(['/api/report']);
+  });
+
+  it('with matchSubpaths at the root takes every path', async () => {
+    const seen: string[] = [];
+    await start({ path: '/', matchSubpaths: true }, seen);
+
+    expect((await sendRequest(TEST_PORT, { path: '/api/study', body: 'a' })).status).toBe(200);
+    expect(seen).toEqual(['/api/study']);
+  });
+});
+
 describe('HttpReceiver authentication', () => {
   it('rejects missing basic-auth with 401', async () => {
     receiver = new HttpReceiver(makeConfig({ auth: { type: 'BASIC', username: 'u', password: 'p' } }));
