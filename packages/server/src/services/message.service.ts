@@ -17,6 +17,7 @@ import {
   messageContent,
   messageAttachments,
   messageStatistics,
+  messageCustomMetadata,
   type ConnectorMessage,
   type Message,
   type MessageStatistic,
@@ -144,6 +145,23 @@ export class MessageService {
       }).onConflictDoUpdate({
         target: [messageContent.channelId, messageContent.messageId, messageContent.metaDataId, messageContent.contentType],
         set: { content, dataType, isEncrypted: encrypted ?? false },
+      });
+    });
+  }
+
+  /** Store a connector message's custom metadata column values, replacing any stored before. */
+  static async storeCustomMetadata(
+    channelId: string,
+    messageId: number,
+    metaDataId: number,
+    metadata: Readonly<Record<string, unknown>>,
+  ): Promise<Result<void>> {
+    return tryCatch(async () => {
+      await db.insert(messageCustomMetadata).values({
+        channelId, messageId, metaDataId, metadata: { ...metadata },
+      }).onConflictDoUpdate({
+        target: [messageCustomMetadata.channelId, messageCustomMetadata.messageId, messageCustomMetadata.metaDataId],
+        set: { metadata: { ...metadata } },
       });
     });
   }

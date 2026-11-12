@@ -244,6 +244,7 @@ function makeChannel(overrides: Record<string, unknown> = {}): Record<string, un
     inboundDataType: 'HL7V2',
     outboundDataType: 'HL7V2',
     messageStorageMode: 'DEVELOPMENT',
+    metadataColumns: [],
     destinations: [],
     scripts: [],
     ...overrides,

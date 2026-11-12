@@ -110,6 +110,8 @@ export interface MessageStore {
   release(channelId: string, messageId: number, metaDataId: number, newStatus: string): Promise<Result<void>>;
   incrementStats(channelId: string, metaDataId: number, serverId: string, field: 'received' | 'filtered' | 'sent' | 'errored'): Promise<Result<void>>;
   storeAttachment?(channelId: string, messageId: number, attachmentId: string, mimeType: string, content: string, size: number): Promise<Result<void>>;
+  /** Optional: store a connector message's custom metadata column values. */
+  storeCustomMetadata?(channelId: string, messageId: number, metaDataId: number, metadata: Readonly<Record<string, unknown>>): Promise<Result<void>>;
 
   /**
    * Optional batch: creates message + source connector + content rows + stats in one round-trip.
@@ -209,6 +211,18 @@ export interface PipelineConfig {
   readonly onStoreFailure?: ((failure: StoreFailure) => void) | undefined;
   /** Where the response to the sender comes from. Absent: the first destination that returned one. */
   readonly responseSource?: ResponseSource | undefined;
+  /** Custom metadata columns, filled after the source transformer. */
+  readonly metadataColumns?: readonly MetadataColumnConfig[] | undefined;
+}
+
+/**
+ * A custom metadata column. `mapping` names a map variable, looked up in the
+ * connector, channel and source maps in that order, as Mirth does.
+ */
+export interface MetadataColumnConfig {
+  readonly name: string;
+  readonly dataType: string;
+  readonly mapping: string;
 }
 
 /**
@@ -266,6 +280,28 @@ function responseText(returnValue: unknown): string | undefined {
   if (typeof returnValue === 'string') return returnValue;
   if (typeof returnValue === 'object') return JSON.stringify(returnValue);
   return String(returnValue);
+}
+
+/**
+ * Each column's value from the first map that has its variable, converted to
+ * the column's type. A column with no value, or a NUMBER that is not a number,
+ * is left out.
+ */
+export function metadataValues(
+  columns: readonly MetadataColumnConfig[],
+  maps: readonly Readonly<Record<string, unknown>>[],
+): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const column of columns) {
+    const raw = maps.map((m) => m[column.mapping]).find((v) => v !== undefined && v !== null);
+    if (raw === undefined) continue;
+    const value = column.dataType === 'NUMBER' ? Number(raw)
+      : column.dataType === 'BOOLEAN' ? (raw === true || String(raw).toLowerCase() === 'true')
+        : typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+    if (typeof value === 'number' && !Number.isFinite(value)) continue;
+    values[column.name] = value;
+  }
+  return values;
 }
 
 // ----- Pipeline -----
@@ -475,6 +511,7 @@ export class MessageProcessor {
           ? this.store.storeContent(channelId, messageId, 0, CT_TRANSFORMED, content, dataType)
           : Promise.resolve({ ok: true as const, value: undefined, error: null }),
         ...activeDests.map((d) => this.store.createConnectorMessage(channelId, messageId, d.metaDataId, d.name, 'RECEIVED')),
+        this.storeSourceMetadata(messageId, mapState, input.sourceMap),
       ]);
       const notPrepared = prepared.find((r) => !r.ok);
       if (notPrepared && !notPrepared.ok) return errorOut('prepareDestinations', notPrepared.error.message);
@@ -828,6 +865,19 @@ export class MessageProcessor {
   }
 
   /** Run a script in the sandbox with the current message context and map state. */
+  /** Store the source's custom metadata column values, read from the maps. Nothing to store is a success. */
+  private storeSourceMetadata(
+    messageId: number,
+    mapState: PipelineMapState,
+    sourceMap: Readonly<Record<string, unknown>>,
+  ): Promise<Result<void>> {
+    const values = metadataValues(this.config.metadataColumns ?? [], [mapState.connectorMap, mapState.channelMap, sourceMap]);
+    if (Object.keys(values).length === 0 || !this.store.storeCustomMetadata) {
+      return Promise.resolve({ ok: true, value: undefined, error: null } as Result<void>);
+    }
+    return this.store.storeCustomMetadata(this.config.channelId, messageId, 0, values);
+  }
+
   /** The response for the sender, from where the channel's response source says. */
   private pickResponse(destResults: readonly DestinationResult[], postprocessorResponse: string | undefined): string | undefined {
     const source = this.config.responseSource;

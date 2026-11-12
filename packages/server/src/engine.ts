@@ -281,6 +281,8 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
       MessageService.release(channelId, messageId, metaDataId, newStatus as Parameters<typeof MessageService.release>[3]),
     storeAttachment: (channelId, messageId, attachmentId, mimeType, content, size) =>
       MessageService.storeAttachment(channelId, messageId, attachmentId, mimeType, content, size),
+    storeCustomMetadata: (channelId, messageId, metaDataId, metadata) =>
+      MessageService.storeCustomMetadata(channelId, messageId, metaDataId, metadata),
     initializeMessage: (channelId, serverId, connectorName, contentRows, correlationId) => {
       // Filter content rows by storage policy before sending to batch
       const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType));
@@ -656,6 +658,8 @@ export class EngineManager {
       configMap: maps.configMap,
       scriptTimeoutMs: channel.scriptTimeoutSeconds * 1_000,
       responseSource: toResponseSource(channel.responseMode, channel.responseConnectorName),
+      metadataColumns: channel.metadataColumns.flatMap((c) =>
+        c.mappingExpression ? [{ name: c.name, dataType: c.dataType, mapping: c.mappingExpression }] : []),
       onError: raiseAlert,
       onStoreFailure: (failure) => {
         logger.error(

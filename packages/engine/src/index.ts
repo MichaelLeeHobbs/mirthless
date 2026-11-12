@@ -19,6 +19,7 @@ export type {
   DestinationResult,
   PipelineConfig,
   ResponseSource,
+  MetadataColumnConfig,
   AlertEventHandler,
   ContentRow,
   StageTiming,

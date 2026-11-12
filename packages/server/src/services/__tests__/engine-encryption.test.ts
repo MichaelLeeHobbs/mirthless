@@ -210,7 +210,7 @@ describe('EngineManager.deploy — encryptData key guard', () => {
       messageStorageMode: 'DEVELOPMENT',
       removeContentOnCompletion: false, removeAttachmentsOnCompletion: false,
       sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: {},
-      inboundDataType: 'HL7V2', destinations: [], scripts: [],
+      inboundDataType: 'HL7V2', destinations: [], metadataColumns: [], scripts: [],
     };
   }
 
