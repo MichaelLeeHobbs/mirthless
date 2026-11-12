@@ -335,3 +335,49 @@ describe('Map Shortcuts', () => {
     });
   });
 });
+
+describe('Mirth message names', () => {
+  it('exposes the raw message as `message` and connectorMessage.getRawData()', async () => {
+    const result = await executor.execute(
+      makeScript('return [message, connectorMessage.getRawData()];'),
+      makeContext({ rawData: 'MSH|RAW' }),
+      makeOptions(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.returnValue).toEqual(['MSH|RAW', 'MSH|RAW']);
+  });
+});
+
+describe('Java map methods on the maps', () => {
+  it('put, get, containsKey and remove work on channelMap and the writes reach the host', async () => {
+    const result = await executor.execute(
+      makeScript([
+        'var prev = channelMap.put("ack", "MSA|AA");',
+        'channelMap.put("gone", 1);',
+        'var removed = channelMap.remove("gone");',
+        'return [prev, channelMap.get("ack"), channelMap.containsKey("ack"), channelMap.get("missing"), removed, channelMap.containsKey("gone")];',
+      ].join('\n')),
+      makeContext(),
+      makeOptions(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.returnValue).toEqual([null, 'MSA|AA', true, null, 1, false]);
+    expect(result.value.mapUpdates.channelMap).toEqual({ ack: 'MSA|AA' });
+  });
+
+  it('globalChannelMap.put persists like $gc', async () => {
+    const result = await executor.execute(makeScript('globalChannelMap.put("count", 3);'), makeContext({ globalChannelMap: {} }), makeOptions());
+    expect(result.ok && result.value.mapUpdates.globalChannelMap).toEqual({ count: 3 });
+  });
+
+  it('sourceMap and configMap read with get but have no put', async () => {
+    const result = await executor.execute(
+      makeScript('return [sourceMap.get("remoteAddress"), configMap.get("host"), typeof sourceMap.put, typeof configMap.put];'),
+      makeContext({ sourceMap: { remoteAddress: '10.0.0.1' }, configMap: { host: 'lis' } }),
+      makeOptions(),
+    );
+    expect(result.ok && result.value.returnValue).toEqual(['10.0.0.1', 'lis', 'undefined', 'undefined']);
+  });
+});

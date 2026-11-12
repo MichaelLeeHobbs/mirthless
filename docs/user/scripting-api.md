@@ -47,6 +47,10 @@ exposed** to your scripts, sourced from `packages/engine/src/sandbox/sandbox-exe
 | `msg` | object/string | The inbound message. HL7v2 is auto-parsed to an HL7 message object (see below); otherwise the parsed/raw value. Mutations persist to later stages. |
 | `tmp` | object/string | The outbound message being built. Defaults to `msg`. |
 | `rawData` | string | The original raw content string. |
+| `message` | string | The same raw string, under the name Mirth's preprocessor uses (`return message;`). |
+| `connectorMessage.getRawData()` | string | The same raw string, for scripts written for Mirth. |
+
+A channel whose response mode is `POSTPROCESSOR` answers the sender with whatever the postprocessor returns: a string as it is, an object as JSON. When it returns nothing, the source connector falls back to its own acknowledgement.
 
 ## Maps
 
