@@ -346,18 +346,14 @@ describe('MirthImportService.convertXml', () => {
     expect(result.value.channels[0]?.destinations[0]?.connectorType).toBe('JAVASCRIPT');
   });
 
-  it('extracts all four script types', () => {
+  it('extracts deploy and undeploy scripts and drops Mirth\'s do-nothing pre- and postprocessor', () => {
     const xml = loadFixture('mirth-channel-complex.xml');
     const result = MirthImportService.convertXml(xml);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const scripts = result.value.channels[0]?.scripts ?? [];
-    const types = scripts.map((s) => s.scriptType);
-    expect(types).toContain('DEPLOY');
-    expect(types).toContain('UNDEPLOY');
-    expect(types).toContain('PREPROCESSOR');
-    expect(types).toContain('POSTPROCESSOR');
+    expect(scripts.map((s) => s.scriptType)).toEqual(['DEPLOY', 'UNDEPLOY']);
   });
 
   it('extracts metadata columns', () => {
@@ -445,6 +441,29 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     const source = channel.transformers.find((t) => (t.metaDataId ?? null) === null);
     expect(source?.steps[0]?.script).toBe('if (1 < 2 && true) { channelMap.put(\'ack\', "MSA|AA"); }\r\nvar done = true;');
     expect(channel.scripts.find((s) => s.scriptType === 'POSTPROCESSOR')?.script).toBe("return $c('ack');");
+  });
+
+  it('drops the do-nothing scripts Mirth puts in every channel and keeps real ones', () => {
+    expect(convert4x().scripts.map((s) => s.scriptType)).toEqual(['POSTPROCESSOR']);
+  });
+
+  it('warns once per channel about the Mirth-only constructs its scripts use', () => {
+    const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml'));
+    if (!result.ok) throw result.error;
+    const warning = result.value.warnings.find((w) => w.includes('Mirth-only constructs'));
+    expect(warning).toContain('Channel "4x Listener"');
+    expect(warning).toContain("E4X field access (msg['PID']...)");
+    expect(warning).toContain('Java map methods (channelMap.put)');
+    expect(warning).not.toContain("'message' variable");
+  });
+
+  it('does not warn about scripts written for GalvaniFlow', () => {
+    const native = (x: string): string => x
+      .replace("return msg[&apos;MSH&apos;][&apos;MSH.9&apos;][&apos;MSH.9.2&apos;].toString() != &apos;A08&apos;;", "return msg.get(&apos;MSH.9.2&apos;) != &apos;A08&apos;;")
+      .replace(/channelMap\.put\(&apos;(\w+)&apos;, ([^)]*)\)/g, '$c(&apos;$1&apos;, $2)');
+    const result = MirthImportService.convertXml(native(loadFixture('mirth-4x-channel.xml')));
+    if (!result.ok) throw result.error;
+    expect(result.value.warnings.filter((w) => w.includes('Mirth-only constructs'))).toEqual([]);
   });
 
   it('keeps values as written, not as numbers', () => {

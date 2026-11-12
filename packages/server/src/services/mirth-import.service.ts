@@ -279,7 +279,7 @@ function convertChannel(
     ? mirthChannel['properties'] as Record<string, unknown>
     : {};
 
-  return {
+  const entry: ChannelExportEntry = {
     id,
     name,
     description,
@@ -305,6 +305,9 @@ function convertChannel(
     filters,
     transformers,
   };
+  const scriptWarning = mirthScriptWarning(entry);
+  if (scriptWarning) warnings.push(scriptWarning);
+  return entry;
 }
 
 // ----- Source Response -----
@@ -829,22 +832,58 @@ function mapTransformerStepType(type: string | null): string {
 
 // ----- Script Conversion -----
 
+const CHANNEL_SCRIPTS = [
+  ['deployScript', 'DEPLOY'],
+  ['undeployScript', 'UNDEPLOY'],
+  ['preprocessingScript', 'PREPROCESSOR'],
+  ['postprocessingScript', 'POSTPROCESSOR'],
+] as const;
+
+/**
+ * Channel scripts, without the ones Mirth puts in every new channel and that
+ * do nothing: `return;`, and the preprocessor's `return message;` (Mirth's
+ * name for the raw message, which GalvaniFlow does not have).
+ */
 function convertScripts(mirthChannel: Record<string, unknown>): ChannelExportEntry['scripts'] {
   const scripts: ChannelExportEntry['scripts'] = [];
-
-  const deployScript = getString(mirthChannel, 'deployScript');
-  if (deployScript) scripts.push({ scriptType: 'DEPLOY', script: deployScript });
-
-  const undeployScript = getString(mirthChannel, 'undeployScript');
-  if (undeployScript) scripts.push({ scriptType: 'UNDEPLOY', script: undeployScript });
-
-  const preprocessingScript = getString(mirthChannel, 'preprocessingScript');
-  if (preprocessingScript) scripts.push({ scriptType: 'PREPROCESSOR', script: preprocessingScript });
-
-  const postprocessingScript = getString(mirthChannel, 'postprocessingScript');
-  if (postprocessingScript) scripts.push({ scriptType: 'POSTPROCESSOR', script: postprocessingScript });
-
+  for (const [key, scriptType] of CHANNEL_SCRIPTS) {
+    const script = getString(mirthChannel, key);
+    if (script && !isMirthDefaultScript(script)) scripts.push({ scriptType, script });
+  }
   return scripts;
+}
+
+function isMirthDefaultScript(script: string): boolean {
+  const code = script.replace(/\/\/[^\n]*/g, '').replace(/\s+/g, ' ').trim();
+  return code === '' || code === 'return;' || code === 'return message;';
+}
+
+/**
+ * Mirth script constructs GalvaniFlow does not run (D-244), with what to use
+ * instead. The import keeps scripts as written and lists these so the
+ * operator knows what to rewrite.
+ */
+const MIRTH_ONLY_CONSTRUCTS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(?:msg|tmp)\s*\[\s*['"]/, "E4X field access (msg['PID']...): use msg.get('PID.5.1') / msg.set"],
+  [/\bfor\s+each\s*\(/, "Rhino 'for each': use for...of"],
+  [/\bnew\s+XML\s*\(/, 'E4X new XML(...): build HL7 with parseHL7 and msg.set'],
+  [/\b(?:Packages|java|javax|org\.apache|com\.mirth)\./, 'Java classes: use JavaScript built-ins'],
+  [/\b(?:channelMap|connectorMap|responseMap|globalMap|globalChannelMap|sourceMap|configurationMap)\.(?:put|get|containsKey|remove)\s*\(/, 'Java map methods (channelMap.put): use $c(key, value) or channelMap[key]'],
+  [/\bconnectorMessage\.get\w+\s*\(/, 'connectorMessage.getRawData(): use rawData'],
+  [/\b(?:ResponseFactory|DateUtil|FileUtil|SerializerFactory|ACKGenerator|ChannelUtil|AttachmentUtil|stringUtils|router)\./, 'Mirth user API objects: use the GalvaniFlow scripting API'],
+  [/\b(?:return|String\()\s*message\b/, "Mirth's 'message' variable: use rawData"],
+];
+
+/** One warning per channel naming the Mirth-only constructs its scripts use. */
+function mirthScriptWarning(entry: Pick<ChannelExportEntry, 'name' | 'scripts' | 'filters' | 'transformers'>): string | null {
+  const sources = [
+    ...entry.scripts.map((s) => s.script),
+    ...entry.filters.flatMap((f) => f.rules.map((r) => r.script ?? '')),
+    ...entry.transformers.flatMap((t) => t.steps.map((s) => s.script ?? '')),
+  ];
+  const found = MIRTH_ONLY_CONSTRUCTS.filter(([pattern]) => sources.some((s) => pattern.test(s))).map(([, hint]) => hint);
+  if (found.length === 0) return null;
+  return `Channel "${entry.name}": its scripts use Mirth-only constructs that will fail until rewritten: ${found.join('; ')}`;
 }
 
 // ----- Metadata Column Conversion -----
