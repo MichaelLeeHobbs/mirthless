@@ -252,7 +252,7 @@ function convertChannel(
 ): ChannelExportEntry {
   const name = getString(mirthChannel, 'name') ?? 'Unnamed Channel';
   const description = getString(mirthChannel, 'description');
-  const enabled = getBoolean(mirthChannel, 'enabled', true);
+  const enabled = channelEnabled(mirthChannel);
   const id = getString(mirthChannel, 'id') ?? randomUUID();
 
   // Source connector
@@ -308,6 +308,17 @@ function convertChannel(
   const scriptWarning = mirthScriptWarning(entry);
   if (scriptWarning) warnings.push(scriptWarning);
   return entry;
+}
+
+/**
+ * Mirth 3.x+ keeps a channel's enabled flag in `exportData/metadata/enabled`;
+ * older exports have it on the channel. A disabled channel imported as
+ * enabled would be deployed by the next server start.
+ */
+function channelEnabled(mirthChannel: Record<string, unknown>): boolean {
+  const metadata = getNestedRecord(getNestedRecord(mirthChannel, 'exportData') ?? {}, 'metadata');
+  if (metadata && getString(metadata, 'enabled') !== null) return getBoolean(metadata, 'enabled', true);
+  return getBoolean(mirthChannel, 'enabled', true);
 }
 
 // ----- Source Response -----

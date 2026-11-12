@@ -466,6 +466,13 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(result.value.warnings.filter((w) => w.includes('Mirth-only constructs'))).toEqual([]);
   });
 
+  it('reads a channel\'s enabled flag from exportData/metadata, where Mirth 4.x writes it', () => {
+    const withFlag = (flag: string) => (x: string): string => x.replace('</properties>\n</channel>', `</properties>\n  <exportData><metadata><enabled>${flag}</enabled></metadata></exportData>\n</channel>`);
+    expect(convert4x(withFlag('false')).enabled).toBe(false);
+    expect(convert4x(withFlag('true')).enabled).toBe(true);
+    expect(convert4x().enabled).toBe(true);
+  });
+
   it('keeps values as written, not as numbers', () => {
     expect(convert4x().description).toBe('0123');
   });
