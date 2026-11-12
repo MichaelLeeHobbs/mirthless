@@ -51,6 +51,11 @@ vi.mock('../channel.service.js', () => ({
   ChannelService: mockChannelService,
 }));
 
+const mockConfigEntries = vi.fn().mockResolvedValue({ ok: true, value: [], error: null });
+vi.mock('../config-map.service.js', () => ({
+  ConfigMapService: { list: mockConfigEntries },
+}));
+
 vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
@@ -186,6 +191,38 @@ describe('DeploymentService', () => {
 
       expect(result.ok).toBe(true);
       expect(mockEngine.deploy).toHaveBeenCalledOnce();
+    });
+
+    it('resolves configuration map references in connector settings before validating them', async () => {
+      mockConfigEntries.mockResolvedValueOnce(ok([
+        { category: 'vns', name: 'SENDER_HOST', value: '10.0.0.5' },
+        { category: 'vns', name: 'SENDER_PORT', value: '6661' },
+      ]));
+      mockChannelService.getById.mockResolvedValue(ok({
+        ...CHANNEL_DETAIL,
+        destinations: [{
+          id: 'dest-1', metaDataId: 1, name: 'Sender', enabled: true,
+          connectorType: 'TCP_MLLP', properties: { host: '${SENDER_HOST}', port: '${vns.SENDER_PORT}', template: '${oru}' },
+          queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 10000,
+          rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+        }],
+      }));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      const deployed = mockEngine.deploy.mock.calls[0]?.[0] as { destinations: Array<{ properties: unknown }> };
+      expect(deployed.destinations[0]?.properties).toEqual({ host: '10.0.0.5', port: '6661', template: '${oru}' });
+    });
+
+    it('fails the deploy when the configuration map cannot be loaded', async () => {
+      mockConfigEntries.mockResolvedValueOnce({ ok: false, value: null, error: new Error('db down') });
+      mockChannelService.getById.mockResolvedValue(ok(CHANNEL_DETAIL));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      expect(mockEngine.deploy).not.toHaveBeenCalled();
     });
   });
 
