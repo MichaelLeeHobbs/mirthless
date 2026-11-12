@@ -9,6 +9,8 @@ export const codeTemplateLibraries = pgTable('code_template_libraries', {
   name: varchar('name', { length: 255 }).notNull().unique(),
   description: text('description').default(''),
   revision: integer('revision').notNull().default(1),
+  // The channels whose scripts get this library's templates; null: every channel.
+  channelIds: jsonb('channel_ids').$type<ReadonlyArray<string>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

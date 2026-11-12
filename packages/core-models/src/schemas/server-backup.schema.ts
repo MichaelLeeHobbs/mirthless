@@ -44,6 +44,8 @@ const backupCodeTemplateLibrarySchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   description: z.string().nullable(),
+  /** Absent in backups made before libraries could be scoped: every channel. */
+  channelIds: z.array(z.string().uuid()).nullable().optional(),
 });
 
 const backupCodeTemplateSchema = z.object({

@@ -127,7 +127,7 @@ vi.mock('../config-map.service.js', () => ({
 
 vi.mock('../code-template.service.js', () => ({
   CodeTemplateService: {
-    listTemplates: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
+    listTemplatesForChannel: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }),
   },
 }));
 

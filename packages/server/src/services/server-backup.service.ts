@@ -139,6 +139,7 @@ export class ServerBackupService {
           id: lib.id,
           name: lib.name,
           description: lib.description,
+          channelIds: lib.channelIds ? [...lib.channelIds] : null,
         })),
         codeTemplates: templatesResult.value.map((t) => ({
           id: t.id,
@@ -450,10 +451,10 @@ async function restoreCodeTemplateLibraries(
 
       if (existing) {
         if (mode === 'SKIP') { skipped++; continue; }
-        await db.update(codeTemplateLibraries).set({ name: item.name, description: item.description }).where(eq(codeTemplateLibraries.id, item.id));
+        await db.update(codeTemplateLibraries).set({ name: item.name, description: item.description, channelIds: item.channelIds ?? null }).where(eq(codeTemplateLibraries.id, item.id));
         updated++;
       } else {
-        await db.insert(codeTemplateLibraries).values({ id: item.id, name: item.name, description: item.description });
+        await db.insert(codeTemplateLibraries).values({ id: item.id, name: item.name, description: item.description, channelIds: item.channelIds ?? null });
         created++;
       }
     } catch (err) {

@@ -61,7 +61,7 @@ vi.mock('../message.service.js', () => ({
 }));
 
 vi.mock('../global-script.service.js', () => ({ GlobalScriptService: { getAll: vi.fn() } }));
-vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplates: vi.fn() } }));
+vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplatesForChannel: vi.fn() } }));
 vi.mock('../alert.service.js', () => ({ AlertService: { list: vi.fn(), getByIds: vi.fn() } }));
 vi.mock('../email.service.js', () => ({ EmailService: { sendMail: vi.fn() } }));
 vi.mock('../../lib/db.js', () => ({ db: { select: vi.fn(), execute: vi.fn() }, default: {} }));

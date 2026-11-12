@@ -6,7 +6,7 @@
 
 import { assertScriptCompiles } from './script-validation.service.js';
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, count, asc } from 'drizzle-orm';
+import { eq, count, asc, or, isNull, sql } from 'drizzle-orm';
 import type {
   CreateCodeTemplateLibraryInput,
   UpdateCodeTemplateLibraryInput,
@@ -26,6 +26,8 @@ export interface LibrarySummary {
   readonly description: string | null;
   readonly revision: number;
   readonly templateCount: number;
+  /** The channels whose scripts get this library's templates; null: every channel. */
+  readonly channelIds: readonly string[] | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -71,6 +73,7 @@ export class CodeTemplateService {
           description: lib.description,
           revision: lib.revision,
           templateCount: countRow?.value ?? 0,
+          channelIds: lib.channelIds ?? null,
           createdAt: lib.createdAt,
           updatedAt: lib.updatedAt,
         });
@@ -101,6 +104,7 @@ export class CodeTemplateService {
         .values({
           name: input.name,
           description: input.description,
+          channelIds: input.channelIds ?? null,
         })
         .returning();
 
@@ -117,6 +121,7 @@ export class CodeTemplateService {
         description: row!.description,
         revision: row!.revision,
         templateCount: 0,
+        channelIds: row!.channelIds ?? null,
         createdAt: row!.createdAt,
         updatedAt: row!.updatedAt,
       };
@@ -161,6 +166,7 @@ export class CodeTemplateService {
       };
       if (input.name !== undefined) updates['name'] = input.name;
       if (input.description !== undefined) updates['description'] = input.description;
+      if (input.channelIds !== undefined) updates['channelIds'] = input.channelIds;
 
       const [row] = await db
         .update(codeTemplateLibraries)
@@ -186,6 +192,7 @@ export class CodeTemplateService {
         description: row!.description,
         revision: row!.revision,
         templateCount: countRow?.value ?? 0,
+        channelIds: row!.channelIds ?? null,
         createdAt: row!.createdAt,
         updatedAt: row!.updatedAt,
       };
@@ -220,6 +227,26 @@ export class CodeTemplateService {
   // ===== Templates =====
 
   /** List templates, optionally filtered by library. */
+  /** The templates a channel's scripts get: those in libraries for every channel or that name this one. */
+  static async listTemplatesForChannel(channelId: string): Promise<Result<readonly TemplateDetail[]>> {
+    return tryCatch(async () => {
+      const rows = await db
+        .select({ template: codeTemplates })
+        .from(codeTemplates)
+        .innerJoin(codeTemplateLibraries, eq(codeTemplates.libraryId, codeTemplateLibraries.id))
+        .where(or(
+          isNull(codeTemplateLibraries.channelIds),
+          sql`${codeTemplateLibraries.channelIds} @> ${JSON.stringify([channelId])}::jsonb`,
+        ))
+        .orderBy(asc(codeTemplates.name));
+      return rows.map(({ template: r }) => ({
+        id: r.id, libraryId: r.libraryId, name: r.name, description: r.description, type: r.type,
+        language: r.language, code: r.code, contexts: r.contexts, revision: r.revision,
+        createdAt: r.createdAt, updatedAt: r.updatedAt,
+      }));
+    });
+  }
+
   static async listTemplates(
     libraryId?: string,
   ): Promise<Result<readonly TemplateDetail[]>> {

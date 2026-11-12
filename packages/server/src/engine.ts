@@ -564,7 +564,7 @@ export class EngineManager {
 
     // Load code templates, global scripts, alerts, filter/transformer data, configMap, and globalMap in parallel
     const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts, configMapResult, globalMapProxyInstance] = await Promise.all([
-      CodeTemplateService.listTemplates(),
+      CodeTemplateService.listTemplatesForChannel(channel.id),
       GlobalScriptService.getAll(),
       this.loadFilterTransformerData(channel.id),
       this.loadAlertsForChannel(channel.id),
@@ -1257,7 +1257,7 @@ export class EngineManager {
    */
   async checkScripts(channel: ChannelDetail): Promise<void> {
     const [templatesResult, globalScriptsResult, ftData] = await Promise.all([
-      CodeTemplateService.listTemplates(),
+      CodeTemplateService.listTemplatesForChannel(channel.id),
       GlobalScriptService.getAll(),
       this.loadFilterTransformerData(channel.id),
     ]);
