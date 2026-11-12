@@ -1148,6 +1148,7 @@ export class EngineManager {
         scripts: cleanScripts as DestinationScripts,
         queueMode: (d.queueMode ?? 'NEVER') as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
         waitForPrevious: d.waitForPrevious,
+        ...(typeof d.properties['template'] === 'string' ? { template: d.properties['template'] } : {}),
       });
     }
 

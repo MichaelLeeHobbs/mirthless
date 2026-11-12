@@ -12,6 +12,7 @@ import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
 import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
 import { parseForSandbox, serializeFromSandbox, serializeTransformed } from './data-type-handler.js';
+import { renderDestinationTemplate } from './destination-template.js';
 
 // ----- Types -----
 
@@ -50,6 +51,8 @@ export interface DestinationConfig {
   readonly queueMode: 'NEVER' | 'ON_FAILURE' | 'ALWAYS';
   /** Run after the preceding destination finishes instead of in parallel with it (default false). */
   readonly waitForPrevious?: boolean | undefined;
+  /** What to send instead of the transformed message, with `${...}` references (see destination-template.ts). */
+  readonly template?: string | undefined;
 }
 
 /**
@@ -689,6 +692,15 @@ export class MessageProcessor {
         }
         const transformed = scriptReplacement(txResult.value.returnValue, txResult.value.msg);
         destContent = serializeTransformed(transformed, destContent, dataType);
+      }
+
+      if (dest.template !== undefined) {
+        destContent = renderDestinationTemplate(
+          dest.template,
+          { encoded: destContent, raw: input.rawContent, messageId },
+          [destMaps.connectorMap, destMaps.channelMap, input.sourceMap, destMaps.responseMap,
+            this.config.globalChannelMap?.toRecord() ?? {}, this.config.globalMapProxy?.toRecord() ?? {}, this.config.configMap ?? {}],
+        );
       }
 
       // Persist the outbound (SENT) content BEFORE queuing/sending. A queued
