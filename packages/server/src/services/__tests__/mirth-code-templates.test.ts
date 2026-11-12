@@ -41,6 +41,7 @@ describe('code template libraries in a Mirth server backup', () => {
     expect(result.codeTemplateLibraries).toEqual([{
       name: 'Globals',
       description: 'About Globals',
+      channelIds: [],
       templates: [{
         name: 'stampSite', description: '', type: 'FUNCTION',
         code: 'function stampSite(m) { return m && m; }',
@@ -59,11 +60,15 @@ describe('code template libraries in a Mirth server backup', () => {
     expect(result.codeTemplateLibraries[0]?.templates[0]?.contexts).toEqual(['CHANNEL_DEPLOY']);
   });
 
-  it('warns when Mirth enabled a library for some channels only', () => {
+  it('scopes a library to the channels Mirth enabled it for, or to every channel with "include new channels"', () => {
     const result = convertBackup(library('Some', template('a', 'FUNCTION', 'x', []), [CHANNEL_ID]) + library('All', template('b', 'FUNCTION', 'y', []), [CHANNEL_ID], true));
-    expect(result.warnings.filter((w) => w.includes('some channels only'))).toEqual([
-      'Code template library "Some": Mirth enabled it for some channels only; here its templates are available to every channel',
-    ]);
+    expect(result.codeTemplateLibraries.map((l) => [l.name, l.channelIds])).toEqual([['Some', [CHANNEL_ID]], ['All', null]]);
+    expect(result.warnings.filter((w) => w.startsWith('Code template library'))).toEqual([]);
+  });
+
+  it('warns that a channel Mirth excluded from an "include new channels" library gets it here', () => {
+    const xml = library('All', template('b', 'FUNCTION', 'y', []), [], true).replace('<disabledChannelIds/>', `<disabledChannelIds><string>${CHANNEL_ID}</string></disabledChannelIds>`);
+    expect(convertBackup(xml).warnings).toContain('Code template library "All": Mirth disabled it for some channels; here it applies to every channel');
   });
 
   it('has no libraries for a single channel export', () => {

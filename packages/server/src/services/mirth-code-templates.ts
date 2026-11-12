@@ -27,6 +27,8 @@ export interface MirthCodeTemplate {
 export interface MirthCodeTemplateLibrary {
   readonly name: string;
   readonly description: string;
+  /** The channels Mirth enabled the library for; null: every channel. */
+  readonly channelIds: readonly string[] | null;
   readonly templates: readonly MirthCodeTemplate[];
 }
 
@@ -74,11 +76,30 @@ function convertTemplate(node: Record<string, unknown>, xml: XmlReaders): MirthC
   };
 }
 
+/** The `<string>` children of a Mirth id list. */
+function idList(node: unknown, xml: XmlReaders): string[] {
+  if (!xml.isRecord(node)) return [];
+  const raw = node['string'];
+  const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+  return list.map(String);
+}
+
 /**
- * Libraries in a server backup (`serverConfiguration/codeTemplateLibraries`).
- * Mirth can enable a library for some channels only; here every template is
- * available to every channel, so the caller warns when a library names channels.
+ * Which channels get a library: Mirth's "include new channels" means every
+ * channel (an exclusion list is not kept, so the import warns about one);
+ * otherwise the channels it was enabled for.
  */
+function libraryScope(lib: Record<string, unknown>, name: string, xml: XmlReaders, warnings: string[]): readonly string[] | null {
+  if (xml.getString(lib, 'includeNewChannels') === 'true') {
+    if (idList(lib['disabledChannelIds'], xml).length > 0) {
+      warnings.push(`Code template library "${name}": Mirth disabled it for some channels; here it applies to every channel`);
+    }
+    return null;
+  }
+  return idList(lib['enabledChannelIds'], xml);
+}
+
+/** Libraries in a server backup (`serverConfiguration/codeTemplateLibraries`), scoped as Mirth scoped them. */
 export function extractCodeTemplateLibraries(
   parsed: Record<string, unknown>,
   xml: XmlReaders,
@@ -95,11 +116,8 @@ export function extractCodeTemplateLibraries(
     const templates = (xml.isRecord(templatesNode) ? xml.toRecordList(templatesNode['codeTemplate']) : [])
       .map((t) => convertTemplate(t, xml))
       .filter((t): t is MirthCodeTemplate => t !== null);
-    const enabled = lib['enabledChannelIds'];
-    if (xml.getString(lib, 'includeNewChannels') !== 'true' && xml.isRecord(enabled) && enabled['string'] !== undefined) {
-      warnings.push(`Code template library "${name}": Mirth enabled it for some channels only; here its templates are available to every channel`);
-    }
-    return [{ name, description: xml.getString(lib, 'description') ?? '', templates }];
+    const channelIds = libraryScope(lib, name, xml, warnings);
+    return [{ name, description: xml.getString(lib, 'description') ?? '', channelIds, templates }];
   });
 }
 
@@ -107,8 +125,8 @@ export function extractCodeTemplateLibraries(
 
 /**
  * Create each library and template that does not exist, matched by name.
- * OVERWRITE replaces an existing template's code, type and contexts; any other
- * mode leaves it as it is.
+ * OVERWRITE replaces an existing library's channel scope and an existing
+ * template's code, type and contexts; any other mode leaves them as they are.
  */
 export async function importCodeTemplateLibraries(
   libraries: readonly MirthCodeTemplateLibrary[],
@@ -121,8 +139,9 @@ export async function importCodeTemplateLibraries(
     const existingLibraries = await CodeTemplateService.listLibraries();
     if (!existingLibraries.ok) throw existingLibraries.error;
     for (const lib of libraries) {
-      const libraryId = existingLibraries.value.find((l) => l.name === lib.name)?.id
-        ?? await createLibrary(lib, context);
+      const found = existingLibraries.value.find((l) => l.name === lib.name);
+      if (found && overwrite) await rescopeLibrary(found.id, found.revision, lib.channelIds, context);
+      const libraryId = found?.id ?? await createLibrary(lib, context);
       const existing = await CodeTemplateService.listTemplates(libraryId);
       if (!existing.ok) throw existing.error;
       for (const template of lib.templates) {
@@ -134,8 +153,15 @@ export async function importCodeTemplateLibraries(
   });
 }
 
+async function rescopeLibrary(id: string, revision: number, channelIds: readonly string[] | null, context?: AuditContext): Promise<void> {
+  const updated = await CodeTemplateService.updateLibrary(id, { channelIds: channelIds ? [...channelIds] : null, revision }, context);
+  if (!updated.ok) throw updated.error;
+}
+
 async function createLibrary(lib: MirthCodeTemplateLibrary, context?: AuditContext): Promise<string> {
-  const created = await CodeTemplateService.createLibrary({ name: lib.name, description: lib.description }, context);
+  const created = await CodeTemplateService.createLibrary(
+    { name: lib.name, description: lib.description, channelIds: lib.channelIds ? [...lib.channelIds] : null }, context,
+  );
   if (!created.ok) throw created.error;
   return created.value.id;
 }
