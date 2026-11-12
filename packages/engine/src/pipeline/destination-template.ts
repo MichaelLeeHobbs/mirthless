@@ -19,6 +19,17 @@ function asText(value: unknown): string {
   return typeof value === 'string' ? value : typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
+/** One record of the maps' variables; for a name in several maps the first map's value wins. */
+export function mergeVariables(maps: readonly Readonly<Record<string, unknown>>[]): Record<string, unknown> {
+  const merged: Record<string, unknown> = {};
+  for (let i = maps.length - 1; i >= 0; i--) {
+    for (const [key, value] of Object.entries(maps[i] ?? {})) {
+      if (value !== undefined && value !== null) merged[key] = value;
+    }
+  }
+  return merged;
+}
+
 /**
  * Fill `${...}` references: `message.encodedData` (also `message.transformedData`),
  * `message.rawData` and `messageId`, then variables from the maps in the order

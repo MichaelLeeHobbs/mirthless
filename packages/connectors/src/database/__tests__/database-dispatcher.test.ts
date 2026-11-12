@@ -279,6 +279,34 @@ describe('DatabaseDispatcher', () => {
       const [_sql, params] = queryFn.mock.calls[0]!;
       expect(params).toEqual(['MSH|^~\\&|SENDER']);
     });
+
+    it('binds parameters from the message variables, as parameters, not SQL', async () => {
+      const { pool, queryFn } = makeMockPool();
+      dispatcher = new DatabaseDispatcher(makeConfig({
+        query: 'INSERT INTO patients (mrn, family) VALUES (${mrn}, ${family})',
+      }), pool);
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(
+        makeMessage({ content: 'MSH|^~\\&|EHR', variables: { mrn: 'MRN1', family: "O'BRIEN); DROP TABLE patients;--" } }),
+        AbortSignal.timeout(5_000),
+      );
+
+      expect(result.ok).toBe(true);
+      const [sql, params] = queryFn.mock.calls[0]!;
+      expect(sql).toBe('INSERT INTO patients (mrn, family) VALUES ($1, $2)');
+      expect(params).toEqual(['MRN1', "O'BRIEN); DROP TABLE patients;--"]);
+    });
+
+    it('lets a field of a JSON message win over a variable of the same name', async () => {
+      const { pool, queryFn } = makeMockPool();
+      dispatcher = new DatabaseDispatcher(makeConfig({ query: 'INSERT INTO t (a) VALUES (${name})' }), pool);
+      await dispatcher.onStart();
+
+      await dispatcher.send(makeMessage({ content: '{"name":"from json"}', variables: { name: 'from map' } }), AbortSignal.timeout(5_000));
+
+      expect(queryFn.mock.calls[0]![1]).toEqual(['from json']);
+    });
   });
 
   describe('send (transaction mode)', () => {

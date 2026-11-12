@@ -165,7 +165,11 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
     });
   }
 
-  /** Build a context object from a ConnectorMessage for template substitution. */
+  /**
+   * Values for the query's `${name}` parameters: the message's map variables,
+   * then the fields of a JSON message (which win over a variable of the same
+   * name), then the message's own ids and content.
+   */
   private buildContext(message: ConnectorMessage): Record<string, unknown> {
     // Parse message content as JSON if possible, otherwise use raw content
     let parsed: Record<string, unknown> = {};
@@ -179,6 +183,7 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
     }
 
     return {
+      ...(message.variables ?? {}),
       ...parsed,
       messageId: message.messageId,
       channelId: message.channelId,

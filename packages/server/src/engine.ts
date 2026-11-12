@@ -176,14 +176,15 @@ const ERROR_CONTENT_TYPES: ReadonlySet<number> = new Set([
  * PRODUCTION stores everything needed to deliver, view, recover, and reprocess a
  * message — RAW (reprocess), SENT (queued delivery + crash recovery), the
  * transformed/encoded/response bodies (message browser), and all errors. It omits
- * only the debug-only PROCESSED copy and the map snapshots (Mirth's "Production"
- * semantics). RAW must be present or crash recovery and reprocess break; SENT must
- * be present or queued destinations reload null content and error 100% of messages.
+ * only the debug-only PROCESSED copy and the source map snapshot (Mirth's
+ * "Production" semantics). RAW must be present or crash recovery and reprocess
+ * break; SENT and a queued destination's variables (CHANNEL_MAP) must be present
+ * or the queue cannot deliver what was routed.
  */
 const PRODUCTION_CONTENT_TYPES: ReadonlySet<number> = new Set([
   CONTENT_TYPE.RAW, CONTENT_TYPE.TRANSFORMED, CONTENT_TYPE.ENCODED,
   CONTENT_TYPE.SENT, CONTENT_TYPE.RESPONSE, CONTENT_TYPE.RESPONSE_TRANSFORMED,
-  CONTENT_TYPE.RESPONSE_SENT,
+  CONTENT_TYPE.RESPONSE_SENT, CONTENT_TYPE.CHANNEL_MAP,
   ...ERROR_CONTENT_TYPES,
 ]);
 
@@ -678,7 +679,7 @@ export class EngineManager {
     };
 
     // Build send function
-    const sendFn: SendToDestination = async (metaDataId, messageId, content, signal, correlationId) => {
+    const sendFn: SendToDestination = async (metaDataId, messageId, content, signal, correlationId, variables) => {
       const connector = destinations.get(metaDataId);
       if (!connector) {
         return tryCatch(() => { throw new Error(`Destination ${String(metaDataId)} not found`); });
@@ -687,7 +688,7 @@ export class EngineManager {
       // that keeps a send from hanging forever if one does not.
       return connector.send({
         channelId: channel.id, messageId, metaDataId, content,
-        dataType: channel.inboundDataType, correlationId,
+        dataType: channel.inboundDataType, correlationId, variables,
       }, AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]));
     };
 

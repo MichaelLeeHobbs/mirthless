@@ -297,7 +297,7 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    expect(sendFn).toHaveBeenCalledWith(2, 1, 'ACK1', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(2, 1, 'ACK1', expect.any(AbortSignal), expect.any(String), { 'Dest 1': { status: 'SENT', content: 'ACK1' } });
   });
 
   it('keeps destination results in configured order across chains', async () => {

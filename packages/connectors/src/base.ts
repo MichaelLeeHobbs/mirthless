@@ -98,6 +98,12 @@ export interface ConnectorMessage {
   readonly dataType: string;
   /** Correlation ID for cross-channel tracing. */
   readonly correlationId?: string | undefined;
+  /**
+   * What scripts put in the message's maps, as this destination saw them
+   * (connector, channel and response maps; the first that has a name wins).
+   * A database writer binds `${name}` from them.
+   */
+  readonly variables?: Readonly<Record<string, unknown>> | undefined;
 }
 
 /** Response from a destination connector after sending. */

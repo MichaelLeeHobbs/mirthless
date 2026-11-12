@@ -12,7 +12,7 @@ import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
 import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
 import { parseForSandbox, serializeFromSandbox, serializeTransformed } from './data-type-handler.js';
-import { renderDestinationTemplate } from './destination-template.js';
+import { mergeVariables, renderDestinationTemplate } from './destination-template.js';
 
 // ----- Types -----
 
@@ -82,6 +82,8 @@ export type SendToDestination = (
   content: string,
   signal: AbortSignal,
   correlationId?: string,
+  /** The message's map variables as the destination saw them (see storeVariables). */
+  variables?: Readonly<Record<string, unknown>>,
 ) => Promise<Result<DestinationResponse>>;
 
 /** Response from a destination send. */
@@ -263,6 +265,9 @@ const CT_SENT = 5;
 const CT_RESPONSE = 6;
 const CT_RESPONSE_TRANSFORMED = 7;
 const CT_SOURCE_MAP = 9;
+/** A destination's variables (see storeVariables). */
+const CT_CHANNEL_MAP = 10;
+const CT_ERROR = 11;
 const CT_PROCESSING_ERROR = 13;
 
 /**
@@ -694,13 +699,19 @@ export class MessageProcessor {
         destContent = serializeTransformed(transformed, destContent, dataType);
       }
 
+      // What scripts put in this message's maps travels with the send (and is
+      // stored for a queued one). The source map is already stored with the
+      // message, and the shared maps are read in memory only: the configuration
+      // map can hold credentials that must not be copied into every message.
+      const variables = mergeVariables([destMaps.connectorMap, destMaps.channelMap, destMaps.responseMap]);
       if (dest.template !== undefined) {
-        destContent = renderDestinationTemplate(
-          dest.template,
-          { encoded: destContent, raw: input.rawContent, messageId },
-          [destMaps.connectorMap, destMaps.channelMap, input.sourceMap, destMaps.responseMap,
-            this.config.globalChannelMap?.toRecord() ?? {}, this.config.globalMapProxy?.toRecord() ?? {}, this.config.configMap ?? {}],
-        );
+        destContent = renderDestinationTemplate(dest.template, { encoded: destContent, raw: input.rawContent, messageId }, [
+          variables, input.sourceMap, this.config.globalChannelMap?.toRecord() ?? {}, this.config.globalMapProxy?.toRecord() ?? {}, this.config.configMap ?? {},
+        ]);
+      }
+      const variablesStored = await this.storeVariables(messageId, dest, variables);
+      if (!variablesStored.ok) {
+        return this.destErrorOut(messageId, dest, 'storeVariables', variablesStored.error.message);
       }
 
       // Persist the outbound (SENT) content BEFORE queuing/sending. A queued
@@ -720,9 +731,12 @@ export class MessageProcessor {
       }
 
       // NEVER / ON_FAILURE: attempt a direct send first.
-      const sendResult = await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId);
+      const sendResult = Object.keys(variables).length > 0
+        ? await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId, variables)
+        : await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId);
 
       if (!sendResult.ok) {
+        await this.recordSendFailure(messageId, dest.metaDataId, sendResult.error.message);
         // ON_FAILURE: fall back to the queue for retry instead of a hard ERROR.
         if (dest.queueMode === 'ON_FAILURE') {
           return this.enqueueDestination(messageId, dest);
@@ -793,6 +807,7 @@ export class MessageProcessor {
 
       // Destination responded but not SENT (e.g. remote NAK). ON_FAILURE queues
       // it for retry; otherwise mark ERROR.
+      await this.recordSendFailure(messageId, dest.metaDataId, response.errorMessage ?? response.content, response.content);
       if (dest.queueMode === 'ON_FAILURE') {
         return this.enqueueDestination(messageId, dest);
       }
@@ -813,6 +828,20 @@ export class MessageProcessor {
       return chainResults;
     }));
     return settled.flat();
+  }
+
+  /**
+   * Keep why a send failed (and what the destination answered, if anything),
+   * so the message browser can say what went wrong whether the destination
+   * ends ERROR or waits in the queue.
+   */
+  private async recordSendFailure(messageId: number, metaDataId: number, reason: string, response?: string): Promise<void> {
+    const { channelId } = this.config;
+    const text = reason.trim() === '' ? 'The destination reported a failure without a reason' : reason;
+    await this.saved(messageId, metaDataId, 'why a destination failed', [
+      this.store.storeContent(channelId, messageId, metaDataId, CT_ERROR, text, 'TEXT'),
+      ...(response ? [this.store.storeContent(channelId, messageId, metaDataId, CT_RESPONSE, response, 'TEXT')] : []),
+    ]);
   }
 
   /** Enqueue a destination for (retried) delivery by the queue consumer. */
@@ -877,6 +906,18 @@ export class MessageProcessor {
   }
 
   /** Run a script in the sandbox with the current message context and map state. */
+  /**
+   * Keep the variables a queued destination will send with: the queue sends
+   * later, from the store, when the message's maps are gone. A destination that
+   * never queues gets them from memory, and an empty set needs no row.
+   */
+  private storeVariables(messageId: number, dest: DestinationConfig, variables: Readonly<Record<string, unknown>>): Promise<Result<void>> {
+    if (dest.queueMode === 'NEVER' || Object.keys(variables).length === 0) {
+      return Promise.resolve({ ok: true, value: undefined, error: null } as Result<void>);
+    }
+    return this.store.storeContent(this.config.channelId, messageId, dest.metaDataId, CT_CHANNEL_MAP, JSON.stringify(variables), 'JSON');
+  }
+
   /** Store the source's custom metadata column values, read from the maps. Nothing to store is a success. */
   private storeSourceMetadata(
     messageId: number,

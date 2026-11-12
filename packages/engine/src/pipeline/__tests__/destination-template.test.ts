@@ -52,7 +52,7 @@ describe('a destination with a template', () => {
 
     await processor.processMessage({ rawContent: 'ACC1', sourceMap: {} }, AbortSignal.timeout(5_000));
 
-    expect(send).toHaveBeenCalledWith(1, 9, 'MSH|ORU for ACC1 at NORTH', expect.any(AbortSignal), expect.any(String));
+    expect(send).toHaveBeenCalledWith(1, 9, 'MSH|ORU for ACC1 at NORTH', expect.any(AbortSignal), expect.any(String), { oru: 'MSH|ORU for ACC1' });
     expect(s.storeContent).toHaveBeenCalledWith(config.channelId, 9, 1, 5, 'MSH|ORU for ACC1 at NORTH', 'RAW');
   });
 });
