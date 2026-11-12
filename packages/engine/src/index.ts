@@ -18,6 +18,7 @@ export type {
   ProcessedMessage,
   DestinationResult,
   PipelineConfig,
+  ResponseSource,
   AlertEventHandler,
   ContentRow,
   StageTiming,

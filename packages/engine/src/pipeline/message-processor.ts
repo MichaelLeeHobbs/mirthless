@@ -207,7 +207,17 @@ export interface PipelineConfig {
   readonly onTiming?: TimingCallback | undefined;
   /** Called when a message store write fails after the point where the message can still be failed cleanly. */
   readonly onStoreFailure?: ((failure: StoreFailure) => void) | undefined;
+  /** Where the response to the sender comes from. Absent: the first destination that returned one. */
+  readonly responseSource?: ResponseSource | undefined;
 }
+
+/**
+ * POSTPROCESSOR: the channel postprocessor's return value.
+ * DESTINATION: the named destination's response.
+ */
+export type ResponseSource =
+  | { readonly kind: 'POSTPROCESSOR' }
+  | { readonly kind: 'DESTINATION'; readonly destinationName: string };
 
 /** A message store write that failed. */
 export interface StoreFailure {
@@ -248,6 +258,14 @@ const CT_PROCESSING_ERROR = 13;
 function scriptReplacement(returnValue: unknown, msg: unknown): unknown {
   if (returnValue != null && typeof returnValue !== 'boolean') return returnValue;
   return msg;
+}
+
+/** The text a postprocessor's return value sends back. Nothing for undefined or null. */
+function responseText(returnValue: unknown): string | undefined {
+  if (returnValue === undefined || returnValue === null) return undefined;
+  if (typeof returnValue === 'string') return returnValue;
+  if (typeof returnValue === 'object') return JSON.stringify(returnValue);
+  return String(returnValue);
 }
 
 // ----- Pipeline -----
@@ -476,12 +494,15 @@ export class MessageProcessor {
       const postErrors: string[] = [];
 
       // Stage 7a: Channel postprocessor (receives responseMap populated with dest responses)
+      let postprocessorResponse: string | undefined;
       if (this.config.scripts.postprocessor) {
         const postResult = await this.runScript(
           this.config.scripts.postprocessor, content, input, signal, mapState,
         );
         if (!postResult.ok) {
           postErrors.push(`Script error in postprocessor: ${postResult.error.message}`);
+        } else {
+          postprocessorResponse = responseText(postResult.value.returnValue);
         }
         mark('postprocessor');
       }
@@ -545,7 +566,7 @@ export class MessageProcessor {
         });
       }
 
-      const firstResponse = destResults.find((r) => r.response)?.response;
+      const firstResponse = this.pickResponse(destResults, postprocessorResponse);
       const result: ProcessedMessage = {
         messageId,
         correlationId,
@@ -807,6 +828,17 @@ export class MessageProcessor {
   }
 
   /** Run a script in the sandbox with the current message context and map state. */
+  /** The response for the sender, from where the channel's response source says. */
+  private pickResponse(destResults: readonly DestinationResult[], postprocessorResponse: string | undefined): string | undefined {
+    const source = this.config.responseSource;
+    if (source?.kind === 'POSTPROCESSOR') return postprocessorResponse;
+    if (source?.kind === 'DESTINATION') {
+      const dest = this.config.destinations.find((d) => d.name === source.destinationName);
+      return dest ? destResults.find((r) => r.metaDataId === dest.metaDataId)?.response : undefined;
+    }
+    return destResults.find((r) => r.response)?.response;
+  }
+
   private async runScript(
     script: CompiledScript,
     content: string,

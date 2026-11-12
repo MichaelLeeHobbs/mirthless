@@ -33,6 +33,7 @@ import {
   type CodeTemplateData,
   type QueueConsumerConfig,
   type LoadedAlert,
+  type ResponseSource,
 } from '@galvaniflow/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { tryCatch, type Result } from 'stderr-lib';
@@ -137,6 +138,15 @@ export function toDispatchStatus(
     return DISPATCH_STATUS.PROCESSED;
   }
   return DISPATCH_STATUS.ERROR;
+}
+
+/** Where a channel's response to the sender comes from, by its response mode. */
+export function toResponseSource(responseMode: string, responseConnectorName: string | null): ResponseSource | undefined {
+  if (responseMode === 'POSTPROCESSOR') return { kind: 'POSTPROCESSOR' };
+  if (responseMode === 'DESTINATION' && responseConnectorName) {
+    return { kind: 'DESTINATION', destinationName: responseConnectorName };
+  }
+  return undefined;
 }
 
 // ----- Storage Policy -----
@@ -645,6 +655,7 @@ export class EngineManager {
       globalMapProxy: globalMapProxyInstance,
       configMap: maps.configMap,
       scriptTimeoutMs: channel.scriptTimeoutSeconds * 1_000,
+      responseSource: toResponseSource(channel.responseMode, channel.responseConnectorName),
       onError: raiseAlert,
       onStoreFailure: (failure) => {
         logger.error(

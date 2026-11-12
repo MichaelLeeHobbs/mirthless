@@ -89,6 +89,19 @@ beforeEach(() => {
 // ----- Preprocessor -----
 
 describe('channel preprocessor', () => {
+  it('runs Mirth\'s default preprocessor, which returns the global `message`', async () => {
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      scripts: { preprocessor: { code: '// Modify the message variable below to pre process data\nreturn message;' } },
+    });
+    const processor = new MessageProcessor(sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    const result = await processor.processMessage(makeInput('PRE_INPUT'), AbortSignal.timeout(5_000));
+
+    expect(result.ok && result.value.status).toBe('SENT');
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'PRE_INPUT', expect.any(AbortSignal), expect.any(String));
+  });
+
   it('happy path: a returned string replaces the message for all downstream stages', async () => {
     const store = makeStore();
     const sendFn = makeSendFn();
@@ -309,5 +322,56 @@ describe('channel postprocessor', () => {
     expect(result.value.status).toBe('SENT');
     // Destination received the original content; the postprocessor return is inert.
     expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+  });
+});
+
+// ----- Response source -----
+
+describe('response to the sender', () => {
+  const twoDestinations: PipelineConfig['destinations'] = [
+    { metaDataId: 1, name: 'First', enabled: true, scripts: {}, queueMode: 'NEVER' },
+    { metaDataId: 2, name: 'Second', enabled: true, scripts: {}, queueMode: 'NEVER' },
+  ];
+  const sendByDest: SendToDestination = vi.fn(async (metaDataId) => ok({ status: 'SENT' as const, content: `reply from ${String(metaDataId)}` }));
+
+  async function respond(overrides: Partial<PipelineConfig>): Promise<string | undefined> {
+    const processor = new MessageProcessor(sandbox, makeStore(), sendByDest, makeConfig({ destinations: twoDestinations, ...overrides }), DEFAULT_EXECUTION_OPTIONS);
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+    if (!result.ok) throw result.error;
+    return result.value.response;
+  }
+
+  it('is what the postprocessor returns when the channel responds from the postprocessor', async () => {
+    const response = await respond({
+      responseSource: { kind: 'POSTPROCESSOR' },
+      scripts: { postprocessor: { code: 'channelMap["ack"] = "ACK built"; return channelMap["ack"];' } },
+    });
+    expect(response).toBe('ACK built');
+  });
+
+  it('is JSON when the postprocessor returns an object', async () => {
+    const response = await respond({
+      responseSource: { kind: 'POSTPROCESSOR' },
+      scripts: { postprocessor: { code: 'return { status: "ok", count: 2 };' } },
+    });
+    expect(JSON.parse(response ?? '')).toEqual({ status: 'ok', count: 2 });
+  });
+
+  it('is absent when the postprocessor returns nothing, so the source falls back to its own ACK', async () => {
+    const response = await respond({
+      responseSource: { kind: 'POSTPROCESSOR' },
+      scripts: { postprocessor: { code: 'channelMap["x"] = 1;' } },
+    });
+    expect(response).toBeUndefined();
+  });
+
+  it('is the named destination\'s response when the channel responds from a destination', async () => {
+    const response = await respond({ responseSource: { kind: 'DESTINATION', destinationName: 'Second' } });
+    expect(response).toBe('reply from 2');
+  });
+
+  it('is the first destination\'s response by default', async () => {
+    const response = await respond({});
+    expect(response).toBe('reply from 1');
   });
 });
