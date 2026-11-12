@@ -213,7 +213,7 @@ Ranked by real-world impact (channels blocked / correctness / daily-use pain), n
 | 9 | **JS API breadth** (DateUtil, ChannelUtil, AttachmentUtil, SerializerFactory, getArrayOrXmlLength, …) | 2 | 🟡 | L |
 | 10 | **Per-connector connection monitoring** + per-channel Prometheus labels | 7 | 🔴 | M |
 | 11 | **Iterator transformer step** (+ XSLT / External Script) | 3 | 🟡 | M |
-| 12 | **Code-template per-channel library scoping** | 5 | 🟡 | S |
+| 12 | ~~Code-template per-channel library scoping~~ done in engine/API 2026-11-12 (D-249); editor control remains | 5 | 🟢 | S |
 | 13 | **Custom RBAC roles** (roles as permission sets) | 6 | 🟡 | M |
 | 14 | **Export completeness** (templates/deps/groups/tags + set export) | 5 | 🟡 | S |
 | 15 | **Alert per-connector scope + error-stage granularity** | 7 | 🟡 | M |

@@ -55,6 +55,25 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] DICOM (source + destination) — C-STORE via dcmtk.js
 - [x] Email/IMAP (source) — folder polling with filters
 
+### Mirth migration suite: scenarios still failing
+
+> `pnpm test:scenarios` (D-237, `docs/testing/migration-scenarios.md`) scores 37/60 on 2026-11-12; every weight-3 scenario passes. These fail, each a concrete gap:
+
+- [ ] **S08** A JavaScript Writer's `msg` is not parsed for its data type (`msg.get is not a function` on HL7).
+- [ ] **S09** `await` does not compile in a JavaScript Writer script (so `await routeMessage(...)` fails), and a Channel Writer target cannot be a per-message `${destinationChannelId}`.
+- [ ] **S11** An imported JavaScript Reader does not keep Mirth's polling interval.
+- [ ] **S12** The SMTP subject and other destination fields do not take per-message `${}` values (connector rank [5] below).
+- [ ] **S14** An imported Database Reader's rows do not reach the transformer as expected (investigate).
+- [ ] **S15** Database connectors are PostgreSQL-only ([1] below).
+- [ ] **S16** A Mirth File Reader with the SFTP scheme does not import onto the SFTP connector ([2] below).
+- [ ] **S17** HTTP Sender Basic auth, query parameters and per-message `${}` ([5] below).
+- [ ] **S18** TCP Basic (STX/ETX) framing ([3] below).
+- [ ] **S19** Delimited data is not parsed into fields by column name (N2).
+- [ ] **S20** No X12 data type (N1).
+- [ ] **S21** An HL7 batch file is not split into messages.
+- [ ] **S26** "Auto-generate (Before processing)" answers AE when a later stage fails; it should answer AA, or the sender resends.
+- [ ] Editor controls for what the engine now supports: custom metadata columns (N5), code template library scope (N12), the HTTP listener's `matchSubpaths`, a destination `template`.
+
 ### Connector Parity Gaps vs Mirth/OIE 4.6.0
 
 > Full analysis + fix specs + migration matrix: [`docs/design/12-connector-parity-gap-analysis.md`](../design/12-connector-parity-gap-analysis.md).
@@ -64,7 +83,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[2] File scheme abstraction** — FTP/FTPS, SMB, S3; fold standalone SFTP in as a scheme. 🔴 Local-disk-only today.
 - [ ] **[3] Configurable TCP framing + Basic mode** — 🔴 start/end bytes hardcoded VT/FS+CR; no non-standard/delimited framing.
 - [x] **[4] Surface hidden runtime options in forms** — surfaced TCP responseMode/charset/maxFrameBytes/acquireTimeoutMs, HTTP-source errorStatusCode/maxBodyBytes, SMTP requireTLS (2026-07-15). TCP TLS deferred to the rank-8 cert-resolver work (not surfacing-only); HTTP inbound auth folded into rank 5. 🟡 cheapest wins.
-- [ ] **[5] HTTP outbound auth (Basic/Digest) + query-parameters table + `${}` substitution** — 🟡 common REST requirement.
+- [ ] **[5] HTTP outbound auth (Basic/Digest) + query-parameters table + `${}` substitution** — 🟡 common REST requirement. Configuration map `${}` in any connector field (at deploy) and a per-message destination `template` exist since 2026-11-12 (D-246); per-message `${}` in the URL, headers and parameters does not.
 - [ ] **[6] Web Service / SOAP connector** (source + dispatcher) — 🔴 blocks brownfield SOAP hospital installs.
 - [ ] **[7] Document Writer** (PDF/RTF destination) — 🟡 no workaround for rendered clinical docs.
 - [ ] **[8] DICOM TLS** (cert/key/trust) — 🟡 secured PACS. (Assoc-rejection bug already fixed, D-181.)
@@ -86,10 +105,10 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] **[N6] Dependency-ordered deploy** (topological sort in `autoDeployChannels`) — 🔴 graph stored/validated but not applied; channel can start before its dependency.
 - [ ] **[N7] Destination-queue threading** (threadCount/groupBy/rotate) — 🔴 throughput/ordering at volume. Thread count and rotate controls removed from the UI until built; `waitForPrevious` chains now work (D-189).
 - [ ] **[N8] Pruner archiver + content/metadata-day split** — 🟡 `pruningArchiveEnabled` flag has no archiver (half-built); HIPAA retention.
-- [ ] **[N9] JS API breadth** — DateUtil, ChannelUtil, AttachmentUtil, SerializerFactory, getArrayOrXmlLength, etc. (~10 of Mirth's ~40 userutil objects). 🟡
+- [ ] **[N9] JS API breadth** — helpers GalvaniFlow's own API lacks (dates, attachments). Not a port of Mirth's userutil objects (D-244). 🟡
 - [ ] **[N10] Per-connector connection monitoring** (Mirth dashboardstatus) + per-channel Prometheus labels — 🔴 ops triage visibility.
 - [ ] **[N11] Iterator transformer step** (+ XSLT / External Script) — 🟡 repeating-segment mapping UX.
-- [ ] **[N12] Code-template per-channel library scoping** — 🟡 flat today (all templates to all channels).
+- [ ] **[N12] Code-template per-channel library scoping: editor control** — the engine, API, backup and Mirth import scope libraries to channels (2026-11-12, D-249); the Code Templates page cannot set the scope yet.
 - [ ] **[N13] Custom RBAC roles** (roles as permission sets vs 4 fixed) — 🟡 "dev who can't deploy to prod".
 - [ ] **[N14] Export completeness** (templates/deps/groups/tags + set export) — 🟡
 - [ ] **[N15] Alert per-connector scope + error-stage granularity** — 🟡
