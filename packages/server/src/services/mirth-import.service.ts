@@ -455,7 +455,8 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       const remoteAddress = getString(propsNode, 'remoteAddress');
       if (remoteAddress) result['host'] = remoteAddress;
       const remotePort = getString(propsNode, 'remotePort');
-      if (remotePort) result['port'] = Number(remotePort);
+      if (remotePort) result['port'] = portValue(remotePort);
+      Object.assign(result, sendTemplate(propsNode, 'template'));
       break;
     }
     case 'HTTP': {
@@ -469,6 +470,7 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       }
       const url = getString(propsNode, 'host');
       if (url) result['url'] = url;
+      if (!listener) Object.assign(result, sendTemplate(propsNode, 'content'));
       break;
     }
     case 'FILE': {
@@ -507,6 +509,7 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       // keeps as the channel's id. "none" is Mirth's "no channel selected".
       const target = getString(propsNode, 'channelId');
       if (target !== null) result['targetChannelId'] = target === 'none' ? '' : target;
+      Object.assign(result, sendTemplate(propsNode, 'channelTemplate'));
       break;
     }
     default:
@@ -520,6 +523,22 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
   }
 
   return result;
+}
+
+/**
+ * What a Mirth sender sends (`template` on a TCP Sender, `content` on an HTTP
+ * Sender, `channelTemplate` on a Channel Writer) as the destination's
+ * `template`. The default, the encoded message itself, needs none.
+ */
+function sendTemplate(propsNode: Record<string, unknown>, key: string): Record<string, unknown> {
+  const template = getString(propsNode, key);
+  if (template === null || template.trim() === '' || template.trim() === '${message.encodedData}') return {};
+  return { template };
+}
+
+/** A port as a number, or as written when it is a `${...}` reference resolved at deploy. */
+function portValue(port: string): number | string {
+  return /^\d+$/.test(port.trim()) ? Number(port) : port;
 }
 
 /**

@@ -545,6 +545,17 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(convert4x(swap('api', '202')).sourceConnectorProperties).toMatchObject({ path: '/api', responseStatusCode: 202 });
   });
 
+  it('carries a TCP Sender\'s template and keeps a ${...} port for the deploy to resolve', () => {
+    const sender = (port: string, template: string): string => `<properties class="com.mirth.connect.connectors.tcp.TcpDispatcherProperties" version="4.5.0"><remoteAddress>\${MIRTH_SENDER_HOST}</remoteAddress><remotePort>${port}</remotePort><template>${template}</template></properties>`;
+    const swap = (port: string, template: string) => (x: string): string =>
+      x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, sender(port, template));
+
+    expect(convert4x(swap('${MIRTH_SENDER_PORT}', '${oru}')).destinations[0]?.properties)
+      .toEqual({ host: '${MIRTH_SENDER_HOST}', port: '${MIRTH_SENDER_PORT}', template: '${oru}' });
+    expect(convert4x(swap('6661', '${message.encodedData}')).destinations[0]?.properties)
+      .toEqual({ host: '${MIRTH_SENDER_HOST}', port: 6661 });
+  });
+
   it('leaves a Channel Writer set to "none" without a target', () => {
     const channel = convert4x((x) => x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, '<properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="4.5.0"><channelId>none</channelId></properties>'));
     expect(channel.destinations[0]?.properties).toEqual({ targetChannelId: '' });
