@@ -81,8 +81,8 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[N1] EDI/X12 + NCPDP serializers** (+ enum entries) — 🔴 blocks X12 billing/eligibility + pharmacy channels.
 - [ ] **[N2] Finish declared-but-pass-through datatypes** — Delimited, HL7v3, DICOM→XML. 🔴 `msg` mapping impossible on them today.
 - [x] **[N3] Fix `$gc` map-shortcut collision** (means configMap; Mirth = globalChannelMap) + add `$cfg`/`$c`/`$co`/`$s` — 🔴 silent-wrong-map footgun for ported scripts.
-- [ ] **[N4] Message search operators** — metadata-column search, regex, error, send-attempt filters. 🔴 daily-use triage gap.
-- [ ] **[N5] Populate custom metadata columns + make searchable** — 🔴 currently stored but never populated (half-built). Editor UI removed until built (D-189).
+- [ ] **[N4] Message search operators** — regex, error, send-attempt filters. 🔴 daily-use triage gap. Metadata-column equality search is in the API (`metaDataColumn`/`metaDataValue`, 2026-11-12); the message browser has no control for it yet.
+- [ ] **[N5] Custom metadata columns: editor and message browser UI** — the engine fills the columns from map variables after the source transformer and the message list API filters on them and returns `metaData` (2026-11-12, D-240). Still missing: defining columns in the channel editor (removed by D-189) and showing/filtering them in the message browser.
 - [x] **[N6] Dependency-ordered deploy** (topological sort in `autoDeployChannels`) — 🔴 graph stored/validated but not applied; channel can start before its dependency.
 - [ ] **[N7] Destination-queue threading** (threadCount/groupBy/rotate) — 🔴 throughput/ordering at volume. Thread count and rotate controls removed from the UI until built; `waitForPrevious` chains now work (D-189).
 - [ ] **[N8] Pruner archiver + content/metadata-day split** — 🟡 `pruningArchiveEnabled` flag has no archiver (half-built); HIPAA retention.
