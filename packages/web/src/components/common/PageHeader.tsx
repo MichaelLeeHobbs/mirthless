@@ -19,9 +19,11 @@ interface PageHeaderProps {
   readonly actions?: ReactNode;
   /** Shows a small spinner beside the title during a background refetch. */
   readonly isFetching?: boolean;
+  /** Status line under the description (state chips, a link to what is failing). */
+  readonly meta?: ReactNode;
 }
 
-export function PageHeader({ title, description, actions, isFetching }: PageHeaderProps): ReactNode {
+export function PageHeader({ title, description, actions, isFetching, meta }: PageHeaderProps): ReactNode {
   return (
     <Box sx={{ mb: 3 }}>
       <Box
@@ -50,6 +52,9 @@ export function PageHeader({ title, description, actions, isFetching }: PageHead
               }}>
               {description}
             </Typography>
+          ) : null}
+          {meta ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mt: 1 }}>{meta}</Box>
           ) : null}
         </Box>
         {actions ? (

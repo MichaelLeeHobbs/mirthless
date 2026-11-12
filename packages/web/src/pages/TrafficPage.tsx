@@ -88,12 +88,10 @@ export function TrafficPage(): ReactNode {
 
       <TrafficSummary />
 
-      <Paper sx={{ mb: 2 }}>
-        <Tabs value={tab} onChange={(_e, v: number) => { setTab(v); }} sx={{ px: 1 }}>
-          <Tab label={<Badge color="error" badgeContent={errorCount} max={999} sx={{ '& .MuiBadge-badge': { position: 'static', transform: 'none', ml: 1 } }}>Needs Attention</Badge>} />
-          <Tab label="Search" />
-        </Tabs>
-      </Paper>
+      <Tabs value={tab} onChange={(_e, v: number) => { setTab(v); }} sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Tab label={<Badge color="error" badgeContent={errorCount} max={999} sx={{ '& .MuiBadge-badge': { position: 'static', transform: 'none', ml: 1 } }}>Needs Attention</Badge>} />
+        <Tab label="Search" />
+      </Tabs>
 
       {tab === 0 ? (
         <>

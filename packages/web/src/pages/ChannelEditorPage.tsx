@@ -10,7 +10,6 @@ import { useForm } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -98,7 +97,7 @@ interface TabPanelProps {
 
 function TabPanel({ children, value, index }: TabPanelProps): ReactNode {
   if (value !== index) return null;
-  return <Box sx={{ py: 3 }}>{children}</Box>;
+  return <Box>{children}</Box>;
 }
 
 // ----- Page Component -----
@@ -615,18 +614,18 @@ export function ChannelEditorPage(): ReactNode {
         description={isEditMode
           ? 'Where this channel receives messages, how it transforms them and where it sends them.'
           : 'Name the channel, pick its source, then add at least one destination.'}
+        meta={id !== undefined ? (
+          <>
+            <ChannelHealth channelId={id} />
+            <Chip variant="outlined" size="small" label={enabledValue ? 'Enabled' : 'Disabled'} />
+          </>
+        ) : undefined}
         actions={
           <>
-            {id !== undefined ? <ChannelHealth channelId={id} /> : null}
             {isEditMode ? (
-              <Chip variant="outlined" size="small" label={enabledValue ? 'Enabled' : 'Disabled'} />
-            ) : null}
-            {isEditMode ? (
-              <Tooltip title="Revision History">
-                <IconButton size="small" onClick={() => { setHistoryOpen(true); }} aria-label="revision history">
-                  <HistoryIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+              <Button size="small" startIcon={<HistoryIcon />} onClick={() => { setHistoryOpen(true); }}>
+                History
+              </Button>
             ) : null}
             <Tooltip title={canWrite ? '' : 'Requires channels:write permission'}>
               <span>
@@ -658,14 +657,12 @@ export function ChannelEditorPage(): ReactNode {
       ) : null}
 
       {/* Tabs */}
-      <Paper sx={{ mb: 2 }}>
-        <Tabs value={activeTab} onChange={handleTabChange} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>
-          <Tab label="Settings" />
-          <Tab label="Source" />
-          <Tab label="Destinations" />
-          <Tab label="Scripts" />
-        </Tabs>
-      </Paper>
+      <Tabs value={activeTab} onChange={handleTabChange} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Tab label="Settings" />
+        <Tab label="Source" />
+        <Tab label="Destinations" />
+        <Tab label="Scripts" />
+      </Tabs>
 
       {/* Tab content */}
       <Paper sx={{ p: 3 }}>
