@@ -11,12 +11,18 @@ import type { ChannelExportEntry, ImportResult } from '@galvaniflow/core-models'
 import { ChannelImportService } from './channel-import.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
+import {
+  extractCodeTemplateLibraries, importCodeTemplateLibraries,
+  type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
+} from './mirth-code-templates.js';
 
 // ----- Types -----
 
 /** Result of XML conversion (before import). */
 export interface MirthConvertResult {
   readonly channels: readonly ChannelExportEntry[];
+  /** Code template libraries from a server backup; empty for a channel export. */
+  readonly codeTemplateLibraries: readonly MirthCodeTemplateLibrary[];
   readonly warnings: readonly string[];
 }
 
@@ -24,7 +30,10 @@ export interface MirthConvertResult {
 export interface MirthImportResult {
   readonly convertResult: MirthConvertResult;
   readonly importResult: ImportResult;
+  readonly codeTemplates: CodeTemplateImportCounts;
 }
+
+const XML_READERS = { isRecord, getString, toRecordList } as const;
 
 // ----- Connector Type Mapping -----
 
@@ -100,8 +109,9 @@ export class MirthImportService {
         const result = convertChannel(mirthChannel, warnings);
         channels.push(result);
       }
+      const codeTemplateLibraries = extractCodeTemplateLibraries(parsed, XML_READERS, warnings);
 
-      return { channels, warnings };
+      return { channels, codeTemplateLibraries, warnings };
     });
   }
 
@@ -125,8 +135,15 @@ export class MirthImportService {
             skipped: 0,
             errors: [],
           },
+          codeTemplates: { created: 0, updated: 0, skipped: 0 },
         };
       }
+
+      // Templates first: a channel deployed right after the import compiles with them.
+      const templates = await importCodeTemplateLibraries(
+        convertResult.value.codeTemplateLibraries, collisionMode === 'OVERWRITE', context,
+      );
+      if (!templates.ok) throw templates.error;
 
       // Map RENAME to CREATE_NEW (GalvaniFlow collision mode)
       const galvaniflowCollisionMode = collisionMode === 'RENAME' ? 'CREATE_NEW' as const : collisionMode;
@@ -145,6 +162,7 @@ export class MirthImportService {
       return {
         convertResult: convertResult.value,
         importResult: importResult.value,
+        codeTemplates: templates.value,
       };
     });
   }
