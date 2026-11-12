@@ -499,6 +499,20 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(channel.sourceConnectorProperties['responseMode']).toBe('AUTO_ACK');
   });
 
+  it('maps a Channel Reader source and a Channel Writer to the target channel id', () => {
+    const writer = '<properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="4.5.0"><pluginProperties/><channelId>5c000200-0000-4000-8000-000000000001</channelId><channelTemplate>${message.encodedData}</channelTemplate><mapVariables/></properties>';
+    const channel = convert4x((x) => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, '<properties class="com.mirth.connect.connectors.vm.VmReceiverProperties" version="4.5.0"><pluginProperties/></properties><transformer')
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer));
+    expect(channel.sourceConnectorType).toBe('CHANNEL');
+    expect(channel.destinations[0]).toMatchObject({ connectorType: 'CHANNEL', properties: { targetChannelId: '5c000200-0000-4000-8000-000000000001' } });
+  });
+
+  it('leaves a Channel Writer set to "none" without a target', () => {
+    const channel = convert4x((x) => x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, '<properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="4.5.0"><channelId>none</channelId></properties>'));
+    expect(channel.destinations[0]?.properties).toEqual({ targetChannelId: '' });
+  });
+
   it('warns and auto-generates when "Respond from" names something it cannot map', () => {
     const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml').replace('<responseVariable>Postprocessor</responseVariable>', '<responseVariable>myResponse</responseVariable>'));
     if (!result.ok) throw result.error;

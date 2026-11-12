@@ -40,6 +40,8 @@ const CONNECTOR_TYPE_MAP: ReadonlyMap<string, string> = new Map([
   ['com.mirth.connect.connectors.js.JavaScriptReceiverProperties', 'JAVASCRIPT'],
   ['com.mirth.connect.connectors.js.JavaScriptDispatcherProperties', 'JAVASCRIPT'],
   ['com.mirth.connect.connectors.smtp.SmtpDispatcherProperties', 'SMTP'],
+  ['com.mirth.connect.connectors.vm.VmReceiverProperties', 'CHANNEL'],
+  ['com.mirth.connect.connectors.vm.VmDispatcherProperties', 'CHANNEL'],
 ]);
 
 // ----- XML Parser Config -----
@@ -465,6 +467,13 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       if (to) result['to'] = to;
       const from = getString(propsNode, 'from');
       if (from) result['from'] = from;
+      break;
+    }
+    case 'CHANNEL': {
+      // Channel Writer: the target is the Mirth channel id, which the import
+      // keeps as the channel's id. "none" is Mirth's "no channel selected".
+      const target = getString(propsNode, 'channelId');
+      if (target !== null) result['targetChannelId'] = target === 'none' ? '' : target;
       break;
     }
     default:
