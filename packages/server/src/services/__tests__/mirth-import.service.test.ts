@@ -55,6 +55,7 @@ vi.mock('../../db/schema/index.js', () => ({
   transformerSteps: { transformerId: 'transformerId' },
 }));
 
+import type { ChannelExportEntry } from '@galvaniflow/core-models';
 import { MirthImportService } from '../mirth-import.service.js';
 
 // ----- Helpers -----
@@ -429,6 +430,82 @@ describe('MirthImportService.convertXml', () => {
 });
 
 // ----- importFromXml -----
+
+describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
+  function convert4x(edit: (xml: string) => string = (x) => x): ChannelExportEntry {
+    const result = MirthImportService.convertXml(edit(loadFixture('mirth-4x-channel.xml')));
+    if (!result.ok) throw result.error;
+    const channel = result.value.channels[0];
+    if (!channel) throw new Error('no channel converted');
+    return channel;
+  }
+
+  it('decodes XML entities and character references in scripts', () => {
+    const channel = convert4x();
+    const source = channel.transformers.find((t) => t.connectorId === null);
+    expect(source?.steps[0]?.script).toBe('if (1 < 2 && true) { channelMap.put(\'ack\', "MSA|AA"); }\r\nvar done = true;');
+    expect(channel.scripts.find((s) => s.scriptType === 'POSTPROCESSOR')?.script).toBe("return $c('ack');");
+  });
+
+  it('keeps values as written, not as numbers', () => {
+    expect(convert4x().description).toBe('0123');
+  });
+
+  it('reads transformer steps from <elements> in sequence order', () => {
+    const source = convert4x().transformers.find((t) => t.connectorId === null);
+    expect(source?.steps.map((s) => [s.name, s.type])).toEqual([['Build ACK', 'JAVASCRIPT'], ['Second step', 'JAVASCRIPT']]);
+  });
+
+  it('reads filter rules from the <filter> next to the transformer', () => {
+    const filters = convert4x().filters;
+    expect(filters.find((f) => f.connectorId === null)?.rules[0]).toMatchObject({ name: 'Not A08', type: 'JAVASCRIPT' });
+    expect(filters.find((f) => f.connectorId === '1')?.rules[0]?.name).toBe('Only ORM');
+  });
+
+  it('keys destinations, their filters and transformers by the metaDataId in the export', () => {
+    const channel = convert4x();
+    expect(channel.destinations.map((d) => d.metaDataId)).toEqual([1, 3]);
+    expect(channel.transformers.find((t) => t.connectorId === '1')?.steps[0]?.name).toBe('Stamp');
+  });
+
+  it('reads queue settings from destinationConnectorProperties', () => {
+    const [tryFirst, always] = convert4x().destinations;
+    expect(tryFirst).toMatchObject({ queueMode: 'ON_FAILURE', retryCount: 3, retryIntervalMs: 5000, rotateQueue: true, queueThreadCount: 2 });
+    expect(always?.queueMode).toBe('ALWAYS');
+    const never = convert4x((x) => x.replace('<queueEnabled>true</queueEnabled>\n          <sendFirst>false</sendFirst>', '<queueEnabled>false</queueEnabled>\n          <sendFirst>false</sendFirst>'));
+    expect(never.destinations[1]?.queueMode).toBe('NEVER');
+  });
+
+  it('responds from the postprocessor, and the MLLP listener passes that response through', () => {
+    const channel = convert4x();
+    expect(channel.responseMode).toBe('POSTPROCESSOR');
+    expect(channel.sourceConnectorProperties).toMatchObject({ port: 6661, responseMode: 'PASSTHROUGH' });
+  });
+
+  it('responds from the destination a "dN" setting names', () => {
+    const channel = convert4x((x) => x.replace('<responseVariable>Postprocessor</responseVariable>', '<responseVariable>d3</responseVariable>'));
+    expect(channel.responseMode).toBe('DESTINATION');
+    expect(channel.responseConnectorName).toBe('Always queue');
+  });
+
+  it.each([
+    ['None', 'NONE'],
+    ['Auto-generate (Before processing)', 'AUTO_BEFORE'],
+    ['Auto-generate (After source transformer)', 'AUTO_AFTER_TRANSFORMER'],
+    ['Auto-generate (Destinations completed)', 'AUTO_AFTER_DESTINATIONS'],
+  ])('maps "Respond from" %s to %s with the listener sending its own ACK', (variable, mode) => {
+    const channel = convert4x((x) => x.replace('<responseVariable>Postprocessor</responseVariable>', `<responseVariable>${variable}</responseVariable>`));
+    expect(channel.responseMode).toBe(mode);
+    expect(channel.sourceConnectorProperties['responseMode']).toBe('AUTO_ACK');
+  });
+
+  it('warns and auto-generates when "Respond from" names something it cannot map', () => {
+    const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml').replace('<responseVariable>Postprocessor</responseVariable>', '<responseVariable>myResponse</responseVariable>'));
+    if (!result.ok) throw result.error;
+    expect(result.value.channels[0]?.responseMode).toBe('AUTO_AFTER_DESTINATIONS');
+    expect(result.value.warnings.some((w) => w.includes('"myResponse"'))).toBe(true);
+  });
+});
 
 describe('MirthImportService.importFromXml', () => {
   it('converts and imports channels from XML', async () => {

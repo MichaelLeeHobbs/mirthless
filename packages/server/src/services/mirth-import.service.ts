@@ -48,12 +48,14 @@ function createParser(): XMLParser {
   return new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
-    parseTagValue: true,
+    // Keep every value a string: "0123" stays "0123" (a password, a code).
+    parseTagValue: false,
     trimValues: true,
-    // Mirth channel exports do not use custom entities. Disabling entity
-    // processing prevents a billion-laughs / numeric-entity expansion DoS from a
-    // malicious upload (the validate endpoint is reachable by lower-priv roles).
-    processEntities: false,
+    // Mirth escapes scripts with the XML entities (&apos; &lt; ...) and numeric
+    // references (&#xd;), so they must be decoded. convertXml rejects a DOCTYPE,
+    // which is the only way to define a custom entity, so no entity can expand.
+    processEntities: true,
+    htmlEntities: true,
     isArray: (tagName: string) => {
       // These elements should always be parsed as arrays even when single
       const arrayTags = new Set([
@@ -241,6 +243,8 @@ function convertChannel(
 
   // Destinations
   const destinations = convertDestinations(mirthChannel, name, warnings);
+  const response = mapResponseVariable(sourceConnector, destinations, name, warnings);
+  const sourceConnectorProperties = withSourceResponseMode(sourceConnectorResult, response.responseMode);
 
   // Data types
   const inboundDataType = extractDataType(sourceConnector, 'inbound') ?? 'HL7V2';
@@ -264,9 +268,9 @@ function convertChannel(
     inboundDataType,
     outboundDataType,
     sourceConnectorType: sourceConnectorResult.type,
-    sourceConnectorProperties: sourceConnectorResult.properties,
-    responseMode: getString(props, 'responseMode') ?? getString(mirthChannel, 'responseMode') ?? 'NONE',
-    responseConnectorName: getString(props, 'responseConnectorName') ?? null,
+    sourceConnectorProperties,
+    responseMode: response.responseMode,
+    responseConnectorName: response.responseConnectorName,
     initialState: mapInitialState(getString(props, 'initialState') ?? getString(mirthChannel, 'initialState')),
     messageStorageMode: mapStorageMode(getString(props, 'messageStorageMode')),
     encryptData: getBoolean(props, 'encryptData', false),
@@ -281,6 +285,52 @@ function convertChannel(
     filters,
     transformers,
   };
+}
+
+// ----- Source Response -----
+
+interface ResponseSetting {
+  readonly responseMode: string;
+  readonly responseConnectorName: string | null;
+}
+
+/** Mirth's fixed "Respond from" choices. Any other value names a destination ("d1") or a response map key. */
+const RESPONSE_VARIABLE_MAP: ReadonlyMap<string, string> = new Map([
+  ['None', 'NONE'],
+  ['Auto-generate (Before processing)', 'AUTO_BEFORE'],
+  ['Auto-generate (After source transformer)', 'AUTO_AFTER_TRANSFORMER'],
+  ['Auto-generate (Destinations completed)', 'AUTO_AFTER_DESTINATIONS'],
+  ['Postprocessor', 'POSTPROCESSOR'],
+]);
+
+/** Map the source's "Respond from" setting (`sourceConnectorProperties/responseVariable`). */
+function mapResponseVariable(
+  sourceConnector: Record<string, unknown> | null,
+  destinations: ChannelExportEntry['destinations'],
+  channelName: string,
+  warnings: string[],
+): ResponseSetting {
+  const props = getNestedRecord(sourceConnector ?? {}, 'properties') ?? {};
+  const variable = getString(getNestedRecord(props, 'sourceConnectorProperties') ?? {}, 'responseVariable');
+  if (variable === null) return { responseMode: 'NONE', responseConnectorName: null };
+  const fixed = RESPONSE_VARIABLE_MAP.get(variable);
+  if (fixed) return { responseMode: fixed, responseConnectorName: null };
+  const destMatch = /^d(\d+)$/.exec(variable);
+  const dest = destMatch ? destinations.find((d) => d.metaDataId === Number(destMatch[1])) : undefined;
+  if (dest) return { responseMode: 'DESTINATION', responseConnectorName: dest.name };
+  warnings.push(`Channel "${channelName}": responds from "${variable}", which is not supported; it will auto-generate its response after the destinations`);
+  return { responseMode: 'AUTO_AFTER_DESTINATIONS', responseConnectorName: null };
+}
+
+/**
+ * A TCP listener answers with the pipeline's response only in PASSTHROUGH mode.
+ * The channel's response comes from a script or a destination in Mirth's
+ * "Postprocessor" and "dN" settings, so those need it.
+ */
+function withSourceResponseMode(source: ConnectorResult, responseMode: string): Record<string, unknown> {
+  if (source.type !== 'TCP_MLLP') return source.properties;
+  const passthrough = responseMode === 'POSTPROCESSOR' || responseMode === 'DESTINATION';
+  return { ...source.properties, responseMode: passthrough ? 'PASSTHROUGH' : 'AUTO_ACK' };
 }
 
 // ----- Connector Conversion -----
@@ -474,19 +524,52 @@ function convertDestinations(
     const properties = extractConnectorProperties(propsNode, connectorType);
 
     return {
-      metaDataId: idx + 1,
+      metaDataId: destinationMetaDataId(dest, idx),
       name: getString(dest, 'name') ?? `Destination ${idx + 1}`,
       enabled: getBoolean(dest, 'enabled', true),
       connectorType,
       properties,
-      queueMode: mapQueueMode(getString(dest, 'queueMode') ?? getString(getNestedRecord(dest, 'queueConnectorProperties') ?? {}, 'queueEnabled')),
-      retryCount: getNumber(getNestedRecord(dest, 'queueConnectorProperties') ?? {}, 'retryCount', 0),
-      retryIntervalMs: getNumber(getNestedRecord(dest, 'queueConnectorProperties') ?? {}, 'retryIntervalMs', 10000),
-      rotateQueue: getBoolean(getNestedRecord(dest, 'queueConnectorProperties') ?? {}, 'rotate', false),
-      queueThreadCount: getNumber(getNestedRecord(dest, 'queueConnectorProperties') ?? {}, 'threadCount', 1),
+      ...convertQueueSettings(dest, propsNode),
       waitForPrevious: getBoolean(dest, 'waitForPrevious', false),
     };
   });
+}
+
+/** Mirth numbers destinations itself (d1, d2 ...); scripts and "Respond from" refer to that number. */
+function destinationMetaDataId(dest: Record<string, unknown>, idx: number): number {
+  const fromXml = getNumber(dest, 'metaDataId', 0);
+  return Number.isInteger(fromXml) && fromXml > 0 ? fromXml : idx + 1;
+}
+
+type QueueSettings = Pick<ChannelExportEntry['destinations'][number],
+  'queueMode' | 'retryCount' | 'retryIntervalMs' | 'rotateQueue' | 'queueThreadCount'>;
+
+/**
+ * Mirth 3.x/4.x keep queue settings in `properties/destinationConnectorProperties`.
+ * "Queue Messages" Never / On Failure / Always is `queueEnabled` false, or true
+ * with `sendFirst` true (try first, queue on failure) or false (always queue).
+ * The older `queueConnectorProperties` node is still read when present.
+ */
+function convertQueueSettings(dest: Record<string, unknown>, propsNode: Record<string, unknown>): QueueSettings {
+  const modern = getNestedRecord(propsNode, 'destinationConnectorProperties');
+  if (modern) {
+    const enabled = getBoolean(modern, 'queueEnabled', false);
+    return {
+      queueMode: !enabled ? 'NEVER' : getBoolean(modern, 'sendFirst', false) ? 'ON_FAILURE' : 'ALWAYS',
+      retryCount: getNumber(modern, 'retryCount', 0),
+      retryIntervalMs: getNumber(modern, 'retryIntervalMillis', 10000),
+      rotateQueue: getBoolean(modern, 'rotate', false),
+      queueThreadCount: Math.max(1, getNumber(modern, 'threadCount', 1)),
+    };
+  }
+  const legacy = getNestedRecord(dest, 'queueConnectorProperties') ?? {};
+  return {
+    queueMode: mapQueueMode(getString(dest, 'queueMode') ?? getString(legacy, 'queueEnabled')),
+    retryCount: getNumber(legacy, 'retryCount', 0),
+    retryIntervalMs: getNumber(legacy, 'retryIntervalMs', 10000),
+    rotateQueue: getBoolean(legacy, 'rotate', false),
+    queueThreadCount: getNumber(legacy, 'threadCount', 1),
+  };
 }
 
 function mapQueueMode(value: string | null): string {
@@ -524,20 +607,54 @@ function convertFilters(mirthChannel: Record<string, unknown>): ChannelExportEnt
   if (sourceFilter) filters.push(sourceFilter);
 
   // Destination connector filters
-  const destConnectors = mirthChannel['destinationConnectors'];
-  if (isRecord(destConnectors)) {
-    const inner = destConnectors['connector'];
-    const connectorList = Array.isArray(inner) ? inner : isRecord(inner) ? [inner] : [];
-    for (let i = 0; i < connectorList.length; i++) {
-      const conn = connectorList[i];
-      if (!isRecord(conn)) continue;
-      const metaDataId = String(i + 1);
-      const filter = extractFilterFromConnector(conn, metaDataId);
-      if (filter) filters.push(filter);
-    }
+  for (const [connectorId, conn] of destinationConnectorsById(mirthChannel)) {
+    const filter = extractFilterFromConnector(conn, connectorId);
+    if (filter) filters.push(filter);
   }
 
   return filters;
+}
+
+/** Destination connector nodes keyed by their metaDataId, as filters and transformers refer to them. */
+function destinationConnectorsById(mirthChannel: Record<string, unknown>): ReadonlyArray<readonly [string, Record<string, unknown>]> {
+  const destConnectors = mirthChannel['destinationConnectors'];
+  if (!isRecord(destConnectors)) return [];
+  const connectorList = toRecordList(destConnectors['connector']);
+  return connectorList.map((conn, idx) => [String(destinationMetaDataId(conn, idx)), conn] as const);
+}
+
+/** A parsed child that may be one element or many. */
+function toRecordList(node: unknown): readonly Record<string, unknown>[] {
+  if (Array.isArray(node)) return node.filter(isRecord);
+  return isRecord(node) ? [node] : [];
+}
+
+interface ScriptElement {
+  /** Mirth 3.4+ element class without its package (`JavaScriptStep`); null for the 3.x `<step>` form. */
+  readonly className: string | null;
+  readonly node: Record<string, unknown>;
+}
+
+/**
+ * Filter rules and transformer steps. Mirth 3.4+ lists them under `<elements>`,
+ * one child per element named by its class
+ * (`com.mirth.connect.plugins.javascriptstep.JavaScriptStep`). Earlier versions
+ * use `<steps><step>` and `<rules><rule>` with a `<type>` child.
+ */
+function scriptElements(container: Record<string, unknown>, legacyKey: 'steps' | 'rules', legacyChild: 'step' | 'rule'): readonly ScriptElement[] {
+  const elements = container['elements'];
+  if (isRecord(elements)) {
+    const result: ScriptElement[] = [];
+    for (const [key, value] of Object.entries(elements)) {
+      if (key.startsWith('@_')) continue;
+      const className = key.slice(key.lastIndexOf('.') + 1);
+      for (const node of toRecordList(value)) result.push({ className, node });
+    }
+    return result.sort((a, b) => getNumber(a.node, 'sequenceNumber', 0) - getNumber(b.node, 'sequenceNumber', 0));
+  }
+  const legacy = container[legacyKey] ?? container[legacyChild];
+  const list = isRecord(legacy) ? toRecordList(legacy[legacyChild]) : toRecordList(legacy);
+  return list.map((node) => ({ className: null, node }));
 }
 
 function extractFilterFromConnector(
@@ -546,35 +663,16 @@ function extractFilterFromConnector(
 ): ChannelExportEntry['filters'][number] | null {
   if (!isRecord(connector)) return null;
 
-  const transformer = connector['transformer'];
-  if (!isRecord(transformer)) return null;
+  // Mirth 3.x/4.x: <filter> is a sibling of <transformer>. Older exports nest it.
+  const transformer = getNestedRecord(connector, 'transformer');
+  const filter = getNestedRecord(connector, 'filter') ?? (transformer ? getNestedRecord(transformer, 'filter') : null);
+  if (!filter) return null;
 
-  const filter = transformer['filter'];
-  if (!isRecord(filter)) return null;
-
-  const rulesNode = filter['rules'] ?? filter['rule'];
-  let rulesList: readonly unknown[];
-
-  if (isRecord(rulesNode)) {
-    const inner = rulesNode['rule'];
-    if (Array.isArray(inner)) {
-      rulesList = inner;
-    } else if (isRecord(inner)) {
-      rulesList = [inner];
-    } else {
-      return null;
-    }
-  } else if (Array.isArray(rulesNode)) {
-    rulesList = rulesNode;
-  } else {
-    return null;
-  }
-
-  const rules = rulesList.filter(isRecord).map((rule) => ({
+  const rules = scriptElements(filter, 'rules', 'rule').map(({ className, node: rule }) => ({
     enabled: getBoolean(rule, 'enabled', true),
     name: getString(rule, 'name'),
     operator: getString(rule, 'operator') ?? 'AND',
-    type: mapFilterRuleType(getString(rule, 'type')),
+    type: mapFilterRuleType(className ?? getString(rule, 'type')),
     script: getString(rule, 'script'),
     field: getString(rule, 'field'),
     condition: getString(rule, 'condition'),
@@ -614,17 +712,9 @@ function convertTransformers(mirthChannel: Record<string, unknown>): ChannelExpo
   if (sourceTransformer) transformers.push(sourceTransformer);
 
   // Destination connector transformers
-  const destConnectors = mirthChannel['destinationConnectors'];
-  if (isRecord(destConnectors)) {
-    const inner = destConnectors['connector'];
-    const connectorList = Array.isArray(inner) ? inner : isRecord(inner) ? [inner] : [];
-    for (let i = 0; i < connectorList.length; i++) {
-      const conn = connectorList[i];
-      if (!isRecord(conn)) continue;
-      const metaDataId = String(i + 1);
-      const transformer = extractTransformerFromConnector(conn, metaDataId);
-      if (transformer) transformers.push(transformer);
-    }
+  for (const [connectorId, conn] of destinationConnectorsById(mirthChannel)) {
+    const transformer = extractTransformerFromConnector(conn, connectorId);
+    if (transformer) transformers.push(transformer);
   }
 
   return transformers;
@@ -639,24 +729,10 @@ function extractTransformerFromConnector(
   const transformer = connector['transformer'];
   if (!isRecord(transformer)) return null;
 
-  const stepsNode = transformer['steps'] ?? transformer['step'];
-  let stepsList: readonly unknown[] = [];
-
-  if (isRecord(stepsNode)) {
-    const inner = stepsNode['step'];
-    if (Array.isArray(inner)) {
-      stepsList = inner;
-    } else if (isRecord(inner)) {
-      stepsList = [inner];
-    }
-  } else if (Array.isArray(stepsNode)) {
-    stepsList = stepsNode;
-  }
-
-  const steps = stepsList.filter(isRecord).map((step) => ({
+  const steps = scriptElements(transformer, 'steps', 'step').map(({ className, node: step }) => ({
     enabled: getBoolean(step, 'enabled', true),
     name: getString(step, 'name'),
-    type: mapTransformerStepType(getString(step, 'type')),
+    type: mapTransformerStepType(className ?? getString(step, 'type')),
     script: getString(step, 'script'),
     sourceField: getString(step, 'sourceField') ?? getString(step, 'field'),
     targetField: getString(step, 'targetField') ?? getString(step, 'variable'),
@@ -701,7 +777,7 @@ function mapTransformerStepType(type: string | null): string {
   const upper = type.toUpperCase();
   if (upper.includes('JAVASCRIPT') || upper === 'STEP_BUILDER') return 'JAVASCRIPT';
   if (upper.includes('MAPPER') || upper === 'MAPPER') return 'MAPPER';
-  if (upper.includes('MESSAGE_BUILDER')) return 'MESSAGE_BUILDER';
+  if (upper.includes('MESSAGE_BUILDER') || upper === 'MESSAGEBUILDERSTEP') return 'MESSAGE_BUILDER';
   return upper;
 }
 
