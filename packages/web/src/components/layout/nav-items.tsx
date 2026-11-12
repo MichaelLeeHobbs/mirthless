@@ -44,6 +44,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     items: [
       { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
       { label: 'Traffic', path: '/messages', icon: <MessageIcon /> },
+      { label: 'System Info', path: '/system', icon: <InfoOutlinedIcon />, anyOf: [PERMISSION.SYSTEM_INFO] },
     ],
   },
   {
@@ -77,7 +78,6 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   {
     heading: 'System',
     items: [
-      { label: 'System Info', path: '/system', icon: <InfoOutlinedIcon />, anyOf: [PERMISSION.SYSTEM_INFO] },
       { label: 'Tools', path: '/tools/message-generator', icon: <BuildIcon /> },
       { label: 'Extensions', path: '/extensions', icon: <ExtensionIcon />, anyOf: [PERMISSION.SETTINGS_READ, PERMISSION.SETTINGS_WRITE] },
     ],

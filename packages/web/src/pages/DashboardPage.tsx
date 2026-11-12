@@ -32,6 +32,7 @@ import { useTags, useTagAssignments, type TagSummary, type TagAssignment } from 
 import { useChannelGroups, useGroupMemberships, type ChannelGroupSummary, type GroupMembership } from '../hooks/use-channel-groups.js';
 import { useSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
 import { SummaryCards } from '../components/dashboard/SummaryCards.js';
+import { NeedsAttention } from '../components/dashboard/NeedsAttention.js';
 import { ChannelStatusTable } from '../components/dashboard/ChannelStatusTable.js';
 import { TagFilter } from '../components/dashboard/TagFilter.js';
 import { GroupedChannelTable } from '../components/dashboard/GroupedChannelTable.js';
@@ -162,24 +163,14 @@ export function DashboardPage(): ReactNode {
         isFetching={(statsQuery.isFetching || deployQuery.isFetching) && !isLoading}
         actions={
           <>
-            <ColumnsButton columns={columns} />
-            <ExportButton />
             <Button
-              variant="outlined"
               size="small"
               startIcon={<UploadIcon />}
               onClick={() => { setImportOpen(true); }}
             >
               Import
             </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<CreateNewFolderIcon />}
-              onClick={() => { setCreateGroupOpen(true); }}
-            >
-              New Group
-            </Button>
+            <ExportButton />
             <Tooltip title={canWrite ? '' : 'Requires channels:write permission'}>
               <span>
                 <Button
@@ -193,19 +184,6 @@ export function DashboardPage(): ReactNode {
                 </Button>
               </span>
             </Tooltip>
-            <ToggleButtonGroup
-              value={viewMode}
-              exclusive
-              onChange={(_, v: ViewMode | null) => { if (v) setViewMode(v); }}
-              size="small"
-            >
-              <ToggleButton value="flat" aria-label="flat view">
-                <ViewListIcon fontSize="small" />
-              </ToggleButton>
-              <ToggleButton value="grouped" aria-label="grouped view">
-                <AccountTreeIcon fontSize="small" />
-              </ToggleButton>
-            </ToggleButtonGroup>
           </>
         }
       />
@@ -230,18 +208,42 @@ export function DashboardPage(): ReactNode {
         </Box>
       ) : (
         <>
+          <NeedsAttention statistics={filteredStatistics} statuses={deploymentStatuses} />
           <SummaryCards
             statistics={filteredStatistics}
             deployedCount={deployedCount}
             stoppedCount={stoppedCount}
             erroredCount={erroredCount}
           />
-          <Box sx={{ mb: 2 }}>
-            <TagFilter
-              tags={tags}
-              selectedTagIds={selectedTagIds}
-              onChangeTagIds={setSelectedTagIds}
-            />
+          <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Box sx={{ flex: '1 1 260px', minWidth: 0 }}>
+              <TagFilter
+                tags={tags}
+                selectedTagIds={selectedTagIds}
+                onChangeTagIds={setSelectedTagIds}
+              />
+            </Box>
+            <Button
+              size="small"
+              startIcon={<CreateNewFolderIcon />}
+              onClick={() => { setCreateGroupOpen(true); }}
+            >
+              New Group
+            </Button>
+            <ColumnsButton columns={columns} />
+            <ToggleButtonGroup
+              value={viewMode}
+              exclusive
+              onChange={(_, v: ViewMode | null) => { if (v) setViewMode(v); }}
+              size="small"
+            >
+              <ToggleButton value="flat" aria-label="flat view">
+                <ViewListIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="grouped" aria-label="grouped view">
+                <AccountTreeIcon fontSize="small" />
+              </ToggleButton>
+            </ToggleButtonGroup>
           </Box>
           {viewMode === 'grouped' ? (
             <GroupedChannelTable

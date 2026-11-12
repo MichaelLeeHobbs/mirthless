@@ -59,9 +59,11 @@ This doc is the rulebook. The values live in code; the rules below say how to us
   - Show `TablePagination` only when the list has more than one page at the smallest page size. A three-row list has no pager.
 - **Labels are words, not enums.** Show server identifiers (`CHANNEL_ERROR`, `USER_LOGIN`, `admin`, `STARTED`) through `humanize()` in `lib/format.ts`, so they read "Channel error", "User login", "Admin", "Started". Status chips do this for you.
 - **Breadcrumbs** live in the app bar, built from the URL by `lib/breadcrumbs.ts`, so every page has one and pages never render their own. A new top-level page gets its crumb by being in `nav-items.tsx`; a new nested route (a record under a list) needs a case in `breadcrumbsFor`. The breadcrumb is the way back, so don't add a separate "Back to ..." button.
-- **Detail pages** put their primary action in `PageHeader`'s `actions`.
+- **Detail pages** put their primary action in `PageHeader`'s `actions`. A record with a live state (a channel) shows it in the header too, with a link to what is failing, so the failure is visible while editing.
+- **Monitoring pages lead with what needs attention.** The dashboard's Needs attention panel lists stopped and erroring channels, worst first, each with a labelled link to its failed messages, and renders nothing when all is well. Secondary page actions (import, export) are text buttons; controls that change a table (columns, grouping, view) sit beside it, not in the header.
 - **Header**: logo and breadcrumbs on the left, "Jump to" centred, theme and account on the right. On phones the trail collapses to the current page (tap the ellipsis for the rest) and "Jump to" is an icon on the right.
 - **Phones (under 900px, MUI `md`)**: the sidebar is an overlay that starts closed, and pages scroll vertically with no horizontal page scroll. Wide tables scroll inside their own container.
+- **Phone lists (under 600px, MUI `sm`)** keep name, status and row actions on screen: put `HIDE_ON_PHONE` from `lib/responsive.ts` on secondary columns (header and body cell), and use icon buttons with tooltips for row actions. Long filter bars show their main search and put the rest behind a "Filters" button. The theme already halves table cell padding and sizes tabs to their labels on phones.
 
 ### Interaction
 

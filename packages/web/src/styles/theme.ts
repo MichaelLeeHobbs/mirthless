@@ -82,6 +82,9 @@ function buildTheme(mode: PaletteMode): Theme {
         styleOverrides: {
           ':root': {
             colorScheme: mode,
+            // A field scrolled into view (focus, validation) stops above the
+            // sticky UnsavedChangesBar, which is two lines tall on phones.
+            scrollPaddingBottom: 140,
           },
           body: {
             backgroundColor: c.background.default,
@@ -175,6 +178,12 @@ function buildTheme(mode: PaletteMode): Theme {
           arrow: { color: isDark ? c.surfaceRaised : '#1f2937' },
         },
       },
+      MuiTab: {
+        styleOverrides: {
+          // Phones: tabs size to their label, so a four-tab bar fits without scrolling.
+          root: { '@media (max-width: 599.95px)': { minWidth: 0, paddingInline: 10 } },
+        },
+      },
       MuiTableContainer: {
         styleOverrides: { root: { borderRadius: 0 } },
       },
@@ -188,6 +197,9 @@ function buildTheme(mode: PaletteMode): Theme {
           root: {
             borderColor: c.divider,
             fontVariantNumeric: 'tabular-nums',
+            // Phones (under MUI `sm`): half the side padding, so a list's name,
+            // status and actions fit in 390px without scrolling sideways.
+            '@media (max-width: 599.95px)': { paddingInline: 8 },
           },
           head: {
             fontSize: '0.6875rem',

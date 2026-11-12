@@ -48,3 +48,6 @@ Thumbs.db
 # Reference source (cloned for study, not part of this project)
 reference/
 bash.exe.stackdump
+
+# Scratch prompts and agent notes
+/tmp/

@@ -35,10 +35,11 @@ function StatTile({ label, value, level }: StatTileProps): ReactNode {
   return (
     <Card
       sx={{
-        flex: '1 1 140px',
-        minWidth: 132,
-        px: 2.25,
-        py: 1.75,
+        // Phones fit three compact tiles a row, so the channels stay near the top.
+        flex: { xs: '1 1 96px', sm: '1 1 140px' },
+        minWidth: { xs: 96, sm: 132 },
+        px: { xs: 1.5, sm: 2.25 },
+        py: { xs: 1.25, sm: 1.75 },
         display: 'flex',
         flexDirection: 'column',
         gap: 0.5,
@@ -62,7 +63,7 @@ function StatTile({ label, value, level }: StatTileProps): ReactNode {
       <Typography
         component="div"
         sx={{
-          fontSize: '1.875rem',
+          fontSize: { xs: '1.375rem', sm: '1.875rem' },
           fontWeight: 700,
           lineHeight: 1.1,
           letterSpacing: '-0.02em',
