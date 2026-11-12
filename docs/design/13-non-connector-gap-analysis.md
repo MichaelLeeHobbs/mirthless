@@ -224,7 +224,7 @@ Ranked by real-world impact (channels blocked / correctness / daily-use pain), n
 ## 10. Open Decisions
 
 1. **Extension model** — commit to a curated built-in-only engine, or design a modern third-party extension contract (npm-package connectors/datatypes via manifest)? Biggest strategic call in this doc. *Recommendation: decide deliberately; a narrow manifest-based connector/datatype SPI captures most ecosystem value without Mirth's classloader complexity.*
-2. **HL7v2 access model** — keep the path-proxy or offer a Mirth-compatible XML/E4X-style `msg` for script portability? Affects how cleanly Mirth transformers migrate.
+2. ~~**HL7v2 access model** — keep the path-proxy or offer a Mirth-compatible XML/E4X-style `msg` for script portability?~~ Decided 2026-11-12 (D-244): path API only, no E4X.
 3. **Dead schema fields** — for queue threading and pruner archive, either implement or remove. Leaving flags that do nothing is a correctness/trust hazard (they imply behavior that doesn't exist).
 4. **Datatype scope** — X12 and NCPDP are large; gate behind demand, or build proactively as parity table-stakes? *Recommendation: Delimited + HL7v3 + DICOM-serialize first (already half-done via enum), X12/NCPDP on first real channel need.*
 
