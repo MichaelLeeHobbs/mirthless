@@ -508,6 +508,17 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(channel.destinations[0]).toMatchObject({ connectorType: 'CHANNEL', properties: { targetChannelId: '5c000200-0000-4000-8000-000000000001' } });
   });
 
+  it('maps an HTTP Listener to serve every path under its context path with its response settings', () => {
+    const listener = (contextPath: string, status: string): string => `<properties class="com.mirth.connect.connectors.http.HttpReceiverProperties" version="4.5.0"><listenerConnectorProperties version="4.5.0"><host>0.0.0.0</host><port>8081</port></listenerConnectorProperties><responseContentType>application/json</responseContentType><responseStatusCode>${status}</responseStatusCode><contextPath>${contextPath}</contextPath></properties><transformer`;
+    const swap = (contextPath: string, status: string) => (x: string): string =>
+      x.replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, listener(contextPath, status));
+
+    expect(convert4x(swap('', '')).sourceConnectorProperties).toEqual({
+      host: '0.0.0.0', port: 8081, path: '/', matchSubpaths: true, responseContentType: 'application/json',
+    });
+    expect(convert4x(swap('api', '202')).sourceConnectorProperties).toMatchObject({ path: '/api', responseStatusCode: 202 });
+  });
+
   it('leaves a Channel Writer set to "none" without a target', () => {
     const channel = convert4x((x) => x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, '<properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="4.5.0"><channelId>none</channelId></properties>'));
     expect(channel.destinations[0]?.properties).toEqual({ targetChannelId: '' });

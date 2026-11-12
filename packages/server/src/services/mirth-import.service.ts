@@ -451,6 +451,7 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
         const port = getString(listener, 'port');
         if (host) result['host'] = host;
         if (port) result['port'] = Number(port);
+        Object.assign(result, httpListenerProperties(propsNode));
       }
       const url = getString(propsNode, 'host');
       if (url) result['url'] = url;
@@ -504,6 +505,23 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       break;
   }
 
+  return result;
+}
+
+/**
+ * Mirth's HTTP Listener serves every path under its context path (empty: all
+ * paths) and answers with its configured content type and status.
+ */
+function httpListenerProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const contextPath = getString(propsNode, 'contextPath') ?? '';
+  const result: Record<string, unknown> = {
+    path: contextPath.startsWith('/') ? contextPath : `/${contextPath}`,
+    matchSubpaths: true,
+  };
+  const contentType = getString(propsNode, 'responseContentType');
+  if (contentType) result['responseContentType'] = contentType;
+  const status = Number(getString(propsNode, 'responseStatusCode') ?? '');
+  if (Number.isInteger(status) && status >= 100 && status <= 599) result['responseStatusCode'] = status;
   return result;
 }
 
