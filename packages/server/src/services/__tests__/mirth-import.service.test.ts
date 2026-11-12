@@ -170,8 +170,7 @@ describe('MirthImportService.convertXml', () => {
     if (!result.ok) return;
     const dbDest = result.value.channels[0]?.destinations[1];
     expect(dbDest?.connectorType).toBe('DATABASE');
-    expect(dbDest?.properties['url']).toBe('jdbc:postgresql://localhost:5432/hl7db');
-    expect(dbDest?.properties['driver']).toBe('org.postgresql.Driver');
+    expect(dbDest?.properties).toMatchObject({ host: 'localhost', port: 5432, database: 'hl7db' });
   });
 
   it('maps SMTP connector type from class name', () => {
@@ -554,6 +553,22 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       .toEqual({ host: '${MIRTH_SENDER_HOST}', port: '${MIRTH_SENDER_PORT}', template: '${oru}' });
     expect(convert4x(swap('6661', '${message.encodedData}')).destinations[0]?.properties)
       .toEqual({ host: '${MIRTH_SENDER_HOST}', port: 6661 });
+  });
+
+  it('maps a Database Writer and Reader JDBC URL, credentials, queries and update mode', () => {
+    const writer = '<properties class="com.mirth.connect.connectors.jdbc.DatabaseDispatcherProperties" version="4.5.0"><driver>org.postgresql.Driver</driver><url>jdbc:postgresql://db.example.org:5433/partner?ssl=true</url><username>mirth</username><password>0123</password><query>INSERT INTO t (a) VALUES (${mrn})</query><useScript>false</useScript></properties>';
+    const reader = '<properties class="com.mirth.connect.connectors.jdbc.DatabaseReceiverProperties" version="4.5.0"><driver>org.postgresql.Driver</driver><url>jdbc:postgresql://db.example.org/orders</url><username>mirth</username><password>pw</password><select>SELECT id FROM o</select><update>UPDATE o SET s = 1 WHERE id = ${id}</update><updateMode>3</updateMode></properties><transformer';
+    const channel = convert4x((x) => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer)
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader));
+
+    expect(channel.destinations[0]?.properties).toEqual({
+      host: 'db.example.org', port: 5433, database: 'partner', username: 'mirth', password: '0123', query: 'INSERT INTO t (a) VALUES (${mrn})',
+    });
+    expect(channel.sourceConnectorProperties).toEqual({
+      host: 'db.example.org', database: 'orders', username: 'mirth', password: 'pw',
+      selectQuery: 'SELECT id FROM o', updateQuery: 'UPDATE o SET s = 1 WHERE id = ${id}', updateMode: 'ON_SUCCESS',
+    });
   });
 
   it('leaves a Channel Writer set to "none" without a target', () => {

@@ -482,17 +482,9 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       if (moveToDir) result['moveToDirectory'] = moveToDir;
       break;
     }
-    case 'DATABASE': {
-      const url = getString(propsNode, 'url');
-      if (url) result['url'] = url;
-      const query = getString(propsNode, 'query') ?? getString(propsNode, 'select');
-      if (query) result['query'] = query;
-      const driver = getString(propsNode, 'driver');
-      if (driver) result['driver'] = driver;
-      const username = getString(propsNode, 'username');
-      if (username) result['username'] = username;
+    case 'DATABASE':
+      Object.assign(result, databaseProperties(propsNode));
       break;
-    }
     case 'SMTP': {
       const smtpHost = getString(propsNode, 'smtpHost');
       if (smtpHost) result['host'] = smtpHost;
@@ -522,6 +514,34 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       break;
   }
 
+  return result;
+}
+
+/** `jdbc:<vendor>://host[:port]/database[?options]` */
+const JDBC_URL = /^jdbc:(\w+):\/\/([^:/?;]+)(?::(\d+))?\/([^?;]+)/;
+
+/** Mirth's Database Reader update modes: 1 never, 2 once after all rows, 3 after each row. */
+const DB_UPDATE_MODE: Readonly<Record<string, string>> = { '1': 'NEVER', '2': 'ALWAYS', '3': 'ON_SUCCESS' };
+
+/**
+ * Mirth's Database Reader/Writer take a JDBC URL; GalvaniFlow's take host,
+ * port and database. Queries keep their `${name}` parameters, which bind from
+ * the row (reader) or the message's variables (writer).
+ */
+function databaseProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const match = JDBC_URL.exec(getString(propsNode, 'url') ?? '');
+  if (match) {
+    result['host'] = match[2];
+    if (match[3]) result['port'] = Number(match[3]);
+    result['database'] = match[4];
+  }
+  for (const [from, to] of [['username', 'username'], ['password', 'password'], ['query', 'query'], ['select', 'selectQuery'], ['update', 'updateQuery']] as const) {
+    const value = getString(propsNode, from);
+    if (value) result[to] = value;
+  }
+  const updateMode = DB_UPDATE_MODE[getString(propsNode, 'updateMode') ?? ''];
+  if (updateMode && result['selectQuery'] !== undefined) result['updateMode'] = updateMode;
   return result;
 }
 
