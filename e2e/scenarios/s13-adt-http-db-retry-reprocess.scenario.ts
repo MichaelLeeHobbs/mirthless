@@ -67,7 +67,8 @@ scenario('S13 ADT is filtered, mapped to JSON, sent to HTTP and Postgres, retrie
       return m ? api.message(channelId, m.messageId) : null;
     };
     await expect.poll(async () => (await a01())?.connectors.find((c) => c.metaDataId === 1)?.status, { timeout: 15_000 }).toBe('QUEUED');
-    expect((await a01())!.connectors.find((c) => c.metaDataId === 1)!.content['error'] ?? '').toContain('500');
+    // The queue makes the first attempt shortly after the message is queued.
+    await expect.poll(async () => (await a01())?.connectors.find((c) => c.metaDataId === 1)?.content['error'] ?? '', { timeout: 15_000 }).toContain('500');
 
     // The API recovers: the queue retries and delivers the JSON once.
     sink.status = 200;
