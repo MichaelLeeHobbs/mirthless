@@ -37,6 +37,7 @@ import {
   parseForSandbox,
 } from '@galvaniflow/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { splitHl7Batch } from '@galvaniflow/core-util';
 import { tryCatch, type Result } from 'stderr-lib';
 import {
   createSourceConnector,
@@ -164,6 +165,32 @@ export function parsedOrRaw(content: string, dataType: string): unknown {
   } catch {
     return content;
   }
+}
+
+/**
+ * Process each message of a batch, in order, and report the batch as one
+ * outcome: an error if the batch could not be split or any message failed
+ * (so the source keeps or quarantines it), otherwise the last message's
+ * outcome. Every message is processed even after one fails, as Mirth does.
+ */
+export async function processBatch(
+  split: (content: string) => string[],
+  content: string,
+  processOne: (part: string) => Promise<Result<SourceDispatchOutcome>>,
+): Promise<Result<SourceDispatchOutcome>> {
+  const parts = tryCatch((): string[] => {
+    const list = split(content);
+    if (list.length === 0) throw new Error('The batch holds no messages');
+    return list;
+  });
+  if (!parts.ok) return { ok: false, value: null, error: parts.error } as Result<SourceDispatchOutcome>;
+  let outcome: Result<SourceDispatchOutcome> | undefined;
+  let failure: Result<SourceDispatchOutcome> | undefined;
+  for (const part of parts.value) {
+    outcome = await processOne(part);
+    if (!failure && (!outcome.ok || outcome.value.status === DISPATCH_STATUS.ERROR)) failure = outcome;
+  }
+  return failure ?? outcome!;
 }
 
 /** Where a channel's response to the sender comes from, by its response mode. */
@@ -741,6 +768,14 @@ export class EngineManager {
       this.sandbox, store, sendFn, pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
     );
 
+    // A source with Mirth's "Process Batch" on splits what it receives into
+    // messages. Only HL7v2 batches can be split; any other data type refuses
+    // to deploy rather than treat a whole batch as one message.
+    const batched = channel.sourceConnectorProperties['processBatch'] === true;
+    if (batched && channel.inboundDataType !== 'HL7V2') {
+      throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: batch processing is only supported for HL7V2, not ${channel.inboundDataType}`);
+    }
+
     // Build the processMessage callback (used by both source connector and sendMessage API)
     const activity = { lastAt: Date.now() };
     const processMessage = async (rawContent: string, sourceMap?: Record<string, unknown>): Promise<Result<SourceDispatchOutcome>> => {
@@ -771,7 +806,9 @@ export class EngineManager {
       channelId: channel.id,
       source,
       destinations,
-      onMessage: async (raw) => processMessage(raw.content, raw.sourceMap),
+      onMessage: async (raw) => (batched
+        ? processBatch(splitHl7Batch, raw.content, (part) => processMessage(part, raw.sourceMap))
+        : processMessage(raw.content, raw.sourceMap)),
     };
 
     // Taken before the channel can receive anything: every unprocessed message

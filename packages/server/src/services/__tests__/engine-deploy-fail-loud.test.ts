@@ -194,6 +194,12 @@ async function deployError(channel: never = makeChannel()): Promise<string> {
 // ----- Tests -----
 
 describe('EngineManager.deploy refuses to start a channel it cannot run as configured', () => {
+  it('refuses batch processing on a data type it cannot split', async () => {
+    const engine = new EngineManager('test-server');
+    await expect(engine.deploy(makeChannel({ inboundDataType: 'JSON', sourceConnectorProperties: { port: 6661, processBatch: true } })))
+      .rejects.toThrow('batch processing is only supported for HL7V2, not JSON');
+  });
+
   it('deploys a channel whose scripts all compile', async () => {
     filterRows = [filterRow({ script: 'return msg.get("MSH.9.1") === "ADT";' })];
     transformerRows = [stepRow({ script: 'msg.delete("PID.19");' })];
