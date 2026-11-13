@@ -770,14 +770,14 @@ export class EngineManager {
       this.sandbox, store, sendFn, pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
     );
 
-    // A source with Mirth's "Process Batch" on splits what it receives into
-    // messages. Only HL7v2 batches can be split; any other data type refuses
-    // to deploy rather than treat a whole batch as one message.
     // A response from a destination that does not exist would leave every
     // sender without the answer it waits for, with nothing logged.
     if (channel.responseMode === 'DESTINATION' && !channel.destinations.some((d) => d.name === channel.responseConnectorName)) {
       throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: it responds from destination "${channel.responseConnectorName ?? ''}", which it does not have`);
     }
+    // A source with Mirth's "Process Batch" on splits what it receives into
+    // messages. Only HL7v2 batches can be split; any other data type refuses
+    // to deploy rather than treat a whole batch as one message.
     const batched = channel.sourceConnectorProperties['processBatch'] === true;
     if (batched && channel.inboundDataType !== 'HL7V2') {
       throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: batch processing is only supported for HL7V2, not ${channel.inboundDataType}`);
