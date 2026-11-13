@@ -571,6 +571,16 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     });
   });
 
+  it('keeps a polling source\'s interval and gives a JavaScript Reader only its script', () => {
+    const reader = (type: string): string => `<properties class="com.mirth.connect.connectors.js.JavaScriptReceiverProperties" version="4.5.0"><pluginProperties/><pollConnectorProperties version="4.5.0"><pollingType>${type}</pollingType><pollOnStart>true</pollOnStart><pollingFrequency>500</pollingFrequency></pollConnectorProperties><sourceConnectorProperties version="4.5.0"><responseVariable>None</responseVariable></sourceConnectorProperties><script>return 'tick';</script></properties><transformer`;
+    const swap = (type: string) => (x: string): string => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader(type))
+      .replace('<transportName>TCP Listener</transportName>', '<transportName>JavaScript Reader</transportName>');
+
+    expect(convert4x(swap('INTERVAL')).sourceConnectorProperties).toEqual({ script: "return 'tick';", pollingIntervalMs: 500 });
+    expect(convert4x(swap('TIME')).sourceConnectorProperties).toEqual({ script: "return 'tick';" });
+  });
+
   it('leaves a Channel Writer set to "none" without a target', () => {
     const channel = convert4x((x) => x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, '<properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="4.5.0"><channelId>none</channelId></properties>'));
     expect(channel.destinations[0]?.properties).toEqual({ targetChannelId: '' });

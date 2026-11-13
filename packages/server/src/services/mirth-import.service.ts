@@ -409,8 +409,20 @@ function convertSourceConnector(
     ? connectorType
     : mapTransportName(transportName, channelName, warnings);
 
-  const properties = extractConnectorProperties(propsNode, finalType);
+  const properties = { ...extractConnectorProperties(propsNode, finalType), ...pollingInterval(propsNode) };
   return { type: finalType, properties };
+}
+
+/**
+ * A polling source's interval (Mirth's File, Database and JavaScript Readers).
+ * Only Mirth's INTERVAL polling has an equivalent; time-of-day and cron polling
+ * keep the connector's default interval.
+ */
+function pollingInterval(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const poll = getNestedRecord(propsNode, 'pollConnectorProperties');
+  if (!poll || (getString(poll, 'pollingType') ?? 'INTERVAL') !== 'INTERVAL') return {};
+  const ms = getNumber(poll, 'pollingFrequency', 0);
+  return ms > 0 ? { pollingIntervalMs: ms } : {};
 }
 
 function mapTransportName(transportName: string, channelName: string, warnings: string[]): string {
@@ -504,8 +516,13 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       Object.assign(result, sendTemplate(propsNode, 'channelTemplate'));
       break;
     }
+    case 'JAVASCRIPT': {
+      const script = getString(propsNode, 'script');
+      if (script) result['script'] = script;
+      break;
+    }
     default:
-      // For JAVASCRIPT and others, copy all non-attribute properties
+      // For others, copy all non-attribute properties
       for (const [key, value] of Object.entries(propsNode)) {
         if (!key.startsWith('@_')) {
           result[key] = value;
