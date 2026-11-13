@@ -57,6 +57,8 @@ vi.mock('../../db/schema/index.js', () => ({
 
 import type { ChannelExportEntry } from '@galvaniflow/core-models';
 import { MirthImportService, type MirthConvertResult } from '../mirth-import.service.js';
+import { ChannelImportService } from '../channel-import.service.js';
+import { CodeTemplateService } from '../code-template.service.js';
 
 // ----- Helpers -----
 
@@ -687,6 +689,27 @@ describe('MirthImportService.importFromXml', () => {
     const result = await MirthImportService.importFromXml('<foo>bar</foo>', 'SKIP', false);
 
     expect(result.ok).toBe(false);
+  });
+
+  it('leaves code templates untouched when a channel in the backup fails to import (regression)', async () => {
+    const channel = loadFixture('mirth-4x-channel.xml');
+    const backup = `<serverConfiguration version="4.5.0"><channels>${channel}</channels><codeTemplateLibraries><codeTemplateLibrary version="4.5.0"><id>l1</id><name>Globals</name><includeNewChannels>true</includeNewChannels><enabledChannelIds/><disabledChannelIds/><codeTemplates><codeTemplate version="4.5.0"><id>t1</id><name>f</name><contextSet><delegate><contextType>SOURCE_FILTER_TRANSFORMER</contextType></delegate></contextSet><properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties"><type>FUNCTION</type><code>function f() {}</code></properties></codeTemplate></codeTemplates></codeTemplateLibrary></codeTemplateLibraries></serverConfiguration>`;
+    const imports = vi.spyOn(ChannelImportService, 'importChannels').mockResolvedValueOnce({
+      ok: true, value: { created: 0, updated: 0, skipped: 0, errors: ['Error importing "4x Listener": db down'] }, error: null,
+    } as never);
+    const listLibraries = vi.spyOn(CodeTemplateService, 'listLibraries');
+    try {
+      const result = await MirthImportService.importFromXml(backup, 'OVERWRITE', false);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(listLibraries).not.toHaveBeenCalled();
+      expect(result.value.codeTemplates).toEqual({ created: 0, updated: 0, skipped: 0 });
+      expect(result.value.importResult.errors).toContain('Code template libraries were not imported because 1 channel(s) failed; fix them and import again');
+    } finally {
+      imports.mockRestore();
+      listLibraries.mockRestore();
+    }
   });
 
   it('maps RENAME collision mode to CREATE_NEW', async () => {

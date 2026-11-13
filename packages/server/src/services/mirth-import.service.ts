@@ -139,12 +139,6 @@ export class MirthImportService {
         };
       }
 
-      // Templates first: a channel deployed right after the import compiles with them.
-      const templates = await importCodeTemplateLibraries(
-        convertResult.value.codeTemplateLibraries, collisionMode === 'OVERWRITE', context,
-      );
-      if (!templates.ok) throw templates.error;
-
       // Map RENAME to CREATE_NEW (GalvaniFlow collision mode)
       const galvaniflowCollisionMode = collisionMode === 'RENAME' ? 'CREATE_NEW' as const : collisionMode;
       const importResult = await ChannelImportService.importChannels(
@@ -154,6 +148,22 @@ export class MirthImportService {
       );
       if (!importResult.ok) throw importResult.error;
 
+      // Templates are shared by every channel, so they change only when every
+      // channel in the file imported: a failed import must not leave other
+      // channels running with templates (or scopes) from a half-applied backup.
+      // Channels are not deployed by the import, so the order costs nothing.
+      const libraries = convertResult.value.codeTemplateLibraries;
+      const channelFailures = importResult.value.errors.length;
+      let codeTemplates = { created: 0, updated: 0, skipped: 0 };
+      let errors = importResult.value.errors;
+      if (libraries.length > 0 && channelFailures > 0) {
+        errors = [...errors, `Code template libraries were not imported because ${String(channelFailures)} channel(s) failed; fix them and import again`];
+      } else {
+        const templates = await importCodeTemplateLibraries(libraries, collisionMode === 'OVERWRITE', context);
+        if (!templates.ok) throw templates.error;
+        codeTemplates = templates.value;
+      }
+
       logger.info(
         { channelCount: convertResult.value.channels.length, warnings: convertResult.value.warnings.length },
         'Mirth Connect XML import completed',
@@ -161,8 +171,8 @@ export class MirthImportService {
 
       return {
         convertResult: convertResult.value,
-        importResult: importResult.value,
-        codeTemplates: templates.value,
+        importResult: { ...importResult.value, errors },
+        codeTemplates,
       };
     });
   }
