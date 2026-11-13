@@ -72,7 +72,8 @@ export class MllpParser {
   private readonly maxFrameBytes: number;
   private readonly charset: BufferEncoding;
   private readonly framing: Framing;
-  private readonly lastEndByte: number;
+  /** The last bytes received, so end bytes split across chunks are seen. */
+  private tail: Buffer = Buffer.alloc(0);
 
   /**
    * @param options.maxFrameBytes - Hard cap on buffered bytes; on exceed the
@@ -84,7 +85,6 @@ export class MllpParser {
     this.maxFrameBytes = options?.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES;
     this.charset = options?.charset ?? 'utf-8';
     this.framing = options?.framing ?? MLLP_FRAMING;
-    this.lastEndByte = this.framing.end[this.framing.end.length - 1]!;
   }
 
   /**
@@ -99,10 +99,13 @@ export class MllpParser {
         `MLLP frame exceeds maximum size of ${String(this.maxFrameBytes)} bytes`,
       );
     }
-    // A frame can only end in a chunk that holds the last end byte. Set any
+    // A frame can only end in a chunk that completes the end bytes. Set any
     // other chunk in the middle of a frame aside instead of joining it to the
     // buffer now: joining on every chunk copies the whole frame each time.
-    const canComplete = !this.inFrame || chunk.includes(this.lastEndByte);
+    // Checking for the last end byte alone is not enough: MLLP's is CR, which
+    // ends every HL7 segment.
+    const canComplete = !this.inFrame || this.completesEnd(chunk);
+    this.rememberTail(chunk);
     this.pending.push(chunk);
     this.pendingBytes += chunk.length;
     if (!canComplete) return [];
@@ -142,6 +145,22 @@ export class MllpParser {
     return results;
   }
 
+  /** Whether the end bytes appear in the chunk, or start in the bytes before it and finish in it. */
+  private completesEnd(chunk: Buffer): boolean {
+    const end = this.framing.end;
+    if (chunk.includes(end)) return true;
+    if (this.tail.length === 0) return false;
+    return Buffer.concat([this.tail, chunk.subarray(0, end.length - 1)]).includes(end);
+  }
+
+  /** Keep the last (end length - 1) bytes received, the most of the end bytes that can precede a chunk. */
+  private rememberTail(chunk: Buffer): void {
+    const keep = this.framing.end.length - 1;
+    if (keep === 0) return;
+    const joined = chunk.length >= keep ? chunk : Buffer.concat([this.tail, chunk]);
+    this.tail = Buffer.from(joined.subarray(joined.length - keep));
+  }
+
   /** Where the payload of the next frame begins, or -1 when no frame starts in the buffer. */
   private frameStart(from: number): number {
     if (this.framing.start.length === 0) return from;
@@ -154,6 +173,7 @@ export class MllpParser {
     this.buffer = Buffer.alloc(0);
     this.pending = [];
     this.pendingBytes = 0;
+    this.tail = Buffer.alloc(0);
     this.inFrame = false;
   }
 }

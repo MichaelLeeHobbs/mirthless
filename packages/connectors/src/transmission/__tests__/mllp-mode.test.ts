@@ -2,7 +2,7 @@
 // MLLP Mode Tests
 // ===========================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { wrapMllp, MllpParser, DEFAULT_MAX_FRAME_BYTES, framingFromHex } from '../mllp-mode.js';
 
 const VT = 0x0B;
@@ -236,6 +236,32 @@ describe('MllpParser chunking', () => {
     // takes minutes; one copy at the end takes well under a second.
     expect(elapsed).toBeLessThan(5_000);
   }, 60_000);
+
+  it('does not join a frame of CR-separated segments on every chunk (regression)', () => {
+    // Every HL7 segment ends in CR, the last byte of MLLP's end, so a chunk
+    // holding a CR is not a sign that the frame can end.
+    const segment = `OBX|1|TX|||${'x'.repeat(70)}\r`;
+    const payload = Buffer.from(segment.repeat(2_000));
+    const stream = Buffer.concat([Buffer.from([VT_B]), payload, Buffer.from([FS_B, CR_B])]);
+    const parser = new MllpParser();
+    const concat = vi.spyOn(Buffer, 'concat');
+    const out: string[] = [];
+    try {
+      for (let i = 0; i < stream.length; i += 100) out.push(...parser.parse(stream.subarray(i, i + 100)));
+      const largeJoins = concat.mock.calls.filter(([list]) => list.reduce((n, b) => n + b.length, 0) > 1_000);
+      expect(largeJoins.length).toBeLessThanOrEqual(1);
+    } finally {
+      concat.mockRestore();
+    }
+    expect(out).toEqual([payload.toString()]);
+  });
+
+  it('completes a frame whose end bytes arrive in separate chunks, and FS inside a payload is not an end', () => {
+    const parser = new MllpParser();
+    expect(parser.parse(Buffer.from([VT_B, 0x41, FS_B, 0x42, CR_B]))).toEqual([]);
+    expect(parser.parse(Buffer.from([0x43, FS_B]))).toEqual([]);
+    expect(parser.parse(Buffer.from([CR_B]))).toEqual([`A${String.fromCharCode(FS_B)}B\rC`]);
+  });
 
   it('still rejects a frame that grows past the limit across chunks', () => {
     const parser = new MllpParser({ maxFrameBytes: 100 });
