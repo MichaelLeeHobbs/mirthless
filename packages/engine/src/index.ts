@@ -7,6 +7,7 @@ export * from './sandbox/index.js';
 export { BatchProcessor, BATCH_MODE } from './batch/index.js';
 export type { BatchConfig, BatchMode, BatchJsOptions } from './batch/index.js';
 export { MessageProcessor } from './pipeline/message-processor.js';
+export { parseForSandbox } from './pipeline/data-type-handler.js';
 export type {
   ChannelScripts,
   DestinationScripts,

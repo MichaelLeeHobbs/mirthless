@@ -66,6 +66,10 @@ vi.mock('@galvaniflow/engine', () => ({
     };
   }),
   DEFAULT_EXECUTION_OPTIONS: { timeout: 30000, memoryLimit: 134217728, signal: AbortSignal.timeout(30000) },
+  parseForSandbox: (content: string, dataType: string): unknown => {
+    if (content === 'unparseable') throw new Error('bad');
+    return { parsed: content, dataType };
+  },
   GlobalChannelMap: MockGlobalChannelMap,
   GlobalMapProxy: vi.fn().mockImplementation(function () { return { load: vi.fn(), start: vi.fn(), toRecord: vi.fn().mockReturnValue({}), applyChanges: vi.fn(), set: vi.fn(), delete: vi.fn(), clear: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), dispose: vi.fn().mockResolvedValue(undefined) }; }),
   compileScript: mockCompileScript,
@@ -567,6 +571,26 @@ describe('EngineManager', () => {
       expect(mockSetDestScriptRunner).toHaveBeenCalledTimes(2);
     });
 
+    it('gives a JavaScript Writer the message parsed for its data type and the message\'s channel map', async () => {
+      const channel = makeChannel({
+        destinations: [{
+          id: 'dest-1', metaDataId: 1, name: 'JS Dest', enabled: true, connectorType: 'JAVASCRIPT',
+          properties: { script: 'return msg;' },
+          queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 5000, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+        }],
+      });
+      const engine = new EngineManager('test-server');
+      await engine.deploy(channel as never);
+      const runner = mockSetDestScriptRunner.mock.calls[0]![0] as (s: string, c: string, m: unknown) => Promise<unknown>;
+
+      await runner('return msg;', 'MSH|^~\\&|A', { dataType: 'HL7V2', variables: { accession: 'ACC1' } });
+      await runner('return msg;', 'unparseable', { dataType: 'HL7V2' });
+
+      const contexts = mockSandboxExecute.mock.calls.map((c) => c[1] as { msg: unknown; rawData: string; channelMap: unknown });
+      expect(contexts.at(-2)).toMatchObject({ msg: { parsed: 'MSH|^~\\&|A', dataType: 'HL7V2' }, rawData: 'MSH|^~\\&|A', channelMap: { accession: 'ACC1' } });
+      expect(contexts.at(-1)).toMatchObject({ msg: 'unparseable', channelMap: {} });
+    });
+
     it('compiles source script once at deploy and reuses in ScriptRunner', async () => {
       const channel = makeChannel({
         sourceConnectorType: 'JAVASCRIPT',
@@ -637,9 +661,10 @@ describe('EngineManager', () => {
       // No additional compile call — pre-compiled script is reused
       expect(mockCompileScript.mock.calls.length).toBe(compileCallCountAtDeploy);
       expect(mockSandboxExecute).toHaveBeenCalledOnce();
-      // The context should include the content as msg
+      // The context has the content parsed for its data type as msg, and the raw text as rawData
       const sandboxCtx = mockSandboxExecute.mock.calls[0]![1] as Record<string, unknown>;
-      expect(sandboxCtx).toHaveProperty('msg', 'test-content');
+      expect(sandboxCtx).toHaveProperty('msg', { parsed: 'test-content', dataType: 'HL7V2' });
+      expect(sandboxCtx).toHaveProperty('rawData', 'test-content');
       expect(result.ok).toBe(true);
       expect(result.value).toBe('test-result');
     });

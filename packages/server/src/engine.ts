@@ -34,6 +34,7 @@ import {
   type QueueConsumerConfig,
   type LoadedAlert,
   type ResponseSource,
+  parseForSandbox,
 } from '@galvaniflow/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { tryCatch, type Result } from 'stderr-lib';
@@ -138,6 +139,27 @@ export function toDispatchStatus(
     return DISPATCH_STATUS.PROCESSED;
   }
   return DISPATCH_STATUS.ERROR;
+}
+
+/** What a deploy, JavaScript Reader or JavaScript Writer script runs on. */
+interface ChannelScriptInput {
+  /** The raw text (`rawData`). */
+  readonly content: string;
+  /** The message as `msg`; the raw text when absent. */
+  readonly msg?: unknown;
+  readonly channelMap?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Content parsed for its data type, as the pipeline gives it to scripts; the
+ * raw text when it does not parse (the pipeline falls back the same way).
+ */
+export function parsedOrRaw(content: string, dataType: string): unknown {
+  try {
+    return parseForSandbox(content, dataType);
+  } catch {
+    return content;
+  }
 }
 
 /** Where a channel's response to the sender comes from, by its response mode. */
@@ -1168,7 +1190,7 @@ export class EngineManager {
     const sourceScript = (channel.sourceConnectorProperties as { script: string }).script;
     const cachedScript = await this.compileWithTemplates(sourceScript, 'sourceReceiver', templates, `${channel.name}/js-source.js`);
     jsReceiver.setScriptRunner(async (_script) => {
-      const execResult = await this.runChannelScript(cachedScript, channel, maps, '', {});
+      const execResult = await this.runChannelScript(cachedScript, channel, maps, { content: '' }, {});
       if (!execResult.ok) return execResult;
       return { ok: true as const, value: execResult.value.returnValue, error: null };
     });
@@ -1191,7 +1213,13 @@ export class EngineManager {
         destScript, 'destinationDispatcher', templates, `${channel.name}/js-dest-${String(dest.metaDataId)}.js`,
       );
       jsDispatcher.setScriptRunner(async (_script, content, connectorMessage) => {
-        const execResult = await this.runChannelScript(cachedScript, channel, maps, content, { connectorMessage });
+        // The script sees the message as every other stage does: parsed for its
+        // data type, with what earlier stages put in the channel map.
+        const execResult = await this.runChannelScript(cachedScript, channel, maps, {
+          content,
+          msg: parsedOrRaw(content, connectorMessage.dataType),
+          channelMap: connectorMessage.variables ?? {},
+        }, { connectorMessage });
         if (!execResult.ok) return execResult;
         return { ok: true as const, value: execResult.value.returnValue, error: null };
       });
@@ -1222,14 +1250,15 @@ export class EngineManager {
     script: CompiledScript,
     channel: ChannelDetail,
     maps: ChannelMaps,
-    content: string,
+    input: ChannelScriptInput,
     extras: Readonly<Record<string, unknown>>,
   ): Promise<Result<ExecutionResult>> {
     const gcmBefore = maps.gcm.toRecord();
     const globalBefore = maps.globalMap.toRecord();
+    const msg = input.msg ?? input.content;
     const context = {
-      msg: content, tmp: content, rawData: content,
-      sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {},
+      msg, tmp: msg, rawData: input.content,
+      sourceMap: {}, channelMap: { ...(input.channelMap ?? {}) }, connectorMap: {}, responseMap: {},
       globalChannelMap: gcmBefore, globalMap: globalBefore, configMap: maps.configMap,
       extras: { channelId: channel.id, channelName: channel.name, ...extras },
     };
@@ -1243,7 +1272,7 @@ export class EngineManager {
 
   /** Run a deploy or undeploy script. Throws when the script fails. */
   private async runDeployScript(script: CompiledScript, channel: ChannelDetail, maps: ChannelMaps, name: string): Promise<void> {
-    const result = await this.runChannelScript(script, channel, maps, '', {});
+    const result = await this.runChannelScript(script, channel, maps, { content: '' }, {});
     if (!result.ok) {
       throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: the ${name} script failed: ${result.error.message}`);
     }
