@@ -4,7 +4,7 @@
 
 ## 2026-11-13 — Delimited, X12 and MySQL (branch `claude/doc17-delimited-x12-mysql`)
 
-Michael approved the recommended options in `docs/design/17-remaining-migration-gaps.md`. Built on top of PR 67's branch, so this branch carries its commits until PR 67 merges.
+Michael approved the recommended options in `docs/design/17-remaining-migration-gaps.md`. The migration scenario suite now scores 60/60.
 
 - **Delimited** (S19, D-256): `msg` is an array of row objects keyed by column name, with column, record and quote settings on the source transformer, validated at deploy; the importer reads Mirth's settings and warns about fixed-width columns. S19's script changed from `msg.mrn` to `msg[0].mrn` as the approved option says.
 - **X12** (S20, D-257): an `X12` data type with HL7's path API (`msg.get('NM1[3].9')`), delimiters from ISA, crossing the sandbox as a host handle like HL7. The importer maps `EDI/X12`; the editor lists it.
