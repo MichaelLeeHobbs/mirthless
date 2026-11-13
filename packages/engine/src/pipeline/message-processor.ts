@@ -12,6 +12,7 @@ import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
 import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
 import { parseForSandbox, serializeFromSandbox, serializeTransformed } from './data-type-handler.js';
+import { mergeVariables, renderDestinationTemplate } from './destination-template.js';
 
 // ----- Types -----
 
@@ -50,6 +51,8 @@ export interface DestinationConfig {
   readonly queueMode: 'NEVER' | 'ON_FAILURE' | 'ALWAYS';
   /** Run after the preceding destination finishes instead of in parallel with it (default false). */
   readonly waitForPrevious?: boolean | undefined;
+  /** What to send instead of the transformed message, with `${...}` references (see destination-template.ts). */
+  readonly template?: string | undefined;
 }
 
 /**
@@ -79,6 +82,8 @@ export type SendToDestination = (
   content: string,
   signal: AbortSignal,
   correlationId?: string,
+  /** The message's map variables as the destination saw them (see storeVariables). */
+  variables?: Readonly<Record<string, unknown>>,
 ) => Promise<Result<DestinationResponse>>;
 
 /** Response from a destination send. */
@@ -110,6 +115,10 @@ export interface MessageStore {
   release(channelId: string, messageId: number, metaDataId: number, newStatus: string): Promise<Result<void>>;
   incrementStats(channelId: string, metaDataId: number, serverId: string, field: 'received' | 'filtered' | 'sent' | 'errored'): Promise<Result<void>>;
   storeAttachment?(channelId: string, messageId: number, attachmentId: string, mimeType: string, content: string, size: number): Promise<Result<void>>;
+  /** Optional: remove one content type of a connector message (an earlier failure reason, once delivered). */
+  removeContent?(channelId: string, messageId: number, metaDataId: number, contentType: number): Promise<Result<void>>;
+  /** Optional: store a connector message's custom metadata column values. */
+  storeCustomMetadata?(channelId: string, messageId: number, metaDataId: number, metadata: Readonly<Record<string, unknown>>): Promise<Result<void>>;
 
   /**
    * Optional batch: creates message + source connector + content rows + stats in one round-trip.
@@ -207,7 +216,29 @@ export interface PipelineConfig {
   readonly onTiming?: TimingCallback | undefined;
   /** Called when a message store write fails after the point where the message can still be failed cleanly. */
   readonly onStoreFailure?: ((failure: StoreFailure) => void) | undefined;
+  /** Where the response to the sender comes from. Absent: the first destination that returned one. */
+  readonly responseSource?: ResponseSource | undefined;
+  /** Custom metadata columns, filled after the source transformer. */
+  readonly metadataColumns?: readonly MetadataColumnConfig[] | undefined;
 }
+
+/**
+ * A custom metadata column. `mapping` names a map variable, looked up in the
+ * connector, channel and source maps in that order, as Mirth does.
+ */
+export interface MetadataColumnConfig {
+  readonly name: string;
+  readonly dataType: string;
+  readonly mapping: string;
+}
+
+/**
+ * POSTPROCESSOR: the channel postprocessor's return value.
+ * DESTINATION: the named destination's response.
+ */
+export type ResponseSource =
+  | { readonly kind: 'POSTPROCESSOR' }
+  | { readonly kind: 'DESTINATION'; readonly destinationName: string };
 
 /** A message store write that failed. */
 export interface StoreFailure {
@@ -236,6 +267,9 @@ const CT_SENT = 5;
 const CT_RESPONSE = 6;
 const CT_RESPONSE_TRANSFORMED = 7;
 const CT_SOURCE_MAP = 9;
+/** A destination's variables (see storeVariables). */
+const CT_CHANNEL_MAP = 10;
+const CT_ERROR = 11;
 const CT_PROCESSING_ERROR = 13;
 
 /**
@@ -248,6 +282,44 @@ const CT_PROCESSING_ERROR = 13;
 function scriptReplacement(returnValue: unknown, msg: unknown): unknown {
   if (returnValue != null && typeof returnValue !== 'boolean') return returnValue;
   return msg;
+}
+
+/** The text a postprocessor's return value sends back. Nothing for undefined or null. */
+function responseText(returnValue: unknown): string | undefined {
+  if (returnValue === undefined || returnValue === null) return undefined;
+  if (typeof returnValue === 'string') return returnValue;
+  if (typeof returnValue === 'object') return JSON.stringify(returnValue);
+  return String(returnValue);
+}
+
+/**
+ * Each column's value from the first map that has its variable, converted to
+ * the column's type. A column with no value, or a NUMBER that is not a number,
+ * is left out.
+ */
+export function metadataValues(
+  columns: readonly MetadataColumnConfig[],
+  maps: readonly Readonly<Record<string, unknown>>[],
+): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const column of columns) {
+    const raw = maps.map((m) => m[column.mapping]).find((v) => v !== undefined && v !== null);
+    if (raw === undefined) continue;
+    const value = column.dataType === 'NUMBER' ? numberValue(raw)
+      : column.dataType === 'BOOLEAN' ? (raw === true || String(raw).toLowerCase() === 'true')
+        : typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+    if (value === undefined) continue;
+    values[column.name] = value;
+  }
+  return values;
+}
+
+/** A finite number, or text that is one; anything else (blank text, a boolean) is no value. */
+function numberValue(raw: unknown): number | undefined {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : undefined;
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 // ----- Pipeline -----
@@ -457,6 +529,7 @@ export class MessageProcessor {
           ? this.store.storeContent(channelId, messageId, 0, CT_TRANSFORMED, content, dataType)
           : Promise.resolve({ ok: true as const, value: undefined, error: null }),
         ...activeDests.map((d) => this.store.createConnectorMessage(channelId, messageId, d.metaDataId, d.name, 'RECEIVED')),
+        this.storeSourceMetadata(messageId, mapState, input.sourceMap),
       ]);
       const notPrepared = prepared.find((r) => !r.ok);
       if (notPrepared && !notPrepared.ok) return errorOut('prepareDestinations', notPrepared.error.message);
@@ -476,12 +549,15 @@ export class MessageProcessor {
       const postErrors: string[] = [];
 
       // Stage 7a: Channel postprocessor (receives responseMap populated with dest responses)
+      let postprocessorResponse: string | undefined;
       if (this.config.scripts.postprocessor) {
         const postResult = await this.runScript(
           this.config.scripts.postprocessor, content, input, signal, mapState,
         );
         if (!postResult.ok) {
           postErrors.push(`Script error in postprocessor: ${postResult.error.message}`);
+        } else {
+          postprocessorResponse = responseText(postResult.value.returnValue);
         }
         mark('postprocessor');
       }
@@ -545,7 +621,7 @@ export class MessageProcessor {
         });
       }
 
-      const firstResponse = destResults.find((r) => r.response)?.response;
+      const firstResponse = this.pickResponse(destResults, postprocessorResponse);
       const result: ProcessedMessage = {
         messageId,
         correlationId,
@@ -633,6 +709,21 @@ export class MessageProcessor {
         destContent = serializeTransformed(transformed, destContent, dataType);
       }
 
+      // What scripts put in this message's maps travels with the send (and is
+      // stored for a queued one). The source map is already stored with the
+      // message, and the shared maps are read in memory only: the configuration
+      // map can hold credentials that must not be copied into every message.
+      const variables = mergeVariables([destMaps.connectorMap, destMaps.channelMap, destMaps.responseMap]);
+      if (dest.template !== undefined) {
+        destContent = renderDestinationTemplate(dest.template, { encoded: destContent, raw: input.rawContent, messageId }, [
+          variables, input.sourceMap, this.config.globalChannelMap?.toRecord() ?? {}, this.config.globalMapProxy?.toRecord() ?? {}, this.config.configMap ?? {},
+        ]);
+      }
+      const variablesStored = await this.storeVariables(messageId, dest, variables);
+      if (!variablesStored.ok) {
+        return this.destErrorOut(messageId, dest, 'storeVariables', variablesStored.error.message);
+      }
+
       // Persist the outbound (SENT) content BEFORE queuing/sending. A queued
       // destination reloads exactly this row to deliver, and crash recovery
       // redispatches from it — if the write fails we must error now (before any
@@ -650,9 +741,13 @@ export class MessageProcessor {
       }
 
       // NEVER / ON_FAILURE: attempt a direct send first.
-      const sendResult = await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId);
+      const sendResult = await this.sendFn(
+        dest.metaDataId, messageId, destContent, signal, correlationId,
+        Object.keys(variables).length > 0 ? variables : undefined,
+      );
 
       if (!sendResult.ok) {
+        await this.recordSendFailure(messageId, dest.metaDataId, sendResult.error.message);
         // ON_FAILURE: fall back to the queue for retry instead of a hard ERROR.
         if (dest.queueMode === 'ON_FAILURE') {
           return this.enqueueDestination(messageId, dest);
@@ -723,6 +818,7 @@ export class MessageProcessor {
 
       // Destination responded but not SENT (e.g. remote NAK). ON_FAILURE queues
       // it for retry; otherwise mark ERROR.
+      await this.recordSendFailure(messageId, dest.metaDataId, response.errorMessage ?? response.content, response.content);
       if (dest.queueMode === 'ON_FAILURE') {
         return this.enqueueDestination(messageId, dest);
       }
@@ -743,6 +839,20 @@ export class MessageProcessor {
       return chainResults;
     }));
     return settled.flat();
+  }
+
+  /**
+   * Keep why a send failed (and what the destination answered, if anything),
+   * so the message browser can say what went wrong whether the destination
+   * ends ERROR or waits in the queue.
+   */
+  private async recordSendFailure(messageId: number, metaDataId: number, reason: string, response?: string): Promise<void> {
+    const { channelId } = this.config;
+    const text = reason.trim() === '' ? 'The destination reported a failure without a reason' : reason;
+    await this.saved(messageId, metaDataId, 'why a destination failed', [
+      this.store.storeContent(channelId, messageId, metaDataId, CT_ERROR, text, 'TEXT'),
+      ...(response ? [this.store.storeContent(channelId, messageId, metaDataId, CT_RESPONSE, response, 'TEXT')] : []),
+    ]);
   }
 
   /** Enqueue a destination for (retried) delivery by the queue consumer. */
@@ -804,6 +914,42 @@ export class MessageProcessor {
         channelId: this.config.channelId, messageId, metaDataId, what, errorMessage: failed.error.message,
       });
     }
+  }
+
+  /**
+   * Keep the variables a queued destination will send with: the queue sends
+   * later, from the store, when the message's maps are gone. A destination that
+   * never queues gets them from memory, and an empty set needs no row.
+   */
+  private storeVariables(messageId: number, dest: DestinationConfig, variables: Readonly<Record<string, unknown>>): Promise<Result<void>> {
+    if (dest.queueMode === 'NEVER' || Object.keys(variables).length === 0) {
+      return Promise.resolve({ ok: true, value: undefined, error: null } as Result<void>);
+    }
+    return this.store.storeContent(this.config.channelId, messageId, dest.metaDataId, CT_CHANNEL_MAP, JSON.stringify(variables), 'JSON');
+  }
+
+  /** Store the source's custom metadata column values, read from the maps. Nothing to store is a success. */
+  private storeSourceMetadata(
+    messageId: number,
+    mapState: PipelineMapState,
+    sourceMap: Readonly<Record<string, unknown>>,
+  ): Promise<Result<void>> {
+    const values = metadataValues(this.config.metadataColumns ?? [], [mapState.connectorMap, mapState.channelMap, sourceMap]);
+    if (Object.keys(values).length === 0 || !this.store.storeCustomMetadata) {
+      return Promise.resolve({ ok: true, value: undefined, error: null } as Result<void>);
+    }
+    return this.store.storeCustomMetadata(this.config.channelId, messageId, 0, values);
+  }
+
+  /** The response for the sender, from where the channel's response source says. */
+  private pickResponse(destResults: readonly DestinationResult[], postprocessorResponse: string | undefined): string | undefined {
+    const source = this.config.responseSource;
+    if (source?.kind === 'POSTPROCESSOR') return postprocessorResponse;
+    if (source?.kind === 'DESTINATION') {
+      const dest = this.config.destinations.find((d) => d.name === source.destinationName);
+      return dest ? destResults.find((r) => r.metaDataId === dest.metaDataId)?.response : undefined;
+    }
+    return destResults.find((r) => r.response)?.response;
   }
 
   /** Run a script in the sandbox with the current message context and map state. */

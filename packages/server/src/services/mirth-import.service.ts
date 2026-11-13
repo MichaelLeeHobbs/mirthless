@@ -11,12 +11,18 @@ import type { ChannelExportEntry, ImportResult } from '@galvaniflow/core-models'
 import { ChannelImportService } from './channel-import.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
+import {
+  extractCodeTemplateLibraries, importCodeTemplateLibraries,
+  type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
+} from './mirth-code-templates.js';
 
 // ----- Types -----
 
 /** Result of XML conversion (before import). */
 export interface MirthConvertResult {
   readonly channels: readonly ChannelExportEntry[];
+  /** Code template libraries from a server backup; empty for a channel export. */
+  readonly codeTemplateLibraries: readonly MirthCodeTemplateLibrary[];
   readonly warnings: readonly string[];
 }
 
@@ -24,7 +30,10 @@ export interface MirthConvertResult {
 export interface MirthImportResult {
   readonly convertResult: MirthConvertResult;
   readonly importResult: ImportResult;
+  readonly codeTemplates: CodeTemplateImportCounts;
 }
+
+const XML_READERS = { isRecord, getString, toRecordList } as const;
 
 // ----- Connector Type Mapping -----
 
@@ -40,6 +49,8 @@ const CONNECTOR_TYPE_MAP: ReadonlyMap<string, string> = new Map([
   ['com.mirth.connect.connectors.js.JavaScriptReceiverProperties', 'JAVASCRIPT'],
   ['com.mirth.connect.connectors.js.JavaScriptDispatcherProperties', 'JAVASCRIPT'],
   ['com.mirth.connect.connectors.smtp.SmtpDispatcherProperties', 'SMTP'],
+  ['com.mirth.connect.connectors.vm.VmReceiverProperties', 'CHANNEL'],
+  ['com.mirth.connect.connectors.vm.VmDispatcherProperties', 'CHANNEL'],
 ]);
 
 // ----- XML Parser Config -----
@@ -48,12 +59,14 @@ function createParser(): XMLParser {
   return new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
-    parseTagValue: true,
+    // Keep every value a string: "0123" stays "0123" (a password, a code).
+    parseTagValue: false,
     trimValues: true,
-    // Mirth channel exports do not use custom entities. Disabling entity
-    // processing prevents a billion-laughs / numeric-entity expansion DoS from a
-    // malicious upload (the validate endpoint is reachable by lower-priv roles).
-    processEntities: false,
+    // Mirth escapes scripts with the XML entities (&apos; &lt; ...) and numeric
+    // references (&#xd;), so they must be decoded. convertXml rejects a DOCTYPE,
+    // which is the only way to define a custom entity, so no entity can expand.
+    processEntities: true,
+    htmlEntities: true,
     isArray: (tagName: string) => {
       // These elements should always be parsed as arrays even when single
       const arrayTags = new Set([
@@ -96,8 +109,9 @@ export class MirthImportService {
         const result = convertChannel(mirthChannel, warnings);
         channels.push(result);
       }
+      const codeTemplateLibraries = extractCodeTemplateLibraries(parsed, XML_READERS, warnings);
 
-      return { channels, warnings };
+      return { channels, codeTemplateLibraries, warnings };
     });
   }
 
@@ -121,6 +135,7 @@ export class MirthImportService {
             skipped: 0,
             errors: [],
           },
+          codeTemplates: { created: 0, updated: 0, skipped: 0 },
         };
       }
 
@@ -133,6 +148,22 @@ export class MirthImportService {
       );
       if (!importResult.ok) throw importResult.error;
 
+      // Templates are shared by every channel, so they change only when every
+      // channel in the file imported: a failed import must not leave other
+      // channels running with templates (or scopes) from a half-applied backup.
+      // Channels are not deployed by the import, so the order costs nothing.
+      const libraries = convertResult.value.codeTemplateLibraries;
+      const channelFailures = importResult.value.errors.length;
+      let codeTemplates = { created: 0, updated: 0, skipped: 0 };
+      let errors = importResult.value.errors;
+      if (libraries.length > 0 && channelFailures > 0) {
+        errors = [...errors, `Code template libraries were not imported because ${String(channelFailures)} channel(s) failed; fix them and import again`];
+      } else {
+        const templates = await importCodeTemplateLibraries(libraries, collisionMode === 'OVERWRITE', context);
+        if (!templates.ok) throw templates.error;
+        codeTemplates = templates.value;
+      }
+
       logger.info(
         { channelCount: convertResult.value.channels.length, warnings: convertResult.value.warnings.length },
         'Mirth Connect XML import completed',
@@ -140,7 +171,8 @@ export class MirthImportService {
 
       return {
         convertResult: convertResult.value,
-        importResult: importResult.value,
+        importResult: { ...importResult.value, errors },
+        codeTemplates,
       };
     });
   }
@@ -230,7 +262,7 @@ function convertChannel(
 ): ChannelExportEntry {
   const name = getString(mirthChannel, 'name') ?? 'Unnamed Channel';
   const description = getString(mirthChannel, 'description');
-  const enabled = getBoolean(mirthChannel, 'enabled', true);
+  const enabled = channelEnabled(mirthChannel);
   const id = getString(mirthChannel, 'id') ?? randomUUID();
 
   // Source connector
@@ -241,21 +273,29 @@ function convertChannel(
 
   // Destinations
   const destinations = convertDestinations(mirthChannel, name, warnings);
+  const response = mapResponseVariable(sourceConnector, destinations, name, warnings);
+  const sourceConnectorProperties = withSourceResponseMode(sourceConnectorResult, response.responseMode);
 
-  // Data types
-  const inboundDataType = extractDataType(sourceConnector, 'inbound') ?? 'HL7V2';
+  // Data types. GalvaniFlow's Database Reader hands each row over as a JSON
+  // object, where Mirth's hands it over as XML, so such a channel reads JSON.
+  const mirthInbound = extractDataType(sourceConnector, 'inbound') ?? 'HL7V2';
+  const inboundDataType = sourceConnectorResult.type === 'DATABASE' ? 'JSON' : mirthInbound;
+  if (inboundDataType !== mirthInbound) {
+    warnings.push(`Channel "${name}": its Database Reader rows arrive as JSON objects here (Mirth: ${mirthInbound}); read columns as msg.column`);
+  }
   const outboundDataType = extractDataType(sourceConnector, 'outbound') ?? 'HL7V2';
 
   // Filters and transformers
   const filters = convertFilters(mirthChannel);
-  const transformers = convertTransformers(mirthChannel);
+  const transformers = convertTransformers(mirthChannel).map((t) =>
+    ((t.metaDataId ?? null) === null && t.inboundDataType !== inboundDataType ? { ...t, inboundDataType } : t));
 
   // Channel properties
   const props = isRecord(mirthChannel['properties'])
     ? mirthChannel['properties'] as Record<string, unknown>
     : {};
 
-  return {
+  const entry: ChannelExportEntry = {
     id,
     name,
     description,
@@ -264,9 +304,9 @@ function convertChannel(
     inboundDataType,
     outboundDataType,
     sourceConnectorType: sourceConnectorResult.type,
-    sourceConnectorProperties: sourceConnectorResult.properties,
-    responseMode: getString(props, 'responseMode') ?? getString(mirthChannel, 'responseMode') ?? 'NONE',
-    responseConnectorName: getString(props, 'responseConnectorName') ?? null,
+    sourceConnectorProperties,
+    responseMode: response.responseMode,
+    responseConnectorName: response.responseConnectorName,
     initialState: mapInitialState(getString(props, 'initialState') ?? getString(mirthChannel, 'initialState')),
     messageStorageMode: mapStorageMode(getString(props, 'messageStorageMode')),
     encryptData: getBoolean(props, 'encryptData', false),
@@ -281,6 +321,66 @@ function convertChannel(
     filters,
     transformers,
   };
+  const scriptWarning = mirthScriptWarning(entry);
+  if (scriptWarning) warnings.push(scriptWarning);
+  return entry;
+}
+
+/**
+ * Mirth 3.x+ keeps a channel's enabled flag in `exportData/metadata/enabled`;
+ * older exports have it on the channel. A disabled channel imported as
+ * enabled would be deployed by the next server start.
+ */
+function channelEnabled(mirthChannel: Record<string, unknown>): boolean {
+  const metadata = getNestedRecord(getNestedRecord(mirthChannel, 'exportData') ?? {}, 'metadata');
+  if (metadata && getString(metadata, 'enabled') !== null) return getBoolean(metadata, 'enabled', true);
+  return getBoolean(mirthChannel, 'enabled', true);
+}
+
+// ----- Source Response -----
+
+interface ResponseSetting {
+  readonly responseMode: string;
+  readonly responseConnectorName: string | null;
+}
+
+/** Mirth's fixed "Respond from" choices. Any other value names a destination ("d1") or a response map key. */
+const RESPONSE_VARIABLE_MAP: ReadonlyMap<string, string> = new Map([
+  ['None', 'NONE'],
+  ['Auto-generate (Before processing)', 'AUTO_BEFORE'],
+  ['Auto-generate (After source transformer)', 'AUTO_AFTER_TRANSFORMER'],
+  ['Auto-generate (Destinations completed)', 'AUTO_AFTER_DESTINATIONS'],
+  ['Postprocessor', 'POSTPROCESSOR'],
+]);
+
+/** Map the source's "Respond from" setting (`sourceConnectorProperties/responseVariable`). */
+function mapResponseVariable(
+  sourceConnector: Record<string, unknown> | null,
+  destinations: ChannelExportEntry['destinations'],
+  channelName: string,
+  warnings: string[],
+): ResponseSetting {
+  const props = getNestedRecord(sourceConnector ?? {}, 'properties') ?? {};
+  const variable = getString(getNestedRecord(props, 'sourceConnectorProperties') ?? {}, 'responseVariable');
+  if (variable === null) return { responseMode: 'NONE', responseConnectorName: null };
+  const fixed = RESPONSE_VARIABLE_MAP.get(variable);
+  if (fixed) return { responseMode: fixed, responseConnectorName: null };
+  const destMatch = /^d(\d+)$/.exec(variable);
+  const dest = destMatch ? destinations.find((d) => d.metaDataId === Number(destMatch[1])) : undefined;
+  if (dest) return { responseMode: 'DESTINATION', responseConnectorName: dest.name };
+  warnings.push(`Channel "${channelName}": responds from "${variable}", which is not supported; it will auto-generate its response after the destinations`);
+  return { responseMode: 'AUTO_AFTER_DESTINATIONS', responseConnectorName: null };
+}
+
+/**
+ * A TCP listener answers with the pipeline's response only in PASSTHROUGH mode.
+ * The channel's response comes from a script or a destination in Mirth's
+ * "Postprocessor" and "dN" settings, so those need it.
+ */
+function withSourceResponseMode(source: ConnectorResult, responseMode: string): Record<string, unknown> {
+  if (source.type !== 'TCP_MLLP') return source.properties;
+  const passthrough = responseMode === 'POSTPROCESSOR' || responseMode === 'DESTINATION';
+  return { ...source.properties, responseMode: passthrough ? 'PASSTHROUGH' : 'AUTO_ACK' };
 }
 
 // ----- Connector Conversion -----
@@ -325,8 +425,80 @@ function convertSourceConnector(
     ? connectorType
     : mapTransportName(transportName, channelName, warnings);
 
-  const properties = extractConnectorProperties(propsNode, finalType);
-  return { type: finalType, properties };
+  const remote = remoteFileConnector(finalType, propsNode, 'source', channelName, warnings);
+  const properties = {
+    ...(remote?.properties ?? extractConnectorProperties(propsNode, finalType)),
+    ...pollingInterval(propsNode),
+    ...(getBoolean(getNestedRecord(propsNode, 'sourceConnectorProperties') ?? {}, 'processBatch', false) ? { processBatch: true } : {}),
+  };
+  return { type: remote?.type ?? finalType, properties };
+}
+
+/** `host[:port][/path]`, as a Mirth remote File connector writes its host field. */
+const REMOTE_HOST = /^([^:/]+)(?::(\d+))?(\/.*)?$/;
+
+/**
+ * A Mirth File Reader or Writer with the SFTP scheme runs on GalvaniFlow's SFTP
+ * connector. Other remote schemes (FTP, SMB, S3, WebDAV) have no connector
+ * here; the import warns and keeps the channel, which then fails to deploy.
+ * Null for a local File connector.
+ */
+function remoteFileConnector(
+  type: string,
+  propsNode: Record<string, unknown>,
+  direction: 'source' | 'destination',
+  channelName: string,
+  warnings: string[],
+): ConnectorResult | null {
+  const scheme = (getString(propsNode, 'scheme') ?? 'FILE').toUpperCase();
+  if (type !== 'FILE' || scheme === 'FILE') return null;
+  if (scheme !== 'SFTP') {
+    warnings.push(`Channel "${channelName}": the ${scheme} file scheme is not supported; this ${direction} will not deploy`);
+    return null;
+  }
+  const match = REMOTE_HOST.exec(getString(propsNode, 'host') ?? '');
+  const schemeProps = getNestedRecord(propsNode, 'schemeProperties') ?? {};
+  const properties: Record<string, unknown> = {
+    host: match?.[1] ?? '',
+    remoteDirectory: match?.[3] ?? '/',
+    username: getString(propsNode, 'username') ?? '',
+    password: getString(propsNode, 'password') ?? '',
+    strictHostKey: (getString(schemeProps, 'hostKeyChecking') ?? 'ask') !== 'no',
+  };
+  if (match?.[2]) properties['port'] = Number(match[2]);
+  if (properties['strictHostKey']) {
+    warnings.push(`Channel "${channelName}": Mirth checks the SFTP server's host key; enter it on the ${direction} before deploying`);
+  }
+  return { type: 'SFTP', properties: { ...properties, ...(direction === 'source' ? sftpReaderProperties(propsNode) : sftpWriterProperties(propsNode)) } };
+}
+
+function sftpReaderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const action = (getString(propsNode, 'afterProcessingAction') ?? 'NONE').toUpperCase();
+  return {
+    filePattern: getString(propsNode, 'fileFilter') ?? '*',
+    afterProcessing: action === 'DELETE' || action === 'MOVE' ? action : 'NONE',
+    moveToDirectory: getString(propsNode, 'moveToDirectory') ?? '',
+  };
+}
+
+function sftpWriterProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const pattern = getString(propsNode, 'outputPattern');
+  return {
+    ...(pattern ? { fileNameTemplate: pattern } : {}),
+    appendMode: getBoolean(propsNode, 'outputAppend', false),
+  };
+}
+
+/**
+ * A polling source's interval (Mirth's File, Database and JavaScript Readers).
+ * Only Mirth's INTERVAL polling has an equivalent; time-of-day and cron polling
+ * keep the connector's default interval.
+ */
+function pollingInterval(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const poll = getNestedRecord(propsNode, 'pollConnectorProperties');
+  if (!poll || (getString(poll, 'pollingType') ?? 'INTERVAL') !== 'INTERVAL') return {};
+  const ms = getNumber(poll, 'pollingFrequency', 0);
+  return ms > 0 ? { pollingIntervalMs: ms } : {};
 }
 
 function mapTransportName(transportName: string, channelName: string, warnings: string[]): string {
@@ -371,7 +543,8 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       const remoteAddress = getString(propsNode, 'remoteAddress');
       if (remoteAddress) result['host'] = remoteAddress;
       const remotePort = getString(propsNode, 'remotePort');
-      if (remotePort) result['port'] = Number(remotePort);
+      if (remotePort) result['port'] = portValue(remotePort);
+      Object.assign(result, sendTemplate(propsNode, 'template'), tcpFraming(propsNode));
       break;
     }
     case 'HTTP': {
@@ -381,9 +554,11 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
         const port = getString(listener, 'port');
         if (host) result['host'] = host;
         if (port) result['port'] = Number(port);
+        Object.assign(result, httpListenerProperties(propsNode));
       }
       const url = getString(propsNode, 'host');
       if (url) result['url'] = url;
+      if (!listener) Object.assign(result, sendTemplate(propsNode, 'content'), httpSenderProperties(propsNode));
       break;
     }
     case 'FILE': {
@@ -395,30 +570,27 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       if (moveToDir) result['moveToDirectory'] = moveToDir;
       break;
     }
-    case 'DATABASE': {
-      const url = getString(propsNode, 'url');
-      if (url) result['url'] = url;
-      const query = getString(propsNode, 'query') ?? getString(propsNode, 'select');
-      if (query) result['query'] = query;
-      const driver = getString(propsNode, 'driver');
-      if (driver) result['driver'] = driver;
-      const username = getString(propsNode, 'username');
-      if (username) result['username'] = username;
+    case 'DATABASE':
+      Object.assign(result, databaseProperties(propsNode));
+      break;
+    case 'SMTP':
+      Object.assign(result, smtpProperties(propsNode));
+      break;
+    case 'CHANNEL': {
+      // Channel Writer: the target is the Mirth channel id, which the import
+      // keeps as the channel's id. "none" is Mirth's "no channel selected".
+      const target = getString(propsNode, 'channelId');
+      if (target !== null) result['targetChannelId'] = target === 'none' ? '' : target;
+      Object.assign(result, sendTemplate(propsNode, 'channelTemplate'));
       break;
     }
-    case 'SMTP': {
-      const smtpHost = getString(propsNode, 'smtpHost');
-      if (smtpHost) result['host'] = smtpHost;
-      const smtpPort = getString(propsNode, 'smtpPort');
-      if (smtpPort) result['port'] = Number(smtpPort);
-      const to = getString(propsNode, 'to');
-      if (to) result['to'] = to;
-      const from = getString(propsNode, 'from');
-      if (from) result['from'] = from;
+    case 'JAVASCRIPT': {
+      const script = getString(propsNode, 'script');
+      if (script) result['script'] = script;
       break;
     }
     default:
-      // For JAVASCRIPT and others, copy all non-attribute properties
+      // For others, copy all non-attribute properties
       for (const [key, value] of Object.entries(propsNode)) {
         if (!key.startsWith('@_')) {
           result[key] = value;
@@ -427,6 +599,131 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       break;
   }
 
+  return result;
+}
+
+/**
+ * A Mirth `linked-hash-map` of name to list of values. A name with several
+ * values keeps them joined with ", ", as one HTTP header carries them.
+ */
+function linkedMap(node: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!isRecord(node)) return result;
+  for (const entry of toRecordList(node['entry'])) {
+    const name = getString(entry, 'string');
+    const list = entry['list'];
+    const raw = isRecord(list) ? list['string'] : undefined;
+    const values = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).map(String);
+    if (name) result[name] = values.join(', ');
+  }
+  return result;
+}
+
+/** A Mirth HTTP Sender's method, headers, query parameters, Basic credentials and content type. */
+function httpSenderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    method: (getString(propsNode, 'method') ?? 'post').toUpperCase(),
+    headers: linkedMap(propsNode['headers']),
+    parameters: linkedMap(propsNode['parameters']),
+  };
+  const contentType = getString(propsNode, 'contentType');
+  if (contentType) result['contentType'] = contentType;
+  if (getBoolean(propsNode, 'useAuthentication', false) && getString(propsNode, 'authenticationType') === 'Basic') {
+    result['basicAuth'] = { username: getString(propsNode, 'username') ?? '', password: getString(propsNode, 'password') ?? '' };
+  }
+  return result;
+}
+
+/** A Mirth SMTP Sender's server, credentials, addresses, subject and body. */
+function smtpProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const port = getString(propsNode, 'smtpPort');
+  if (port) result['port'] = portValue(port);
+  const fields = [['smtpHost', 'host'], ['to', 'to'], ['from', 'from'], ['cc', 'cc'], ['bcc', 'bcc'], ['subject', 'subject'], ['body', 'bodyTemplate']] as const;
+  for (const [from, to] of fields) {
+    const value = getString(propsNode, from);
+    if (value) result[to] = value;
+  }
+  if (getBoolean(propsNode, 'html', false)) result['contentType'] = 'text/html';
+  const encryption = getString(propsNode, 'encryption')?.toLowerCase();
+  if (encryption === 'ssl') result['secure'] = true;
+  if (encryption === 'tls') result['requireTLS'] = true;
+  if (getBoolean(propsNode, 'authentication', false)) {
+    result['authUser'] = getString(propsNode, 'username') ?? '';
+    result['authPass'] = getString(propsNode, 'password') ?? '';
+  }
+  return result;
+}
+
+/** `jdbc:<vendor>://host[:port]/database[?options]` */
+const JDBC_URL = /^jdbc:(\w+):\/\/([^:/?;]+)(?::(\d+))?\/([^?;]+)/;
+
+/** Mirth's Database Reader update modes: 1 never, 2 once after all rows, 3 after each row. */
+const DB_UPDATE_MODE: Readonly<Record<string, string>> = { '1': 'NEVER', '2': 'ALWAYS', '3': 'ON_SUCCESS' };
+
+/**
+ * Mirth's Database Reader/Writer take a JDBC URL; GalvaniFlow's take host,
+ * port and database. Queries keep their `${name}` parameters, which bind from
+ * the row (reader) or the message's variables (writer).
+ */
+function databaseProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const match = JDBC_URL.exec(getString(propsNode, 'url') ?? '');
+  if (match) {
+    result['host'] = match[2];
+    if (match[3]) result['port'] = Number(match[3]);
+    result['database'] = match[4];
+  }
+  for (const [from, to] of [['username', 'username'], ['password', 'password'], ['query', 'query'], ['select', 'selectQuery'], ['update', 'updateQuery']] as const) {
+    const value = getString(propsNode, from);
+    if (value) result[to] = value;
+  }
+  const updateMode = DB_UPDATE_MODE[getString(propsNode, 'updateMode') ?? ''];
+  if (updateMode && result['selectQuery'] !== undefined) result['updateMode'] = updateMode;
+  return result;
+}
+
+/**
+ * What a Mirth sender sends (`template` on a TCP Sender, `content` on an HTTP
+ * Sender, `channelTemplate` on a Channel Writer) as the destination's
+ * `template`. The default, the encoded message itself, needs none.
+ */
+function sendTemplate(propsNode: Record<string, unknown>, key: string): Record<string, unknown> {
+  const template = getString(propsNode, key);
+  if (template === null || template.trim() === '' || template.trim() === '${message.encodedData}') return {};
+  return { template };
+}
+
+/**
+ * The frame bytes of a Mirth TCP connector (MLLP or Basic mode), when they
+ * differ from MLLP's 0B / 1C0D.
+ */
+function tcpFraming(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const mode = getNestedRecord(propsNode, 'transmissionModeProperties') ?? {};
+  const start = (getString(mode, 'startOfMessageBytes') ?? '0B').toUpperCase();
+  const end = (getString(mode, 'endOfMessageBytes') ?? '1C0D').toUpperCase();
+  return start === '0B' && end === '1C0D' ? {} : { frameStart: start, frameEnd: end };
+}
+
+/** A port as a number, or as written when it is a `${...}` reference resolved at deploy. */
+function portValue(port: string): number | string {
+  return /^\d+$/.test(port.trim()) ? Number(port) : port;
+}
+
+/**
+ * Mirth's HTTP Listener serves every path under its context path (empty: all
+ * paths) and answers with its configured content type and status.
+ */
+function httpListenerProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const contextPath = getString(propsNode, 'contextPath') ?? '';
+  const result: Record<string, unknown> = {
+    path: contextPath.startsWith('/') ? contextPath : `/${contextPath}`,
+    matchSubpaths: true,
+  };
+  const contentType = getString(propsNode, 'responseContentType');
+  if (contentType) result['responseContentType'] = contentType;
+  const status = Number(getString(propsNode, 'responseStatusCode') ?? '');
+  if (Number.isInteger(status) && status >= 100 && status <= 599) result['responseStatusCode'] = status;
   return result;
 }
 
@@ -471,22 +768,55 @@ function convertDestinations(
       connectorType = mapTransportName(transportName, channelName, warnings);
     }
 
-    const properties = extractConnectorProperties(propsNode, connectorType);
+    const remote = remoteFileConnector(connectorType, propsNode, 'destination', channelName, warnings);
 
     return {
-      metaDataId: idx + 1,
+      metaDataId: destinationMetaDataId(dest, idx),
       name: getString(dest, 'name') ?? `Destination ${idx + 1}`,
       enabled: getBoolean(dest, 'enabled', true),
-      connectorType,
-      properties,
-      queueMode: mapQueueMode(getString(dest, 'queueMode') ?? getString(getNestedRecord(dest, 'queueConnectorProperties') ?? {}, 'queueEnabled')),
-      retryCount: getNumber(getNestedRecord(dest, 'queueConnectorProperties') ?? {}, 'retryCount', 0),
-      retryIntervalMs: getNumber(getNestedRecord(dest, 'queueConnectorProperties') ?? {}, 'retryIntervalMs', 10000),
-      rotateQueue: getBoolean(getNestedRecord(dest, 'queueConnectorProperties') ?? {}, 'rotate', false),
-      queueThreadCount: getNumber(getNestedRecord(dest, 'queueConnectorProperties') ?? {}, 'threadCount', 1),
+      connectorType: remote?.type ?? connectorType,
+      properties: remote?.properties ?? extractConnectorProperties(propsNode, connectorType),
+      ...convertQueueSettings(dest, propsNode),
       waitForPrevious: getBoolean(dest, 'waitForPrevious', false),
     };
   });
+}
+
+/** Mirth numbers destinations itself (d1, d2 ...); scripts and "Respond from" refer to that number. */
+function destinationMetaDataId(dest: Record<string, unknown>, idx: number): number {
+  const fromXml = getNumber(dest, 'metaDataId', 0);
+  return Number.isInteger(fromXml) && fromXml > 0 ? fromXml : idx + 1;
+}
+
+type QueueSettings = Pick<ChannelExportEntry['destinations'][number],
+  'queueMode' | 'retryCount' | 'retryIntervalMs' | 'rotateQueue' | 'queueThreadCount'>;
+
+/**
+ * Mirth 3.x/4.x keep queue settings in `properties/destinationConnectorProperties`.
+ * "Queue Messages" Never / On Failure / Always is `queueEnabled` false, or true
+ * with `sendFirst` true (try first, queue on failure) or false (always queue).
+ * The older `queueConnectorProperties` node is still read when present.
+ */
+function convertQueueSettings(dest: Record<string, unknown>, propsNode: Record<string, unknown>): QueueSettings {
+  const modern = getNestedRecord(propsNode, 'destinationConnectorProperties');
+  if (modern) {
+    const enabled = getBoolean(modern, 'queueEnabled', false);
+    return {
+      queueMode: !enabled ? 'NEVER' : getBoolean(modern, 'sendFirst', false) ? 'ON_FAILURE' : 'ALWAYS',
+      retryCount: getNumber(modern, 'retryCount', 0),
+      retryIntervalMs: getNumber(modern, 'retryIntervalMillis', 10000),
+      rotateQueue: getBoolean(modern, 'rotate', false),
+      queueThreadCount: Math.max(1, getNumber(modern, 'threadCount', 1)),
+    };
+  }
+  const legacy = getNestedRecord(dest, 'queueConnectorProperties') ?? {};
+  return {
+    queueMode: mapQueueMode(getString(dest, 'queueMode') ?? getString(legacy, 'queueEnabled')),
+    retryCount: getNumber(legacy, 'retryCount', 0),
+    retryIntervalMs: getNumber(legacy, 'retryIntervalMs', 10000),
+    rotateQueue: getBoolean(legacy, 'rotate', false),
+    queueThreadCount: getNumber(legacy, 'threadCount', 1),
+  };
 }
 
 function mapQueueMode(value: string | null): string {
@@ -524,57 +854,72 @@ function convertFilters(mirthChannel: Record<string, unknown>): ChannelExportEnt
   if (sourceFilter) filters.push(sourceFilter);
 
   // Destination connector filters
-  const destConnectors = mirthChannel['destinationConnectors'];
-  if (isRecord(destConnectors)) {
-    const inner = destConnectors['connector'];
-    const connectorList = Array.isArray(inner) ? inner : isRecord(inner) ? [inner] : [];
-    for (let i = 0; i < connectorList.length; i++) {
-      const conn = connectorList[i];
-      if (!isRecord(conn)) continue;
-      const metaDataId = String(i + 1);
-      const filter = extractFilterFromConnector(conn, metaDataId);
-      if (filter) filters.push(filter);
-    }
+  for (const [metaDataId, conn] of destinationConnectorsById(mirthChannel)) {
+    const filter = extractFilterFromConnector(conn, metaDataId);
+    if (filter) filters.push(filter);
   }
 
   return filters;
 }
 
+/** Destination connector nodes keyed by their metaDataId, as filters and transformers refer to them. */
+function destinationConnectorsById(mirthChannel: Record<string, unknown>): ReadonlyArray<readonly [number, Record<string, unknown>]> {
+  const destConnectors = mirthChannel['destinationConnectors'];
+  if (!isRecord(destConnectors)) return [];
+  const connectorList = toRecordList(destConnectors['connector']);
+  return connectorList.map((conn, idx) => [destinationMetaDataId(conn, idx), conn] as const);
+}
+
+/** A parsed child that may be one element or many. */
+function toRecordList(node: unknown): readonly Record<string, unknown>[] {
+  if (Array.isArray(node)) return node.filter(isRecord);
+  return isRecord(node) ? [node] : [];
+}
+
+interface ScriptElement {
+  /** Mirth 3.4+ element class without its package (`JavaScriptStep`); null for the 3.x `<step>` form. */
+  readonly className: string | null;
+  readonly node: Record<string, unknown>;
+}
+
+/**
+ * Filter rules and transformer steps. Mirth 3.4+ lists them under `<elements>`,
+ * one child per element named by its class
+ * (`com.mirth.connect.plugins.javascriptstep.JavaScriptStep`). Earlier versions
+ * use `<steps><step>` and `<rules><rule>` with a `<type>` child.
+ */
+function scriptElements(container: Record<string, unknown>, legacyKey: 'steps' | 'rules', legacyChild: 'step' | 'rule'): readonly ScriptElement[] {
+  const elements = container['elements'];
+  if (isRecord(elements)) {
+    const result: ScriptElement[] = [];
+    for (const [key, value] of Object.entries(elements)) {
+      if (key.startsWith('@_')) continue;
+      const className = key.slice(key.lastIndexOf('.') + 1);
+      for (const node of toRecordList(value)) result.push({ className, node });
+    }
+    return result.sort((a, b) => getNumber(a.node, 'sequenceNumber', 0) - getNumber(b.node, 'sequenceNumber', 0));
+  }
+  const legacy = container[legacyKey] ?? container[legacyChild];
+  const list = isRecord(legacy) ? toRecordList(legacy[legacyChild]) : toRecordList(legacy);
+  return list.map((node) => ({ className: null, node }));
+}
+
 function extractFilterFromConnector(
   connector: unknown,
-  connectorId: string | null,
+  metaDataId: number | null,
 ): ChannelExportEntry['filters'][number] | null {
   if (!isRecord(connector)) return null;
 
-  const transformer = connector['transformer'];
-  if (!isRecord(transformer)) return null;
+  // Mirth 3.x/4.x: <filter> is a sibling of <transformer>. Older exports nest it.
+  const transformer = getNestedRecord(connector, 'transformer');
+  const filter = getNestedRecord(connector, 'filter') ?? (transformer ? getNestedRecord(transformer, 'filter') : null);
+  if (!filter) return null;
 
-  const filter = transformer['filter'];
-  if (!isRecord(filter)) return null;
-
-  const rulesNode = filter['rules'] ?? filter['rule'];
-  let rulesList: readonly unknown[];
-
-  if (isRecord(rulesNode)) {
-    const inner = rulesNode['rule'];
-    if (Array.isArray(inner)) {
-      rulesList = inner;
-    } else if (isRecord(inner)) {
-      rulesList = [inner];
-    } else {
-      return null;
-    }
-  } else if (Array.isArray(rulesNode)) {
-    rulesList = rulesNode;
-  } else {
-    return null;
-  }
-
-  const rules = rulesList.filter(isRecord).map((rule) => ({
+  const rules = scriptElements(filter, 'rules', 'rule').map(({ className, node: rule }) => ({
     enabled: getBoolean(rule, 'enabled', true),
     name: getString(rule, 'name'),
     operator: getString(rule, 'operator') ?? 'AND',
-    type: mapFilterRuleType(getString(rule, 'type')),
+    type: mapFilterRuleType(className ?? getString(rule, 'type')),
     script: getString(rule, 'script'),
     field: getString(rule, 'field'),
     condition: getString(rule, 'condition'),
@@ -583,7 +928,7 @@ function extractFilterFromConnector(
 
   if (rules.length === 0) return null;
 
-  return { connectorId, rules };
+  return { connectorId: null, metaDataId, rules };
 }
 
 function mapFilterRuleType(type: string | null): string {
@@ -614,17 +959,9 @@ function convertTransformers(mirthChannel: Record<string, unknown>): ChannelExpo
   if (sourceTransformer) transformers.push(sourceTransformer);
 
   // Destination connector transformers
-  const destConnectors = mirthChannel['destinationConnectors'];
-  if (isRecord(destConnectors)) {
-    const inner = destConnectors['connector'];
-    const connectorList = Array.isArray(inner) ? inner : isRecord(inner) ? [inner] : [];
-    for (let i = 0; i < connectorList.length; i++) {
-      const conn = connectorList[i];
-      if (!isRecord(conn)) continue;
-      const metaDataId = String(i + 1);
-      const transformer = extractTransformerFromConnector(conn, metaDataId);
-      if (transformer) transformers.push(transformer);
-    }
+  for (const [metaDataId, conn] of destinationConnectorsById(mirthChannel)) {
+    const transformer = extractTransformerFromConnector(conn, metaDataId);
+    if (transformer) transformers.push(transformer);
   }
 
   return transformers;
@@ -632,31 +969,17 @@ function convertTransformers(mirthChannel: Record<string, unknown>): ChannelExpo
 
 function extractTransformerFromConnector(
   connector: unknown,
-  connectorId: string | null,
+  metaDataId: number | null,
 ): ChannelExportEntry['transformers'][number] | null {
   if (!isRecord(connector)) return null;
 
   const transformer = connector['transformer'];
   if (!isRecord(transformer)) return null;
 
-  const stepsNode = transformer['steps'] ?? transformer['step'];
-  let stepsList: readonly unknown[] = [];
-
-  if (isRecord(stepsNode)) {
-    const inner = stepsNode['step'];
-    if (Array.isArray(inner)) {
-      stepsList = inner;
-    } else if (isRecord(inner)) {
-      stepsList = [inner];
-    }
-  } else if (Array.isArray(stepsNode)) {
-    stepsList = stepsNode;
-  }
-
-  const steps = stepsList.filter(isRecord).map((step) => ({
+  const steps = scriptElements(transformer, 'steps', 'step').map(({ className, node: step }) => ({
     enabled: getBoolean(step, 'enabled', true),
     name: getString(step, 'name'),
-    type: mapTransformerStepType(getString(step, 'type')),
+    type: mapTransformerStepType(className ?? getString(step, 'type')),
     script: getString(step, 'script'),
     sourceField: getString(step, 'sourceField') ?? getString(step, 'field'),
     targetField: getString(step, 'targetField') ?? getString(step, 'variable'),
@@ -673,7 +996,8 @@ function extractTransformerFromConnector(
   }
 
   return {
-    connectorId,
+    connectorId: null,
+    metaDataId,
     inboundDataType,
     outboundDataType,
     inboundProperties: extractDataTypeProperties(transformer, 'inboundProperties'),
@@ -701,28 +1025,64 @@ function mapTransformerStepType(type: string | null): string {
   const upper = type.toUpperCase();
   if (upper.includes('JAVASCRIPT') || upper === 'STEP_BUILDER') return 'JAVASCRIPT';
   if (upper.includes('MAPPER') || upper === 'MAPPER') return 'MAPPER';
-  if (upper.includes('MESSAGE_BUILDER')) return 'MESSAGE_BUILDER';
+  if (upper.includes('MESSAGE_BUILDER') || upper === 'MESSAGEBUILDERSTEP') return 'MESSAGE_BUILDER';
   return upper;
 }
 
 // ----- Script Conversion -----
 
+const CHANNEL_SCRIPTS = [
+  ['deployScript', 'DEPLOY'],
+  ['undeployScript', 'UNDEPLOY'],
+  ['preprocessingScript', 'PREPROCESSOR'],
+  ['postprocessingScript', 'POSTPROCESSOR'],
+] as const;
+
+/**
+ * Channel scripts, without the ones Mirth puts in every new channel and that
+ * do nothing: `return;`, and the preprocessor's `return message;` (Mirth's
+ * name for the raw message, which GalvaniFlow does not have).
+ */
 function convertScripts(mirthChannel: Record<string, unknown>): ChannelExportEntry['scripts'] {
   const scripts: ChannelExportEntry['scripts'] = [];
-
-  const deployScript = getString(mirthChannel, 'deployScript');
-  if (deployScript) scripts.push({ scriptType: 'DEPLOY', script: deployScript });
-
-  const undeployScript = getString(mirthChannel, 'undeployScript');
-  if (undeployScript) scripts.push({ scriptType: 'UNDEPLOY', script: undeployScript });
-
-  const preprocessingScript = getString(mirthChannel, 'preprocessingScript');
-  if (preprocessingScript) scripts.push({ scriptType: 'PREPROCESSOR', script: preprocessingScript });
-
-  const postprocessingScript = getString(mirthChannel, 'postprocessingScript');
-  if (postprocessingScript) scripts.push({ scriptType: 'POSTPROCESSOR', script: postprocessingScript });
-
+  for (const [key, scriptType] of CHANNEL_SCRIPTS) {
+    const script = getString(mirthChannel, key);
+    if (script && !isMirthDefaultScript(script)) scripts.push({ scriptType, script });
+  }
   return scripts;
+}
+
+function isMirthDefaultScript(script: string): boolean {
+  const code = script.replace(/\/\/[^\n]*/g, '').replace(/\s+/g, ' ').trim();
+  return code === '' || code === 'return;' || code === 'return message;';
+}
+
+/**
+ * Mirth script constructs GalvaniFlow does not run (D-244), with what to use
+ * instead. The import keeps scripts as written and lists these so the
+ * operator knows what to rewrite.
+ */
+const MIRTH_ONLY_CONSTRUCTS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(?:msg|tmp)\s*\[\s*['"]/, "E4X field access (msg['PID']...): use msg.get('PID.5.1') / msg.set"],
+  [/\bfor\s+each\s*\(/, "Rhino 'for each': use for...of"],
+  [/\bnew\s+XML\s*\(/, 'E4X new XML(...): build HL7 with parseHL7 and msg.set'],
+  [/\b(?:Packages|java|javax|org\.apache|com\.mirth)\./, 'Java classes: use JavaScript built-ins'],
+  [/\b(?:channelMap|connectorMap|responseMap|globalMap|globalChannelMap|sourceMap|configurationMap)\.(?:put|get|containsKey|remove)\s*\(/, 'Java map methods (channelMap.put): use $c(key, value) or channelMap[key]'],
+  [/\bconnectorMessage\.get\w+\s*\(/, 'connectorMessage.getRawData(): use rawData'],
+  [/\b(?:ResponseFactory|DateUtil|FileUtil|SerializerFactory|ACKGenerator|ChannelUtil|AttachmentUtil|stringUtils|router)\./, 'Mirth user API objects: use the GalvaniFlow scripting API'],
+  [/\b(?:return|String\()\s*message\b/, "Mirth's 'message' variable: use rawData"],
+];
+
+/** One warning per channel naming the Mirth-only constructs its scripts use. */
+function mirthScriptWarning(entry: Pick<ChannelExportEntry, 'name' | 'scripts' | 'filters' | 'transformers'>): string | null {
+  const sources = [
+    ...entry.scripts.map((s) => s.script),
+    ...entry.filters.flatMap((f) => f.rules.map((r) => r.script ?? '')),
+    ...entry.transformers.flatMap((t) => t.steps.map((s) => s.script ?? '')),
+  ];
+  const found = MIRTH_ONLY_CONSTRUCTS.filter(([pattern]) => sources.some((s) => pattern.test(s))).map(([, hint]) => hint);
+  if (found.length === 0) return null;
+  return `Channel "${entry.name}": its scripts use Mirth-only constructs that will fail until rewritten: ${found.join('; ')}`;
 }
 
 // ----- Metadata Column Conversion -----

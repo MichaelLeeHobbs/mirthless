@@ -7,7 +7,7 @@ import type { SourceConnectorRuntime, DestinationConnectorRuntime } from './base
 import { TcpMllpReceiver, MLLP_RESPONSE_MODE, type MllpResponseMode } from './tcp-mllp/tcp-mllp-receiver.js';
 import { TcpMllpDispatcher } from './tcp-mllp/tcp-mllp-dispatcher.js';
 import { HttpReceiver, DEFAULT_MAX_BODY_BYTES, type HttpAuthConfig } from './http/http-receiver.js';
-import { DEFAULT_MAX_FRAME_BYTES } from './transmission/mllp-mode.js';
+import { DEFAULT_MAX_FRAME_BYTES, framingFromHex, type Framing } from './transmission/mllp-mode.js';
 import { readTlsServerOptions, readTlsClientOptions } from './tls.js';
 import { HttpDispatcher } from './http/http-dispatcher.js';
 import { FileReceiver, FILE_SORT_BY, FILE_POST_ACTION, type FileSortBy, type FilePostAction } from './file/file-receiver.js';
@@ -60,6 +60,32 @@ export function readSmtpAttachments(value: unknown): readonly SmtpAttachment[] {
   return result;
 }
 
+/**
+ * TCP frame bytes from `frameStart` / `frameEnd` hex strings (e.g. "02" and
+ * "03" for STX/ETX); undefined (MLLP) when neither is set. Invalid hex throws,
+ * so the channel fails to deploy instead of misreading its partner.
+ */
+export function readFraming(props: Record<string, unknown>): Framing | undefined {
+  const start = props['frameStart'];
+  const end = props['frameEnd'];
+  if (typeof start !== 'string' && typeof end !== 'string') return undefined;
+  return framingFromHex(typeof start === 'string' ? start : undefined, typeof end === 'string' ? end : undefined);
+}
+
+/** A name-to-text map from a prop bag, keeping only string values; undefined when absent. */
+export function readStringRecord(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value)) if (typeof v === 'string') result[k] = v;
+  return result;
+}
+
+/** HTTP Basic credentials from a prop bag; undefined unless both are strings and a username is set. */
+export function readBasicAuth(value: unknown): { username: string; password: string } | undefined {
+  const rec = readStringRecord(value);
+  return rec?.['username'] && typeof rec['password'] === 'string' ? { username: rec['username'], password: rec['password'] } : undefined;
+}
+
 // ----- Source Factories -----
 
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
@@ -73,11 +99,13 @@ const sourceFactories = new Map<string, SourceFactory>([
     charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
     maxFrameBytes: num(props, 'maxFrameBytes', DEFAULT_MAX_FRAME_BYTES),
     tls: readTlsServerOptions(props),
+    framing: readFraming(props),
   })],
   ['HTTP', (props): SourceConnectorRuntime => new HttpReceiver({
     host: (props['host'] as string | undefined) ?? '0.0.0.0',
     port: num(props, 'port', 0),
     path: (props['path'] as string | undefined) ?? '/',
+    matchSubpaths: props['matchSubpaths'] === true,
     method: (props['method'] as string | undefined) ?? 'POST',
     responseContentType: (props['responseContentType'] as string | undefined) ?? 'text/plain',
     responseStatusCode: num(props, 'responseStatusCode', 200),
@@ -175,11 +203,14 @@ const destinationFactories = new Map<string, DestinationFactory>([
     acquireTimeoutMs: num(props, 'acquireTimeoutMs', 30_000),
     charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
     tls: readTlsClientOptions(props),
+    framing: readFraming(props),
   })],
   ['HTTP', (props): DestinationConnectorRuntime => new HttpDispatcher({
     url: props['url'] as string,
     method: (props['method'] as string | undefined) ?? 'POST',
     headers: (props['headers'] as Record<string, string> | undefined) ?? {},
+    parameters: readStringRecord(props['parameters']),
+    basicAuth: readBasicAuth(props['basicAuth']),
     contentType: (props['contentType'] as string | undefined) ?? 'text/plain',
     responseTimeout: num(props, 'responseTimeout', 30_000),
     scheme: props['scheme'] as string | undefined,

@@ -34,6 +34,8 @@ export interface MessageSummary {
   readonly processed: boolean;
   readonly processedAt: string | null;
   readonly connectors: readonly ConnectorSummary[];
+  /** The source's custom metadata column values. */
+  readonly metaData: Readonly<Record<string, unknown>>;
 }
 
 export interface MessageSearchResult {
@@ -133,6 +135,15 @@ export class MessageQueryService {
         );
       }
 
+      if (filters.metaDataColumn !== undefined) {
+        const match = filters.metaDataValue === undefined
+          ? sql`mcm.metadata ? ${filters.metaDataColumn}`
+          : sql`mcm.metadata ->> ${filters.metaDataColumn} = ${filters.metaDataValue}`;
+        conditions.push(
+          sql`${messages.id} IN (SELECT mcm.message_id FROM message_custom_metadata mcm WHERE mcm.channel_id = ${channelId} AND mcm.meta_data_id = 0 AND ${match})`,
+        );
+      }
+
       const whereClause = and(...conditions);
 
       // Count total matching
@@ -199,6 +210,15 @@ export class MessageQueryService {
         }
       }
 
+      const metaDataRows = await db.execute<{ message_id: number; metadata: Record<string, unknown> }>(sql`
+        SELECT message_id, metadata
+        FROM message_custom_metadata
+        WHERE channel_id = ${channelId}
+          AND meta_data_id = 0
+          AND message_id IN (${sql.join(idParams, sql`, `)})
+      `);
+      const metaDataByMessage = new Map(metaDataRows.rows.map((r) => [Number(r.message_id), r.metadata] as const));
+
       const items: MessageSummary[] = messageRows.rows.map(row => {
         const id = Number(row.id);
         return {
@@ -210,6 +230,7 @@ export class MessageQueryService {
             ? (typeof row.processed_at === 'string' ? row.processed_at : new Date(row.processed_at).toISOString())
             : null,
           connectors: connectorMap.get(id) ?? [],
+          metaData: metaDataByMessage.get(id) ?? {},
         };
       });
 

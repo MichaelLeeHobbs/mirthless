@@ -40,9 +40,13 @@ export type CodeTemplateLanguage = (typeof CODE_TEMPLATE_LANGUAGES)[number];
 
 // ----- Library Schemas -----
 
+/** The channels whose scripts get a library's templates; null: every channel. */
+const libraryChannelIdsSchema = z.array(z.string().uuid()).max(10_000).nullable();
+
 export const createCodeTemplateLibrarySchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().default(''),
+  channelIds: libraryChannelIdsSchema.optional(),
 });
 
 export type CreateCodeTemplateLibraryInput = z.infer<typeof createCodeTemplateLibrarySchema>;
@@ -50,6 +54,7 @@ export type CreateCodeTemplateLibraryInput = z.infer<typeof createCodeTemplateLi
 export const updateCodeTemplateLibrarySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
+  channelIds: libraryChannelIdsSchema.optional(),
   revision: z.number().int().positive(),
 });
 

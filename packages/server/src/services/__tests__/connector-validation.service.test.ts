@@ -283,4 +283,21 @@ describe('validateConnectorProperties', () => {
       expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
     });
   });
+
+  describe('ports given as text', () => {
+    it('accepts digits as text, as a resolved configuration reference gives them', () => {
+      expect(validateConnectorProperties('TCP_MLLP', 'destination', { host: 'lis', port: '6661' }).ok).toBe(true);
+    });
+
+    it.each([[true], ['66a'], ['']])('refuses %j as a port', (port) => {
+      expect(validateConnectorProperties('TCP_MLLP', 'source', { port }).ok).toBe(false);
+    });
+
+    it('says a configuration reference that did not resolve is the problem', () => {
+      const result = validateConnectorProperties('TCP_MLLP', 'destination', { host: 'lis', port: '${MIRTH_SENDER_PORT}' });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('configuration map reference ${MIRTH_SENDER_PORT} did not resolve');
+    });
+  });
 });

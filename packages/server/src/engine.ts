@@ -33,8 +33,11 @@ import {
   type CodeTemplateData,
   type QueueConsumerConfig,
   type LoadedAlert,
+  type ResponseSource,
+  parseForSandbox,
 } from '@galvaniflow/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { splitHl7Batch } from '@galvaniflow/core-util';
 import { tryCatch, type Result } from 'stderr-lib';
 import {
   createSourceConnector,
@@ -125,7 +128,8 @@ const RESPOND_BEFORE_DESTINATIONS: ReadonlySet<string> = new Set(['AUTO_BEFORE',
  *   recorded, so the sender gets a success and does not resend (a resend would
  *   deliver a second copy to the destinations that worked).
  * - every other mode (AUTO_AFTER_DESTINATIONS is the default): yes.
- * An error before routing is always reported: nothing was delivered.
+ * An error before routing is reported (nothing was delivered), except under
+ * AUTO_BEFORE, which answers once the message is recorded, before processing.
  */
 export function toDispatchStatus(
   outcome: { readonly status: 'SENT' | 'FILTERED' | 'ERROR'; readonly errorStage?: 'SOURCE' | 'DESTINATION' | undefined },
@@ -133,10 +137,69 @@ export function toDispatchStatus(
 ): DispatchStatus {
   if (outcome.status === 'FILTERED') return DISPATCH_STATUS.FILTERED;
   if (outcome.status !== 'ERROR') return DISPATCH_STATUS.PROCESSED;
+  // Mirth's "Before processing" answers as soon as the message is recorded;
+  // the failure stays on the message and raises its alert.
+  if (responseMode === 'AUTO_BEFORE') return DISPATCH_STATUS.PROCESSED;
   if (outcome.errorStage === 'DESTINATION' && RESPOND_BEFORE_DESTINATIONS.has(responseMode)) {
     return DISPATCH_STATUS.PROCESSED;
   }
   return DISPATCH_STATUS.ERROR;
+}
+
+/** What a deploy, JavaScript Reader or JavaScript Writer script runs on. */
+interface ChannelScriptInput {
+  /** The raw text (`rawData`). */
+  readonly content: string;
+  /** The message as `msg`; the raw text when absent. */
+  readonly msg?: unknown;
+  readonly channelMap?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Content parsed for its data type, as the pipeline gives it to scripts; the
+ * raw text when it does not parse (the pipeline falls back the same way).
+ */
+export function parsedOrRaw(content: string, dataType: string): unknown {
+  try {
+    return parseForSandbox(content, dataType);
+  } catch {
+    return content;
+  }
+}
+
+/**
+ * Process each message of a batch, in order, and report the batch as one
+ * outcome: an error if the batch could not be split or any message failed
+ * (so the source keeps or quarantines it), otherwise the last message's
+ * outcome. Every message is processed even after one fails, as Mirth does.
+ */
+export async function processBatch(
+  split: (content: string) => string[],
+  content: string,
+  processOne: (part: string) => Promise<Result<SourceDispatchOutcome>>,
+): Promise<Result<SourceDispatchOutcome>> {
+  const parts = tryCatch((): string[] => {
+    const list = split(content);
+    if (list.length === 0) throw new Error('The batch holds no messages');
+    return list;
+  });
+  if (!parts.ok) return { ok: false, value: null, error: parts.error } as Result<SourceDispatchOutcome>;
+  let outcome: Result<SourceDispatchOutcome> | undefined;
+  let failure: Result<SourceDispatchOutcome> | undefined;
+  for (const part of parts.value) {
+    outcome = await processOne(part);
+    if (!failure && (!outcome.ok || outcome.value.status === DISPATCH_STATUS.ERROR)) failure = outcome;
+  }
+  return failure ?? outcome!;
+}
+
+/** Where a channel's response to the sender comes from, by its response mode. */
+export function toResponseSource(responseMode: string, responseConnectorName: string | null): ResponseSource | undefined {
+  if (responseMode === 'POSTPROCESSOR') return { kind: 'POSTPROCESSOR' };
+  if (responseMode === 'DESTINATION' && responseConnectorName) {
+    return { kind: 'DESTINATION', destinationName: responseConnectorName };
+  }
+  return undefined;
 }
 
 // ----- Storage Policy -----
@@ -166,14 +229,15 @@ const ERROR_CONTENT_TYPES: ReadonlySet<number> = new Set([
  * PRODUCTION stores everything needed to deliver, view, recover, and reprocess a
  * message — RAW (reprocess), SENT (queued delivery + crash recovery), the
  * transformed/encoded/response bodies (message browser), and all errors. It omits
- * only the debug-only PROCESSED copy and the map snapshots (Mirth's "Production"
- * semantics). RAW must be present or crash recovery and reprocess break; SENT must
- * be present or queued destinations reload null content and error 100% of messages.
+ * only the debug-only PROCESSED copy and the source map snapshot (Mirth's
+ * "Production" semantics). RAW must be present or crash recovery and reprocess
+ * break; SENT and a queued destination's variables (CHANNEL_MAP) must be present
+ * or the queue cannot deliver what was routed.
  */
 const PRODUCTION_CONTENT_TYPES: ReadonlySet<number> = new Set([
   CONTENT_TYPE.RAW, CONTENT_TYPE.TRANSFORMED, CONTENT_TYPE.ENCODED,
   CONTENT_TYPE.SENT, CONTENT_TYPE.RESPONSE, CONTENT_TYPE.RESPONSE_TRANSFORMED,
-  CONTENT_TYPE.RESPONSE_SENT,
+  CONTENT_TYPE.RESPONSE_SENT, CONTENT_TYPE.CHANNEL_MAP,
   ...ERROR_CONTENT_TYPES,
 ]);
 
@@ -271,6 +335,10 @@ export function createMessageStoreAdapter(config?: StorageConfig): MessageStore 
       MessageService.release(channelId, messageId, metaDataId, newStatus as Parameters<typeof MessageService.release>[3]),
     storeAttachment: (channelId, messageId, attachmentId, mimeType, content, size) =>
       MessageService.storeAttachment(channelId, messageId, attachmentId, mimeType, content, size),
+    removeContent: (channelId, messageId, metaDataId, contentType) =>
+      MessageService.removeContent(channelId, messageId, metaDataId, contentType as Parameters<typeof MessageService.removeContent>[3]),
+    storeCustomMetadata: (channelId, messageId, metaDataId, metadata) =>
+      MessageService.storeCustomMetadata(channelId, messageId, metaDataId, metadata),
     initializeMessage: (channelId, serverId, connectorName, contentRows, correlationId) => {
       // Filter content rows by storage policy before sending to batch
       const filtered = contentRows.filter((r) => shouldStoreContent(mode, r.contentType));
@@ -551,7 +619,7 @@ export class EngineManager {
 
     // Load code templates, global scripts, alerts, filter/transformer data, configMap, and globalMap in parallel
     const [templatesResult, globalScriptsResult, filterTransformerData, loadedAlerts, configMapResult, globalMapProxyInstance] = await Promise.all([
-      CodeTemplateService.listTemplates(),
+      CodeTemplateService.listTemplatesForChannel(channel.id),
       GlobalScriptService.getAll(),
       this.loadFilterTransformerData(channel.id),
       this.loadAlertsForChannel(channel.id),
@@ -645,6 +713,9 @@ export class EngineManager {
       globalMapProxy: globalMapProxyInstance,
       configMap: maps.configMap,
       scriptTimeoutMs: channel.scriptTimeoutSeconds * 1_000,
+      responseSource: toResponseSource(channel.responseMode, channel.responseConnectorName),
+      metadataColumns: channel.metadataColumns.flatMap((c) =>
+        c.mappingExpression ? [{ name: c.name, dataType: c.dataType, mapping: c.mappingExpression }] : []),
       onError: raiseAlert,
       onStoreFailure: (failure) => {
         logger.error(
@@ -663,7 +734,7 @@ export class EngineManager {
     };
 
     // Build send function
-    const sendFn: SendToDestination = async (metaDataId, messageId, content, signal, correlationId) => {
+    const sendFn: SendToDestination = async (metaDataId, messageId, content, signal, correlationId, variables) => {
       const connector = destinations.get(metaDataId);
       if (!connector) {
         return tryCatch(() => { throw new Error(`Destination ${String(metaDataId)} not found`); });
@@ -672,7 +743,7 @@ export class EngineManager {
       // that keeps a send from hanging forever if one does not.
       return connector.send({
         channelId: channel.id, messageId, metaDataId, content,
-        dataType: channel.inboundDataType, correlationId,
+        dataType: channel.inboundDataType, correlationId, variables,
       }, AbortSignal.any([signal, AbortSignal.timeout(SEND_BACKSTOP_MS)]));
     };
 
@@ -698,6 +769,19 @@ export class EngineManager {
     const processor = new MessageProcessor(
       this.sandbox, store, sendFn, pipelineConfig, DEFAULT_EXECUTION_OPTIONS,
     );
+
+    // A response from a destination that does not exist would leave every
+    // sender without the answer it waits for, with nothing logged.
+    if (channel.responseMode === 'DESTINATION' && !channel.destinations.some((d) => d.name === channel.responseConnectorName)) {
+      throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: it responds from destination "${channel.responseConnectorName ?? ''}", which it does not have`);
+    }
+    // A source with Mirth's "Process Batch" on splits what it receives into
+    // messages. Only HL7v2 batches can be split; any other data type refuses
+    // to deploy rather than treat a whole batch as one message.
+    const batched = channel.sourceConnectorProperties['processBatch'] === true;
+    if (batched && channel.inboundDataType !== 'HL7V2') {
+      throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: batch processing is only supported for HL7V2, not ${channel.inboundDataType}`);
+    }
 
     // Build the processMessage callback (used by both source connector and sendMessage API)
     const activity = { lastAt: Date.now() };
@@ -729,7 +813,9 @@ export class EngineManager {
       channelId: channel.id,
       source,
       destinations,
-      onMessage: async (raw) => processMessage(raw.content, raw.sourceMap),
+      onMessage: async (raw) => (batched
+        ? processBatch(splitHl7Batch, raw.content, (part) => processMessage(part, raw.sourceMap))
+        : processMessage(raw.content, raw.sourceMap)),
     };
 
     // Taken before the channel can receive anything: every unprocessed message
@@ -1133,6 +1219,7 @@ export class EngineManager {
         scripts: cleanScripts as DestinationScripts,
         queueMode: (d.queueMode ?? 'NEVER') as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
         waitForPrevious: d.waitForPrevious,
+        ...(typeof d.properties['template'] === 'string' ? { template: d.properties['template'] } : {}),
       });
     }
 
@@ -1151,7 +1238,7 @@ export class EngineManager {
     const sourceScript = (channel.sourceConnectorProperties as { script: string }).script;
     const cachedScript = await this.compileWithTemplates(sourceScript, 'sourceReceiver', templates, `${channel.name}/js-source.js`);
     jsReceiver.setScriptRunner(async (_script) => {
-      const execResult = await this.runChannelScript(cachedScript, channel, maps, '', {});
+      const execResult = await this.runChannelScript(cachedScript, channel, maps, { content: '' }, {});
       if (!execResult.ok) return execResult;
       return { ok: true as const, value: execResult.value.returnValue, error: null };
     });
@@ -1174,7 +1261,13 @@ export class EngineManager {
         destScript, 'destinationDispatcher', templates, `${channel.name}/js-dest-${String(dest.metaDataId)}.js`,
       );
       jsDispatcher.setScriptRunner(async (_script, content, connectorMessage) => {
-        const execResult = await this.runChannelScript(cachedScript, channel, maps, content, { connectorMessage });
+        // The script sees the message as every other stage does: parsed for its
+        // data type, with what earlier stages put in the channel map.
+        const execResult = await this.runChannelScript(cachedScript, channel, maps, {
+          content,
+          msg: parsedOrRaw(content, connectorMessage.dataType),
+          channelMap: connectorMessage.variables ?? {},
+        }, { connectorMessage });
         if (!execResult.ok) return execResult;
         return { ok: true as const, value: execResult.value.returnValue, error: null };
       });
@@ -1205,14 +1298,15 @@ export class EngineManager {
     script: CompiledScript,
     channel: ChannelDetail,
     maps: ChannelMaps,
-    content: string,
+    input: ChannelScriptInput,
     extras: Readonly<Record<string, unknown>>,
   ): Promise<Result<ExecutionResult>> {
     const gcmBefore = maps.gcm.toRecord();
     const globalBefore = maps.globalMap.toRecord();
+    const msg = input.msg ?? input.content;
     const context = {
-      msg: content, tmp: content, rawData: content,
-      sourceMap: {}, channelMap: {}, connectorMap: {}, responseMap: {},
+      msg, tmp: msg, rawData: input.content,
+      sourceMap: {}, channelMap: { ...(input.channelMap ?? {}) }, connectorMap: {}, responseMap: {},
       globalChannelMap: gcmBefore, globalMap: globalBefore, configMap: maps.configMap,
       extras: { channelId: channel.id, channelName: channel.name, ...extras },
     };
@@ -1226,7 +1320,7 @@ export class EngineManager {
 
   /** Run a deploy or undeploy script. Throws when the script fails. */
   private async runDeployScript(script: CompiledScript, channel: ChannelDetail, maps: ChannelMaps, name: string): Promise<void> {
-    const result = await this.runChannelScript(script, channel, maps, '', {});
+    const result = await this.runChannelScript(script, channel, maps, { content: '' }, {});
     if (!result.ok) {
       throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: the ${name} script failed: ${result.error.message}`);
     }
@@ -1240,7 +1334,7 @@ export class EngineManager {
    */
   async checkScripts(channel: ChannelDetail): Promise<void> {
     const [templatesResult, globalScriptsResult, ftData] = await Promise.all([
-      CodeTemplateService.listTemplates(),
+      CodeTemplateService.listTemplatesForChannel(channel.id),
       GlobalScriptService.getAll(),
       this.loadFilterTransformerData(channel.id),
     ]);

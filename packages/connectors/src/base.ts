@@ -98,6 +98,27 @@ export interface ConnectorMessage {
   readonly dataType: string;
   /** Correlation ID for cross-channel tracing. */
   readonly correlationId?: string | undefined;
+  /**
+   * What scripts put in the message's maps, as this destination saw them
+   * (connector, channel and response maps; the first that has a name wins).
+   * A database writer binds `${name}` from them.
+   */
+  readonly variables?: Readonly<Record<string, unknown>> | undefined;
+}
+
+/**
+ * Fill each `${name}` in a connector setting from the message's variables
+ * (strings as they are, other values as JSON). A name the message does not
+ * have is left as written, so a mistake shows in what is sent.
+ */
+export function fillVariables(text: string, message: Pick<ConnectorMessage, 'variables'>): string {
+  const variables = message.variables;
+  if (!variables || !text.includes('${')) return text;
+  return text.replace(/\$\{([^}]+)\}/g, (whole, key: string) => {
+    const value = variables[key.trim()];
+    if (value === undefined || value === null) return whole;
+    return typeof value === 'string' ? value : JSON.stringify(value);
+  });
 }
 
 /** Response from a destination connector after sending. */

@@ -2,12 +2,46 @@
 // MLLP Mode Tests
 // ===========================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { wrapMllp, MllpParser, DEFAULT_MAX_FRAME_BYTES } from '../mllp-mode.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { wrapMllp, MllpParser, DEFAULT_MAX_FRAME_BYTES, framingFromHex } from '../mllp-mode.js';
 
 const VT = 0x0B;
 const FS = 0x1C;
 const CR = 0x0D;
+
+describe('custom framing', () => {
+  const stxEtx = framingFromHex('02', '03');
+
+  it('wraps and parses STX/ETX frames, split across chunks, with ETX the only end byte', () => {
+    const frame = wrapMllp('MSH|A', 'utf-8', stxEtx);
+    expect([...frame]).toEqual([0x02, ...Buffer.from('MSH|A'), 0x03]);
+    const parser = new MllpParser({ framing: stxEtx });
+    expect(parser.parse(Buffer.concat([frame.subarray(0, 3)]))).toEqual([]);
+    expect(parser.parse(Buffer.concat([frame.subarray(3), wrapMllp('MSH|B', 'utf-8', stxEtx)]))).toEqual(['MSH|A', 'MSH|B']);
+  });
+
+  it('frames with no start bytes take everything up to the end bytes', () => {
+    const parser = new MllpParser({ framing: framingFromHex('', '0D0A') });
+    expect(parser.parse(Buffer.from('one\r\ntwo\r\nthr'))).toEqual(['one', 'two']);
+    expect(parser.parse(Buffer.from('ee\r\n'))).toEqual(['three']);
+  });
+
+  it('finds a multi-byte start split across two chunks', () => {
+    const parser = new MllpParser({ framing: framingFromHex('0B0B', '1C0D') });
+    expect(parser.parse(Buffer.from([0x41, 0x0b]))).toEqual([]);
+    expect(parser.parse(Buffer.from([0x0b, 0x58, 0x1c, 0x0d]))).toEqual(['X']);
+  });
+
+  it('refuses frame bytes that are not hex pairs, or an empty end', () => {
+    expect(() => framingFromHex('0', '03')).toThrow('hex pairs');
+    expect(() => framingFromHex('02', 'ZZ')).toThrow('hex pairs');
+    expect(() => framingFromHex('02', '')).toThrow('cannot be empty');
+  });
+
+  it('keeps MLLP bytes for a side not given', () => {
+    expect(framingFromHex(undefined, undefined)).toEqual({ start: Buffer.from([VT]), end: Buffer.from([FS, CR]) });
+  });
+});
 
 describe('wrapMllp', () => {
   it('wraps message in MLLP envelope', () => {
@@ -202,6 +236,32 @@ describe('MllpParser chunking', () => {
     // takes minutes; one copy at the end takes well under a second.
     expect(elapsed).toBeLessThan(5_000);
   }, 60_000);
+
+  it('does not join a frame of CR-separated segments on every chunk (regression)', () => {
+    // Every HL7 segment ends in CR, the last byte of MLLP's end, so a chunk
+    // holding a CR is not a sign that the frame can end.
+    const segment = `OBX|1|TX|||${'x'.repeat(70)}\r`;
+    const payload = Buffer.from(segment.repeat(2_000));
+    const stream = Buffer.concat([Buffer.from([VT_B]), payload, Buffer.from([FS_B, CR_B])]);
+    const parser = new MllpParser();
+    const concat = vi.spyOn(Buffer, 'concat');
+    const out: string[] = [];
+    try {
+      for (let i = 0; i < stream.length; i += 100) out.push(...parser.parse(stream.subarray(i, i + 100)));
+      const largeJoins = concat.mock.calls.filter(([list]) => list.reduce((n, b) => n + b.length, 0) > 1_000);
+      expect(largeJoins.length).toBeLessThanOrEqual(1);
+    } finally {
+      concat.mockRestore();
+    }
+    expect(out).toEqual([payload.toString()]);
+  });
+
+  it('completes a frame whose end bytes arrive in separate chunks, and FS inside a payload is not an end', () => {
+    const parser = new MllpParser();
+    expect(parser.parse(Buffer.from([VT_B, 0x41, FS_B, 0x42, CR_B]))).toEqual([]);
+    expect(parser.parse(Buffer.from([0x43, FS_B]))).toEqual([]);
+    expect(parser.parse(Buffer.from([CR_B]))).toEqual([`A${String.fromCharCode(FS_B)}B\rC`]);
+  });
 
   it('still rejects a frame that grows past the limit across chunks', () => {
     const parser = new MllpParser({ maxFrameBytes: 100 });

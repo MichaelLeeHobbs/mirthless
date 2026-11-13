@@ -188,7 +188,7 @@ describe('MessageProcessor', () => {
       expect.any(String), 1, 0, 3, 'test', 'RAW',
     );
     // Destination receives transformed content
-    expect(sendFn).toHaveBeenCalledWith(1, 1,'test', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'test', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('destination transformer modifies content via msg assignment (no return)', async () => {
@@ -208,7 +208,7 @@ describe('MessageProcessor', () => {
     await processor.processMessage(makeInput('original'), AbortSignal.timeout(5_000));
 
     // Destination receives msg-assigned content
-    expect(sendFn).toHaveBeenCalledWith(1, 1,'dest_modified', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'dest_modified', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('routes to 2 destinations in parallel', async () => {
@@ -297,7 +297,7 @@ describe('MessageProcessor', () => {
 
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
-    expect(sendFn).toHaveBeenCalledWith(2, 1, 'ACK1', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(2, 1, 'ACK1', expect.any(AbortSignal), expect.any(String), { 'Dest 1': { status: 'SENT', content: 'ACK1' } });
   });
 
   it('keeps destination results in configured order across chains', async () => {
@@ -770,7 +770,7 @@ describe('MessageProcessor', () => {
     await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
 
     // Destination must receive the original message, not the string "true".
-    expect(sendFn).toHaveBeenCalledWith(1, 1,'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('does not count the source as SENT when the only destination errors (stats overcount)', async () => {
@@ -829,7 +829,7 @@ describe('MessageProcessor', () => {
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
     // Transformed content should be sent
-    expect(sendFn).toHaveBeenCalledWith(1, 1,'DEST_TRANSFORMED', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'DEST_TRANSFORMED', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   // ----- Global Scripts -----
@@ -853,7 +853,7 @@ describe('MessageProcessor', () => {
     // Channel preprocessor gets rawData (still original "MSG") and returns "MSG_CHANNEL"
     // But preprocessor reads rawData which is the ORIGINAL input
     // The content flows through, so destination gets channel preprocessor output
-    expect(sendFn).toHaveBeenCalledWith(1, 1,expect.any(String), expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,expect.any(String), expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('global postprocessor runs after channel postprocessor', async () => {
@@ -911,7 +911,7 @@ describe('MessageProcessor', () => {
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
     // Destination receives the globally-modified content
-    expect(sendFn).toHaveBeenCalledWith(1, 1,'GLOBAL_MODIFIED', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'GLOBAL_MODIFIED', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   // ----- globalChannelMap -----
@@ -954,7 +954,7 @@ describe('MessageProcessor', () => {
     await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
 
     // Preprocessor returned the value from globalChannelMap
-    expect(sendFn).toHaveBeenCalledWith(1, 1,'hello', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1,'hello', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   // ----- destinationSet -----

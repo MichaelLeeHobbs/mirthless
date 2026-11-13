@@ -5,7 +5,7 @@
 // Supports template variable substitution in subject/body.
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
-import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { fillVariables, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { createRequire } from 'node:module';
 import { withTimeoutSignal } from '../timeout.js';
 
@@ -96,19 +96,20 @@ export type TransportFactory = (config: SmtpDispatcherConfig) => SmtpTransport;
 // ----- Template substitution -----
 
 /**
- * Substitute `${msg}` and `${messageId}` placeholders in a template string.
- * Kept intentionally simple — no eval, no arbitrary expressions.
+ * Substitute `${msg}`, `${messageId}`, `${channelId}` and `${metaDataId}`, then
+ * any other `${name}` from the message's variables. No eval, no expressions.
  */
 export function substituteTemplate(
   template: string,
   content: string,
   message: ConnectorMessage,
 ): string {
-  return template
-    .replace(/\$\{msg\}/g, content)
+  const filled = template
     .replace(/\$\{messageId\}/g, String(message.messageId))
     .replace(/\$\{channelId\}/g, message.channelId)
     .replace(/\$\{metaDataId\}/g, String(message.metaDataId));
+  // Variables before ${msg}: the message content must not be scanned for references.
+  return fillVariables(filled, message).replace(/\$\{msg\}/g, () => content);
 }
 
 // ----- Dispatcher -----
@@ -150,10 +151,10 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
       const attachments = this.buildAttachments(message);
 
       const mailOptions: SmtpMailOptions = {
-        from: this.config.from,
-        to: this.config.to,
-        ...(this.config.cc ? { cc: this.config.cc } : {}),
-        ...(this.config.bcc ? { bcc: this.config.bcc } : {}),
+        from: fillVariables(this.config.from, message),
+        to: fillVariables(this.config.to, message),
+        ...(this.config.cc ? { cc: fillVariables(this.config.cc, message) } : {}),
+        ...(this.config.bcc ? { bcc: fillVariables(this.config.bcc, message) } : {}),
         subject,
         ...(this.config.contentType === 'text/html' ? { html: body } : { text: body }),
         ...(attachments.length > 0 ? { attachments } : {}),

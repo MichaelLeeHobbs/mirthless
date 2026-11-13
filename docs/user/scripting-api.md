@@ -48,6 +48,8 @@ exposed** to your scripts, sourced from `packages/engine/src/sandbox/sandbox-exe
 | `tmp` | object/string | The outbound message being built. Defaults to `msg`. |
 | `rawData` | string | The original raw content string. |
 
+A channel whose response mode is `POSTPROCESSOR` answers the sender with whatever the postprocessor returns: a string as it is, an object as JSON. When it returns nothing, the source connector falls back to its own acknowledgement.
+
 ## Maps
 
 All maps are plain objects. Reads and writes on the read/write maps are captured and

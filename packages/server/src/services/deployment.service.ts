@@ -9,9 +9,11 @@ import { CHANNEL_STATE, SOCKET_EVENT, type ChannelState } from '@galvaniflow/cor
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { emitToAll } from '../lib/socket.js';
-import { ChannelService } from './channel.service.js';
+import { ChannelService, type ChannelDetail } from './channel.service.js';
 import { ChannelDependencyService, orderByDependencies } from './channel-dependency.service.js';
 import { validateConnectorProperties } from './connector-validation.service.js';
+import { ConfigMapService } from './config-map.service.js';
+import { configLookup, resolveConfigReferences } from '../lib/config-references.js';
 import { getEngine } from '../engine.js';
 import type { DeployedChannel } from '../engine.js';
 import logger from '../lib/logger.js';
@@ -40,6 +42,23 @@ function notRunning(action: 'deployed' | 'redeployed', channelId: string, cause:
   return new ServiceError('CONFLICT', `Channel was ${action} but is stopped. ${cause.message}`);
 }
 
+/**
+ * The channel as it deploys: configuration map references in connector
+ * settings resolved, and a Channel Reader given its own channel id (used to
+ * register itself).
+ */
+async function withConfigReferences(channel: ChannelDetail): Promise<ChannelDetail> {
+  const entries = await ConfigMapService.list();
+  if (!entries.ok) throw new ServiceError('INTERNAL', `Could not load the configuration map: ${entries.error.message}`);
+  const lookup = configLookup(entries.value);
+  const sourceProps = resolveConfigReferences(channel.sourceConnectorProperties, lookup);
+  return {
+    ...channel,
+    sourceConnectorProperties: channel.sourceConnectorType === 'CHANNEL' ? { ...sourceProps, channelId: channel.id } : sourceProps,
+    destinations: channel.destinations.map((d) => ({ ...d, properties: resolveConfigReferences(d.properties, lookup) })),
+  };
+}
+
 // ----- Service -----
 
 export class DeploymentService {
@@ -63,21 +82,18 @@ export class DeploymentService {
         throw new ServiceError('CONFLICT', `Channel ${channelId} is already deployed`);
       }
 
-      // Auto-inject channelId for CHANNEL source connectors (used for registry self-registration)
-      const srcProps = channel.sourceConnectorType === 'CHANNEL'
-        ? { ...channel.sourceConnectorProperties, channelId: channel.id }
-        : channel.sourceConnectorProperties;
+      const deployChannel = await withConfigReferences(channel);
 
       // Validate source connector properties
       const srcValidation = validateConnectorProperties(
-        channel.sourceConnectorType, 'source', srcProps,
+        deployChannel.sourceConnectorType, 'source', deployChannel.sourceConnectorProperties,
       );
       if (!srcValidation.ok) {
         throw new ServiceError('INVALID_INPUT', srcValidation.error.message);
       }
 
       // Validate each destination's connector properties
-      for (const dest of channel.destinations) {
+      for (const dest of deployChannel.destinations) {
         const destValidation = validateConnectorProperties(
           dest.connectorType, 'destination', dest.properties,
         );
@@ -86,10 +102,6 @@ export class DeploymentService {
         }
       }
 
-      // Pass enriched source properties for CHANNEL connectors
-      const deployChannel = channel.sourceConnectorType === 'CHANNEL'
-        ? { ...channel, sourceConnectorProperties: { ...channel.sourceConnectorProperties, channelId: channel.id } }
-        : channel;
       await engine.deploy(deployChannel);
 
       emitEvent({

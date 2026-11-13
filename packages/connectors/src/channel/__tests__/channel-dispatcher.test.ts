@@ -115,6 +115,28 @@ describe('ChannelDispatcher.send', () => {
     expect(received[0]?.content).toBe('test content');
   });
 
+  it('sends to the channel a ${name} target names in the message variables', async () => {
+    const received: string[] = [];
+    registerChannel('site-a', async (raw) => { received.push(`a:${raw.content}`); return { ok: true as const, value: { messageId: 1 }, error: null }; });
+    registerChannel('site-b', async (raw) => { received.push(`b:${raw.content}`); return { ok: true as const, value: { messageId: 2 }, error: null }; });
+    const dispatcher = new ChannelDispatcher(makeConfig({ targetChannelId: '${destinationChannelId}' }));
+    await dispatcher.onStart();
+
+    await dispatcher.send(makeMessage({ variables: { destinationChannelId: 'site-b' } }), makeSignal());
+    await dispatcher.send(makeMessage({ variables: { destinationChannelId: 'site-a' } }), makeSignal());
+
+    expect(received).toEqual(['b:test content', 'a:test content']);
+  });
+
+  it('errors, naming the target, when the message has no value for it', async () => {
+    const dispatcher = new ChannelDispatcher(makeConfig({ targetChannelId: '${destinationChannelId}' }));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage({ variables: {} }), makeSignal());
+
+    expect(result.ok && result.value).toMatchObject({ status: 'ERROR', errorMessage: expect.stringContaining('${destinationChannelId}') });
+  });
+
   it('breaks a channel routing loop instead of recursing forever', async () => {
     // The target channel re-dispatches back to itself, forming A -> A -> A ...
     // The hop-depth guard must terminate it and surface a routing-loop error.

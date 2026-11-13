@@ -28,6 +28,30 @@ describe('DestinationSet', () => {
     expect(ds.contains('Billing')).toBe(true);
   });
 
+  it('removeAllExcept keeps every destination in a list, as Mirth scripts pass them', () => {
+    ds.removeAllExcept(['Lab', 'Billing']);
+    expect(ds.getConnectorNames()).toEqual(['Lab', 'Billing']);
+  });
+
+  it('removeAllExcept and remove accept metaDataIds', () => {
+    ds.removeAllExcept([2, 3]);
+    ds.remove(3);
+    expect([...ds.getActiveMetaDataIds()]).toEqual([2]);
+  });
+
+  it('removeAllExcept with no known destination removes them all', () => {
+    ds.removeAllExcept(['Nowhere']);
+    expect(ds.getConnectorNames()).toEqual([]);
+    ds.add(null);
+    expect(ds.getConnectorNames()).toEqual([]);
+  });
+
+  it('contains takes a metaDataId', () => {
+    ds.remove('Lab');
+    expect(ds.contains(1)).toBe(false);
+    expect(ds.contains(2)).toBe(true);
+  });
+
   it('removeAll clears all destinations', () => {
     ds.removeAll();
     expect(ds.contains('Lab')).toBe(false);

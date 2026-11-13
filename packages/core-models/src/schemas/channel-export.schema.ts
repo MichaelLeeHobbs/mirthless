@@ -18,8 +18,19 @@ const channelExportFilterRuleSchema = z.object({
   values: z.array(z.string()).nullable(),
 });
 
-const channelExportFilterSchema = z.object({
+/**
+ * Which connector a filter or transformer belongs to. `metaDataId` names the
+ * destination (null or absent: the source); import resolves it to the new
+ * connector row. `connectorId` is the exporting server's row id, which does not
+ * exist on the importing server; a file with only that cannot be imported.
+ */
+const connectorRef = {
   connectorId: z.string().nullable(),
+  metaDataId: z.number().int().positive().nullable().optional(),
+};
+
+const channelExportFilterSchema = z.object({
+  ...connectorRef,
   rules: z.array(channelExportFilterRuleSchema),
 });
 
@@ -35,7 +46,7 @@ const channelExportTransformerStepSchema = z.object({
 });
 
 const channelExportTransformerSchema = z.object({
-  connectorId: z.string().nullable(),
+  ...connectorRef,
   inboundDataType: z.string(),
   outboundDataType: z.string(),
   inboundProperties: z.record(z.string(), z.unknown()),

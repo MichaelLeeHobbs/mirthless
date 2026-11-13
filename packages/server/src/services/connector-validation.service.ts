@@ -11,7 +11,17 @@ import { ServiceError } from '../lib/service-error.js';
 
 // ----- Reusable Schemas -----
 
-const portSchema = z.number().int().min(1).max(65535);
+// A port may arrive as text ("6661"), e.g. from a configuration map reference;
+// the connector factories accept that too. Nothing else is coerced (true is
+// not port 1), and a reference left unresolved says so.
+const portSchema = z.preprocess(
+  (v) => (typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v) : v),
+  z.number({
+    error: (issue) => (typeof issue.input === 'string' && issue.input.includes('${')
+      ? `configuration map reference ${issue.input} did not resolve: no configuration entry has that name`
+      : 'must be a port number'),
+  }).int().min(1).max(65535),
+);
 const nonEmptyString = z.string().min(1);
 
 // ----- Source Connector Schemas -----

@@ -28,31 +28,39 @@ export class DestinationSet {
     this.active.clear();
   }
 
-  /** Remove a specific destination by name. */
-  remove(connectorName: string): void {
-    this.active.delete(connectorName);
+  /** Remove destinations. Takes what Mirth's does: a name, a metaDataId, or a list of either. */
+  remove(target: unknown): void {
+    for (const name of this.resolve(target)) this.active.delete(name);
   }
 
-  /** Remove all destinations except the named one. */
-  removeAllExcept(connectorName: string): void {
-    const keep = this.active.has(connectorName);
+  /** Keep only the given destinations (a name, a metaDataId, or a list of either). */
+  removeAllExcept(target: unknown): void {
+    const keep = this.resolve(target).filter((name) => this.active.has(name));
     this.active.clear();
-    if (keep) {
-      this.active.add(connectorName);
-    }
+    for (const name of keep) this.active.add(name);
   }
 
-  /** Add a destination back by name (must be a known destination). */
-  add(connectorName: string): void {
-    const known = this.allDestinations.some((d) => d.name === connectorName);
-    if (known) {
-      this.active.add(connectorName);
-    }
+  /** Add destinations back (must be known destinations). */
+  add(target: unknown): void {
+    for (const name of this.resolve(target)) this.active.add(name);
   }
 
-  /** Check if a destination is currently active. */
-  contains(connectorName: string): boolean {
-    return this.active.has(connectorName);
+  /** Check if a destination (by name or metaDataId) is currently active. */
+  contains(target: unknown): boolean {
+    const names = this.resolve(target);
+    return names.length > 0 && names.every((name) => this.active.has(name));
+  }
+
+  /** The known destination names a target refers to. Unknown names and ids are ignored. */
+  private resolve(target: unknown): string[] {
+    const items: readonly unknown[] = Array.isArray(target) ? target : [target];
+    const names: string[] = [];
+    for (const item of items) {
+      const dest = this.allDestinations.find((d) =>
+        typeof item === 'number' ? d.metaDataId === item : d.name === String(item));
+      if (dest) names.push(dest.name);
+    }
+    return names;
   }
 
   /** Get all active destination names. */
@@ -78,10 +86,10 @@ export class DestinationSet {
 export function createDestinationSetProxy(set: DestinationSet): Record<string, unknown> {
   return {
     removeAll(): void { set.removeAll(); },
-    remove(connectorName: string): void { set.remove(connectorName); },
-    removeAllExcept(connectorName: string): void { set.removeAllExcept(connectorName); },
-    add(connectorName: string): void { set.add(connectorName); },
-    contains(connectorName: string): boolean { return set.contains(connectorName); },
+    remove(target: unknown): void { set.remove(target); },
+    removeAllExcept(target: unknown): void { set.removeAllExcept(target); },
+    add(target: unknown): void { set.add(target); },
+    contains(target: unknown): boolean { return set.contains(target); },
     getConnectorNames(): ReadonlyArray<string> { return set.getConnectorNames(); },
   };
 }

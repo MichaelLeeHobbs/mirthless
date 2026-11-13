@@ -11,7 +11,7 @@ import * as tls from 'node:tls';
 import * as genericPool from 'generic-pool';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
-import { MllpParser, wrapMllp } from '../transmission/mllp-mode.js';
+import { MllpParser, wrapMllp, type Framing } from '../transmission/mllp-mode.js';
 import type { TlsClientOptions } from '../tls.js';
 import { classifyAckResponse, controlIdOf } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
@@ -29,6 +29,8 @@ export interface TcpMllpDispatcherConfig {
   readonly charset: BufferEncoding;
   /** Optional TLS. When present the client connects over TLS. */
   readonly tls?: TlsClientOptions | undefined;
+  /** Frame bytes around each message and response (default MLLP). */
+  readonly framing?: Framing | undefined;
 }
 
 // ----- Dispatcher -----
@@ -215,7 +217,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
     signal: AbortSignal,
   ): Promise<ConnectorResponse> {
     return new Promise<ConnectorResponse>((resolve, reject) => {
-      const parser = new MllpParser({ charset: this.config.charset });
+      const parser = new MllpParser({ charset: this.config.charset, ...(this.config.framing ? { framing: this.config.framing } : {}) });
       const timeout = this.config.responseTimeout;
       const sentControlId = controlIdOf(content);
 
@@ -269,7 +271,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
       socket.once('error', onError);
       socket.once('close', onClose);
 
-      socket.write(wrapMllp(content, this.config.charset));
+      socket.write(wrapMllp(content, this.config.charset, this.config.framing));
     });
   }
 }

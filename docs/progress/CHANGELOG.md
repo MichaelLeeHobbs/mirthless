@@ -2,6 +2,26 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-13 — Mirth migration climb, remaining scenarios (same branch)
+
+Michael asked to start on the scenarios still failing after the climb stopped at 37/60. Now 55/60 (identical on two runs): S08, S09, S11, S12, S14, S16, S17, S18, S21 and S26 pass.
+
+- **Scripts**: a JavaScript Writer gets the parsed message and the channel map (D-250); a script can `await` a bridge and then `return`, which failed to compile in every stage (D-251).
+- **Connectors**: per-message `${}` in Channel Writer targets, HTTP URL/headers/parameters and SMTP fields; HTTP Basic auth and query parameters (D-252); settable TCP frame bytes (D-253).
+- **Pipeline**: HL7 batch files split into messages (D-254); "Before processing" answers AA (D-255).
+- **Import**: polling intervals, Database Reader rows as JSON, SFTP-scheme File Readers/Writers onto the SFTP connector, HTTP and SMTP Sender settings, TCP frame bytes, Process Batch.
+- S15 (MySQL), S19 (Delimited) and S20 (X12) wait on the design decisions in `docs/design/17-remaining-migration-gaps.md`.
+
+## 2026-11-12 — Mirth migration hill climb (branch `claude/galvaniflow-completeness-scenarios-ec0c4d`)
+
+Michael asked to hill climb feature completeness: can an operator who runs Mirth in production move their channels here? A scenario suite (`pnpm test:scenarios`, D-237) imports Mirth 4.5 exports shaped like the production backup and runs real messages against real MLLP, HTTP, Postgres, MySQL, SFTP and mail servers. Mid-climb Michael ruled out E4X and Mirth's script APIs (D-244): the suite was re-scoped so its scripts use GalvaniFlow's API, and the Mirth script shims added in round 1 were removed. Score: 0/52 baseline, 20/52 before the re-scope; re-scoped baseline 23/60, final 37/60 with every weight-3 scenario passing. Log in `tmp/feature-climb/log.md` (git-ignored).
+
+- **Import fidelity**: Mirth 4.x `<elements>` steps and rules, the `<filter>` next to the transformer, XML entities, string values, queue settings, destination metaDataIds, "Respond from", Channel Reader/Writer, HTTP Listener context path, JDBC URLs, sender templates, `${}` ports, the channel enabled flag in `exportData`, code template libraries with their channel scope. Mirth's do-nothing scripts are dropped and Mirth-only script constructs are flagged.
+- **Engine**: response from the postprocessor or a named destination (D-239); `destinationSet` takes lists; custom metadata columns filled and searchable (D-240); destination templates and configuration map references (D-246); message variables to destinations, stored for queued sends, bound by the database writer (D-247); every failed send keeps its reason (D-248); HTTP listener `matchSubpaths` (D-243); code template libraries scoped to channels (D-249, migration 0014).
+- **Bug fixed on the way**: GalvaniFlow's own export/import lost destination filters and transformers (D-241).
+- An anti-gaming agent broke 12 of 33 variants of two passing scenarios; the four in scope became S24 to S27.
+- Still failing and on the ROADMAP: S08, S09, S11, S12, S14 to S21, S26. No UI was changed; editor controls for the new engine settings are listed there.
+
 ## 2026-11-11 — UI hill climb for looks and workflow (branch `claude/ui-hill-climb-e18d5c`)
 
 Michael asked to hill climb the web UI for looks and usability. A blind judge agent scored 9 pages (27 `pnpm shots` images: light, dark, phone) on six criteria: hierarchy, spacing, dark mode, phone, status at a glance, and seven operator task paths. Only changes that beat the best score by more than the judge's noise floor were kept.

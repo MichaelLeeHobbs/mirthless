@@ -1,0 +1,31 @@
+{
+  "_comment": "Migration scenario suite. Weight: 3 = most production integrations need it, 2 = common, 1 = occasional. Channels are imported from Mirth 4.5 exports; their scripts are written in GalvaniFlow's scripting API, as an operator rewrites them when moving (D-244: no E4X or Mirth script APIs). Frozen once approved; changing it resets the baseline.",
+  "scenarios": [
+    { "id": "S01", "weight": 3, "source": "prod: 10000 HL7 LISTENER", "title": "MLLP listener returns the ACK its postprocessor builds" },
+    { "id": "S02", "weight": 3, "source": "prod: listener -> HL7 ROUTER lanes", "title": "Lane router sends each message type to one lane through queued Channel Writers" },
+    { "id": "S03", "weight": 3, "source": "prod: Gov Message Router", "title": "Transformer edits HL7 fields and deletes a segment" },
+    { "id": "S04", "weight": 3, "source": "prod: 87 code templates", "title": "Channel calls code templates imported with the server backup" },
+    { "id": "S05", "weight": 3, "source": "prod: HL7 Report Processor - <customer>", "title": "JSON report is sent as an ORU to the configuration-map host" },
+    { "id": "S06", "weight": 3, "source": "prod: Gov per-site senders", "title": "Queued TCP sender delivers after an outage and errors on a NACK" },
+    { "id": "S07", "weight": 3, "source": "prod: 10001 API", "title": "HTTP listener routes on context path and returns the postprocessor JSON" },
+    { "id": "S08", "weight": 2, "source": "prod: Propelyx Orders writer", "title": "JavaScript Writer reports SENT with a reply, or ERROR by throwing" },
+    { "id": "S09", "weight": 2, "source": "prod: Gov Message Router, routeJsonMsg", "title": "Messages reach a channel picked at run time and an audit channel by name" },
+    { "id": "S10", "weight": 3, "source": "prod: ACCESSION metadata; doc 13 N4/N5", "title": "Messages are found by their ACCESSION metadata column" },
+    { "id": "S11", "weight": 2, "source": "prod: mirthEventPoller, Channels Monitor", "title": "JavaScript Reader polls on an interval and keeps a counter in $gc" },
+    { "id": "S12", "weight": 1, "source": "prod: Gov SendMail", "title": "SMTP Sender sends a mail with a subject from the channel map" },
+    { "id": "S13", "weight": 3, "source": "climb brief reference job", "title": "ADT filtered, mapped to JSON, sent to HTTP and Postgres, retried, reprocessed" },
+    { "id": "S14", "weight": 2, "source": "doc 12: Database connector", "title": "Database Reader turns new Postgres rows into HL7 and marks them sent" },
+    { "id": "S15", "weight": 2, "source": "doc 12 rank 1", "title": "Database Writer inserts rows into MySQL" },
+    { "id": "S16", "weight": 2, "source": "doc 12 rank 2", "title": "File Reader over SFTP reads a partner file and deletes it" },
+    { "id": "S17", "weight": 2, "source": "doc 12 rank 5", "title": "HTTP Sender sends Basic auth, query parameters and substituted values" },
+    { "id": "S18", "weight": 1, "source": "doc 12 rank 3", "title": "TCP listener accepts STX/ETX framing and answers in the same framing" },
+    { "id": "S19", "weight": 2, "source": "doc 13 N2", "title": "Delimited CSV rows are read by column name" },
+    { "id": "S20", "weight": 1, "source": "doc 13 N1", "title": "X12 270 member id is read with msg.get" },
+    { "id": "S21", "weight": 2, "source": "ROADMAP: batch not reachable", "title": "HL7 batch file is split into one message per MSH" },
+    { "id": "S23", "weight": 2, "source": "doc 14 B1, Mirth alerts", "title": "Destination error triggers an alert email naming the channel" },
+    { "id": "S24", "weight": 3, "source": "anti-gaming B4: 3 disabled channels in the prod backup", "title": "A channel disabled in Mirth is imported disabled" },
+    { "id": "S25", "weight": 3, "source": "anti-gaming R(a): prod library scoping", "title": "Code template libraries apply only to the channels Mirth enabled them for" },
+    { "id": "S26", "weight": 2, "source": "anti-gaming: Auto-generate (Before processing)", "title": "A listener that responds before processing answers AA even when its transformer fails" },
+    { "id": "S27", "weight": 2, "source": "anti-gaming A7b: error with no reason", "title": "A destination error records why it failed" }
+  ]
+}

@@ -64,7 +64,7 @@ vi.mock('../config-map.service.js', () => ({
 
 const mockListTemplates = vi.fn();
 vi.mock('../code-template.service.js', () => ({
-  CodeTemplateService: { listTemplates: mockListTemplates },
+  CodeTemplateService: { listTemplatesForChannel: mockListTemplates },
 }));
 
 const mockGlobalScriptGetAll = vi.fn().mockResolvedValue({
@@ -148,6 +148,7 @@ function makeChannel(overrides: Record<string, unknown> = {}): never {
     inboundDataType: 'HL7V2',
     outboundDataType: 'HL7V2',
     messageStorageMode: 'DEVELOPMENT',
+    metadataColumns: [],
     destinations: [],
     scripts: [],
     ...overrides,
@@ -193,6 +194,18 @@ async function deployError(channel: never = makeChannel()): Promise<string> {
 // ----- Tests -----
 
 describe('EngineManager.deploy refuses to start a channel it cannot run as configured', () => {
+  it('refuses a channel that responds from a destination it does not have (renamed or removed)', async () => {
+    const engine = new EngineManager('test-server');
+    await expect(engine.deploy(makeChannel({ responseMode: 'DESTINATION', responseConnectorName: 'Old Name' })))
+      .rejects.toThrow('responds from destination "Old Name", which it does not have');
+  });
+
+  it('refuses batch processing on a data type it cannot split', async () => {
+    const engine = new EngineManager('test-server');
+    await expect(engine.deploy(makeChannel({ inboundDataType: 'JSON', sourceConnectorProperties: { port: 6661, processBatch: true } })))
+      .rejects.toThrow('batch processing is only supported for HL7V2, not JSON');
+  });
+
   it('deploys a channel whose scripts all compile', async () => {
     filterRows = [filterRow({ script: 'return msg.get("MSH.9.1") === "ADT";' })];
     transformerRows = [stepRow({ script: 'msg.delete("PID.19");' })];

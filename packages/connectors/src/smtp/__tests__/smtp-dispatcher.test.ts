@@ -78,6 +78,12 @@ beforeEach(() => {
 describe('substituteTemplate', () => {
   const msg = makeMessage();
 
+  it('fills other ${name} references from the message variables, and never scans the content', () => {
+    const withVars = { ...msg, variables: { subject: 'Report ACC1' } };
+    expect(substituteTemplate('${subject}: ${msg}', 'body has ${subject} and $& in it', withVars))
+      .toBe('Report ACC1: body has ${subject} and $& in it');
+  });
+
   it('substitutes ${msg} with content', () => {
     expect(substituteTemplate('Body: ${msg}', 'hello', msg)).toBe('Body: hello');
   });

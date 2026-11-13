@@ -103,7 +103,7 @@ describe('channel preprocessor', () => {
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
     // The replacement content flows to the destination.
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'PREPROCESSED_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'PREPROCESSED_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('a mutated `msg` (no explicit return) replaces the message', async () => {
@@ -116,7 +116,7 @@ describe('channel preprocessor', () => {
 
     await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
 
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'MUTATED_VIA_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'MUTATED_VIA_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('regression: `return true` does NOT corrupt the message to the string "true"', async () => {
@@ -130,7 +130,7 @@ describe('channel preprocessor', () => {
     await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
 
     // A boolean return is treated as "leave the message unchanged".
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('regression: `return false` also leaves the message intact (not the string "false")', async () => {
@@ -147,7 +147,7 @@ describe('channel preprocessor', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('an explicit `return undefined` leaves the message intact', async () => {
@@ -160,7 +160,7 @@ describe('channel preprocessor', () => {
 
     await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
 
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('no return statement at all leaves the message intact', async () => {
@@ -173,7 +173,7 @@ describe('channel preprocessor', () => {
 
     await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
 
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('a throwing preprocessor surfaces as ERROR, stores error content, and does not send', async () => {
@@ -220,7 +220,7 @@ describe('channel preprocessor', () => {
     if (!result.ok) return;
     // Filter saw the preprocessed message and passed → SENT (not FILTERED).
     expect(result.value.status).toBe('SENT');
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'PASSPHRASE', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'PASSPHRASE', expect.any(AbortSignal), expect.any(String), undefined);
   });
 });
 
@@ -308,6 +308,57 @@ describe('channel postprocessor', () => {
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
     // Destination received the original content; the postprocessor return is inert.
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
+  });
+});
+
+// ----- Response source -----
+
+describe('response to the sender', () => {
+  const twoDestinations: PipelineConfig['destinations'] = [
+    { metaDataId: 1, name: 'First', enabled: true, scripts: {}, queueMode: 'NEVER' },
+    { metaDataId: 2, name: 'Second', enabled: true, scripts: {}, queueMode: 'NEVER' },
+  ];
+  const sendByDest: SendToDestination = vi.fn(async (metaDataId) => ok({ status: 'SENT' as const, content: `reply from ${String(metaDataId)}` }));
+
+  async function respond(overrides: Partial<PipelineConfig>): Promise<string | undefined> {
+    const processor = new MessageProcessor(sandbox, makeStore(), sendByDest, makeConfig({ destinations: twoDestinations, ...overrides }), DEFAULT_EXECUTION_OPTIONS);
+    const result = await processor.processMessage(makeInput(), AbortSignal.timeout(5_000));
+    if (!result.ok) throw result.error;
+    return result.value.response;
+  }
+
+  it('is what the postprocessor returns when the channel responds from the postprocessor', async () => {
+    const response = await respond({
+      responseSource: { kind: 'POSTPROCESSOR' },
+      scripts: { postprocessor: { code: 'channelMap["ack"] = "ACK built"; return channelMap["ack"];' } },
+    });
+    expect(response).toBe('ACK built');
+  });
+
+  it('is JSON when the postprocessor returns an object', async () => {
+    const response = await respond({
+      responseSource: { kind: 'POSTPROCESSOR' },
+      scripts: { postprocessor: { code: 'return { status: "ok", count: 2 };' } },
+    });
+    expect(JSON.parse(response ?? '')).toEqual({ status: 'ok', count: 2 });
+  });
+
+  it('is absent when the postprocessor returns nothing, so the source falls back to its own ACK', async () => {
+    const response = await respond({
+      responseSource: { kind: 'POSTPROCESSOR' },
+      scripts: { postprocessor: { code: 'channelMap["x"] = 1;' } },
+    });
+    expect(response).toBeUndefined();
+  });
+
+  it('is the named destination\'s response when the channel responds from a destination', async () => {
+    const response = await respond({ responseSource: { kind: 'DESTINATION', destinationName: 'Second' } });
+    expect(response).toBe('reply from 2');
+  });
+
+  it('is the first destination\'s response by default', async () => {
+    const response = await respond({});
+    expect(response).toBe('reply from 1');
   });
 });

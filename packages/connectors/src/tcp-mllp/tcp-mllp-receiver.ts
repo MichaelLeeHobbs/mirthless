@@ -15,7 +15,7 @@ import type {
   DispatchResult,
 } from '../base.js';
 import { DISPATCH_STATUS } from '../base.js';
-import { MllpParser, wrapMllp } from '../transmission/mllp-mode.js';
+import { MllpParser, wrapMllp, type Framing } from '../transmission/mllp-mode.js';
 import type { TlsServerOptions } from '../tls.js';
 import { buildAck, type AckCode } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
@@ -62,6 +62,8 @@ export interface TcpMllpReceiverConfig {
   readonly maxFrameBytes: number;
   /** Optional TLS termination. When present the server speaks TLS. */
   readonly tls?: TlsServerOptions | undefined;
+  /** Frame bytes around each message and response (default MLLP). */
+  readonly framing?: Framing | undefined;
 }
 
 // ----- Receiver -----
@@ -208,6 +210,7 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     const parser = new MllpParser({
       maxFrameBytes: this.config.maxFrameBytes,
       charset: this.config.charset,
+      ...(this.config.framing ? { framing: this.config.framing } : {}),
     });
     // Serialize processing per connection: HL7 senders assume strict
     // sequential request/response, so ACKs must not interleave.
@@ -268,7 +271,7 @@ export class TcpMllpReceiver implements SourceConnectorRuntime {
     const result = await this.dispatcher(raw);
     const response = this.buildResponse(content, result);
     if (response !== null && socket.writable) {
-      socket.write(wrapMllp(response, this.config.charset));
+      socket.write(wrapMllp(response, this.config.charset, this.config.framing));
     }
   }
 

@@ -44,5 +44,18 @@ services:
       - "3025:3025"
       - "3143:3143"
 
+  mysql-test:
+    # A partner MySQL database for the migration scenario suite (e2e/scenarios).
+    image: mysql:8.4
+    container_name: galvaniflow-mysql-test
+    profiles: ["test"]
+    environment:
+      MYSQL_ROOT_PASSWORD: mirthpw
+      MYSQL_DATABASE: partner
+      MYSQL_USER: mirth
+      MYSQL_PASSWORD: mirthpw
+    ports:
+      - "3307:3306"
+
 volumes:
   postgres_data:

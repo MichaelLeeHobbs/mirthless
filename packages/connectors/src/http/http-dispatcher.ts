@@ -10,7 +10,7 @@
 
 import * as https from 'node:https';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
-import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { fillVariables, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import type { TlsClientOptions } from '../tls.js';
 
 // ----- Config -----
@@ -21,6 +21,10 @@ export interface HttpDispatcherConfig {
   readonly headers: Readonly<Record<string, string>>;
   readonly contentType: string;
   readonly responseTimeout: number;
+  /** Query parameters added to the URL. Values, the URL and header values may hold `${name}` message variables. */
+  readonly parameters?: Readonly<Record<string, string>> | undefined;
+  /** HTTP Basic credentials, sent in the Authorization header. */
+  readonly basicAuth?: { readonly username: string; readonly password: string } | undefined;
   /**
    * Explicit transport scheme. When 'HTTPS' the node:https path is authoritative
    * (rather than inferring purely from the URL), so a configured HTTPS
@@ -33,6 +37,12 @@ export interface HttpDispatcherConfig {
    * control. Applied only for https:// URLs. Verification defaults to ON.
    */
   readonly tls?: TlsClientOptions | undefined;
+}
+
+/** The URL and headers one message is sent with. */
+interface OutboundRequest {
+  readonly url: URL;
+  readonly headers: Record<string, string>;
 }
 
 /**
@@ -67,7 +77,8 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
         throw new Error('URL is required');
       }
       try {
-        new URL(this.config.url);
+        // A URL that names message variables is checked per message instead.
+        if (!this.config.url.includes('${')) new URL(this.config.url);
       } catch {
         throw new Error(`Invalid URL: ${this.config.url}`);
       }
@@ -82,6 +93,23 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
     return tryCatch(async () => {
       this.started = true;
     });
+  }
+
+  /**
+   * This message's URL (with its query parameters) and headers, `${name}`
+   * references filled from the message's variables. The credentials are added
+   * here and never logged.
+   */
+  private requestFor(message: ConnectorMessage): OutboundRequest {
+    const url = new URL(fillVariables(this.config.url, message));
+    for (const [name, value] of Object.entries(this.config.parameters ?? {})) {
+      url.searchParams.append(name, fillVariables(value, message));
+    }
+    const headers: Record<string, string> = { 'Content-Type': this.config.contentType };
+    for (const [name, value] of Object.entries(this.config.headers)) headers[name] = fillVariables(value, message);
+    const auth = this.config.basicAuth;
+    if (auth) headers['Authorization'] = `Basic ${Buffer.from(`${auth.username}:${auth.password}`).toString('base64')}`;
+    return { url, headers };
   }
 
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
@@ -107,18 +135,16 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
       // takes the node:https path so its TLS options are honored, even when the
       // material alone (e.g. a public-CA server with default verification) would
       // otherwise have fallen back to fetch. Absent scheme → legacy URL inference.
+      const request = this.requestFor(message);
       const schemeHttps = this.config.scheme === 'HTTPS';
-      const isHttps = schemeHttps || new URL(this.config.url).protocol === 'https:';
+      const isHttps = schemeHttps || request.url.protocol === 'https:';
       if (isHttps && (schemeHttps || hasActiveTlsOptions(this.config.tls))) {
-        return this.sendViaHttps(message, combinedSignal, bodyAllowed);
+        return this.sendViaHttps(message, request, combinedSignal, bodyAllowed);
       }
 
-      const response = await fetch(this.config.url, {
+      const response = await fetch(request.url, {
         method: this.config.method,
-        headers: {
-          'Content-Type': this.config.contentType,
-          ...this.config.headers,
-        },
+        headers: request.headers,
         ...(bodyAllowed ? { body: message.content } : {}),
         signal: combinedSignal,
         // Never follow a redirect. fetch would re-send a POST as a GET without
@@ -154,19 +180,17 @@ export class HttpDispatcher implements DestinationConnectorRuntime {
    */
   private sendViaHttps(
     message: ConnectorMessage,
+    request: OutboundRequest,
     signal: AbortSignal,
     bodyAllowed: boolean,
   ): Promise<ConnectorResponse> {
     const tls = this.config.tls;
     return new Promise<ConnectorResponse>((resolve, reject) => {
       const req = https.request(
-        this.config.url,
+        request.url,
         {
           method: this.config.method,
-          headers: {
-            'Content-Type': this.config.contentType,
-            ...this.config.headers,
-          },
+          headers: request.headers,
           signal,
           rejectUnauthorized: tls?.rejectUnauthorized !== false,
           ...(tls?.ca ? { ca: tls.ca } : {}),

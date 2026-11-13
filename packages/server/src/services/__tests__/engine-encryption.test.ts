@@ -74,7 +74,7 @@ vi.mock('../message.service.js', () => ({
 vi.mock('../global-script.service.js', () => ({ GlobalScriptService: { getAll: vi.fn() } }));
 vi.mock('../global-map.service.js', () => ({ GlobalMapService: { list: vi.fn(), upsert: vi.fn(), persist: vi.fn(), persistRemoval: vi.fn(), onChange: vi.fn() } }));
 vi.mock('../config-map.service.js', () => ({ ConfigMapService: { list: vi.fn() } }));
-vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplates: vi.fn() } }));
+vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplatesForChannel: vi.fn() } }));
 vi.mock('../alert.service.js', () => ({ AlertService: { list: vi.fn(), getByIds: vi.fn() } }));
 vi.mock('../email.service.js', () => ({ EmailService: { sendMail: vi.fn() } }));
 vi.mock('../../lib/db.js', () => ({ db: { select: vi.fn(), execute: vi.fn() }, default: {} }));
@@ -210,7 +210,7 @@ describe('EngineManager.deploy — encryptData key guard', () => {
       messageStorageMode: 'DEVELOPMENT',
       removeContentOnCompletion: false, removeAttachmentsOnCompletion: false,
       sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: {},
-      inboundDataType: 'HL7V2', destinations: [], scripts: [],
+      inboundDataType: 'HL7V2', destinations: [], metadataColumns: [], scripts: [],
     };
   }
 

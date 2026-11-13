@@ -379,6 +379,40 @@ describe('HttpDispatcher', () => {
   });
 });
 
+describe('HttpDispatcher per-message values, parameters and Basic auth', () => {
+  it('fills the URL, parameters and headers from the message variables and sends Basic credentials', async () => {
+    mockServer = createMockServer(DEST_PORT);
+    dispatcher = new HttpDispatcher(makeConfig({
+      url: `http://127.0.0.1:${String(DEST_PORT)}/orders/\${accession}`,
+      method: 'PUT',
+      parameters: { site: '${site}', fixed: 'a b' },
+      headers: { 'X-Site': '${site}' },
+      basicAuth: { username: 'mirth', password: 's3cret' },
+    }));
+    expect((await dispatcher.onDeploy()).ok).toBe(true);
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage({ variables: { accession: 'ACC1', site: 'NORTH' } }), AbortSignal.timeout(5_000));
+
+    expect(result.ok && result.value.status).toBe('SENT');
+    const req = mockServer.requests[0]!;
+    expect(req.method).toBe('PUT');
+    expect(req.url).toBe('/orders/ACC1?site=NORTH&fixed=a+b');
+    expect(req.headers['x-site']).toBe('NORTH');
+    expect(req.headers['authorization']).toBe(`Basic ${Buffer.from('mirth:s3cret').toString('base64')}`);
+  });
+
+  it('leaves a reference the message does not have as written', async () => {
+    mockServer = createMockServer(DEST_PORT);
+    dispatcher = new HttpDispatcher(makeConfig({ parameters: { site: '${site}' } }));
+    await dispatcher.onStart();
+
+    await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(mockServer.requests[0]!.url).toBe('/receive?site=%24%7Bsite%7D');
+  });
+});
+
 describe('HttpDispatcher redirects', () => {
   const REDIRECT_PORT = 18664;
 

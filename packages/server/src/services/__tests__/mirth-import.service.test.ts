@@ -55,7 +55,10 @@ vi.mock('../../db/schema/index.js', () => ({
   transformerSteps: { transformerId: 'transformerId' },
 }));
 
-import { MirthImportService } from '../mirth-import.service.js';
+import type { ChannelExportEntry } from '@galvaniflow/core-models';
+import { MirthImportService, type MirthConvertResult } from '../mirth-import.service.js';
+import { ChannelImportService } from '../channel-import.service.js';
+import { CodeTemplateService } from '../code-template.service.js';
 
 // ----- Helpers -----
 
@@ -169,8 +172,7 @@ describe('MirthImportService.convertXml', () => {
     if (!result.ok) return;
     const dbDest = result.value.channels[0]?.destinations[1];
     expect(dbDest?.connectorType).toBe('DATABASE');
-    expect(dbDest?.properties['url']).toBe('jdbc:postgresql://localhost:5432/hl7db');
-    expect(dbDest?.properties['driver']).toBe('org.postgresql.Driver');
+    expect(dbDest?.properties).toMatchObject({ host: 'localhost', port: 5432, database: 'hl7db' });
   });
 
   it('maps SMTP connector type from class name', () => {
@@ -229,7 +231,7 @@ describe('MirthImportService.convertXml', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const filters = result.value.channels[0]?.filters ?? [];
-    const sourceFilter = filters.find((f) => f.connectorId === null);
+    const sourceFilter = filters.find((f) => (f.metaDataId ?? null) === null);
     expect(sourceFilter).toBeDefined();
     expect(sourceFilter?.rules).toHaveLength(1);
     expect(sourceFilter?.rules[0]?.name).toBe('Accept ADT only');
@@ -243,7 +245,7 @@ describe('MirthImportService.convertXml', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const filters = result.value.channels[0]?.filters ?? [];
-    const destFilter = filters.find((f) => f.connectorId === '2');
+    const destFilter = filters.find((f) => f.metaDataId === 2);
     expect(destFilter).toBeDefined();
     expect(destFilter?.rules).toHaveLength(1);
     expect(destFilter?.rules[0]?.name).toBe('Only A01 events');
@@ -256,7 +258,7 @@ describe('MirthImportService.convertXml', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const transformers = result.value.channels[0]?.transformers ?? [];
-    const sourceTransformer = transformers.find((t) => t.connectorId === null);
+    const sourceTransformer = transformers.find((t) => (t.metaDataId ?? null) === null);
     expect(sourceTransformer).toBeDefined();
     expect(sourceTransformer?.steps).toHaveLength(2);
     expect(sourceTransformer?.steps[0]?.name).toBe('Set patient name');
@@ -272,7 +274,7 @@ describe('MirthImportService.convertXml', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const transformers = result.value.channels[0]?.transformers ?? [];
-    const destTransformer = transformers.find((t) => t.connectorId === '2');
+    const destTransformer = transformers.find((t) => t.metaDataId === 2);
     expect(destTransformer).toBeDefined();
     expect(destTransformer?.steps).toHaveLength(1);
     expect(destTransformer?.steps[0]?.name).toBe('Log message type');
@@ -345,18 +347,14 @@ describe('MirthImportService.convertXml', () => {
     expect(result.value.channels[0]?.destinations[0]?.connectorType).toBe('JAVASCRIPT');
   });
 
-  it('extracts all four script types', () => {
+  it('extracts deploy and undeploy scripts and drops Mirth\'s do-nothing pre- and postprocessor', () => {
     const xml = loadFixture('mirth-channel-complex.xml');
     const result = MirthImportService.convertXml(xml);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const scripts = result.value.channels[0]?.scripts ?? [];
-    const types = scripts.map((s) => s.scriptType);
-    expect(types).toContain('DEPLOY');
-    expect(types).toContain('UNDEPLOY');
-    expect(types).toContain('PREPROCESSOR');
-    expect(types).toContain('POSTPROCESSOR');
+    expect(scripts.map((s) => s.scriptType)).toEqual(['DEPLOY', 'UNDEPLOY']);
   });
 
   it('extracts metadata columns', () => {
@@ -430,6 +428,240 @@ describe('MirthImportService.convertXml', () => {
 
 // ----- importFromXml -----
 
+describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
+  function convert4x(edit: (xml: string) => string = (x) => x): ChannelExportEntry {
+    const result = MirthImportService.convertXml(edit(loadFixture('mirth-4x-channel.xml')));
+    if (!result.ok) throw result.error;
+    const channel = result.value.channels[0];
+    if (!channel) throw new Error('no channel converted');
+    return channel;
+  }
+
+  it('decodes XML entities and character references in scripts', () => {
+    const channel = convert4x();
+    const source = channel.transformers.find((t) => (t.metaDataId ?? null) === null);
+    expect(source?.steps[0]?.script).toBe('if (1 < 2 && true) { channelMap.put(\'ack\', "MSA|AA"); }\r\nvar done = true;');
+    expect(channel.scripts.find((s) => s.scriptType === 'POSTPROCESSOR')?.script).toBe("return $c('ack');");
+  });
+
+  it('drops the do-nothing scripts Mirth puts in every channel and keeps real ones', () => {
+    expect(convert4x().scripts.map((s) => s.scriptType)).toEqual(['POSTPROCESSOR']);
+  });
+
+  it('warns once per channel about the Mirth-only constructs its scripts use', () => {
+    const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml'));
+    if (!result.ok) throw result.error;
+    const warning = result.value.warnings.find((w) => w.includes('Mirth-only constructs'));
+    expect(warning).toContain('Channel "4x Listener"');
+    expect(warning).toContain("E4X field access (msg['PID']...)");
+    expect(warning).toContain('Java map methods (channelMap.put)');
+    expect(warning).not.toContain("'message' variable");
+  });
+
+  it('does not warn about scripts written for GalvaniFlow', () => {
+    const native = (x: string): string => x
+      .replace("return msg[&apos;MSH&apos;][&apos;MSH.9&apos;][&apos;MSH.9.2&apos;].toString() != &apos;A08&apos;;", "return msg.get(&apos;MSH.9.2&apos;) != &apos;A08&apos;;")
+      .replace(/channelMap\.put\(&apos;(\w+)&apos;, ([^)]*)\)/g, '$c(&apos;$1&apos;, $2)');
+    const result = MirthImportService.convertXml(native(loadFixture('mirth-4x-channel.xml')));
+    if (!result.ok) throw result.error;
+    expect(result.value.warnings.filter((w) => w.includes('Mirth-only constructs'))).toEqual([]);
+  });
+
+  it('reads a channel\'s enabled flag from exportData/metadata, where Mirth 4.x writes it', () => {
+    const withFlag = (flag: string) => (x: string): string => x.replace('</properties>\n</channel>', `</properties>\n  <exportData><metadata><enabled>${flag}</enabled></metadata></exportData>\n</channel>`);
+    expect(convert4x(withFlag('false')).enabled).toBe(false);
+    expect(convert4x(withFlag('true')).enabled).toBe(true);
+    expect(convert4x().enabled).toBe(true);
+  });
+
+  it('keeps values as written, not as numbers', () => {
+    expect(convert4x().description).toBe('0123');
+  });
+
+  it('reads transformer steps from <elements> in sequence order', () => {
+    const source = convert4x().transformers.find((t) => (t.metaDataId ?? null) === null);
+    expect(source?.steps.map((s) => [s.name, s.type])).toEqual([['Build ACK', 'JAVASCRIPT'], ['Second step', 'JAVASCRIPT']]);
+  });
+
+  it('reads filter rules from the <filter> next to the transformer', () => {
+    const filters = convert4x().filters;
+    expect(filters.find((f) => (f.metaDataId ?? null) === null)?.rules[0]).toMatchObject({ name: 'Not A08', type: 'JAVASCRIPT' });
+    expect(filters.find((f) => f.metaDataId === 1)?.rules[0]?.name).toBe('Only ORM');
+  });
+
+  it('keys destinations, their filters and transformers by the metaDataId in the export', () => {
+    const channel = convert4x();
+    expect(channel.destinations.map((d) => d.metaDataId)).toEqual([1, 3]);
+    expect(channel.transformers.find((t) => t.metaDataId === 1)?.steps[0]?.name).toBe('Stamp');
+  });
+
+  it('reads queue settings from destinationConnectorProperties', () => {
+    const [tryFirst, always] = convert4x().destinations;
+    expect(tryFirst).toMatchObject({ queueMode: 'ON_FAILURE', retryCount: 3, retryIntervalMs: 5000, rotateQueue: true, queueThreadCount: 2 });
+    expect(always?.queueMode).toBe('ALWAYS');
+    const never = convert4x((x) => x.replace('<queueEnabled>true</queueEnabled>\n          <sendFirst>false</sendFirst>', '<queueEnabled>false</queueEnabled>\n          <sendFirst>false</sendFirst>'));
+    expect(never.destinations[1]?.queueMode).toBe('NEVER');
+  });
+
+  it('responds from the postprocessor, and the MLLP listener passes that response through', () => {
+    const channel = convert4x();
+    expect(channel.responseMode).toBe('POSTPROCESSOR');
+    expect(channel.sourceConnectorProperties).toMatchObject({ port: 6661, responseMode: 'PASSTHROUGH' });
+  });
+
+  it('keeps a TCP connector\'s frame bytes when they are not MLLP\'s', () => {
+    expect(convert4x().sourceConnectorProperties['frameStart']).toBeUndefined();
+    const basic = convert4x((x) => x
+      .replace('<startOfMessageBytes>0B</startOfMessageBytes>', '<startOfMessageBytes>02</startOfMessageBytes>')
+      .replace('<endOfMessageBytes>1C0D</endOfMessageBytes>', '<endOfMessageBytes>03</endOfMessageBytes>'));
+    expect(basic.sourceConnectorProperties).toMatchObject({ frameStart: '02', frameEnd: '03' });
+  });
+
+  it('responds from the destination a "dN" setting names', () => {
+    const channel = convert4x((x) => x.replace('<responseVariable>Postprocessor</responseVariable>', '<responseVariable>d3</responseVariable>'));
+    expect(channel.responseMode).toBe('DESTINATION');
+    expect(channel.responseConnectorName).toBe('Always queue');
+  });
+
+  it.each([
+    ['None', 'NONE'],
+    ['Auto-generate (Before processing)', 'AUTO_BEFORE'],
+    ['Auto-generate (After source transformer)', 'AUTO_AFTER_TRANSFORMER'],
+    ['Auto-generate (Destinations completed)', 'AUTO_AFTER_DESTINATIONS'],
+  ])('maps "Respond from" %s to %s with the listener sending its own ACK', (variable, mode) => {
+    const channel = convert4x((x) => x.replace('<responseVariable>Postprocessor</responseVariable>', `<responseVariable>${variable}</responseVariable>`));
+    expect(channel.responseMode).toBe(mode);
+    expect(channel.sourceConnectorProperties['responseMode']).toBe('AUTO_ACK');
+  });
+
+  it('maps a Channel Reader source and a Channel Writer to the target channel id', () => {
+    const writer = '<properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="4.5.0"><pluginProperties/><channelId>5c000200-0000-4000-8000-000000000001</channelId><channelTemplate>${message.encodedData}</channelTemplate><mapVariables/></properties>';
+    const channel = convert4x((x) => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, '<properties class="com.mirth.connect.connectors.vm.VmReceiverProperties" version="4.5.0"><pluginProperties/></properties><transformer')
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer));
+    expect(channel.sourceConnectorType).toBe('CHANNEL');
+    expect(channel.destinations[0]).toMatchObject({ connectorType: 'CHANNEL', properties: { targetChannelId: '5c000200-0000-4000-8000-000000000001' } });
+  });
+
+  it('maps an HTTP Listener to serve every path under its context path with its response settings', () => {
+    const listener = (contextPath: string, status: string): string => `<properties class="com.mirth.connect.connectors.http.HttpReceiverProperties" version="4.5.0"><listenerConnectorProperties version="4.5.0"><host>0.0.0.0</host><port>8081</port></listenerConnectorProperties><responseContentType>application/json</responseContentType><responseStatusCode>${status}</responseStatusCode><contextPath>${contextPath}</contextPath></properties><transformer`;
+    const swap = (contextPath: string, status: string) => (x: string): string =>
+      x.replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, listener(contextPath, status));
+
+    expect(convert4x(swap('', '')).sourceConnectorProperties).toEqual({
+      host: '0.0.0.0', port: 8081, path: '/', matchSubpaths: true, responseContentType: 'application/json',
+    });
+    expect(convert4x(swap('api', '202')).sourceConnectorProperties).toMatchObject({ path: '/api', responseStatusCode: 202 });
+  });
+
+  it('carries a TCP Sender\'s template and keeps a ${...} port for the deploy to resolve', () => {
+    const sender = (port: string, template: string): string => `<properties class="com.mirth.connect.connectors.tcp.TcpDispatcherProperties" version="4.5.0"><remoteAddress>\${MIRTH_SENDER_HOST}</remoteAddress><remotePort>${port}</remotePort><template>${template}</template></properties>`;
+    const swap = (port: string, template: string) => (x: string): string =>
+      x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, sender(port, template));
+
+    expect(convert4x(swap('${MIRTH_SENDER_PORT}', '${oru}')).destinations[0]?.properties)
+      .toEqual({ host: '${MIRTH_SENDER_HOST}', port: '${MIRTH_SENDER_PORT}', template: '${oru}' });
+    expect(convert4x(swap('6661', '${message.encodedData}')).destinations[0]?.properties)
+      .toEqual({ host: '${MIRTH_SENDER_HOST}', port: 6661 });
+  });
+
+  it('maps a Database Writer and Reader JDBC URL, credentials, queries and update mode', () => {
+    const writer = '<properties class="com.mirth.connect.connectors.jdbc.DatabaseDispatcherProperties" version="4.5.0"><driver>org.postgresql.Driver</driver><url>jdbc:postgresql://db.example.org:5433/partner?ssl=true</url><username>mirth</username><password>0123</password><query>INSERT INTO t (a) VALUES (${mrn})</query><useScript>false</useScript></properties>';
+    const reader = '<properties class="com.mirth.connect.connectors.jdbc.DatabaseReceiverProperties" version="4.5.0"><driver>org.postgresql.Driver</driver><url>jdbc:postgresql://db.example.org/orders</url><username>mirth</username><password>pw</password><select>SELECT id FROM o</select><update>UPDATE o SET s = 1 WHERE id = ${id}</update><updateMode>3</updateMode></properties><transformer';
+    const channel = convert4x((x) => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer)
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader));
+
+    expect(channel.destinations[0]?.properties).toEqual({
+      host: 'db.example.org', port: 5433, database: 'partner', username: 'mirth', password: '0123', query: 'INSERT INTO t (a) VALUES (${mrn})',
+    });
+    expect(channel.sourceConnectorProperties).toEqual({
+      host: 'db.example.org', database: 'orders', username: 'mirth', password: 'pw',
+      selectQuery: 'SELECT id FROM o', updateQuery: 'UPDATE o SET s = 1 WHERE id = ${id}', updateMode: 'ON_SUCCESS',
+    });
+    // The reader's rows are JSON objects here, so the channel and its source transformer read JSON.
+    expect(channel.inboundDataType).toBe('JSON');
+    expect(channel.transformers.find((t) => (t.metaDataId ?? null) === null)?.inboundDataType).toBe('JSON');
+  });
+
+  it('keeps a polling source\'s interval and gives a JavaScript Reader only its script', () => {
+    const reader = (type: string): string => `<properties class="com.mirth.connect.connectors.js.JavaScriptReceiverProperties" version="4.5.0"><pluginProperties/><pollConnectorProperties version="4.5.0"><pollingType>${type}</pollingType><pollOnStart>true</pollOnStart><pollingFrequency>500</pollingFrequency></pollConnectorProperties><sourceConnectorProperties version="4.5.0"><responseVariable>None</responseVariable></sourceConnectorProperties><script>return 'tick';</script></properties><transformer`;
+    const swap = (type: string) => (x: string): string => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader(type))
+      .replace('<transportName>TCP Listener</transportName>', '<transportName>JavaScript Reader</transportName>');
+
+    expect(convert4x(swap('INTERVAL')).sourceConnectorProperties).toEqual({ script: "return 'tick';", pollingIntervalMs: 500 });
+    const batch = convert4x((x) => swap('INTERVAL')(x).replace('<responseVariable>None</responseVariable>', '<responseVariable>None</responseVariable><processBatch>true</processBatch>'));
+    expect(batch.sourceConnectorProperties['processBatch']).toBe(true);
+    expect(convert4x(swap('TIME')).sourceConnectorProperties).toEqual({ script: "return 'tick';" });
+  });
+
+  it('maps an HTTP Sender\'s method, headers, parameters, Basic credentials and content, and an SMTP Sender\'s mail', () => {
+    const http = '<properties class="com.mirth.connect.connectors.http.HttpDispatcherProperties" version="4.5.0"><host>http://api/orders/${accession}</host><method>put</method><headers class="linked-hash-map"><entry><string>X-Source</string><list><string>VNS</string><string>LAB</string></list></entry></headers><parameters class="linked-hash-map"><entry><string>site</string><list><string>${site}</string></list></entry></parameters><useAuthentication>true</useAuthentication><authenticationType>Basic</authenticationType><username>mirth</username><password>s3cret</password><content>{"a":"${accession}"}</content><contentType>application/json</contentType></properties>';
+    const smtp = '<properties class="com.mirth.connect.connectors.smtp.SmtpDispatcherProperties" version="4.5.0"><smtpHost>mail</smtpHost><smtpPort>25</smtpPort><encryption>tls</encryption><authentication>true</authentication><username>u</username><password>p</password><to>${email}</to><from>vns@example.com</from><cc></cc><subject>${subject}</subject><html>true</html><body>Ready</body></properties>';
+    const channel = convert4x((x) => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, http)
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, smtp));
+
+    expect(channel.destinations[0]?.properties).toEqual({
+      url: 'http://api/orders/${accession}', method: 'PUT', headers: { 'X-Source': 'VNS, LAB' }, parameters: { site: '${site}' },
+      contentType: 'application/json', basicAuth: { username: 'mirth', password: 's3cret' }, template: '{"a":"${accession}"}',
+    });
+    expect(channel.destinations[1]?.properties).toEqual({
+      host: 'mail', port: 25, to: '${email}', from: 'vns@example.com', subject: '${subject}', bodyTemplate: 'Ready',
+      contentType: 'text/html', requireTLS: true, authUser: 'u', authPass: 'p',
+    });
+  });
+
+  describe('a File connector with a remote scheme', () => {
+    const reader = (scheme: string, hostKeyChecking: string): string => `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>${scheme}</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>${hostKeyChecking}</hostKeyChecking></schemeProperties><host>sftp.partner.org:2222/out/orders</host><fileFilter>*.hl7</fileFilter><username>vns</username><password>pw</password><afterProcessingAction>DELETE</afterProcessingAction><moveToDirectory></moveToDirectory></properties><transformer`;
+    const writer = '<properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0"><scheme>SFTP</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>no</hostKeyChecking></schemeProperties><host>sftp.partner.org/in</host><outputPattern>${messageId}.hl7</outputPattern><outputAppend>false</outputAppend><username>vns</username><password>pw</password></properties>';
+    const convert = (scheme: string, hostKeyChecking = 'no'): MirthConvertResult => {
+      const xml = loadFixture('mirth-4x-channel.xml')
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader(scheme, hostKeyChecking))
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer);
+      const result = MirthImportService.convertXml(xml);
+      if (!result.ok) throw result.error;
+      return result.value;
+    };
+
+    it('runs an SFTP File Reader and Writer on the SFTP connector', () => {
+      const { channels } = convert('SFTP');
+      expect(channels[0]?.sourceConnectorType).toBe('SFTP');
+      expect(channels[0]?.sourceConnectorProperties).toEqual({
+        host: 'sftp.partner.org', port: 2222, remoteDirectory: '/out/orders', username: 'vns', password: 'pw',
+        strictHostKey: false, filePattern: '*.hl7', afterProcessing: 'DELETE', moveToDirectory: '',
+      });
+      expect(channels[0]?.destinations[0]).toMatchObject({
+        connectorType: 'SFTP',
+        properties: { host: 'sftp.partner.org', remoteDirectory: '/in', fileNameTemplate: '${messageId}.hl7', appendMode: false, strictHostKey: false },
+      });
+    });
+
+    it('keeps host key checking on, and says the key must be entered', () => {
+      const result = convert('SFTP', 'yes');
+      expect(result.channels[0]?.sourceConnectorProperties['strictHostKey']).toBe(true);
+      expect(result.warnings.some((w) => w.includes('host key'))).toBe(true);
+    });
+
+    it('warns that a scheme with no connector here will not deploy', () => {
+      expect(convert('FTP').warnings.some((w) => w.includes('FTP file scheme is not supported'))).toBe(true);
+    });
+  });
+
+  it('leaves a Channel Writer set to "none" without a target', () => {
+    const channel = convert4x((x) => x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, '<properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="4.5.0"><channelId>none</channelId></properties>'));
+    expect(channel.destinations[0]?.properties).toEqual({ targetChannelId: '' });
+  });
+
+  it('warns and auto-generates when "Respond from" names something it cannot map', () => {
+    const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml').replace('<responseVariable>Postprocessor</responseVariable>', '<responseVariable>myResponse</responseVariable>'));
+    if (!result.ok) throw result.error;
+    expect(result.value.channels[0]?.responseMode).toBe('AUTO_AFTER_DESTINATIONS');
+    expect(result.value.warnings.some((w) => w.includes('"myResponse"'))).toBe(true);
+  });
+});
+
 describe('MirthImportService.importFromXml', () => {
   it('converts and imports channels from XML', async () => {
     const xml = loadFixture('mirth-channel-basic.xml');
@@ -457,6 +689,27 @@ describe('MirthImportService.importFromXml', () => {
     const result = await MirthImportService.importFromXml('<foo>bar</foo>', 'SKIP', false);
 
     expect(result.ok).toBe(false);
+  });
+
+  it('leaves code templates untouched when a channel in the backup fails to import (regression)', async () => {
+    const channel = loadFixture('mirth-4x-channel.xml');
+    const backup = `<serverConfiguration version="4.5.0"><channels>${channel}</channels><codeTemplateLibraries><codeTemplateLibrary version="4.5.0"><id>l1</id><name>Globals</name><includeNewChannels>true</includeNewChannels><enabledChannelIds/><disabledChannelIds/><codeTemplates><codeTemplate version="4.5.0"><id>t1</id><name>f</name><contextSet><delegate><contextType>SOURCE_FILTER_TRANSFORMER</contextType></delegate></contextSet><properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties"><type>FUNCTION</type><code>function f() {}</code></properties></codeTemplate></codeTemplates></codeTemplateLibrary></codeTemplateLibraries></serverConfiguration>`;
+    const imports = vi.spyOn(ChannelImportService, 'importChannels').mockResolvedValueOnce({
+      ok: true, value: { created: 0, updated: 0, skipped: 0, errors: ['Error importing "4x Listener": db down'] }, error: null,
+    } as never);
+    const listLibraries = vi.spyOn(CodeTemplateService, 'listLibraries');
+    try {
+      const result = await MirthImportService.importFromXml(backup, 'OVERWRITE', false);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(listLibraries).not.toHaveBeenCalled();
+      expect(result.value.codeTemplates).toEqual({ created: 0, updated: 0, skipped: 0 });
+      expect(result.value.importResult.errors).toContain('Code template libraries were not imported because 1 channel(s) failed; fix them and import again');
+    } finally {
+      imports.mockRestore();
+      listLibraries.mockRestore();
+    }
   });
 
   it('maps RENAME collision mode to CREATE_NEW', async () => {

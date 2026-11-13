@@ -55,6 +55,10 @@ vi.mock('../channel.service.js', () => ({
   ChannelService: mockChannelService,
 }));
 
+vi.mock('../config-map.service.js', () => ({
+  ConfigMapService: { list: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) },
+}));
+
 vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));

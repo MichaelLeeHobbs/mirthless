@@ -55,6 +55,16 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] DICOM (source + destination) — C-STORE via dcmtk.js
 - [x] Email/IMAP (source) — folder polling with filters
 
+### Mirth migration suite
+
+> `pnpm test:scenarios` (D-237, `docs/testing/migration-scenarios.md`) scores 55/60 on 2026-11-13. The three that fail each need a decision first: [`docs/design/17-remaining-migration-gaps.md`](../design/17-remaining-migration-gaps.md).
+
+- [ ] **S15** Database connectors are PostgreSQL-only (connector rank [1] below; doc 17 proposes a MySQL driver behind the same connector).
+- [ ] **S19** Delimited data is not parsed into fields by column name (N2; doc 17 proposes `msg` as an array of row objects).
+- [ ] **S20** No X12 data type (N1; doc 17 proposes X12 on the HL7 path model).
+- [x] S08, S09, S11, S12, S14, S16, S17, S18, S21, S26 pass since 2026-11-13 (D-250 to D-255).
+- [ ] Editor controls for what the engine now supports: custom metadata columns (N5), code template library scope (N12), the HTTP listener's `matchSubpaths`, a destination `template`, HTTP Sender parameters and Basic credentials, TCP frame bytes.
+
 ### Connector Parity Gaps vs Mirth/OIE 4.6.0
 
 > Full analysis + fix specs + migration matrix: [`docs/design/12-connector-parity-gap-analysis.md`](../design/12-connector-parity-gap-analysis.md).
@@ -62,9 +72,9 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 
 - [ ] **[1] Multi-vendor Database connector** — driver abstraction (pg/mysql2/tedious/oracledb) + JS mode. 🔴 Postgres-only today; Oracle/SQL Server/MySQL DB channels **cannot migrate**.
 - [ ] **[2] File scheme abstraction** — FTP/FTPS, SMB, S3; fold standalone SFTP in as a scheme. 🔴 Local-disk-only today.
-- [ ] **[3] Configurable TCP framing + Basic mode** — 🔴 start/end bytes hardcoded VT/FS+CR; no non-standard/delimited framing.
+- [x] **[3] Configurable TCP framing + Basic mode** — `frameStart`/`frameEnd` hex bytes on TCP listeners and senders, imported from Mirth (2026-11-13, D-253). No form field yet.
 - [x] **[4] Surface hidden runtime options in forms** — surfaced TCP responseMode/charset/maxFrameBytes/acquireTimeoutMs, HTTP-source errorStatusCode/maxBodyBytes, SMTP requireTLS (2026-07-15). TCP TLS deferred to the rank-8 cert-resolver work (not surfacing-only); HTTP inbound auth folded into rank 5. 🟡 cheapest wins.
-- [ ] **[5] HTTP outbound auth (Basic/Digest) + query-parameters table + `${}` substitution** — 🟡 common REST requirement.
+- [ ] **[5] HTTP outbound Digest auth + form controls** — Basic auth, query parameters and per-message `${}` in the URL, headers and parameters work since 2026-11-13 (D-252), as does configuration map `${}` at deploy and a destination `template` (D-246). Digest auth and the destination form fields for these remain. 🟡
 - [ ] **[6] Web Service / SOAP connector** (source + dispatcher) — 🔴 blocks brownfield SOAP hospital installs.
 - [ ] **[7] Document Writer** (PDF/RTF destination) — 🟡 no workaround for rendered clinical docs.
 - [ ] **[8] DICOM TLS** (cert/key/trust) — 🟡 secured PACS. (Assoc-rejection bug already fixed, D-181.)
@@ -81,15 +91,15 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[N1] EDI/X12 + NCPDP serializers** (+ enum entries) — 🔴 blocks X12 billing/eligibility + pharmacy channels.
 - [ ] **[N2] Finish declared-but-pass-through datatypes** — Delimited, HL7v3, DICOM→XML. 🔴 `msg` mapping impossible on them today.
 - [x] **[N3] Fix `$gc` map-shortcut collision** (means configMap; Mirth = globalChannelMap) + add `$cfg`/`$c`/`$co`/`$s` — 🔴 silent-wrong-map footgun for ported scripts.
-- [ ] **[N4] Message search operators** — metadata-column search, regex, error, send-attempt filters. 🔴 daily-use triage gap.
-- [ ] **[N5] Populate custom metadata columns + make searchable** — 🔴 currently stored but never populated (half-built). Editor UI removed until built (D-189).
+- [ ] **[N4] Message search operators** — regex, error, send-attempt filters. 🔴 daily-use triage gap. Metadata-column equality search is in the API (`metaDataColumn`/`metaDataValue`, 2026-11-12); the message browser has no control for it yet.
+- [ ] **[N5] Custom metadata columns: editor and message browser UI** — the engine fills the columns from map variables after the source transformer and the message list API filters on them and returns `metaData` (2026-11-12, D-240). Still missing: defining columns in the channel editor (removed by D-189) and showing/filtering them in the message browser.
 - [x] **[N6] Dependency-ordered deploy** (topological sort in `autoDeployChannels`) — 🔴 graph stored/validated but not applied; channel can start before its dependency.
 - [ ] **[N7] Destination-queue threading** (threadCount/groupBy/rotate) — 🔴 throughput/ordering at volume. Thread count and rotate controls removed from the UI until built; `waitForPrevious` chains now work (D-189).
 - [ ] **[N8] Pruner archiver + content/metadata-day split** — 🟡 `pruningArchiveEnabled` flag has no archiver (half-built); HIPAA retention.
-- [ ] **[N9] JS API breadth** — DateUtil, ChannelUtil, AttachmentUtil, SerializerFactory, getArrayOrXmlLength, etc. (~10 of Mirth's ~40 userutil objects). 🟡
+- [ ] **[N9] JS API breadth** — helpers GalvaniFlow's own API lacks (dates, attachments). Not a port of Mirth's userutil objects (D-244). 🟡
 - [ ] **[N10] Per-connector connection monitoring** (Mirth dashboardstatus) + per-channel Prometheus labels — 🔴 ops triage visibility.
 - [ ] **[N11] Iterator transformer step** (+ XSLT / External Script) — 🟡 repeating-segment mapping UX.
-- [ ] **[N12] Code-template per-channel library scoping** — 🟡 flat today (all templates to all channels).
+- [ ] **[N12] Code-template per-channel library scoping: editor control** — the engine, API, backup and Mirth import scope libraries to channels (2026-11-12, D-249); the Code Templates page cannot set the scope yet.
 - [ ] **[N13] Custom RBAC roles** (roles as permission sets vs 4 fixed) — 🟡 "dev who can't deploy to prod".
 - [ ] **[N14] Export completeness** (templates/deps/groups/tags + set export) — 🟡
 - [ ] **[N15] Alert per-connector scope + error-stage granularity** — 🟡

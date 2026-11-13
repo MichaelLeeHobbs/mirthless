@@ -35,7 +35,20 @@ export interface QueueConsumerConfig {
 /** Content types written by the consumer (see CONTENT_TYPE in core-models). */
 const CT_SENT = 5;
 const CT_RESPONSE = 6;
+/** A destination's stored variables (MessageProcessor.storeVariables). */
+const CT_CHANNEL_MAP = 10;
 const CT_ERROR = 11;
+
+/** Stored variables as a record; undefined when none were stored. */
+function parseVariables(stored: string | null): Record<string, unknown> | undefined | 'INVALID' {
+  if (stored === null) return undefined;
+  try {
+    const value: unknown = JSON.parse(stored);
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : 'INVALID';
+  } catch {
+    return 'INVALID';
+  }
+}
 
 interface QueuedMessage {
   readonly channelId: string;
@@ -200,11 +213,25 @@ export class QueueConsumer {
       return 'DONE';
     }
 
+    // The variables the destination saw when the message was routed (a
+    // database writer binds its parameters from them). Absent when there were none.
+    const variablesResult = await this.store.loadContent(msg.channelId, msg.messageId, msg.metaDataId, CT_CHANNEL_MAP);
+    if (!variablesResult.ok) {
+      await this.putBack([msg]);
+      await this.alertOnce(
+        `Queued destination ${String(msg.metaDataId)} could not load the variables of message ${String(msg.messageId)}: ` +
+        `${variablesResult.error.message}. It stays queued and is retried.`,
+      );
+      return 'RETRY_LATER';
+    }
+    const variables = parseVariables(variablesResult.value);
+    if (variables === 'INVALID') {
+      await this.giveUp(msg, 'Queued message has stored variables that are not a JSON object');
+      return 'DONE';
+    }
+
     const sendResult: Result<DestinationResponse> = await this.sendFn(
-      msg.metaDataId,
-      msg.messageId,
-      contentResult.value,
-      signal,
+      msg.metaDataId, msg.messageId, contentResult.value, signal, undefined, variables,
     );
 
     if (sendResult.ok && sendResult.value.status === 'SENT') {
@@ -232,6 +259,11 @@ export class QueueConsumer {
       `${reason}. It stays queued and is retried every ${String(Math.round(this.config.retryIntervalMs / 1000))} s.`,
     );
 
+    // Keep the latest reason with the message, so the message browser says why
+    // it is still queued.
+    const reasonStored = await this.store.storeContent(this.config.channelId, msg.messageId, msg.metaDataId, CT_ERROR, reason, 'TEXT');
+    if (!reasonStored.ok) await this.alertOnce(`Queued destination ${String(msg.metaDataId)} could not save why message ${String(msg.messageId)} failed: ${reasonStored.error.message}`);
+
     // Re-queue for retry. Transitioning back to QUEUED persists an incremented
     // send_attempts (see MessageService.updateConnectorMessageStatus), which the
     // retry cap above counts.
@@ -249,6 +281,16 @@ export class QueueConsumer {
     // message browser shows it for queued deliveries too.
     const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CT_RESPONSE, response, 'TEXT');
     if (!stored.ok) await this.reportUnrecorded(msg, 'response content', stored.error.message);
+    // An earlier attempt left why it failed; a delivered message must not show it.
+    if (this.store.removeContent) {
+      const cleared = await this.store.removeContent(channelId, msg.messageId, msg.metaDataId, CT_ERROR);
+      if (!cleared.ok) {
+        await this.alert(
+          `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)}, but the reason an ` +
+          `earlier attempt failed could not be removed: ${cleared.error.message}. The message still shows it.`,
+        );
+      }
+    }
     const released = await this.store.release(channelId, msg.messageId, msg.metaDataId, 'SENT');
     if (!released.ok) {
       await this.reportUnrecorded(msg, 'SENT', released.error.message);

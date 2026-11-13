@@ -39,7 +39,8 @@ function makeStore(): MessageStore {
     storeContent: vi.fn().mockResolvedValue(ok(undefined)),
     markProcessed: vi.fn().mockResolvedValue(ok(undefined)),
     enqueue: vi.fn().mockResolvedValue(ok(undefined)),
-    loadContent: vi.fn().mockResolvedValue(ok('test content')),
+    // SENT content; no stored variables (content type 10) unless a test says so.
+    loadContent: vi.fn().mockImplementation(async (_c: string, _m: number, _d: number, contentType: number) => ok(contentType === 5 ? 'test content' : null)),
     incrementStats: vi.fn().mockResolvedValue(ok(undefined)),
     dequeue: vi.fn().mockResolvedValue(ok([])),
     release: vi.fn().mockResolvedValue(ok(undefined)),
@@ -254,7 +255,7 @@ describe('QueueConsumer', () => {
       expect(store.release).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 12, 1, 'ERROR');
     });
 
-    it('alerts once that a delivery failed and is being retried, and stores no error', async () => {
+    it('alerts once that a delivery failed and is being retried, and keeps the latest reason with the message', async () => {
       const store = makeStore();
       const onError = vi.fn().mockResolvedValue(undefined);
       (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([
@@ -269,7 +270,57 @@ describe('QueueConsumer', () => {
       expect(onError).toHaveBeenCalledWith(expect.objectContaining({
         errorMessage: expect.stringMatching(/could not deliver message 13: x.*stays queued/) as unknown as string,
       }));
-      expect(store.storeContent).not.toHaveBeenCalled();
+      expect(store.storeContent).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 13, 1, 11, 'x', 'TEXT');
+      expect(store.updateConnectorMessageStatus).not.toHaveBeenCalledWith(expect.anything(), 13, 1, 'ERROR');
+    });
+
+    it('removes the reason an earlier attempt failed once a retry delivers (regression)', async () => {
+      const store = { ...makeStore(), removeContent: vi.fn().mockResolvedValue(ok(undefined)) };
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([
+        { channelId: '00000000-0000-0000-0000-000000000001', messageId: 16, metaDataId: 1, sendAttempts: 0 },
+      ]));
+      const sendFn = vi.fn()
+        .mockResolvedValueOnce(fail('HTTP 500'))
+        .mockResolvedValueOnce(ok({ status: 'SENT', content: 'OK' }));
+
+      consumer = new QueueConsumer(makeConfig({ retryCount: 3, retryIntervalMs: 0 }), store, sendFn);
+      await consumer.poll();
+      expect(store.removeContent).not.toHaveBeenCalled();
+      await consumer.poll();
+
+      expect(store.storeContent).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 16, 1, 11, 'HTTP 500', 'TEXT');
+      expect(store.removeContent).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', 16, 1, 11);
+    });
+
+    it('sends with the variables stored when the message was routed', async () => {
+      const store = makeStore();
+      (store.loadContent as ReturnType<typeof vi.fn>).mockImplementation(async (_c: string, _m: number, _d: number, contentType: number) =>
+        ok(contentType === 5 ? 'test content' : '{"mrn":"MRN1"}'));
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([
+        { channelId: '00000000-0000-0000-0000-000000000001', messageId: 14, metaDataId: 1, sendAttempts: 0 },
+      ]));
+      const sendFn = vi.fn().mockResolvedValue(ok({ status: 'SENT', content: '' }));
+
+      consumer = new QueueConsumer(makeConfig(), store, sendFn);
+      await consumer.poll();
+
+      expect(sendFn).toHaveBeenCalledWith(1, 14, 'test content', expect.any(AbortSignal), undefined, { mrn: 'MRN1' });
+    });
+
+    it('keeps a message queued when its stored variables cannot be read', async () => {
+      const store = makeStore();
+      (store.loadContent as ReturnType<typeof vi.fn>).mockImplementation(async (_c: string, _m: number, _d: number, contentType: number) =>
+        (contentType === 5 ? ok('test content') : fail('connection lost')));
+      (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([
+        { channelId: '00000000-0000-0000-0000-000000000001', messageId: 15, metaDataId: 1, sendAttempts: 0 },
+      ]));
+      const sendFn = vi.fn();
+
+      consumer = new QueueConsumer(makeConfig(), store, sendFn);
+      await consumer.poll();
+
+      expect(sendFn).not.toHaveBeenCalled();
+      expect(store.updateConnectorMessageStatus).not.toHaveBeenCalledWith(expect.anything(), 15, 1, 'ERROR');
     });
 
     it('alerts again for a new failure after a delivery succeeded', async () => {
@@ -432,7 +483,7 @@ describe('QueueConsumer', () => {
       expect(store.loadContent).toHaveBeenCalledWith(
         '00000000-0000-0000-0000-000000000001', 10, 1, 5,
       );
-      expect(sendFn).toHaveBeenCalledWith(1, 10, 'test content', expect.any(AbortSignal));
+      expect(sendFn).toHaveBeenCalledWith(1, 10, 'test content', expect.any(AbortSignal), undefined, undefined);
     });
 
     it('releases as ERROR when loadContent returns null', async () => {

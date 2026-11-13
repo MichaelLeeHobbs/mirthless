@@ -1,0 +1,1 @@
+ALTER TABLE "code_template_libraries" ADD COLUMN "channel_ids" jsonb;

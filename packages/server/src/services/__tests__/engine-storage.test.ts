@@ -61,7 +61,7 @@ vi.mock('../message.service.js', () => ({
 }));
 
 vi.mock('../global-script.service.js', () => ({ GlobalScriptService: { getAll: vi.fn() } }));
-vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplates: vi.fn() } }));
+vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplatesForChannel: vi.fn() } }));
 vi.mock('../alert.service.js', () => ({ AlertService: { list: vi.fn(), getByIds: vi.fn() } }));
 vi.mock('../email.service.js', () => ({ EmailService: { sendMail: vi.fn() } }));
 vi.mock('../../lib/db.js', () => ({ db: { select: vi.fn(), execute: vi.fn() }, default: {} }));
@@ -104,12 +104,13 @@ describe('shouldStoreContent', () => {
 
   it('PRODUCTION stores delivery/recovery/browser content (raw, transformed, encoded, sent, response*) and errors', () => {
     // Stored: RAW(1), TRANSFORMED(3), ENCODED(4), SENT(5), RESPONSE(6),
-    // RESPONSE_TRANSFORMED(7), RESPONSE_SENT(8), and errors(11-13).
-    for (const ct of [1, 3, 4, 5, 6, 7, 8, 11, 12, 13]) {
+    // RESPONSE_TRANSFORMED(7), RESPONSE_SENT(8), a queued destination's
+    // variables CHANNEL_MAP(10), and errors(11-13).
+    for (const ct of [1, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13]) {
       expect(shouldStoreContent('PRODUCTION', ct)).toBe(true);
     }
-    // Not stored: PROCESSED(2) debug copy, SOURCE_MAP(9), CHANNEL_MAP(10).
-    for (const ct of [2, 9, 10]) {
+    // Not stored: PROCESSED(2) debug copy, SOURCE_MAP(9).
+    for (const ct of [2, 9]) {
       expect(shouldStoreContent('PRODUCTION', ct)).toBe(false);
     }
   });

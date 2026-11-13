@@ -67,7 +67,7 @@ vi.mock('../config-map.service.js', () => ({
 
 const mockListTemplates = vi.fn();
 vi.mock('../code-template.service.js', () => ({
-  CodeTemplateService: { listTemplates: mockListTemplates },
+  CodeTemplateService: { listTemplatesForChannel: mockListTemplates },
 }));
 
 const mockGlobalScriptGetAll = vi.fn().mockResolvedValue({
@@ -135,6 +135,7 @@ function makeChannel(overrides: Record<string, unknown> = {}): never {
     inboundDataType: 'HL7V2',
     outboundDataType: 'HL7V2',
     messageStorageMode: 'DEVELOPMENT',
+    metadataColumns: [],
     destinations: [],
     scripts: [],
     ...overrides,
