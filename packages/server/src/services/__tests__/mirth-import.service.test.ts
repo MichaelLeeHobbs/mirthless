@@ -584,6 +584,23 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(convert4x(swap('TIME')).sourceConnectorProperties).toEqual({ script: "return 'tick';" });
   });
 
+  it('maps an HTTP Sender\'s method, headers, parameters, Basic credentials and content, and an SMTP Sender\'s mail', () => {
+    const http = '<properties class="com.mirth.connect.connectors.http.HttpDispatcherProperties" version="4.5.0"><host>http://api/orders/${accession}</host><method>put</method><headers class="linked-hash-map"><entry><string>X-Source</string><list><string>VNS</string><string>LAB</string></list></entry></headers><parameters class="linked-hash-map"><entry><string>site</string><list><string>${site}</string></list></entry></parameters><useAuthentication>true</useAuthentication><authenticationType>Basic</authenticationType><username>mirth</username><password>s3cret</password><content>{"a":"${accession}"}</content><contentType>application/json</contentType></properties>';
+    const smtp = '<properties class="com.mirth.connect.connectors.smtp.SmtpDispatcherProperties" version="4.5.0"><smtpHost>mail</smtpHost><smtpPort>25</smtpPort><encryption>tls</encryption><authentication>true</authentication><username>u</username><password>p</password><to>${email}</to><from>vns@example.com</from><cc></cc><subject>${subject}</subject><html>true</html><body>Ready</body></properties>';
+    const channel = convert4x((x) => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, http)
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, smtp));
+
+    expect(channel.destinations[0]?.properties).toEqual({
+      url: 'http://api/orders/${accession}', method: 'PUT', headers: { 'X-Source': 'VNS, LAB' }, parameters: { site: '${site}' },
+      contentType: 'application/json', basicAuth: { username: 'mirth', password: 's3cret' }, template: '{"a":"${accession}"}',
+    });
+    expect(channel.destinations[1]?.properties).toEqual({
+      host: 'mail', port: 25, to: '${email}', from: 'vns@example.com', subject: '${subject}', bodyTemplate: 'Ready',
+      contentType: 'text/html', requireTLS: true, authUser: 'u', authPass: 'p',
+    });
+  });
+
   it('leaves a Channel Writer set to "none" without a target', () => {
     const channel = convert4x((x) => x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, '<properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="4.5.0"><channelId>none</channelId></properties>'));
     expect(channel.destinations[0]?.properties).toEqual({ targetChannelId: '' });

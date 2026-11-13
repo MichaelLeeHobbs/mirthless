@@ -488,7 +488,7 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       }
       const url = getString(propsNode, 'host');
       if (url) result['url'] = url;
-      if (!listener) Object.assign(result, sendTemplate(propsNode, 'content'));
+      if (!listener) Object.assign(result, sendTemplate(propsNode, 'content'), httpSenderProperties(propsNode));
       break;
     }
     case 'FILE': {
@@ -503,17 +503,9 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
     case 'DATABASE':
       Object.assign(result, databaseProperties(propsNode));
       break;
-    case 'SMTP': {
-      const smtpHost = getString(propsNode, 'smtpHost');
-      if (smtpHost) result['host'] = smtpHost;
-      const smtpPort = getString(propsNode, 'smtpPort');
-      if (smtpPort) result['port'] = Number(smtpPort);
-      const to = getString(propsNode, 'to');
-      if (to) result['to'] = to;
-      const from = getString(propsNode, 'from');
-      if (from) result['from'] = from;
+    case 'SMTP':
+      Object.assign(result, smtpProperties(propsNode));
       break;
-    }
     case 'CHANNEL': {
       // Channel Writer: the target is the Mirth channel id, which the import
       // keeps as the channel's id. "none" is Mirth's "no channel selected".
@@ -537,6 +529,59 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       break;
   }
 
+  return result;
+}
+
+/**
+ * A Mirth `linked-hash-map` of name to list of values. A name with several
+ * values keeps them joined with ", ", as one HTTP header carries them.
+ */
+function linkedMap(node: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!isRecord(node)) return result;
+  for (const entry of toRecordList(node['entry'])) {
+    const name = getString(entry, 'string');
+    const list = entry['list'];
+    const raw = isRecord(list) ? list['string'] : undefined;
+    const values = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).map(String);
+    if (name) result[name] = values.join(', ');
+  }
+  return result;
+}
+
+/** A Mirth HTTP Sender's method, headers, query parameters, Basic credentials and content type. */
+function httpSenderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    method: (getString(propsNode, 'method') ?? 'post').toUpperCase(),
+    headers: linkedMap(propsNode['headers']),
+    parameters: linkedMap(propsNode['parameters']),
+  };
+  const contentType = getString(propsNode, 'contentType');
+  if (contentType) result['contentType'] = contentType;
+  if (getBoolean(propsNode, 'useAuthentication', false) && getString(propsNode, 'authenticationType') === 'Basic') {
+    result['basicAuth'] = { username: getString(propsNode, 'username') ?? '', password: getString(propsNode, 'password') ?? '' };
+  }
+  return result;
+}
+
+/** A Mirth SMTP Sender's server, credentials, addresses, subject and body. */
+function smtpProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const port = getString(propsNode, 'smtpPort');
+  if (port) result['port'] = portValue(port);
+  const fields = [['smtpHost', 'host'], ['to', 'to'], ['from', 'from'], ['cc', 'cc'], ['bcc', 'bcc'], ['subject', 'subject'], ['body', 'bodyTemplate']] as const;
+  for (const [from, to] of fields) {
+    const value = getString(propsNode, from);
+    if (value) result[to] = value;
+  }
+  if (getBoolean(propsNode, 'html', false)) result['contentType'] = 'text/html';
+  const encryption = getString(propsNode, 'encryption')?.toLowerCase();
+  if (encryption === 'ssl') result['secure'] = true;
+  if (encryption === 'tls') result['requireTLS'] = true;
+  if (getBoolean(propsNode, 'authentication', false)) {
+    result['authUser'] = getString(propsNode, 'username') ?? '';
+    result['authPass'] = getString(propsNode, 'password') ?? '';
+  }
   return result;
 }
 
