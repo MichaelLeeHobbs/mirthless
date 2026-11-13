@@ -27,6 +27,7 @@ const DATA_TYPES = [
   { value: 'DICOM', label: 'DICOM' },
   { value: 'DELIMITED', label: 'Delimited' },
   { value: 'FHIR', label: 'FHIR' },
+  { value: 'X12', label: 'X12 (EDI)' },
 ] as const;
 
 interface SourceTransformerSectionProps {

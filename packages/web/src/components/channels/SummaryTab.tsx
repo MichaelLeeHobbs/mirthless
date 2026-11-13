@@ -29,7 +29,7 @@ import type { AdvancedFormValues } from './AdvancedTab.js';
 import { useChannelGroups, useGroupMemberships, useAddGroupMember, useRemoveGroupMember } from '../../hooks/use-channel-groups.js';
 import { useNotification } from '../../stores/notification.store.js';
 
-const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR'] as const;
+const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR', 'X12'] as const;
 
 // Must match the source factories in packages/connectors/src/registry.ts.
 // FHIR is a destination-only connector (no receiver/factory) and EMAIL (IMAP)

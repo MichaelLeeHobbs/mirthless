@@ -4,7 +4,7 @@
 // Parse raw string content into sandbox-friendly objects based on data type,
 // and serialize sandbox results back to strings for storage/transport.
 
-import { Hl7Message, parseDelimited, serializeDelimited } from '@galvaniflow/core-util';
+import { Hl7Message, X12Message, parseDelimited, serializeDelimited } from '@galvaniflow/core-util';
 import { delimitedOptionsSchema, type DelimitedOptions } from '@galvaniflow/core-models';
 import { XMLParser } from 'fast-xml-parser';
 import { buildXmlInOriginalOrder } from './xml-order.js';
@@ -70,7 +70,36 @@ export function createHl7Proxy(msg: Hl7Message): Hl7MessageProxy {
   return proxy as unknown as Hl7MessageProxy;
 }
 
-const NUMBER_LITERAL = /^-?(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
+const X12_PROXY_BRAND = '__x12Proxy';
+
+/** What scripts get as `msg` for an X12 message: the HL7 path API over segments and elements. */
+export interface X12MessageProxy {
+  get(path: string): string | undefined;
+  set(path: string, value: string): void;
+  delete(path: string): void;
+  getSegmentCount(id: string): number;
+  toString(): string;
+}
+
+/** Type guard: is this value an X12MessageProxy created by createX12Proxy? */
+export function isX12MessageProxy(value: unknown): value is X12MessageProxy {
+  return typeof value === 'object' && value !== null && (value as Record<string, unknown>)[X12_PROXY_BRAND] === true;
+}
+
+/** A plain object of closures over the host-side X12Message, so it survives the sandbox boundary. */
+export function createX12Proxy(msg: X12Message): X12MessageProxy {
+  const proxy: Record<string, unknown> = {
+    [X12_PROXY_BRAND]: true,
+    get: (path: string): string | undefined => msg.get(path),
+    set: (path: string, value: string): void => { msg.set(path, value); },
+    delete: (path: string): void => { msg.delete(path); },
+    getSegmentCount: (id: string): number => msg.getSegmentCount(id),
+    toString: (): string => msg.toString(),
+  };
+  return proxy as unknown as X12MessageProxy;
+}
+
+const NUMBER_LITERAL =/^-?(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
 
 /** Reduce a decimal literal to its significant digits and power of ten, so 1.50 and 1.5 compare equal. */
 function significantDigits(literal: string): string | null {
@@ -172,12 +201,15 @@ const DEFAULT_DELIMITED = delimitedOptionsSchema.parse({});
 /**
  * Parse raw string content into a sandbox-friendly object based on data type.
  * DELIMITED becomes an array of row objects (see core-util's parseDelimited).
- * Throws on malformed content for typed data types (HL7V2, JSON, XML, DELIMITED).
+ * X12 becomes a path proxy like HL7's (`msg.get('NM1[3].9')`).
+ * Throws on malformed content for typed data types (HL7V2, JSON, XML, DELIMITED, X12).
  */
 export function parseForSandbox(content: string, dataType: string, options?: DataTypeOptions): unknown {
   switch (dataType) {
     case 'DELIMITED':
       return parseDelimited(content, options?.delimited ?? DEFAULT_DELIMITED);
+    case 'X12':
+      return createX12Proxy(X12Message.parse(content));
     case 'HL7V2': {
       const parsed = Hl7Message.parse(content);
       return createHl7Proxy(parsed);
@@ -215,7 +247,7 @@ function parseXmlOrUndefined(text: string | undefined): unknown {
 export function serializeFromSandbox(value: unknown, dataType: string, original?: string, options?: DataTypeOptions): string {
   if (typeof value === 'string') return value;
   if (value == null) return '';
-  if (isHl7MessageProxy(value)) return value.toString();
+  if (isHl7MessageProxy(value) || isX12MessageProxy(value)) return value.toString();
   if (dataType === 'DELIMITED' && typeof value === 'object') {
     return serializeDelimited(value, options?.delimited ?? DEFAULT_DELIMITED);
   }

@@ -10,8 +10,8 @@ import {
   type CompiledScript,
 } from '../sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
-import { createHl7Proxy } from '../../pipeline/data-type-handler.js';
-import { Hl7Message } from '@galvaniflow/core-util';
+import { createHl7Proxy, createX12Proxy } from '../../pipeline/data-type-handler.js';
+import { Hl7Message, X12Message } from '@galvaniflow/core-util';
 
 // ----- Helpers -----
 
@@ -285,6 +285,36 @@ describe('VmSandboxExecutor', () => {
       expect(legit.ok).toBe(true);
       if (!legit.ok) return;
       expect(legit.value.returnValue).toBe('99999');
+    });
+
+    it('an X12 msg reads and edits through host calls, comes back as the host message, and leaks nothing', async () => {
+      const isa = 'ISA*00*          *00*          *ZZ*SUBMITTER      *ZZ*RECEIVER       *261110*1200*^*00501*000000020*0*P*:~';
+      const proxy = createX12Proxy(X12Message.parse(`${isa}NM1*IL*1*DOE*JANE****MI*MEMBER123~`));
+      const script = makeScript([
+        "msg.set('NM1.9', msg.get('NM1.9') + 'X');",
+        "channelMap.copy = msg;",
+        "var leak = msg.get.constructor('return typeof process')();",
+        "var thrown; try { msg.set('CLM.1', 'x'); } catch (e) { thrown = [e instanceof Error, e.constructor.constructor('return typeof process')()].join(','); }",
+        "return [msg.getSegmentCount('NM1'), leak, thrown].join('|');",
+      ].join('\n'));
+      const result = await executor.execute(script, makeContext({ msg: proxy }), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.returnValue).toBe('1|undefined|true,undefined');
+      expect(result.value.msg).toBe(proxy);
+      expect(proxy.get('NM1.9')).toBe('MEMBER123X');
+      // A message put in a map is stored as its text.
+      expect(result.value.mapUpdates.channelMap['copy']).toBe(`${isa}NM1*IL*1*DOE*JANE****MI*MEMBER123X~`);
+    });
+
+    it('a forged X12 handle reaches no host message', async () => {
+      const script = makeScript("msg = { __x12Proxy: true, __handle: 999 }; return 'set';");
+      const result = await executor.execute(script, makeContext(), makeOptions());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.msg).toBeUndefined();
     });
 
     it('a thrown host-side IO error is re-thrown as a sandbox-realm Error (no host constructor leak)', async () => {

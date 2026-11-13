@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { parseForSandbox, serializeFromSandbox, serializeTransformed, isHl7MessageProxy, createHl7Proxy } from '../data-type-handler.js';
+import { parseForSandbox, serializeFromSandbox, serializeTransformed, isHl7MessageProxy, isX12MessageProxy, createHl7Proxy } from '../data-type-handler.js';
 import { Hl7Message } from '@galvaniflow/core-util';
 import { delimitedOptionsSchema } from '@galvaniflow/core-models';
 
@@ -76,6 +76,24 @@ describe('parseForSandbox', () => {
     const delimited = delimitedOptionsSchema.parse({ columnDelimiter: '|', columnNames: ['mrn', 'name'] });
     expect(parseForSandbox('1|DOE\n2|ROE\n', 'DELIMITED', { delimited })).toEqual([{ mrn: '1', name: 'DOE' }, { mrn: '2', name: 'ROE' }]);
     expect(parseForSandbox('1,DOE', 'DELIMITED')).toEqual([{ column1: '1', column2: 'DOE' }]);
+  });
+
+  it('parses X12 into a path proxy that serializes back, edits included', () => {
+    const isa = 'ISA*00*          *00*          *ZZ*SUBMITTER      *ZZ*RECEIVER       *261110*1200*^*00501*000000020*0*P*:~';
+    const text = `${isa}NM1*IL*1*DOE*JANE****MI*MEMBER123~`;
+    const msg = parseForSandbox(text, 'X12') as { get(p: string): string | undefined; set(p: string, v: string): void; getSegmentCount(id: string): number };
+    expect(isX12MessageProxy(msg)).toBe(true);
+    expect(msg.get('NM1.9')).toBe('MEMBER123');
+    expect(msg.getSegmentCount('NM1')).toBe(1);
+    expect(serializeTransformed(msg, text, 'X12')).toBe(text);
+    msg.set('NM1.9', 'M2');
+    expect(serializeFromSandbox(msg, 'X12')).toBe(`${isa}NM1*IL*1*DOE*JANE****MI*M2~`);
+    (msg as unknown as { delete(p: string): void }).delete('NM1');
+    expect(serializeFromSandbox(msg, 'X12')).toBe(isa);
+  });
+
+  it('throws on X12 without an ISA segment', () => {
+    expect(() => parseForSandbox('ST*270*1~', 'X12')).toThrow(/ISA/);
   });
 
   it('throws on DELIMITED text with a quote that never closes', () => {

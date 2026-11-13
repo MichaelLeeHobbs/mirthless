@@ -8,3 +8,4 @@ export * from './validation.js';
 export * from './date.js';
 export * from './hl7/index.js';
 export * from './delimited.js';
+export * from './x12.js';

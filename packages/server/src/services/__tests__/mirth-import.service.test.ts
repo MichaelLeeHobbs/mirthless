@@ -353,6 +353,26 @@ describe('MirthImportService.convertXml', () => {
     expect(fixed.ok && fixed.value.warnings.join('\n')).toContain('fixed-width columns are not supported');
   });
 
+  it('imports Mirth EDI/X12 as the X12 data type, on the channel and its transformers', () => {
+    const xml = `<channel>
+      <id>test-x12</id>
+      <name>Eligibility</name>
+      <enabled>true</enabled>
+      <sourceConnector>
+        <properties class="com.mirth.connect.connectors.js.JavaScriptReceiverProperties"></properties>
+        <transformer><inboundDataType>EDI/X12</inboundDataType><outboundDataType>EDI/X12</outboundDataType></transformer>
+      </sourceConnector>
+      <destinationConnectors></destinationConnectors>
+    </channel>`;
+
+    const result = MirthImportService.convertXml(xml);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const channel = result.value.channels[0]!;
+    expect([channel.inboundDataType, channel.outboundDataType]).toEqual(['X12', 'X12']);
+    expect(channel.transformers[0]).toMatchObject({ inboundDataType: 'X12', outboundDataType: 'X12' });
+  });
+
   it('maps JAVASCRIPT connector type from class name', () => {
     const xml = `<channel>
       <id>test-js</id>

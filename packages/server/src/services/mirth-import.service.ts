@@ -842,7 +842,7 @@ function extractDataType(
   if (!transformer) return null;
 
   const key = direction === 'inbound' ? 'inboundDataType' : 'outboundDataType';
-  return getString(transformer, key);
+  return mirthDataType(getString(transformer, key));
 }
 
 // ----- Filter Conversion -----
@@ -988,8 +988,8 @@ function extractTransformerFromConnector(
     mapping: getString(step, 'mapping'),
   }));
 
-  const inboundDataType = getString(transformer, 'inboundDataType') ?? 'HL7V2';
-  const outboundDataType = getString(transformer, 'outboundDataType') ?? 'HL7V2';
+  const inboundDataType = mirthDataType(getString(transformer, 'inboundDataType')) ?? 'HL7V2';
+  const outboundDataType = mirthDataType(getString(transformer, 'outboundDataType')) ?? 'HL7V2';
 
   // Only include transformer if it has steps or explicit data types
   if (steps.length === 0 && inboundDataType === 'HL7V2' && outboundDataType === 'HL7V2') {
@@ -1019,6 +1019,11 @@ function extractDataTypeProperties(transformer: Record<string, unknown>, key: st
     }
   }
   return result;
+}
+
+/** GalvaniFlow's name for a Mirth data type: Mirth calls X12 "EDI/X12". */
+function mirthDataType(name: string | null): string | null {
+  return name === 'EDI/X12' ? 'X12' : name;
 }
 
 /** Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`. */
