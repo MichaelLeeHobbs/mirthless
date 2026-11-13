@@ -1,0 +1,201 @@
+{"id":"D0001","name":"no input","def":"the function takes no parameters"}
+{"id":"D0002","name":"request or route path","def":"the path part of a URL or API route, whole or as segments"}
+{"id":"D0003","name":"URL","def":"a full URL or server root address, including a redirect target"}
+{"id":"D0004","name":"hostname or IP address","def":"a host name or IP literal, optionally with an allow list to check it against"}
+{"id":"D0005","name":"host and port","def":"a network endpoint given as host plus port"}
+{"id":"D0006","name":"CSV cell text","def":"text destined for one cell of a CSV file"}
+{"id":"D0007","name":"table headers and rows","def":"tabular export data: column headers with rows of cells"}
+{"id":"D0008","name":"connector properties","def":"the property bag of a connector of any type, or one of its property names; receiver, dispatcher and sender settings"}
+{"id":"D0009","name":"HTTP connector properties","def":"properties of an HTTP or HTTPS listener or sender connector"}
+{"id":"D0010","name":"DICOM connector properties","def":"properties of a DICOM connector"}
+{"id":"D0011","name":"FHIR connector properties","def":"properties of a FHIR server connector"}
+{"id":"D0012","name":"mail server settings","def":"SMTP or IMAP server and mailbox connection settings"}
+{"id":"D0013","name":"database connector properties","def":"properties of a database connector"}
+{"id":"D0014","name":"file connector properties","def":"properties of a file connector"}
+{"id":"D0015","name":"SFTP connection","def":"SFTP connection settings, credentials or an open SFTP client"}
+{"id":"D0016","name":"connection settings","def":"a generic or unsaved connection or transport definition"}
+{"id":"D0017","name":"filesystem path","def":"a file or directory path, alone or with a base directory"}
+{"id":"D0018","name":"HL7 message text","def":"a raw HL7 v2 message as text"}
+{"id":"D0019","name":"raw message content","def":"message body text of any data type, optionally with its data type or an abort signal"}
+{"id":"D0020","name":"parsed HL7 message","def":"an HL7 message as a parsed object or proxy"}
+{"id":"D0021","name":"HL7 path","def":"an HL7 field path, as text or parsed"}
+{"id":"D0022","name":"HL7 path and value","def":"an HL7 path together with the value to write there"}
+{"id":"D0023","name":"method name and arguments","def":"an operation or method name with its argument list"}
+{"id":"D0024","name":"HL7 segment line","def":"one segment line of an HL7 message, including the MSH header"}
+{"id":"D0025","name":"HL7 field text","def":"the text of an HL7 field, component, repetition or element, escaped or not"}
+{"id":"D0026","name":"parsed HL7 node record","def":"a parsed HL7 segment, field, repetition or component record"}
+{"id":"D0027","name":"HL7 segment name","def":"a segment name, optionally with an index"}
+{"id":"D0028","name":"delimiter characters","def":"HL7 delimiter characters or a single literal character"}
+{"id":"D0029","name":"HL7 acknowledgement","def":"an ACK frame, or the ack code and text to build one"}
+{"id":"D0030","name":"message control id","def":"the HL7 message control id"}
+{"id":"D0031","name":"network byte stream chunk","def":"a chunk of bytes read from a TCP or MLLP socket"}
+{"id":"D0032","name":"binary buffer","def":"a binary buffer or an offset into it"}
+{"id":"D0033","name":"HTTP method, path and body","def":"the parts of an outgoing API request"}
+{"id":"D0034","name":"HTTP request","def":"an incoming HTTP request with nothing more specific said about it"}
+{"id":"D0035","name":"HTTP request body","def":"the body of an HTTP request"}
+{"id":"D0036","name":"HTTP headers","def":"request or response headers, including content type and header rows in a form"}
+{"id":"D0037","name":"request cookies","def":"the cookie map of a request"}
+{"id":"D0038","name":"HTTP response","def":"an HTTP response object or stream"}
+{"id":"D0039","name":"HTTP server","def":"an HTTP server instance"}
+{"id":"D0040","name":"Socket.IO server","def":"a Socket.IO server instance, possibly null"}
+{"id":"D0041","name":"API request without parameters","def":"an HTTP request that lists everything of a kind or triggers an action, carrying no parameters"}
+{"id":"D0042","name":"API request with entity id","def":"an HTTP request naming one entity by id"}
+{"id":"D0043","name":"API request with entity id and changes","def":"an HTTP request carrying an entity id plus fields to change, a new name or an enabled flag"}
+{"id":"D0044","name":"API request with new entity definition","def":"an HTTP request carrying the fields of an entity to create"}
+{"id":"D0045","name":"API request with several ids","def":"an HTTP request carrying two or more ids: parent and child, an association pair or an id list"}
+{"id":"D0046","name":"API request with query filters","def":"an HTTP request carrying search, paging, export or log filters"}
+{"id":"D0047","name":"API request with key","def":"an HTTP request naming a setting, preference or map entry by key or category and name"}
+{"id":"D0048","name":"API request with key and value","def":"an HTTP request carrying a key and the value to store"}
+{"id":"D0049","name":"API request with entry list","def":"an HTTP request carrying a batch of settings, preferences or entries"}
+{"id":"D0050","name":"API request with credentials","def":"an HTTP request carrying a password, bearer token, refresh cookie or secret change"}
+{"id":"D0051","name":"API request with caller identity","def":"an HTTP request read for its signed-in user or session"}
+{"id":"D0052","name":"API request with script source","def":"an HTTP request carrying script text"}
+{"id":"D0053","name":"API request with test message","def":"an HTTP request carrying message content to send or message generation parameters"}
+{"id":"D0054","name":"API request with import payload","def":"an HTTP request carrying a backup document, channel import or channel XML"}
+{"id":"D0055","name":"API request with connection settings","def":"an HTTP request carrying connector or connection settings to test"}
+{"id":"D0056","name":"API request with retention or schedule","def":"an HTTP request carrying a retention age or pruner schedule settings"}
+{"id":"D0057","name":"JSON text","def":"a JSON document or argument as text"}
+{"id":"D0058","name":"parsed JSON value","def":"a JSON-serializable value, parsed JSON node or nested node with its key"}
+{"id":"D0059","name":"unknown value","def":"a value of unknown type to inspect or narrow"}
+{"id":"D0060","name":"error value","def":"an error object or thrown value of unknown shape, including socket and connection failures"}
+{"id":"D0061","name":"status message text","def":"a user-facing error, failure or success message"}
+{"id":"D0062","name":"JavaScript connector","def":"a JavaScript receiver or dispatcher connector object"}
+{"id":"D0063","name":"Mirth XML export","def":"a Mirth Connect XML export of a channel or server"}
+{"id":"D0064","name":"Mirth XML node","def":"a node of a parsed Mirth channel export: channel, connector, properties, transformer"}
+{"id":"D0065","name":"Monaco instance","def":"the Monaco editor instance"}
+{"id":"D0066","name":"PEM text","def":"a PEM certificate or public key as text"}
+{"id":"D0067","name":"SQL statement","def":"SQL text, optionally with parameters, template variables, a pool or a data source"}
+{"id":"D0068","name":"TLS settings","def":"a TLS settings bag or one of its keys and values"}
+{"id":"D0069","name":"script source","def":"user script source code in JavaScript or TypeScript, optionally with code templates"}
+{"id":"D0070","name":"global scripts","def":"the set of global script bodies"}
+{"id":"D0071","name":"UUID candidate","def":"a string to test as a UUID"}
+{"id":"D0072","name":"XML text","def":"an XML document as text"}
+{"id":"D0073","name":"parsed XML","def":"a parsed XML document, element or tree node, including edited copies"}
+{"id":"D0074","name":"abort signal","def":"a cancellation or abort signal"}
+{"id":"D0075","name":"pending promise","def":"a promise for pending work, optionally with an abort signal"}
+{"id":"D0076","name":"auth token","def":"an access, refresh or secret token string"}
+{"id":"D0077","name":"signing or encryption key","def":"a signing secret or encryption key"}
+{"id":"D0078","name":"login credentials","def":"a user name with password, or auth type with credentials"}
+{"id":"D0079","name":"password","def":"a password or credential string"}
+{"id":"D0080","name":"password change","def":"current and new passwords, or an account with its new credential"}
+{"id":"D0081","name":"user identifier","def":"a user or account id, alone or with actor, transaction or client metadata"}
+{"id":"D0082","name":"user record","def":"a user account record, new user fields or user changes"}
+{"id":"D0083","name":"session identity","def":"a session id, user and session pair, or persisted auth session"}
+{"id":"D0084","name":"alert definition","def":"an alert record, new alert definition or alert changes"}
+{"id":"D0085","name":"alert identifier","def":"one or more alert ids, optionally with an enabled flag"}
+{"id":"D0086","name":"alert throttle timestamps","def":"an alert or channel with the timestamps used to silence or throttle it"}
+{"id":"D0087","name":"alert action or trigger","def":"the action or trigger configuration of an alert"}
+{"id":"D0088","name":"alert and error event","def":"an error event with the alerts to match it against, or a pipeline alert event"}
+{"id":"D0089","name":"backup section entries","def":"one section of a server backup: alerts, groups, tags, libraries, settings, map entries and the like"}
+{"id":"D0090","name":"server backup payload","def":"a whole server backup document, optionally with a collision mode"}
+{"id":"D0091","name":"setting list","def":"a batch of settings or setting definitions"}
+{"id":"D0092","name":"setting key","def":"a setting key, name or type label"}
+{"id":"D0093","name":"setting key and value","def":"a setting key with its value, type or validation rule"}
+{"id":"D0094","name":"setting record","def":"one settings row or definition"}
+{"id":"D0095","name":"before and after snapshots","def":"two versions of a map or record to compare"}
+{"id":"D0096","name":"transaction callback","def":"a callback to run inside a database transaction"}
+{"id":"D0097","name":"identifier to format","def":"an enum-style identifier, brand or label to turn into display text"}
+{"id":"D0098","name":"fixture label","def":"a label, name or seed definition used to build test or seed data"}
+{"id":"D0099","name":"random source","def":"a random seed or seeded random generator"}
+{"id":"D0100","name":"sandbox bridge call","def":"a bridge call, bridge argument, handle or host bridge state crossing the sandbox boundary"}
+{"id":"D0101","name":"byte count","def":"a size in bytes"}
+{"id":"D0102","name":"compiled script","def":"a compiled script or its cache key, optionally with the content or maps to run it on"}
+{"id":"D0103","name":"search text","def":"text typed into a search box, optionally with the candidates to filter"}
+{"id":"D0104","name":"map entry key","def":"the key of a config or global map entry: category, name or id"}
+{"id":"D0105","name":"map entry key and value","def":"a key-value entry, entry batch or persisted map row"}
+{"id":"D0106","name":"certificate record","def":"a certificate row, definition, id, changes or list filters"}
+{"id":"D0107","name":"duration in days","def":"a number of days: retention, horizon or days until expiry"}
+{"id":"D0108","name":"timestamp","def":"a point in time in any representation: ISO string, Date, epoch number"}
+{"id":"D0109","name":"duration in seconds","def":"a length of time in seconds"}
+{"id":"D0110","name":"event callback","def":"a listener or UI callback to register"}
+{"id":"D0111","name":"shutdown hooks","def":"shutdown step callbacks or the process events that trigger them"}
+{"id":"D0112","name":"channel identifier","def":"one or more channel ids"}
+{"id":"D0113","name":"channel lifecycle state","def":"a channel state or lifecycle action, optionally with the channel id or a failure"}
+{"id":"D0114","name":"channel definition","def":"a channel record, new definition, changes, runtime configuration or its related rows"}
+{"id":"D0115","name":"channel rename or clone","def":"a channel with a new name"}
+{"id":"D0116","name":"message identity","def":"channel, message, connector, server or attachment ids that locate a message"}
+{"id":"D0117","name":"channel dependencies","def":"a channel with its dependency list or dependency edges"}
+{"id":"D0118","name":"message retention cutoff","def":"a channel with a retention age, cutoff or recovery range"}
+{"id":"D0119","name":"storage mode","def":"a channel's message storage mode or content type code"}
+{"id":"D0120","name":"message search filters","def":"filters for searching or exporting messages"}
+{"id":"D0121","name":"channel or connector name","def":"the display name of a channel or connector"}
+{"id":"D0122","name":"channel dashboard rows","def":"channel lists, statistics rows and states shown on the dashboard"}
+{"id":"D0123","name":"channel group","def":"a channel group id, definition, changes or membership pair"}
+{"id":"D0124","name":"raw message for a channel","def":"an inbound raw message with its channel context or source map"}
+{"id":"D0125","name":"charset name","def":"a character set name"}
+{"id":"D0126","name":"queued message","def":"a queued message record, claimed batch or queue mode"}
+{"id":"D0127","name":"script result","def":"the value a user script returned, optionally with the original content"}
+{"id":"D0128","name":"collection definition","def":"a collection id, name, definition, changes or row"}
+{"id":"D0129","name":"collection record","def":"a record of a collection: id, content, changes or row"}
+{"id":"D0130","name":"grid query","def":"paging, sorting and search settings of a list or grid"}
+{"id":"D0131","name":"grid column visibility","def":"column ids and their show or hide state"}
+{"id":"D0132","name":"command line arguments","def":"CLI arguments, parsed run arguments or a shell command line"}
+{"id":"D0133","name":"CLI program registration","def":"the commander program and factories a CLI command registers with"}
+{"id":"D0134","name":"CLI config","def":"the CLI config directory and settings"}
+{"id":"D0135","name":"network socket","def":"a TCP or Socket.IO socket, optionally with a token or permission"}
+{"id":"D0136","name":"connector type","def":"a connector type name, code or class name"}
+{"id":"D0137","name":"delivery outcome","def":"a connector or pipeline delivery status or outcome"}
+{"id":"D0138","name":"connector index","def":"the position or key of a destination connector"}
+{"id":"D0139","name":"connector message record","def":"a stored or outbound connector message with its content rows"}
+{"id":"D0140","name":"stored content","def":"stored message content rows or strings, possibly null"}
+{"id":"D0141","name":"batch split input","def":"message content with the delimiter, pattern or batch config to split it by"}
+{"id":"D0142","name":"script context names","def":"names of script contexts a template applies to"}
+{"id":"D0143","name":"data source","def":"a data source id, row, connection config or changes"}
+{"id":"D0144","name":"database pool","def":"a database handle, pool settings or pool factory"}
+{"id":"D0145","name":"database result row","def":"rows returned by a query"}
+{"id":"D0146","name":"number text","def":"a decimal literal, numeric setting text or digit count"}
+{"id":"D0147","name":"delimited name list","def":"a list of names in one delimited string"}
+{"id":"D0148","name":"description text","def":"a free text description, optionally with a schema"}
+{"id":"D0149","name":"destination config","def":"one or more destination connector configurations"}
+{"id":"D0150","name":"destination send request","def":"a message or payload with the destination to send it to"}
+{"id":"D0151","name":"pipeline stage error","def":"a pipeline stage, message or destination with its error text"}
+{"id":"D0152","name":"boolean flag","def":"an on or off switch"}
+{"id":"D0153","name":"encryption input","def":"plaintext to encrypt or an encrypted envelope to decrypt"}
+{"id":"D0154","name":"server wiring","def":"the engine, logger or controllers handed to a route or module setup"}
+{"id":"D0155","name":"environment variables","def":"the process environment map"}
+{"id":"D0156","name":"operation result","def":"a service or test result, success payload or error with success flag"}
+{"id":"D0157","name":"ratio inputs","def":"counts or amounts to turn into a percentage"}
+{"id":"D0158","name":"event list filters","def":"filters and paging for listing or exporting audit events"}
+{"id":"D0159","name":"log entry","def":"a log record, severity, log filters or log stream"}
+{"id":"D0160","name":"event identifier","def":"the id of an audit event"}
+{"id":"D0161","name":"socket event","def":"a Socket.IO event name, payload or room"}
+{"id":"D0162","name":"exported channel entry","def":"a channel entry from an export file, optionally with a collision policy"}
+{"id":"D0163","name":"extension","def":"an extension id, kind or enabled switch"}
+{"id":"D0164","name":"audit event","def":"the fields or context of an audit event"}
+{"id":"D0165","name":"fetched email","def":"an email fetched from a mailbox, its id or flags"}
+{"id":"D0166","name":"custom metadata fields","def":"indexed field names, values or metadata column rows"}
+{"id":"D0167","name":"file blob","def":"a file blob with its name"}
+{"id":"D0168","name":"attachment","def":"a message attachment payload, config or form row"}
+{"id":"D0169","name":"file listing","def":"a local or remote directory listing or one entry of it"}
+{"id":"D0170","name":"template text","def":"text with placeholders to fill, or its variable names"}
+{"id":"D0171","name":"filter rules","def":"filter rule definitions or form rows"}
+{"id":"D0172","name":"transformer steps","def":"transformer step definitions or form state"}
+{"id":"D0173","name":"form field edit","def":"a form field or property key with its new value"}
+{"id":"D0174","name":"message generator settings","def":"options for generating sample messages"}
+{"id":"D0175","name":"benchmark statistics","def":"soak or benchmark numbers: heap, latency samples, task counts"}
+{"id":"D0176","name":"theme","def":"a theme mode, palette mode or colour"}
+{"id":"D0177","name":"generic entity id and changes","def":"an id with changed fields, or a table with an id"}
+{"id":"D0178","name":"resource","def":"a resource id or its fields"}
+{"id":"D0179","name":"DICOM association","def":"a DICOM association, its contexts or a received dataset or file"}
+{"id":"D0180","name":"DOM event","def":"a keyboard, mouse or page event or element"}
+{"id":"D0181","name":"factory function","def":"a lazy loader or factory function"}
+{"id":"D0182","name":"processed file ledger","def":"the ledger of processed files, as path or JSON"}
+{"id":"D0183","name":"code template library","def":"a library id, definition or changes"}
+{"id":"D0184","name":"code template","def":"a code template or snippet id, definition or changes"}
+{"id":"D0185","name":"count limit","def":"a maximum count or retry limit"}
+{"id":"D0186","name":"tag","def":"a tag id, definition, changes or tag and channel pair"}
+{"id":"D0187","name":"pending UI action","def":"the target of a pending delete or clone dialog"}
+{"id":"D0188","name":"permission","def":"permission or role names"}
+{"id":"D0189","name":"process info","def":"the platform string or process id"}
+{"id":"D0190","name":"user preference","def":"a preference key, entries or key with user"}
+{"id":"D0191","name":"email message","def":"recipients, subject and body of an email to send"}
+{"id":"D0192","name":"match pattern","def":"a wildcard or regex pattern"}
+{"id":"D0193","name":"sandbox context","def":"the vm context, deadline or execution callback of the sandbox"}
+{"id":"D0194","name":"schedule","def":"a schedule expression or settings"}
+{"id":"D0195","name":"schema validation","def":"Zod schemas or the issues they reported"}
+{"id":"D0196","name":"FHIR resource","def":"a serialized FHIR resource"}
+{"id":"D0197","name":"server snapshot","def":"a snapshot of server state, optionally with a moment"}
+{"id":"D0198","name":"clipboard text","def":"text to copy to the clipboard"}
+{"id":"D0199","name":"timeout wrapper","def":"a timeout with the callback it guards"}
+{"id":"D0200","name":"revision number","def":"a version or revision counter, optionally with a channel id"}
+{"id":"D0201","name":"dispatch function","def":"the function that dispatches a message into a channel"}
