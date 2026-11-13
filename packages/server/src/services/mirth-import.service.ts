@@ -289,6 +289,7 @@ function convertChannel(
   const filters = convertFilters(mirthChannel);
   const transformers = convertTransformers(mirthChannel).map((t) =>
     ((t.metaDataId ?? null) === null && t.inboundDataType !== inboundDataType ? { ...t, inboundDataType } : t));
+  warnings.push(...delimitedWarnings(name, transformers.find((t) => (t.metaDataId ?? null) === null)));
 
   // Channel properties
   const props = isRecord(mirthChannel['properties'])
@@ -1000,7 +1001,7 @@ function extractTransformerFromConnector(
     metaDataId,
     inboundDataType,
     outboundDataType,
-    inboundProperties: extractDataTypeProperties(transformer, 'inboundProperties'),
+    inboundProperties: withDelimitedOptions(extractDataTypeProperties(transformer, 'inboundProperties'), inboundDataType),
     outboundProperties: extractDataTypeProperties(transformer, 'outboundProperties'),
     inboundTemplate: getString(transformer, 'inboundTemplate'),
     outboundTemplate: getString(transformer, 'outboundTemplate'),
@@ -1018,6 +1019,47 @@ function extractDataTypeProperties(transformer: Record<string, unknown>, key: st
     }
   }
   return result;
+}
+
+/** Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`. */
+function unescapeMirth(text: string): string {
+  return text.replace(/\\([nrt\\])/g, (_m, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? '\\');
+}
+
+/**
+ * Add GalvaniFlow's `delimited` settings (see delimitedOptionsSchema) to a
+ * Delimited transformer's properties, read from Mirth's serializationProperties.
+ * Mirth's own properties stay as they are, for export back.
+ */
+function withDelimitedOptions(props: Record<string, unknown>, dataType: string): Record<string, unknown> {
+  if (dataType !== 'DELIMITED') return props;
+  const ser = props['serializationProperties'];
+  const text = (key: string): string | undefined => {
+    const value = getString(ser, key);
+    return value === null ? undefined : unescapeMirth(value);
+  };
+  const names = text('columnNames');
+  const delimited = {
+    ...(text('columnDelimiter') !== undefined ? { columnDelimiter: text('columnDelimiter') } : {}),
+    ...(text('recordDelimiter') !== undefined ? { recordDelimiter: text('recordDelimiter') } : {}),
+    ...(text('quoteToken') !== undefined ? { quote: text('quoteToken') } : {}),
+    ...(text('quoteEscapeToken') !== undefined ? { quoteEscape: text('quoteEscapeToken') } : {}),
+    escapeWithDoubleQuote: getBoolean(ser, 'escapeWithDoubleQuote', true),
+    ignoreCR: getBoolean(ser, 'ignoreCR', true),
+    columnNames: names ? names.split(',').map((n) => n.trim()).filter((n) => n !== '') : [],
+  };
+  return { ...props, delimited };
+}
+
+/** Warnings for Mirth Delimited settings that read differently here. */
+function delimitedWarnings(channelName: string, transformer: ChannelExportEntry['transformers'][number] | undefined): string[] {
+  if (transformer?.inboundDataType !== 'DELIMITED') return [];
+  const warnings = [`Channel "${channelName}": Delimited messages arrive as an array of rows keyed by column name; read msg[0].column, not msg['row']['column']`];
+  const widths = getString(transformer.inboundProperties['serializationProperties'], 'columnWidths');
+  if (widths !== null && widths.trim() !== '') {
+    warnings.push(`Channel "${channelName}": fixed-width columns are not supported; the message is split on the column delimiter instead`);
+  }
+  return warnings;
 }
 
 function mapTransformerStepType(type: string | null): string {

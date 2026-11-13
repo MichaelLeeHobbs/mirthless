@@ -11,7 +11,7 @@ import { createSandboxContext } from '../sandbox/sandbox-context.js';
 import type { GlobalChannelMap } from '../runtime/global-channel-map.js';
 import type { GlobalMapProxy } from '../runtime/global-map-proxy.js';
 import { DestinationSet, createDestinationSetProxy } from './destination-set.js';
-import { parseForSandbox, serializeFromSandbox, serializeTransformed } from './data-type-handler.js';
+import { parseForSandbox, serializeFromSandbox, serializeTransformed, type DataTypeOptions } from './data-type-handler.js';
 import { mergeVariables, renderDestinationTemplate } from './destination-template.js';
 
 // ----- Types -----
@@ -206,6 +206,8 @@ export interface PipelineConfig {
   readonly channelId: string;
   readonly serverId: string;
   readonly dataType: string;
+  /** Settings the data type reads and writes messages with (the Delimited columns). */
+  readonly dataTypeOptions?: DataTypeOptions | undefined;
   readonly scripts: ChannelScripts;
   readonly destinations: readonly DestinationConfig[];
   readonly scriptTimeoutMs?: number | undefined;
@@ -411,7 +413,7 @@ export class MessageProcessor {
 
       // Validate inbound data type — parse to verify format is valid
       try {
-        parseForSandbox(content, dataType);
+        parseForSandbox(content, dataType, this.config.dataTypeOptions);
       } catch (parseErr) {
         const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
         // Use inline error-out since errorOut helper isn't defined yet
@@ -459,7 +461,7 @@ export class MessageProcessor {
         if (!gpreResult.ok) return errorOut('globalPreprocessor', gpreResult.error.message);
         const gpreVal = scriptReplacement(gpreResult.value.returnValue, gpreResult.value.msg);
         if (gpreVal != null) {
-          content = serializeFromSandbox(gpreVal, dataType, content);
+          content = serializeFromSandbox(gpreVal, dataType, content, this.config.dataTypeOptions);
         }
         mark('globalPreprocessor');
       }
@@ -472,7 +474,7 @@ export class MessageProcessor {
         if (!preResult.ok) return errorOut('preprocessor', preResult.error.message);
         const preVal = scriptReplacement(preResult.value.returnValue, preResult.value.msg);
         if (preVal != null) {
-          content = serializeFromSandbox(preVal, dataType, content);
+          content = serializeFromSandbox(preVal, dataType, content, this.config.dataTypeOptions);
         }
         mark('preprocessor');
       }
@@ -511,7 +513,7 @@ export class MessageProcessor {
         if (!txResult.ok) return errorOut('sourceTransformer', txResult.error.message);
         // Use explicit return value if present, otherwise fall back to msg variable
         const transformed = scriptReplacement(txResult.value.returnValue, txResult.value.msg);
-        content = serializeTransformed(transformed, content, dataType);
+        content = serializeTransformed(transformed, content, dataType, this.config.dataTypeOptions);
         mark('sourceTransformer');
       }
 
@@ -706,7 +708,7 @@ export class MessageProcessor {
           return this.destErrorOut(messageId, dest, 'destinationTransformer', txResult.error.message);
         }
         const transformed = scriptReplacement(txResult.value.returnValue, txResult.value.msg);
-        destContent = serializeTransformed(transformed, destContent, dataType);
+        destContent = serializeTransformed(transformed, destContent, dataType, this.config.dataTypeOptions);
       }
 
       // What scripts put in this message's maps travels with the send (and is
@@ -783,7 +785,7 @@ export class MessageProcessor {
           );
           if (rtResult.ok) {
             const transformed = scriptReplacement(rtResult.value.returnValue, rtResult.value.msg);
-            responseContent = serializeFromSandbox(transformed, dataType, response.content);
+            responseContent = serializeFromSandbox(transformed, dataType, response.content, this.config.dataTypeOptions);
             await this.store.storeContent(
               channelId, messageId, dest.metaDataId, CT_RESPONSE_TRANSFORMED, responseContent, dataType,
             );
@@ -965,7 +967,7 @@ export class MessageProcessor {
     // transformed to a different format), fall back to raw string.
     let parsedMsg: unknown;
     try {
-      parsedMsg = parseForSandbox(content, this.config.dataType);
+      parsedMsg = parseForSandbox(content, this.config.dataType, this.config.dataTypeOptions);
     } catch {
       parsedMsg = content;
     }

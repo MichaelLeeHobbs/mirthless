@@ -320,6 +320,39 @@ describe('MirthImportService.convertXml', () => {
     expect(result.value.channels[0]?.description).toBeNull();
   });
 
+  it('reads Mirth Delimited settings into delimited options and says how scripts read rows', () => {
+    const ser = (widths: string): string => `<serializationProperties class="com.mirth.connect.plugins.datatypes.delimited.DelimitedSerializationProperties">
+      <columnDelimiter>\\t</columnDelimiter><recordDelimiter>\\r\\n</recordDelimiter><columnWidths>${widths}</columnWidths>
+      <quoteToken>'</quoteToken><escapeWithDoubleQuote>false</escapeWithDoubleQuote><quoteEscapeToken>\\\\</quoteEscapeToken>
+      <columnNames>mrn, family ,given</columnNames><ignoreCR>false</ignoreCR></serializationProperties>`;
+    const xml = (widths: string): string => `<channel>
+      <id>test-delimited</id>
+      <name>Census</name>
+      <enabled>true</enabled>
+      <sourceConnector>
+        <properties class="com.mirth.connect.connectors.js.JavaScriptReceiverProperties"></properties>
+        <transformer><inboundDataType>DELIMITED</inboundDataType><outboundDataType>HL7V2</outboundDataType>
+          <inboundProperties class="com.mirth.connect.plugins.datatypes.delimited.DelimitedDataTypeProperties">${ser(widths)}</inboundProperties>
+        </transformer>
+      </sourceConnector>
+      <destinationConnectors></destinationConnectors>
+    </channel>`;
+
+    const result = MirthImportService.convertXml(xml(''));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const source = result.value.channels[0]?.transformers.find((t) => (t.metaDataId ?? null) === null);
+    expect(source?.inboundProperties['delimited']).toEqual({
+      columnDelimiter: '\t', recordDelimiter: '\r\n', quote: "'", quoteEscape: '\\',
+      escapeWithDoubleQuote: false, ignoreCR: false, columnNames: ['mrn', 'family', 'given'],
+    });
+    expect(result.value.warnings.join('\n')).toContain('read msg[0].column');
+    expect(result.value.warnings.join('\n')).not.toContain('fixed-width');
+
+    const fixed = MirthImportService.convertXml(xml('5,10'));
+    expect(fixed.ok && fixed.value.warnings.join('\n')).toContain('fixed-width columns are not supported');
+  });
+
   it('maps JAVASCRIPT connector type from class name', () => {
     const xml = `<channel>
       <id>test-js</id>

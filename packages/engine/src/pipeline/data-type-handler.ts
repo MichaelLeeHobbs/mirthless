@@ -4,7 +4,8 @@
 // Parse raw string content into sandbox-friendly objects based on data type,
 // and serialize sandbox results back to strings for storage/transport.
 
-import { Hl7Message } from '@galvaniflow/core-util';
+import { Hl7Message, parseDelimited, serializeDelimited } from '@galvaniflow/core-util';
+import { delimitedOptionsSchema, type DelimitedOptions } from '@galvaniflow/core-models';
 import { XMLParser } from 'fast-xml-parser';
 import { buildXmlInOriginalOrder } from './xml-order.js';
 import type { Hl7MessageProxy } from '../sandbox/bridge-functions.js';
@@ -161,12 +162,22 @@ function stringifyJsonKeepingNumbers(value: unknown, original: string): string {
   return JSON.stringify(out.root);
 }
 
+/** Settings a data type needs to read and write its messages, from the source transformer. */
+export interface DataTypeOptions {
+  readonly delimited?: DelimitedOptions | undefined;
+}
+
+const DEFAULT_DELIMITED = delimitedOptionsSchema.parse({});
+
 /**
  * Parse raw string content into a sandbox-friendly object based on data type.
- * Throws on malformed content for typed data types (HL7V2, JSON, XML).
+ * DELIMITED becomes an array of row objects (see core-util's parseDelimited).
+ * Throws on malformed content for typed data types (HL7V2, JSON, XML, DELIMITED).
  */
-export function parseForSandbox(content: string, dataType: string): unknown {
+export function parseForSandbox(content: string, dataType: string, options?: DataTypeOptions): unknown {
   switch (dataType) {
+    case 'DELIMITED':
+      return parseDelimited(content, options?.delimited ?? DEFAULT_DELIMITED);
     case 'HL7V2': {
       const parsed = Hl7Message.parse(content);
       return createHl7Proxy(parsed);
@@ -177,7 +188,7 @@ export function parseForSandbox(content: string, dataType: string): unknown {
     case 'XML': {
       return xmlParser.parse(content) as unknown;
     }
-    // RAW, HL7V3, DICOM, DELIMITED, FHIR — pass through as string
+    // RAW, HL7V3, DICOM, FHIR: pass through as string
     default:
       return content;
   }
@@ -201,10 +212,13 @@ function parseXmlOrUndefined(text: string | undefined): unknown {
  *   that document's element order, comments and whitespace (see xml-order.ts);
  *   for JSON it keeps the spelling of every number the script left alone.
  */
-export function serializeFromSandbox(value: unknown, dataType: string, original?: string): string {
+export function serializeFromSandbox(value: unknown, dataType: string, original?: string, options?: DataTypeOptions): string {
   if (typeof value === 'string') return value;
   if (value == null) return '';
   if (isHl7MessageProxy(value)) return value.toString();
+  if (dataType === 'DELIMITED' && typeof value === 'object') {
+    return serializeDelimited(value, options?.delimited ?? DEFAULT_DELIMITED);
+  }
   if (dataType === 'XML' && typeof value === 'object') {
     return buildXmlInOriginalOrder(value, parseXmlOrUndefined(original), original);
   }
@@ -223,11 +237,11 @@ export function serializeFromSandbox(value: unknown, dataType: string, original?
  * empty-element spelling, JSON number formatting), so a transformer that only
  * reads the message, for example to set a map value, must not rewrite it.
  */
-export function serializeTransformed(value: unknown, original: string, dataType: string): string {
-  const serialized = serializeFromSandbox(value, dataType, original);
+export function serializeTransformed(value: unknown, original: string, dataType: string, options?: DataTypeOptions): string {
+  const serialized = serializeFromSandbox(value, dataType, original, options);
   if (typeof value === 'string') return serialized;
   try {
-    const untouched = serializeFromSandbox(parseForSandbox(original, dataType), dataType, original);
+    const untouched = serializeFromSandbox(parseForSandbox(original, dataType, options), dataType, original, options);
     return untouched === serialized ? original : serialized;
   } catch {
     // The original is not valid for this data type, so there is nothing to compare with.

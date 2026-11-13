@@ -60,7 +60,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 > `pnpm test:scenarios` (D-237, `docs/testing/migration-scenarios.md`) scores 55/60 on 2026-11-13. The three that fail each need a decision first: [`docs/design/17-remaining-migration-gaps.md`](../design/17-remaining-migration-gaps.md).
 
 - [ ] **S15** Database connectors are PostgreSQL-only (connector rank [1] below; doc 17 proposes a MySQL driver behind the same connector).
-- [ ] **S19** Delimited data is not parsed into fields by column name (N2; doc 17 proposes `msg` as an array of row objects).
+- [x] **S19** Delimited data is an array of row objects keyed by column name (D-256). Not yet: fixed-width columns, Process Batch per row, editor controls for the settings.
 - [ ] **S20** No X12 data type (N1; doc 17 proposes X12 on the HL7 path model).
 - [x] S08, S09, S11, S12, S14, S16, S17, S18, S21, S26 pass since 2026-11-13 (D-250 to D-255).
 - [ ] Editor controls for what the engine now supports: custom metadata columns (N5), code template library scope (N12), the HTTP listener's `matchSubpaths`, a destination `template`, HTTP Sender parameters and Basic credentials, TCP frame bytes.
@@ -89,7 +89,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 > Core lifecycle/alerts/monitoring are at parity or ahead. Gaps cluster in data types, scripting API, and a few "half-built" engine features (schema exists, runtime doesn't use it). Ranked by impact, not effort.
 
 - [ ] **[N1] EDI/X12 + NCPDP serializers** (+ enum entries) — 🔴 blocks X12 billing/eligibility + pharmacy channels.
-- [ ] **[N2] Finish declared-but-pass-through datatypes** — Delimited, HL7v3, DICOM→XML. 🔴 `msg` mapping impossible on them today.
+- [ ] **[N2] Finish declared-but-pass-through datatypes** — HL7v3, DICOM→XML. 🔴 `msg` mapping impossible on them today. Delimited done 2026-11-13 (D-256).
 - [x] **[N3] Fix `$gc` map-shortcut collision** (means configMap; Mirth = globalChannelMap) + add `$cfg`/`$c`/`$co`/`$s` — 🔴 silent-wrong-map footgun for ported scripts.
 - [ ] **[N4] Message search operators** — regex, error, send-attempt filters. 🔴 daily-use triage gap. Metadata-column equality search is in the API (`metaDataColumn`/`metaDataValue`, 2026-11-12); the message browser has no control for it yet.
 - [ ] **[N5] Custom metadata columns: editor and message browser UI** — the engine fills the columns from map variables after the source transformer and the message list API filters on them and returns `metaData` (2026-11-12, D-240). Still missing: defining columns in the channel editor (removed by D-189) and showing/filtering them in the message browser.

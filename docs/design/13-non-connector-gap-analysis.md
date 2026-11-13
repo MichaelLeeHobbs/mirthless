@@ -34,7 +34,7 @@ Mirth ships full inbound/outbound serializers (raw ⇄ XML) for each datatype, s
 | XML | Full | parse/build via fast-xml-parser | 🟢 |
 | JSON | Full | JSON.parse/stringify | 🟢 |
 | Raw | Full | Pass-through | 🟢 |
-| **Delimited (CSV/fixed-width)** | Full serializer + batch | **Pass-through string only** — no delimited→XML | 🔴 |
+| **Delimited (CSV/fixed-width)** | Full serializer + batch | `msg` is an array of row objects keyed by column name (D-256, 2026-11-13); no fixed-width, no batch per row | 🟡 |
 | **DICOM** | Full serializer + DICOMUtil | **Pass-through** (declared, not serialized) | 🔴 |
 | **EDI / X12** | Full serializer, X12 vocab, batch | **Absent from enum entirely** | 🔴 |
 | **NCPDP** | Full serializer + NCPDPUtil | **Absent** | 🔴 |
