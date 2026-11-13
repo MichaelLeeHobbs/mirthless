@@ -20,7 +20,7 @@ type Queryable = Pick<mysql.Pool, 'execute' | 'query'>;
  */
 async function run(target: Queryable, sql: string, params: readonly unknown[], timeoutMs: number): Promise<QueryResult> {
   // mysql2 refuses undefined; pg sends it as NULL, and so do we.
-  const values: unknown[] = params.map((p) => (p === undefined ? null : p));
+  const values = params.map((p) => (p === undefined ? null : p)) as mysql.ExecuteValues & unknown[];
   const [result] = values.length > 0
     ? await target.execute({ sql, timeout: timeoutMs }, values)
     : await target.query({ sql, timeout: timeoutMs });
