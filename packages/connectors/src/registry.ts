@@ -60,6 +60,20 @@ export function readSmtpAttachments(value: unknown): readonly SmtpAttachment[] {
   return result;
 }
 
+/** A name-to-text map from a prop bag, keeping only string values; undefined when absent. */
+export function readStringRecord(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value)) if (typeof v === 'string') result[k] = v;
+  return result;
+}
+
+/** HTTP Basic credentials from a prop bag; undefined unless both are strings and a username is set. */
+export function readBasicAuth(value: unknown): { username: string; password: string } | undefined {
+  const rec = readStringRecord(value);
+  return rec?.['username'] && typeof rec['password'] === 'string' ? { username: rec['username'], password: rec['password'] } : undefined;
+}
+
 // ----- Source Factories -----
 
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
@@ -181,6 +195,8 @@ const destinationFactories = new Map<string, DestinationFactory>([
     url: props['url'] as string,
     method: (props['method'] as string | undefined) ?? 'POST',
     headers: (props['headers'] as Record<string, string> | undefined) ?? {},
+    parameters: readStringRecord(props['parameters']),
+    basicAuth: readBasicAuth(props['basicAuth']),
     contentType: (props['contentType'] as string | undefined) ?? 'text/plain',
     responseTimeout: num(props, 'responseTimeout', 30_000),
     scheme: props['scheme'] as string | undefined,

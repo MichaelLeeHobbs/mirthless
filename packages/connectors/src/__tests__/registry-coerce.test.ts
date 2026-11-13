@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { num, readSmtpAttachments } from '../registry.js';
+import { num, readSmtpAttachments, readStringRecord, readBasicAuth } from '../registry.js';
+
+describe('registry readStringRecord() and readBasicAuth()', () => {
+  it('keeps only string values and rejects what is not a map', () => {
+    expect(readStringRecord({ a: 'x', b: 2, c: null })).toEqual({ a: 'x' });
+    expect(readStringRecord(['a'])).toBeUndefined();
+    expect(readStringRecord(undefined)).toBeUndefined();
+  });
+
+  it('reads Basic credentials only with a username and a string password', () => {
+    expect(readBasicAuth({ username: 'u', password: '' })).toEqual({ username: 'u', password: '' });
+    expect(readBasicAuth({ username: '', password: 'p' })).toBeUndefined();
+    expect(readBasicAuth({ username: 'u' })).toBeUndefined();
+  });
+});
 
 describe('registry num() coercion', () => {
   it('returns a numeric value as-is', () => {
