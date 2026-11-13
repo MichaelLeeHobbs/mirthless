@@ -3,11 +3,45 @@
 // ===========================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { wrapMllp, MllpParser, DEFAULT_MAX_FRAME_BYTES } from '../mllp-mode.js';
+import { wrapMllp, MllpParser, DEFAULT_MAX_FRAME_BYTES, framingFromHex } from '../mllp-mode.js';
 
 const VT = 0x0B;
 const FS = 0x1C;
 const CR = 0x0D;
+
+describe('custom framing', () => {
+  const stxEtx = framingFromHex('02', '03');
+
+  it('wraps and parses STX/ETX frames, split across chunks, with ETX the only end byte', () => {
+    const frame = wrapMllp('MSH|A', 'utf-8', stxEtx);
+    expect([...frame]).toEqual([0x02, ...Buffer.from('MSH|A'), 0x03]);
+    const parser = new MllpParser({ framing: stxEtx });
+    expect(parser.parse(Buffer.concat([frame.subarray(0, 3)]))).toEqual([]);
+    expect(parser.parse(Buffer.concat([frame.subarray(3), wrapMllp('MSH|B', 'utf-8', stxEtx)]))).toEqual(['MSH|A', 'MSH|B']);
+  });
+
+  it('frames with no start bytes take everything up to the end bytes', () => {
+    const parser = new MllpParser({ framing: framingFromHex('', '0D0A') });
+    expect(parser.parse(Buffer.from('one\r\ntwo\r\nthr'))).toEqual(['one', 'two']);
+    expect(parser.parse(Buffer.from('ee\r\n'))).toEqual(['three']);
+  });
+
+  it('finds a multi-byte start split across two chunks', () => {
+    const parser = new MllpParser({ framing: framingFromHex('0B0B', '1C0D') });
+    expect(parser.parse(Buffer.from([0x41, 0x0b]))).toEqual([]);
+    expect(parser.parse(Buffer.from([0x0b, 0x58, 0x1c, 0x0d]))).toEqual(['X']);
+  });
+
+  it('refuses frame bytes that are not hex pairs, or an empty end', () => {
+    expect(() => framingFromHex('0', '03')).toThrow('hex pairs');
+    expect(() => framingFromHex('02', 'ZZ')).toThrow('hex pairs');
+    expect(() => framingFromHex('02', '')).toThrow('cannot be empty');
+  });
+
+  it('keeps MLLP bytes for a side not given', () => {
+    expect(framingFromHex(undefined, undefined)).toEqual({ start: Buffer.from([VT]), end: Buffer.from([FS, CR]) });
+  });
+});
 
 describe('wrapMllp', () => {
   it('wraps message in MLLP envelope', () => {

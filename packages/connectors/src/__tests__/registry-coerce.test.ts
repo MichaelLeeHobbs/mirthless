@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { num, readSmtpAttachments, readStringRecord, readBasicAuth } from '../registry.js';
+import { num, readSmtpAttachments, readStringRecord, readBasicAuth, readFraming } from '../registry.js';
+
+describe('registry readFraming()', () => {
+  it('is MLLP (undefined) unless frame bytes are set, and parses the ones that are', () => {
+    expect(readFraming({})).toBeUndefined();
+    expect(readFraming({ frameStart: '02', frameEnd: '03' })).toEqual({ start: Buffer.from([2]), end: Buffer.from([3]) });
+    expect(() => readFraming({ frameEnd: 'nope' })).toThrow();
+  });
+});
 
 describe('registry readStringRecord() and readBasicAuth()', () => {
   it('keeps only string values and rejects what is not a map', () => {
