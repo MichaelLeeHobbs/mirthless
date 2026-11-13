@@ -38,6 +38,11 @@ describe('resolveConfigReferences', () => {
     });
   });
 
+  it.each(['script', 'query', 'selectQuery', 'updateQuery'])('leaves %s alone: it is code or SQL with its own ${...}', (key) => {
+    const text = key === 'script' ? 'const url = `http://${SENDER_HOST}`;' : 'INSERT INTO t (h) VALUES (${SENDER_HOST})';
+    expect(resolveConfigReferences({ [key]: text, host: '${SENDER_HOST}' }, lookup)).toEqual({ [key]: text, host: 'lis.example.org' });
+  });
+
   it('does not resolve a name two categories share', () => {
     expect(resolveConfigReferences({ site: '${SITE}' }, lookup)).toEqual({ site: '${SITE}' });
   });

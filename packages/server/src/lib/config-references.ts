@@ -31,9 +31,16 @@ export function configLookup(entries: readonly ConfigEntry[]): ReadonlyMap<strin
 }
 
 /**
+ * Settings whose text is code or SQL. A `${name}` there is the language's own
+ * (a template literal) or a query parameter the connector binds; inlining a
+ * configuration value would change the code or put unescaped text in the SQL.
+ */
+const CODE_OR_SQL_KEYS: ReadonlySet<string> = new Set(['script', 'query', 'selectQuery', 'updateQuery']);
+
+/**
  * A copy of `properties` with every `${key}` that names a configuration entry
- * replaced by its value. Any other `${...}` (a message variable such as
- * `${oru}`) is left for the message to fill.
+ * replaced by its value, except in code and SQL settings. Any other `${...}`
+ * (a message variable such as `${oru}`) is left for the message to fill.
  */
 export function resolveConfigReferences(
   properties: Readonly<Record<string, unknown>>,
@@ -41,6 +48,6 @@ export function resolveConfigReferences(
 ): Record<string, unknown> {
   if (lookup.size === 0) return { ...properties };
   const replace = (text: string): string => text.replace(REFERENCE, (whole, key: string) => lookup.get(key.trim()) ?? whole);
-  return JSON.parse(JSON.stringify(properties), (_key, value: unknown) =>
-    typeof value === 'string' ? replace(value) : value) as Record<string, unknown>;
+  return JSON.parse(JSON.stringify(properties), (key, value: unknown) =>
+    (typeof value === 'string' && !CODE_OR_SQL_KEYS.has(key) ? replace(value) : value)) as Record<string, unknown>;
 }
