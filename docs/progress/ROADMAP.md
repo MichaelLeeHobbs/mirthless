@@ -124,6 +124,26 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[NON-GOAL] FHIR datastore, API gateway, SaaS marketplace, dev portal, streaming internals** — ⛔ front/beside a real tool.
 - [ ] **[DECIDE] Multi-tenancy (SaaS vs on-prem), low-code visual canvas, how far up the FHIR-server stack** — business/identity calls, not engineering.
 
+### Voice of the user (what users of every engine complain about and ask for)
+
+> 865 complaints, requests and wishes from Mirth, OIE, BridgeLink, commercial engines and open-source tools, in 160 ranked themes: [`docs/design/18-voice-of-the-user.md`](../design/18-voice-of-the-user.md), full ranking in [`docs/research/voice-of-user/ranking.md`](../research/voice-of-user/ranking.md). Judged against D-256. Recommended order, each line naming doc 18 theme IDs (several overlap B1 to B10 and N4 to N13 above):
+
+- [ ] **[V1]** Channel-health alerts (queue depth, error rate, schedule-aware silence), webhook alert action, error triage view (MON1, MON2, MON7)
+- [ ] **[V2]** Git and CI/CD for channels, revision diff and restore, environment promotion, env-sourced config (OPS1 to OPS4)
+- [ ] **[V3]** Channel tests in CI, live sample-message editing, step-through debugger (TEST2, TEST4, TEST1)
+- [ ] **[V4]** SSO, LDAP and MFA; custom roles; server-side password policy (SEC3, SEC2, SEC5)
+- [ ] **[V5]** Dependency/CVE process, SBOM, outside pen test (SEC1, LIC6, SEC12)
+- [ ] **[V6]** Free active-active HA (HA1, = B2)
+- [ ] **[V7]** Upgrade safety: migration tests per release, published Node LTS policy (UPG2, UPG1)
+- [ ] **[V8]** Standard helper library, repeating-segment iteration, one page on maps and the message model (SCR4, SCR5, SCR8)
+- [ ] **[V9]** Bulk and per-destination reprocess with guardrails, dead-letter queue (REC1, REC5)
+- [ ] **[V10]** HL7 round-trip corpus test, HL7 viewer with field names, conformance-profile validation (DT1, UI11, DT3)
+- [ ] **[V11]** HTTP connector flexibility, OAuth2 with token refresh (CON4, CON5)
+- [ ] **[V12]** FHIR source, bundles and validation; maintained v2-to-FHIR maps (FHIR1, FHIR2, = B7)
+- [ ] **[V13]** Docs site, recipe gallery, generated channel docs, guided first channel (DOC1, DOC3, UI13, UI3)
+- [ ] **[V14]** Generated API clients, MCP server, AI-assisted mapping (API1, AI2, AI1)
+- [ ] **[DECIDE]** Kafka/AMQP: build thin connectors (doc 18) or partner (doc 14)? npm packages in the sandbox? (doc 18, open decisions)
+
 ### API & Auth (done)
 - [x] 131 REST endpoints across 37 route files
 - [x] JWT + refresh tokens + session management
@@ -302,10 +322,12 @@ Ideas that may become relevant. Not committed to any timeline.
 |---------|---------------------|------------------------|-----------|
 | Channel pipeline | Yes | Yes | Yes |
 | RBAC | No | Yes | **Free** |
-| MFA | No | Yes | **Free** |
-| Channel history/diff | No | Yes | **Free** |
+| MFA, LDAP, SSO | No | Yes | **Planned (V4)** |
+| TLS on TCP/MLLP | No | Yes | **Free** |
+| Channel history/diff | No | Yes | **Free history; diff viewer planned (V2)** |
 | Cross-channel search | No | Yes ($$) | **Free** |
-| Advanced alerting | Basic | Yes | **Free** |
+| Advanced alerting | Basic | Yes | **Basic; planned (V1)** |
+| High availability | No | Platinum | **Planned (V6)** |
 | TypeScript support | No | No | **Yes** |
 | Visual flow editor | No | No | **Planned (v2.0)** |
 | Plugin marketplace | No | No | **Planned (v2.1)** |
