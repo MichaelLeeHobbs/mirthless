@@ -154,8 +154,9 @@ function createInMemoryStore(): InMemoryStore {
 
 // ----- Test Constants -----
 
-const SOURCE_PORT = 17681;
-const DEST_PORT = 17682;
+// Unique across e2e files: vitest runs them in parallel.
+const SOURCE_PORT = 17691;
+const DEST_PORT = 17692;
 const CHANNEL_ID = '00000000-0000-0000-0000-e2e000000042';
 const SERVER_ID = 'e2e-dest-scripts-server';
 const DEST_META_ID = 1;
