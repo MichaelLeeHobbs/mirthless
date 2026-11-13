@@ -415,8 +415,64 @@ function convertSourceConnector(
     ? connectorType
     : mapTransportName(transportName, channelName, warnings);
 
-  const properties = { ...extractConnectorProperties(propsNode, finalType), ...pollingInterval(propsNode) };
-  return { type: finalType, properties };
+  const remote = remoteFileConnector(finalType, propsNode, 'source', channelName, warnings);
+  const properties = { ...(remote?.properties ?? extractConnectorProperties(propsNode, finalType)), ...pollingInterval(propsNode) };
+  return { type: remote?.type ?? finalType, properties };
+}
+
+/** `host[:port][/path]`, as a Mirth remote File connector writes its host field. */
+const REMOTE_HOST = /^([^:/]+)(?::(\d+))?(\/.*)?$/;
+
+/**
+ * A Mirth File Reader or Writer with the SFTP scheme runs on GalvaniFlow's SFTP
+ * connector. Other remote schemes (FTP, SMB, S3, WebDAV) have no connector
+ * here; the import warns and keeps the channel, which then fails to deploy.
+ * Null for a local File connector.
+ */
+function remoteFileConnector(
+  type: string,
+  propsNode: Record<string, unknown>,
+  direction: 'source' | 'destination',
+  channelName: string,
+  warnings: string[],
+): ConnectorResult | null {
+  const scheme = (getString(propsNode, 'scheme') ?? 'FILE').toUpperCase();
+  if (type !== 'FILE' || scheme === 'FILE') return null;
+  if (scheme !== 'SFTP') {
+    warnings.push(`Channel "${channelName}": the ${scheme} file scheme is not supported; this ${direction} will not deploy`);
+    return null;
+  }
+  const match = REMOTE_HOST.exec(getString(propsNode, 'host') ?? '');
+  const schemeProps = getNestedRecord(propsNode, 'schemeProperties') ?? {};
+  const properties: Record<string, unknown> = {
+    host: match?.[1] ?? '',
+    remoteDirectory: match?.[3] ?? '/',
+    username: getString(propsNode, 'username') ?? '',
+    password: getString(propsNode, 'password') ?? '',
+    strictHostKey: (getString(schemeProps, 'hostKeyChecking') ?? 'ask') !== 'no',
+  };
+  if (match?.[2]) properties['port'] = Number(match[2]);
+  if (properties['strictHostKey']) {
+    warnings.push(`Channel "${channelName}": Mirth checks the SFTP server's host key; enter it on the ${direction} before deploying`);
+  }
+  return { type: 'SFTP', properties: { ...properties, ...(direction === 'source' ? sftpReaderProperties(propsNode) : sftpWriterProperties(propsNode)) } };
+}
+
+function sftpReaderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const action = (getString(propsNode, 'afterProcessingAction') ?? 'NONE').toUpperCase();
+  return {
+    filePattern: getString(propsNode, 'fileFilter') ?? '*',
+    afterProcessing: action === 'DELETE' || action === 'MOVE' ? action : 'NONE',
+    moveToDirectory: getString(propsNode, 'moveToDirectory') ?? '',
+  };
+}
+
+function sftpWriterProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const pattern = getString(propsNode, 'outputPattern');
+  return {
+    ...(pattern ? { fileNameTemplate: pattern } : {}),
+    appendMode: getBoolean(propsNode, 'outputAppend', false),
+  };
 }
 
 /**
@@ -687,14 +743,14 @@ function convertDestinations(
       connectorType = mapTransportName(transportName, channelName, warnings);
     }
 
-    const properties = extractConnectorProperties(propsNode, connectorType);
+    const remote = remoteFileConnector(connectorType, propsNode, 'destination', channelName, warnings);
 
     return {
       metaDataId: destinationMetaDataId(dest, idx),
       name: getString(dest, 'name') ?? `Destination ${idx + 1}`,
       enabled: getBoolean(dest, 'enabled', true),
-      connectorType,
-      properties,
+      connectorType: remote?.type ?? connectorType,
+      properties: remote?.properties ?? extractConnectorProperties(propsNode, connectorType),
       ...convertQueueSettings(dest, propsNode),
       waitForPrevious: getBoolean(dest, 'waitForPrevious', false),
     };

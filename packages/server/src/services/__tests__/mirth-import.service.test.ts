@@ -56,7 +56,7 @@ vi.mock('../../db/schema/index.js', () => ({
 }));
 
 import type { ChannelExportEntry } from '@galvaniflow/core-models';
-import { MirthImportService } from '../mirth-import.service.js';
+import { MirthImportService, type MirthConvertResult } from '../mirth-import.service.js';
 
 // ----- Helpers -----
 
@@ -598,6 +598,42 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(channel.destinations[1]?.properties).toEqual({
       host: 'mail', port: 25, to: '${email}', from: 'vns@example.com', subject: '${subject}', bodyTemplate: 'Ready',
       contentType: 'text/html', requireTLS: true, authUser: 'u', authPass: 'p',
+    });
+  });
+
+  describe('a File connector with a remote scheme', () => {
+    const reader = (scheme: string, hostKeyChecking: string): string => `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>${scheme}</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>${hostKeyChecking}</hostKeyChecking></schemeProperties><host>sftp.partner.org:2222/out/orders</host><fileFilter>*.hl7</fileFilter><username>vns</username><password>pw</password><afterProcessingAction>DELETE</afterProcessingAction><moveToDirectory></moveToDirectory></properties><transformer`;
+    const writer = '<properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0"><scheme>SFTP</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>no</hostKeyChecking></schemeProperties><host>sftp.partner.org/in</host><outputPattern>${messageId}.hl7</outputPattern><outputAppend>false</outputAppend><username>vns</username><password>pw</password></properties>';
+    const convert = (scheme: string, hostKeyChecking = 'no'): MirthConvertResult => {
+      const xml = loadFixture('mirth-4x-channel.xml')
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader(scheme, hostKeyChecking))
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer);
+      const result = MirthImportService.convertXml(xml);
+      if (!result.ok) throw result.error;
+      return result.value;
+    };
+
+    it('runs an SFTP File Reader and Writer on the SFTP connector', () => {
+      const { channels } = convert('SFTP');
+      expect(channels[0]?.sourceConnectorType).toBe('SFTP');
+      expect(channels[0]?.sourceConnectorProperties).toEqual({
+        host: 'sftp.partner.org', port: 2222, remoteDirectory: '/out/orders', username: 'vns', password: 'pw',
+        strictHostKey: false, filePattern: '*.hl7', afterProcessing: 'DELETE', moveToDirectory: '',
+      });
+      expect(channels[0]?.destinations[0]).toMatchObject({
+        connectorType: 'SFTP',
+        properties: { host: 'sftp.partner.org', remoteDirectory: '/in', fileNameTemplate: '${messageId}.hl7', appendMode: false, strictHostKey: false },
+      });
+    });
+
+    it('keeps host key checking on, and says the key must be entered', () => {
+      const result = convert('SFTP', 'yes');
+      expect(result.channels[0]?.sourceConnectorProperties['strictHostKey']).toBe(true);
+      expect(result.warnings.some((w) => w.includes('host key'))).toBe(true);
+    });
+
+    it('warns that a scheme with no connector here will not deploy', () => {
+      expect(convert('FTP').warnings.some((w) => w.includes('FTP file scheme is not supported'))).toBe(true);
     });
   });
 
