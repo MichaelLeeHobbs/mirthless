@@ -25,6 +25,14 @@ export interface ChannelDispatcherConfig {
 const MAX_CHANNEL_HOPS = 10;
 const hopDepth = new AsyncLocalStorage<number>();
 
+/** The target with each `${name}` filled from the message's variables; an unknown name is left as written. */
+export function resolveTarget(target: string, variables: Readonly<Record<string, unknown>> | undefined): string {
+  return target.replace(/\$\{([^}]+)\}/g, (whole, key: string) => {
+    const value = variables?.[key.trim()];
+    return typeof value === 'string' && value !== '' ? value : whole;
+  });
+}
+
 // ----- Dispatcher -----
 
 export class ChannelDispatcher implements DestinationConnectorRuntime {
@@ -49,6 +57,11 @@ export class ChannelDispatcher implements DestinationConnectorRuntime {
     });
   }
 
+  /**
+   * Send to the target channel. The target may be a `${name}` reference that
+   * each message fills from its variables, so a router picks the channel at
+   * run time (Mirth's `${destinationChannelId}`).
+   */
   async send(message: ConnectorMessage, signal: AbortSignal): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
       if (!this.started) throw new Error('Dispatcher not started');
@@ -63,12 +76,20 @@ export class ChannelDispatcher implements DestinationConnectorRuntime {
         };
       }
 
-      const dispatcher = getChannelDispatcher(this.config.targetChannelId);
+      const target = resolveTarget(this.config.targetChannelId, message.variables);
+      if (target.includes('${')) {
+        return {
+          status: 'ERROR' as const,
+          content: '',
+          errorMessage: `Target channel ${this.config.targetChannelId} names a variable this message does not have`,
+        };
+      }
+      const dispatcher = getChannelDispatcher(target);
       if (!dispatcher) {
         return {
           status: 'ERROR' as const,
           content: '',
-          errorMessage: `Target channel ${this.config.targetChannelId} is not deployed or not registered`,
+          errorMessage: `Target channel ${target} is not deployed or not registered`,
         };
       }
 
@@ -97,7 +118,7 @@ export class ChannelDispatcher implements DestinationConnectorRuntime {
         return {
           status: 'ERROR' as const,
           content: '',
-          errorMessage: `Target channel ${this.config.targetChannelId} recorded message ${String(result.value.messageId)} with an ERROR status`,
+          errorMessage: `Target channel ${target} recorded message ${String(result.value.messageId)} with an ERROR status`,
         };
       }
 
