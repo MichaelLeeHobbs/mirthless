@@ -266,13 +266,19 @@ function convertChannel(
   const response = mapResponseVariable(sourceConnector, destinations, name, warnings);
   const sourceConnectorProperties = withSourceResponseMode(sourceConnectorResult, response.responseMode);
 
-  // Data types
-  const inboundDataType = extractDataType(sourceConnector, 'inbound') ?? 'HL7V2';
+  // Data types. GalvaniFlow's Database Reader hands each row over as a JSON
+  // object, where Mirth's hands it over as XML, so such a channel reads JSON.
+  const mirthInbound = extractDataType(sourceConnector, 'inbound') ?? 'HL7V2';
+  const inboundDataType = sourceConnectorResult.type === 'DATABASE' ? 'JSON' : mirthInbound;
+  if (inboundDataType !== mirthInbound) {
+    warnings.push(`Channel "${name}": its Database Reader rows arrive as JSON objects here (Mirth: ${mirthInbound}); read columns as msg.column`);
+  }
   const outboundDataType = extractDataType(sourceConnector, 'outbound') ?? 'HL7V2';
 
   // Filters and transformers
   const filters = convertFilters(mirthChannel);
-  const transformers = convertTransformers(mirthChannel);
+  const transformers = convertTransformers(mirthChannel).map((t) =>
+    ((t.metaDataId ?? null) === null && t.inboundDataType !== inboundDataType ? { ...t, inboundDataType } : t));
 
   // Channel properties
   const props = isRecord(mirthChannel['properties'])

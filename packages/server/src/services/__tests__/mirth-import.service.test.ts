@@ -569,6 +569,9 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       host: 'db.example.org', database: 'orders', username: 'mirth', password: 'pw',
       selectQuery: 'SELECT id FROM o', updateQuery: 'UPDATE o SET s = 1 WHERE id = ${id}', updateMode: 'ON_SUCCESS',
     });
+    // The reader's rows are JSON objects here, so the channel and its source transformer read JSON.
+    expect(channel.inboundDataType).toBe('JSON');
+    expect(channel.transformers.find((t) => (t.metaDataId ?? null) === null)?.inboundDataType).toBe('JSON');
   });
 
   it('keeps a polling source\'s interval and gives a JavaScript Reader only its script', () => {
