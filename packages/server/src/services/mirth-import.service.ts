@@ -416,7 +416,11 @@ function convertSourceConnector(
     : mapTransportName(transportName, channelName, warnings);
 
   const remote = remoteFileConnector(finalType, propsNode, 'source', channelName, warnings);
-  const properties = { ...(remote?.properties ?? extractConnectorProperties(propsNode, finalType)), ...pollingInterval(propsNode) };
+  const properties = {
+    ...(remote?.properties ?? extractConnectorProperties(propsNode, finalType)),
+    ...pollingInterval(propsNode),
+    ...(getBoolean(getNestedRecord(propsNode, 'sourceConnectorProperties') ?? {}, 'processBatch', false) ? { processBatch: true } : {}),
+  };
   return { type: remote?.type ?? finalType, properties };
 }
 

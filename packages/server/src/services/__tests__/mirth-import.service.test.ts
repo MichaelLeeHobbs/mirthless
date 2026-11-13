@@ -581,6 +581,8 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       .replace('<transportName>TCP Listener</transportName>', '<transportName>JavaScript Reader</transportName>');
 
     expect(convert4x(swap('INTERVAL')).sourceConnectorProperties).toEqual({ script: "return 'tick';", pollingIntervalMs: 500 });
+    const batch = convert4x((x) => swap('INTERVAL')(x).replace('<responseVariable>None</responseVariable>', '<responseVariable>None</responseVariable><processBatch>true</processBatch>'));
+    expect(batch.sourceConnectorProperties['processBatch']).toBe(true);
     expect(convert4x(swap('TIME')).sourceConnectorProperties).toEqual({ script: "return 'tick';" });
   });
 
