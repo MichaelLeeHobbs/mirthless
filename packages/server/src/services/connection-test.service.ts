@@ -15,6 +15,7 @@ import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
 import { stderr, type Result } from 'stderr-lib';
 import type { ConnectionTestResult } from '@galvaniflow/core-models';
+import { isBlockedAddress, isBlockedHostname } from '@galvaniflow/engine';
 import { ServiceError } from '../lib/service-error.js';
 import { resolveHttpDestinationTls, resolveHttpSourceTls } from './connector-tls-resolver.js';
 
@@ -80,49 +81,20 @@ export function resetFactories(): void {
 
 // ----- SSRF Protection -----
 
-const BLOCKED_IP_PATTERNS = [
-  /^127\./,
-  /^10\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.168\./,
-  /^0\./,
-  /^169\.254\./,
-  /^::1$/,
-  /^fc00:/i,
-  /^fd/i,
-  /^fe80:/i,
-  /^localhost$/i,
-] as const;
-
-/** Check if a literal hostname string matches a blocked pattern (e.g. localhost). */
-function isBlockedHost(hostname: string): boolean {
-  return BLOCKED_IP_PATTERNS.some((pattern) => pattern.test(hostname));
-}
-
-/** Check if a resolved IP address falls in a private/reserved range. */
-function isBlockedIp(ip: string): boolean {
-  // Strip IPv4-mapped IPv6 prefix so ::ffff:127.0.0.1 is checked as 127.0.0.1.
-  const normalized = ip.startsWith('::ffff:') ? ip.slice('::ffff:'.length) : ip;
-  return BLOCKED_IP_PATTERNS.some((pattern) => pattern.test(normalized) || pattern.test(ip));
-}
-
 /**
- * Full SSRF guard: reject literal private hostnames, literal private IPs, and —
- * critically — DNS names (or decimal/hex encodings) that RESOLVE to a private IP.
+ * Full SSRF guard: reject localhost names, private or reserved IP literals, and
+ * DNS names (or decimal/hex encodings) that RESOLVE to one. The address policy is
+ * the engine's (`sandbox/ssrf.ts`), the same one script httpFetch uses.
  * Unresolvable hosts are allowed through; the connection attempt itself will fail
  * loudly, which is not an SSRF exposure.
  */
 async function assertHostAllowed(hostname: string): Promise<void> {
-  if (isBlockedHost(hostname)) {
+  if (isBlockedHostname(hostname)) {
     throw new ServiceError('INVALID_INPUT', `Connection to ${hostname} is blocked (private/reserved address)`);
   }
 
-  if (net.isIP(hostname) !== 0) {
-    if (isBlockedIp(hostname)) {
-      throw new ServiceError('INVALID_INPUT', `Connection to ${hostname} is blocked (private/reserved address)`);
-    }
-    return;
-  }
+  // An IP literal (bracketed IPv6 included) passed the check above; there is nothing to resolve.
+  if (net.isIP(hostname.replace(/^\[(.*)\]$/, '$1')) !== 0) return;
 
   let addresses: readonly LookupAddress[];
   try {
@@ -132,7 +104,7 @@ async function assertHostAllowed(hostname: string): Promise<void> {
   }
 
   for (const addr of addresses) {
-    if (isBlockedIp(addr.address)) {
+    if (isBlockedAddress(addr.address)) {
       throw new ServiceError(
         'INVALID_INPUT',
         `Connection to ${hostname} is blocked (resolves to private/reserved address ${addr.address})`,
@@ -554,8 +526,6 @@ export class ConnectionTestService {
 
 /** Exported for testing only — not part of the public API. */
 export const _testing = {
-  isBlockedHost,
-  isBlockedIp,
   assertHostAllowed,
   TEST_TIMEOUT_MS,
 } as const;
