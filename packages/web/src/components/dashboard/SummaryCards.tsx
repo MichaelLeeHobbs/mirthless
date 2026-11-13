@@ -86,7 +86,7 @@ export function SummaryCards({ statistics, deployedCount, stoppedCount, erroredC
     <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
       <StatTile label="Total Channels" value={totalChannels} />
       <StatTile label="Running" value={deployedCount} level="healthy" />
-      <StatTile label="Stopped" value={stoppedCount} level="neutral" />
+      <StatTile label="Stopped" value={stoppedCount} level="critical" />
       <StatTile label="Errored" value={erroredCount} level="critical" />
       <StatTile label="Queued" value={totalQueued} level="warning" />
       <StatTile label="Received" value={totalReceived} level="info" />

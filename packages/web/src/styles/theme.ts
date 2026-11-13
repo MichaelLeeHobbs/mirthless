@@ -184,6 +184,13 @@ function buildTheme(mode: PaletteMode): Theme {
           root: { '@media (max-width: 599.95px)': { minWidth: 0, paddingInline: 10 } },
         },
       },
+      MuiTablePagination: {
+        styleOverrides: {
+          // Phones: drop the rows-per-page picker so the range and both arrows fit.
+          selectLabel: { '@media (max-width: 599.95px)': { display: 'none' } },
+          input: { '@media (max-width: 599.95px)': { display: 'none' } },
+        },
+      },
       MuiTableContainer: {
         styleOverrides: { root: { borderRadius: 0 } },
       },
