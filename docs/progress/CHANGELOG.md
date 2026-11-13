@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-13 — Mirth migration climb, remaining scenarios (same branch)
+
+Michael asked to start on the scenarios still failing after the climb stopped at 37/60. Now 55/60 (identical on two runs): S08, S09, S11, S12, S14, S16, S17, S18, S21 and S26 pass.
+
+- **Scripts**: a JavaScript Writer gets the parsed message and the channel map (D-250); a script can `await` a bridge and then `return`, which failed to compile in every stage (D-251).
+- **Connectors**: per-message `${}` in Channel Writer targets, HTTP URL/headers/parameters and SMTP fields; HTTP Basic auth and query parameters (D-252); settable TCP frame bytes (D-253).
+- **Pipeline**: HL7 batch files split into messages (D-254); "Before processing" answers AA (D-255).
+- **Import**: polling intervals, Database Reader rows as JSON, SFTP-scheme File Readers/Writers onto the SFTP connector, HTTP and SMTP Sender settings, TCP frame bytes, Process Batch.
+- S15 (MySQL), S19 (Delimited) and S20 (X12) wait on the design decisions in `docs/design/17-remaining-migration-gaps.md`.
+
 ## 2026-11-12 — Mirth migration hill climb (branch `claude/galvaniflow-completeness-scenarios-ec0c4d`)
 
 Michael asked to hill climb feature completeness: can an operator who runs Mirth in production move their channels here? A scenario suite (`pnpm test:scenarios`, D-237) imports Mirth 4.5 exports shaped like the production backup and runs real messages against real MLLP, HTTP, Postgres, MySQL, SFTP and mail servers. Mid-climb Michael ruled out E4X and Mirth's script APIs (D-244): the suite was re-scoped so its scripts use GalvaniFlow's API, and the Mirth script shims added in round 1 were removed. Score: 0/52 baseline, 20/52 before the re-scope; re-scoped baseline 23/60, final 37/60 with every weight-3 scenario passing. Log in `tmp/feature-climb/log.md` (git-ignored).

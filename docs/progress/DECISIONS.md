@@ -495,3 +495,15 @@ D-247: What scripts put in a message's connector, channel and response maps trav
 D-248: A failed send keeps its reason, whether the destination ends ERROR or waits in the queue, and the queue stores the latest reason after each failed retry. This reverses M19's "store no error while retrying": nothing reads an error row as a failed status, and an operator looking at a queued message needs to know why it is waiting. — 2026-11-12
 
 D-249: A code template library has `channelIds`: null (the default, and every library that existed before) reaches every channel, a list only those channels. One nullable jsonb column, not a join table: a deleted channel's id simply never matches. Rejected: Mirth's include/exclude lists, which the import maps to these two cases with a warning when an exclusion is lost. No editor control yet. — 2026-11-12
+
+D-250: A JavaScript Writer's script sees the message the way every other stage does: `msg` parsed for its data type (raw text if it does not parse), `rawData` as the raw text, and the message's channel map from its variables. It used to get the raw text as `msg`. — 2026-11-13
+
+D-251: Scripts are compiled inside an async function and the body is taken back out, because a script is a function body: compiled on its own, a top-level `await` made esbuild treat it as a module, where its top-level `return` is a syntax error. Any script that awaited a bridge and then returned failed to deploy. Rejected: rewriting `await` or retrying the compile on that error. — 2026-11-13
+
+D-252: Per-message `${name}` in destination settings is filled from the message's variables by each connector, for the fields where a per-message value makes sense: a Channel Writer target, the HTTP Sender's URL, header values and query parameters, and the SMTP Sender's addresses, subject and body. A name the message does not have is left as written (a Channel Writer errors). The HTTP Sender gains query parameters and Basic credentials. — 2026-11-13
+
+D-253: TCP frame bytes are settable (`frameStart`/`frameEnd`, hex; start may be empty, end may not). Responses use the same framing. Default stays MLLP. — 2026-11-13
+
+D-254: "Process Batch" on an HL7V2 source splits what it receives into one message per MSH, dropping the FHS/BHS/BTS/FTS envelope, processes all of them in order, and reports an error to the source if any failed, so a File Reader quarantines the file instead of reading it again. Batch on another data type refuses to deploy. The engine's BatchProcessor is not used: it has no HL7 mode and its JavaScript mode passes everything through on a script error. — 2026-11-13
+
+D-255: Under "Auto-generate (Before processing)" a recorded message answers AA whatever fails afterwards; the failure stays on the message and raises its alert. Mirth answers before processing, and an AE made senders resend a message already recorded. — 2026-11-13
