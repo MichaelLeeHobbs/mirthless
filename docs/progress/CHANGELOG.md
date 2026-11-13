@@ -2,6 +2,15 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-13 — Delimited, X12 and MySQL (branch `claude/doc17-delimited-x12-mysql`)
+
+Michael approved the recommended options in `docs/design/17-remaining-migration-gaps.md`. Built on top of PR 67's branch, so this branch carries its commits until PR 67 merges.
+
+- **Delimited** (S19, D-256): `msg` is an array of row objects keyed by column name, with column, record and quote settings on the source transformer, validated at deploy; the importer reads Mirth's settings and warns about fixed-width columns. S19's script changed from `msg.mrn` to `msg[0].mrn` as the approved option says.
+- **X12** (S20, D-257): an `X12` data type with HL7's path API (`msg.get('NM1[3].9')`), delimiters from ISA, crossing the sandbox as a host handle like HL7. The importer maps `EDI/X12`; the editor lists it.
+- **MySQL** (S15, D-258): the Database Reader and Writer pick a `pg` or `mysql2` pool by `vendor`, which the importer takes from the JDBC URL. SQL Server and Oracle refuse to deploy and say so.
+- Not built: fixed-width Delimited, Process Batch per Delimited row, X12 envelope validation and 999/TA1, SQL Server and Oracle drivers, editor controls for Delimited settings and the database vendor.
+
 ## 2026-11-13 — Mirth migration climb, remaining scenarios (same branch)
 
 Michael asked to start on the scenarios still failing after the climb stopped at 37/60. Now 55/60 (identical on two runs): S08, S09, S11, S12, S14, S16, S17, S18, S21 and S26 pass.
