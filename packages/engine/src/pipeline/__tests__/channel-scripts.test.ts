@@ -103,7 +103,7 @@ describe('channel preprocessor', () => {
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
     // The replacement content flows to the destination.
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'PREPROCESSED_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'PREPROCESSED_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('a mutated `msg` (no explicit return) replaces the message', async () => {
@@ -116,7 +116,7 @@ describe('channel preprocessor', () => {
 
     await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
 
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'MUTATED_VIA_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'MUTATED_VIA_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('regression: `return true` does NOT corrupt the message to the string "true"', async () => {
@@ -130,7 +130,7 @@ describe('channel preprocessor', () => {
     await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
 
     // A boolean return is treated as "leave the message unchanged".
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('regression: `return false` also leaves the message intact (not the string "false")', async () => {
@@ -147,7 +147,7 @@ describe('channel preprocessor', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('an explicit `return undefined` leaves the message intact', async () => {
@@ -160,7 +160,7 @@ describe('channel preprocessor', () => {
 
     await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
 
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('no return statement at all leaves the message intact', async () => {
@@ -173,7 +173,7 @@ describe('channel preprocessor', () => {
 
     await processor.processMessage(makeInput('ORIGINAL_MSG'), AbortSignal.timeout(5_000));
 
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('a throwing preprocessor surfaces as ERROR, stores error content, and does not send', async () => {
@@ -220,7 +220,7 @@ describe('channel preprocessor', () => {
     if (!result.ok) return;
     // Filter saw the preprocessed message and passed → SENT (not FILTERED).
     expect(result.value.status).toBe('SENT');
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'PASSPHRASE', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'PASSPHRASE', expect.any(AbortSignal), expect.any(String), undefined);
   });
 });
 
@@ -308,7 +308,7 @@ describe('channel postprocessor', () => {
     if (!result.ok) return;
     expect(result.value.status).toBe('SENT');
     // Destination received the original content; the postprocessor return is inert.
-    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String));
+    expect(sendFn).toHaveBeenCalledWith(1, 1, 'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
   });
 });
 

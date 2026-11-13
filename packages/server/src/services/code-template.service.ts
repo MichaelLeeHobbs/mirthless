@@ -16,7 +16,7 @@ import type {
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
-import { codeTemplateLibraries, codeTemplates } from '../db/schema/index.js';
+import { codeTemplateLibraries, codeTemplates, type CodeTemplate } from '../db/schema/index.js';
 
 // ----- Response Types -----
 
@@ -44,6 +44,23 @@ export interface TemplateDetail {
   readonly revision: number;
   readonly createdAt: Date;
   readonly updatedAt: Date;
+}
+
+/** A template row as the API returns it. */
+function toTemplateDetail(r: CodeTemplate): TemplateDetail {
+  return {
+    id: r.id,
+    libraryId: r.libraryId,
+    name: r.name,
+    description: r.description,
+    type: r.type,
+    language: r.language,
+    code: r.code,
+    contexts: r.contexts,
+    revision: r.revision,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
 }
 
 // ----- Service -----
@@ -226,7 +243,6 @@ export class CodeTemplateService {
 
   // ===== Templates =====
 
-  /** List templates, optionally filtered by library. */
   /** The templates a channel's scripts get: those in libraries for every channel or that name this one. */
   static async listTemplatesForChannel(channelId: string): Promise<Result<readonly TemplateDetail[]>> {
     return tryCatch(async () => {
@@ -239,14 +255,11 @@ export class CodeTemplateService {
           sql`${codeTemplateLibraries.channelIds} @> ${JSON.stringify([channelId])}::jsonb`,
         ))
         .orderBy(asc(codeTemplates.name));
-      return rows.map(({ template: r }) => ({
-        id: r.id, libraryId: r.libraryId, name: r.name, description: r.description, type: r.type,
-        language: r.language, code: r.code, contexts: r.contexts, revision: r.revision,
-        createdAt: r.createdAt, updatedAt: r.updatedAt,
-      }));
+      return rows.map(({ template }) => toTemplateDetail(template));
     });
   }
 
+  /** List templates, optionally filtered by library. */
   static async listTemplates(
     libraryId?: string,
   ): Promise<Result<readonly TemplateDetail[]>> {
@@ -262,19 +275,7 @@ export class CodeTemplateService {
 
       const rows = await query;
 
-      return rows.map((r) => ({
-        id: r.id,
-        libraryId: r.libraryId,
-        name: r.name,
-        description: r.description,
-        type: r.type,
-        language: r.language,
-        code: r.code,
-        contexts: r.contexts,
-        revision: r.revision,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      }));
+      return rows.map(toTemplateDetail);
     });
   }
 
@@ -290,19 +291,7 @@ export class CodeTemplateService {
         throw new ServiceError('NOT_FOUND', `Template ${id} not found`);
       }
 
-      return {
-        id: row.id,
-        libraryId: row.libraryId,
-        name: row.name,
-        description: row.description,
-        type: row.type,
-        language: row.language,
-        code: row.code,
-        contexts: row.contexts,
-        revision: row.revision,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      };
+      return toTemplateDetail(row);
     });
   }
 
@@ -345,19 +334,7 @@ export class CodeTemplateService {
         attributes: { action: 'createTemplate', templateName: input.name },
       });
 
-      return {
-        id: row!.id,
-        libraryId: row!.libraryId,
-        name: row!.name,
-        description: row!.description,
-        type: row!.type,
-        language: row!.language,
-        code: row!.code,
-        contexts: row!.contexts,
-        revision: row!.revision,
-        createdAt: row!.createdAt,
-        updatedAt: row!.updatedAt,
-      };
+      return toTemplateDetail(row!);
     });
   }
 
@@ -409,19 +386,7 @@ export class CodeTemplateService {
         attributes: { action: 'updateTemplate', templateId: id },
       });
 
-      return {
-        id: row!.id,
-        libraryId: row!.libraryId,
-        name: row!.name,
-        description: row!.description,
-        type: row!.type,
-        language: row!.language,
-        code: row!.code,
-        contexts: row!.contexts,
-        revision: row!.revision,
-        createdAt: row!.createdAt,
-        updatedAt: row!.updatedAt,
-      };
+      return toTemplateDetail(row!);
     });
   }
 

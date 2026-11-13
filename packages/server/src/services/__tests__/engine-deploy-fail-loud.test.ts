@@ -194,6 +194,12 @@ async function deployError(channel: never = makeChannel()): Promise<string> {
 // ----- Tests -----
 
 describe('EngineManager.deploy refuses to start a channel it cannot run as configured', () => {
+  it('refuses a channel that responds from a destination it does not have (renamed or removed)', async () => {
+    const engine = new EngineManager('test-server');
+    await expect(engine.deploy(makeChannel({ responseMode: 'DESTINATION', responseConnectorName: 'Old Name' })))
+      .rejects.toThrow('responds from destination "Old Name", which it does not have');
+  });
+
   it('refuses batch processing on a data type it cannot split', async () => {
     const engine = new EngineManager('test-server');
     await expect(engine.deploy(makeChannel({ inboundDataType: 'JSON', sourceConnectorProperties: { port: 6661, processBatch: true } })))

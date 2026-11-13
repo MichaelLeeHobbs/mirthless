@@ -149,6 +149,23 @@ export class MessageService {
     });
   }
 
+  /** Remove one content type of a connector message. Nothing to remove is a success. */
+  static async removeContent(
+    channelId: string,
+    messageId: number,
+    metaDataId: number,
+    contentType: ContentType,
+  ): Promise<Result<void>> {
+    return tryCatch(async () => {
+      await db.delete(messageContent).where(and(
+        eq(messageContent.channelId, channelId),
+        eq(messageContent.messageId, messageId),
+        eq(messageContent.metaDataId, metaDataId),
+        eq(messageContent.contentType, contentType),
+      ));
+    });
+  }
+
   /** Store a connector message's custom metadata column values, replacing any stored before. */
   static async storeCustomMetadata(
     channelId: string,

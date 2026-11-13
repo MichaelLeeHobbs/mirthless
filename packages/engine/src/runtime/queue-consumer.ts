@@ -34,8 +34,10 @@ export interface QueueConsumerConfig {
 
 /** Content types written by the consumer (see CONTENT_TYPE in core-models). */
 const CT_SENT = 5;
+const CT_RESPONSE = 6;
 /** A destination's stored variables (MessageProcessor.storeVariables). */
 const CT_CHANNEL_MAP = 10;
+const CT_ERROR = 11;
 
 /** Stored variables as a record; undefined when none were stored. */
 function parseVariables(stored: string | null): Record<string, unknown> | undefined | 'INVALID' {
@@ -47,8 +49,6 @@ function parseVariables(stored: string | null): Record<string, unknown> | undefi
     return 'INVALID';
   }
 }
-const CT_RESPONSE = 6;
-const CT_ERROR = 11;
 
 interface QueuedMessage {
   readonly channelId: string;
@@ -230,9 +230,9 @@ export class QueueConsumer {
       return 'DONE';
     }
 
-    const sendResult: Result<DestinationResponse> = variables === undefined
-      ? await this.sendFn(msg.metaDataId, msg.messageId, contentResult.value, signal)
-      : await this.sendFn(msg.metaDataId, msg.messageId, contentResult.value, signal, undefined, variables);
+    const sendResult: Result<DestinationResponse> = await this.sendFn(
+      msg.metaDataId, msg.messageId, contentResult.value, signal, undefined, variables,
+    );
 
     if (sendResult.ok && sendResult.value.status === 'SENT') {
       this.failureAlerted = false;
@@ -281,6 +281,16 @@ export class QueueConsumer {
     // message browser shows it for queued deliveries too.
     const stored = await this.store.storeContent(channelId, msg.messageId, msg.metaDataId, CT_RESPONSE, response, 'TEXT');
     if (!stored.ok) await this.reportUnrecorded(msg, 'response content', stored.error.message);
+    // An earlier attempt left why it failed; a delivered message must not show it.
+    if (this.store.removeContent) {
+      const cleared = await this.store.removeContent(channelId, msg.messageId, msg.metaDataId, CT_ERROR);
+      if (!cleared.ok) {
+        await this.alert(
+          `Queued destination ${String(msg.metaDataId)} delivered message ${String(msg.messageId)}, but the reason an ` +
+          `earlier attempt failed could not be removed: ${cleared.error.message}. The message still shows it.`,
+        );
+      }
+    }
     const released = await this.store.release(channelId, msg.messageId, msg.metaDataId, 'SENT');
     if (!released.ok) {
       await this.reportUnrecorded(msg, 'SENT', released.error.message);

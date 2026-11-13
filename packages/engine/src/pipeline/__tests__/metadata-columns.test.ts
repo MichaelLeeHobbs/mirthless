@@ -50,8 +50,8 @@ describe('metadataValues', () => {
       .toEqual({ ACCESSION: 'A1', COUNT: 3, STAT: true });
   });
 
-  it('leaves out a NUMBER column whose value is not a number', () => {
-    expect(metadataValues(columns, [{ count: 'many' }])).toEqual({});
+  it.each([['many'], [''], ['  '], [true], [{ n: 1 }]])('leaves out a NUMBER column whose value is %j, which is not a number', (count) => {
+    expect(metadataValues(columns, [{ count }])).toEqual({});
   });
 
   it('skips null values and falls through to the next map', () => {

@@ -11,9 +11,6 @@ interface DestinationInfo {
   readonly metaDataId: number;
 }
 
-/** A destination name, a metaDataId, or a list of either, as a script passes them. */
-export type DestinationTarget = unknown;
-
 // ----- DestinationSet -----
 
 /** Tracks which destinations are active for the current message. */
@@ -32,30 +29,30 @@ export class DestinationSet {
   }
 
   /** Remove destinations. Takes what Mirth's does: a name, a metaDataId, or a list of either. */
-  remove(target: DestinationTarget): void {
+  remove(target: unknown): void {
     for (const name of this.resolve(target)) this.active.delete(name);
   }
 
   /** Keep only the given destinations (a name, a metaDataId, or a list of either). */
-  removeAllExcept(target: DestinationTarget): void {
+  removeAllExcept(target: unknown): void {
     const keep = this.resolve(target).filter((name) => this.active.has(name));
     this.active.clear();
     for (const name of keep) this.active.add(name);
   }
 
   /** Add destinations back (must be known destinations). */
-  add(target: DestinationTarget): void {
+  add(target: unknown): void {
     for (const name of this.resolve(target)) this.active.add(name);
   }
 
   /** Check if a destination (by name or metaDataId) is currently active. */
-  contains(target: DestinationTarget): boolean {
+  contains(target: unknown): boolean {
     const names = this.resolve(target);
     return names.length > 0 && names.every((name) => this.active.has(name));
   }
 
   /** The known destination names a target refers to. Unknown names and ids are ignored. */
-  private resolve(target: DestinationTarget): string[] {
+  private resolve(target: unknown): string[] {
     const items: readonly unknown[] = Array.isArray(target) ? target : [target];
     const names: string[] = [];
     for (const item of items) {
@@ -89,10 +86,10 @@ export class DestinationSet {
 export function createDestinationSetProxy(set: DestinationSet): Record<string, unknown> {
   return {
     removeAll(): void { set.removeAll(); },
-    remove(target: DestinationTarget): void { set.remove(target); },
-    removeAllExcept(target: DestinationTarget): void { set.removeAllExcept(target); },
-    add(target: DestinationTarget): void { set.add(target); },
-    contains(target: DestinationTarget): boolean { return set.contains(target); },
+    remove(target: unknown): void { set.remove(target); },
+    removeAllExcept(target: unknown): void { set.removeAllExcept(target); },
+    add(target: unknown): void { set.add(target); },
+    contains(target: unknown): boolean { return set.contains(target); },
     getConnectorNames(): ReadonlyArray<string> { return set.getConnectorNames(); },
   };
 }

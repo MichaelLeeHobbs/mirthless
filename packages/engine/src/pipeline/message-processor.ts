@@ -115,6 +115,8 @@ export interface MessageStore {
   release(channelId: string, messageId: number, metaDataId: number, newStatus: string): Promise<Result<void>>;
   incrementStats(channelId: string, metaDataId: number, serverId: string, field: 'received' | 'filtered' | 'sent' | 'errored'): Promise<Result<void>>;
   storeAttachment?(channelId: string, messageId: number, attachmentId: string, mimeType: string, content: string, size: number): Promise<Result<void>>;
+  /** Optional: remove one content type of a connector message (an earlier failure reason, once delivered). */
+  removeContent?(channelId: string, messageId: number, metaDataId: number, contentType: number): Promise<Result<void>>;
   /** Optional: store a connector message's custom metadata column values. */
   storeCustomMetadata?(channelId: string, messageId: number, metaDataId: number, metadata: Readonly<Record<string, unknown>>): Promise<Result<void>>;
 
@@ -303,13 +305,21 @@ export function metadataValues(
   for (const column of columns) {
     const raw = maps.map((m) => m[column.mapping]).find((v) => v !== undefined && v !== null);
     if (raw === undefined) continue;
-    const value = column.dataType === 'NUMBER' ? Number(raw)
+    const value = column.dataType === 'NUMBER' ? numberValue(raw)
       : column.dataType === 'BOOLEAN' ? (raw === true || String(raw).toLowerCase() === 'true')
         : typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
-    if (typeof value === 'number' && !Number.isFinite(value)) continue;
+    if (value === undefined) continue;
     values[column.name] = value;
   }
   return values;
+}
+
+/** A finite number, or text that is one; anything else (blank text, a boolean) is no value. */
+function numberValue(raw: unknown): number | undefined {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : undefined;
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 // ----- Pipeline -----
@@ -731,9 +741,10 @@ export class MessageProcessor {
       }
 
       // NEVER / ON_FAILURE: attempt a direct send first.
-      const sendResult = Object.keys(variables).length > 0
-        ? await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId, variables)
-        : await this.sendFn(dest.metaDataId, messageId, destContent, signal, correlationId);
+      const sendResult = await this.sendFn(
+        dest.metaDataId, messageId, destContent, signal, correlationId,
+        Object.keys(variables).length > 0 ? variables : undefined,
+      );
 
       if (!sendResult.ok) {
         await this.recordSendFailure(messageId, dest.metaDataId, sendResult.error.message);
@@ -905,7 +916,6 @@ export class MessageProcessor {
     }
   }
 
-  /** Run a script in the sandbox with the current message context and map state. */
   /**
    * Keep the variables a queued destination will send with: the queue sends
    * later, from the store, when the message's maps are gone. A destination that
@@ -942,6 +952,7 @@ export class MessageProcessor {
     return destResults.find((r) => r.response)?.response;
   }
 
+  /** Run a script in the sandbox with the current message context and map state. */
   private async runScript(
     script: CompiledScript,
     content: string,
