@@ -21,8 +21,13 @@ describe('toDispatchStatus', () => {
     expect(toDispatchStatus({ status: 'FILTERED' }, mode)).toBe('FILTERED');
   });
 
-  it.each(ALL_MODES)('always reports an error before routing under %s', (mode) => {
+  it.each(ALL_MODES.filter((m) => m !== 'AUTO_BEFORE'))('reports an error before routing under %s', (mode) => {
     expect(toDispatchStatus({ status: 'ERROR', errorStage: 'SOURCE' }, mode)).toBe('ERROR');
+  });
+
+  it('reports any recorded message as PROCESSED under AUTO_BEFORE, which answers before processing', () => {
+    expect(toDispatchStatus({ status: 'ERROR', errorStage: 'SOURCE' }, 'AUTO_BEFORE')).toBe('PROCESSED');
+    expect(toDispatchStatus({ status: 'ERROR' }, 'AUTO_BEFORE')).toBe('PROCESSED');
   });
 
   it.each(AFTER_DESTINATIONS)('reports a destination failure as ERROR under %s', (mode) => {
@@ -33,7 +38,7 @@ describe('toDispatchStatus', () => {
     expect(toDispatchStatus({ status: 'ERROR', errorStage: 'DESTINATION' }, mode)).toBe('PROCESSED');
   });
 
-  it.each(ALL_MODES)('treats an error with no stage as an error under %s', (mode) => {
+  it.each(ALL_MODES.filter((m) => m !== 'AUTO_BEFORE'))('treats an error with no stage as an error under %s', (mode) => {
     expect(toDispatchStatus({ status: 'ERROR' }, mode)).toBe('ERROR');
   });
 });

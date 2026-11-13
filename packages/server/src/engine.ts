@@ -127,7 +127,8 @@ const RESPOND_BEFORE_DESTINATIONS: ReadonlySet<string> = new Set(['AUTO_BEFORE',
  *   recorded, so the sender gets a success and does not resend (a resend would
  *   deliver a second copy to the destinations that worked).
  * - every other mode (AUTO_AFTER_DESTINATIONS is the default): yes.
- * An error before routing is always reported: nothing was delivered.
+ * An error before routing is reported (nothing was delivered), except under
+ * AUTO_BEFORE, which answers once the message is recorded, before processing.
  */
 export function toDispatchStatus(
   outcome: { readonly status: 'SENT' | 'FILTERED' | 'ERROR'; readonly errorStage?: 'SOURCE' | 'DESTINATION' | undefined },
@@ -135,6 +136,9 @@ export function toDispatchStatus(
 ): DispatchStatus {
   if (outcome.status === 'FILTERED') return DISPATCH_STATUS.FILTERED;
   if (outcome.status !== 'ERROR') return DISPATCH_STATUS.PROCESSED;
+  // Mirth's "Before processing" answers as soon as the message is recorded;
+  // the failure stays on the message and raises its alert.
+  if (responseMode === 'AUTO_BEFORE') return DISPATCH_STATUS.PROCESSED;
   if (outcome.errorStage === 'DESTINATION' && RESPOND_BEFORE_DESTINATIONS.has(responseMode)) {
     return DISPATCH_STATUS.PROCESSED;
   }
