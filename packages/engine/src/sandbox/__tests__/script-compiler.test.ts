@@ -60,6 +60,36 @@ describe('compileScript', () => {
     expect(result.value.code).not.toContain('sourceMappingURL');
   });
 
+  it('compiles a script that awaits a bridge and then returns (regression)', async () => {
+    // A top-level await made esbuild read the script as a module, where a
+    // top-level return is a syntax error, so `const r = await dbQuery(...); return r;`
+    // could not be deployed in any script stage.
+    const result = await compileScript('const r: string = await getResource("x");\nreturn r;');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.code).toContain('await getResource("x")');
+    expect(result.value.code).toContain('return r;');
+  });
+
+  it('runs the compiled await-then-return script in the sandbox', async () => {
+    const compiled = await compileScript('const r: string = await getResource("greeting");\nreturn r + "!";');
+    if (!compiled.ok) throw compiled.error;
+    const executor = new VmSandboxExecutor({ getResource: async (name: string) => `hello ${name}` });
+
+    const result = await executor.execute(compiled.value, createSandboxContext('m', 'r'), { timeout: 2_000 });
+
+    expect(result.ok && result.value.returnValue).toBe('hello greeting!');
+  });
+
+  it('keeps a multi-line template literal exactly as written', async () => {
+    const result = await compileScript('const t = `line1\nline2`;\nreturn t;');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.code).toContain('`line1\nline2`');
+  });
+
   it('returns error for invalid TypeScript', async () => {
     // esbuild is lenient with TS errors but fails on syntax errors
     const result = await compileScript('const x: = ;');

@@ -45,6 +45,23 @@ function remember(key: string, compiled: CompiledScript): void {
   if (!oldest.done) scriptCache.delete(oldest.value);
 }
 
+const WRAPPER_OPEN = 'async function __galvaniflowScript() {';
+
+/**
+ * The compiled function's body: the lines between the wrapper's first line
+ * and its closing brace, plus the inline source map comment if there is one.
+ * esbuild indents code lines but never the inside of a template literal.
+ */
+function unwrapBody(output: string): string {
+  const lines = output.split('\n');
+  const close = lines.lastIndexOf('}');
+  if (!(lines[0] ?? '').startsWith(WRAPPER_OPEN) || close < 1) {
+    throw new Error('Script compiler produced output it could not unwrap');
+  }
+  const trailer = lines.slice(close + 1).filter((l) => l.startsWith('//# sourceMappingURL='));
+  return [...lines.slice(1, close), ...trailer].join('\n');
+}
+
 /** Compile TypeScript source to JavaScript via esbuild. */
 export async function compileScript(
   code: string,
@@ -66,11 +83,15 @@ export async function compileScript(
       transformOptions.sourcefile = opts.sourcefile;
     }
 
-    const result = await transform(code, transformOptions);
+    // A script is a function body (the executor runs it inside one), so it is
+    // compiled as one: on its own, a top-level await makes esbuild read it as a
+    // module, where the script's top-level return is a syntax error.
+    const result = await transform(`${WRAPPER_OPEN}\n${code}\n}`, transformOptions);
+    const body = unwrapBody(result.code);
 
     const compiled: CompiledScript = result.map
-      ? { code: result.code, sourceMap: result.map }
-      : { code: result.code };
+      ? { code: body, sourceMap: result.map }
+      : { code: body };
 
     remember(key, compiled);
     return compiled;
