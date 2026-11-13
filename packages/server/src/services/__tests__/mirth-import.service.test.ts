@@ -507,6 +507,14 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(channel.sourceConnectorProperties).toMatchObject({ port: 6661, responseMode: 'PASSTHROUGH' });
   });
 
+  it('keeps a TCP connector\'s frame bytes when they are not MLLP\'s', () => {
+    expect(convert4x().sourceConnectorProperties['frameStart']).toBeUndefined();
+    const basic = convert4x((x) => x
+      .replace('<startOfMessageBytes>0B</startOfMessageBytes>', '<startOfMessageBytes>02</startOfMessageBytes>')
+      .replace('<endOfMessageBytes>1C0D</endOfMessageBytes>', '<endOfMessageBytes>03</endOfMessageBytes>'));
+    expect(basic.sourceConnectorProperties).toMatchObject({ frameStart: '02', frameEnd: '03' });
+  });
+
   it('responds from the destination a "dN" setting names', () => {
     const channel = convert4x((x) => x.replace('<responseVariable>Postprocessor</responseVariable>', '<responseVariable>d3</responseVariable>'));
     expect(channel.responseMode).toBe('DESTINATION');

@@ -534,7 +534,7 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       if (remoteAddress) result['host'] = remoteAddress;
       const remotePort = getString(propsNode, 'remotePort');
       if (remotePort) result['port'] = portValue(remotePort);
-      Object.assign(result, sendTemplate(propsNode, 'template'));
+      Object.assign(result, sendTemplate(propsNode, 'template'), tcpFraming(propsNode));
       break;
     }
     case 'HTTP': {
@@ -682,6 +682,17 @@ function sendTemplate(propsNode: Record<string, unknown>, key: string): Record<s
   const template = getString(propsNode, key);
   if (template === null || template.trim() === '' || template.trim() === '${message.encodedData}') return {};
   return { template };
+}
+
+/**
+ * The frame bytes of a Mirth TCP connector (MLLP or Basic mode), when they
+ * differ from MLLP's 0B / 1C0D.
+ */
+function tcpFraming(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const mode = getNestedRecord(propsNode, 'transmissionModeProperties') ?? {};
+  const start = (getString(mode, 'startOfMessageBytes') ?? '0B').toUpperCase();
+  const end = (getString(mode, 'endOfMessageBytes') ?? '1C0D').toUpperCase();
+  return start === '0B' && end === '1C0D' ? {} : { frameStart: start, frameEnd: end };
 }
 
 /** A port as a number, or as written when it is a `${...}` reference resolved at deploy. */
