@@ -663,13 +663,18 @@ const JDBC_URL = /^jdbc:(\w+):\/\/([^:/?;]+)(?::(\d+))?\/([^?;]+)/;
 const DB_UPDATE_MODE: Readonly<Record<string, string>> = { '1': 'NEVER', '2': 'ALWAYS', '3': 'ON_SUCCESS' };
 
 /**
- * Mirth's Database Reader/Writer take a JDBC URL; GalvaniFlow's take host,
- * port and database. Queries keep their `${name}` parameters, which bind from
- * the row (reader) or the message's variables (writer).
+ * Mirth's Database Reader/Writer take a JDBC URL; GalvaniFlow's take a vendor,
+ * host, port and database. The vendor is the URL's scheme (MariaDB speaks
+ * MySQL's protocol); one with no driver here (sqlserver, oracle) is kept, so
+ * the channel refuses to deploy and says which. Queries keep their `${name}`
+ * parameters, which bind from the row (reader) or the message's variables (writer).
  */
 function databaseProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  const match = JDBC_URL.exec(getString(propsNode, 'url') ?? '');
+  const url = getString(propsNode, 'url') ?? '';
+  const scheme = /^jdbc:(\w+):/.exec(url)?.[1]?.toLowerCase();
+  if (scheme) result['vendor'] = scheme === 'mariadb' ? 'mysql' : scheme;
+  const match = JDBC_URL.exec(url);
   if (match) {
     result['host'] = match[2];
     if (match[3]) result['port'] = Number(match[3]);

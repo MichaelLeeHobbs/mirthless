@@ -14,6 +14,7 @@ import { FileReceiver, FILE_SORT_BY, FILE_POST_ACTION, type FileSortBy, type Fil
 import { FileDispatcher } from './file/file-dispatcher.js';
 import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, type UpdateMode, type RowFormat } from './database/database-receiver.js';
 import { DatabaseDispatcher } from './database/database-dispatcher.js';
+import { DATABASE_VENDOR, type DatabaseVendor } from './database/database-vendor.js';
 import { JavaScriptReceiver } from './javascript/javascript-receiver.js';
 import { JavaScriptDispatcher } from './javascript/javascript-dispatcher.js';
 import { SmtpDispatcher, type SmtpAttachment } from './smtp/smtp-dispatcher.js';
@@ -37,6 +38,12 @@ export function num(props: Record<string, unknown>, key: string, fallback: numbe
   if (v === undefined || v === null || v === '') return fallback;
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/** A database connector's vendor and port, the port defaulting to the vendor's own. */
+export function databaseTarget(props: Record<string, unknown>): { vendor: DatabaseVendor; port: number } {
+  const vendor = (props['vendor'] as DatabaseVendor | undefined) ?? DATABASE_VENDOR.POSTGRESQL;
+  return { vendor, port: num(props, 'port', vendor === DATABASE_VENDOR.MYSQL ? 3306 : 5432) };
 }
 
 /**
@@ -128,7 +135,7 @@ const sourceFactories = new Map<string, SourceFactory>([
   })],
   ['DATABASE', (props): SourceConnectorRuntime => new DatabaseReceiver({
     host: props['host'] as string,
-    port: num(props, 'port', 5432),
+    ...databaseTarget(props),
     database: props['database'] as string,
     username: props['username'] as string,
     password: props['password'] as string,
@@ -226,7 +233,7 @@ const destinationFactories = new Map<string, DestinationFactory>([
   })],
   ['DATABASE', (props): DestinationConnectorRuntime => new DatabaseDispatcher({
     host: props['host'] as string,
-    port: num(props, 'port', 5432),
+    ...databaseTarget(props),
     database: props['database'] as string,
     username: props['username'] as string,
     password: props['password'] as string,

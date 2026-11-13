@@ -626,15 +626,27 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader));
 
     expect(channel.destinations[0]?.properties).toEqual({
-      host: 'db.example.org', port: 5433, database: 'partner', username: 'mirth', password: '0123', query: 'INSERT INTO t (a) VALUES (${mrn})',
+      vendor: 'postgresql', host: 'db.example.org', port: 5433, database: 'partner', username: 'mirth', password: '0123', query: 'INSERT INTO t (a) VALUES (${mrn})',
     });
     expect(channel.sourceConnectorProperties).toEqual({
-      host: 'db.example.org', database: 'orders', username: 'mirth', password: 'pw',
+      vendor: 'postgresql', host: 'db.example.org', database: 'orders', username: 'mirth', password: 'pw',
       selectQuery: 'SELECT id FROM o', updateQuery: 'UPDATE o SET s = 1 WHERE id = ${id}', updateMode: 'ON_SUCCESS',
     });
     // The reader's rows are JSON objects here, so the channel and its source transformer read JSON.
     expect(channel.inboundDataType).toBe('JSON');
     expect(channel.transformers.find((t) => (t.metaDataId ?? null) === null)?.inboundDataType).toBe('JSON');
+  });
+
+  it.each([
+    ['jdbc:mysql://partner.example.org:3307/results', 'mysql', { host: 'partner.example.org', port: 3307, database: 'results' }],
+    ['jdbc:mariadb://partner.example.org/results', 'mysql', { host: 'partner.example.org', database: 'results' }],
+    ['jdbc:sqlserver://partner.example.org:1433;databaseName=results', 'sqlserver', {}],
+  ])('takes the database vendor from the JDBC URL %s', (url, vendor, location) => {
+    const writer = `<properties class="com.mirth.connect.connectors.jdbc.DatabaseDispatcherProperties" version="4.5.0"><url>${url}</url><query>INSERT INTO t (a) VALUES (\${mrn})</query></properties>`;
+    const channel = convert4x((x) => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer));
+
+    expect(channel.destinations[0]?.properties).toEqual({ vendor, ...location, query: 'INSERT INTO t (a) VALUES (${mrn})' });
   });
 
   it('keeps a polling source\'s interval and gives a JavaScript Reader only its script', () => {
