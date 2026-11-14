@@ -43,13 +43,8 @@ import {
   type CertificateSummary,
 } from '../hooks/use-certificates.js';
 import { expiryColor, expiryDays, expiryLabel } from '../lib/certificate-expiry.js';
+import { formatTimestamp } from '../lib/format.js';
 import { FONT_FAMILY_MONO } from '../styles/tokens.js';
-
-// ----- Helpers -----
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString();
-}
 
 const CERT_TYPES = [
   CERTIFICATE_TYPE.CA,
@@ -237,7 +232,7 @@ export function CertificatesPage(): ReactNode {
                             display: 'block',
                             color: 'text.secondary'
                           }}>
-                          {formatDate(cert.notBefore)} - {formatDate(cert.notAfter)}
+                          {formatTimestamp(cert.notBefore, { dateOnly: true })} - {formatTimestamp(cert.notAfter, { dateOnly: true })}
                         </Typography>
                       </TableCell>
                       <TableCell align="right">
