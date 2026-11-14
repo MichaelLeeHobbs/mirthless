@@ -32,3 +32,4 @@ export * from './event-export.schema.js';
 export * from './mirth-import.schema.js';
 export * from './certificate.schema.js';
 export * from './deployment.schema.js';
+export * from './queue-connector.schema.js';

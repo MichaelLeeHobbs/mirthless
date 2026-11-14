@@ -17,6 +17,8 @@ const CONNECTOR_TYPE_VALUES = [
   'FHIR',
   'EMAIL',
   'SFTP',
+  'KAFKA',
+  'AMQP',
 ] as const;
 
 const CONNECTOR_MODE_VALUES = [

@@ -18,6 +18,8 @@ export const createDestinationConnectorSchema = z.object({
     'SMTP',
     'FHIR',
     'SFTP',
+    'KAFKA',
+    'AMQP',
   ]),
   properties: z.record(z.string(), z.unknown()),
   queueMode: z.enum(['NEVER', 'ON_FAILURE', 'ALWAYS']).default('NEVER'),

@@ -27,6 +27,8 @@ export const CONNECTOR_TYPES = [
   'SMTP',
   'EMAIL',
   'SFTP',
+  'KAFKA',
+  'AMQP',
 ] as const;
 
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);
