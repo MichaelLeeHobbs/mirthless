@@ -5,15 +5,8 @@
 
 import type { Request, Response } from 'express';
 import { DataPrunerService } from '../services/data-pruner.service.js';
-import { isServiceError } from '../lib/service-error.js';
-import { errorResponse } from '../lib/controller-helpers.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
-
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  if (isServiceError(error, 'INVALID_INPUT')) return 400;
-  return 500;
-}
 
 function auditContext(req: Request): { userId: string | null; ipAddress: string | null } {
   return {

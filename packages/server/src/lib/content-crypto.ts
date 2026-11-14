@@ -81,16 +81,17 @@ export function decryptIfEncrypted(content: string | null): Result<string | null
 /**
  * Decrypt an envelope produced by encryptContent back to UTF-8 plaintext.
  * A tampered or malformed envelope fails loudly (never returns partial data).
+ * Envelopes come from storage, so a bad one is INTERNAL (HTTP 500), not bad input.
  */
 export function decryptContent(envelope: string): Result<string> {
   return tryCatch(() => {
     if (!isEncryptedEnvelope(envelope)) {
-      throw new ServiceError('INVALID_INPUT', 'Value is not an encrypted content envelope');
+      throw new ServiceError('INTERNAL', 'Value is not an encrypted content envelope');
     }
     const key = loadKey();
     const packed = Buffer.from(envelope.slice(ENVELOPE_PREFIX.length), 'base64');
     if (packed.length < IV_BYTES + AUTH_TAG_BYTES) {
-      throw new ServiceError('INVALID_INPUT', 'Encrypted envelope is truncated');
+      throw new ServiceError('INTERNAL', 'Encrypted envelope is truncated');
     }
     const iv = packed.subarray(0, IV_BYTES);
     const authTag = packed.subarray(IV_BYTES, IV_BYTES + AUTH_TAG_BYTES);

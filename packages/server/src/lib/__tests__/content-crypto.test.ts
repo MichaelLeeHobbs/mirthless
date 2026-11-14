@@ -17,6 +17,7 @@ const {
   isEncryptedEnvelope,
   isContentEncryptionConfigured,
 } = await import('../content-crypto.js');
+const { mapErrorToStatus } = await import('../controller-helpers.js');
 
 beforeEach(() => {
   cfg.CONTENT_ENCRYPTION_KEY = 'a'.repeat(64);
@@ -71,6 +72,18 @@ describe('content-crypto', () => {
     const tampered = enc.value.slice(0, -4) + (enc.value.endsWith('AAAA') ? 'BBBB' : 'AAAA');
     const result = decryptContent(tampered);
     expect(result.ok).toBe(false);
+  });
+
+  // Every caller decrypts stored data (message content, data source passwords),
+  // so a bad envelope is a server-side integrity fault, never a client error.
+  it.each([
+    ['not an envelope', 'plainish'],
+    ['a truncated envelope', 'enc:v1:AAAA'],
+  ])('reports %s as an internal error (HTTP 500), not bad input', (_what, value) => {
+    const result = decryptContent(value);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(mapErrorToStatus(result.error)).toBe(500);
   });
 
   it('rejects a key of the wrong length', () => {
