@@ -175,6 +175,8 @@ export interface ChannelSpec {
   /** Source transformer script. */
   readonly transformer?: string;
   readonly destinations: ReadonlyArray<DestinationSpec>;
+  /** Store to record into; a fresh in-memory store when absent. */
+  readonly store?: InMemoryStore;
 }
 
 export interface DeployedChannel {
@@ -240,7 +242,7 @@ async function buildDestinationConfigs(
  */
 export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel> {
   const sandbox = new VmSandboxExecutor();
-  const store = createInMemoryStore();
+  const store = spec.store ?? createInMemoryStore();
   const serverId = spec.serverId ?? 'e2e-server';
   const templates = spec.templates ?? [];
 
@@ -276,7 +278,7 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
   };
 
   const destByMeta = new Map(spec.destinations.map((d) => [d.metaDataId, d]));
-  const sendFn: SendToDestination = async (metaDataId, messageId, content, signal) => {
+  const sendFn: SendToDestination = async (metaDataId, messageId, content, signal, _correlationId, variables) => {
     const d = destByMeta.get(metaDataId);
     if (!d) {
       return ok<DestinationResponse>({ status: 'ERROR', content: '', errorMessage: `unknown destination ${String(metaDataId)}` });
@@ -287,6 +289,8 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
       metaDataId,
       content,
       dataType: d.dataType ?? spec.dataType,
+      // As the server engine does, so destinations can fill `${name}` per message.
+      variables,
     };
     return d.connector.send(message, signal);
   };
