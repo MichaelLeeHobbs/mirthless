@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@galvaniflow/core-models';
 import { CertificateService } from '../services/certificate.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
@@ -14,11 +15,6 @@ function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'ALREADY_EXISTS')) return 409;
   if (isServiceError(error, 'INVALID_INPUT')) return 400;
   return 500;
-}
-
-function errorResponse(error: unknown): { code: string; message: string } {
-  if (isServiceError(error)) return { code: error.code, message: error.message };
-  return { code: 'INTERNAL', message: 'Internal server error' };
 }
 
 export class CertificateController {
