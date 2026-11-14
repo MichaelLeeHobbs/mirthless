@@ -2,7 +2,7 @@
 // Database Query Builder
 // ===========================================
 // Converts template strings with ${variable} placeholders
-// into parameterized SQL with positional $1, $2, ... params.
+// into parameterized SQL with the driver's placeholders.
 // CRITICAL: No string interpolation of values into SQL.
 
 // ----- Types -----
@@ -11,6 +11,12 @@ export interface PreparedQuery {
   readonly sql: string;
   readonly params: readonly unknown[];
 }
+
+/**
+ * `numbered`: `$1, $2, ...`, a name used twice reuses its number (PostgreSQL).
+ * `question`: `?` per use, so a name used twice is passed twice (MySQL).
+ */
+export type PlaceholderStyle = 'numbered' | 'question';
 
 // ----- Placeholder regex -----
 
@@ -21,7 +27,7 @@ const PLACEHOLDER_RE = /\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
 
 /**
  * Prepare a parameterized query from a template string.
- * Replaces `${variable}` with positional `$N` parameters.
+ * Replaces `${variable}` with the driver's placeholders.
  *
  * @example
  * prepare("INSERT INTO t (a, b) VALUES (${name}, ${age})", { name: "John", age: 30 })
@@ -30,11 +36,16 @@ const PLACEHOLDER_RE = /\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
 export function prepare(
   template: string,
   context: Readonly<Record<string, unknown>>,
+  style: PlaceholderStyle = 'numbered',
 ): PreparedQuery {
   const params: unknown[] = [];
   const seen = new Map<string, number>();
 
   const sql = template.replace(PLACEHOLDER_RE, (_match, varName: string) => {
+    if (style === 'question') {
+      params.push(context[varName]);
+      return '?';
+    }
     const existingIndex = seen.get(varName);
     if (existingIndex !== undefined) {
       return `$${String(existingIndex)}`;

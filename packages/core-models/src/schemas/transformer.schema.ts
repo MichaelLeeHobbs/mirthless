@@ -34,3 +34,24 @@ export const transformerInputSchema = z.object({
 });
 
 export type TransformerInput = z.infer<typeof transformerInputSchema>;
+
+/**
+ * How a DELIMITED message is split into rows and columns. Kept on the source
+ * transformer as `inboundProperties.delimited`; every field has a default, so
+ * `{}` reads comma-separated lines with double-quote quoting.
+ */
+export const delimitedOptionsSchema = z.object({
+  columnDelimiter: z.string().min(1).default(','),
+  recordDelimiter: z.string().min(1).default('\n'),
+  /** Quote character; empty turns quoting off. */
+  quote: z.string().default('"'),
+  /** A quote inside a quoted value is written twice (`""`); otherwise it is preceded by `quoteEscape`. */
+  escapeWithDoubleQuote: z.boolean().default(true),
+  quoteEscape: z.string().default('\\'),
+  /** Names for the columns in order; a column past the list is `column<n>` (1-based). */
+  columnNames: z.array(z.string().min(1)).default([]),
+  /** Drop carriage returns, so CRLF files read like LF ones. */
+  ignoreCR: z.boolean().default(true),
+}).refine((o) => o.columnDelimiter !== o.recordDelimiter, { message: 'Column and record delimiters must differ' });
+
+export type DelimitedOptions = z.infer<typeof delimitedOptionsSchema>;

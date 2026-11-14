@@ -39,7 +39,7 @@ import type { Result } from '@galvaniflow/core-util';
 import { tryCatch } from '@galvaniflow/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
-import { isHl7MessageProxy } from '../pipeline/data-type-handler.js';
+import { isHl7MessageProxy, isX12MessageProxy, type X12MessageProxy } from '../pipeline/data-type-handler.js';
 
 // ----- Types -----
 
@@ -99,6 +99,7 @@ interface HostBridgeState {
   readonly logs: LogEntry[];
   readonly bridges: BridgeFunctions;
   readonly hl7Handles: Map<number, Hl7MessageProxy>;
+  readonly x12Handles: Map<number, X12MessageProxy>;
   readonly destSet: Record<string, unknown> | undefined;
   nextHandle: number;
   /** Message of the error the script threw, reported from inside the sandbox. */
@@ -173,6 +174,38 @@ function hl7Op(state: HostBridgeState, op: string, args: readonly unknown[]): un
   }
 }
 
+function registerX12(state: HostBridgeState, proxy: X12MessageProxy): number {
+  const id = state.nextHandle;
+  state.nextHandle += 1;
+  state.x12Handles.set(id, proxy);
+  return id;
+}
+
+/** Dispatch X12 message-proxy method calls to the host-side proxy. */
+function x12Op(state: HostBridgeState, op: string, args: readonly unknown[]): unknown {
+  const proxy = state.x12Handles.get(args[0] as number);
+  if (!proxy) throw new Error('Invalid X12 handle');
+  switch (op) {
+    case 'x12.get': return proxy.get(str(args[1]));
+    case 'x12.set': proxy.set(str(args[1]), str(args[2])); return undefined;
+    case 'x12.delete': proxy.delete(str(args[1])); return undefined;
+    case 'x12.toString': return proxy.toString();
+    case 'x12.segCount': return proxy.getSegmentCount(str(args[1]));
+    default: return undefined;
+  }
+}
+
+/** How a message crosses into the sandbox: an HL7 or X12 handle, or plain data. */
+function messageKind(value: unknown): 'hl7' | 'x12' | 'data' {
+  if (isHl7MessageProxy(value)) return 'hl7';
+  return isX12MessageProxy(value) ? 'x12' : 'data';
+}
+
+function messageValue(state: HostBridgeState, value: unknown): unknown {
+  if (isHl7MessageProxy(value)) return registerHl7(state, value);
+  return isX12MessageProxy(value) ? registerX12(state, value) : value;
+}
+
 /** Dispatch destinationSet method calls to the host-side proxy. Object/array results are JSON-encoded. */
 function dsOp(state: HostBridgeState, op: string, args: readonly unknown[]): unknown {
   const set = state.destSet;
@@ -239,6 +272,7 @@ function makeHostDispatch(state: HostBridgeState): (op: string, ...args: unknown
   const { bridges } = state;
   return (op: string, ...args: unknown[]): unknown => {
     if (op.startsWith('hl7.')) return hl7Op(state, op, args);
+    if (op.startsWith('x12.')) return x12Op(state, op, args);
     if (op.startsWith('ds.')) return dsOp(state, op, args);
     switch (op) {
       case 'log':
@@ -280,9 +314,9 @@ interface SandboxPayload {
   /** Value the host dispatch returns in place of throwing (see makeNonThrowingDispatch). */
   readonly errToken: string;
   readonly rawData: string;
-  readonly msgKind: 'hl7' | 'data';
+  readonly msgKind: 'hl7' | 'x12' | 'data';
   readonly msgVal: unknown;
-  readonly tmpKind: 'hl7' | 'data';
+  readonly tmpKind: 'hl7' | 'x12' | 'data';
   readonly tmpVal: unknown;
   readonly channelMap: Record<string, unknown>;
   readonly connectorMap: Record<string, unknown>;
@@ -302,8 +336,6 @@ function buildPayload(
   deps: BridgeDependencies | undefined,
   errToken: string,
 ): SandboxPayload {
-  const msgIsHl7 = isHl7MessageProxy(context.msg);
-  const tmpIsHl7 = isHl7MessageProxy(context.tmp);
   const extrasData: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(context.extras ?? {})) {
     if (k !== 'destinationSet') extrasData[k] = v;
@@ -311,10 +343,10 @@ function buildPayload(
   return {
     errToken,
     rawData: context.rawData,
-    msgKind: msgIsHl7 ? 'hl7' : 'data',
-    msgVal: msgIsHl7 ? registerHl7(state, context.msg as Hl7MessageProxy) : context.msg,
-    tmpKind: tmpIsHl7 ? 'hl7' : 'data',
-    tmpVal: tmpIsHl7 ? registerHl7(state, context.tmp as Hl7MessageProxy) : context.tmp,
+    msgKind: messageKind(context.msg),
+    msgVal: messageValue(state, context.msg),
+    tmpKind: messageKind(context.tmp),
+    tmpVal: messageValue(state, context.tmp),
     channelMap: { ...context.channelMap },
     connectorMap: { ...context.connectorMap },
     globalChannelMap: { ...(context.globalChannelMap ?? {}) },
@@ -398,6 +430,9 @@ globalThis.__build = function (hostDispatch, payload) {
     if (v !== null && typeof v === 'object' && v.__hl7Proxy === true && typeof v.__handle === 'number') {
       return { k: 'h', v: v.__handle };
     }
+    if (v !== null && typeof v === 'object' && v.__x12Proxy === true && typeof v.__handle === 'number') {
+      return { k: 'x', v: v.__handle };
+    }
     return { k: 'j', v: v };
   }
   Object.defineProperty(globalThis, '__collect', { value: function () {
@@ -436,6 +471,22 @@ globalThis.__build = function (hostDispatch, payload) {
       getSegmentString: function (n, i) { return dispatch('hl7.segString', handle, text(n), i == null ? undefined : N(i)); }
     };
   }
+  function makeX12(handle) {
+    return {
+      __x12Proxy: true,
+      __handle: handle,
+      get: function (p) { return dispatch('x12.get', handle, text(p)); },
+      set: function (p, v) { dispatch('x12.set', handle, text(p), text(v)); },
+      delete: function (p) { dispatch('x12.delete', handle, text(p)); },
+      getSegmentCount: function (n) { return dispatch('x12.segCount', handle, text(n)); },
+      toString: function () { return dispatch('x12.toString', handle); },
+      toJSON: function () { return dispatch('x12.toString', handle); }
+    };
+  }
+  function message(kind, value) {
+    if (kind === 'hl7') { return makeHl7(value); }
+    return kind === 'x12' ? makeX12(value) : value;
+  }
   globalThis.rawData = payload.rawData;
   globalThis.channelMap = payload.channelMap;
   globalThis.connectorMap = payload.connectorMap;
@@ -444,8 +495,8 @@ globalThis.__build = function (hostDispatch, payload) {
   globalThis.responseMap = payload.responseMap;
   globalThis.sourceMap = payload.sourceMap;
   globalThis.configMap = Object.freeze(payload.configMap);
-  globalThis.msg = payload.msgKind === 'hl7' ? makeHl7(payload.msgVal) : payload.msgVal;
-  globalThis.tmp = payload.tmpKind === 'hl7' ? makeHl7(payload.tmpVal) : payload.tmpVal;
+  globalThis.msg = message(payload.msgKind, payload.msgVal);
+  globalThis.tmp = message(payload.tmpKind, payload.tmpVal);
   globalThis.logger = {
     info: function (m) { dispatch('log', 'INFO', S(m)); },
     warn: function (m) { dispatch('log', 'WARN', S(m)); },
@@ -565,8 +616,8 @@ const INVOKE_SRC =
 
 // ----- Helpers -----
 
-/** One value handed back by `__collect`: undefined, an HL7 handle, or JSON data. */
-interface Collected { readonly k: 'u' | 'h' | 'j'; readonly v?: unknown }
+/** One value handed back by `__collect`: undefined, an HL7 or X12 handle, or JSON data. */
+interface Collected { readonly k: 'u' | 'h' | 'x' | 'j'; readonly v?: unknown }
 
 /** Everything `__collect` returns, already parsed into host-realm objects. */
 interface CollectedResult {
@@ -580,6 +631,7 @@ interface CollectedResult {
 function restore(state: HostBridgeState, c: Collected): unknown {
   if (c.k === 'u') return undefined;
   if (c.k === 'h') return state.hl7Handles.get(c.v as number);
+  if (c.k === 'x') return state.x12Handles.get(c.v as number);
   return c.v;
 }
 
@@ -716,6 +768,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
         logs: [],
         bridges: createBridgeFunctions(this.deps),
         hl7Handles: new Map(),
+        x12Handles: new Map(),
         destSet: context.extras?.['destinationSet'] as Record<string, unknown> | undefined,
         nextHandle: 1,
         failure: undefined,

@@ -14,7 +14,7 @@ GalvaniFlow is **close to Mirth/OIE on connector breadth** and **ahead on modern
 
 | # | Gap | Class | Why it matters |
 |---|-----|-------|----------------|
-| 1 | **Database connector is PostgreSQL-only** | 🔴 Silent blocker | Every Database Reader/Writer pointed at Oracle/SQL Server/MySQL cannot migrate. Looks done; isn't. |
+| 1 | **Database connector is PostgreSQL and MySQL only** | 🔴 Blocker | MySQL/MariaDB added 2026-11-13 (D-259). Oracle and SQL Server channels cannot migrate; they now refuse to deploy and name the database instead of failing silently. |
 | 2 | **File connector is local-disk-only** (no FTP/FTPS/SMB/S3/WebDAV) | 🔴 Silent blocker | File channels over remote transports cannot migrate. SFTP exists but as a *separate* connector. |
 | 3 | **No Web Service / SOAP connector** | 🔴 Missing | Blocks brownfield hospital installs still on SOAP (LIS/RIS/EMR, IHE, state registries). |
 | 4 | **TCP/MLLP framing is hardcoded** (VT/FS+CR only, no Basic mode) | 🔴 Degraded | Partners using non-standard LLP bytes or delimited framing cannot be integrated. |

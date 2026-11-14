@@ -27,6 +27,7 @@
     "dcmjs-dimse": "^0.3.4",
     "generic-pool": "^3.9.0",
     "imapflow": "^2.9.1",
+    "mysql2": "3.24.6",
     "nodemailer": "^10.2.1",
     "pg": "^8.23.1",
     "pino": "^10.4.0",

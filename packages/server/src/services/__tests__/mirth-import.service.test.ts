@@ -320,6 +320,59 @@ describe('MirthImportService.convertXml', () => {
     expect(result.value.channels[0]?.description).toBeNull();
   });
 
+  it('reads Mirth Delimited settings into delimited options and says how scripts read rows', () => {
+    const ser = (widths: string): string => `<serializationProperties class="com.mirth.connect.plugins.datatypes.delimited.DelimitedSerializationProperties">
+      <columnDelimiter>\\t</columnDelimiter><recordDelimiter>\\r\\n</recordDelimiter><columnWidths>${widths}</columnWidths>
+      <quoteToken>'</quoteToken><escapeWithDoubleQuote>false</escapeWithDoubleQuote><quoteEscapeToken>\\\\</quoteEscapeToken>
+      <columnNames>mrn, family ,given</columnNames><ignoreCR>false</ignoreCR></serializationProperties>`;
+    const xml = (widths: string): string => `<channel>
+      <id>test-delimited</id>
+      <name>Census</name>
+      <enabled>true</enabled>
+      <sourceConnector>
+        <properties class="com.mirth.connect.connectors.js.JavaScriptReceiverProperties"></properties>
+        <transformer><inboundDataType>DELIMITED</inboundDataType><outboundDataType>HL7V2</outboundDataType>
+          <inboundProperties class="com.mirth.connect.plugins.datatypes.delimited.DelimitedDataTypeProperties">${ser(widths)}</inboundProperties>
+        </transformer>
+      </sourceConnector>
+      <destinationConnectors></destinationConnectors>
+    </channel>`;
+
+    const result = MirthImportService.convertXml(xml(''));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const source = result.value.channels[0]?.transformers.find((t) => (t.metaDataId ?? null) === null);
+    expect(source?.inboundProperties['delimited']).toEqual({
+      columnDelimiter: '\t', recordDelimiter: '\r\n', quote: "'", quoteEscape: '\\',
+      escapeWithDoubleQuote: false, ignoreCR: false, columnNames: ['mrn', 'family', 'given'],
+    });
+    expect(result.value.warnings.join('\n')).toContain('read msg[0].column');
+    expect(result.value.warnings.join('\n')).not.toContain('fixed-width');
+
+    const fixed = MirthImportService.convertXml(xml('5,10'));
+    expect(fixed.ok && fixed.value.warnings.join('\n')).toContain('fixed-width columns are not supported');
+  });
+
+  it('imports Mirth EDI/X12 as the X12 data type, on the channel and its transformers', () => {
+    const xml = `<channel>
+      <id>test-x12</id>
+      <name>Eligibility</name>
+      <enabled>true</enabled>
+      <sourceConnector>
+        <properties class="com.mirth.connect.connectors.js.JavaScriptReceiverProperties"></properties>
+        <transformer><inboundDataType>EDI/X12</inboundDataType><outboundDataType>EDI/X12</outboundDataType></transformer>
+      </sourceConnector>
+      <destinationConnectors></destinationConnectors>
+    </channel>`;
+
+    const result = MirthImportService.convertXml(xml);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const channel = result.value.channels[0]!;
+    expect([channel.inboundDataType, channel.outboundDataType]).toEqual(['X12', 'X12']);
+    expect(channel.transformers[0]).toMatchObject({ inboundDataType: 'X12', outboundDataType: 'X12' });
+  });
+
   it('maps JAVASCRIPT connector type from class name', () => {
     const xml = `<channel>
       <id>test-js</id>
@@ -573,15 +626,27 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader));
 
     expect(channel.destinations[0]?.properties).toEqual({
-      host: 'db.example.org', port: 5433, database: 'partner', username: 'mirth', password: '0123', query: 'INSERT INTO t (a) VALUES (${mrn})',
+      vendor: 'postgresql', host: 'db.example.org', port: 5433, database: 'partner', username: 'mirth', password: '0123', query: 'INSERT INTO t (a) VALUES (${mrn})',
     });
     expect(channel.sourceConnectorProperties).toEqual({
-      host: 'db.example.org', database: 'orders', username: 'mirth', password: 'pw',
+      vendor: 'postgresql', host: 'db.example.org', database: 'orders', username: 'mirth', password: 'pw',
       selectQuery: 'SELECT id FROM o', updateQuery: 'UPDATE o SET s = 1 WHERE id = ${id}', updateMode: 'ON_SUCCESS',
     });
     // The reader's rows are JSON objects here, so the channel and its source transformer read JSON.
     expect(channel.inboundDataType).toBe('JSON');
     expect(channel.transformers.find((t) => (t.metaDataId ?? null) === null)?.inboundDataType).toBe('JSON');
+  });
+
+  it.each([
+    ['jdbc:mysql://partner.example.org:3307/results', 'mysql', { host: 'partner.example.org', port: 3307, database: 'results' }],
+    ['jdbc:mariadb://partner.example.org/results', 'mysql', { host: 'partner.example.org', database: 'results' }],
+    ['jdbc:sqlserver://partner.example.org:1433;databaseName=results', 'sqlserver', {}],
+  ])('takes the database vendor from the JDBC URL %s', (url, vendor, location) => {
+    const writer = `<properties class="com.mirth.connect.connectors.jdbc.DatabaseDispatcherProperties" version="4.5.0"><url>${url}</url><query>INSERT INTO t (a) VALUES (\${mrn})</query></properties>`;
+    const channel = convert4x((x) => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer));
+
+    expect(channel.destinations[0]?.properties).toEqual({ vendor, ...location, query: 'INSERT INTO t (a) VALUES (${mrn})' });
   });
 
   it('keeps a polling source\'s interval and gives a JavaScript Reader only its script', () => {

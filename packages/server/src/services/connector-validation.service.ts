@@ -29,7 +29,12 @@ const nonEmptyString = z.string().min(1);
 const tcpMllpSourceSchema = z.object({ port: portSchema }).passthrough();
 const httpSourceSchema = z.object({ port: portSchema }).passthrough();
 const fileSourceSchema = z.object({ directory: nonEmptyString }).passthrough();
+/** Databases the connectors have a driver for; a Mirth channel on any other refuses to deploy. */
+const databaseVendorSchema = z.enum(['postgresql', 'mysql'], {
+  error: (issue) => `database "${String(issue.input)}" is not supported (PostgreSQL and MySQL are)`,
+}).optional();
 const databaseSourceSchema = z.object({
+  vendor: databaseVendorSchema,
   host: nonEmptyString,
   port: z.number(),
   database: nonEmptyString,
@@ -46,6 +51,7 @@ const tcpMllpDestSchema = z.object({ host: nonEmptyString, port: portSchema }).p
 const httpDestSchema = z.object({ url: nonEmptyString }).passthrough();
 const fileDestSchema = z.object({ directory: nonEmptyString }).passthrough();
 const databaseDestSchema = z.object({
+  vendor: databaseVendorSchema,
   host: nonEmptyString,
   port: z.number(),
   database: nonEmptyString,

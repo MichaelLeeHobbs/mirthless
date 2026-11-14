@@ -3,8 +3,29 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { parseForSandbox, serializeFromSandbox, serializeTransformed, isHl7MessageProxy, createHl7Proxy } from '../data-type-handler.js';
+import { parseForSandbox, serializeFromSandbox, serializeTransformed, isHl7MessageProxy, isX12MessageProxy, createHl7Proxy } from '../data-type-handler.js';
 import { Hl7Message } from '@galvaniflow/core-util';
+import { delimitedOptionsSchema } from '@galvaniflow/core-models';
+
+describe('DELIMITED serialization', () => {
+  const delimited = delimitedOptionsSchema.parse({ columnDelimiter: '|', columnNames: ['mrn', 'name'] });
+
+  it('writes edited rows back with the same settings', () => {
+    const rows = parseForSandbox('1|DOE\n', 'DELIMITED', { delimited }) as Array<Record<string, string>>;
+    rows[0]!['name'] = 'DOE|JR';
+    expect(serializeTransformed(rows, '1|DOE\n', 'DELIMITED', { delimited })).toBe('1|"DOE|JR"\n');
+  });
+
+  it('keeps the original text when a script only read the rows', () => {
+    const original = '1|DOE\r\n';
+    const rows = parseForSandbox(original, 'DELIMITED', { delimited });
+    expect(serializeTransformed(rows, original, 'DELIMITED', { delimited })).toBe(original);
+  });
+
+  it('writes a single row object a script returned', () => {
+    expect(serializeFromSandbox({ mrn: '1', name: 'DOE' }, 'DELIMITED', undefined, { delimited })).toBe('1|DOE\n');
+  });
+});
 
 const SAMPLE_HL7 = [
   'MSH|^~\\&|SENDING|FACILITY|RECEIVING|FACILITY|20260329||ADT^A01|MSG001|P|2.5',
@@ -51,8 +72,35 @@ describe('parseForSandbox', () => {
     expect(patient.mrn).toBe('12345');
   });
 
-  it('returns string for unsupported types (DELIMITED, HL7V3, FHIR, DICOM)', () => {
-    expect(parseForSandbox('data', 'DELIMITED')).toBe('data');
+  it('parses DELIMITED into rows named by the given settings, or column<n> without them', () => {
+    const delimited = delimitedOptionsSchema.parse({ columnDelimiter: '|', columnNames: ['mrn', 'name'] });
+    expect(parseForSandbox('1|DOE\n2|ROE\n', 'DELIMITED', { delimited })).toEqual([{ mrn: '1', name: 'DOE' }, { mrn: '2', name: 'ROE' }]);
+    expect(parseForSandbox('1,DOE', 'DELIMITED')).toEqual([{ column1: '1', column2: 'DOE' }]);
+  });
+
+  it('parses X12 into a path proxy that serializes back, edits included', () => {
+    const isa = 'ISA*00*          *00*          *ZZ*SUBMITTER      *ZZ*RECEIVER       *261110*1200*^*00501*000000020*0*P*:~';
+    const text = `${isa}NM1*IL*1*DOE*JANE****MI*MEMBER123~`;
+    const msg = parseForSandbox(text, 'X12') as { get(p: string): string | undefined; set(p: string, v: string): void; getSegmentCount(id: string): number };
+    expect(isX12MessageProxy(msg)).toBe(true);
+    expect(msg.get('NM1.9')).toBe('MEMBER123');
+    expect(msg.getSegmentCount('NM1')).toBe(1);
+    expect(serializeTransformed(msg, text, 'X12')).toBe(text);
+    msg.set('NM1.9', 'M2');
+    expect(serializeFromSandbox(msg, 'X12')).toBe(`${isa}NM1*IL*1*DOE*JANE****MI*M2~`);
+    (msg as unknown as { delete(p: string): void }).delete('NM1');
+    expect(serializeFromSandbox(msg, 'X12')).toBe(isa);
+  });
+
+  it('throws on X12 without an ISA segment', () => {
+    expect(() => parseForSandbox('ST*270*1~', 'X12')).toThrow(/ISA/);
+  });
+
+  it('throws on DELIMITED text with a quote that never closes', () => {
+    expect(() => parseForSandbox('1,"DOE', 'DELIMITED')).toThrow(/never closes/);
+  });
+
+  it('returns string for unsupported types (HL7V3, FHIR, DICOM)', () => {
     expect(parseForSandbox('data', 'HL7V3')).toBe('data');
     expect(parseForSandbox('data', 'FHIR')).toBe('data');
     expect(parseForSandbox('data', 'DICOM')).toBe('data');
