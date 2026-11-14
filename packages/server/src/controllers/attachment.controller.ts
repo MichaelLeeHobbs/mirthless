@@ -5,19 +5,9 @@
 
 import type { Request, Response } from 'express';
 import { AttachmentService } from '../services/attachment.service.js';
-import { isServiceError } from '../lib/service-error.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { emitEvent } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
-
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  return 500;
-}
-
-function errorResponse(error: unknown): { code: string; message: string } {
-  if (isServiceError(error)) return { code: error.code, message: error.message };
-  return { code: 'INTERNAL', message: 'Internal server error' };
-}
 
 export class AttachmentController {
   static async list(req: Request, res: Response): Promise<void> {

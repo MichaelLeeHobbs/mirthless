@@ -9,7 +9,7 @@ import {
   channelDependencyParamSchema,
 } from '@galvaniflow/core-models';
 import { ChannelDependencyService } from '../services/channel-dependency.service.js';
-import { isServiceError } from '../lib/service-error.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
@@ -18,17 +18,6 @@ import logger from '../lib/logger.js';
 const router: IRouter = Router();
 
 router.use(authenticate);
-
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  if (isServiceError(error, 'INVALID_INPUT')) return 400;
-  return 500;
-}
-
-function errorResponse(error: unknown): { code: string; message: string } {
-  if (isServiceError(error)) return { code: error.code, message: error.message };
-  return { code: 'INTERNAL', message: 'Internal server error' };
-}
 
 router.get(
   '/:id/dependencies',

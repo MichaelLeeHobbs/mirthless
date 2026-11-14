@@ -11,6 +11,15 @@ Michael approved the recommended options in `docs/design/17-remaining-migration-
 - **MySQL** (S15, D-259): the Database Reader and Writer pick a `pg` or `mysql2` pool by `vendor`, which the importer takes from the JDBC URL. SQL Server and Oracle refuse to deploy and say so.
 - Not built: fixed-width Delimited, Process Batch per Delimited row, X12 envelope validation and 999/TA1, SQL Server and Oracle drivers, editor controls for Delimited settings and the database vendor.
 
+## 2026-11-13 — Voice of the user research (branch `claude/interface-engine-research-5cb1eb`)
+
+Michael asked for every complaint, feature request and wish users have voiced about Mirth, OIE, BridgeLink and other interface engines, ranked and recorded. Seven research agents covered the Mirth and fork trackers, Stack Overflow and the Mirth forum archive, commercial-engine reviews, Reddit/HN/blogs, community workaround tools and paid add-ons, and open-source engines. 865 entries fall into 160 themes.
+
+- Doc 18 gives the findings, the filter (D-260) and a recommended build order; ROADMAP has it as V1 to V14.
+- Raw entries, the theme map and the scoring scripts are in `docs/research/voice-of-user/`; `ranking.md` is generated from them.
+- ROADMAP's Competitive Position table claimed MFA and advanced alerting ship free. Neither exists yet; the table now says so.
+- 2026-11-14: Michael chose to build Kafka and AMQP connectors rather than partner (D-261, ROADMAP V15).
+
 ## 2026-11-13 — Two security fixes from the reinvention audit (branch `fix/ssrf-and-smtp-template`)
 
 Michael ran `/find-reinvention` over the whole repo, then asked to fix its two security findings.

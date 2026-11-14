@@ -42,7 +42,7 @@ import { EventFilterBar, type EventFilters } from '../components/events/EventFil
 import { EventDetailPanel } from '../components/events/EventDetailPanel.js';
 import { StatusChip } from '../components/common/StatusChip.js';
 import { eventLevelLevel, eventOutcomeLevel } from '../lib/status.js';
-import { humanize } from '../lib/format.js';
+import { formatTimestamp, humanize } from '../lib/format.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
@@ -94,10 +94,6 @@ export function EventsPage(): ReactNode {
     purgeEvents.mutate(days, {
       onSuccess: () => { setPurgeDialogOpen(false); },
     });
-  };
-
-  const formatDate = (dateStr: string): string => {
-    return new Date(dateStr).toLocaleString();
   };
 
   return (
@@ -174,7 +170,7 @@ export function EventsPage(): ReactNode {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                        {formatDate(event.createdAt)}
+                        {formatTimestamp(event.createdAt)}
                       </Typography>
                     </TableCell>
                     <TableCell>

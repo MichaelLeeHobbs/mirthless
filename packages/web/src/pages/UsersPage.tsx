@@ -25,7 +25,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useChangePassword, useUnlockUser } from '../hooks/use-users.js';
 import { UserDialog, type UserFormData } from '../components/users/UserDialog.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
-import { humanize } from '../lib/format.js';
+import { formatTimestamp, humanize } from '../lib/format.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
@@ -33,11 +33,6 @@ import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 import type { UserSummary } from '../api/client.js';
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return 'Never';
-  return new Date(dateStr).toLocaleString();
-}
 
 export function UsersPage(): ReactNode {
   const { data: users, isLoading, error, isFetching, refetch } = useUsers();
@@ -208,7 +203,7 @@ export function UsersPage(): ReactNode {
                         </span>
                       </Tooltip>
                     </TableCell>
-                    <TableCell>{formatDate(user.lastLoginAt)}</TableCell>
+                    <TableCell>{formatTimestamp(user.lastLoginAt, { empty: 'Never' })}</TableCell>
                     <TableCell align="right">
                       <Tooltip title={canWrite ? 'Edit' : 'Requires users:write permission'}>
                         <span>

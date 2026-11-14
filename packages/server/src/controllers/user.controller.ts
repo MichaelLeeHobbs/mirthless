@@ -6,27 +6,17 @@
 import type { Request, Response } from 'express';
 import type { CreateUserInput, UpdateUserInput, ChangePasswordInput, ChangeOwnPasswordInput } from '@galvaniflow/core-models';
 import { UserService } from '../services/user.service.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';
 
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  if (isServiceError(error, 'ALREADY_EXISTS')) return 409;
-  if (isServiceError(error, 'CONFLICT')) return 409;
-  if (isServiceError(error, 'SELF_ACTION')) return 400;
-  if (isServiceError(error, 'FORBIDDEN')) return 403;
+/**
+ * The shared map, except a wrong current password is 400, not 401: the web
+ * client reads any 401 as an expired session and refreshes the token.
+ */
+function userErrorStatus(error: unknown): number {
   if (isServiceError(error, 'INVALID_CREDENTIALS')) return 400;
-  return 500;
-}
-
-function errorCode(error: unknown): string {
-  if (isServiceError(error)) return error.code;
-  return 'INTERNAL';
-}
-
-function errorMessage(error: unknown): string {
-  if (isServiceError(error)) return error.message;
-  return 'Internal server error';
+  return mapErrorToStatus(error);
 }
 
 export class UserController {
@@ -47,8 +37,8 @@ export class UserController {
     const result = await UserService.getUser(id);
 
     if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      const status = userErrorStatus(result.error);
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -61,9 +51,9 @@ export class UserController {
     const result = await UserService.createUser(input, context);
 
     if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
+      const status = userErrorStatus(result.error);
       logger.warn({ errMsg: result.error.message, username: input.username }, 'Failed to create user');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -79,9 +69,9 @@ export class UserController {
     const result = await UserService.updateUser(id, input, actorId, context);
 
     if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
+      const status = userErrorStatus(result.error);
       logger.warn({ errMsg: result.error.message, userId: id }, 'Failed to update user');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -96,9 +86,9 @@ export class UserController {
     const result = await UserService.deleteUser(id, actorId, context);
 
     if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
+      const status = userErrorStatus(result.error);
       logger.warn({ errMsg: result.error.message, userId: id }, 'Failed to delete user');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -114,8 +104,8 @@ export class UserController {
     const result = await UserService.changePassword(id, newPassword, actorId, actorRole);
 
     if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      const status = userErrorStatus(result.error);
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -130,9 +120,9 @@ export class UserController {
     const result = await UserService.changeOwnPassword(userId, currentPassword, newPassword, req.sessionId);
 
     if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
+      const status = userErrorStatus(result.error);
       logger.warn({ errMsg: result.error.message, userId }, 'Self password change failed');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -146,8 +136,8 @@ export class UserController {
     const result = await UserService.getPermissions(id);
 
     if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      const status = userErrorStatus(result.error);
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -159,8 +149,8 @@ export class UserController {
     const result = await UserService.unlockUser(id);
 
     if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      const status = userErrorStatus(result.error);
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
