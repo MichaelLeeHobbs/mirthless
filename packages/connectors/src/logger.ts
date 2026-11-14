@@ -35,13 +35,5 @@ export function createConnectorLogger(connector: string): ConnectorLogger {
   return rootLogger.child({ connector });
 }
 
-/**
- * Normalize an unknown thrown value into a structured, loggable shape.
- * Never throws; safe for any caught value.
- */
-export function errorInfo(err: unknown): Readonly<Record<string, unknown>> {
-  if (err instanceof Error) {
-    return { message: err.message, name: err.name, stack: err.stack };
-  }
-  return { message: String(err) };
-}
+/** Loggable record for a caught value; connectors log errors through this. */
+export { errorInfo } from '@galvaniflow/core-util';
