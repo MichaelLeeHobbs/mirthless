@@ -109,7 +109,7 @@ Tests are mandatory, not optional. This is healthcare software.
 
 ### Coverage Minimums
 
-`pnpm gate` fails a package whose coverage drops below these. They sit one point under what each package measured on 2026-11-11. When your change raises a package's coverage, raise its numbers in `packages/<name>/vitest.config.ts` and here. Never lower one to get green: add the missing tests.
+`pnpm gate` fails a package whose coverage drops below these. Each sits one point under what that package measured when its numbers were last raised. When your change raises a package's coverage, raise its numbers in `packages/<name>/vitest.config.ts` and here. Never lower one to get green: add the missing tests.
 
 | Package | Statements | Branches | Functions | Lines |
 |---|---|---|---|---|
