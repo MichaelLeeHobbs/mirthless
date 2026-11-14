@@ -6,8 +6,10 @@ property keys each connector actually reads, sourced from
 `packages/connectors/src/registry.ts` (the registry is the source of truth). Defaults
 shown are the values the registry applies when a property is omitted.
 
-Source types: `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `CHANNEL`, `DICOM`, `EMAIL`
-Destination types: `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `SMTP`, `CHANNEL`, `FHIR`, `DICOM`
+Source types: `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `CHANNEL`, `DICOM`, `EMAIL`, `KAFKA`, `AMQP`
+Destination types: `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `SMTP`, `CHANNEL`, `FHIR`, `DICOM`, `KAFKA`, `AMQP`
+
+The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`; their delivery guarantees are in D-263.
 
 ---
 
@@ -114,6 +116,33 @@ Polls a mailbox (IMAP/POP3).
 | `moveToFolder` | `''` | Target folder when moving. |
 | `subjectFilter` | `''` | Only ingest matching subjects. |
 | `includeAttachments` | `false` | Attach message attachments. |
+
+### KAFKA (source)
+Reads a topic as a member of a consumer group and commits a record only after the channel has stored it. Source map: `topic`, `partition`, `offset`, `key`, `headers`, `timestamp`.
+
+| Property | Default | Notes |
+|---|---|---|
+| `brokers` | — (required) | `host:port`, comma separated. |
+| `clientId` | `galvaniflow` | Shown in broker logs. |
+| `topic` | — (required) | An existing topic. |
+| `groupId` | — (required) | Consumer group; one per channel. |
+| `startFrom` | `EARLIEST` | `EARLIEST` or `LATEST`, for a group with no committed offset. |
+| `saslMechanism` | `NONE` | `NONE`, `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`. |
+| `saslUsername`, `saslPassword` | `''` | Required with a mechanism. |
+| `useTls` | `false` | TLS to the brokers. |
+| `tls` | — | `caCertId`, `clientCertId` (certificate store ids), `rejectUnauthorized` (default `true`). |
+
+### AMQP (source)
+Consumes an existing RabbitMQ (AMQP 0-9-1) queue and acks a message only after the channel has stored it. Source map: `queue`, `exchange`, `routingKey`, `redelivered`, `headers`, and `messageId`/`contentType` when set.
+
+| Property | Default | Notes |
+|---|---|---|
+| `host` | — (required) | Broker host. |
+| `port` | `5672` | 5671 is the usual TLS port. |
+| `vhost` | `/` | Virtual host. |
+| `username`, `password` | `''` | Login; the broker's default when empty. |
+| `queue` | — (required) | An existing queue; never declared. |
+| `useTls`, `tls` | `false` | As for Kafka. |
 
 ---
 
@@ -232,3 +261,22 @@ DICOM C-STORE SCU — sends objects to a PACS.
 | `maxRetries` | `3` | Retry attempts. |
 | `retryDelayMs` | `1000` | Delay between retries. |
 | `timeoutMs` | `30000` | Association timeout. |
+
+### KAFKA (destination)
+Publishes to a topic; SENT once every in-sync replica has the record (acks=all). Connection properties (`brokers`, `clientId`, SASL, TLS) as for the source.
+
+| Property | Default | Notes |
+|---|---|---|
+| `topic` | — (required) | An existing topic; `${name}` is filled per message, and a name the message lacks is an error. |
+| `key` | `''` | Record key, `${name}` allowed; empty sends no key. |
+| `headers` | `{}` | Record headers; values may use `${name}`. |
+
+### AMQP (destination)
+Publishes a persistent message; SENT once the broker confirms it. A message no queue would receive is returned by the broker and is an error. Connection properties as for the source. The message id is `channelId:messageId:metaDataId`, the same on every retry.
+
+| Property | Default | Notes |
+|---|---|---|
+| `exchange` | `''` | An existing exchange; empty is the default exchange (routing key = queue name). |
+| `routingKey` | `''` | `${name}` allowed; a name the message lacks is an error. Required with the default exchange. |
+| `headers` | `{}` | Message headers; values may use `${name}`. |
+| `contentType` | `text/plain` | AMQP content type. |

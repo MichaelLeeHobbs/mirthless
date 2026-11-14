@@ -39,6 +39,8 @@ const PAGES = {
   'channel-editor': '/channels/c1',
   'channel-destinations': { url: '/channels/c1', click: 'Destinations' },
   'destination-queue': { url: '/channels/c1', click: 'Destinations', scrollTo: 'Queue Settings' },
+  'source-kafka': { url: '/channels/c8', click: 'Source' },
+  'destination-amqp': { url: '/channels/c8', click: 'Destinations' },
   'message-browser': '/channels/c1/messages',
   traffic: '/messages',
   alerts: '/alerts',

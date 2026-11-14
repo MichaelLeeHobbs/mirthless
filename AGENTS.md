@@ -11,7 +11,7 @@ Instructions for AI coding agents (Claude Code, Codex and others) working in thi
 GalvaniFlow is a message routing and transformation engine for healthcare systems. Core concepts:
 
 - **Channels** — message processing pipelines with a source connector (inbound) and destination connectors (outbound)
-- **Connectors** — protocol adapters: TCP/MLLP (HL7), HTTP/REST, File, Database, DICOM, FHIR, SMTP, JavaScript
+- **Connectors** — protocol adapters: TCP/MLLP (HL7), HTTP/REST, File, SFTP, Database, DICOM, FHIR, SMTP, Email, JavaScript, Kafka, AMQP (RabbitMQ)
 - **Transformers** — JavaScript/TypeScript steps that convert messages between formats (HL7v2, XML, JSON, FHIR, DICOM, delimited)
 - **Filters** — JavaScript conditions controlling message flow through the pipeline
 - **Code Templates** — reusable JavaScript functions shared across channels
@@ -351,7 +351,7 @@ galvaniflow/             — repository root (the GitHub repository is still nam
 │   ├── core-models/     — Shared TS types, Zod schemas, branded types
 │   ├── core-util/       — Shared utilities (HL7 parsing, serialization, date helpers)
 │   ├── engine/          — Message processing: channel runtime, routing, queuing, sandbox
-│   ├── connectors/      — Protocol adapters (tcp-mllp, http, file, sftp, database, dicom, fhir, smtp, js)
+│   ├── connectors/      — Protocol adapters (tcp-mllp, http, file, sftp, database, dicom, fhir, smtp, email, js, kafka, amqp)
 │   ├── server/          — Express API, auth, channel deployment, config management
 │   ├── web/             — React + MUI admin: channel editor, message browser, dashboard
 │   └── cli/             — CLI for server management
