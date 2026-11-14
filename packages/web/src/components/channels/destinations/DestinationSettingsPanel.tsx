@@ -31,6 +31,8 @@ const CONNECTOR_TYPES = [
   { value: 'FHIR', label: 'FHIR' },
   { value: 'DICOM', label: 'DICOM' },
   { value: 'SFTP', label: 'SFTP' },
+  { value: 'KAFKA', label: 'Kafka' },
+  { value: 'AMQP', label: 'AMQP (RabbitMQ)' },
 ] as const;
 
 interface DestinationSettingsPanelProps {

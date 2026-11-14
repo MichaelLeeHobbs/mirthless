@@ -31,6 +31,9 @@ const SOURCE_CONNECTOR_TYPES = [
   'CHANNEL',
   'DICOM',
   'EMAIL',
+  'SFTP',
+  'KAFKA',
+  'AMQP',
 ] as const;
 
 interface NewChannelFormData {

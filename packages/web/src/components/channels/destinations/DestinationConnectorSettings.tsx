@@ -17,6 +17,8 @@ import { ChannelDestinationForm } from './ChannelDestinationForm.js';
 import { FhirDestinationForm } from './FhirDestinationForm.js';
 import { DicomDestinationForm } from './DicomDestinationForm.js';
 import { SftpDestinationForm } from './SftpDestinationForm.js';
+import { KafkaDestinationForm } from './KafkaDestinationForm.js';
+import { AmqpDestinationForm } from './AmqpDestinationForm.js';
 
 const DEST_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<DestConnectorFormProps> | undefined>> = {
   TCP_MLLP: TcpMllpDestinationForm,
@@ -29,6 +31,8 @@ const DEST_CONNECTOR_FORMS: Readonly<Record<string, ComponentType<DestConnectorF
   FHIR: FhirDestinationForm,
   DICOM: DicomDestinationForm,
   SFTP: SftpDestinationForm,
+  KAFKA: KafkaDestinationForm,
+  AMQP: AmqpDestinationForm,
 };
 
 interface DestinationConnectorSettingsProps {

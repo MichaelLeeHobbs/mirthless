@@ -36,7 +36,7 @@ export const DEFAULT_VISIBLE_COLUMNS: readonly DashboardColumnId[] =
 const CONNECTOR_TYPE_LABELS: Readonly<Record<string, string>> = {
   TCP_MLLP: 'TCP/MLLP', HTTP: 'HTTP', FILE: 'File', DATABASE: 'Database',
   JAVASCRIPT: 'JavaScript', CHANNEL: 'Channel', DICOM: 'DICOM', EMAIL: 'Email',
-  FHIR: 'FHIR', SFTP: 'SFTP', SMTP: 'SMTP',
+  FHIR: 'FHIR', SFTP: 'SFTP', SMTP: 'SMTP', KAFKA: 'Kafka', AMQP: 'AMQP',
 };
 
 export function connectorLabel(type: string): string {
