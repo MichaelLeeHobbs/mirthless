@@ -64,6 +64,24 @@ describe('X12Message', () => {
     expect(msg.toString()).toContain('SE*6*0020**Z~');
   });
 
+  it('refuses a value holding a delimiter, so an edit cannot change the structure', () => {
+    const msg = X12Message.parse(X12_270);
+    expect(() => msg.set('NM1[3].3', 'DOE*SMITH')).toThrow(/delimiter "\*"/);
+    expect(() => msg.set('NM1[3].3', 'DOE~XX')).toThrow(/delimiter "~"/);
+    expect(() => msg.set('EQ.3.2', '99:213')).toThrow(/delimiter ":"/);
+    expect(msg.toString()).toBe(X12_270);
+    // An element is a composite, so it may hold component separators.
+    msg.set('EQ.3', 'HC:99214');
+    expect(msg.get('EQ.3.2')).toBe('99214');
+  });
+
+  // Regression: an ISA without its padding read a later character as the
+  // terminator, so ST and GS were never found and filters dropped the claim.
+  it('refuses an ISA that is not padded to its fixed width', () => {
+    const unpadded = 'ISA*00**00**ZZ*SUBMITTER*ZZ*RECEIVER*261110*1200*^*00501*000000020*0*P*:~GS*HC*SUBMITTER*RECEIVER*20261110*1200*20*X*005010X222A1~ST*837*0001~SE*2*0001~GE*1*20~IEA*1*000000020~';
+    expect(() => X12Message.parse(unpadded)).toThrow(/fixed-width/);
+  });
+
   it('refuses to set a segment that is not there, or a whole segment', () => {
     const msg = X12Message.parse(X12_270);
     expect(() => msg.set('CLM.1', 'x')).toThrow(/no CLM\[1\] segment/);

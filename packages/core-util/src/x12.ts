@@ -40,6 +40,7 @@ export class X12Message {
     private readonly segments: string[][],
     private readonly elementSeparator: string,
     private readonly componentSeparator: string,
+    private readonly terminator: string,
     /** The terminator plus any line break written after it. */
     private readonly segmentEnd: string,
   ) {}
@@ -54,6 +55,13 @@ export class X12Message {
       throw new Error('X12 must start with a complete 106-character ISA segment');
     }
     const elementSeparator = body[ELEMENT_SEPARATOR_AT]!;
+    // The delimiters are read by position, so the ISA must be the fixed-width
+    // form: 16 elements, padded, with ISA16 the one character before the
+    // terminator. An unpadded ISA would make some other character the terminator.
+    const isa = body.slice(0, SEGMENT_TERMINATOR_AT);
+    if (isa.split(elementSeparator).length !== 17 || body[COMPONENT_SEPARATOR_AT - 1] !== elementSeparator) {
+      throw new Error('X12 ISA segment is not the fixed-width 106-character form (are ISA02/ISA04/ISA06/ISA08 padded with spaces?)');
+    }
     const componentSeparator = body[COMPONENT_SEPARATOR_AT]!;
     const terminator = body[SEGMENT_TERMINATOR_AT]!;
     const lineBreak = /^[\r\n]*/.exec(body.slice(ISA_LENGTH))?.[0] ?? '';
@@ -61,7 +69,14 @@ export class X12Message {
       .map((segment) => segment.replace(/^[\r\n]+/, ''))
       .filter((segment) => segment.trim() !== '')
       .map((segment) => segment.split(elementSeparator));
-    return new X12Message(segments, elementSeparator, componentSeparator, terminator + lineBreak);
+    return new X12Message(segments, elementSeparator, componentSeparator, terminator, terminator + lineBreak);
+  }
+
+  /** Refuse a value that holds a delimiter, which would turn it into more elements, components or segments. */
+  private checkValue(value: string, component: boolean): void {
+    const delimiters = component ? [this.elementSeparator, this.terminator, this.componentSeparator] : [this.elementSeparator, this.terminator];
+    const found = delimiters.find((d) => value.includes(d));
+    if (found !== undefined) throw new Error(`X12 value cannot contain the delimiter "${found}"`);
   }
 
   /** The indexes of the segments with this id, in order. */
@@ -87,12 +102,17 @@ export class X12Message {
     return element.split(this.componentSeparator)[p.component - 1];
   }
 
-  /** Set an element or component, adding empty elements or components before it as needed. Throws when the segment is not there. */
+  /**
+   * Set an element or component, adding empty elements or components before it
+   * as needed. Throws when the segment is not there or the value holds a
+   * delimiter (an element may hold component separators: it is a composite).
+   */
   set(path: string, value: string): void {
     const p = parsePath(path);
     const segment = this.find(p);
     if (!segment) throw new Error(`X12 message has no ${p.segment}[${String(p.occurrence)}] segment`);
     if (p.element === undefined) throw new Error(`Set an element of ${p.segment}, not the whole segment`);
+    this.checkValue(value, p.component !== undefined);
     while (segment.length <= p.element) segment.push('');
     if (p.component === undefined) {
       segment[p.element] = value;
