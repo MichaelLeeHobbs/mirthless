@@ -6,6 +6,7 @@
 // log and channels are not stopped in order.
 
 import type { Logger } from 'pino';
+import { errorInfo } from '@galvaniflow/core-util';
 
 /** The part of `process` the handlers need. */
 export interface FatalEventSource {
@@ -19,12 +20,6 @@ export interface FatalHandlerDeps {
   readonly shutdown: (reason: string, exitCode: number) => void;
 }
 
-function describe(reason: unknown): { errMsg: string; stack: string | undefined } {
-  return reason instanceof Error
-    ? { errMsg: reason.message, stack: reason.stack }
-    : { errMsg: String(reason), stack: undefined };
-}
-
 /**
  * Registers the process-level error handlers.
  *
@@ -36,11 +31,11 @@ function describe(reason: unknown): { errMsg: string; stack: string | undefined 
  */
 export function installFatalHandlers(deps: FatalHandlerDeps): void {
   deps.proc.on('unhandledRejection', (reason) => {
-    deps.logger.error(describe(reason), 'Unhandled promise rejection. This is a bug: a promise failed with nothing handling it');
+    deps.logger.error(errorInfo(reason),'Unhandled promise rejection. This is a bug: a promise failed with nothing handling it');
   });
 
   deps.proc.on('uncaughtException', (error) => {
-    deps.logger.fatal(describe(error), 'Uncaught exception. Shutting down');
+    deps.logger.fatal(errorInfo(error),'Uncaught exception. Shutting down');
     deps.shutdown('uncaughtException', 1);
   });
 }

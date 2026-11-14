@@ -96,20 +96,24 @@ export type TransportFactory = (config: SmtpDispatcherConfig) => SmtpTransport;
 // ----- Template substitution -----
 
 /**
- * Substitute `${msg}`, `${messageId}`, `${channelId}` and `${metaDataId}`, then
+ * Substitute `${msg}`, `${messageId}`, `${channelId}` and `${metaDataId}`, and
  * any other `${name}` from the message's variables. No eval, no expressions.
+ * One pass over the template: a substituted value (the message content or a
+ * variable) is never scanned for placeholders.
  */
 export function substituteTemplate(
   template: string,
   content: string,
   message: ConnectorMessage,
 ): string {
-  const filled = template
-    .replace(/\$\{messageId\}/g, String(message.messageId))
-    .replace(/\$\{channelId\}/g, message.channelId)
-    .replace(/\$\{metaDataId\}/g, String(message.metaDataId));
-  // Variables before ${msg}: the message content must not be scanned for references.
-  return fillVariables(filled, message).replace(/\$\{msg\}/g, () => content);
+  const builtIns: Readonly<Record<string, string>> = {
+    msg: content,
+    messageId: String(message.messageId),
+    channelId: message.channelId,
+    metaDataId: String(message.metaDataId),
+  };
+  return template.replace(/\$\{([^}]+)\}/g, (placeholder, name: string) =>
+    Object.hasOwn(builtIns, name) ? (builtIns[name] ?? placeholder) : fillVariables(placeholder, message));
 }
 
 // ----- Dispatcher -----

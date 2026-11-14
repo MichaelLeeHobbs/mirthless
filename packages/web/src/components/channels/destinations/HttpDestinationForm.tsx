@@ -3,7 +3,7 @@
 // ===========================================
 // Configuration form for HTTP client destination connectors.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -16,35 +16,10 @@ import { HTTP_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { HeadersEditor, coerceHeaders } from '../../common/HeadersEditor.js';
 import { CertificateSelect } from '../common/CertificateSelect.js';
+import { getStr, getNum, getTls, getTlsStr, getTlsBool, propertyUpdaters } from '../common/connector-properties.js';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 const SCHEMES = ['HTTP', 'HTTPS'] as const;
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getNum(props: Record<string, unknown>, key: string, fallback: number): number {
-  const val = props[key];
-  return typeof val === 'number' ? val : fallback;
-}
-
-/** Read the nested `tls` object, tolerating a missing/invalid value. */
-function getTls(props: Record<string, unknown>): Record<string, unknown> {
-  const tls = props['tls'];
-  return tls !== null && typeof tls === 'object' ? tls as Record<string, unknown> : {};
-}
-
-function getTlsStr(props: Record<string, unknown>, key: string): string {
-  const val = getTls(props)[key];
-  return typeof val === 'string' ? val : '';
-}
-
-function getTlsBool(props: Record<string, unknown>, key: string, fallback: boolean): boolean {
-  const val = getTls(props)[key];
-  return typeof val === 'boolean' ? val : fallback;
-}
 
 export function HttpDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -58,18 +33,7 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleNumber = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    const parsed = parseInt(e.target.value, 10);
-    update(key, Number.isNaN(parsed) ? 0 : parsed);
-  };
+  const { update, handleText, handleNumber } = propertyUpdaters(properties, onChange);
 
   const updateTls = (key: string, value: unknown): void => {
     update('tls', { ...getTls(properties), [key]: value });

@@ -15,6 +15,7 @@ import {
   extractCodeTemplateLibraries, importCodeTemplateLibraries,
   type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
 } from './mirth-code-templates.js';
+import { isPlainObject } from '@galvaniflow/core-util';
 
 // ----- Types -----
 
@@ -33,7 +34,7 @@ export interface MirthImportResult {
   readonly codeTemplates: CodeTemplateImportCounts;
 }
 
-const XML_READERS = { isRecord, getString, toRecordList } as const;
+const XML_READERS = { isRecord: isPlainObject, getString, toRecordList } as const;
 
 // ----- Connector Type Mapping -----
 
@@ -91,7 +92,7 @@ export class MirthImportService {
       const parser = createParser();
       const parsed: unknown = parser.parse(xml);
 
-      if (!isRecord(parsed)) {
+      if (!isPlainObject(parsed)) {
         throw new Error('Invalid XML: parsed result is not an object');
       }
 
@@ -180,14 +181,9 @@ export class MirthImportService {
 
 // ----- Extraction Helpers -----
 
-/** Type guard for plain objects. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /** Safely get a string from parsed XML. */
 function getString(obj: unknown, key: string): string | null {
-  if (!isRecord(obj)) return null;
+  if (!isPlainObject(obj)) return null;
   const val = obj[key];
   if (typeof val === 'string') return val;
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
@@ -203,7 +199,7 @@ function getBoolean(obj: unknown, key: string, defaultValue: boolean): boolean {
 
 /** Safely get a number from parsed XML. */
 function getNumber(obj: unknown, key: string, defaultValue: number): number {
-  if (!isRecord(obj)) return defaultValue;
+  if (!isPlainObject(obj)) return defaultValue;
   const val = obj[key];
   if (typeof val === 'number') return val;
   if (typeof val === 'string') {
@@ -216,37 +212,37 @@ function getNumber(obj: unknown, key: string, defaultValue: number): number {
 /** Extract all channels from parsed XML (handles single channel or serverConfiguration). */
 function extractChannels(parsed: Record<string, unknown>): readonly Record<string, unknown>[] {
   // Single channel: <channel> at root
-  if (isRecord(parsed['channel'])) {
+  if (isPlainObject(parsed['channel'])) {
     return [parsed['channel'] as Record<string, unknown>];
   }
 
   // ServerConfiguration / list of channels
   const serverConfig = parsed['serverConfiguration'] ?? parsed['list'];
-  if (isRecord(serverConfig)) {
+  if (isPlainObject(serverConfig)) {
     const channelsNode = serverConfig['channels'] ?? serverConfig['channel'];
-    if (isRecord(channelsNode)) {
+    if (isPlainObject(channelsNode)) {
       // Channels wrapper with 'channel' children
       const inner = channelsNode['channel'];
       if (Array.isArray(inner)) {
-        return inner.filter(isRecord);
+        return inner.filter(isPlainObject);
       }
-      if (isRecord(inner)) {
+      if (isPlainObject(inner)) {
         return [inner];
       }
     }
     if (Array.isArray(channelsNode)) {
-      return channelsNode.filter(isRecord);
+      return channelsNode.filter(isPlainObject);
     }
   }
 
   // Direct list: <channels><channel>...</channel></channels>
   const channelsRoot = parsed['channels'];
-  if (isRecord(channelsRoot)) {
+  if (isPlainObject(channelsRoot)) {
     const inner = channelsRoot['channel'];
     if (Array.isArray(inner)) {
-      return inner.filter(isRecord);
+      return inner.filter(isPlainObject);
     }
-    if (isRecord(inner)) {
+    if (isPlainObject(inner)) {
       return [inner];
     }
   }
@@ -266,7 +262,7 @@ function convertChannel(
   const id = getString(mirthChannel, 'id') ?? randomUUID();
 
   // Source connector
-  const sourceConnector = isRecord(mirthChannel['sourceConnector'])
+  const sourceConnector = isPlainObject(mirthChannel['sourceConnector'])
     ? mirthChannel['sourceConnector'] as Record<string, unknown>
     : null;
   const sourceConnectorResult = convertSourceConnector(sourceConnector, name, warnings);
@@ -291,7 +287,7 @@ function convertChannel(
     ((t.metaDataId ?? null) === null && t.inboundDataType !== inboundDataType ? { ...t, inboundDataType } : t));
 
   // Channel properties
-  const props = isRecord(mirthChannel['properties'])
+  const props = isPlainObject(mirthChannel['properties'])
     ? mirthChannel['properties'] as Record<string, unknown>
     : {};
 
@@ -412,7 +408,7 @@ function convertSourceConnector(
   }
 
   const transportName = getString(sourceConnector, 'transportName');
-  const propsNode = isRecord(sourceConnector['properties'])
+  const propsNode = isPlainObject(sourceConnector['properties'])
     ? sourceConnector['properties'] as Record<string, unknown>
     : {};
 
@@ -608,11 +604,11 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
  */
 function linkedMap(node: unknown): Record<string, string> {
   const result: Record<string, string> = {};
-  if (!isRecord(node)) return result;
+  if (!isPlainObject(node)) return result;
   for (const entry of toRecordList(node['entry'])) {
     const name = getString(entry, 'string');
     const list = entry['list'];
-    const raw = isRecord(list) ? list['string'] : undefined;
+    const raw = isPlainObject(list) ? list['string'] : undefined;
     const values = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).map(String);
     if (name) result[name] = values.join(', ');
   }
@@ -729,7 +725,7 @@ function httpListenerProperties(propsNode: Record<string, unknown>): Record<stri
 
 function getNestedRecord(obj: Record<string, unknown>, key: string): Record<string, unknown> | null {
   const val = obj[key];
-  return isRecord(val) ? val as Record<string, unknown> : null;
+  return isPlainObject(val) ? val as Record<string, unknown> : null;
 }
 
 // ----- Destination Conversion -----
@@ -740,17 +736,17 @@ function convertDestinations(
   warnings: string[],
 ): ChannelExportEntry['destinations'] {
   const destinationConnectors = mirthChannel['destinationConnectors'];
-  if (!isRecord(destinationConnectors) && !Array.isArray(destinationConnectors)) return [];
+  if (!isPlainObject(destinationConnectors) && !Array.isArray(destinationConnectors)) return [];
 
   let connectorList: readonly Record<string, unknown>[];
   if (Array.isArray(destinationConnectors)) {
-    connectorList = destinationConnectors.filter(isRecord);
+    connectorList = destinationConnectors.filter(isPlainObject);
   } else {
     // destinationConnectors wraps <connector> children
     const inner = destinationConnectors['connector'];
     if (Array.isArray(inner)) {
-      connectorList = inner.filter(isRecord);
-    } else if (isRecord(inner)) {
+      connectorList = inner.filter(isPlainObject);
+    } else if (isPlainObject(inner)) {
       connectorList = [inner];
     } else {
       return [];
@@ -758,7 +754,7 @@ function convertDestinations(
   }
 
   return connectorList.map((dest, idx) => {
-    const propsNode = isRecord(dest['properties'])
+    const propsNode = isPlainObject(dest['properties'])
       ? dest['properties'] as Record<string, unknown>
       : {};
     const className = typeof propsNode['@_class'] === 'string' ? propsNode['@_class'] : null;
@@ -835,7 +831,7 @@ function extractDataType(
 ): string | null {
   if (!connector) return null;
 
-  const transformer = isRecord(connector['transformer'])
+  const transformer = isPlainObject(connector['transformer'])
     ? connector['transformer'] as Record<string, unknown>
     : null;
   if (!transformer) return null;
@@ -865,15 +861,15 @@ function convertFilters(mirthChannel: Record<string, unknown>): ChannelExportEnt
 /** Destination connector nodes keyed by their metaDataId, as filters and transformers refer to them. */
 function destinationConnectorsById(mirthChannel: Record<string, unknown>): ReadonlyArray<readonly [number, Record<string, unknown>]> {
   const destConnectors = mirthChannel['destinationConnectors'];
-  if (!isRecord(destConnectors)) return [];
+  if (!isPlainObject(destConnectors)) return [];
   const connectorList = toRecordList(destConnectors['connector']);
   return connectorList.map((conn, idx) => [destinationMetaDataId(conn, idx), conn] as const);
 }
 
 /** A parsed child that may be one element or many. */
 function toRecordList(node: unknown): readonly Record<string, unknown>[] {
-  if (Array.isArray(node)) return node.filter(isRecord);
-  return isRecord(node) ? [node] : [];
+  if (Array.isArray(node)) return node.filter(isPlainObject);
+  return isPlainObject(node) ? [node] : [];
 }
 
 interface ScriptElement {
@@ -890,7 +886,7 @@ interface ScriptElement {
  */
 function scriptElements(container: Record<string, unknown>, legacyKey: 'steps' | 'rules', legacyChild: 'step' | 'rule'): readonly ScriptElement[] {
   const elements = container['elements'];
-  if (isRecord(elements)) {
+  if (isPlainObject(elements)) {
     const result: ScriptElement[] = [];
     for (const [key, value] of Object.entries(elements)) {
       if (key.startsWith('@_')) continue;
@@ -900,7 +896,7 @@ function scriptElements(container: Record<string, unknown>, legacyKey: 'steps' |
     return result.sort((a, b) => getNumber(a.node, 'sequenceNumber', 0) - getNumber(b.node, 'sequenceNumber', 0));
   }
   const legacy = container[legacyKey] ?? container[legacyChild];
-  const list = isRecord(legacy) ? toRecordList(legacy[legacyChild]) : toRecordList(legacy);
+  const list = isPlainObject(legacy) ? toRecordList(legacy[legacyChild]) : toRecordList(legacy);
   return list.map((node) => ({ className: null, node }));
 }
 
@@ -908,7 +904,7 @@ function extractFilterFromConnector(
   connector: unknown,
   metaDataId: number | null,
 ): ChannelExportEntry['filters'][number] | null {
-  if (!isRecord(connector)) return null;
+  if (!isPlainObject(connector)) return null;
 
   // Mirth 3.x/4.x: <filter> is a sibling of <transformer>. Older exports nest it.
   const transformer = getNestedRecord(connector, 'transformer');
@@ -941,7 +937,7 @@ function mapFilterRuleType(type: string | null): string {
 function extractStringArray(node: unknown): string[] | null {
   if (!node) return null;
   if (Array.isArray(node)) return node.map(String);
-  if (isRecord(node)) {
+  if (isPlainObject(node)) {
     const inner = node['string'];
     if (Array.isArray(inner)) return inner.map(String);
     if (typeof inner === 'string') return [inner];
@@ -971,10 +967,10 @@ function extractTransformerFromConnector(
   connector: unknown,
   metaDataId: number | null,
 ): ChannelExportEntry['transformers'][number] | null {
-  if (!isRecord(connector)) return null;
+  if (!isPlainObject(connector)) return null;
 
   const transformer = connector['transformer'];
-  if (!isRecord(transformer)) return null;
+  if (!isPlainObject(transformer)) return null;
 
   const steps = scriptElements(transformer, 'steps', 'step').map(({ className, node: step }) => ({
     enabled: getBoolean(step, 'enabled', true),
@@ -1010,7 +1006,7 @@ function extractTransformerFromConnector(
 
 function extractDataTypeProperties(transformer: Record<string, unknown>, key: string): Record<string, unknown> {
   const node = transformer[key];
-  if (!isRecord(node)) return {};
+  if (!isPlainObject(node)) return {};
   const result: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(node)) {
     if (!k.startsWith('@_')) {
@@ -1088,17 +1084,17 @@ function mirthScriptWarning(entry: Pick<ChannelExportEntry, 'name' | 'scripts' |
 // ----- Metadata Column Conversion -----
 
 function convertMetadataColumns(mirthChannel: Record<string, unknown>): ChannelExportEntry['metadataColumns'] {
-  const props = isRecord(mirthChannel['properties'])
+  const props = isPlainObject(mirthChannel['properties'])
     ? mirthChannel['properties'] as Record<string, unknown>
     : {};
   const columns = props['metaDataColumns'];
-  if (!isRecord(columns)) return [];
+  if (!isPlainObject(columns)) return [];
 
   const inner = columns['metaDataColumn'];
   if (!inner) return [];
 
   const list = Array.isArray(inner) ? inner : [inner];
-  return list.filter(isRecord).map((col) => ({
+  return list.filter(isPlainObject).map((col) => ({
     name: getString(col, 'name') ?? '',
     dataType: getString(col, 'type') ?? 'STRING',
     mappingExpression: getString(col, 'mappingName'),

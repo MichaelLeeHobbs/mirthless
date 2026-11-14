@@ -3,18 +3,14 @@
 // ===========================================
 // Configuration form for JavaScript destination connectors.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { JAVASCRIPT_DEST_DEFAULTS } from './connector-defaults.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
+import { getStr, propertyUpdaters } from '../common/connector-properties.js';
 
 export function JavaScriptDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -28,9 +24,7 @@ export function JavaScriptDestinationForm({ properties, onChange }: DestConnecto
     }
   }, [properties, onChange]);
 
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    onChange({ ...properties, [key]: e.target.value });
-  };
+  const { handleText } = propertyUpdaters(properties, onChange);
 
   return (
     <Grid container spacing={3}>

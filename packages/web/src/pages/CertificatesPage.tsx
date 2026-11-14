@@ -42,28 +42,9 @@ import {
   useDeleteCertificate,
   type CertificateSummary,
 } from '../hooks/use-certificates.js';
+import { expiryColor, expiryDays, expiryLabel } from '../lib/certificate-expiry.js';
 import { formatTimestamp } from '../lib/format.js';
 import { FONT_FAMILY_MONO } from '../styles/tokens.js';
-
-// ----- Helpers -----
-
-function getExpiryDays(notAfter: string): number {
-  const expiry = new Date(notAfter).getTime();
-  const now = Date.now();
-  return Math.floor((expiry - now) / (1000 * 60 * 60 * 24));
-}
-
-function getExpiryColor(days: number): 'error' | 'warning' | 'success' {
-  if (days < 30) return 'error';
-  if (days < 90) return 'warning';
-  return 'success';
-}
-
-function getExpiryLabel(days: number): string {
-  if (days < 0) return `Expired ${String(-days)}d ago`;
-  return `${String(days)}d remaining`;
-}
-
 
 const CERT_TYPES = [
   CERTIFICATE_TYPE.CA,
@@ -222,8 +203,8 @@ export function CertificatesPage(): ReactNode {
               <TableSkeleton rows={6} columns={6} />
             ) : certificates && certificates.length > 0 ? (
               certificates.map((cert) => {
-                  const days = getExpiryDays(cert.notAfter);
-                  const color = getExpiryColor(days);
+                  const days = expiryDays(cert.notAfter);
+                  const color = expiryColor(days);
                   return (
                     <TableRow key={cert.id} hover>
                       <TableCell>
@@ -244,7 +225,7 @@ export function CertificatesPage(): ReactNode {
                         <Typography variant="body2">{cert.issuer}</Typography>
                       </TableCell>
                       <TableCell>
-                        <Chip label={getExpiryLabel(days)} size="small" color={color} />
+                        <Chip label={expiryLabel(days)} size="small" color={color} />
                         <Typography
                           variant="caption"
                           sx={{

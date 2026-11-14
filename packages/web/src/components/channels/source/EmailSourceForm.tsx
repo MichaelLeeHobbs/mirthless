@@ -13,24 +13,10 @@ import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { EMAIL_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
+import { getStr, getNum, getBool, propertyUpdaters } from '../common/connector-properties.js';
 
 const PROTOCOLS = ['IMAP', 'POP3'] as const;
 const POST_ACTIONS = ['DELETE', 'MARK_READ', 'MOVE'] as const;
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getNum(props: Record<string, unknown>, key: string, fallback: number): number {
-  const val = props[key];
-  return typeof val === 'number' ? val : fallback;
-}
-
-function getBool(props: Record<string, unknown>, key: string, fallback: boolean): boolean {
-  const val = props[key];
-  return typeof val === 'boolean' ? val : fallback;
-}
 
 export function EmailSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -44,18 +30,7 @@ export function EmailSourceForm({ properties, onChange }: SourceConnectorFormPro
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleNumber = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    const parsed = parseInt(e.target.value, 10);
-    update(key, Number.isNaN(parsed) ? 0 : parsed);
-  };
+  const { update, handleText, handleNumber } = propertyUpdaters(properties, onChange);
 
   const handleCheck = (key: string) => (_e: ChangeEvent<HTMLInputElement>, checked: boolean): void => {
     update(key, checked);

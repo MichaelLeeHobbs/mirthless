@@ -99,6 +99,23 @@ describe('resolveOutputFilename', () => {
     const result = resolveOutputFilename('${messageId}_${messageId}.txt', { messageId: '5' });
     expect(result).toBe('5_5.txt');
   });
+
+  it('does not expand a placeholder that appears inside a substituted value', () => {
+    const result = resolveOutputFilename(
+      '${messageId}_${timestamp}.txt',
+      { messageId: 'a${timestamp}', timestamp: '99' },
+    );
+    expect(result).toBe('a${timestamp}_99.txt');
+  });
+
+  it('inserts replacement-pattern characters in a value literally', () => {
+    const result = resolveOutputFilename('${messageId}.txt', { messageId: "$& $1 $$ $'" });
+    expect(result).toBe("$& $1 $$ $'.txt");
+  });
+
+  it('ignores inherited object keys as placeholder names', () => {
+    expect(resolveOutputFilename('${toString}.txt', { messageId: '1' })).toBe('${toString}.txt');
+  });
 });
 
 // ----- FileDispatcher Tests -----

@@ -84,6 +84,11 @@ describe('substituteTemplate', () => {
       .toBe('Report ACC1: body has ${subject} and $& in it');
   });
 
+  it('never expands a placeholder that arrives inside a variable value', () => {
+    const withVars = { ...msg, variables: { note: 'see ${msg} and ${channelId}' } };
+    expect(substituteTemplate('${note}', 'PHI body', withVars)).toBe('see ${msg} and ${channelId}');
+  });
+
   it('substitutes ${msg} with content', () => {
     expect(substituteTemplate('Body: ${msg}', 'hello', msg)).toBe('Body: hello');
   });

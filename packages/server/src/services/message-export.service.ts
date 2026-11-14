@@ -11,6 +11,7 @@ import { sql } from 'drizzle-orm';
 import type { MessageExportQuery } from '@galvaniflow/core-models';
 import { db } from '../lib/db.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
+import { escapeCsvField } from '../lib/csv.js';
 import { CONTENT_TYPE } from '../db/schema/message-content.js';
 
 // ----- Types -----
@@ -36,19 +37,6 @@ export interface MessageExportData {
 const CSV_COLUMNS = ['messageId', 'correlationId', 'receivedAt', 'processed', 'statuses'] as const;
 
 // ----- CSV Helpers -----
-
-/**
- * Escape one CSV field per RFC 4180 and neutralize spreadsheet formula
- * injection: a field starting with =, +, -, @, tab, or CR is prefixed with a
- * single quote so Excel/Sheets treat it as text, not a formula.
- */
-function escapeCsvField(value: string): string {
-  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  if (/[",\n\r]/.test(guarded)) {
-    return `"${guarded.replace(/"/g, '""')}"`;
-  }
-  return guarded;
-}
 
 function toIso(value: string | Date): string {
   return typeof value === 'string' ? value : value.toISOString();
