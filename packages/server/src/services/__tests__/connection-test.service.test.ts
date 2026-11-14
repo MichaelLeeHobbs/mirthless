@@ -703,10 +703,10 @@ describe('ConnectionTestService', () => {
       expect(result.error.message).toContain('blocked');
     });
 
-    it('blocks 10.x.x.x connections', async () => {
+    it('blocks the cloud metadata address', async () => {
       const result = await ConnectionTestService.testConnection('TCP_MLLP', 'DESTINATION', {
-        host: '10.0.0.1',
-        port: 6661,
+        host: '169.254.169.254',
+        port: 80,
       });
 
       expect(result.ok).toBe(false);
@@ -714,27 +714,16 @@ describe('ConnectionTestService', () => {
       expect(result.error.message).toContain('blocked');
     });
 
-    it('blocks 192.168.x.x connections', async () => {
-      const result = await ConnectionTestService.testConnection('TCP_MLLP', 'DESTINATION', {
-        host: '192.168.1.1',
-        port: 6661,
-      });
+    it.each(['10.0.0.1', '192.168.1.1', '172.16.0.1', '100.64.0.7'])(
+      'connects to the private-network endpoint %s', async (host) => {
+        createFakeSocket('connect');
 
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.message).toContain('blocked');
-    });
+        const result = await ConnectionTestService.testConnection('TCP_MLLP', 'DESTINATION', { host, port: 6661 });
 
-    it('blocks 172.16-31.x.x connections', async () => {
-      const result = await ConnectionTestService.testConnection('TCP_MLLP', 'DESTINATION', {
-        host: '172.16.0.1',
-        port: 6661,
-      });
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.message).toContain('blocked');
-    });
+        expect(result.ok).toBe(true);
+        expect(mockConnect).toHaveBeenCalledWith(expect.objectContaining({ host }), expect.any(Function));
+      },
+    );
 
     it('blocks HTTP requests to blocked hosts', async () => {
       const result = await ConnectionTestService.testConnection('HTTP', 'DESTINATION', {
@@ -760,7 +749,7 @@ describe('ConnectionTestService', () => {
 
     it('blocks SMTP connections to blocked hosts', async () => {
       const result = await ConnectionTestService.testConnection('SMTP', 'DESTINATION', {
-        host: '10.0.0.5',
+        host: '127.0.0.1',
         port: 587,
       });
 
@@ -771,7 +760,7 @@ describe('ConnectionTestService', () => {
 
     it('blocks FHIR connections to blocked hosts', async () => {
       const result = await ConnectionTestService.testConnection('FHIR', 'DESTINATION', {
-        baseUrl: 'http://192.168.1.100/fhir',
+        baseUrl: 'http://169.254.169.254/fhir',
       });
 
       expect(result.ok).toBe(false);
@@ -817,12 +806,20 @@ describe('ConnectionTestService', () => {
   // ----- SSRF Guard (DNS-aware) -----
 
   describe('SSRF guard', () => {
+    // Integration endpoints (MLLP, databases, SFTP) live on private networks, so
+    // the test reaches them; only the server itself and cloud metadata are refused.
     it.each([
-      '127.0.0.1', '10.0.0.5', '192.168.1.1', '172.16.0.1', '169.254.169.254',
-      '100.64.0.1', '198.18.0.1', '224.0.0.1', '::1', '[::1]', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1',
-    ])('blocks the private or reserved IP literal %s', async (host) => {
+      '127.0.0.1', '0.0.0.0', '169.254.169.254', '224.0.0.1', '::1', '[::1]', 'fe80::1', '::ffff:127.0.0.1',
+      '::ffff:169.254.169.254',
+    ])('blocks the loopback, link-local or reserved IP literal %s', async (host) => {
       await expect(_testing.assertHostAllowed(host)).rejects.toThrow(/blocked/);
     });
+
+    it.each(['10.0.0.5', '192.168.1.1', '172.16.0.1', '100.64.0.1', '198.18.0.1', 'fd00::1', '[fd00::1]', '::ffff:10.0.0.1'])(
+      'allows the private-network IP literal %s', async (host) => {
+        await expect(_testing.assertHostAllowed(host)).resolves.toBeUndefined();
+      },
+    );
 
     it.each(['localhost', 'LOCALHOST', 'localhost.', 'db.localhost'])('blocks the loopback name %s', async (host) => {
       await expect(_testing.assertHostAllowed(host)).rejects.toThrow(/blocked/);
@@ -832,22 +829,16 @@ describe('ConnectionTestService', () => {
       await expect(_testing.assertHostAllowed(host)).resolves.toBeUndefined();
     });
 
-    it.each(['100.64.10.1', '::ffff:10.0.0.1', 'fd12::1'])('blocks a DNS name that resolves to %s', async (address) => {
+    it.each(['127.0.0.1', '169.254.169.254', '::ffff:127.0.0.1', 'fe80::1'])(
+      'blocks a DNS name that resolves to %s (rebinding defense)', async (address) => {
+        mockDnsLookup.mockResolvedValueOnce([{ address, family: address.includes(':') ? 6 : 4 }]);
+        await expect(_testing.assertHostAllowed('evil.example.com')).rejects.toThrow(/resolves to/);
+      },
+    );
+
+    it.each(['10.1.2.3', '100.64.10.1', 'fd12::1'])('allows a DNS name that resolves to the private address %s', async (address) => {
       mockDnsLookup.mockResolvedValueOnce([{ address, family: address.includes(':') ? 6 : 4 }]);
-      await expect(_testing.assertHostAllowed('internal.example.com')).rejects.toThrow(/resolves to/);
-    });
-
-    it('blocks a literal loopback hostname', async () => {
-      await expect(_testing.assertHostAllowed('localhost')).rejects.toBeTruthy();
-    });
-
-    it('blocks a literal private IP', async () => {
-      await expect(_testing.assertHostAllowed('127.0.0.1')).rejects.toBeTruthy();
-    });
-
-    it('blocks a DNS name that RESOLVES to a private IP (rebinding defense)', async () => {
-      mockDnsLookup.mockResolvedValueOnce([{ address: '10.1.2.3', family: 4 }]);
-      await expect(_testing.assertHostAllowed('evil.example.com')).rejects.toBeTruthy();
+      await expect(_testing.assertHostAllowed('lis.hospital.local')).resolves.toBeUndefined();
     });
 
     it('allows a DNS name that resolves to a public IP', async () => {

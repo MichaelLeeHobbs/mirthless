@@ -2,6 +2,10 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-14 — Test Connection reaches private networks (branch `fix/test-connection-private-addresses`)
+
+- **Test Connection allows private addresses (D-262).** It refused every 10.x, 172.16-31.x, 192.168.x and (since D-256) 100.64/10 address, so on a hospital network it failed for nearly every real endpoint. It now refuses only loopback, link-local (cloud metadata) and other reserved ranges. Script `httpFetch` is unchanged.
+
 ## 2026-11-13 — Delimited, X12 and MySQL (branch `claude/doc17-delimited-x12-mysql`)
 
 Michael approved the recommended options in `docs/design/17-remaining-migration-gaps.md`. The migration scenario suite now scores 60/60.
