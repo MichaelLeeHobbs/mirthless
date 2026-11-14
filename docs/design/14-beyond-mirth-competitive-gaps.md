@@ -208,7 +208,7 @@ If I had to compress 68 candidates into a bet: **spend the no-legacy advantage o
 ## 13. Open Decisions
 
 1. **Product identity:** interface engine (A) or health-data platform (B), and how far into B? This gates §3, §7, §8-multitenancy. *Recommendation: A first, then the regulated FHIR-native slice of B.*
-2. **Streaming stance:** integrate (Kafka connector) vs build. *Recommendation: integrate.*
+2. **Streaming stance:** integrate (Kafka connector) vs build. *Recommendation: integrate.* Decided 2026-11-14 (D-261): Kafka and AMQP ship as built-in connectors; no broker of our own.
 3. **FHIR server line:** validate/transform/bulk in-pipeline (engine) vs become a repository (platform). *Recommendation: stop at facade + validate + bulk; embed HAPI if a datastore is ever needed.*
 4. **Multi-tenancy** — driven by GTM (SaaS vs licensed on-prem). Needs a business call.
 5. **AI in a PHI path** — build-time assist is low-risk; a runtime LLM step needs a governance/BAA/data-handling policy before shipping.
