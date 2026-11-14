@@ -39,7 +39,7 @@ Rank is by demand score only. Call: build, have (already ours), consider, partne
 | 35 | DOC5 | Plugin SDK, stable plugin API and a marketplace | 43.2 | Missing | ROADMAP [DECIDE] item. A stable API must exist before any marketplace. |
 | 36 | OPS4 | Environment variables and layered config for containers | 43.1 | Partial | Config map `${}` (D-246); env-var sourcing for config map values. |
 | 37 | HA2 | Kubernetes, Helm, cloud reference deployments; on-prem or cloud | 42.9 | Partial | Compose and images exist; Helm chart and reference HA deploy open. |
-| 38 | CON10 | Queues and streaming: Kafka, RabbitMQ/AMQP, JMS, SQS, Pub/Sub | 42.8 | Missing | D-257: Kafka and AMQP connectors on maintained Node clients, no broker of our own. JMS stays out; SQS and Pub/Sub wait for demand. |
+| 38 | CON10 | Queues and streaming: Kafka, RabbitMQ/AMQP, JMS, SQS, Pub/Sub | 42.8 | Missing | D-261: Kafka and AMQP connectors on maintained Node clients, no broker of our own. JMS stays out; SQS and Pub/Sub wait for demand. |
 | 39 | LIC3 | Single-vendor control of roadmap and license; slow, unresponsive vendors | 42.7 | Partial | Public roadmap, contribution guide, release cadence, and a license that cannot be pulled (consider foundation or CLA-free contribution). |
 | 40 | DT3 | Validation: conformance profiles, strict parsing, data-quality rules, receiver-specific rules | 42.1 | Partial | Profile-based validation step with readable errors; per-partner profiles. |
 | 41 | SEC3 | SSO, directory login and MFA: LDAP/AD, OIDC, SAML, TOTP | 42 | Missing | All paid Gold in Mirth. None exist here yet, though the ROADMAP "Competitive Position" table said MFA ships free. |

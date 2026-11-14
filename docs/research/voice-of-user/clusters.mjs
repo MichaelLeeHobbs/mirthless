@@ -101,7 +101,7 @@ export const CLUSTERS = [
   c('CON7', 'CON', 'File ergonomics: dynamic and original file names, move after read, header row, per-poll limit', 'QA28 OB97 OS95 OB98', 'partial', 'build', '`${originalFilename}` on destinations still open (D-219).'),
   c('CON8', 'CON', 'Database connector: more vendors, pooling, robustness', 'QA12 QA14 MG45 MG46 QA13 CR69', 'partial', 'build', 'Postgres-only today; doc 17 S15 proposes MySQL first. Pooling exists.'),
   c('CON9', 'CON', 'SOAP web services', 'QA23 MG44', 'gap', 'build', 'Parity [6]. Second-largest Q&A theme by count; brownfield hospitals still run SOAP.'),
-  c('CON10', 'CON', 'Queues and streaming: Kafka, RabbitMQ/AMQP, JMS, SQS, Pub/Sub', 'MG29 MG31 MG43 OB90 QA80 WP83 OS125', 'gap', 'build', 'D-257: Kafka and AMQP connectors on maintained Node clients, no broker of our own. JMS stays out; SQS and Pub/Sub wait for demand.'),
+  c('CON10', 'CON', 'Queues and streaming: Kafka, RabbitMQ/AMQP, JMS, SQS, Pub/Sub', 'MG29 MG31 MG43 OB90 QA80 WP83 OS125', 'gap', 'build', 'D-261: Kafka and AMQP connectors on maintained Node clients, no broker of our own. JMS stays out; SQS and Pub/Sub wait for demand.'),
   c('CON11', 'CON', 'Cloud storage and identity: S3, Azure Blob, IAM roles', 'MG30 OB100 OS48', 'gap', 'build', 'S3 as a file scheme (CON6) covers most of it.'),
   c('CON12', 'CON', 'DICOM: modern stack, worklist, query/retrieve, routing by AE, TLS', 'MG26 MG27 OB87 OB88 QA78 OS93 OS94 CR30 WP100', 'partial', 'build', 'C-STORE on dcmjs-dimse works; MWL, Q/R and TLS open.'),
   c('CON13', 'CON', 'Email: OAuth for Microsoft 365/Google, SMTP modernisation', 'MG42 OB99 QA81 WP81', 'partial', 'build', 'Basic-auth SMTP/IMAP is being retired by Microsoft; OAuth is required to keep working.'),

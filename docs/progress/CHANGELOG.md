@@ -6,10 +6,10 @@
 
 Michael asked for every complaint, feature request and wish users have voiced about Mirth, OIE, BridgeLink and other interface engines, ranked and recorded. Seven research agents covered the Mirth and fork trackers, Stack Overflow and the Mirth forum archive, commercial-engine reviews, Reddit/HN/blogs, community workaround tools and paid add-ons, and open-source engines. 865 entries fall into 160 themes.
 
-- Doc 18 gives the findings, the filter (D-256) and a recommended build order; ROADMAP has it as V1 to V14.
+- Doc 18 gives the findings, the filter (D-260) and a recommended build order; ROADMAP has it as V1 to V14.
 - Raw entries, the theme map and the scoring scripts are in `docs/research/voice-of-user/`; `ranking.md` is generated from them.
 - ROADMAP's Competitive Position table claimed MFA and advanced alerting ship free. Neither exists yet; the table now says so.
-- 2026-11-14: Michael chose to build Kafka and AMQP connectors rather than partner (D-257, ROADMAP V15).
+- 2026-11-14: Michael chose to build Kafka and AMQP connectors rather than partner (D-261, ROADMAP V15).
 
 ## 2026-11-13 — Mirth migration climb, remaining scenarios (same branch)
 

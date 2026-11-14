@@ -120,13 +120,13 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[B8] AI-assisted mapping + first-class LLM step** — 🟢 modern differentiator; PHI governance required for runtime use.
 - [ ] **[B9] EIP primitives**: aggregator (on Collections), wire-tap, dead-letter queue — 🟢 engine-native.
 - [ ] **[B10] OAuth2 credential vault** (handshake + auto token refresh) — 🟢 enables FHIR/SMART direction.
-- [ ] **[PARTNER] EMPI, terminology hosting, TEFCA/QHIN, Temporal, Debezium/CDC** — 🔗 integrate best-of-breed, don't rebuild. (Kafka moved to V15, D-257.)
+- [ ] **[PARTNER] EMPI, terminology hosting, TEFCA/QHIN, Temporal, Debezium/CDC** — 🔗 integrate best-of-breed, don't rebuild. (Kafka moved to V15, D-261.)
 - [ ] **[NON-GOAL] FHIR datastore, API gateway, SaaS marketplace, dev portal, streaming internals** — ⛔ front/beside a real tool.
 - [ ] **[DECIDE] Multi-tenancy (SaaS vs on-prem), low-code visual canvas, how far up the FHIR-server stack** — business/identity calls, not engineering.
 
 ### Voice of the user (what users of every engine complain about and ask for)
 
-> 865 complaints, requests and wishes from Mirth, OIE, BridgeLink, commercial engines and open-source tools, in 160 ranked themes: [`docs/design/18-voice-of-the-user.md`](../design/18-voice-of-the-user.md), full ranking in [`docs/research/voice-of-user/ranking.md`](../research/voice-of-user/ranking.md). Judged against D-256. Recommended order, each line naming doc 18 theme IDs (several overlap B1 to B10 and N4 to N13 above):
+> 865 complaints, requests and wishes from Mirth, OIE, BridgeLink, commercial engines and open-source tools, in 160 ranked themes: [`docs/design/18-voice-of-the-user.md`](../design/18-voice-of-the-user.md), full ranking in [`docs/research/voice-of-user/ranking.md`](../research/voice-of-user/ranking.md). Judged against D-260. Recommended order, each line naming doc 18 theme IDs (several overlap B1 to B10 and N4 to N13 above):
 
 - [ ] **[V1]** Channel-health alerts (queue depth, error rate, schedule-aware silence), webhook alert action, error triage view (MON1, MON2, MON7)
 - [ ] **[V2]** Git and CI/CD for channels, revision diff and restore, environment promotion, env-sourced config (OPS1 to OPS4)
@@ -142,7 +142,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[V12]** FHIR source, bundles and validation; maintained v2-to-FHIR maps (FHIR1, FHIR2, = B7)
 - [ ] **[V13]** Docs site, recipe gallery, generated channel docs, guided first channel (DOC1, DOC3, UI13, UI3)
 - [ ] **[V14]** Generated API clients, MCP server, AI-assisted mapping (API1, AI2, AI1)
-- [ ] **[V15]** Kafka and AMQP (RabbitMQ) source and destination connectors on maintained Node clients; no broker of our own (CON10, D-257)
+- [ ] **[V15]** Kafka and AMQP (RabbitMQ) source and destination connectors on maintained Node clients; no broker of our own (CON10, D-261)
 - [ ] **[DECIDE]** npm packages in the sandbox? (doc 18, open decisions)
 
 ### API & Auth (done)
