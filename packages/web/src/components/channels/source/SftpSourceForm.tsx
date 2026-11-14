@@ -5,7 +5,7 @@
 // form but polls a remote directory over SFTP. Property keys must match exactly
 // what the SFTP source connector reads (see connector-defaults.ts).
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -15,6 +15,7 @@ import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { SFTP_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
+import { getStr, getNum, getBool, propertyUpdaters } from '../common/connector-properties.js';
 
 const AFTER_PROCESSING = ['DELETE', 'MOVE', 'NONE'] as const;
 
@@ -25,21 +26,6 @@ const CHARSETS: readonly { value: string; label: string }[] = [
   { value: 'ascii', label: 'US-ASCII' },
   { value: 'utf16le', label: 'UTF-16 LE' },
 ];
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getNum(props: Record<string, unknown>, key: string, fallback: number): number {
-  const val = props[key];
-  return typeof val === 'number' ? val : fallback;
-}
-
-function getBool(props: Record<string, unknown>, key: string, fallback: boolean): boolean {
-  const val = props[key];
-  return typeof val === 'boolean' ? val : fallback;
-}
 
 export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -53,22 +39,7 @@ export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProp
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleNumber = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    const parsed = parseInt(e.target.value, 10);
-    update(key, Number.isNaN(parsed) ? 0 : parsed);
-  };
-
-  const handleBool = (key: string) => (_e: ChangeEvent<HTMLInputElement>, checked: boolean): void => {
-    update(key, checked);
-  };
+  const { handleText, handleNumber, handleBool } = propertyUpdaters(properties, onChange);
 
   const afterProcessing = getStr(properties, 'afterProcessing', 'DELETE');
 

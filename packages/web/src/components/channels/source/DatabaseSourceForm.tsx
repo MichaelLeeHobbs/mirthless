@@ -3,7 +3,7 @@
 // ===========================================
 // Configuration form for database reader source connectors.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -14,19 +14,10 @@ import type { SourceConnectorFormProps } from './types.js';
 import { DATABASE_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
+import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
 
 const UPDATE_MODES = ['NEVER', 'ALWAYS', 'ON_SUCCESS'] as const;
 const ROW_FORMATS = ['JSON'] as const;
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getNum(props: Record<string, unknown>, key: string, fallback: number): number {
-  const val = props[key];
-  return typeof val === 'number' ? val : fallback;
-}
 
 export function DatabaseSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -40,18 +31,7 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleNumber = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    const parsed = parseInt(e.target.value, 10);
-    update(key, Number.isNaN(parsed) ? 0 : parsed);
-  };
+  const { update, handleText, handleNumber } = propertyUpdaters(properties, onChange);
 
   return (
     <Grid container spacing={3}>

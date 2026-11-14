@@ -3,7 +3,7 @@
 // ===========================================
 // Configuration form for DICOM C-STORE SCU destination connectors.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -11,18 +11,9 @@ import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { DICOM_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
+import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
 
 const SEND_MODES = ['single', 'multiple'] as const;
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getNum(props: Record<string, unknown>, key: string, fallback: number): number {
-  const val = props[key];
-  return typeof val === 'number' ? val : fallback;
-}
 
 export function DicomDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -36,18 +27,7 @@ export function DicomDestinationForm({ properties, onChange }: DestConnectorForm
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleNumber = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    const parsed = parseInt(e.target.value, 10);
-    update(key, Number.isNaN(parsed) ? 0 : parsed);
-  };
+  const { handleText, handleNumber } = propertyUpdaters(properties, onChange);
 
   const mode = getStr(properties, 'mode', 'multiple');
 

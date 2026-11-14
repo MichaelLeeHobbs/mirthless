@@ -9,7 +9,7 @@
 // === 'HTTP'), so a form-only tls bag would be silently ignored at deploy.
 // That is a separate workstream — see docs/design connector-parity notes.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -18,16 +18,7 @@ import type { SourceConnectorFormProps } from './types.js';
 import { TCP_MLLP_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { MLLP_CHARSETS, MLLP_RESPONSE_MODES } from './tcp-mllp-options.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getNum(props: Record<string, unknown>, key: string, fallback: number): number {
-  const val = props[key];
-  return typeof val === 'number' ? val : fallback;
-}
+import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
 
 export function TcpMllpSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -42,18 +33,7 @@ export function TcpMllpSourceForm({ properties, onChange }: SourceConnectorFormP
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleNumber = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    const parsed = parseInt(e.target.value, 10);
-    update(key, Number.isNaN(parsed) ? 0 : parsed);
-  };
+  const { handleText, handleNumber } = propertyUpdaters(properties, onChange);
 
   return (
     <Grid container spacing={3}>
