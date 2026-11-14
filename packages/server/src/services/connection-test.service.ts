@@ -14,10 +14,18 @@ import * as fs from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
 import { stderr, type Result } from 'stderr-lib';
-import type { ConnectionTestResult } from '@galvaniflow/core-models';
+import type { z } from 'zod/v4';
+import {
+  kafkaSourcePropertiesSchema,
+  kafkaDestinationPropertiesSchema,
+  amqpSourcePropertiesSchema,
+  amqpDestinationPropertiesSchema,
+  type ConnectionTestResult,
+} from '@galvaniflow/core-models';
 import { isBlockedAddress, isBlockedHostname } from '@galvaniflow/engine';
+import { testKafkaConnection, testAmqpConnection, readQueueTls, withTimeout } from '@galvaniflow/connectors';
 import { ServiceError } from '../lib/service-error.js';
-import { resolveHttpDestinationTls, resolveHttpSourceTls } from './connector-tls-resolver.js';
+import { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } from './connector-tls-resolver.js';
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -464,6 +472,67 @@ const testEmail: Tester = async (_mode, props) => {
   return testTcpConnect(host, port);
 };
 
+/** Parse props with a connector schema, failing as invalid input with the schema's reasons. */
+function parseProps<S extends z.ZodType>(schema: S, props: unknown): z.output<S> {
+  const parsed = schema.safeParse(props);
+  if (!parsed.success) {
+    throw new ServiceError('INVALID_INPUT', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+  }
+  return parsed.data;
+}
+
+/** Certificate ids swapped for PEM, as at deploy, then read the way the connector reads them. */
+async function queueTls(props: Readonly<Record<string, unknown>>): Promise<ReturnType<typeof readQueueTls>> {
+  const resolved = await resolveQueueTls(props);
+  if (!resolved.ok) {
+    throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
+  }
+  return readQueueTls(resolved.value);
+}
+
+/** Run a broker check under the test timeout and report it as a result. */
+async function brokerCheck(label: string, check: () => Promise<string>): Promise<ConnectionTestResult> {
+  const start = performance.now();
+  try {
+    const message = await withTimeout(check(), TEST_TIMEOUT_MS, `${label} connection test`);
+    return successResult(message, performance.now() - start);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return failureResult(`${label} connection failed: ${msg}`, performance.now() - start);
+  }
+}
+
+/**
+ * Kafka tester: connect to the bootstrap brokers with the configured TLS and
+ * SASL and read cluster metadata. A source, or a destination whose topic does
+ * not vary per message, also checks that the topic exists.
+ */
+const testKafka: Tester = async (mode, props) => {
+  const config = parseProps(mode === 'SOURCE' ? kafkaSourcePropertiesSchema : kafkaDestinationPropertiesSchema, props);
+  for (const broker of config.brokers.split(',')) {
+    await assertHostAllowed(broker.trim().replace(/:\d+$/, ''));
+  }
+  const tls = await queueTls(props);
+  const topic = config.topic.includes('${') ? undefined : config.topic;
+  return brokerCheck('Kafka', () => testKafkaConnection({ ...config, tls }, topic));
+};
+
+/**
+ * AMQP tester: connect and log in with the configured TLS and credentials, then
+ * check that the source's queue, or the destination's exchange, exists.
+ */
+const testAmqp: Tester = async (mode, props) => {
+  const tls = await queueTls(props);
+  if (mode === 'SOURCE') {
+    const config = parseProps(amqpSourcePropertiesSchema, props);
+    await assertHostAllowed(config.host);
+    return brokerCheck('AMQP', () => testAmqpConnection({ ...config, tls }, { queue: config.queue }));
+  }
+  const config = parseProps(amqpDestinationPropertiesSchema, props);
+  await assertHostAllowed(config.host);
+  return brokerCheck('AMQP', () => testAmqpConnection({ ...config, tls }, { exchange: config.exchange }));
+};
+
 // ----- Tester Registry -----
 
 const TESTERS: Readonly<Record<string, Tester>> = {
@@ -477,6 +546,8 @@ const TESTERS: Readonly<Record<string, Tester>> = {
   CHANNEL: testChannel,
   JAVASCRIPT: testJavascript,
   EMAIL: testEmail,
+  KAFKA: testKafka,
+  AMQP: testAmqp,
 };
 
 // ----- Public API -----
