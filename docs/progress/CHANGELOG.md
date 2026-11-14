@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-14 — Editor controls for Delimited settings and the database type (branch `claude/editor-delimited-db-vendor`)
+
+Michael asked for the editor controls the Delimited and MySQL work left out.
+
+- **Delimited settings** in the source transformer when its inbound type is Delimited: delimiters (typed as `\t`, `\r\n`), quote, quote escape, column names, CR handling. The form checks them with the schema the server checks at deploy and says when the channel would not deploy.
+- **Database type** on the Database Reader and Writer: PostgreSQL or MySQL/MariaDB; a port still at one database's default moves to the other's. A database imported from Mirth with no driver (sqlserver, oracle) shows as such and says the channel will not deploy.
+- **Test Connection** for a database now connects with the connector's own pool for its type. It always spoke PostgreSQL, so a MySQL test failed.
+- The source transformer's data type row wraps on a phone instead of running past the card.
+- `pnpm shots` gains `source-delimited` and `destination-database`, and a shot's `click` takes a list.
+
 ## 2026-11-13 — Delimited, X12 and MySQL (branch `claude/doc17-delimited-x12-mysql`)
 
 Michael approved the recommended options in `docs/design/17-remaining-migration-gaps.md`. The migration scenario suite now scores 60/60.
