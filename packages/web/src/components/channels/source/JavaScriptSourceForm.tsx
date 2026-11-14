@@ -3,23 +3,14 @@
 // ===========================================
 // Configuration form for JavaScript source connectors.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { JAVASCRIPT_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getNum(props: Record<string, unknown>, key: string, fallback: number): number {
-  const val = props[key];
-  return typeof val === 'number' ? val : fallback;
-}
+import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
 
 export function JavaScriptSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -33,18 +24,7 @@ export function JavaScriptSourceForm({ properties, onChange }: SourceConnectorFo
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleNumber = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    const parsed = parseInt(e.target.value, 10);
-    update(key, Number.isNaN(parsed) ? 0 : parsed);
-  };
+  const { handleText, handleNumber } = propertyUpdaters(properties, onChange);
 
   return (
     <Grid container spacing={3}>

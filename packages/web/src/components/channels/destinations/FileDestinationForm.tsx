@@ -3,7 +3,7 @@
 // ===========================================
 // Configuration form for file writer destination connectors.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -13,6 +13,7 @@ import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { FILE_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
+import { getStr, getBool, propertyUpdaters } from '../common/connector-properties.js';
 
 // Values must be valid Node Buffer encodings (passed straight to fs.writeFile) —
 // 'ISO-8859-1'/'US-ASCII' are NOT and throw ERR_UNKNOWN_ENCODING at runtime.
@@ -22,16 +23,6 @@ const CHARSETS: readonly { value: string; label: string }[] = [
   { value: 'ascii', label: 'US-ASCII' },
   { value: 'utf16le', label: 'UTF-16 LE' },
 ];
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getBool(props: Record<string, unknown>, key: string, fallback: boolean): boolean {
-  const val = props[key];
-  return typeof val === 'boolean' ? val : fallback;
-}
 
 export function FileDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -45,17 +36,7 @@ export function FileDestinationForm({ properties, onChange }: DestConnectorFormP
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleBool = (key: string) => (_e: ChangeEvent<HTMLInputElement>, checked: boolean): void => {
-    update(key, checked);
-  };
+  const { handleText, handleBool } = propertyUpdaters(properties, onChange);
 
   return (
     <Grid container spacing={3}>

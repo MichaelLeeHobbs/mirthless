@@ -3,7 +3,7 @@
 // ===========================================
 // Configuration form for channel destination connectors.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -11,16 +11,7 @@ import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import type { DestConnectorFormProps } from './types.js';
 import { CHANNEL_DEST_DEFAULTS } from './connector-defaults.js';
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getBool(props: Record<string, unknown>, key: string, fallback: boolean): boolean {
-  const val = props[key];
-  return typeof val === 'boolean' ? val : fallback;
-}
+import { getStr, getBool, propertyUpdaters } from '../common/connector-properties.js';
 
 export function ChannelDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -34,17 +25,7 @@ export function ChannelDestinationForm({ properties, onChange }: DestConnectorFo
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleBool = (key: string) => (_e: ChangeEvent<HTMLInputElement>, checked: boolean): void => {
-    update(key, checked);
-  };
+  const { handleText, handleBool } = propertyUpdaters(properties, onChange);
 
   return (
     <Grid container spacing={3}>
