@@ -43,9 +43,26 @@ describe('parseDelimited', () => {
     expect(parseDelimited('"a\\"b",c', o)).toEqual([{ column1: 'a"b', column2: 'c' }]);
   });
 
-  it('treats quotes as text when quoting is off', () => {
-    const o = delimitedOptionsSchema.parse({ quote: '' });
-    expect(parseDelimited('"a",b', o)).toEqual([{ column1: '"a"', column2: 'b' }]);
+  it('reads a doubled quote escape as one when doubling is off, and keeps a lone one', () => {
+    const o = delimitedOptionsSchema.parse({ escapeWithDoubleQuote: false });
+    expect(parseDelimited('"C:\\\\dir\\\\",x\\y', o)).toEqual([{ column1: 'C:\\dir\\', column2: 'x\\y' }]);
+    expect(parseDelimited('"a\\b"', o)).toEqual([{ column1: 'a\\b' }]);
+  });
+
+  // Regression: each quoted field searched the rest of the text for an escaped
+  // quote, and each field of a one-column file for a column delimiter, so a
+  // 338 KB file took 11 s. A linear parse takes well under a second.
+  it.each([
+    ['quoted', '"v","w"\n', 60_000],
+    ['single-column', 'value\n', 200_000],
+    ['single-column quoted', '"value"\n', 200_000],
+  ])('parses a large %s file in linear time', (_name, line, count) => {
+    const text = line.repeat(count);
+    const started = performance.now();
+    const rows = parseDelimited(text, delimitedOptionsSchema.parse({}));
+    const elapsed = performance.now() - started;
+    expect(rows).toHaveLength(count);
+    expect(elapsed).toBeLessThan(2_000);
   });
 
   it('uses multi-character and pipe delimiters', () => {
@@ -83,8 +100,24 @@ describe('serializeDelimited', () => {
     expect(serializeDelimited([{ a: null, b: undefined, c: 5 }], csv)).toBe(',,5\n');
   });
 
-  it('escapes with the quote escape when doubling is off, and never quotes when quoting is off', () => {
-    expect(serializeDelimited([{ a: 'x"y' }], delimitedOptionsSchema.parse({ escapeWithDoubleQuote: false }))).toBe('"x\\"y"\n');
-    expect(serializeDelimited([{ a: 'x,y' }], delimitedOptionsSchema.parse({ quote: '' }))).toBe('x,y\n');
+  it('escapes quotes and the quote escape itself when doubling is off', () => {
+    const o = delimitedOptionsSchema.parse({ escapeWithDoubleQuote: false });
+    expect(serializeDelimited([{ a: 'x"y' }], o)).toBe('"x\\"y"\n');
+    expect(serializeDelimited([{ a: 'say "hi\\' }], o)).toBe('"say \\"hi\\\\"\n');
+  });
+
+  const SETTINGS = [
+    {},
+    { escapeWithDoubleQuote: false },
+    { columnDelimiter: '|', recordDelimiter: '~~', quote: "'" },
+    { columnDelimiter: '\t', recordDelimiter: '\r\n', ignoreCR: false },
+  ];
+  const VALUES = ['plain', '', 'Smith, John', 'say "hi"', 'say "hi\\', 'C:\\dir\\', 'two\nlines', 'a|b~~c', "it's", '\t\r\n', '"', '\\'];
+
+  it.each(SETTINGS)('reads back exactly what it writes with settings %j', (settings) => {
+    const o = delimitedOptionsSchema.parse(settings);
+    const rows = VALUES.map((value, i) => ({ column1: String(i), column2: value, column3: 'end' }));
+    const parsed = parseDelimited(serializeDelimited(rows, o), { ...o, ignoreCR: false });
+    expect(parsed).toEqual(rows);
   });
 });

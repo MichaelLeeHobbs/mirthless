@@ -15,42 +15,51 @@ interface Field {
   readonly next: number;
 }
 
-/** Index of the first of `tokens` at or after `from`, or the text length when none occurs. */
-function nearest(text: string, from: number, tokens: readonly string[]): number {
-  let best = text.length;
-  for (const token of tokens) {
-    const at = text.indexOf(token, from);
-    if (at !== -1 && at < best) best = at;
-  }
-  return best;
+// Every scan below walks forward from where the field starts and stops at that
+// field's own end, so parsing is linear in the text. Searching the whole rest
+// of the text for each field (indexOf) made a large file quadratic.
+
+/** Index of the next column or record delimiter at or after `from`, or the text length. */
+function nextDelimiter(text: string, from: number, o: DelimitedOptions): number {
+  let i = from;
+  while (i < text.length && !text.startsWith(o.columnDelimiter, i) && !text.startsWith(o.recordDelimiter, i)) i += 1;
+  return i;
 }
 
+/**
+ * A quoted value. Inside the quotes, a quote is written twice, or (with
+ * escapeWithDoubleQuote off) preceded by quoteEscape, which is itself written
+ * twice; any other character is the value's own.
+ */
 function readQuoted(text: string, start: number, o: DelimitedOptions): Field {
-  const escaped = o.escapeWithDoubleQuote ? o.quote + o.quote : o.quoteEscape + o.quote;
-  let value = '';
-  let i = start + o.quote.length;
-  let closed = false;
-  while (!closed) {
-    const close = text.indexOf(o.quote, i);
-    if (close === -1) throw new Error(`Delimited text has a quoted value that never closes (starts at character ${String(start)})`);
-    const escape = text.indexOf(escaped, i);
-    if (escape !== -1 && escape <= close) {
-      value += text.slice(i, escape) + o.quote;
-      i = escape + escaped.length;
+  const escapedQuote = o.escapeWithDoubleQuote ? o.quote + o.quote : o.quoteEscape + o.quote;
+  const escapedEscape = o.escapeWithDoubleQuote ? undefined : o.quoteEscape + o.quoteEscape;
+  const parts: string[] = [];
+  let run = start + o.quote.length;
+  let i = run;
+  while (i < text.length) {
+    const literal = text.startsWith(escapedQuote, i) ? escapedQuote
+      : escapedEscape !== undefined && text.startsWith(escapedEscape, i) ? escapedEscape : undefined;
+    if (literal !== undefined) {
+      parts.push(text.slice(run, i), literal === escapedQuote ? o.quote : o.quoteEscape);
+      i += literal.length;
+      run = i;
+    } else if (text.startsWith(o.quote, i)) {
+      // Text between the closing quote and the next delimiter is kept, not dropped.
+      const after = i + o.quote.length;
+      const next = nextDelimiter(text, after, o);
+      parts.push(text.slice(run, i), text.slice(after, next));
+      return { value: parts.join(''), next };
     } else {
-      value += text.slice(i, close);
-      i = close + o.quote.length;
-      closed = true;
+      i += 1;
     }
   }
-  // Text between the closing quote and the next delimiter is kept, not dropped.
-  const next = nearest(text, i, [o.columnDelimiter, o.recordDelimiter]);
-  return { value: value + text.slice(i, next), next };
+  throw new Error(`Delimited text has a quoted value that never closes (starts at character ${String(start)})`);
 }
 
 function readField(text: string, start: number, o: DelimitedOptions): Field {
-  if (o.quote !== '' && text.startsWith(o.quote, start)) return readQuoted(text, start, o);
-  const next = nearest(text, start, [o.columnDelimiter, o.recordDelimiter]);
+  if (text.startsWith(o.quote, start)) return readQuoted(text, start, o);
+  const next = nextDelimiter(text, start, o);
   return { value: text.slice(start, next), next };
 }
 
@@ -99,13 +108,14 @@ export function parseDelimited(text: string, options: DelimitedOptions): Delimit
   return rows;
 }
 
+/** A value as the parser reads it back: quoted, with its quotes (and escapes) escaped, when it holds a delimiter or a quote. */
 function writeValue(raw: unknown, o: DelimitedOptions): string {
   const value = raw === null || raw === undefined ? '' : String(raw);
-  if (o.quote === '') return value;
   const needsQuotes = [o.columnDelimiter, o.recordDelimiter, o.quote, '\r', '\n'].some((token) => value.includes(token));
   if (!needsQuotes) return value;
-  const escaped = o.escapeWithDoubleQuote ? o.quote + o.quote : o.quoteEscape + o.quote;
-  return o.quote + value.replaceAll(o.quote, escaped) + o.quote;
+  if (o.escapeWithDoubleQuote) return o.quote + value.replaceAll(o.quote, o.quote + o.quote) + o.quote;
+  const escaped = value.replaceAll(o.quoteEscape, o.quoteEscape + o.quoteEscape).replaceAll(o.quote, o.quoteEscape + o.quote);
+  return o.quote + escaped + o.quote;
 }
 
 /**

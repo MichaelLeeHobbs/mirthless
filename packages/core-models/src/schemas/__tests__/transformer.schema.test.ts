@@ -18,6 +18,15 @@ describe('delimitedOptionsSchema', () => {
     expect(delimitedOptionsSchema.safeParse({ columnDelimiter: '' }).success).toBe(false);
     expect(delimitedOptionsSchema.safeParse({ columnNames: ['mrn', ''] }).success).toBe(false);
   });
+
+  it('refuses an empty quote or quote escape, a quote that is a delimiter, and a repeated column name', () => {
+    expect(delimitedOptionsSchema.safeParse({ quote: '' }).success).toBe(false);
+    expect(delimitedOptionsSchema.safeParse({ quoteEscape: '' }).success).toBe(false);
+    expect(delimitedOptionsSchema.safeParse({ quote: ',' }).success).toBe(false);
+    const repeated = delimitedOptionsSchema.safeParse({ columnNames: ['a', 'b', 'a'] });
+    expect(repeated.success).toBe(false);
+    expect(repeated.error?.issues[0]?.message).toBe('Column names must be unique');
+  });
 });
 
 describe('transformerStepInputSchema', () => {
