@@ -56,10 +56,16 @@ describe('KAFKA', () => {
     expect(mockTestKafka.mock.calls[0]?.[0]).toMatchObject({ tls: { ca: 'CA-PEM', rejectUnauthorized: true } });
   });
 
-  it('blocks a broker on a private address, even when it is not the first', async () => {
-    const result = await ConnectionTestService.testConnection('KAFKA', 'SOURCE', { ...source, brokers: 'kafka-1.example.com:9093,10.0.0.5:9093' });
+  it('reaches brokers on a private network (D-262)', async () => {
+    const result = await ConnectionTestService.testConnection('KAFKA', 'SOURCE', { ...source, brokers: '10.0.0.5:9093,192.168.1.20:9093' });
+    expect(result.ok && result.value.success).toBe(true);
+    expect(mockTestKafka).toHaveBeenCalledOnce();
+  });
+
+  it('blocks a broker on a reserved address, even when it is not the first', async () => {
+    const result = await ConnectionTestService.testConnection('KAFKA', 'SOURCE', { ...source, brokers: 'kafka-1.example.com:9093,169.254.169.254:9093' });
     expect(result.ok).toBe(false);
-    expect(result.error?.message).toContain('10.0.0.5');
+    expect(result.error?.message).toContain('169.254.169.254');
     expect(mockTestKafka).not.toHaveBeenCalled();
   });
 
