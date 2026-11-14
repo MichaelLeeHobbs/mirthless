@@ -807,12 +807,18 @@ describe('ConnectionTestService', () => {
 
   describe('SSRF guard', () => {
     // Integration endpoints (MLLP, databases, SFTP) live on private networks, so
-    // the test reaches them; only the server itself and cloud metadata are refused.
+    // the test reaches them; loopback, cloud metadata and reserved ranges are refused.
     it.each([
       '127.0.0.1', '0.0.0.0', '169.254.169.254', '224.0.0.1', '::1', '[::1]', 'fe80::1', '::ffff:127.0.0.1',
-      '::ffff:169.254.169.254',
+      '::ffff:169.254.169.254', 'fd00:ec2::254', '[fd00:ec2::254]', '100.100.100.200',
     ])('blocks the loopback, link-local or reserved IP literal %s', async (host) => {
       await expect(_testing.assertHostAllowed(host)).rejects.toThrow(/blocked/);
+    });
+
+    // pg treats a host starting with "/" as a Unix socket directory, a local server
+    // no address check sees.
+    it.each(['/var/run/postgresql', '/tmp', 'db/../x'])('refuses %s, which is not a hostname or IP address', async (host) => {
+      await expect(_testing.assertHostAllowed(host)).rejects.toThrow(/not a hostname/);
     });
 
     it.each(['10.0.0.5', '192.168.1.1', '172.16.0.1', '100.64.0.1', '198.18.0.1', 'fd00::1', '[fd00::1]', '::ffff:10.0.0.1'])(

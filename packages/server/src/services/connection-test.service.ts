@@ -91,6 +91,11 @@ export function resetFactories(): void {
  * loudly, which is not an SSRF exposure.
  */
 async function assertHostAllowed(hostname: string): Promise<void> {
+  // pg reads a host starting with "/" as a Unix socket directory: a local server
+  // that no address check below would see.
+  if (/[/\\]/.test(hostname)) {
+    throw new ServiceError('INVALID_INPUT', `Connection to ${hostname} is blocked (not a hostname or IP address)`);
+  }
   if (isReservedHostname(hostname)) {
     throw new ServiceError('INVALID_INPUT', `Connection to ${hostname} is blocked (loopback or reserved address)`);
   }
