@@ -9,8 +9,10 @@ import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DatabasePool, PoolConfig, QueryResult, TxQuery } from './connection-pool.js';
 
 const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
+/** How much sooner the server gives up than the client, so the server's error is the one that arrives. */
+const SERVER_MARGIN_MS = 5_000;
 
-type Queryable = Pick<mysql.Pool, 'execute' | 'query'>;
+type Queryable = Pick<mysql.PoolConnection, 'execute' | 'query'>;
 
 /**
  * Run one statement. Rows come back for a SELECT; a write returns its affected
@@ -32,10 +34,24 @@ async function run(target: Queryable, sql: string, params: readonly unknown[], t
   return { rows: header.insertId ? [{ insertId: header.insertId }] : [], rowCount: header.affectedRows };
 }
 
+/** Hand a connection back, or close it when an error or timeout may have left it mid-statement. */
+function finish(connection: mysql.PoolConnection, broken: boolean): void {
+  if (broken) connection.destroy();
+  else connection.release();
+}
+
+/** A timeout or a lost connection, after which the connection's state is unknown. A plain SQL error (a duplicate key) is not. */
+function isBroken(err: unknown): boolean {
+  const e = err as { fatal?: unknown; code?: unknown } | null;
+  return e?.fatal === true || e?.code === 'PROTOCOL_SEQUENCE_TIMEOUT';
+}
+
 /** MySQL pool (`mysql2`). */
 export class MysqlPool implements DatabasePool {
   private pool: mysql.Pool | null = null;
   private timeoutMs = DEFAULT_STATEMENT_TIMEOUT_MS;
+  /** Connections whose session limits are set, by their underlying connection. */
+  private readonly limited = new WeakSet<object>();
 
   async create(config: PoolConfig): Promise<Result<void>> {
     return tryCatch(async () => {
@@ -56,37 +72,66 @@ export class MysqlPool implements DatabasePool {
         decimalNumbers: false,
         dateStrings: true,
       });
-      const connection = await this.pool.getConnection();
-      connection.release();
+      finish(await this.connection(), false);
     });
   }
 
-  private requirePool(): mysql.Pool {
+  /**
+   * A pooled connection with server-side limits below the client timeout. The
+   * client timeout alone does not stop the statement: an INSERT waiting on a
+   * lock would still commit after the client gave up, and the queue's retry
+   * would then write the row twice.
+   */
+  private async connection(): Promise<mysql.PoolConnection> {
     if (!this.pool) throw new Error('Pool not initialized — call create() first');
-    return this.pool;
+    const connection = await this.pool.getConnection();
+    const underlying = (connection as unknown as { connection: object }).connection;
+    if (this.limited.has(underlying)) return connection;
+    const serverMs = Math.max(1_000, this.timeoutMs - SERVER_MARGIN_MS);
+    try {
+      await connection.query(
+        { sql: 'SET SESSION innodb_lock_wait_timeout = ?, SESSION max_execution_time = ?', timeout: this.timeoutMs },
+        [Math.ceil(serverMs / 1_000), serverMs],
+      );
+    } catch (err) {
+      finish(connection, true);
+      throw err;
+    }
+    this.limited.add(underlying);
+    return connection;
   }
 
   async query(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>> {
-    return tryCatch(async () => run(this.requirePool(), sql, params, this.timeoutMs));
+    return tryCatch(async () => {
+      const connection = await this.connection();
+      try {
+        const result = await run(connection, sql, params, this.timeoutMs);
+        finish(connection, false);
+        return result;
+      } catch (err) {
+        finish(connection, isBroken(err));
+        throw err;
+      }
+    });
   }
 
   async transaction<T>(fn: (tx: TxQuery) => Promise<T>): Promise<Result<T>> {
     return tryCatch(async () => {
-      const connection = await this.requirePool().getConnection();
+      const connection = await this.connection();
+      // Every statement, COMMIT included, has the timeout: a connection that
+      // drops during COMMIT must fail the poll, not hang it.
+      const statement = (sql: string): Promise<QueryResult> => run(connection, sql, [], this.timeoutMs);
       try {
-        await connection.beginTransaction();
+        await statement('START TRANSACTION');
         const value = await fn({ query: (sql, params) => run(connection, sql, params, this.timeoutMs) });
-        await connection.commit();
+        await statement('COMMIT');
+        finish(connection, false);
         return value;
       } catch (err) {
-        try {
-          await connection.rollback();
-        } catch {
-          // A failed rollback (a dropped connection) is less useful than the original error.
-        }
+        // A connection the rollback could not reach is closed, never reused mid-transaction.
+        const rolledBack = !isBroken(err) && await statement('ROLLBACK').then(() => true, () => false);
+        finish(connection, !rolledBack);
         throw err;
-      } finally {
-        connection.release();
       }
     });
   }

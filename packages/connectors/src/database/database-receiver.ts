@@ -219,18 +219,38 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
    */
   private async pollWithClaim(): Promise<void> {
     const lockedSelect = appendLockClause(this.config.selectQuery);
+    const dispatched: Array<{ row: Readonly<Record<string, unknown>>; recorded: boolean }> = [];
     const txResult = await this.pool.transaction(async (tx) => {
       const selectResult = await tx.query(lockedSelect, []);
       for (const row of this.capRows(selectResult.rows)) {
         const recorded = await this.dispatchRow(row);
+        dispatched.push({ row, recorded });
         await this.ackRow(tx, row, recorded);
       }
     });
-    if (!txResult.ok) {
-      // SELECT/lock failure or a broken connection during the transaction.
+    if (txResult.ok) return;
+    // SELECT/lock failure, a broken connection, or (MySQL) a deadlock, which
+    // rolls back the whole transaction and with it every ack of this poll.
+    this.logger.error(
+      { ...errorInfo(txResult.error), database: this.config.database, dispatched: dispatched.length },
+      'Database poll transaction failed',
+    );
+    if (dispatched.length > 0) await this.reackDispatched(dispatched);
+  }
+
+  /**
+   * Ack again, in a new transaction, the rows a failed poll had already
+   * dispatched, without dispatching them again: read again next poll, they
+   * would become duplicate messages.
+   */
+  private async reackDispatched(dispatched: ReadonlyArray<{ row: Readonly<Record<string, unknown>>; recorded: boolean }>): Promise<void> {
+    const retry = await this.pool.transaction(async (tx) => {
+      for (const { row, recorded } of dispatched) await this.ackRow(tx, row, recorded);
+    });
+    if (!retry.ok) {
       this.logger.error(
-        { ...errorInfo(txResult.error), database: this.config.database },
-        'Database poll transaction failed',
+        { ...errorInfo(retry.error), database: this.config.database, rows: dispatched.length },
+        'Rows were dispatched but could not be marked processed; the next poll reads and dispatches them again',
       );
     }
   }
