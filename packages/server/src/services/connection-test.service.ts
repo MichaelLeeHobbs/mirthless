@@ -16,6 +16,7 @@ import { createRequire } from 'node:module';
 import { stderr, type Result } from 'stderr-lib';
 import type { ConnectionTestResult } from '@galvaniflow/core-models';
 import { isBlockedAddress, isBlockedHostname } from '@galvaniflow/engine';
+import { DATABASE_VENDOR, createPool, type DatabasePool, type DatabaseVendor } from '@galvaniflow/connectors';
 import { ServiceError } from '../lib/service-error.js';
 import { resolveHttpDestinationTls, resolveHttpSourceTls } from './connector-tls-resolver.js';
 
@@ -27,14 +28,11 @@ const TEST_TIMEOUT_MS = 10_000;
 
 // ----- Injectable Factories (for testing) -----
 
-/** pg Pool interface. */
-interface PgPool {
-  query(sql: string): Promise<unknown>;
-  end(): Promise<void>;
-}
+/** What the database test needs from a connector pool: connect (create checks the connection) and close. */
+type TestPool = Pick<DatabasePool, 'create' | 'destroy'>;
 
-/** pg Pool factory. */
-type PoolFactory = (config: Record<string, unknown>) => PgPool;
+/** The database connectors' pool for a vendor, so the test speaks the same protocol as the connector. */
+type PoolFactory = (vendor: DatabaseVendor) => TestPool;
 
 /** nodemailer transport interface for verify. */
 interface SmtpVerifyTransport {
@@ -45,11 +43,7 @@ interface SmtpVerifyTransport {
 /** nodemailer transport factory. */
 type SmtpTransportFactory = (config: Record<string, unknown>) => SmtpVerifyTransport;
 
-/** Default pg Pool factory. */
-function defaultPoolFactory(config: Record<string, unknown>): PgPool {
-  const pg = nodeRequire('pg') as { Pool: new (c: Record<string, unknown>) => PgPool };
-  return new pg.Pool(config);
-}
+const defaultPoolFactory: PoolFactory = createPool;
 
 /** Default nodemailer transport factory. */
 function defaultSmtpTransportFactory(config: Record<string, unknown>): SmtpVerifyTransport {
@@ -344,37 +338,37 @@ const testFile: Tester = async (mode, props) => {
   }
 };
 
-/** Database tester — connects via pg and runs SELECT 1. */
+/** Database tester — connects with the connector's own pool for the vendor (PostgreSQL by default). */
 const testDatabase: Tester = async (_mode, props) => {
   const host = requireString(props, 'host');
   const port = requireNumber(props, 'port');
   const database = requireString(props, 'database');
+  const vendor = props['vendor'] ?? DATABASE_VENDOR.POSTGRESQL;
+  if (vendor !== DATABASE_VENDOR.POSTGRESQL && vendor !== DATABASE_VENDOR.MYSQL) {
+    return failureResult(`Database "${String(vendor)}" is not supported (PostgreSQL and MySQL are)`, 0);
+  }
   await assertHostAllowed(host);
 
   const start = performance.now();
-
-  const pool = poolFactory({
+  const pool = poolFactory(vendor);
+  const created = await pool.create({
     host,
     port,
     database,
     // The connector forms save the account as `username`.
-    user: typeof props['username'] === 'string' ? props['username'] : undefined,
-    password: typeof props['password'] === 'string' ? props['password'] : undefined,
-    ssl: props['tls'] === true ? { rejectUnauthorized: true } : false,
-    connectionTimeoutMillis: TEST_TIMEOUT_MS,
+    user: typeof props['username'] === 'string' ? props['username'] : '',
+    password: typeof props['password'] === 'string' ? props['password'] : '',
+    tls: props['tls'] === true,
+    maxConnections: 1,
+    idleTimeoutMs: TEST_TIMEOUT_MS,
+    connectionTimeoutMs: TEST_TIMEOUT_MS,
+    statementTimeoutMs: TEST_TIMEOUT_MS,
   });
-
-  try {
-    await pool.query('SELECT 1');
-    const latency = performance.now() - start;
-    return successResult(`Database connected: ${host}:${port}/${database}`, latency);
-  } catch (err: unknown) {
-    const latency = performance.now() - start;
-    const msg = err instanceof Error ? err.message : 'Unknown error';
-    return failureResult(`Database connection failed: ${msg}`, latency);
-  } finally {
-    await pool.end();
-  }
+  await pool.destroy();
+  const latency = performance.now() - start;
+  return created.ok
+    ? successResult(`Database connected: ${host}:${port}/${database}`, latency)
+    : failureResult(`Database connection failed: ${created.error.message}`, latency);
 };
 
 /** SMTP tester — verifies transport connectivity. */
