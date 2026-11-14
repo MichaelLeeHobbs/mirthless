@@ -27,18 +27,16 @@ export interface FileDispatcherConfig {
 // ----- Pattern Substitution -----
 
 /**
- * Resolve an output filename by substituting placeholders
- * in the pattern with values from the message context.
+ * Resolve an output filename by substituting placeholders in the pattern with
+ * values from the message context. One pass over the pattern: a value is
+ * inserted as-is and never scanned for further placeholders.
  */
 export function resolveOutputFilename(
   pattern: string,
   context: Readonly<Record<string, string>>,
 ): string {
-  let result = pattern;
-  for (const [key, value] of Object.entries(context)) {
-    result = result.split('${' + key + '}').join(value);
-  }
-  return result;
+  return pattern.replace(/\$\{([^}]*)\}/g, (placeholder, name: string) =>
+    Object.hasOwn(context, name) ? (context[name] ?? placeholder) : placeholder);
 }
 
 /** Placeholders an output filename pattern can use. */
