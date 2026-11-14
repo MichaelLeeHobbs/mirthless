@@ -64,7 +64,7 @@ The ranking measures demand only. This order also weighs what is missing here, w
 | 15 | PERF1 throughput and memory [5] | Worker threads (D-212) and streaming large payloads. Keep publishing the soak baseline. |
 | 16 | DOC1 docs [32], DOC3 recipes [121], UI13 generated channel docs [85], UI3 onboarding [34] | The Mirth wiki vanished. Example-channel repos (connect-examples, 114 stars) are among the most-starred community projects. |
 | 17 | API1 generated client SDKs [14], AI2 MCP server [113], AI1 AI-assisted mapping [71] | Cheap given the OpenAPI spec. AI suggestions must be reviewable and tested (AI4). |
-| 18 | CON10 Kafka and AMQP [38], CON12 DICOM worklist, Q/R and TLS [17] | Needs the decision below on Kafka. |
+| 18 | CON10 Kafka and AMQP [38], CON12 DICOM worklist, Q/R and TLS [17] | Kafka and AMQP connectors decided in D-257. |
 | 19 | DOC5 plugin SDK [35] | The ROADMAP [DECIDE] item. A stable API must come before a marketplace. |
 
 ## Already ours
@@ -80,7 +80,7 @@ These rank high and we already answer them. They are the pitch, so they need to 
 
 ## Open decisions
 
-1. Kafka and AMQP connectors. Doc 14 said partner. Demand (rank 38, five streams) says ship thin client connectors. Recommendation: build both as connectors and keep "don't build a broker" as the line.
+1. Kafka and AMQP connectors. Decided 2026-11-14 (D-257): build both as source and destination connectors; no broker of our own.
 2. Libraries in scripts. Expose a vetted set of npm packages to the sandbox, or keep everything behind GalvaniFlow's own helpers (SCR4)? Recommendation: helpers first, a short allow-list later.
 3. Python in scripts (SCR11). Recorded as won't. Overrule it if you see demand the data doesn't show.
 4. Multi-tenancy (HA6) and a hosted offering (HA7). Both stay consider. Rhapsody's lockers are praised, but both are business-model choices.
