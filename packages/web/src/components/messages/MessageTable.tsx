@@ -20,6 +20,7 @@ import type { MessageSummary } from '../../hooks/use-messages.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 import { HIDE_ON_PHONE } from '../../lib/responsive.js';
 import { messageStatusLevel } from '../../lib/status.js';
+import { formatTimestamp } from '../../lib/format.js';
 
 interface MessageTableProps {
   readonly items: readonly MessageSummary[];
@@ -41,14 +42,6 @@ function getWorstStatus(connectors: readonly { readonly status: string }[]): str
   if (connectors.some(c => c.status === 'FILTERED')) return 'FILTERED';
   if (connectors.every(c => c.status === 'SENT')) return 'SENT';
   return connectors[0]?.status ?? 'PENDING';
-}
-
-function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
 }
 
 function formatDuration(receivedAt: string, processedAt: string | null): string {
@@ -144,7 +137,7 @@ export function MessageTable({
                     <TableCell>
                       <MessageStatusChip status={worstStatus} />
                     </TableCell>
-                    <TableCell>{formatTime(msg.receivedAt)}</TableCell>
+                    <TableCell>{formatTimestamp(msg.receivedAt)}</TableCell>
                     <TableCell align="right" sx={HIDE_ON_PHONE}>{formatDuration(msg.receivedAt, msg.processedAt)}</TableCell>
                     <TableCell align="right" sx={HIDE_ON_PHONE}>{msg.connectors.length}</TableCell>
                     <TableCell align="right" sx={HIDE_ON_PHONE}>{totalAttempts}</TableCell>
