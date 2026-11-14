@@ -83,11 +83,11 @@ const MISMATCHED_KEY_PEM = generateKeyPairSync('rsa', {
 
 // ----- Mocks -----
 
-// Mock node:net for TCP tests. isIP is needed by the SSRF guard's host check.
+// Mock only net.connect for TCP tests; the SSRF guard needs the real isIP and BlockList.
 const mockConnect = vi.fn();
-vi.mock('node:net', () => ({
+vi.mock('node:net', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:net')>()),
   connect: (...args: unknown[]) => mockConnect(...args),
-  isIP: (value: string) => (/^\d{1,3}(\.\d{1,3}){3}$/.test(value) ? 4 : 0),
 }));
 
 // Mock DNS so the SSRF guard resolves test hostnames to a public IP (allowed)
@@ -780,34 +780,6 @@ describe('ConnectionTestService', () => {
     });
   });
 
-  // ----- isBlockedHost helper -----
-
-  describe('isBlockedHost', () => {
-    it('returns true for localhost', () => {
-      expect(_testing.isBlockedHost('localhost')).toBe(true);
-    });
-
-    it('returns true for 127.0.0.1', () => {
-      expect(_testing.isBlockedHost('127.0.0.1')).toBe(true);
-    });
-
-    it('returns false for public hosts', () => {
-      expect(_testing.isBlockedHost('example.com')).toBe(false);
-    });
-
-    it('returns false for public IP', () => {
-      expect(_testing.isBlockedHost('8.8.8.8')).toBe(false);
-    });
-
-    it('returns true for IPv6 loopback', () => {
-      expect(_testing.isBlockedHost('::1')).toBe(true);
-    });
-
-    it('returns true for link-local IPv6', () => {
-      expect(_testing.isBlockedHost('fe80::1')).toBe(true);
-    });
-  });
-
   // ----- Latency -----
 
   describe('latency measurement', () => {
@@ -845,18 +817,24 @@ describe('ConnectionTestService', () => {
   // ----- SSRF Guard (DNS-aware) -----
 
   describe('SSRF guard', () => {
-    it('classifies private/reserved IPs as blocked', () => {
-      expect(_testing.isBlockedIp('127.0.0.1')).toBe(true);
-      expect(_testing.isBlockedIp('10.0.0.5')).toBe(true);
-      expect(_testing.isBlockedIp('192.168.1.1')).toBe(true);
-      expect(_testing.isBlockedIp('172.16.0.1')).toBe(true);
-      expect(_testing.isBlockedIp('169.254.0.1')).toBe(true);
-      expect(_testing.isBlockedIp('::ffff:127.0.0.1')).toBe(true);
+    it.each([
+      '127.0.0.1', '10.0.0.5', '192.168.1.1', '172.16.0.1', '169.254.169.254',
+      '100.64.0.1', '198.18.0.1', '224.0.0.1', '::1', '[::1]', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1',
+    ])('blocks the private or reserved IP literal %s', async (host) => {
+      await expect(_testing.assertHostAllowed(host)).rejects.toThrow(/blocked/);
     });
 
-    it('classifies public IPs as allowed', () => {
-      expect(_testing.isBlockedIp('93.184.216.34')).toBe(false);
-      expect(_testing.isBlockedIp('8.8.8.8')).toBe(false);
+    it.each(['localhost', 'LOCALHOST', 'localhost.', 'db.localhost'])('blocks the loopback name %s', async (host) => {
+      await expect(_testing.assertHostAllowed(host)).rejects.toThrow(/blocked/);
+    });
+
+    it.each(['93.184.216.34', '8.8.8.8', '2606:4700::1111'])('allows the public IP literal %s', async (host) => {
+      await expect(_testing.assertHostAllowed(host)).resolves.toBeUndefined();
+    });
+
+    it.each(['100.64.10.1', '::ffff:10.0.0.1', 'fd12::1'])('blocks a DNS name that resolves to %s', async (address) => {
+      mockDnsLookup.mockResolvedValueOnce([{ address, family: address.includes(':') ? 6 : 4 }]);
+      await expect(_testing.assertHostAllowed('internal.example.com')).rejects.toThrow(/resolves to/);
     });
 
     it('blocks a literal loopback hostname', async () => {
