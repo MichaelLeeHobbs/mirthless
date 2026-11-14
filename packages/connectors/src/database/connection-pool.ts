@@ -50,9 +50,19 @@ export interface TxQuery {
   query(sql: string, params: readonly unknown[]): Promise<QueryResult>;
 }
 
+/** What the database connectors need from a pool, whatever the database. */
+export interface DatabasePool {
+  create(config: PoolConfig): Promise<Result<void>>;
+  query(sql: string, params: readonly unknown[]): Promise<Result<QueryResult>>;
+  /** Run `fn` in one transaction: committed when it resolves, rolled back when it throws. */
+  transaction<T>(fn: (tx: TxQuery) => Promise<T>): Promise<Result<T>>;
+  destroy(): Promise<Result<void>>;
+}
+
 // ----- Connection Pool -----
 
-export class ConnectionPool {
+/** PostgreSQL pool (`pg`). */
+export class ConnectionPool implements DatabasePool {
   private pool: pg.Pool | null = null;
 
   /** Create the underlying pg.Pool from config. */

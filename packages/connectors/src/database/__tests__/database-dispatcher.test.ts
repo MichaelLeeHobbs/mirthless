@@ -4,7 +4,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DatabaseDispatcher, type DatabaseDispatcherConfig } from '../database-dispatcher.js';
-import { ConnectionPool } from '../connection-pool.js';
+import type { DatabasePool, TxQuery } from '../connection-pool.js';
+import { DATABASE_VENDOR } from '../database-vendor.js';
 import type { ConnectorMessage } from '../../base.js';
 
 // ----- Helpers -----
@@ -35,11 +36,12 @@ function makeMessage(overrides?: Partial<ConnectorMessage>): ConnectorMessage {
 }
 
 function makeMockPool(): {
-  pool: ConnectionPool;
+  pool: DatabasePool;
   createFn: ReturnType<typeof vi.fn>;
   queryFn: ReturnType<typeof vi.fn>;
   destroyFn: ReturnType<typeof vi.fn>;
-  acquireClientFn: ReturnType<typeof vi.fn>;
+  transactionFn: ReturnType<typeof vi.fn>;
+  txQueryFn: ReturnType<typeof vi.fn>;
 } {
   const createFn = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
   const queryFn = vi.fn().mockResolvedValue({
@@ -48,31 +50,25 @@ function makeMockPool(): {
     error: null,
   });
   const destroyFn = vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null });
-  const acquireClientFn = vi.fn();
+  // The transaction runs the callback against txQueryFn, failing as a real pool
+  // does (an error Result) when the callback throws.
+  const txQueryFn = vi.fn().mockResolvedValue({ rows: [{ id: 7 }], rowCount: 1 });
+  const transactionFn = vi.fn().mockImplementation(async (fn: (tx: TxQuery) => Promise<unknown>) => {
+    try {
+      return { ok: true, value: await fn({ query: txQueryFn }), error: null };
+    } catch (error) {
+      return { ok: false, value: null, error };
+    }
+  });
 
-  const pool = {
+  const pool: DatabasePool = {
     create: createFn,
     query: queryFn,
     destroy: destroyFn,
-    acquireClient: acquireClientFn,
-  } as unknown as ConnectionPool;
+    transaction: transactionFn,
+  } as unknown as DatabasePool;
 
-  return { pool, createFn, queryFn, destroyFn, acquireClientFn };
-}
-
-function makeMockClient(): {
-  client: { query: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> };
-  queryFn: ReturnType<typeof vi.fn>;
-  releaseFn: ReturnType<typeof vi.fn>;
-} {
-  const queryFn = vi.fn();
-  const releaseFn = vi.fn();
-
-  return {
-    client: { query: queryFn, release: releaseFn },
-    queryFn,
-    releaseFn,
-  };
+  return { pool, createFn, queryFn, destroyFn, transactionFn, txQueryFn };
 }
 
 // ----- Lifecycle -----
@@ -310,79 +306,47 @@ describe('DatabaseDispatcher', () => {
   });
 
   describe('send (transaction mode)', () => {
-    it('wraps query in BEGIN/COMMIT transaction', async () => {
-      const { pool, acquireClientFn } = makeMockPool();
-      const { client, queryFn: clientQueryFn, releaseFn } = makeMockClient();
-
-      acquireClientFn.mockResolvedValue({
-        ok: true,
-        value: client,
-        error: null,
-      });
-      clientQueryFn.mockResolvedValue({ rows: [], rowCount: 1 });
-
-      dispatcher = new DatabaseDispatcher(makeConfig({
-        useTransaction: true,
-      }), pool);
+    it('runs the prepared query inside one pool transaction', async () => {
+      const { pool, queryFn, transactionFn, txQueryFn } = makeMockPool();
+      dispatcher = new DatabaseDispatcher(makeConfig({ useTransaction: true, returnGeneratedKeys: true }), pool);
       await dispatcher.onStart();
 
-      const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+      const result = await dispatcher.send(makeMessage({ content: 'hello' }), AbortSignal.timeout(5_000));
 
-      expect(result.ok).toBe(true);
-      expect(clientQueryFn).toHaveBeenCalledTimes(3);
-      expect(clientQueryFn.mock.calls[0]![0]).toBe('BEGIN');
-      expect(clientQueryFn.mock.calls[1]![0]).toContain('INSERT INTO messages');
-      expect(clientQueryFn.mock.calls[2]![0]).toBe('COMMIT');
-      expect(releaseFn).toHaveBeenCalledTimes(1);
+      expect(result.ok && result.value.content).toBe('[{"id":7}]');
+      expect(transactionFn).toHaveBeenCalledTimes(1);
+      expect(txQueryFn).toHaveBeenCalledWith(
+        'INSERT INTO messages (content, channel_id) VALUES ($1, $2)',
+        ['hello', '00000000-0000-0000-0000-000000000001'],
+      );
+      expect(queryFn).not.toHaveBeenCalled();
     });
 
-    it('rolls back transaction on query failure', async () => {
-      const { pool, acquireClientFn } = makeMockPool();
-      const { client, queryFn: clientQueryFn, releaseFn } = makeMockClient();
-
-      acquireClientFn.mockResolvedValue({
-        ok: true,
-        value: client,
-        error: null,
-      });
-
-      let callIdx = 0;
-      clientQueryFn.mockImplementation(async () => {
-        callIdx++;
-        if (callIdx === 1) return { rows: [], rowCount: 0 }; // BEGIN
-        if (callIdx === 2) throw new Error('Constraint violation'); // The query
-        return { rows: [], rowCount: 0 }; // ROLLBACK
-      });
-
-      dispatcher = new DatabaseDispatcher(makeConfig({
-        useTransaction: true,
-      }), pool);
+    it('fails the send when the transaction fails', async () => {
+      const { pool, txQueryFn } = makeMockPool();
+      txQueryFn.mockRejectedValue(new Error('Constraint violation'));
+      dispatcher = new DatabaseDispatcher(makeConfig({ useTransaction: true }), pool);
       await dispatcher.onStart();
 
       const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
 
       expect(result.ok).toBe(false);
-      expect(clientQueryFn.mock.calls[2]![0]).toBe('ROLLBACK');
-      expect(releaseFn).toHaveBeenCalledTimes(1);
+      expect(!result.ok && result.error.message).toContain('Constraint violation');
     });
+  });
 
-    it('fails when client acquisition fails', async () => {
-      const { pool, acquireClientFn } = makeMockPool();
-
-      acquireClientFn.mockResolvedValue({
-        ok: false,
-        value: null,
-        error: { name: 'Error', code: 'POOL_EXHAUSTED', message: 'no clients available' },
-      });
-
+  describe('send (MySQL)', () => {
+    it('writes ? placeholders, passing a value once per use', async () => {
+      const { pool, queryFn } = makeMockPool();
       dispatcher = new DatabaseDispatcher(makeConfig({
-        useTransaction: true,
+        vendor: DATABASE_VENDOR.MYSQL,
+        query: 'INSERT INTO t (a, b, c) VALUES (${content}, ${channelId}, ${content})',
       }), pool);
       await dispatcher.onStart();
 
-      const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+      await dispatcher.send(makeMessage({ content: 'x' }), AbortSignal.timeout(5_000));
 
-      expect(result.ok).toBe(false);
+      expect(queryFn).toHaveBeenCalledWith('INSERT INTO t (a, b, c) VALUES (?, ?, ?)', ['x', '00000000-0000-0000-0000-000000000001', 'x']);
     });
   });
 

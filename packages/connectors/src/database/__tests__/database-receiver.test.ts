@@ -482,6 +482,69 @@ describe('DatabaseReceiver', () => {
       expect(selectSql).toContain('FOR UPDATE SKIP LOCKED');
     });
 
+    // Regression: on MySQL a deadlock rolls back the whole transaction, savepoint
+    // included, so ROLLBACK TO SAVEPOINT fails too. The acks of rows already
+    // dispatched were lost and those rows were dispatched again next poll.
+    it('acks rows a failed poll already dispatched without dispatching them again', async () => {
+      const processed = new Set<number>();
+      let deadlocked = false;
+      const pool = {
+        create: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+        destroy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
+        query: vi.fn(),
+        transaction: vi.fn().mockImplementation(async (fn: (tx: { query: (sql: string, params: readonly unknown[]) => Promise<unknown> }) => Promise<unknown>) => {
+          const writes = new Set<number>();
+          let rolledBack = false;
+          const tx = {
+            query: async (sql: string, params: readonly unknown[]) => {
+              if (/for update skip locked/i.test(sql)) {
+                const rows = [1, 2, 3].filter((id) => !processed.has(id)).map((id) => ({ id }));
+                return { rows, rowCount: rows.length };
+              }
+              if (sql.startsWith('SAVEPOINT') || sql.startsWith('RELEASE')) return { rows: [], rowCount: 0 };
+              if (sql.startsWith('ROLLBACK TO')) {
+                if (rolledBack) throw new Error('SAVEPOINT ack_row does not exist');
+                return { rows: [], rowCount: 0 };
+              }
+              const id = params[0] as number;
+              if (id === 2 && !deadlocked) {
+                deadlocked = true;
+                rolledBack = true;
+                throw Object.assign(new Error('Deadlock found when trying to get lock'), { errno: 1213 });
+              }
+              writes.add(id);
+              return { rows: [], rowCount: 1 };
+            },
+          };
+          try {
+            const value = await fn(tx);
+            for (const id of writes) processed.add(id);
+            return { ok: true, value, error: null };
+          } catch (error) {
+            return { ok: false, value: null, error };
+          }
+        }),
+      } as unknown as ConnectionPool;
+      const dispatched: number[] = [];
+      receiver = new DatabaseReceiver(makeConfig({
+        updateMode: UPDATE_MODE.ALWAYS,
+        updateQuery: 'UPDATE t SET processed = true WHERE id = ${id}',
+      }), pool);
+      receiver.setDispatcher(makeDispatcher((raw) => {
+        const id = (JSON.parse(raw.content) as { id: number }).id;
+        dispatched.push(id);
+        return { messageId: id };
+      }));
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(dispatched).toEqual([1, 2]);
+      expect([...processed].sort()).toEqual([1, 2]);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(dispatched).toEqual([1, 2, 3]);
+    });
+
     it('two concurrent pollers over a locking table dispatch each row exactly once', async () => {
       // Shared table with FOR UPDATE SKIP LOCKED semantics.
       const table = [1, 2, 3].map((id) => ({ id, processed: false, locked: false }));

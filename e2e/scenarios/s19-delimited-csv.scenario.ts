@@ -1,7 +1,8 @@
 // S19: a CSV file is read with the Delimited data type and mapped through msg.
 // Gap doc 13 N2: Mirth serializes delimited text to XML and a transformer reads
-// msg['row']['column']. GalvaniFlow has no E4X (D-244); the expectation here is
-// that a Delimited message is an object keyed by the configured column names.
+// msg['row']['column']. GalvaniFlow has no E4X (D-244); a Delimited message is
+// an array of rows keyed by the configured column names (doc 17, approved
+// 2026-11-13), so the script reads msg[0].
 
 import { expect } from '@playwright/test';
 import { channelExport, fileReader, tcpSender } from './support/mirth-xml.js';
@@ -28,8 +29,8 @@ scenario('S19 Delimited CSV rows are read by column name', async (api) => {
         steps: [{
           name: 'Row to PID',
           script: [
-            "var mrn = msg.mrn;",
-            "var name = msg.family + '^' + msg.given;",
+            "var mrn = msg[0].mrn;",
+            "var name = msg[0].family + '^' + msg[0].given;",
             "$c('hl7','MSH|^~\\\\&|CSV|S19|VNS|V|20261110120000||ADT^A04|' + mrn + '|P|2.5\\rPID|||' + mrn + '||' + name);",
           ].join('\n'),
         }],

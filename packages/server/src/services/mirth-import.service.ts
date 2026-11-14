@@ -285,6 +285,7 @@ function convertChannel(
   const filters = convertFilters(mirthChannel);
   const transformers = convertTransformers(mirthChannel).map((t) =>
     ((t.metaDataId ?? null) === null && t.inboundDataType !== inboundDataType ? { ...t, inboundDataType } : t));
+  warnings.push(...delimitedWarnings(name, transformers.find((t) => (t.metaDataId ?? null) === null)));
 
   // Channel properties
   const props = isPlainObject(mirthChannel['properties'])
@@ -658,13 +659,18 @@ const JDBC_URL = /^jdbc:(\w+):\/\/([^:/?;]+)(?::(\d+))?\/([^?;]+)/;
 const DB_UPDATE_MODE: Readonly<Record<string, string>> = { '1': 'NEVER', '2': 'ALWAYS', '3': 'ON_SUCCESS' };
 
 /**
- * Mirth's Database Reader/Writer take a JDBC URL; GalvaniFlow's take host,
- * port and database. Queries keep their `${name}` parameters, which bind from
- * the row (reader) or the message's variables (writer).
+ * Mirth's Database Reader/Writer take a JDBC URL; GalvaniFlow's take a vendor,
+ * host, port and database. The vendor is the URL's scheme (MariaDB speaks
+ * MySQL's protocol); one with no driver here (sqlserver, oracle) is kept, so
+ * the channel refuses to deploy and says which. Queries keep their `${name}`
+ * parameters, which bind from the row (reader) or the message's variables (writer).
  */
 function databaseProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  const match = JDBC_URL.exec(getString(propsNode, 'url') ?? '');
+  const url = getString(propsNode, 'url') ?? '';
+  const scheme = /^jdbc:(\w+):/.exec(url)?.[1]?.toLowerCase();
+  if (scheme) result['vendor'] = scheme === 'mariadb' ? 'mysql' : scheme;
+  const match = JDBC_URL.exec(url);
   if (match) {
     result['host'] = match[2];
     if (match[3]) result['port'] = Number(match[3]);
@@ -837,7 +843,7 @@ function extractDataType(
   if (!transformer) return null;
 
   const key = direction === 'inbound' ? 'inboundDataType' : 'outboundDataType';
-  return getString(transformer, key);
+  return mirthDataType(getString(transformer, key));
 }
 
 // ----- Filter Conversion -----
@@ -983,8 +989,8 @@ function extractTransformerFromConnector(
     mapping: getString(step, 'mapping'),
   }));
 
-  const inboundDataType = getString(transformer, 'inboundDataType') ?? 'HL7V2';
-  const outboundDataType = getString(transformer, 'outboundDataType') ?? 'HL7V2';
+  const inboundDataType = mirthDataType(getString(transformer, 'inboundDataType')) ?? 'HL7V2';
+  const outboundDataType = mirthDataType(getString(transformer, 'outboundDataType')) ?? 'HL7V2';
 
   // Only include transformer if it has steps or explicit data types
   if (steps.length === 0 && inboundDataType === 'HL7V2' && outboundDataType === 'HL7V2') {
@@ -996,7 +1002,7 @@ function extractTransformerFromConnector(
     metaDataId,
     inboundDataType,
     outboundDataType,
-    inboundProperties: extractDataTypeProperties(transformer, 'inboundProperties'),
+    inboundProperties: withDelimitedOptions(extractDataTypeProperties(transformer, 'inboundProperties'), inboundDataType),
     outboundProperties: extractDataTypeProperties(transformer, 'outboundProperties'),
     inboundTemplate: getString(transformer, 'inboundTemplate'),
     outboundTemplate: getString(transformer, 'outboundTemplate'),
@@ -1014,6 +1020,52 @@ function extractDataTypeProperties(transformer: Record<string, unknown>, key: st
     }
   }
   return result;
+}
+
+/** GalvaniFlow's name for a Mirth data type: Mirth calls X12 "EDI/X12". */
+function mirthDataType(name: string | null): string | null {
+  return name === 'EDI/X12' ? 'X12' : name;
+}
+
+/** Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`. */
+function unescapeMirth(text: string): string {
+  return text.replace(/\\([nrt\\])/g, (_m, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? '\\');
+}
+
+/**
+ * Add GalvaniFlow's `delimited` settings (see delimitedOptionsSchema) to a
+ * Delimited transformer's properties, read from Mirth's serializationProperties.
+ * Mirth's own properties stay as they are, for export back.
+ */
+function withDelimitedOptions(props: Record<string, unknown>, dataType: string): Record<string, unknown> {
+  if (dataType !== 'DELIMITED') return props;
+  const ser = props['serializationProperties'];
+  const text = (key: string): string | undefined => {
+    const value = getString(ser, key);
+    return value === null ? undefined : unescapeMirth(value);
+  };
+  const names = text('columnNames');
+  const delimited = {
+    ...(text('columnDelimiter') !== undefined ? { columnDelimiter: text('columnDelimiter') } : {}),
+    ...(text('recordDelimiter') !== undefined ? { recordDelimiter: text('recordDelimiter') } : {}),
+    ...(text('quoteToken') !== undefined ? { quote: text('quoteToken') } : {}),
+    ...(text('quoteEscapeToken') !== undefined ? { quoteEscape: text('quoteEscapeToken') } : {}),
+    escapeWithDoubleQuote: getBoolean(ser, 'escapeWithDoubleQuote', true),
+    ignoreCR: getBoolean(ser, 'ignoreCR', true),
+    columnNames: names ? names.split(',').map((n) => n.trim()).filter((n) => n !== '') : [],
+  };
+  return { ...props, delimited };
+}
+
+/** Warnings for Mirth Delimited settings that read differently here. */
+function delimitedWarnings(channelName: string, transformer: ChannelExportEntry['transformers'][number] | undefined): string[] {
+  if (transformer?.inboundDataType !== 'DELIMITED') return [];
+  const warnings = [`Channel "${channelName}": Delimited messages arrive as an array of rows keyed by column name; read msg[0].column, not msg['row']['column']`];
+  const widths = getString(transformer.inboundProperties['serializationProperties'], 'columnWidths');
+  if (widths !== null && widths.trim() !== '') {
+    warnings.push(`Channel "${channelName}": fixed-width columns are not supported; the message is split on the column delimiter instead`);
+  }
+  return warnings;
 }
 
 function mapTransformerStepType(type: string | null): string {

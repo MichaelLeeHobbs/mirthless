@@ -35,6 +35,7 @@ import {
   type LoadedAlert,
   type ResponseSource,
   parseForSandbox,
+  type DataTypeOptions,
 } from '@galvaniflow/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { splitHl7Batch } from '@galvaniflow/core-util';
@@ -49,7 +50,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@galvaniflow/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema } from '@galvaniflow/core-models';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema } from '@galvaniflow/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
@@ -159,12 +160,27 @@ interface ChannelScriptInput {
  * Content parsed for its data type, as the pipeline gives it to scripts; the
  * raw text when it does not parse (the pipeline falls back the same way).
  */
-export function parsedOrRaw(content: string, dataType: string): unknown {
+export function parsedOrRaw(content: string, dataType: string, options?: DataTypeOptions): unknown {
   try {
-    return parseForSandbox(content, dataType);
+    return parseForSandbox(content, dataType, options);
   } catch {
     return content;
   }
+}
+
+/**
+ * The data type settings a channel reads its messages with, from its source
+ * transformer. Throws a ServiceError on settings that do not validate, so the
+ * channel refuses to deploy instead of splitting rows the wrong way.
+ */
+export function dataTypeOptionsFor(channel: ChannelDetail): DataTypeOptions {
+  if (channel.inboundDataType !== 'DELIMITED') return {};
+  const source = channel.transformers.find((t) => t.connectorId === null);
+  const parsed = delimitedOptionsSchema.safeParse(source?.inboundProperties['delimited'] ?? {});
+  if (!parsed.success) {
+    throw new ServiceError('INVALID_INPUT', `Channel ${channel.name}: Delimited settings are invalid: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+  }
+  return { delimited: parsed.data };
 }
 
 /**
@@ -707,6 +723,7 @@ export class EngineManager {
       channelId: channel.id,
       serverId: this.serverId,
       dataType: channel.inboundDataType,
+      dataTypeOptions: dataTypeOptionsFor(channel),
       scripts,
       destinations: destConfigs,
       globalChannelMap: gcm,
@@ -1251,6 +1268,7 @@ export class EngineManager {
     templates: ReadonlyArray<CodeTemplateData>,
     maps: ChannelMaps,
   ): Promise<void> {
+    const dataTypeOptions = dataTypeOptionsFor(channel);
     for (const dest of channel.destinations) {
       if (dest.connectorType !== 'JAVASCRIPT') continue;
       const connector = destinations.get(dest.metaDataId);
@@ -1265,7 +1283,7 @@ export class EngineManager {
         // data type, with what earlier stages put in the channel map.
         const execResult = await this.runChannelScript(cachedScript, channel, maps, {
           content,
-          msg: parsedOrRaw(content, connectorMessage.dataType),
+          msg: parsedOrRaw(content, connectorMessage.dataType, dataTypeOptions),
           channelMap: connectorMessage.variables ?? {},
         }, { connectorMessage });
         if (!execResult.ok) return execResult;

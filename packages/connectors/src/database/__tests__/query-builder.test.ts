@@ -141,4 +141,10 @@ describe('prepare', () => {
     // params are in order of first encounter in the template, not context key order
     expect(result.params).toEqual([3, 2, 1]);
   });
+
+  it('writes ? per use in question style, passing a repeated name once per use', () => {
+    const result = prepare('UPDATE t SET a = ${x}, b = ${y} WHERE a <> ${x} AND c = ${missing}', { x: 1, y: 2 }, 'question');
+    expect(result.sql).toBe('UPDATE t SET a = ?, b = ? WHERE a <> ? AND c = ?');
+    expect(result.params).toEqual([1, 2, 1, undefined]);
+  });
 });

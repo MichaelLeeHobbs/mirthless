@@ -60,10 +60,13 @@ export {
 export {
   prepare,
   ConnectionPool,
+  MysqlPool,
   DatabaseReceiver,
   DatabaseDispatcher,
   UPDATE_MODE,
   ROW_FORMAT,
+  DATABASE_VENDOR,
+  type DatabaseVendor,
   type PreparedQuery,
   type PoolConfig,
   type QueryResult,

@@ -34,3 +34,31 @@ export const transformerInputSchema = z.object({
 });
 
 export type TransformerInput = z.infer<typeof transformerInputSchema>;
+
+/**
+ * How a DELIMITED message is split into rows and columns. Kept on the source
+ * transformer as `inboundProperties.delimited`; every field has a default, so
+ * `{}` reads comma-separated lines with double-quote quoting.
+ */
+export const delimitedOptionsSchema = z.object({
+  columnDelimiter: z.string().min(1).default(','),
+  recordDelimiter: z.string().min(1).default('\n'),
+  /**
+   * Quote character. Never empty: without quoting, a value holding a delimiter
+   * would be written as two columns and read back wrong.
+   */
+  quote: z.string().min(1).default('"'),
+  /** A quote inside a quoted value is written twice (`""`); otherwise it is preceded by `quoteEscape`, which is itself written twice. */
+  escapeWithDoubleQuote: z.boolean().default(true),
+  quoteEscape: z.string().min(1).default('\\'),
+  /** Names for the columns in order; a column past the list is `column<n>` (1-based). */
+  columnNames: z.array(z.string().min(1)).default([]),
+  /** Drop carriage returns, so CRLF files read like LF ones. */
+  ignoreCR: z.boolean().default(true),
+})
+  .refine((o) => o.columnDelimiter !== o.recordDelimiter, { message: 'Column and record delimiters must differ' })
+  .refine((o) => o.quote !== o.columnDelimiter && o.quote !== o.recordDelimiter, { message: 'The quote cannot be a delimiter' })
+  // Two columns with one name would make a row object keep only the last.
+  .refine((o) => new Set(o.columnNames).size === o.columnNames.length, { message: 'Column names must be unique' });
+
+export type DelimitedOptions = z.infer<typeof delimitedOptionsSchema>;

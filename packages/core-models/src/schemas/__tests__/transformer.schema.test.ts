@@ -3,7 +3,31 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { transformerStepInputSchema, transformerInputSchema } from '../transformer.schema.js';
+import { transformerStepInputSchema, transformerInputSchema, delimitedOptionsSchema } from '../transformer.schema.js';
+
+describe('delimitedOptionsSchema', () => {
+  it('fills every setting from {} with comma-separated, double-quoted lines', () => {
+    expect(delimitedOptionsSchema.parse({})).toEqual({
+      columnDelimiter: ',', recordDelimiter: '\n', quote: '"', escapeWithDoubleQuote: true,
+      quoteEscape: '\\', columnNames: [], ignoreCR: true,
+    });
+  });
+
+  it('refuses the same column and record delimiter, an empty delimiter and an empty column name', () => {
+    expect(delimitedOptionsSchema.safeParse({ columnDelimiter: '\n' }).success).toBe(false);
+    expect(delimitedOptionsSchema.safeParse({ columnDelimiter: '' }).success).toBe(false);
+    expect(delimitedOptionsSchema.safeParse({ columnNames: ['mrn', ''] }).success).toBe(false);
+  });
+
+  it('refuses an empty quote or quote escape, a quote that is a delimiter, and a repeated column name', () => {
+    expect(delimitedOptionsSchema.safeParse({ quote: '' }).success).toBe(false);
+    expect(delimitedOptionsSchema.safeParse({ quoteEscape: '' }).success).toBe(false);
+    expect(delimitedOptionsSchema.safeParse({ quote: ',' }).success).toBe(false);
+    const repeated = delimitedOptionsSchema.safeParse({ columnNames: ['a', 'b', 'a'] });
+    expect(repeated.success).toBe(false);
+    expect(repeated.error?.issues[0]?.message).toBe('Column names must be unique');
+  });
+});
 
 describe('transformerStepInputSchema', () => {
   it('accepts valid JavaScript step', () => {

@@ -2,8 +2,10 @@
 // Database Connector Exports
 // ===========================================
 
-export { prepare, type PreparedQuery } from './query-builder.js';
-export { ConnectionPool, type PoolConfig, type QueryResult } from './connection-pool.js';
+export { prepare, type PreparedQuery, type PlaceholderStyle } from './query-builder.js';
+export { ConnectionPool, type DatabasePool, type PoolConfig, type QueryResult } from './connection-pool.js';
+export { MysqlPool } from './mysql-pool.js';
+export { DATABASE_VENDOR, createPool, type DatabaseVendor } from './database-vendor.js';
 export {
   DatabaseReceiver,
   UPDATE_MODE,

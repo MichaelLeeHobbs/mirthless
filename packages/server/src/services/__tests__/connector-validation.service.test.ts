@@ -166,6 +166,16 @@ describe('validateConnectorProperties', () => {
       expect(result.ok).toBe(true);
     });
 
+    it('accepts a MySQL database and refuses one with no driver, naming it', () => {
+      const props = { host: 'localhost', port: 3306, database: 'mydb', query: 'INSERT INTO t VALUES (1)' };
+      expect(validateConnectorProperties('DATABASE', 'destination', { ...props, vendor: 'mysql' }).ok).toBe(true);
+      const refused = validateConnectorProperties('DATABASE', 'destination', { ...props, vendor: 'sqlserver' });
+      expect(refused.ok).toBe(false);
+      expect(!refused.ok && refused.error.message).toContain('database "sqlserver" is not supported');
+      const source = validateConnectorProperties('DATABASE', 'source', { host: 'h', port: 1, database: 'd', selectQuery: 'SELECT 1', vendor: 'oracle' });
+      expect(!source.ok && source.error.message).toContain('database "oracle" is not supported');
+    });
+
     it('rejects DATABASE destination with missing query', () => {
       const result = validateConnectorProperties('DATABASE', 'destination', {
         host: 'localhost', port: 5432, database: 'mydb',

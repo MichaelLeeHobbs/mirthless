@@ -73,6 +73,7 @@ export const DATA_TYPE = {
   DICOM: 'DICOM',
   DELIMITED: 'DELIMITED',
   FHIR: 'FHIR',
+  X12: 'X12',
 } as const;
 export type DataType = (typeof DATA_TYPE)[keyof typeof DATA_TYPE];
 

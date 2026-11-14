@@ -8,8 +8,9 @@
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
-import { ConnectionPool, type PoolConfig, type TxQuery } from './connection-pool.js';
+import type { DatabasePool, PoolConfig, TxQuery } from './connection-pool.js';
 import { prepare } from './query-builder.js';
+import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Constants -----
@@ -44,6 +45,8 @@ export interface DatabaseReceiverConfig {
   readonly rowFormat: RowFormat;
   /** Connect with TLS and verify the server certificate. */
   readonly tls?: boolean;
+  /** The database it reads (default PostgreSQL). */
+  readonly vendor?: DatabaseVendor;
 }
 
 export { UPDATE_MODE, ROW_FORMAT };
@@ -87,15 +90,15 @@ export function appendLockClause(selectQuery: string): string {
 
 export class DatabaseReceiver implements SourceConnectorRuntime {
   private readonly config: DatabaseReceiverConfig;
-  private readonly pool: ConnectionPool;
+  private readonly pool: DatabasePool;
   private readonly logger: ConnectorLogger;
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
 
-  constructor(config: DatabaseReceiverConfig, pool?: ConnectionPool, logger?: ConnectorLogger) {
+  constructor(config: DatabaseReceiverConfig, pool?: DatabasePool, logger?: ConnectorLogger) {
     this.config = config;
-    this.pool = pool ?? new ConnectionPool();
+    this.pool = pool ?? createPool(config.vendor ?? DATABASE_VENDOR.POSTGRESQL);
     this.logger = logger ?? createConnectorLogger('DATABASE');
   }
 
@@ -216,18 +219,38 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
    */
   private async pollWithClaim(): Promise<void> {
     const lockedSelect = appendLockClause(this.config.selectQuery);
+    const dispatched: Array<{ row: Readonly<Record<string, unknown>>; recorded: boolean }> = [];
     const txResult = await this.pool.transaction(async (tx) => {
       const selectResult = await tx.query(lockedSelect, []);
       for (const row of this.capRows(selectResult.rows)) {
         const recorded = await this.dispatchRow(row);
+        dispatched.push({ row, recorded });
         await this.ackRow(tx, row, recorded);
       }
     });
-    if (!txResult.ok) {
-      // SELECT/lock failure or a broken connection during the transaction.
+    if (txResult.ok) return;
+    // SELECT/lock failure, a broken connection, or (MySQL) a deadlock, which
+    // rolls back the whole transaction and with it every ack of this poll.
+    this.logger.error(
+      { ...errorInfo(txResult.error), database: this.config.database, dispatched: dispatched.length },
+      'Database poll transaction failed',
+    );
+    if (dispatched.length > 0) await this.reackDispatched(dispatched);
+  }
+
+  /**
+   * Ack again, in a new transaction, the rows a failed poll had already
+   * dispatched, without dispatching them again: read again next poll, they
+   * would become duplicate messages.
+   */
+  private async reackDispatched(dispatched: ReadonlyArray<{ row: Readonly<Record<string, unknown>>; recorded: boolean }>): Promise<void> {
+    const retry = await this.pool.transaction(async (tx) => {
+      for (const { row, recorded } of dispatched) await this.ackRow(tx, row, recorded);
+    });
+    if (!retry.ok) {
       this.logger.error(
-        { ...errorInfo(txResult.error), database: this.config.database },
-        'Database poll transaction failed',
+        { ...errorInfo(retry.error), database: this.config.database, rows: dispatched.length },
+        'Rows were dispatched but could not be marked processed; the next poll reads and dispatches them again',
       );
     }
   }
@@ -269,7 +292,7 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
   ): Promise<void> {
     if (this.config.updateMode === UPDATE_MODE.ON_SUCCESS && !recorded) return;
 
-    const prepared = prepare(this.config.updateQuery, row as Record<string, unknown>);
+    const prepared = prepare(this.config.updateQuery, row as Record<string, unknown>, placeholderStyle(this.config.vendor ?? DATABASE_VENDOR.POSTGRESQL));
     // A failed statement aborts a PostgreSQL transaction: every later
     // statement fails and COMMIT turns into ROLLBACK, undoing the acks of rows
     // already dispatched. The savepoint confines the failure to this row, so

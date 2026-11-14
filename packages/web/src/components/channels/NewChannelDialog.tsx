@@ -18,7 +18,7 @@ import Stack from '@mui/material/Stack';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useCreateChannel } from '../../hooks/use-channels.js';
 
-const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR'] as const;
+const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR', 'X12'] as const;
 
 // Must match the source factories in packages/connectors/src/registry.ts
 // (FHIR is destination-only; EMAIL/IMAP is a valid source).

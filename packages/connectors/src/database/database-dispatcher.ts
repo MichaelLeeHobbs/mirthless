@@ -2,12 +2,13 @@
 // Database Dispatcher (Destination Connector)
 // ===========================================
 // Executes parameterized INSERT/UPDATE queries
-// against a PostgreSQL database.
+// against a PostgreSQL or MySQL database.
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
-import { ConnectionPool, type PoolConfig } from './connection-pool.js';
-import { prepare } from './query-builder.js';
+import type { DatabasePool, PoolConfig } from './connection-pool.js';
+import { prepare, type PreparedQuery } from './query-builder.js';
+import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
 
 // ----- Config -----
 
@@ -22,6 +23,8 @@ export interface DatabaseDispatcherConfig {
   readonly returnGeneratedKeys: boolean;
   /** Connect with TLS and verify the server certificate. */
   readonly tls?: boolean;
+  /** The database it talks to (default PostgreSQL). */
+  readonly vendor?: DatabaseVendor;
 }
 
 // ----- Default Pool Config -----
@@ -44,12 +47,12 @@ function toPoolConfig(config: DatabaseDispatcherConfig): PoolConfig {
 
 export class DatabaseDispatcher implements DestinationConnectorRuntime {
   private readonly config: DatabaseDispatcherConfig;
-  private readonly pool: ConnectionPool;
+  private readonly pool: DatabasePool;
   private started = false;
 
-  constructor(config: DatabaseDispatcherConfig, pool?: ConnectionPool) {
+  constructor(config: DatabaseDispatcherConfig, pool?: DatabasePool) {
     this.config = config;
-    this.pool = pool ?? new ConnectionPool();
+    this.pool = pool ?? createPool(config.vendor ?? DATABASE_VENDOR.POSTGRESQL);
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -114,54 +117,37 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
     });
   }
 
+  /** The query with the message's values as parameters, in the vendor's placeholder style. */
+  private prepared(message: ConnectorMessage): PreparedQuery {
+    return prepare(this.config.query, this.buildContext(message), placeholderStyle(this.config.vendor ?? DATABASE_VENDOR.POSTGRESQL));
+  }
+
+  private response(rows: readonly Record<string, unknown>[], rowCount: number): ConnectorResponse {
+    const content = this.config.returnGeneratedKeys ? JSON.stringify(rows) : String(rowCount);
+    return { status: 'SENT' as const, content };
+  }
+
   /** Execute query directly (no transaction). */
   private async sendDirect(message: ConnectorMessage): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
-      const context = this.buildContext(message);
-      const prepared = prepare(this.config.query, context);
+      const prepared = this.prepared(message);
       const result = await this.pool.query(prepared.sql, prepared.params);
-
       if (!result.ok) {
         throw result.error;
       }
-
-      const content = this.config.returnGeneratedKeys
-        ? JSON.stringify(result.value.rows)
-        : String(result.value.rowCount);
-
-      return { status: 'SENT' as const, content };
+      return this.response(result.value.rows, result.value.rowCount);
     });
   }
 
-  /** Execute query inside a transaction. */
+  /** Execute query inside a transaction, rolled back if it fails. */
   private async sendWithTransaction(message: ConnectorMessage): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
-      const clientResult = await this.pool.acquireClient();
-      if (!clientResult.ok) {
-        throw clientResult.error;
+      const prepared = this.prepared(message);
+      const result = await this.pool.transaction((tx) => tx.query(prepared.sql, prepared.params));
+      if (!result.ok) {
+        throw result.error;
       }
-
-      const client = clientResult.value;
-      try {
-        await client.query('BEGIN');
-
-        const context = this.buildContext(message);
-        const prepared = prepare(this.config.query, context);
-        const result = await client.query(prepared.sql, [...prepared.params]);
-
-        await client.query('COMMIT');
-
-        const content = this.config.returnGeneratedKeys
-          ? JSON.stringify(result.rows)
-          : String(result.rowCount ?? 0);
-
-        return { status: 'SENT' as const, content };
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
+      return this.response(result.value.rows, result.value.rowCount);
     });
   }
 
