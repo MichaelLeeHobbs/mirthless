@@ -6,22 +6,13 @@
 import type { Request, Response } from 'express';
 import { DataPrunerService } from '../services/data-pruner.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
   if (isServiceError(error, 'INVALID_INPUT')) return 400;
   return 500;
-}
-
-function errorCode(error: unknown): string {
-  if (isServiceError(error)) return error.code;
-  return 'INTERNAL';
-}
-
-function errorMessage(error: unknown): string {
-  if (isServiceError(error)) return error.message;
-  return 'Internal server error';
 }
 
 function auditContext(req: Request): { userId: string | null; ipAddress: string | null } {
@@ -67,7 +58,7 @@ export class DataPrunerController {
       const status = mapErrorToStatus(result.error);
       res.status(status).json({
         success: false,
-        error: { code: errorCode(result.error), message: errorMessage(result.error) },
+        error: errorResponse(result.error),
       });
       return;
     }

@@ -40,6 +40,17 @@ describe('installFatalHandlers', () => {
     );
   });
 
+  it('logs the message of a rejection with a plain { message } object, not "[object Object]"', () => {
+    const { proc, logger } = setup();
+
+    proc.emit('unhandledRejection', { message: 'socket hang up', code: 'ECONNRESET' });
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ errMsg: 'socket hang up' }),
+      expect.any(String),
+    );
+  });
+
   it('logs an uncaught exception as fatal and starts an orderly shutdown that exits non-zero', () => {
     const { proc, logger, shutdown } = setup();
     const error = new Error('boom');

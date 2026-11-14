@@ -41,13 +41,8 @@ import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
+import { formatBytes } from '../lib/system-health.js';
 import { FONT_FAMILY_MONO } from '../styles/tokens.js';
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 export function ResourcesPage(): ReactNode {
   const { data: resources, isLoading, error, isFetching, refetch } = useResources();

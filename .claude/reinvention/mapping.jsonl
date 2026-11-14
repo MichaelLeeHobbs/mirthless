@@ -1,0 +1,900 @@
+{"value":"API request path","domain":"D0002"}
+{"value":"CSV cell text","domain":"D0006"}
+{"value":"DICOM connector properties","domain":"D0010"}
+{"value":"DICOM file paths","domain":"D0017"}
+{"value":"FHIR server properties","domain":"D0011"}
+{"value":"HL7 message proxy","domain":"D0020"}
+{"value":"HL7 message text","domain":"D0018"}
+{"value":"HL7 operation and arguments","domain":"D0023"}
+{"value":"HL7 path and free text","domain":"D0022"}
+{"value":"HL7 path and value","domain":"D0022"}
+{"value":"HL7 path string","domain":"D0021"}
+{"value":"HTTP connector properties","domain":"D0009"}
+{"value":"HTTP listener properties","domain":"D0009"}
+{"value":"HTTP method, path and body","domain":"D0033"}
+{"value":"HTTP request","domain":"D0034"}
+{"value":"HTTP request body","domain":"D0035"}
+{"value":"HTTP request for all channels","domain":"D0041"}
+{"value":"HTTP request for all statuses","domain":"D0041"}
+{"value":"HTTP request for collections","domain":"D0041"}
+{"value":"HTTP request for data sources","domain":"D0041"}
+{"value":"HTTP request for extensions","domain":"D0041"}
+{"value":"HTTP request for groups","domain":"D0041"}
+{"value":"HTTP request for libraries","domain":"D0041"}
+{"value":"HTTP request for map entries","domain":"D0041"}
+{"value":"HTTP request for memberships","domain":"D0041"}
+{"value":"HTTP request for metrics","domain":"D0041"}
+{"value":"HTTP request for prune all","domain":"D0041"}
+{"value":"HTTP request for prune statistics","domain":"D0041"}
+{"value":"HTTP request for scripts","domain":"D0041"}
+{"value":"HTTP request from signed-in user","domain":"D0051"}
+{"value":"HTTP request headers","domain":"D0036"}
+{"value":"HTTP request to clear map","domain":"D0041"}
+{"value":"HTTP request with account id","domain":"D0042"}
+{"value":"HTTP request with account id and changes","domain":"D0043"}
+{"value":"HTTP request with alert changes","domain":"D0043"}
+{"value":"HTTP request with alert definition","domain":"D0044"}
+{"value":"HTTP request with attachment ids","domain":"D0045"}
+{"value":"HTTP request with backup document","domain":"D0054"}
+{"value":"HTTP request with bearer token","domain":"D0050"}
+{"value":"HTTP request with caller identity","domain":"D0051"}
+{"value":"HTTP request with category and name","domain":"D0047"}
+{"value":"HTTP request with category, name and value","domain":"D0048"}
+{"value":"HTTP request with certificate changes","domain":"D0043"}
+{"value":"HTTP request with certificate definition","domain":"D0044"}
+{"value":"HTTP request with channel XML","domain":"D0054"}
+{"value":"HTTP request with channel and message ids","domain":"D0045"}
+{"value":"HTTP request with channel and revision numbers","domain":"D0045"}
+{"value":"HTTP request with channel changes","domain":"D0043"}
+{"value":"HTTP request with channel definition","domain":"D0044"}
+{"value":"HTTP request with channel id","domain":"D0042"}
+{"value":"HTTP request with channel id and export query","domain":"D0046"}
+{"value":"HTTP request with channel id and max age","domain":"D0056"}
+{"value":"HTTP request with channel id and message content","domain":"D0053"}
+{"value":"HTTP request with channel import payload","domain":"D0054"}
+{"value":"HTTP request with collection and record ids","domain":"D0045"}
+{"value":"HTTP request with collection changes","domain":"D0043"}
+{"value":"HTTP request with collection definition","domain":"D0044"}
+{"value":"HTTP request with collection id and paging query","domain":"D0046"}
+{"value":"HTTP request with connection settings","domain":"D0055"}
+{"value":"HTTP request with connector settings","domain":"D0055"}
+{"value":"HTTP request with credentials","domain":"D0050"}
+{"value":"HTTP request with current and new secret","domain":"D0050"}
+{"value":"HTTP request with data source changes","domain":"D0043"}
+{"value":"HTTP request with data source definition","domain":"D0044"}
+{"value":"HTTP request with enabled flag","domain":"D0043"}
+{"value":"HTTP request with entry key","domain":"D0047"}
+{"value":"HTTP request with entry list","domain":"D0049"}
+{"value":"HTTP request with export query","domain":"D0046"}
+{"value":"HTTP request with generation parameters","domain":"D0053"}
+{"value":"HTTP request with group changes","domain":"D0043"}
+{"value":"HTTP request with group definition","domain":"D0044"}
+{"value":"HTTP request with group id and channel id","domain":"D0045"}
+{"value":"HTTP request with item id","domain":"D0042"}
+{"value":"HTTP request with item id and changes","domain":"D0043"}
+{"value":"HTTP request with key and value","domain":"D0048"}
+{"value":"HTTP request with library changes","domain":"D0043"}
+{"value":"HTTP request with library definition","domain":"D0044"}
+{"value":"HTTP request with library filter","domain":"D0046"}
+{"value":"HTTP request with log query","domain":"D0046"}
+{"value":"HTTP request with message and connector ids","domain":"D0045"}
+{"value":"HTTP request with message id","domain":"D0042"}
+{"value":"HTTP request with message id list","domain":"D0045"}
+{"value":"HTTP request with new account fields","domain":"D0044"}
+{"value":"HTTP request with new item fields","domain":"D0044"}
+{"value":"HTTP request with new tag fields","domain":"D0044"}
+{"value":"HTTP request with no parameters","domain":"D0041"}
+{"value":"HTTP request with optional category","domain":"D0046"}
+{"value":"HTTP request with preference entries","domain":"D0049"}
+{"value":"HTTP request with preference key","domain":"D0047"}
+{"value":"HTTP request with preference key and value","domain":"D0048"}
+{"value":"HTTP request with query filters","domain":"D0046"}
+{"value":"HTTP request with record changes","domain":"D0043"}
+{"value":"HTTP request with record payload","domain":"D0044"}
+{"value":"HTTP request with refresh cookie","domain":"D0050"}
+{"value":"HTTP request with retention age","domain":"D0056"}
+{"value":"HTTP request with route id","domain":"D0042"}
+{"value":"HTTP request with schedule settings","domain":"D0056"}
+{"value":"HTTP request with script contents","domain":"D0052"}
+{"value":"HTTP request with script source","domain":"D0052"}
+{"value":"HTTP request with search filters","domain":"D0046"}
+{"value":"HTTP request with session","domain":"D0051"}
+{"value":"HTTP request with setting key","domain":"D0047"}
+{"value":"HTTP request with setting key and value","domain":"D0048"}
+{"value":"HTTP request with setting list","domain":"D0049"}
+{"value":"HTTP request with source id and new name","domain":"D0043"}
+{"value":"HTTP request with tag and channel ids","domain":"D0045"}
+{"value":"HTTP request with tag id","domain":"D0042"}
+{"value":"HTTP request with tag id and changes","domain":"D0043"}
+{"value":"HTTP request with tag id and channel id","domain":"D0045"}
+{"value":"HTTP request with template changes","domain":"D0043"}
+{"value":"HTTP request with template definition","domain":"D0044"}
+{"value":"HTTP request with user","domain":"D0051"}
+{"value":"HTTP request with user id","domain":"D0042"}
+{"value":"HTTP request with user id and new secret","domain":"D0050"}
+{"value":"HTTP response","domain":"D0038"}
+{"value":"HTTP response headers","domain":"D0036"}
+{"value":"HTTP response stream","domain":"D0038"}
+{"value":"HTTP server","domain":"D0039"}
+{"value":"HTTPS listener properties","domain":"D0009"}
+{"value":"IMAP connector properties","domain":"D0012"}
+{"value":"IP address literal","domain":"D0004"}
+{"value":"JSON encoded argument","domain":"D0057"}
+{"value":"JSON encoded list argument","domain":"D0057"}
+{"value":"JSON encoded object argument","domain":"D0057"}
+{"value":"JSON setting text","domain":"D0057"}
+{"value":"JSON text","domain":"D0057"}
+{"value":"JSON-serializable value","domain":"D0058"}
+{"value":"JavaScript dispatcher connectors","domain":"D0062"}
+{"value":"JavaScript receiver connector","domain":"D0062"}
+{"value":"MLLP byte stream","domain":"D0031"}
+{"value":"MSH segment line","domain":"D0024"}
+{"value":"Mirth XML export","domain":"D0063"}
+{"value":"Mirth channel XML export","domain":"D0063"}
+{"value":"Mirth channel node","domain":"D0064"}
+{"value":"Monaco instance","domain":"D0065"}
+{"value":"PEM certificate text","domain":"D0066"}
+{"value":"SELECT query text","domain":"D0067"}
+{"value":"SFTP connection settings","domain":"D0015"}
+{"value":"SFTP credentials","domain":"D0015"}
+{"value":"SMTP settings","domain":"D0012"}
+{"value":"SQL statement and parameters","domain":"D0067"}
+{"value":"Socket.IO server","domain":"D0040"}
+{"value":"Socket.IO server or null","domain":"D0040"}
+{"value":"TCP data chunk","domain":"D0031"}
+{"value":"TLS setting key","domain":"D0068"}
+{"value":"TLS setting key and value","domain":"D0068"}
+{"value":"TLS settings bag","domain":"D0068"}
+{"value":"TLS settings key","domain":"D0068"}
+{"value":"TypeScript source","domain":"D0069"}
+{"value":"URL hostname","domain":"D0004"}
+{"value":"URL hostname and allow list","domain":"D0004"}
+{"value":"URL path","domain":"D0002"}
+{"value":"UUID candidate string","domain":"D0071"}
+{"value":"XML string node","domain":"D0073"}
+{"value":"XML text","domain":"D0072"}
+{"value":"abort signal","domain":"D0074"}
+{"value":"access token","domain":"D0076"}
+{"value":"account id and new credential","domain":"D0080"}
+{"value":"account identifier","domain":"D0081"}
+{"value":"account name and password","domain":"D0078"}
+{"value":"ack code and diagnostic text","domain":"D0029"}
+{"value":"acknowledgement frame text","domain":"D0029"}
+{"value":"address string","domain":"D0004"}
+{"value":"alert","domain":"D0084"}
+{"value":"alert action","domain":"D0087"}
+{"value":"alert and error event","domain":"D0088"}
+{"value":"alert and silence timestamps","domain":"D0086"}
+{"value":"alert changes with revision","domain":"D0084"}
+{"value":"alert configurations","domain":"D0084"}
+{"value":"alert definition","domain":"D0084"}
+{"value":"alert detail records","domain":"D0084"}
+{"value":"alert error text","domain":"D0061"}
+{"value":"alert id and changes","domain":"D0084"}
+{"value":"alert id and on/off flag","domain":"D0085"}
+{"value":"alert id and timestamp","domain":"D0086"}
+{"value":"alert identifier","domain":"D0085"}
+{"value":"alert identifier and enabled flag","domain":"D0085"}
+{"value":"alert identifiers","domain":"D0085"}
+{"value":"alert trigger configuration","domain":"D0087"}
+{"value":"alert with timestamp","domain":"D0086"}
+{"value":"arbitrary unknown value","domain":"D0059"}
+{"value":"association summary","domain":"D0179"}
+{"value":"async bridge call","domain":"D0100"}
+{"value":"attachment config list","domain":"D0168"}
+{"value":"attachment list property","domain":"D0168"}
+{"value":"attachment payload","domain":"D0168"}
+{"value":"attachment row index","domain":"D0168"}
+{"value":"attachment row index and field text","domain":"D0168"}
+{"value":"audit context","domain":"D0164"}
+{"value":"audit context and attributes","domain":"D0164"}
+{"value":"audit event fields","domain":"D0164"}
+{"value":"audit event input","domain":"D0164"}
+{"value":"audit event row","domain":"D0164"}
+{"value":"audit result name","domain":"D0164"}
+{"value":"audit severity name","domain":"D0164"}
+{"value":"auth type and credentials","domain":"D0078"}
+{"value":"backup alert action definition","domain":"D0087"}
+{"value":"backup alert entries","domain":"D0089"}
+{"value":"backup alert trigger definition","domain":"D0087"}
+{"value":"backup configuration entries","domain":"D0089"}
+{"value":"backup dependency pairs","domain":"D0089"}
+{"value":"backup group entries","domain":"D0089"}
+{"value":"backup library entries","domain":"D0089"}
+{"value":"backup map entries","domain":"D0089"}
+{"value":"backup membership pairs","domain":"D0089"}
+{"value":"backup payload and collision mode","domain":"D0090"}
+{"value":"backup resource entries","domain":"D0089"}
+{"value":"backup script set","domain":"D0089"}
+{"value":"backup setting entries","domain":"D0089"}
+{"value":"backup snippet entries","domain":"D0089"}
+{"value":"backup tag entries","domain":"D0089"}
+{"value":"backup tag-channel pairs","domain":"D0089"}
+{"value":"batch of settings","domain":"D0091"}
+{"value":"before and after maps","domain":"D0095"}
+{"value":"before and after snapshots","domain":"D0095"}
+{"value":"begin statement and transaction callback","domain":"D0096"}
+{"value":"binary buffer","domain":"D0032"}
+{"value":"brand label","domain":"D0097"}
+{"value":"bridge argument","domain":"D0100"}
+{"value":"bridge dependency callbacks","domain":"D0100"}
+{"value":"buffer start offset","domain":"D0032"}
+{"value":"byte count","domain":"D0101"}
+{"value":"cache key and script","domain":"D0102"}
+{"value":"cancellation signal","domain":"D0074"}
+{"value":"candidate list","domain":"D0103"}
+{"value":"category and entry name","domain":"D0104"}
+{"value":"category and name","domain":"D0104"}
+{"value":"category, name and value","domain":"D0105"}
+{"value":"certificate changes","domain":"D0106"}
+{"value":"certificate database row","domain":"D0106"}
+{"value":"certificate definition with PEM","domain":"D0106"}
+{"value":"certificate expiry timestamp","domain":"D0108"}
+{"value":"certificate id and changes","domain":"D0106"}
+{"value":"certificate identifier","domain":"D0106"}
+{"value":"certificate list filters","domain":"D0106"}
+{"value":"change listener callback","domain":"D0110"}
+{"value":"channel ID","domain":"D0112"}
+{"value":"channel ID and dispatch callback","domain":"D0201"}
+{"value":"channel UUID","domain":"D0112"}
+{"value":"channel and connector identifiers","domain":"D0116"}
+{"value":"channel and its dependency list","domain":"D0117"}
+{"value":"channel and message identifiers","domain":"D0116"}
+{"value":"channel and message ids","domain":"D0116"}
+{"value":"channel and proposed dependencies","domain":"D0117"}
+{"value":"channel and recovery horizon","domain":"D0118"}
+{"value":"channel and search filters","domain":"D0120"}
+{"value":"channel changes with revision","domain":"D0114"}
+{"value":"channel configuration snapshot","domain":"D0114"}
+{"value":"channel definition","domain":"D0114"}
+{"value":"channel definition with scripts","domain":"D0114"}
+{"value":"channel definition with scripts and filter/transformer rows","domain":"D0114"}
+{"value":"channel deployment counts","domain":"D0122"}
+{"value":"channel destinations with filter/transformer rows","domain":"D0149"}
+{"value":"channel detail record","domain":"D0114"}
+{"value":"channel display name","domain":"D0121"}
+{"value":"channel entry relations","domain":"D0114"}
+{"value":"channel error event","domain":"D0088"}
+{"value":"channel group definition","domain":"D0123"}
+{"value":"channel id","domain":"D0112"}
+{"value":"channel id and changes","domain":"D0114"}
+{"value":"channel id and cutoff","domain":"D0118"}
+{"value":"channel id and export filters","domain":"D0120"}
+{"value":"channel id and lifecycle action","domain":"D0113"}
+{"value":"channel id and message ids","domain":"D0116"}
+{"value":"channel id and name","domain":"D0115"}
+{"value":"channel id and new name","domain":"D0115"}
+{"value":"channel id and on/off flag","domain":"D0113"}
+{"value":"channel id and raw message","domain":"D0124"}
+{"value":"channel id and retention","domain":"D0118"}
+{"value":"channel id and revision number","domain":"D0200"}
+{"value":"channel id and start failure","domain":"D0113"}
+{"value":"channel id and state","domain":"D0113"}
+{"value":"channel id, item name and cause","domain":"D0113"}
+{"value":"channel identifier","domain":"D0112"}
+{"value":"channel identifier and token","domain":"D0112"}
+{"value":"channel identifier list","domain":"D0112"}
+{"value":"channel ids and dependency edges","domain":"D0117"}
+{"value":"channel label","domain":"D0098"}
+{"value":"channel list","domain":"D0122"}
+{"value":"channel message and server ids","domain":"D0116"}
+{"value":"channel message specification","domain":"D0124"}
+{"value":"channel name and raw message","domain":"D0124"}
+{"value":"channel name with factory","domain":"D0098"}
+{"value":"channel row and relations","domain":"D0114"}
+{"value":"channel row and sort field","domain":"D0122"}
+{"value":"channel runtime configuration","domain":"D0114"}
+{"value":"channel server and correlation","domain":"D0116"}
+{"value":"channel silence timestamps","domain":"D0086"}
+{"value":"channel stat rows","domain":"D0122"}
+{"value":"channel state code","domain":"D0113"}
+{"value":"channel stats and states","domain":"D0122"}
+{"value":"channel storage settings","domain":"D0119"}
+{"value":"channel, format and filters","domain":"D0120"}
+{"value":"channel, message and attachment identifiers","domain":"D0116"}
+{"value":"charset name","domain":"D0125"}
+{"value":"claimed queued messages","domain":"D0126"}
+{"value":"claimed row and recorded flag","domain":"D0126"}
+{"value":"client TLS settings","domain":"D0068"}
+{"value":"collected result value","domain":"D0127"}
+{"value":"collection and record content","domain":"D0129"}
+{"value":"collection and record identifiers","domain":"D0129"}
+{"value":"collection changes","domain":"D0128"}
+{"value":"collection definition","domain":"D0128"}
+{"value":"collection id and changes","domain":"D0128"}
+{"value":"collection id and grid query","domain":"D0130"}
+{"value":"collection identifier","domain":"D0128"}
+{"value":"collection identifier and record","domain":"D0129"}
+{"value":"collection name","domain":"D0128"}
+{"value":"collection name and changes","domain":"D0128"}
+{"value":"collection name and record","domain":"D0129"}
+{"value":"collection record","domain":"D0129"}
+{"value":"collection record and access mode","domain":"D0129"}
+{"value":"collection summary and new-record flag","domain":"D0128"}
+{"value":"collection table row","domain":"D0128"}
+{"value":"column headers and cell rows","domain":"D0007"}
+{"value":"column id and show flag","domain":"D0131"}
+{"value":"column id set","domain":"D0131"}
+{"value":"command and search word","domain":"D0103"}
+{"value":"command line arguments","domain":"D0132"}
+{"value":"commander program and client factory","domain":"D0133"}
+{"value":"commander program, client factory and saver","domain":"D0133"}
+{"value":"compiled channel script with maps","domain":"D0102"}
+{"value":"compiled deploy script","domain":"D0102"}
+{"value":"compiled script and message content","domain":"D0102"}
+{"value":"complete message text","domain":"D0019"}
+{"value":"completed association summary","domain":"D0179"}
+{"value":"component text","domain":"D0025"}
+{"value":"config directory and settings","domain":"D0134"}
+{"value":"config entry","domain":"D0105"}
+{"value":"config entry batch","domain":"D0105"}
+{"value":"configured select query","domain":"D0067"}
+{"value":"connected socket","domain":"D0135"}
+{"value":"connection failure","domain":"D0060"}
+{"value":"connection settings","domain":"D0016"}
+{"value":"connector class name","domain":"D0136"}
+{"value":"connector delivery status","domain":"D0137"}
+{"value":"connector index number","domain":"D0138"}
+{"value":"connector kind name","domain":"D0136"}
+{"value":"connector label","domain":"D0098"}
+{"value":"connector message identity","domain":"D0116"}
+{"value":"connector message key","domain":"D0116"}
+{"value":"connector message record","domain":"D0139"}
+{"value":"connector name","domain":"D0121"}
+{"value":"connector node","domain":"D0064"}
+{"value":"connector node and direction","domain":"D0064"}
+{"value":"connector properties","domain":"D0008"}
+{"value":"connector properties node","domain":"D0064"}
+{"value":"connector properties of unknown shape","domain":"D0008"}
+{"value":"connector properties record","domain":"D0008"}
+{"value":"connector property bag","domain":"D0008"}
+{"value":"connector property map","domain":"D0008"}
+{"value":"connector property name","domain":"D0008"}
+{"value":"connector settings","domain":"D0008"}
+{"value":"connector settings object","domain":"D0008"}
+{"value":"connector status list","domain":"D0137"}
+{"value":"connector status records","domain":"D0137"}
+{"value":"connector type and properties","domain":"D0008"}
+{"value":"connector type code","domain":"D0136"}
+{"value":"connector type name","domain":"D0136"}
+{"value":"content and compiled script","domain":"D0102"}
+{"value":"content and delimiter","domain":"D0141"}
+{"value":"content and regex pattern","domain":"D0141"}
+{"value":"content row list","domain":"D0140"}
+{"value":"content type header","domain":"D0036"}
+{"value":"content type key","domain":"D0119"}
+{"value":"context name sets","domain":"D0142"}
+{"value":"credential string","domain":"D0079"}
+{"value":"current and new credentials","domain":"D0080"}
+{"value":"current and replacement passwords","domain":"D0080"}
+{"value":"current sort and clicked column","domain":"D0130"}
+{"value":"current time as epoch milliseconds","domain":"D0108"}
+{"value":"dashboard column id","domain":"D0131"}
+{"value":"data source connection config","domain":"D0143"}
+{"value":"data source database row","domain":"D0143"}
+{"value":"data source id","domain":"D0143"}
+{"value":"data source id and changes","domain":"D0143"}
+{"value":"data source name and SQL","domain":"D0067"}
+{"value":"database connector properties","domain":"D0013"}
+{"value":"database handle","domain":"D0144"}
+{"value":"database password","domain":"D0079"}
+{"value":"database pool settings","domain":"D0144"}
+{"value":"database result row","domain":"D0145"}
+{"value":"database status","domain":"D0144"}
+{"value":"database timestamp","domain":"D0108"}
+{"value":"date object","domain":"D0108"}
+{"value":"day horizon","domain":"D0107"}
+{"value":"days remaining","domain":"D0107"}
+{"value":"days until expiry","domain":"D0107"}
+{"value":"decimal literal","domain":"D0146"}
+{"value":"delimited name list","domain":"D0147"}
+{"value":"delimiter characters","domain":"D0028"}
+{"value":"delivered message record","domain":"D0139"}
+{"value":"delivery outcome status","domain":"D0137"}
+{"value":"delivery status change","domain":"D0137"}
+{"value":"deployment state name","domain":"D0113"}
+{"value":"description text","domain":"D0148"}
+{"value":"description text and data schema","domain":"D0148"}
+{"value":"destination config","domain":"D0149"}
+{"value":"destination configs","domain":"D0149"}
+{"value":"destination connector key","domain":"D0138"}
+{"value":"destination form entries","domain":"D0149"}
+{"value":"destination id and content","domain":"D0150"}
+{"value":"destination message identifiers","domain":"D0116"}
+{"value":"destination outcome plan","domain":"D0137"}
+{"value":"destination path and payload","domain":"D0150"}
+{"value":"destination position index","domain":"D0138"}
+{"value":"destination send request","domain":"D0150"}
+{"value":"destination set operation","domain":"D0149"}
+{"value":"destination, stage and error message","domain":"D0151"}
+{"value":"digit count","domain":"D0146"}
+{"value":"directory and file name","domain":"D0017"}
+{"value":"dispatch function","domain":"D0201"}
+{"value":"dispatch outcome","domain":"D0137"}
+{"value":"dispatcher connection settings","domain":"D0008"}
+{"value":"dispatcher settings","domain":"D0008"}
+{"value":"duration in seconds","domain":"D0109"}
+{"value":"edited JSON value and original text","domain":"D0058"}
+{"value":"edited XML object","domain":"D0073"}
+{"value":"edited element content","domain":"D0073"}
+{"value":"elapsed seconds","domain":"D0109"}
+{"value":"element value","domain":"D0025"}
+{"value":"enabled flag","domain":"D0152"}
+{"value":"encrypted envelope","domain":"D0153"}
+{"value":"engine and logger","domain":"D0154"}
+{"value":"entry category","domain":"D0104"}
+{"value":"entry id and changes","domain":"D0105"}
+{"value":"entry identifier","domain":"D0104"}
+{"value":"entry key","domain":"D0104"}
+{"value":"entry key and value","domain":"D0105"}
+{"value":"enum-style identifier","domain":"D0097"}
+{"value":"environment variable map","domain":"D0155"}
+{"value":"error and success flag","domain":"D0156"}
+{"value":"error event and alert","domain":"D0088"}
+{"value":"error event and alerts","domain":"D0088"}
+{"value":"error message","domain":"D0061"}
+{"value":"error object","domain":"D0060"}
+{"value":"error of unknown shape","domain":"D0060"}
+{"value":"error type and filter list","domain":"D0088"}
+{"value":"errored and received counts","domain":"D0157"}
+{"value":"escaped field text","domain":"D0025"}
+{"value":"event export filters","domain":"D0158"}
+{"value":"event id","domain":"D0160"}
+{"value":"event identifier","domain":"D0160"}
+{"value":"event list filters","domain":"D0158"}
+{"value":"event list filters and page","domain":"D0158"}
+{"value":"event name and callback","domain":"D0110"}
+{"value":"event name and payload","domain":"D0161"}
+{"value":"event payload","domain":"D0161"}
+{"value":"event type string","domain":"D0161"}
+{"value":"example channel name","domain":"D0098"}
+{"value":"expiry timestamp","domain":"D0108"}
+{"value":"export format and filters","domain":"D0120"}
+{"value":"exported channel entries and collision policy","domain":"D0162"}
+{"value":"exported channel entry","domain":"D0162"}
+{"value":"exported channel entry and collision policy","domain":"D0162"}
+{"value":"extension id","domain":"D0163"}
+{"value":"extension id and switch","domain":"D0163"}
+{"value":"extension identifier","domain":"D0163"}
+{"value":"extension kind","domain":"D0163"}
+{"value":"failed login details","domain":"D0164"}
+{"value":"failure message","domain":"D0061"}
+{"value":"fetch-enabled flag","domain":"D0152"}
+{"value":"fetched email","domain":"D0165"}
+{"value":"field content text","domain":"D0025"}
+{"value":"field key names","domain":"D0166"}
+{"value":"field text","domain":"D0025"}
+{"value":"field value map","domain":"D0166"}
+{"value":"field value text","domain":"D0025"}
+{"value":"file blob and name","domain":"D0167"}
+{"value":"file connector properties","domain":"D0014"}
+{"value":"file listing","domain":"D0169"}
+{"value":"file listing entry","domain":"D0169"}
+{"value":"file path and base directory","domain":"D0017"}
+{"value":"filename template","domain":"D0170"}
+{"value":"filter definitions","domain":"D0171"}
+{"value":"filter rule definition","domain":"D0171"}
+{"value":"filter rule definitions","domain":"D0171"}
+{"value":"filter rule form rows","domain":"D0171"}
+{"value":"filter rule list","domain":"D0171"}
+{"value":"form field and text","domain":"D0173"}
+{"value":"generated script result","domain":"D0127"}
+{"value":"generator options","domain":"D0174"}
+{"value":"global script bodies","domain":"D0070"}
+{"value":"global script changes","domain":"D0070"}
+{"value":"grid column name","domain":"D0131"}
+{"value":"grid page query","domain":"D0130"}
+{"value":"grid query settings","domain":"D0130"}
+{"value":"grid search query","domain":"D0130"}
+{"value":"group and channel identifiers","domain":"D0123"}
+{"value":"group changes with revision","domain":"D0123"}
+{"value":"group id","domain":"D0123"}
+{"value":"group id and changes","domain":"D0123"}
+{"value":"group id and channel id","domain":"D0123"}
+{"value":"group identifier","domain":"D0123"}
+{"value":"handle identifier","domain":"D0100"}
+{"value":"header row pairs","domain":"D0036"}
+{"value":"header segment line","domain":"D0024"}
+{"value":"heap statistics","domain":"D0175"}
+{"value":"help and palette callbacks","domain":"D0110"}
+{"value":"hex background color","domain":"D0176"}
+{"value":"hex encryption key setting","domain":"D0077"}
+{"value":"holder object, key and value","domain":"D0058"}
+{"value":"home directory path","domain":"D0017"}
+{"value":"host and port","domain":"D0005"}
+{"value":"host bridge state","domain":"D0100"}
+{"value":"host dispatch function","domain":"D0100"}
+{"value":"hostname or address","domain":"D0004"}
+{"value":"hostname string","domain":"D0004"}
+{"value":"hostname to resolve","domain":"D0004"}
+{"value":"identifier and changed fields","domain":"D0177"}
+{"value":"inbound HL7 message","domain":"D0018"}
+{"value":"inbound association contexts","domain":"D0179"}
+{"value":"inbound message","domain":"D0124"}
+{"value":"incoming request","domain":"D0034"}
+{"value":"incoming socket","domain":"D0135"}
+{"value":"indexed field name","domain":"D0166"}
+{"value":"indexed field values","domain":"D0166"}
+{"value":"initial state text","domain":"D0113"}
+{"value":"integer seed","domain":"D0099"}
+{"value":"key and stored value","domain":"D0105"}
+{"value":"key and value pair","domain":"D0105"}
+{"value":"keyboard event","domain":"D0180"}
+{"value":"label identifier","domain":"D0097"}
+{"value":"lazy module loader","domain":"D0181"}
+{"value":"ledger JSON text","domain":"D0182"}
+{"value":"ledger file path","domain":"D0182"}
+{"value":"library changes with revision","domain":"D0183"}
+{"value":"library definition","domain":"D0183"}
+{"value":"library id and changes","domain":"D0183"}
+{"value":"library identifier","domain":"D0183"}
+{"value":"literal character","domain":"D0028"}
+{"value":"local date-time field text","domain":"D0108"}
+{"value":"locked account identifier","domain":"D0081"}
+{"value":"log entry","domain":"D0159"}
+{"value":"log entry record","domain":"D0159"}
+{"value":"log filters","domain":"D0159"}
+{"value":"log query filters","domain":"D0159"}
+{"value":"log record","domain":"D0159"}
+{"value":"log severity number","domain":"D0159"}
+{"value":"mail server properties","domain":"D0012"}
+{"value":"mailbox connection settings","domain":"D0012"}
+{"value":"mailbox flag set","domain":"D0165"}
+{"value":"mailbox message identifier","domain":"D0165"}
+{"value":"map change event","domain":"D0105"}
+{"value":"map key","domain":"D0104"}
+{"value":"map key and value","domain":"D0105"}
+{"value":"matched alert and event","domain":"D0088"}
+{"value":"maximum entries cap","domain":"D0185"}
+{"value":"message and active destinations","domain":"D0149"}
+{"value":"message and connector ids","domain":"D0116"}
+{"value":"message and destination","domain":"D0150"}
+{"value":"message and destination identifiers","domain":"D0116"}
+{"value":"message and failed write","domain":"D0151"}
+{"value":"message and failure reason","domain":"D0151"}
+{"value":"message and latency","domain":"D0175"}
+{"value":"message and raw text","domain":"D0124"}
+{"value":"message body text","domain":"D0019"}
+{"value":"message content","domain":"D0019"}
+{"value":"message content and abort signal","domain":"D0019"}
+{"value":"message content and batch config","domain":"D0141"}
+{"value":"message content and data type","domain":"D0019"}
+{"value":"message content payload","domain":"D0019"}
+{"value":"message control id","domain":"D0030"}
+{"value":"message export rows","domain":"D0007"}
+{"value":"message generation settings","domain":"D0174"}
+{"value":"message id and error reason","domain":"D0151"}
+{"value":"message id and error text","domain":"D0151"}
+{"value":"message id list","domain":"D0116"}
+{"value":"message identifier","domain":"D0116"}
+{"value":"message payload text","domain":"D0019"}
+{"value":"message retention policy","domain":"D0118"}
+{"value":"message search criteria","domain":"D0120"}
+{"value":"message search filters","domain":"D0120"}
+{"value":"message template text","domain":"D0170"}
+{"value":"message text","domain":"D0019"}
+{"value":"message text and dispatch result","domain":"D0137"}
+{"value":"message text and pattern","domain":"D0141"}
+{"value":"message text body","domain":"D0019"}
+{"value":"message type definition","domain":"D0174"}
+{"value":"message type options","domain":"D0174"}
+{"value":"metadata column rows","domain":"D0166"}
+{"value":"method name and arguments","domain":"D0023"}
+{"value":"nested node","domain":"D0058"}
+{"value":"new account fields","domain":"D0082"}
+{"value":"new alert definition","domain":"D0084"}
+{"value":"new certificate definition","domain":"D0106"}
+{"value":"new channel definition","domain":"D0114"}
+{"value":"new collection definition","domain":"D0128"}
+{"value":"new connection definition","domain":"D0016"}
+{"value":"new data source fields","domain":"D0143"}
+{"value":"new entry data","domain":"D0105"}
+{"value":"new group definition","domain":"D0123"}
+{"value":"new label fields","domain":"D0186"}
+{"value":"new library definition","domain":"D0183"}
+{"value":"new message with content rows","domain":"D0139"}
+{"value":"new password and actor details","domain":"D0080"}
+{"value":"new record fields","domain":"D0129"}
+{"value":"new resource fields","domain":"D0178"}
+{"value":"new snippet definition","domain":"D0184"}
+{"value":"new tag definition","domain":"D0186"}
+{"value":"new user details","domain":"D0082"}
+{"value":"no input","domain":"D0001"}
+{"value":"notification template text","domain":"D0170"}
+{"value":"numeric setting text","domain":"D0146"}
+{"value":"open SFTP client","domain":"D0015"}
+{"value":"optional bridge argument","domain":"D0100"}
+{"value":"optional category filter","domain":"D0104"}
+{"value":"optional certificate filters","domain":"D0106"}
+{"value":"optional channel identifier","domain":"D0112"}
+{"value":"optional grouping name","domain":"D0104"}
+{"value":"optional library identifier","domain":"D0183"}
+{"value":"ordered tree node","domain":"D0073"}
+{"value":"original XML document","domain":"D0073"}
+{"value":"original and edited children","domain":"D0073"}
+{"value":"outbound HL7 message","domain":"D0018"}
+{"value":"outbound connector message","domain":"D0139"}
+{"value":"outbound message","domain":"D0139"}
+{"value":"outbound request URL","domain":"D0003"}
+{"value":"page and page size","domain":"D0130"}
+{"value":"page element","domain":"D0180"}
+{"value":"page number and size","domain":"D0130"}
+{"value":"page unload event","domain":"D0180"}
+{"value":"pagination query","domain":"D0130"}
+{"value":"palette items and query","domain":"D0103"}
+{"value":"palette mode","domain":"D0176"}
+{"value":"parent element and tag","domain":"D0073"}
+{"value":"parent node and key","domain":"D0058"}
+{"value":"parent table and id","domain":"D0177"}
+{"value":"parsed HL7 message","domain":"D0020"}
+{"value":"parsed JSON document","domain":"D0058"}
+{"value":"parsed JSON node and key","domain":"D0058"}
+{"value":"parsed JSON number","domain":"D0058"}
+{"value":"parsed XML document","domain":"D0073"}
+{"value":"parsed XML element","domain":"D0073"}
+{"value":"parsed XML node","domain":"D0073"}
+{"value":"parsed component record","domain":"D0026"}
+{"value":"parsed field record","domain":"D0026"}
+{"value":"parsed node record","domain":"D0026"}
+{"value":"parsed path","domain":"D0021"}
+{"value":"parsed path and escaped value","domain":"D0022"}
+{"value":"parsed repetition record","domain":"D0026"}
+{"value":"parsed run arguments","domain":"D0132"}
+{"value":"parsed segment record","domain":"D0026"}
+{"value":"partial resource fields","domain":"D0178"}
+{"value":"path string","domain":"D0017"}
+{"value":"payload text","domain":"D0019"}
+{"value":"pending clone target and name","domain":"D0187"}
+{"value":"pending delete target","domain":"D0187"}
+{"value":"pending operation promise","domain":"D0075"}
+{"value":"pending store writes","domain":"D0139"}
+{"value":"pending work promise","domain":"D0075"}
+{"value":"permission names","domain":"D0188"}
+{"value":"permission string","domain":"D0188"}
+{"value":"persisted auth session","domain":"D0083"}
+{"value":"persisted map row","domain":"D0105"}
+{"value":"persisted map rows","domain":"D0105"}
+{"value":"pipeline alert event","domain":"D0088"}
+{"value":"pipeline dispatch outcome","domain":"D0137"}
+{"value":"pipeline outcome and response mode","domain":"D0137"}
+{"value":"plaintext content","domain":"D0153"}
+{"value":"platform string","domain":"D0189"}
+{"value":"polled result rows","domain":"D0145"}
+{"value":"polling switch","domain":"D0152"}
+{"value":"pool and SQL","domain":"D0067"}
+{"value":"pool configuration","domain":"D0144"}
+{"value":"pool factory function","domain":"D0144"}
+{"value":"pooled socket","domain":"D0135"}
+{"value":"preference entries","domain":"D0190"}
+{"value":"preference key","domain":"D0190"}
+{"value":"preference key and content","domain":"D0190"}
+{"value":"preference key and user identifier","domain":"D0190"}
+{"value":"process environment variables","domain":"D0155"}
+{"value":"process event source and shutdown hook","domain":"D0111"}
+{"value":"process identifier","domain":"D0189"}
+{"value":"processed file entry","domain":"D0169"}
+{"value":"processing outcome name","domain":"D0137"}
+{"value":"promise and abort signal","domain":"D0075"}
+{"value":"prompt question text","domain":"D0132"}
+{"value":"property key and new setting","domain":"D0173"}
+{"value":"property key and new value","domain":"D0173"}
+{"value":"property key and value","domain":"D0173"}
+{"value":"public key text","domain":"D0066"}
+{"value":"query benchmark callback","domain":"D0175"}
+{"value":"query template and variable values","domain":"D0067"}
+{"value":"queue batch request","domain":"D0126"}
+{"value":"queue mode text","domain":"D0126"}
+{"value":"queued message and response","domain":"D0126"}
+{"value":"queued message record","domain":"D0126"}
+{"value":"random source and timestamp text","domain":"D0099"}
+{"value":"raw message and source map","domain":"D0124"}
+{"value":"received DICOM dataset","domain":"D0179"}
+{"value":"received DICOM file event","domain":"D0179"}
+{"value":"received and processed timestamps","domain":"D0108"}
+{"value":"receiver connection settings","domain":"D0008"}
+{"value":"receiver settings","domain":"D0008"}
+{"value":"recipients, subject and body","domain":"D0191"}
+{"value":"recipients, subject, body","domain":"D0191"}
+{"value":"record changes","domain":"D0129"}
+{"value":"record expiry settings","domain":"D0128"}
+{"value":"record identifier","domain":"D0129"}
+{"value":"record or new-record marker","domain":"D0129"}
+{"value":"record query","domain":"D0130"}
+{"value":"record table row","domain":"D0129"}
+{"value":"recovery id range","domain":"D0118"}
+{"value":"redirect answer","domain":"D0003"}
+{"value":"refresh credential","domain":"D0076"}
+{"value":"refresh token string","domain":"D0076"}
+{"value":"regex pattern list","domain":"D0192"}
+{"value":"rejected charset name","domain":"D0125"}
+{"value":"rejected placeholder names","domain":"D0170"}
+{"value":"remote directory listing","domain":"D0169"}
+{"value":"remote file entry","domain":"D0169"}
+{"value":"remote ledger path","domain":"D0182"}
+{"value":"repetition text","domain":"D0025"}
+{"value":"reply status and text","domain":"D0029"}
+{"value":"request URL path","domain":"D0002"}
+{"value":"request URL string","domain":"D0003"}
+{"value":"request audit context","domain":"D0164"}
+{"value":"request cookie map","domain":"D0037"}
+{"value":"request header set","domain":"D0036"}
+{"value":"request method, path and body","domain":"D0033"}
+{"value":"request path","domain":"D0002"}
+{"value":"request path and body","domain":"D0033"}
+{"value":"resolved data source","domain":"D0143"}
+{"value":"resolved data source and SQL","domain":"D0067"}
+{"value":"resource label","domain":"D0098"}
+{"value":"resource seed definition","domain":"D0098"}
+{"value":"resource uuid","domain":"D0178"}
+{"value":"retention age in days","domain":"D0107"}
+{"value":"retention in days","domain":"D0107"}
+{"value":"retry limit","domain":"D0185"}
+{"value":"right-click event and target","domain":"D0180"}
+{"value":"role name","domain":"D0188"}
+{"value":"room join and leave events","domain":"D0161"}
+{"value":"room name","domain":"D0161"}
+{"value":"room name, event name and payload","domain":"D0161"}
+{"value":"route path","domain":"D0002"}
+{"value":"routing controller","domain":"D0154"}
+{"value":"rule function body","domain":"D0069"}
+{"value":"rule type text","domain":"D0171"}
+{"value":"run arguments and context","domain":"D0132"}
+{"value":"run arguments and statistics","domain":"D0132"}
+{"value":"run arguments and token","domain":"D0132"}
+{"value":"sample message outcome","domain":"D0137"}
+{"value":"sample message with channel context","domain":"D0124"}
+{"value":"sandbox context","domain":"D0193"}
+{"value":"sandbox execution callback","domain":"D0193"}
+{"value":"saved header data","domain":"D0036"}
+{"value":"schedule expression","domain":"D0194"}
+{"value":"schedule settings","domain":"D0194"}
+{"value":"schema validation issues","domain":"D0195"}
+{"value":"schemas for request parts","domain":"D0195"}
+{"value":"script result value","domain":"D0127"}
+{"value":"script return and message variable","domain":"D0127"}
+{"value":"script return value","domain":"D0127"}
+{"value":"script source","domain":"D0069"}
+{"value":"script source and language","domain":"D0069"}
+{"value":"script source code","domain":"D0069"}
+{"value":"script source plus code template list","domain":"D0069"}
+{"value":"script source plus code templates","domain":"D0069"}
+{"value":"script text","domain":"D0069"}
+{"value":"search box text","domain":"D0103"}
+{"value":"search text","domain":"D0103"}
+{"value":"secret token string","domain":"D0076"}
+{"value":"secret-bearing settings row","domain":"D0094"}
+{"value":"seeded item description","domain":"D0098"}
+{"value":"seeded random source","domain":"D0099"}
+{"value":"segment line","domain":"D0024"}
+{"value":"segment name","domain":"D0027"}
+{"value":"segment name and index","domain":"D0027"}
+{"value":"sender settings","domain":"D0008"}
+{"value":"serialized FHIR resource","domain":"D0196"}
+{"value":"server acceptance flag","domain":"D0152"}
+{"value":"server backup payload","domain":"D0090"}
+{"value":"server root address","domain":"D0003"}
+{"value":"server setting list","domain":"D0091"}
+{"value":"server snapshot","domain":"D0197"}
+{"value":"server snapshot and moment","domain":"D0197"}
+{"value":"service result","domain":"D0156"}
+{"value":"session identifier","domain":"D0083"}
+{"value":"session identifier and user identifier","domain":"D0083"}
+{"value":"setting definition","domain":"D0094"}
+{"value":"setting definitions","domain":"D0091"}
+{"value":"setting identifier","domain":"D0092"}
+{"value":"setting key","domain":"D0092"}
+{"value":"setting key and type","domain":"D0092"}
+{"value":"setting key and type label","domain":"D0092"}
+{"value":"setting key and value","domain":"D0093"}
+{"value":"setting key, type and stored value","domain":"D0093"}
+{"value":"setting name","domain":"D0092"}
+{"value":"setting record","domain":"D0094"}
+{"value":"setting row","domain":"D0094"}
+{"value":"setting type label","domain":"D0092"}
+{"value":"setting type, value and rule","domain":"D0093"}
+{"value":"settings bag entry","domain":"D0094"}
+{"value":"settings table row","domain":"D0094"}
+{"value":"shell command line","domain":"D0132"}
+{"value":"shortcut-help callback","domain":"D0110"}
+{"value":"shutdown step callbacks","domain":"D0111"}
+{"value":"signed access token","domain":"D0076"}
+{"value":"signed refresh token","domain":"D0076"}
+{"value":"signing secret string","domain":"D0077"}
+{"value":"snippet id and changes","domain":"D0184"}
+{"value":"snippet identifier","domain":"D0184"}
+{"value":"soak statistics record","domain":"D0175"}
+{"value":"socket and permission name","domain":"D0135"}
+{"value":"socket data chunk","domain":"D0031"}
+{"value":"socket error","domain":"D0060"}
+{"value":"socket handshake with token","domain":"D0135"}
+{"value":"sorted latency samples","domain":"D0175"}
+{"value":"source and destination filter rules","domain":"D0171"}
+{"value":"source and destination transformers","domain":"D0172"}
+{"value":"source channel and new name","domain":"D0115"}
+{"value":"source channel destinations","domain":"D0149"}
+{"value":"source channel detail","domain":"D0114"}
+{"value":"source channel scripts","domain":"D0114"}
+{"value":"source connector node","domain":"D0064"}
+{"value":"source id and changes","domain":"D0143"}
+{"value":"source identifier","domain":"D0143"}
+{"value":"stage name","domain":"D0151"}
+{"value":"stage name and error message","domain":"D0151"}
+{"value":"statistic field name","domain":"D0122"}
+{"value":"step type text","domain":"D0172"}
+{"value":"storage mode and content type code","domain":"D0119"}
+{"value":"storage mode text","domain":"D0119"}
+{"value":"stored content or null","domain":"D0140"}
+{"value":"stored content string","domain":"D0140"}
+{"value":"stored file path","domain":"D0017"}
+{"value":"stored source map JSON","domain":"D0124"}
+{"value":"stored tag records","domain":"D0186"}
+{"value":"stored theme preference","domain":"D0176"}
+{"value":"stored trigger script","domain":"D0069"}
+{"value":"success message","domain":"D0061"}
+{"value":"success payload","domain":"D0156"}
+{"value":"successful payload","domain":"D0156"}
+{"value":"tab path segment","domain":"D0002"}
+{"value":"tag and channel identifiers","domain":"D0186"}
+{"value":"tag changes","domain":"D0186"}
+{"value":"tag identifier","domain":"D0186"}
+{"value":"target channel and alert text","domain":"D0088"}
+{"value":"target user and actor identifiers","domain":"D0081"}
+{"value":"task count and concurrency","domain":"D0175"}
+{"value":"template changes with revision","domain":"D0184"}
+{"value":"template context name","domain":"D0142"}
+{"value":"template definition","domain":"D0184"}
+{"value":"template identifier","domain":"D0184"}
+{"value":"template text with hint","domain":"D0170"}
+{"value":"template text with placeholders","domain":"D0170"}
+{"value":"template variable name","domain":"D0170"}
+{"value":"test result","domain":"D0156"}
+{"value":"text to copy","domain":"D0198"}
+{"value":"theme mode name","domain":"D0176"}
+{"value":"thrown value","domain":"D0060"}
+{"value":"thrown value of unknown shape","domain":"D0060"}
+{"value":"ticket and JSON result","domain":"D0100"}
+{"value":"timeout and connect callback","domain":"D0199"}
+{"value":"timestamp as ISO string","domain":"D0108"}
+{"value":"timestamp as string","domain":"D0108"}
+{"value":"timestamp string","domain":"D0108"}
+{"value":"timestamp text","domain":"D0108"}
+{"value":"trailing path segments","domain":"D0002"}
+{"value":"transaction callback","domain":"D0096"}
+{"value":"transformer definitions","domain":"D0172"}
+{"value":"transformer form state","domain":"D0172"}
+{"value":"transformer node and key","domain":"D0064"}
+{"value":"transformer result and original","domain":"D0127"}
+{"value":"transformer step definitions","domain":"D0172"}
+{"value":"transformer step form rows","domain":"D0172"}
+{"value":"transformer step list","domain":"D0172"}
+{"value":"transport configuration","domain":"D0016"}
+{"value":"transport factory function","domain":"D0181"}
+{"value":"transport label","domain":"D0098"}
+{"value":"trigger form state","domain":"D0087"}
+{"value":"two map values","domain":"D0095"}
+{"value":"unknown parsed data","domain":"D0059"}
+{"value":"unknown value","domain":"D0059"}
+{"value":"unsaved connection fields","domain":"D0016"}
+{"value":"unsaved-changes flag","domain":"D0152"}
+{"value":"untrusted value","domain":"D0059"}
+{"value":"url and TLS properties","domain":"D0068"}
+{"value":"usage percentage","domain":"D0157"}
+{"value":"used and total amounts","domain":"D0157"}
+{"value":"user account record","domain":"D0082"}
+{"value":"user and session identity","domain":"D0083"}
+{"value":"user changes and actor identifier","domain":"D0082"}
+{"value":"user identifier","domain":"D0081"}
+{"value":"user identifier and client metadata","domain":"D0081"}
+{"value":"user identifier and transaction","domain":"D0081"}
+{"value":"user identifier, session identifier and token type","domain":"D0083"}
+{"value":"user session and token","domain":"D0083"}
+{"value":"user typed search text","domain":"D0103"}
+{"value":"username and password credentials","domain":"D0078"}
+{"value":"value of unknown shape","domain":"D0059"}
+{"value":"value of unknown type","domain":"D0059"}
+{"value":"version counter number","domain":"D0200"}
+{"value":"visible column ids","domain":"D0131"}
+{"value":"vm context and deadline","domain":"D0193"}
+{"value":"watched directory","domain":"D0017"}
+{"value":"wildcard pattern","domain":"D0192"}
+{"value":"writable log stream","domain":"D0159"}

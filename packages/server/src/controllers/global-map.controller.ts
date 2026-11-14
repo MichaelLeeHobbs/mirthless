@@ -7,16 +7,12 @@ import type { Request, Response } from 'express';
 import type { UpsertGlobalMapEntryInput } from '@galvaniflow/core-models';
 import { GlobalMapService } from '../services/global-map.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
   return 500;
-}
-
-function errorResponse(error: unknown): { code: string; message: string } {
-  if (isServiceError(error)) return { code: error.code, message: error.message };
-  return { code: 'INTERNAL', message: 'Internal server error' };
 }
 
 export class GlobalMapController {

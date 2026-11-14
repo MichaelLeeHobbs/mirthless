@@ -7,17 +7,13 @@ import type { Request, Response } from 'express';
 import type { CreateResourceInput, UpdateResourceInput } from '@galvaniflow/core-models';
 import { ResourceService } from '../services/resource.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
   if (isServiceError(error, 'ALREADY_EXISTS')) return 409;
   return 500;
-}
-
-function errorResponse(error: unknown): { code: string; message: string } {
-  if (isServiceError(error)) return { code: error.code, message: error.message };
-  return { code: 'INTERNAL', message: 'Internal server error' };
 }
 
 export class ResourceController {

@@ -23,10 +23,7 @@ import {
   channelTransformers,
   transformerSteps,
 } from '../db/schema/index.js';
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+import { isPlainObject } from '@galvaniflow/core-util';
 
 /**
  * Exports mask connector credentials as REDACTED. Importing that marker verbatim

@@ -11,6 +11,14 @@ Michael asked for every complaint, feature request and wish users have voiced ab
 - ROADMAP's Competitive Position table claimed MFA and advanced alerting ship free. Neither exists yet; the table now says so.
 - 2026-11-14: Michael chose to build Kafka and AMQP connectors rather than partner (D-261, ROADMAP V15).
 
+## 2026-11-13 — Two security fixes from the reinvention audit (branch `fix/ssrf-and-smtp-template`)
+
+Michael ran `/find-reinvention` over the whole repo, then asked to fix its two security findings.
+
+- **Connection tests use the engine's SSRF policy (D-256).** The tester's own regex list let through CGNAT, benchmark, multicast and other reserved ranges, bracketed `[::1]`, `localhost.` and `*.localhost`. Its hostname check also let `::ffff:127.0.0.1` through.
+- **SMTP templates substitute in one pass.** A message variable whose value contained `${msg}` had the whole message body pasted into it; no substituted value is scanned again now. A message variable named `msg` no longer replaces the message content.
+- Not changed: the File Writer's `resolveOutputFilename` still expands a value that contains another placeholder. The audit's other findings (24 local `mapErrorToStatus` copies, the byte formatter's `"512.0 undefined"`, the form getters) are in its report.
+
 ## 2026-11-13 — Mirth migration climb, remaining scenarios (same branch)
 
 Michael asked to start on the scenarios still failing after the climb stopped at 37/60. Now 55/60 (identical on two runs): S08, S09, S11, S12, S14, S16, S17, S18, S21 and S26 pass.
