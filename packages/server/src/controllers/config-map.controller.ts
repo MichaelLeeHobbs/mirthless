@@ -6,14 +6,8 @@
 import type { Request, Response } from 'express';
 import type { UpsertConfigMapEntryInput, BulkUpsertConfigMapInput, ConfigMapQuery } from '@galvaniflow/core-models';
 import { ConfigMapService } from '../services/config-map.service.js';
-import { isServiceError } from '../lib/service-error.js';
-import { errorResponse } from '../lib/controller-helpers.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
-
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  return 500;
-}
 
 export class ConfigMapController {
   static async list(req: Request, res: Response): Promise<void> {

@@ -17,6 +17,7 @@ export function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'ACCOUNT_LOCKED')) return 423;
   if (isServiceError(error, 'ACCOUNT_DEACTIVATED')) return 403;
   if (isServiceError(error, 'SELF_ACTION')) return 400;
+  if (isServiceError(error, 'NOT_SUPPORTED')) return 422;
   return 500;
 }
 

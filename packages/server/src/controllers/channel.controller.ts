@@ -12,25 +12,10 @@ import type {
   PatchChannelEnabledInput,
 } from '@galvaniflow/core-models';
 import { ChannelService } from '../services/channel.service.js';
-import { isServiceError } from '../lib/service-error.js';
-import { errorResponse } from '../lib/controller-helpers.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { redactChannelDetail } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
 import { getEngine } from '../engine.js';
-
-/**
- * Mask connector credentials (DB/SFTP passwords, API keys, private keys) in a
- * channel detail for read-only callers. Only a caller who can already edit the
- * channel (`channels:write`) sees the real values; everyone else — notably the
- * `viewer` role — gets the redacted marker.
- */
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  if (isServiceError(error, 'ALREADY_EXISTS')) return 409;
-  if (isServiceError(error, 'CONFLICT')) return 409;
-  if (isServiceError(error, 'NOT_SUPPORTED')) return 422;
-  return 500;
-}
 
 export class ChannelController {
   static async list(req: Request, res: Response): Promise<void> {
@@ -52,10 +37,14 @@ export class ChannelController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: 'NOT_FOUND', message: errorResponse(result.error).message } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
+    // Mask connector credentials (DB/SFTP passwords, API keys, private keys)
+    // for read-only callers. Only a caller who can already edit the channel
+    // (`channels:write`) sees the real values; everyone else, notably the
+    // `viewer` role, gets the redacted marker.
     const canWrite = req.user?.permissions.includes('channels:write') ?? false;
     const data = canWrite
       ? result.value

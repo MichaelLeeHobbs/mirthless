@@ -175,6 +175,18 @@ describe('ChannelController', () => {
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
+    it('returns 500 with code INTERNAL, not NOT_FOUND, when the lookup itself fails', async () => {
+      mockService.getById.mockResolvedValue({ ok: false, value: null, error: new Error('connection reset') });
+
+      const req = makeReq({ params: { id: '00000000-0000-0000-0000-000000000099' } as Request['params'] });
+      const res = makeRes();
+
+      await ChannelController.getById(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+    });
+
     it('redacts connector credentials for a read-only caller (no channels:write)', async () => {
       const channel = makeChannelDetail({
         sourceConnectorProperties: { host: 'db.local', password: 'super-secret' },

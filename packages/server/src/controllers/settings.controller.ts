@@ -11,14 +11,8 @@ import type {
   BulkUpsertSettingsInput,
 } from '@galvaniflow/core-models';
 import { SettingsService } from '../services/settings.service.js';
-import { isServiceError } from '../lib/service-error.js';
-import { errorResponse } from '../lib/controller-helpers.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
-
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  return 500;
-}
 
 export class SettingsController {
   static async list(req: Request, res: Response): Promise<void> {

@@ -12,16 +12,8 @@ import type {
   CodeTemplateListQuery,
 } from '@galvaniflow/core-models';
 import { CodeTemplateService } from '../services/code-template.service.js';
-import { isServiceError } from '../lib/service-error.js';
-import { errorResponse } from '../lib/controller-helpers.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
-
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  if (isServiceError(error, 'ALREADY_EXISTS')) return 409;
-  if (isServiceError(error, 'CONFLICT')) return 409;
-  return 500;
-}
 
 export class CodeTemplateController {
   // ===== Libraries =====

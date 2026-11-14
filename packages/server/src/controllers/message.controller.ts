@@ -6,15 +6,9 @@
 import type { Request, Response } from 'express';
 import type { MessageSearchQuery } from '@galvaniflow/core-models';
 import { MessageQueryService } from '../services/message-query.service.js';
-import { isServiceError } from '../lib/service-error.js';
-import { errorResponse } from '../lib/controller-helpers.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { emitEvent } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
-
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  return 500;
-}
 
 export class MessageController {
   /** GET /channels/:id/messages — Search messages with filters and pagination. */
