@@ -8,6 +8,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { desc, and, inArray, gte, lte, eq } from 'drizzle-orm';
 import type { EventExportQuery } from '@galvaniflow/core-models';
 import { db } from '../lib/db.js';
+import { escapeCsvField } from '../lib/csv.js';
 import { events } from '../db/schema/index.js';
 
 // ----- Types -----
@@ -76,20 +77,6 @@ async function fetchRows(query: EventExportQuery): Promise<readonly EventRow[]> 
     : await dataQuery.orderBy(desc(events.createdAt)).limit(query.maxRows);
 
   return rows;
-}
-
-/**
- * Escape a single CSV field per RFC 4180 and neutralize spreadsheet formula
- * injection: a field starting with =, +, -, @, tab, or CR is prefixed with a
- * single quote so Excel/Sheets treat it as text. Event fields (e.g. usernames in
- * failed-login events) can be attacker-influenced.
- */
-function escapeCsvField(value: string): string {
-  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  if (guarded.includes('"') || guarded.includes(',') || guarded.includes('\n') || guarded.includes('\r')) {
-    return `"${guarded.replace(/"/g, '""')}"`;
-  }
-  return guarded;
 }
 
 function rowToCsvFields(row: EventRow): string {

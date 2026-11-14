@@ -5,6 +5,8 @@
 // leave the server in GET / export responses. Values are never returned in the
 // clear to a read-level caller — only overwritten via explicit writes.
 
+import { isPlainObject } from '@galvaniflow/core-util';
+
 /** Masked stand-in returned in place of a real secret that has a value. */
 export const REDACTED = '__REDACTED__';
 
@@ -65,10 +67,6 @@ export function redactSettingValue(key: string, type: string | null | undefined,
     return value;
   }
   return value !== null && value.length > 0 ? REDACTED : value;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /**
