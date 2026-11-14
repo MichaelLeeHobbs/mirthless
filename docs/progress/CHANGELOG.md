@@ -10,7 +10,8 @@ Michael decided to build Kafka and AMQP connectors rather than partner (D-261, d
 - **Schemas, server, UI**: property schemas in core-models drive deploy validation and the registry; Test Connection reads Kafka metadata or checks the AMQP queue/exchange; four editor forms with shared broker and TLS fields.
 - **Tests**: unit tests for both pairs, including a failed store, a dropped broker connection, stop versus halt and a halt followed by a restart. A real-broker suite (`connector-queue.itest.ts`, with `kafka-test` and `rabbitmq-test` in the compose test profile) passed 10/10 on three runs.
 - **Found by the real-broker suite**: Kafka records with headers failed to encode (string header names), and a failed AMQP connection test crashed the process on an unhandled channel `error` event. Both fixed; the suite covers them.
-- Not done: TLS against a real broker (unit tests cover the option mapping only). The connectors integration lane (`*.itest.ts`) still does not run in CI.
+- **Coverage**: the connectors coverage run counted the integration lane's own files (`*.itest.ts`, `gates.ts`) as uncovered source, so adding the real-broker suite pushed the package under its minimums. They are excluded now, and the minimums rose to 89/78/85/91 (AGENTS.md table).
+- Not done: TLS against a real broker (unit tests cover the option mapping only). The connectors integration lane (`*.itest.ts`) still does not run in CI. Locally the parallel `pnpm gate` fails seven of engine's sandbox timing tests (50 ms timeouts) under load; they pass when packages run one at a time, and engine is unchanged here.
 
 ## 2026-11-13 — Delimited, X12 and MySQL (branch `claude/doc17-delimited-x12-mysql`)
 
