@@ -26,6 +26,17 @@ import { DicomDispatcher } from './dicom/dicom-dispatcher.js';
 import { EmailReceiver, EMAIL_POST_ACTION, type EmailPostAction, type EmailProtocol } from './email/email-receiver.js';
 import { SftpReceiver, SFTP_POST_ACTION, type SftpPostAction } from './sftp/sftp-receiver.js';
 import { SftpDispatcher } from './sftp/sftp-dispatcher.js';
+import { KafkaReceiver } from './kafka/kafka-receiver.js';
+import { KafkaDispatcher } from './kafka/kafka-dispatcher.js';
+import { AmqpReceiver } from './amqp/amqp-receiver.js';
+import { AmqpDispatcher } from './amqp/amqp-dispatcher.js';
+import type { TlsClientOptions } from './tls.js';
+import {
+  kafkaSourcePropertiesSchema,
+  kafkaDestinationPropertiesSchema,
+  amqpSourcePropertiesSchema,
+  amqpDestinationPropertiesSchema,
+} from '@galvaniflow/core-models';
 
 /**
  * Coerce a config property to a finite number, tolerating string values (a UI/JSON
@@ -91,6 +102,20 @@ export function readStringRecord(value: unknown): Record<string, string> | undef
 export function readBasicAuth(value: unknown): { username: string; password: string } | undefined {
   const rec = readStringRecord(value);
   return rec?.['username'] && typeof rec['password'] === 'string' ? { username: rec['username'], password: rec['password'] } : undefined;
+}
+
+/**
+ * Client TLS for the Kafka and AMQP connectors: PEM material when `useTls` is
+ * on (the server has already swapped certificate ids for PEM), else none.
+ */
+export function readQueueTls(props: Record<string, unknown>): TlsClientOptions | undefined {
+  return props['useTls'] === true ? readTlsClientOptions(props) ?? {} : undefined;
+}
+
+/** Parse props with a schema, leaving `tls` (PEM by now, not the stored ids) to {@link readQueueTls}. */
+function parseQueueProps<T>(schema: { parse(value: unknown): T }, props: Record<string, unknown>): T & { tls: TlsClientOptions | undefined } {
+  const { tls: _tls, ...rest } = props;
+  return { ...schema.parse(rest), tls: readQueueTls(props) };
 }
 
 // ----- Source Factories -----
@@ -195,6 +220,8 @@ const sourceFactories = new Map<string, SourceFactory>([
     hostKey: props['hostKey'] as string | undefined,
     charset: (props['charset'] as string | undefined) ?? 'utf-8',
   })],
+  ['KAFKA', (props): SourceConnectorRuntime => new KafkaReceiver(parseQueueProps(kafkaSourcePropertiesSchema, props))],
+  ['AMQP', (props): SourceConnectorRuntime => new AmqpReceiver(parseQueueProps(amqpSourcePropertiesSchema, props))],
 ]);
 
 // ----- Destination Factories -----
@@ -308,6 +335,8 @@ const destinationFactories = new Map<string, DestinationFactory>([
     strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
     hostKey: props['hostKey'] as string | undefined,
   })],
+  ['KAFKA', (props): DestinationConnectorRuntime => new KafkaDispatcher(parseQueueProps(kafkaDestinationPropertiesSchema, props))],
+  ['AMQP', (props): DestinationConnectorRuntime => new AmqpDispatcher(parseQueueProps(amqpDestinationPropertiesSchema, props))],
 ]);
 
 // ----- Public API -----
