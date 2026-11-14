@@ -24,10 +24,12 @@ export const SLOW_DB_MS = 250;
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
 
-/** 1536 → "1.5 KB". Binary units, one decimal. */
+/** 1536 → "1.5 KB". Binary units, one decimal; "0 B" at or below zero, "—" when not a finite number. */
 export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes)) return '—';
   if (bytes <= 0) return '0 B';
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), UNITS.length - 1);
+  const exponent = Math.floor(Math.log(bytes) / Math.log(1024));
+  const i = Math.min(Math.max(exponent, 0), UNITS.length - 1);
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${UNITS[i]}`;
 }
 

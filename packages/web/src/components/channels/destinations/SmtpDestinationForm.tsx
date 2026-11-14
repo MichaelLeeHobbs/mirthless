@@ -3,7 +3,7 @@
 // ===========================================
 // Configuration form for SMTP email destination connectors.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -16,6 +16,7 @@ import type { DestConnectorFormProps } from './types.js';
 import { SMTP_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
+import { getStr, getNum, getBool, propertyUpdaters } from '../common/connector-properties.js';
 
 const CONTENT_TYPES = ['text/plain', 'text/html'] as const;
 const DEFAULT_MIME_TYPE = 'text/plain';
@@ -38,21 +39,6 @@ function getAttachments(props: Record<string, unknown>): readonly AttachmentRow[
       content: typeof rec['content'] === 'string' ? rec['content'] : '',
     };
   });
-}
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getNum(props: Record<string, unknown>, key: string, fallback: number): number {
-  const val = props[key];
-  return typeof val === 'number' ? val : fallback;
-}
-
-function getBool(props: Record<string, unknown>, key: string, fallback: boolean): boolean {
-  const val = props[key];
-  return typeof val === 'boolean' ? val : fallback;
 }
 
 interface AttachmentsEditorProps {
@@ -137,22 +123,7 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleNumber = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    const parsed = parseInt(e.target.value, 10);
-    update(key, Number.isNaN(parsed) ? 0 : parsed);
-  };
-
-  const handleBool = (key: string) => (_e: ChangeEvent<HTMLInputElement>, checked: boolean): void => {
-    update(key, checked);
-  };
+  const { update, handleText, handleNumber, handleBool } = propertyUpdaters(properties, onChange);
 
   return (
     <Grid container spacing={3}>

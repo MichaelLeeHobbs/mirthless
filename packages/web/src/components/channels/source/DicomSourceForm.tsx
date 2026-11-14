@@ -3,7 +3,7 @@
 // ===========================================
 // Configuration form for DICOM C-STORE SCP source connectors.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -11,19 +11,10 @@ import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { DICOM_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
+import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
 
 const DISPATCH_MODES = ['PER_FILE', 'PER_ASSOCIATION'] as const;
 const POST_ACTIONS = ['DELETE', 'MOVE', 'NONE'] as const;
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getNum(props: Record<string, unknown>, key: string, fallback: number): number {
-  const val = props[key];
-  return typeof val === 'number' ? val : fallback;
-}
 
 export function DicomSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -37,18 +28,7 @@ export function DicomSourceForm({ properties, onChange }: SourceConnectorFormPro
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleNumber = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    const parsed = parseInt(e.target.value, 10);
-    update(key, Number.isNaN(parsed) ? 0 : parsed);
-  };
+  const { handleText, handleNumber } = propertyUpdaters(properties, onChange);
 
   const postAction = getStr(properties, 'postAction', 'DELETE');
 

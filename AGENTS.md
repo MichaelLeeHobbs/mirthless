@@ -35,7 +35,7 @@ Every line of code you write may be part of a system that routes patient lab res
 Do NOT build features, abstractions, or flexibility that aren't explicitly required by the current task.
 
 - No "just in case" parameters, config options, or extension points
-- No premature abstractions — three similar lines are better than a clever helper used once
+- No premature abstractions: don't build a helper for one caller. Before writing a helper, search `lib/` and `packages/core-util` for one that already does the job. A second copy of an existing helper is a defect.
 - No speculative generalization — design for today's requirements, not hypothetical futures
 - If you find yourself saying "this might be useful later" — stop and don't build it
 
