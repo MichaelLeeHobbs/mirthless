@@ -34,9 +34,9 @@ Mirth ships full inbound/outbound serializers (raw ⇄ XML) for each datatype, s
 | XML | Full | parse/build via fast-xml-parser | 🟢 |
 | JSON | Full | JSON.parse/stringify | 🟢 |
 | Raw | Full | Pass-through | 🟢 |
-| **Delimited (CSV/fixed-width)** | Full serializer + batch | `msg` is an array of row objects keyed by column name (D-256, 2026-11-13); no fixed-width, no batch per row | 🟡 |
+| **Delimited (CSV/fixed-width)** | Full serializer + batch | `msg` is an array of row objects keyed by column name (D-257, 2026-11-13); no fixed-width, no batch per row | 🟡 |
 | **DICOM** | Full serializer + DICOMUtil | **Pass-through** (declared, not serialized) | 🔴 |
-| **EDI / X12** | Full serializer, X12 vocab, batch | `X12` data type with the HL7 path API (D-257, 2026-11-13); no envelope validation, 999/TA1 or batch | 🟡 |
+| **EDI / X12** | Full serializer, X12 vocab, batch | `X12` data type with the HL7 path API (D-258, 2026-11-13); no envelope validation, 999/TA1 or batch | 🟡 |
 | **NCPDP** | Full serializer + NCPDPUtil | **Absent** | 🔴 |
 | **HL7v3** | Full serializer, batch | Declared enum only; pass-through | 🔴 |
 | FHIR | Not a native Mirth datatype | Declared (pass-through) | 🟢 GalvaniFlow extra |

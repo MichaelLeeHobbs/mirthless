@@ -166,7 +166,10 @@ export function route(pathname, search) {
   if (p === '/channels/status') return status;
   if (p === '/channels/c1') return channelDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
-  if (p === '/messages') return { items: search.includes('status=ERROR') ? traffic.filter((t) => t.status === 'ERROR') : traffic, total: traffic.length, limit: 25, offset: 0 };
+  if (p === '/messages') {
+    const items = search.includes('status=ERROR') ? traffic.filter((t) => t.status === 'ERROR') : traffic;
+    return { items, total: items.length, limit: 25, offset: 0 };
+  }
   if (p === '/tags') return tags;
   if (p === '/tags/assignments') return [{ tagId: 't1', channelId: 'c1' }, { tagId: 't1', channelId: 'c2' }, { tagId: 't2', channelId: 'c3' }, { tagId: 't3', channelId: 'c2' }];
   if (p === '/channel-groups') return groups;

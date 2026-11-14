@@ -1,6 +1,6 @@
 # 17. The last three migration gaps: MySQL, Delimited, X12
 
-Status: Michael approved the recommended option for all three on 2026-11-13, and all three are built: S19 Delimited (D-256), S20 X12 (D-257), S15 MySQL (D-258). The proposal as written when the suite scored 55/60 follows.
+Status: Michael approved the recommended option for all three on 2026-11-13, and all three are built: S19 Delimited (D-257), S20 X12 (D-258), S15 MySQL (D-259). The proposal as written when the suite scored 55/60 follows.
 
 ## S15: Database Writer to MySQL (weight 2, doc 12 rank 1)
 

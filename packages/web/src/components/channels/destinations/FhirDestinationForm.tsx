@@ -3,7 +3,7 @@
 // ===========================================
 // Configuration form for FHIR REST API destination connectors.
 
-import { useEffect, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -12,6 +12,7 @@ import type { DestConnectorFormProps } from './types.js';
 import { FHIR_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { HeadersEditor, coerceHeaders } from '../../common/HeadersEditor.js';
+import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
 
 const RESOURCE_TYPES = [
   'Patient', 'Observation', 'Encounter', 'Condition',
@@ -22,16 +23,6 @@ const RESOURCE_TYPES = [
 const METHODS = ['POST', 'PUT'] as const;
 const AUTH_TYPES = ['NONE', 'BASIC', 'BEARER', 'API_KEY'] as const;
 const FORMATS = ['json', 'xml'] as const;
-
-function getStr(props: Record<string, unknown>, key: string, fallback: string): string {
-  const val = props[key];
-  return typeof val === 'string' ? val : fallback;
-}
-
-function getNum(props: Record<string, unknown>, key: string, fallback: number): number {
-  const val = props[key];
-  return typeof val === 'number' ? val : fallback;
-}
 
 export function FhirDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -45,18 +36,7 @@ export function FhirDestinationForm({ properties, onChange }: DestConnectorFormP
     }
   }, [properties, onChange]);
 
-  const update = (key: string, value: unknown): void => {
-    onChange({ ...properties, [key]: value });
-  };
-
-  const handleText = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    update(key, e.target.value);
-  };
-
-  const handleNumber = (key: string) => (e: ChangeEvent<HTMLInputElement>): void => {
-    const parsed = parseInt(e.target.value, 10);
-    update(key, Number.isNaN(parsed) ? 0 : parsed);
-  };
+  const { update, handleText, handleNumber } = propertyUpdaters(properties, onChange);
 
   const authType = getStr(properties, 'authType', 'NONE');
 

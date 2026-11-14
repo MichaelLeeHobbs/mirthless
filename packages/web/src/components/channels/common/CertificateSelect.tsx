@@ -11,6 +11,7 @@ import Chip from '@mui/material/Chip';
 import Box from '@mui/material/Box';
 import type { CertificateListQuery } from '@galvaniflow/core-models';
 import { useCertificates, type CertificateSummary } from '../../../hooks/use-certificates.js';
+import { expiryColor, expiryDays, expiryLabel } from '../../../lib/certificate-expiry.js';
 
 interface CertificateSelectProps {
   readonly label: string;
@@ -24,21 +25,6 @@ interface CertificateSelectProps {
   readonly required?: boolean;
   readonly error?: boolean;
   readonly helperText?: string;
-}
-
-function expiryDays(notAfter: string): number {
-  return Math.floor((new Date(notAfter).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-}
-
-function expiryColor(days: number): 'error' | 'warning' | 'success' {
-  if (days < 30) return 'error';
-  if (days < 90) return 'warning';
-  return 'success';
-}
-
-function expiryLabel(days: number): string {
-  if (days < 0) return `Expired ${String(-days)}d ago`;
-  return `${String(days)}d remaining`;
 }
 
 /**

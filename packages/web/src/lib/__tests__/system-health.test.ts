@@ -29,6 +29,19 @@ describe('formatting', () => {
     expect(formatBytes(3 * 1024 ** 5)).toBe('3072.0 TB');
   });
 
+  it('keeps a fraction of a byte in bytes', () => {
+    expect(formatBytes(0.5)).toBe('0.5 B');
+  });
+
+  it('shows a dash for a size that is not a number', () => {
+    expect(formatBytes(Number.NaN)).toBe('—');
+    expect(formatBytes(Number.POSITIVE_INFINITY)).toBe('—');
+  });
+
+  it('shows zero for a negative size', () => {
+    expect(formatBytes(-5)).toBe('0 B');
+  });
+
   it('formats uptime as days, hours and minutes, always showing minutes', () => {
     expect(formatUptime(93_784)).toBe('1d 2h 3m');
     expect(formatUptime(30)).toBe('0m');

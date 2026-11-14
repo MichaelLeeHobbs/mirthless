@@ -13,6 +13,7 @@
 // CDATA sections and whitespace the script cannot see are kept where they were.
 
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
+import { isPlainObject } from '@galvaniflow/core-util';
 
 const ATTR_PREFIX = '@_';
 const TEXT = '#text';
@@ -67,10 +68,6 @@ interface Work {
   readonly out: OrderedNode[];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /** The single tag name of an ordered node (`#text`, `#comment`, `#cdata` or an element name). */
 function tagOf(node: OrderedNode): string {
   for (const key of Object.keys(node)) {
@@ -81,7 +78,7 @@ function tagOf(node: OrderedNode): string {
 
 /** Every value the object form holds under a tag: an array for repeated elements, one value otherwise. */
 function occurrences(parent: unknown, tag: string): readonly unknown[] {
-  if (!isRecord(parent) || !Object.hasOwn(parent, tag)) return [];
+  if (!isPlainObject(parent) || !Object.hasOwn(parent, tag)) return [];
   const value = parent[tag];
   if (Array.isArray(value)) return value as readonly unknown[];
   return value === undefined ? [] : [value];
@@ -89,7 +86,7 @@ function occurrences(parent: unknown, tag: string): readonly unknown[] {
 
 /** The text an element holds in the object form: the value itself for a leaf, `#text` otherwise. */
 function textOf(value: unknown): string {
-  if (isRecord(value)) return value[TEXT] === undefined || value[TEXT] === null ? '' : String(value[TEXT]);
+  if (isPlainObject(value)) return value[TEXT] === undefined || value[TEXT] === null ? '' : String(value[TEXT]);
   if (value === undefined || value === null || Array.isArray(value)) return '';
   return String(value);
 }
@@ -99,7 +96,7 @@ function isBlankText(node: OrderedNode): boolean {
 }
 
 function attributesOf(value: unknown): Record<string, string> | undefined {
-  if (!isRecord(value)) return undefined;
+  if (!isPlainObject(value)) return undefined;
   const attrs: Record<string, string> = {};
   let any = false;
   for (const [key, attr] of Object.entries(value)) {
@@ -146,7 +143,7 @@ function mergeOriginal(work: Work, used: Map<string, number>, stack: Work[]): vo
 
 /** Append the elements the script added: anything the original walk did not account for. */
 function appendAdded(work: Work, used: Map<string, number>, stack: Work[]): void {
-  if (!isRecord(work.edited)) return;
+  if (!isPlainObject(work.edited)) return;
   for (const key of Object.keys(work.edited)) {
     if (key === TEXT || key.startsWith(ATTR_PREFIX)) continue;
     const now = occurrences(work.edited, key);
