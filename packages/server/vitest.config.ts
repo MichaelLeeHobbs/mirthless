@@ -15,7 +15,7 @@ export default defineConfig({
       exclude: ['src/**/*.test.ts', 'src/db/migrations/**'],
       // Minimums set ~1 point under coverage on 2026-10-26, re-measured after the
       // Vitest 5 upgrade changed how V8 coverage is counted; raise toward the 95% target (D-193).
-      thresholds: { statements: 54, branches: 53, functions: 68, lines: 55 },
+      thresholds: { statements: 57, branches: 58, functions: 71, lines: 57 },
     },
   },
 });

@@ -5,14 +5,8 @@
 import type { Request, Response } from 'express';
 import type { SetExtensionEnabledInput } from '@galvaniflow/core-models';
 import { ExtensionService } from '../services/extension.service.js';
-import { isServiceError } from '../lib/service-error.js';
-import { errorResponse } from '../lib/controller-helpers.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
-
-function mapErrorToStatus(error: unknown): number {
-  if (isServiceError(error, 'NOT_FOUND')) return 404;
-  return 500;
-}
 
 export class ExtensionController {
   static async list(_req: Request, res: Response): Promise<void> {
