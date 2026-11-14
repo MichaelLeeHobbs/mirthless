@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import type { CreateUserInput, UpdateUserInput, ChangePasswordInput, ChangeOwnPasswordInput } from '@galvaniflow/core-models';
 import { UserService } from '../services/user.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
@@ -17,16 +18,6 @@ function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'FORBIDDEN')) return 403;
   if (isServiceError(error, 'INVALID_CREDENTIALS')) return 400;
   return 500;
-}
-
-function errorCode(error: unknown): string {
-  if (isServiceError(error)) return error.code;
-  return 'INTERNAL';
-}
-
-function errorMessage(error: unknown): string {
-  if (isServiceError(error)) return error.message;
-  return 'Internal server error';
 }
 
 export class UserController {
@@ -48,7 +39,7 @@ export class UserController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -63,7 +54,7 @@ export class UserController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, username: input.username }, 'Failed to create user');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -81,7 +72,7 @@ export class UserController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, userId: id }, 'Failed to update user');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -98,7 +89,7 @@ export class UserController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, userId: id }, 'Failed to delete user');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -115,7 +106,7 @@ export class UserController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -132,7 +123,7 @@ export class UserController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, userId }, 'Self password change failed');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -147,7 +138,7 @@ export class UserController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -160,7 +151,7 @@ export class UserController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

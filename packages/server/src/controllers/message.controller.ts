@@ -7,22 +7,13 @@ import type { Request, Response } from 'express';
 import type { MessageSearchQuery } from '@galvaniflow/core-models';
 import { MessageQueryService } from '../services/message-query.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { errorResponse } from '../lib/controller-helpers.js';
 import { emitEvent } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
   return 500;
-}
-
-function errorCode(error: unknown): string {
-  if (isServiceError(error)) return error.code;
-  return 'INTERNAL';
-}
-
-function errorMessage(error: unknown): string {
-  if (isServiceError(error)) return error.message;
-  return 'Internal server error';
 }
 
 export class MessageController {
@@ -35,7 +26,7 @@ export class MessageController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, channelId }, 'Failed to search messages');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -58,7 +49,7 @@ export class MessageController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -82,7 +73,7 @@ export class MessageController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, channelId, msgId }, 'Failed to delete message');
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

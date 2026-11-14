@@ -13,6 +13,7 @@ import type {
 } from '@galvaniflow/core-models';
 import { ChannelService } from '../services/channel.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { errorResponse } from '../lib/controller-helpers.js';
 import { redactChannelDetail } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
 import { getEngine } from '../engine.js';
@@ -29,11 +30,6 @@ function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'CONFLICT')) return 409;
   if (isServiceError(error, 'NOT_SUPPORTED')) return 422;
   return 500;
-}
-
-function errorMessage(error: unknown): string {
-  if (isServiceError(error)) return error.message;
-  return 'Internal server error';
 }
 
 export class ChannelController {
@@ -56,7 +52,7 @@ export class ChannelController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: 'NOT_FOUND', message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: { code: 'NOT_FOUND', message: errorResponse(result.error).message } });
       return;
     }
 
@@ -76,7 +72,7 @@ export class ChannelController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, channelName: input.name }, 'Failed to create channel');
-      res.status(status).json({ success: false, error: { code: isServiceError(result.error) ? result.error.code : 'INTERNAL', message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -93,7 +89,7 @@ export class ChannelController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to update channel');
-      res.status(status).json({ success: false, error: { code: isServiceError(result.error) ? result.error.code : 'INTERNAL', message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -115,7 +111,7 @@ export class ChannelController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to delete channel');
-      res.status(status).json({ success: false, error: { code: isServiceError(result.error) ? result.error.code : 'INTERNAL', message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -132,7 +128,7 @@ export class ChannelController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, channelId: id }, 'Failed to clone channel');
-      res.status(status).json({ success: false, error: { code: isServiceError(result.error) ? result.error.code : 'INTERNAL', message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -147,7 +143,7 @@ export class ChannelController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: isServiceError(result.error) ? result.error.code : 'INTERNAL', message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

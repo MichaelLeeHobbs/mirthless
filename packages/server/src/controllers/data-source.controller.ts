@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import type { CreateDataSourceInput, UpdateDataSourceInput } from '@galvaniflow/core-models';
 import { DataSourceService, type TestConnectionInput } from '../services/data-source.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
@@ -14,11 +15,6 @@ function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'ALREADY_EXISTS')) return 409;
   if (isServiceError(error, 'CONFIG_ERROR')) return 500;
   return 500;
-}
-
-function errorResponse(error: unknown): { code: string; message: string } {
-  if (isServiceError(error)) return { code: error.code, message: error.message };
-  return { code: 'INTERNAL', message: 'Internal server error' };
 }
 
 export class DataSourceController {

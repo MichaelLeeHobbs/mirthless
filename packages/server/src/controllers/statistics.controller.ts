@@ -6,21 +6,12 @@
 import type { Request, Response } from 'express';
 import { StatisticsService } from '../services/statistics.service.js';
 import { isServiceError } from '../lib/service-error.js';
+import { errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'NOT_FOUND')) return 404;
   return 500;
-}
-
-function errorCode(error: unknown): string {
-  if (isServiceError(error)) return error.code;
-  return 'INTERNAL';
-}
-
-function errorMessage(error: unknown): string {
-  if (isServiceError(error)) return error.message;
-  return 'Internal server error';
 }
 
 export class StatisticsController {
@@ -31,7 +22,7 @@ export class StatisticsController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -58,7 +49,7 @@ export class StatisticsController {
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
-      res.status(status).json({ success: false, error: { code: errorCode(result.error), message: errorMessage(result.error) } });
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
