@@ -460,8 +460,9 @@ export class MessageProcessor {
         );
         if (!gpreResult.ok) return errorOut('globalPreprocessor', gpreResult.error.message);
         const gpreVal = scriptReplacement(gpreResult.value.returnValue, gpreResult.value.msg);
+        // A preprocessor that changed nothing leaves the text exactly as received.
         if (gpreVal != null) {
-          content = serializeFromSandbox(gpreVal, dataType, content, this.config.dataTypeOptions);
+          content = serializeTransformed(gpreVal, content, dataType, this.config.dataTypeOptions);
         }
         mark('globalPreprocessor');
       }
@@ -474,7 +475,7 @@ export class MessageProcessor {
         if (!preResult.ok) return errorOut('preprocessor', preResult.error.message);
         const preVal = scriptReplacement(preResult.value.returnValue, preResult.value.msg);
         if (preVal != null) {
-          content = serializeFromSandbox(preVal, dataType, content, this.config.dataTypeOptions);
+          content = serializeTransformed(preVal, content, dataType, this.config.dataTypeOptions);
         }
         mark('preprocessor');
       }

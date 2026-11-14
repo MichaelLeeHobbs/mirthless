@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from '@galvaniflow/core-util';
+import { delimitedOptionsSchema } from '@galvaniflow/core-models';
 import { MessageProcessor, groupDestinationChains } from '../message-processor.js';
 import type {
   MessageStore,
@@ -771,6 +772,39 @@ describe('MessageProcessor', () => {
 
     // Destination must receive the original message, not the string "true".
     expect(sendFn).toHaveBeenCalledWith(1, 1,'ORIGINAL_MSG', expect.any(AbortSignal), expect.any(String), undefined);
+  });
+
+  // Regression: a preprocessor that returned nothing had its parsed rows written
+  // back, dropping a blank record, a CR inside a quoted value and a column
+  // whose name repeats an earlier one.
+  it.each([
+    ['a blank record', '001\n\n003\n', {}],
+    ['a CR inside a quoted value', '1,"two\r\nlines"\r\n', {}],
+  ])('a Delimited preprocessor that changes nothing keeps %s', async (_name, text, delimited) => {
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      dataType: 'DELIMITED',
+      dataTypeOptions: { delimited: delimitedOptionsSchema.parse(delimited) },
+      scripts: { globalPreprocessor: { code: 'logger.info("seen");' }, preprocessor: { code: 'logger.info(msg.length);' } },
+    });
+    const processor = new MessageProcessor(sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput(text), AbortSignal.timeout(5_000));
+
+    expect(sendFn).toHaveBeenCalledWith(1, 1, text, expect.any(AbortSignal), expect.any(String), undefined);
+  });
+
+  it('a Delimited preprocessor that edits a row writes the rows back', async () => {
+    const sendFn = makeSendFn();
+    const config = makeConfig({
+      dataType: 'DELIMITED',
+      scripts: { preprocessor: { code: 'msg[0].column2 = "X";' } },
+    });
+    const processor = new MessageProcessor(sandbox, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS);
+
+    await processor.processMessage(makeInput('1,2\n'), AbortSignal.timeout(5_000));
+
+    expect(sendFn).toHaveBeenCalledWith(1, 1, '1,X\n', expect.any(AbortSignal), expect.any(String), undefined);
   });
 
   it('does not count the source as SENT when the only destination errors (stats overcount)', async () => {
