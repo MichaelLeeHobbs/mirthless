@@ -40,13 +40,15 @@ beforeEach(() => {
 });
 
 describe('UserPreferenceController without an authenticated user', () => {
-  it.each(HANDLERS)('%s answers 401 and never calls the service', async (handler) => {
+  // Behind authenticate this is a server bug. A 401 would make the web client
+  // sign the user out as if the session had expired (D-263).
+  it.each(HANDLERS)('%s answers 500 INTERNAL, not 401, and never calls the service', async (handler) => {
     const res = makeRes();
 
     await UserPreferenceController[handler](makeReq(false), res);
 
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
     expect(mockService[handler]).not.toHaveBeenCalled();
   });
 });
