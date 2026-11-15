@@ -2,12 +2,9 @@
 // TCP/MLLP Source Connector Form
 // ===========================================
 // Configuration form for TCP/MLLP listener source connectors.
-// Property keys mirror packages/connectors/src/registry.ts (TcpMllpReceiver):
-// host, port, maxConnections, responseMode, charset, maxFrameBytes.
-// TLS is intentionally NOT surfaced here: TCP TLS needs the same server-side
-// cert-store resolution HTTP has (engine.ts resolves only for connectorType
-// === 'HTTP'), so a form-only tls bag would be silently ignored at deploy.
-// That is a separate workstream — see docs/design connector-parity notes.
+// Property keys are tcpMllpSourcePropertiesSchema's in core-models. TLS,
+// frame bytes and processBatch are not surfaced: TCP TLS is inline PEM until
+// it gets the certificate-store lookup HTTP, Kafka and AMQP have.
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';

@@ -2,6 +2,10 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — TCP/MLLP property schema (branch `feat/115-tcp-mllp-props-schema`)
+
+First slice of #115 (D-270). TCP/MLLP source and destination properties have a strict schema in `core-models/src/schemas/tcp-mllp-connector.schema.ts`. Deploy validation and the registry both use it, so a misspelled key, an unsupported charset or a non-numeric setting fails the deploy instead of being ignored or failing on the first message. A test checks the web defaults and the form's charset and response-mode lists against it, and another checks the connector reference tables, which gained the six TCP/MLLP keys they were missing. Upgrade note with a query to find affected channels: `docs/ops/upgrade.md`. HTTP and DATABASE follow in their own PRs.
+
 ## 2026-11-15 — Open issues batch (branch `batch-2026-11-15-open-issues`)
 
 Michael asked for the open issues to be worked through. 16 of 18 were fixed as one batch, one branch and merge commit per issue; #115 (one property schema per connector) and #88 (CI job for the real-broker suites) were left for their own sessions.

@@ -36,6 +36,28 @@ If you are upgrading an install that predates 0007 and has message history you c
 about, **export it first** (per-channel message export or a full `pg_dump`), because the
 migration will not migrate it for you. From 1.0 onward, migrations will be data-preserving.
 
+## Stricter connector properties (#115)
+
+Connector properties are moving, one connector type at a time, to a schema in `packages/core-models` that refuses keys it does not list and values of the wrong type. A channel that deployed before can then fail its deploy, including the auto-deploy at server start, with `Invalid source connector properties for <TYPE>: ...` or `Invalid destination connector properties for <TYPE>: ...`. The message names the key. Nothing in the database is changed; edit the channel's properties and deploy again. `docs/user/connector-reference.md` lists the keys each type accepts.
+
+**TCP_MLLP** is the first. A TCP_MLLP channel now fails to deploy when it has:
+
+- a key not in its table, e.g. a misspelling such as `maxConnection` or a key left from another connector type. Before, such a key was ignored.
+- a `charset` other than `utf-8`, `latin1`, `ascii` or `utf16le`. `ISO-8859-1` used to deploy and then fail on the first message; `utf8` used to work and must now be written `utf-8`.
+- a number that is not a whole number given as a number or as digits (`maxConnections: "ten"`), or a timeout or size below 1. Before, the default was used silently.
+- a `tls` that is not an object, `false` or `null`, or a key inside `tls` other than those in `docs/ops/tls-and-phi.md`.
+
+To find TCP_MLLP connectors with a key the schema does not list before upgrading, run in `psql`:
+
+```sql
+SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE source_connector_type = 'TCP_MLLP'
+  AND k NOT IN ('host','port','maxConnections','responseMode','charset','maxFrameBytes','frameStart','frameEnd','tls','processBatch');
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'TCP_MLLP'
+  AND k NOT IN ('host','port','maxConnections','responseTimeout','acquireTimeoutMs','charset','frameStart','frameEnd','tls','template');
+```
+
 ## Standard upgrade (Docker)
 
 ```bash

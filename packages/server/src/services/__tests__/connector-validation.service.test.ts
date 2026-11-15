@@ -135,11 +135,23 @@ describe('validateConnectorProperties', () => {
       expect(result.ok).toBe(false);
     });
 
-    it('allows extra properties via passthrough', () => {
-      const result = validateConnectorProperties('TCP_MLLP', 'source', {
-        port: 6661, bufferSize: 65536, charset: 'UTF-8',
-      });
-      expect(result.ok).toBe(true);
+    it('rejects a TCP_MLLP key the schema does not list, naming it', () => {
+      const result = validateConnectorProperties('TCP_MLLP', 'source', { port: 6661, bufferSize: 65536 });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('bufferSize');
+    });
+
+    it('rejects a TCP_MLLP charset Node has no encoder for', () => {
+      const result = validateConnectorProperties('TCP_MLLP', 'source', { port: 6661, charset: 'UTF-8' });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('charset:');
+    });
+
+    it('accepts the keys the engine reads from every TCP_MLLP connector', () => {
+      expect(validateConnectorProperties('TCP_MLLP', 'source', { port: 6661, processBatch: true }).ok).toBe(true);
+      expect(validateConnectorProperties('TCP_MLLP', 'destination', { host: 'lis', port: 6661, template: 'x' }).ok).toBe(true);
     });
   });
 
