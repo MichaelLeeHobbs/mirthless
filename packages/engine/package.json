@@ -24,12 +24,12 @@
     "@galvaniflow/core-models": "workspace:*",
     "@galvaniflow/core-util": "workspace:*",
     "esbuild": "^0.28.2",
-    "fast-xml-parser": "^5.11.2"
+    "fast-xml-parser": "^5.12.0"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
     "@vitest/coverage-v8": "5.0.5",
-    "rimraf": "6.1.3",
+    "rimraf": "6.1.4",
     "typescript": "6.0.3",
     "vitest": "5.0.5"
   }
