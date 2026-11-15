@@ -503,7 +503,7 @@ describe('EmailReceiver', () => {
       expect(result.ok).toBe(false);
     });
 
-    it('does not keep a client whose connect failed on start, so stop does not disconnect it', async () => {
+    it('closes a client whose connect failed on start and does not keep it, so stop does not log it out again', async () => {
       const client = makeMockClient();
       vi.mocked(client.connect).mockRejectedValue(new Error('Connection refused'));
       // Logging out a session that never connected fails.
@@ -512,10 +512,31 @@ describe('EmailReceiver', () => {
       receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
       receiver.setDispatcher(makeDispatcher());
       expect((await receiver.onStart()).ok).toBe(false);
+      // The failed connect is cleaned up once (its error ignored), in case the library logs in late.
+      expect(client.disconnect).toHaveBeenCalledTimes(1);
 
       const stopResult = await receiver.onStop();
       expect(stopResult.ok).toBe(true);
-      expect(client.disconnect).not.toHaveBeenCalled();
+      expect(client.disconnect).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not log out an already stopped session again when a restart fails', async () => {
+      const first = makeMockClient();
+      const second = makeMockClient();
+      vi.mocked(second.connect).mockRejectedValue(new Error('Connection refused'));
+      const clients = [first, second];
+      let next = 0;
+      receiver = new EmailReceiver(makeConfig(), () => clients[next++] ?? second);
+      receiver.setDispatcher(makeDispatcher());
+
+      expect((await receiver.onStart()).ok).toBe(true);
+      expect((await receiver.onStop()).ok).toBe(true);
+      // A second logout of the closed session would fail.
+      vi.mocked(first.disconnect).mockRejectedValue(new Error('Not connected'));
+
+      expect((await receiver.onStart()).ok).toBe(false);
+      expect((await receiver.onStop()).ok).toBe(true);
+      expect(first.disconnect).toHaveBeenCalledTimes(1);
     });
   });
 

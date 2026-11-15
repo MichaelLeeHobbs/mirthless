@@ -17,13 +17,30 @@ export interface ConnectableClient {
  * Connect a newly built client under a timeout and return it. Rejects when the
  * connect fails or exceeds `timeoutMs`, so the caller stores the client only
  * once it is connected.
+ *
+ * On failure `close`, when given, runs (under the same timeout) before the
+ * rejection: a client library can finish a connect after our timeout, and
+ * nobody would hold that session to close it. A failed close is ignored, since
+ * the connect error is the one the caller reports.
  */
 export async function connectFresh<C extends ConnectableClient>(
   client: C,
   timeoutMs: number,
   label: string,
+  close?: () => Promise<void>,
 ): Promise<C> {
-  await withTimeout(client.connect(), timeoutMs, label);
+  try {
+    await withTimeout(client.connect(), timeoutMs, label);
+  } catch (err) {
+    if (close) {
+      try {
+        await withTimeout(close(), timeoutMs, `${label} cleanup`);
+      } catch {
+        // The connect error below is what the caller reports.
+      }
+    }
+    throw err;
+  }
   return client;
 }
 

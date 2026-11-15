@@ -33,6 +33,23 @@ describe('connectFresh', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     await assertion;
   });
+
+  it('closes a client whose connect failed, and still rejects with the connect error', async () => {
+    const client = { connect: vi.fn<() => Promise<void>>().mockRejectedValue(new Error('refused')) };
+    const close = vi.fn<() => Promise<void>>().mockRejectedValue(new Error('not connected'));
+    await expect(connectFresh(client, 1_000, 'X connect', close)).rejects.toThrow('refused');
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('closes a client whose connect timed out, so a late login does not leave a session open', async () => {
+    const client = { connect: (): Promise<void> => new Promise(() => { /* never */ }) };
+    const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    const pending = connectFresh(client, 1_000, 'X connect', close);
+    const assertion = expect(pending).rejects.toThrow('X connect timed out after 1000ms');
+    await vi.advanceTimersByTimeAsync(1_000);
+    await assertion;
+    expect(close).toHaveBeenCalledOnce();
+  });
 });
 
 describe('closeQuietly', () => {
