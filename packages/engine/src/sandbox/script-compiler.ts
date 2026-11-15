@@ -98,6 +98,35 @@ export async function compileScript(
   });
 }
 
+interface CompileMessage {
+  readonly text: string;
+  readonly location?: { readonly line: number } | null;
+}
+
+function compileMessages(error: unknown): ReadonlyArray<CompileMessage> | null {
+  if (error === null || typeof error !== 'object' || !('errors' in error)) return null;
+  const { errors } = error as { readonly errors: unknown };
+  return Array.isArray(errors) && errors.length > 0 ? (errors as ReadonlyArray<CompileMessage>) : null;
+}
+
+/**
+ * The syntax errors from a failed {@link compileScript}, as `Line N: <text>`
+ * with N counted in the user's script, not in the function the compiler wraps
+ * it in. An error esbuild places on the wrapper's closing brace (an unclosed
+ * block, say) is reported on the script's last line.
+ */
+export function compileErrorMessages(error: unknown, code: string): readonly string[] {
+  const messages = compileMessages(error);
+  if (messages === null) return [error instanceof Error ? error.message : 'Unknown syntax error'];
+  const lastLine = code.split('\n').length;
+  return messages.map((m) => {
+    if (!m.location) return m.text;
+    // The wrapper's opening line comes before line 1 of the script.
+    const line = Math.min(Math.max(m.location.line - 1, 1), lastLine);
+    return `Line ${String(line)}: ${m.text}`;
+  });
+}
+
 /** Clear the script compilation cache. */
 export function clearScriptCache(): void {
   scriptCache.clear();
