@@ -3,6 +3,8 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
+import { CONNECTOR_TYPES } from '@galvaniflow/core-models';
+import { createSourceConnector, createDestinationConnector } from '@galvaniflow/connectors';
 import { validateConnectorProperties } from '../connector-validation.service.js';
 
 describe('validateConnectorProperties: Kafka and AMQP', () => {
@@ -285,14 +287,112 @@ describe('validateConnectorProperties', () => {
   // ----- Unknown Type -----
 
   describe('unknown connector type', () => {
-    it('passes validation for unknown source connector type', () => {
+    it('rejects an unknown source connector type, naming it', () => {
       const result = validateConnectorProperties('UNKNOWN_TYPE', 'source', {});
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+      expect(result.error.message).toContain('Unknown source connector type: UNKNOWN_TYPE');
     });
 
-    it('passes validation for unknown destination connector type', () => {
+    it('rejects an unknown destination connector type', () => {
       const result = validateConnectorProperties('FUTURE_CONNECTOR', 'destination', { foo: 'bar' });
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
+    });
+
+    it('does not take an object prototype key for a connector type', () => {
+      expect(validateConnectorProperties('constructor', 'source', {}).ok).toBe(false);
+    });
+
+    it('rejects a destination-only type as a source and a source-only type as a destination', () => {
+      expect(validateConnectorProperties('SMTP', 'source', { host: 'mail', port: 25, to: 'a@b' }).ok).toBe(false);
+      expect(validateConnectorProperties('EMAIL', 'destination', { host: 'mail', port: 993, username: 'u', password: 'p' }).ok).toBe(false);
+    });
+  });
+
+  describe('every registry connector type has a schema', () => {
+    /** Types the connector registry can build in a mode (a factory that rejects empty properties still counts). */
+    function registryTypes(create: (type: string, props: Record<string, unknown>) => unknown): string[] {
+      return CONNECTOR_TYPES.filter((type) => {
+        try {
+          create(type, {});
+          return true;
+        } catch (err: unknown) {
+          return !(err instanceof Error && err.message.startsWith('Unknown'));
+        }
+      });
+    }
+
+    /** Types validation knows in a mode: anything not refused as unknown. */
+    function validatedTypes(mode: 'source' | 'destination'): string[] {
+      return CONNECTOR_TYPES.filter((type) => {
+        const result = validateConnectorProperties(type, mode, {});
+        return result.ok || !result.error.message.startsWith('Unknown');
+      });
+    }
+
+    it('validates exactly the source types the registry builds', () => {
+      expect(validatedTypes('source')).toEqual(registryTypes(createSourceConnector));
+    });
+
+    it('validates exactly the destination types the registry builds', () => {
+      expect(validatedTypes('destination')).toEqual(registryTypes(createDestinationConnector));
+    });
+  });
+
+  describe('SFTP', () => {
+    // As the SFTP source and destination forms save them (web connector-defaults), filled in.
+    const SFTP_SOURCE = {
+      host: 'sftp.lab.example', port: 22, username: 'lab', password: 'pw', privateKey: '', passphrase: '',
+      remoteDirectory: '/inbound', filePattern: '*', pollingIntervalMs: 5000, afterProcessing: 'DELETE',
+      moveToDirectory: '', minFileAgeMs: 1000, charset: 'utf-8', strictHostKey: true, hostKey: 'AAAAkey',
+    };
+    const SFTP_DEST = {
+      host: 'sftp.lab.example', port: 22, username: 'lab', password: '', privateKey: '-----BEGIN KEY-----', passphrase: '',
+      remoteDirectory: '/outbound', fileNameTemplate: '${messageId}.dat', appendMode: false, strictHostKey: true, hostKey: 'AAAAkey',
+    };
+
+    it('accepts SFTP source and destination properties as the forms save them', () => {
+      expect(validateConnectorProperties('SFTP', 'source', SFTP_SOURCE).ok).toBe(true);
+      expect(validateConnectorProperties('SFTP', 'destination', SFTP_DEST).ok).toBe(true);
+    });
+
+    it('accepts a missing port (the connector uses 22) and no host key when host key checking is off', () => {
+      const { port: _port, ...noPort } = SFTP_SOURCE;
+      expect(validateConnectorProperties('SFTP', 'source', { ...noPort, strictHostKey: false, hostKey: '' }).ok).toBe(true);
+    });
+
+    it('rejects an SFTP source with no host and a non-numeric port, naming both', () => {
+      const result = validateConnectorProperties('SFTP', 'source', { port: 'abc' });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('host');
+      expect(result.error.message).toContain('port');
+    });
+
+    it.each([['source', SFTP_SOURCE], ['destination', SFTP_DEST]] as const)('rejects an SFTP %s with neither password nor private key', (mode, props) => {
+      const result = validateConnectorProperties('SFTP', mode, { ...props, password: '', privateKey: '' });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('password or a privateKey');
+    });
+
+    it.each([['source', SFTP_SOURCE], ['destination', SFTP_DEST]] as const)('rejects an SFTP %s that checks the host key but has none', (mode, props) => {
+      const { hostKey: _hostKey, ...noKey } = props;
+      const result = validateConnectorProperties('SFTP', mode, noKey);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('hostKey');
+    });
+
+    it('rejects an SFTP source that moves processed files but names no directory, or has an unknown action', () => {
+      expect(validateConnectorProperties('SFTP', 'source', { ...SFTP_SOURCE, afterProcessing: 'MOVE', moveToDirectory: '' }).ok).toBe(false);
+      expect(validateConnectorProperties('SFTP', 'source', { ...SFTP_SOURCE, afterProcessing: 'MOVE', moveToDirectory: '/done' }).ok).toBe(true);
+      expect(validateConnectorProperties('SFTP', 'source', { ...SFTP_SOURCE, afterProcessing: 'ARCHIVE' }).ok).toBe(false);
+    });
+
+    it.each(['username', 'remoteDirectory'])('rejects an SFTP destination with an empty %s', (key) => {
+      expect(validateConnectorProperties('SFTP', 'destination', { ...SFTP_DEST, [key]: '' }).ok).toBe(false);
     });
   });
 

@@ -42,6 +42,8 @@ function fromRow(row: GlobalMapRow): unknown {
 export class GlobalMapProxy {
   private readonly map = new GlobalChannelMap();
   private readonly dirty = new Set<string>();
+  /** The latest write of each key that has not settled yet. */
+  private readonly inFlight = new Map<string, Promise<void>>();
   private readonly persistence: GlobalMapStore;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private readonly flushIntervalMs: number;
@@ -81,22 +83,28 @@ export class GlobalMapProxy {
     }
   }
 
-  /** Take an entry that is already persisted (an edit made through the API). */
+  // An edit made through the API is already in the database, but a script save
+  // of the same key on another connection can commit after it, even one whose
+  // promise resolved before the API told the proxy. So an API edit always marks
+  // the key dirty: the next flush writes the API's value last. The extra write
+  // is idempotent.
+
+  /** Take an entry that the API already persisted. */
   set(row: GlobalMapRow): void {
     this.map.put(row.key, fromRow(row));
-    this.dirty.delete(row.key);
+    this.dirty.add(row.key);
   }
 
-  /** Drop an entry that is already removed from the database. */
+  /** Drop an entry the API already removed from the database. */
   delete(key: string): void {
     this.map.remove(key);
-    this.dirty.delete(key);
+    this.dirty.add(key);
   }
 
-  /** Drop every entry; the database is already cleared. */
+  /** Drop every entry; the API already cleared the database. */
   clear(): void {
+    for (const key of Object.keys(this.map.toRecord())) this.dirty.add(key);
     this.map.clear();
-    this.dirty.clear();
   }
 
   /** Save every changed key. Never rejects: failures are reported and retried next time. */
@@ -106,7 +114,7 @@ export class GlobalMapProxy {
     const keys = [...this.dirty];
     this.dirty.clear();
 
-    const results = await Promise.allSettled(keys.map((key) => this.persistKey(key)));
+    const results = await Promise.allSettled(keys.map((key) => this.persistInOrder(key)));
     results.forEach((result, i) => {
       const key = keys[i];
       if (result.status === 'rejected' && key !== undefined) {
@@ -123,6 +131,24 @@ export class GlobalMapProxy {
       this.flushTimer = null;
     }
     await this.flush();
+  }
+
+  /**
+   * Persist a key after any earlier write of the same key has settled, so two
+   * flushes can never land one key's values out of order. The value is read
+   * when the write starts, not when it is queued.
+   */
+  private persistInOrder(key: string): Promise<void> {
+    const previous = this.inFlight.get(key);
+    const write = previous === undefined
+      ? this.persistKey(key)
+      : previous.then(() => this.persistKey(key), () => this.persistKey(key));
+    this.inFlight.set(key, write);
+    const settle = (): void => {
+      if (this.inFlight.get(key) === write) this.inFlight.delete(key);
+    };
+    void write.then(settle, settle);
+    return write;
   }
 
   private async persistKey(key: string): Promise<void> {

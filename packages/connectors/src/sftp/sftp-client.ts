@@ -29,6 +29,8 @@ export interface SftpConnectionOptions {
   /** When true, verify the server host key against {@link hostKey}. */
   readonly strictHostKey: boolean;
   readonly hostKey?: string | undefined;
+  /** How long ssh2 waits for the SSH handshake (its `readyTimeout`); ssh2's default of 20 s when unset. */
+  readonly readyTimeoutMs?: number | undefined;
 }
 
 // ----- File listing -----
@@ -154,6 +156,7 @@ export function buildConnectOptions(options: SftpConnectionOptions): Record<stri
     ...(options.privateKey ? { privateKey: options.privateKey } : {}),
     ...(options.passphrase ? { passphrase: options.passphrase } : {}),
     ...(verifier ? { hostVerifier: verifier } : {}),
+    ...(options.readyTimeoutMs !== undefined ? { readyTimeout: options.readyTimeoutMs } : {}),
   };
 }
 

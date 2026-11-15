@@ -12,10 +12,9 @@ import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
 import { permissionNamesForRole } from '../lib/role-permissions.js';
 import { eq } from 'drizzle-orm';
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../lib/jwt.js';
+import { signAccessToken, signRefreshToken, tokenExpiresAt, verifyRefreshToken } from '../lib/jwt.js';
 import { emitEvent } from '../lib/event-emitter.js';
 
-const REFRESH_TOKEN_DAYS = 7;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 /**
@@ -226,9 +225,9 @@ export class AuthService {
   ): Promise<AuthTokens> {
     const refreshToken = signRefreshToken({ userId });
 
-    // Store hashed refresh token in database with metadata
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_DAYS);
+    // Store hashed refresh token in database with metadata. The session ends
+    // when the token does, so JWT_REFRESH_EXPIRES_IN sets both.
+    const expiresAt = tokenExpiresAt(refreshToken);
 
     const [session] = await db
       .insert(sessions)

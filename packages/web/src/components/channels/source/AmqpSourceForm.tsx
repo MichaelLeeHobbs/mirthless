@@ -11,7 +11,7 @@ import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { AMQP_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
-import { AmqpConnectionFields, QueueTlsFields } from '../common/QueueConnectionFields.js';
+import { AmqpConnectionFields, QueueCharsetField, QueueStoreAttemptsField, QueueTlsFields } from '../common/QueueConnectionFields.js';
 import { getStr, propertyUpdaters } from '../common/connector-properties.js';
 
 export function AmqpSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
@@ -43,8 +43,10 @@ export function AmqpSourceForm({ properties, onChange }: SourceConnectorFormProp
           fullWidth
           sx={{ mb: 2 }}
         />
+        <QueueCharsetField properties={properties} onChange={onChange} />
+        <QueueStoreAttemptsField properties={properties} onChange={onChange} />
         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-          A message is acknowledged only after the channel has stored it. One the channel could not store goes back to the queue; one stored with an error goes to the queue&apos;s dead-letter exchange, if it has one. After a lost connection a message can arrive twice, with redelivered set in the source map.
+          A message is acknowledged only after the channel has stored it. One the channel could not store goes back to the queue, and if it keeps failing the channel stops with the message still on the queue; one stored with an error goes to the queue&apos;s dead-letter exchange, if it has one. After a lost connection a message can arrive twice, with redelivered set in the source map.
         </Typography>
       </Grid>
 

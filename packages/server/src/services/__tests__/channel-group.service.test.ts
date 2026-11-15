@@ -287,6 +287,32 @@ describe('ChannelGroupService', () => {
       if (result.ok) return;
       expect(result.error).toHaveProperty('message', expect.stringContaining('not found'));
     });
+
+    it('puts the expected revision in the UPDATE WHERE', async () => {
+      pushResponse([makeGroupRow()]);
+      mockUpdateReturning.mockResolvedValueOnce([makeGroupRow({ revision: 2 })]);
+      pushResponse([{ value: 0 }]);
+
+      await ChannelGroupService.update(GROUP_ID, { revision: 1, description: 'x' });
+
+      expect(mockUpdateWhere).toHaveBeenCalledWith({
+        type: 'and',
+        args: [{ type: 'eq', val: GROUP_ID }, { type: 'eq', val: 1 }],
+      });
+    });
+
+    it('returns CONFLICT when a concurrent update changed the revision first', async () => {
+      // The read sees revision 1, but by the UPDATE another writer has bumped it,
+      // so the revision-guarded UPDATE matches no row.
+      pushResponse([makeGroupRow()]);
+      mockUpdateReturning.mockResolvedValueOnce([]);
+
+      const result = await ChannelGroupService.update(GROUP_ID, { revision: 1, description: 'x' });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+    });
   });
 
   describe('delete', () => {

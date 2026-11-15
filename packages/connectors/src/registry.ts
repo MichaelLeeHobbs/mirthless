@@ -32,7 +32,7 @@ import { KafkaReceiver } from './kafka/kafka-receiver.js';
 import { KafkaDispatcher } from './kafka/kafka-dispatcher.js';
 import { AmqpReceiver } from './amqp/amqp-receiver.js';
 import { AmqpDispatcher } from './amqp/amqp-dispatcher.js';
-import type { TlsClientOptions } from './tls.js';
+import type { TlsClientOptions, TlsServerOptions } from './tls.js';
 import {
   kafkaSourcePropertiesSchema,
   kafkaDestinationPropertiesSchema,
@@ -114,6 +114,24 @@ export function readQueueTls(props: Record<string, unknown>): TlsClientOptions |
   return props['useTls'] === true ? readTlsClientOptions(props) ?? {} : undefined;
 }
 
+/**
+ * Server TLS for the HTTP source. On scheme HTTPS the server has swapped the
+ * certificate ids for PEM, which must be complete. On any other scheme the
+ * stored `tls` bag holds only certificate ids (the form keeps it when HTTPS is
+ * off), so the listener is plaintext; a bag carrying cert or key PEM there
+ * throws rather than being ignored.
+ */
+export function readHttpSourceTls(props: Record<string, unknown>): TlsServerOptions | undefined {
+  if (props['scheme'] !== 'HTTPS') {
+    const bag = readStringRecord(props['tls']);
+    if (bag?.['cert'] || bag?.['key']) throw new Error('TLS configuration is invalid: tls has a certificate but scheme is not HTTPS');
+    return undefined;
+  }
+  const tls = readTlsServerOptions(props);
+  if (!tls) throw new Error('TLS configuration is incomplete: scheme is HTTPS but no tls cert and key are set');
+  return tls;
+}
+
 /** Parse props with a schema, leaving `tls` (PEM by now, not the stored ids) to {@link readQueueTls}. */
 function parseQueueProps<T>(schema: { parse(value: unknown): T }, props: Record<string, unknown>): T & { tls: TlsClientOptions | undefined } {
   const { tls: _tls, ...rest } = props;
@@ -146,7 +164,7 @@ const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnec
     errorStatusCode: num(props, 'errorStatusCode', 500),
     maxBodyBytes: num(props, 'maxBodyBytes', DEFAULT_MAX_BODY_BYTES),
     auth: props['auth'] as HttpAuthConfig | undefined,
-    tls: readTlsServerOptions(props),
+    tls: readHttpSourceTls(props),
   })],
   ['FILE', (props): SourceConnectorRuntime => new FileReceiver({
     directory: props['directory'] as string,
