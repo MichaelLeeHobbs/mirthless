@@ -107,16 +107,28 @@ export const subscribeKafka: KafkaSubscribe = async (options) => {
     groupId: options.groupId,
     autocommit: false,
   });
+  // The consumer emits 'error' when it cannot rejoin the group after a failed
+  // heartbeat (a broker restart, a coordinator move), even while no record is
+  // being read. Unheard, that error would end the process. End the stream with
+  // it instead, so the iteration throws and the receiver rejoins.
+  let stream: Awaited<ReturnType<typeof consumer.consume>> | null = null;
+  let consumerError: Error | null = null;
+  consumer.on('error', (err: unknown) => {
+    consumerError = describeKafkaError(err);
+    stream?.destroy(consumerError);
+  });
   try {
-    const stream = await consumer.consume({
+    stream = await consumer.consume({
       topics: [options.topic],
       mode: 'committed',
       fallbackMode: options.startFrom === 'EARLIEST' ? 'earliest' : 'latest',
       autocommit: false,
     });
+    if (consumerError) stream.destroy(consumerError);
+    const messages = stream;
     return {
       async *[Symbol.asyncIterator](): AsyncIterator<KafkaInboundRecord> {
-        for await (const message of stream) {
+        for await (const message of messages) {
           yield {
             topic: message.topic,
             partition: message.partition,
@@ -131,7 +143,7 @@ export const subscribeKafka: KafkaSubscribe = async (options) => {
       },
       async close(force: boolean): Promise<void> {
         try {
-          await stream.close();
+          await messages.close();
         } finally {
           await consumer.close(force);
         }

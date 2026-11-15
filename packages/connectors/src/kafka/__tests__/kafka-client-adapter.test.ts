@@ -14,6 +14,8 @@ const lib = vi.hoisted(() => ({
   consumerClosed: [] as (boolean | undefined)[],
   stream: null as (Readable & { close?: () => Promise<void> }) | null,
   consumeError: null as Error | null,
+  errorDuringConsume: null as Error | null,
+  consumer: null as { emit(event: string, ...args: unknown[]): boolean } | null,
   producerOptions: [] as unknown[],
   sent: [] as unknown[],
   sendError: null as Error | null,
@@ -24,36 +26,41 @@ const lib = vi.hoisted(() => ({
   adminClosed: 0,
 }));
 
-vi.mock('@platformatic/kafka', () => ({
-  ProduceAcks: { ALL: -1, NO_RESPONSE: 0, LEADER: 1 },
-  Consumer: class {
-    constructor(options: unknown) { lib.consumerOptions.push(options); }
-    async consume(options: unknown): Promise<unknown> {
-      lib.consumeOptions.push(options);
-      if (lib.consumeError) throw lib.consumeError;
-      return lib.stream;
-    }
-    async close(force?: boolean): Promise<void> { lib.consumerClosed.push(force); }
-  },
-  Producer: class {
-    constructor(options: unknown) { lib.producerOptions.push(options); }
-    async send(options: { messages: unknown[] }): Promise<unknown> {
-      if (lib.sendError) throw lib.sendError;
-      lib.sent.push(...options.messages);
-      return { offsets: [{ topic: 'results', partition: 2, offset: 41n }] };
-    }
-    async close(): Promise<void> { lib.producerClosed += 1; }
-  },
-  Admin: class {
-    constructor(options: unknown) { lib.adminOptions.push(options); }
-    async metadata(options: unknown): Promise<unknown> {
-      lib.metadataArgs.push(options);
-      if (lib.metadata instanceof Error) throw lib.metadata;
-      return lib.metadata;
-    }
-    async close(): Promise<void> { lib.adminClosed += 1; }
-  },
-}));
+vi.mock('@platformatic/kafka', async () => {
+  const { EventEmitter } = await import('node:events');
+  return {
+    ProduceAcks: { ALL: -1, NO_RESPONSE: 0, LEADER: 1 },
+    // An EventEmitter like the real one: an 'error' nobody listens for throws.
+    Consumer: class extends EventEmitter {
+      constructor(options: unknown) { super(); lib.consumerOptions.push(options); lib.consumer = this; }
+      async consume(options: unknown): Promise<unknown> {
+        lib.consumeOptions.push(options);
+        if (lib.consumeError) throw lib.consumeError;
+        if (lib.errorDuringConsume) this.emit('error', lib.errorDuringConsume);
+        return lib.stream;
+      }
+      async close(force?: boolean): Promise<void> { lib.consumerClosed.push(force); }
+    },
+    Producer: class {
+      constructor(options: unknown) { lib.producerOptions.push(options); }
+      async send(options: { messages: unknown[] }): Promise<unknown> {
+        if (lib.sendError) throw lib.sendError;
+        lib.sent.push(...options.messages);
+        return { offsets: [{ topic: 'results', partition: 2, offset: 41n }] };
+      }
+      async close(): Promise<void> { lib.producerClosed += 1; }
+    },
+    Admin: class {
+      constructor(options: unknown) { lib.adminOptions.push(options); }
+      async metadata(options: unknown): Promise<unknown> {
+        lib.metadataArgs.push(options);
+        if (lib.metadata instanceof Error) throw lib.metadata;
+        return lib.metadata;
+      }
+      async close(): Promise<void> { lib.adminClosed += 1; }
+    },
+  };
+});
 
 const { subscribeKafka, createKafkaProducer, testKafkaConnection } = await import('../kafka-client.js');
 
@@ -64,6 +71,8 @@ beforeEach(() => {
   lib.consumeOptions = [];
   lib.consumerClosed = [];
   lib.consumeError = null;
+  lib.errorDuringConsume = null;
+  lib.consumer = null;
   lib.producerOptions = [];
   lib.sent = [];
   lib.sendError = null;
@@ -105,6 +114,30 @@ describe('subscribeKafka', () => {
     await subscription.close(true);
     expect(order).toEqual(['stream']);
     expect(lib.consumerClosed).toEqual([true]);
+  });
+
+  // The client emits 'error' when a rejoin after a failed heartbeat fails, with
+  // or without a record in flight. Unheard, it became an uncaught exception.
+  it('ends an idle subscription with the error when the consumer cannot rejoin its group', async () => {
+    const idle = new Readable({ read(): void { /* no records */ } });
+    lib.stream = Object.assign(idle, { close: async () => undefined });
+    const subscription = await subscribeKafka({ ...connection, topic: 'adt', groupId: 'g1', startFrom: 'EARLIEST' });
+    const reading = (async (): Promise<number> => {
+      let count = 0;
+      for await (const _record of subscription) count += 1;
+      return count;
+    })();
+    lib.consumer?.emit('error', Object.assign(new Error('Rejoining the group failed.'), { errors: [new Error('COORDINATOR_NOT_AVAILABLE')] }));
+    await expect(reading).rejects.toThrow('Rejoining the group failed. COORDINATOR_NOT_AVAILABLE');
+    await subscription.close(true);
+    expect(lib.consumerClosed).toEqual([true]);
+  });
+
+  it('ends the subscription when the consumer fails while joining', async () => {
+    lib.errorDuringConsume = new Error('Rejoining the group failed.');
+    lib.stream = Object.assign(new Readable({ read(): void { /* no records */ } }), { close: async () => undefined });
+    const subscription = await subscribeKafka({ ...connection, topic: 'adt', groupId: 'g1', startFrom: 'EARLIEST' });
+    await expect((async (): Promise<void> => { for await (const _record of subscription) { /* none */ } })()).rejects.toThrow('Rejoining the group failed.');
   });
 
   it('closes the consumer and rethrows when the group cannot be joined', async () => {
