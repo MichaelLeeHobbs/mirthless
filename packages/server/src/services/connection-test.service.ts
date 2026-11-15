@@ -516,6 +516,8 @@ function readSftpOptions(props: Readonly<Record<string, unknown>>): SftpConnecti
     passphrase: optionalString(props, 'passphrase'),
     strictHostKey: props['strictHostKey'] !== false,
     hostKey: optionalString(props, 'hostKey'),
+    // ssh2 waits 20 s for the handshake by default; give up when the test does.
+    readyTimeoutMs: TEST_TIMEOUT_MS,
   };
   const authError = validateAuth(options);
   if (authError) throw new ServiceError('INVALID_INPUT', authError);
@@ -532,6 +534,27 @@ async function closeSftp(client: SftpClient): Promise<void> {
   } catch {
     // Nothing to report: the session either never opened or the server dropped it.
   }
+}
+
+/**
+ * Start an SFTP connect and return it with a close that also covers a connect
+ * still pending when the test gives up. ssh2-sftp-client's end() does nothing
+ * while connect is pending, so a session that opens late is closed once it settles.
+ */
+function startSftpConnect(client: SftpClient): { readonly connecting: Promise<void>; close(): Promise<void> } {
+  const connecting = client.connect();
+  let settled = false;
+  const whenSettled = connecting.then(() => { settled = true; }, () => { settled = true; });
+  return {
+    connecting,
+    async close(): Promise<void> {
+      if (settled) {
+        await closeSftp(client);
+        return;
+      }
+      void whenSettled.then(() => closeSftp(client));
+    },
+  };
 }
 
 /**
@@ -566,9 +589,10 @@ const testSftp: Tester = async (mode, props) => {
   const start = performance.now();
   const target = `${options.host}:${String(options.port)}`;
   const client = sftpClientFactory(options);
+  const session = startSftpConnect(client);
   try {
     const found = await withTimeout(
-      client.connect().then(() => client.exists(remoteDirectory)),
+      session.connecting.then(() => client.exists(remoteDirectory)),
       TEST_TIMEOUT_MS,
       'SFTP connection test',
     );
@@ -577,7 +601,7 @@ const testSftp: Tester = async (mode, props) => {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return failureResult(`SFTP connection failed: ${msg}`, performance.now() - start);
   } finally {
-    await closeSftp(client);
+    await session.close();
   }
 };
 
