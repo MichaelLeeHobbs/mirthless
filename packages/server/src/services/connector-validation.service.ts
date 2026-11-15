@@ -12,27 +12,21 @@ import {
   kafkaDestinationPropertiesSchema,
   amqpSourcePropertiesSchema,
   amqpDestinationPropertiesSchema,
+  tcpMllpSourcePropertiesSchema,
+  tcpMllpDestinationPropertiesSchema,
+  connectorPortSchema as portSchema,
+  formatPropertyIssues,
 } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 
 // ----- Reusable Schemas -----
 
-// A port may arrive as text ("6661"), e.g. from a configuration map reference;
-// the connector factories accept that too. Nothing else is coerced (true is
-// not port 1), and a reference left unresolved says so.
-const portSchema = z.preprocess(
-  (v) => (typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v) : v),
-  z.number({
-    error: (issue) => (typeof issue.input === 'string' && issue.input.includes('${')
-      ? `configuration map reference ${issue.input} did not resolve: no configuration entry has that name`
-      : 'must be a port number'),
-  }).int().min(1).max(65535),
-);
 const nonEmptyString = z.string().min(1);
 
 // ----- Source Connector Schemas -----
+// TCP_MLLP, KAFKA and AMQP use their core-models schemas (#115); the others
+// still check only their required keys here.
 
-const tcpMllpSourceSchema = z.object({ port: portSchema }).passthrough();
 const httpSourceSchema = z.object({ port: portSchema }).passthrough();
 const fileSourceSchema = z.object({ directory: nonEmptyString }).passthrough();
 /** Databases the connectors have a driver for; a Mirth channel on any other refuses to deploy. */
@@ -92,7 +86,6 @@ const sftpSourceSchema = sftpConnectionSchema.extend({
 
 // ----- Destination Connector Schemas -----
 
-const tcpMllpDestSchema = z.object({ host: nonEmptyString, port: portSchema }).passthrough();
 const httpDestSchema = z.object({ url: nonEmptyString }).passthrough();
 const fileDestSchema = z.object({ directory: nonEmptyString }).passthrough();
 const databaseDestSchema = z.object({
@@ -112,7 +105,7 @@ const sftpDestSchema = sftpConnectionSchema.superRefine(checkSftpCredentials);
 // ----- Schema Registries -----
 
 const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
-  TCP_MLLP: tcpMllpSourceSchema,
+  TCP_MLLP: tcpMllpSourcePropertiesSchema,
   HTTP: httpSourceSchema,
   FILE: fileSourceSchema,
   DATABASE: databaseSourceSchema,
@@ -126,7 +119,7 @@ const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
 };
 
 const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
-  TCP_MLLP: tcpMllpDestSchema,
+  TCP_MLLP: tcpMllpDestinationPropertiesSchema,
   HTTP: httpDestSchema,
   FILE: fileDestSchema,
   DATABASE: databaseDestSchema,
@@ -139,13 +132,6 @@ const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   KAFKA: kafkaDestinationPropertiesSchema,
   AMQP: amqpDestinationPropertiesSchema,
 };
-
-// ----- Helpers -----
-
-/** Format Zod issues into a human-readable semicolon-separated string. */
-function formatIssues(issues: ReadonlyArray<{ readonly path: ReadonlyArray<PropertyKey>; readonly message: string }>): string {
-  return issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
-}
 
 // ----- Public API -----
 
@@ -172,7 +158,7 @@ export function validateConnectorProperties(
 
   const parsed = schema.safeParse(properties);
   if (!parsed.success) {
-    const detail = formatIssues(parsed.error.issues);
+    const detail = formatPropertyIssues(parsed.error.issues);
     return {
       ok: false,
       value: null,

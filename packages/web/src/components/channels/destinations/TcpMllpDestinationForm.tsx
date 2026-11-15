@@ -2,11 +2,9 @@
 // TCP/MLLP Destination Connector Form
 // ===========================================
 // Configuration form for TCP/MLLP client destination connectors.
-// Property keys mirror packages/connectors/src/registry.ts (TcpMllpDispatcher):
-// host, port, maxConnections, responseTimeout, acquireTimeoutMs, charset.
-// TLS is intentionally NOT surfaced here: TCP TLS needs the same server-side
-// cert-store resolution HTTP has (engine.ts resolves only for connectorType
-// === 'HTTP'), so a form-only tls bag would be silently ignored at deploy.
+// Property keys are tcpMllpDestinationPropertiesSchema's in core-models. TLS,
+// frame bytes and template are not surfaced: TCP TLS is inline PEM until it
+// gets the certificate-store lookup HTTP, Kafka and AMQP have.
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
@@ -102,10 +100,10 @@ export function TcpMllpDestinationForm({ properties, onChange }: DestConnectorFo
           type="number"
           value={getNum(properties, 'responseTimeout', 30000)}
           onChange={handleNumber('responseTimeout')}
-          helperText="Timeout waiting for the ACK response (0 = no timeout)"
+          helperText="Timeout waiting for the ACK response"
           fullWidth
           sx={{ mb: 2 }}
-          slotProps={{ htmlInput: { min: 0 } }}
+          slotProps={{ htmlInput: { min: 1 } }}
         />
 
         <TextField
@@ -116,7 +114,7 @@ export function TcpMllpDestinationForm({ properties, onChange }: DestConnectorFo
           helperText="Max wait for a pooled socket before the send fails"
           fullWidth
           sx={{ mb: 2 }}
-          slotProps={{ htmlInput: { min: 0 } }}
+          slotProps={{ htmlInput: { min: 1 } }}
         />
 
         <TextField
