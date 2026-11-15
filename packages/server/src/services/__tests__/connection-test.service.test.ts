@@ -780,7 +780,30 @@ describe('ConnectionTestService', () => {
       if (!result.ok) return;
       expect(result.value.success).toBe(false);
       expect(result.value.message).toContain('timed out');
+    });
+
+    it('closes a session whose connect completes after the test gave up', async () => {
+      vi.useFakeTimers();
+      let finishConnect: () => void = () => undefined;
+      mockSftpConnect.mockReturnValue(new Promise<void>((resolve) => { finishConnect = resolve; }));
+
+      const pending = ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+      await vi.advanceTimersByTimeAsync(_testing.TEST_TIMEOUT_MS);
+      const result = await pending;
+      expect(result.ok && result.value.success).toBe(false);
+      // ssh2-sftp-client's end() does nothing while connect is pending, so it must wait for the connect.
+      expect(mockSftpEnd).not.toHaveBeenCalled();
+
+      finishConnect();
+      await vi.advanceTimersByTimeAsync(0);
       expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('bounds the SSH handshake by the test timeout, not ssh2 default of 20 s', async () => {
+      await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+      const options = sftpFactory.mock.calls[0]?.[0];
+      expect(options?.readyTimeoutMs).toBeDefined();
+      expect(options?.readyTimeoutMs).toBeLessThanOrEqual(_testing.TEST_TIMEOUT_MS);
     });
 
     it('still reports the result when closing the session fails', async () => {
