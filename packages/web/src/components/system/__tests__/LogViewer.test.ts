@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { formatTimestamp } from '../LogViewer.js';
+import { formatClockTime } from '../LogViewer.js';
 
 // Node reads TZ on every Date call, so each block sets the zone it means.
 const ORIGINAL_TZ = process.env['TZ'];
@@ -12,41 +12,23 @@ function inZone(zone: string): void {
 }
 
 const VALID = '2026-06-15T14:05:09.042Z';
-// The type says string, but a log line from the wire can lack a time.
-const missing = (v: null | undefined): string => v as unknown as string;
 
-describe('log line time of day in UTC', () => {
-  inZone('UTC');
+for (const [zone, clock] of [['UTC', '14:05:09.042'], ['America/New_York', '10:05:09.042']] as const) {
+  describe(`log line time of day in ${zone}`, () => {
+    inZone(zone);
 
-  it('shows HH:MM:SS.mmm for a valid time', () => {
-    expect(formatTimestamp(VALID)).toBe('14:05:09.042');
+    it('shows HH:MM:SS.mmm in the local zone for a valid time', () => {
+      expect(formatClockTime(VALID)).toBe(clock);
+    });
+
+    it('shows a dash for null, undefined or an empty string, never the epoch', () => {
+      for (const value of [null, undefined, '']) {
+        expect(formatClockTime(value)).toBe('—');
+      }
+    });
+
+    it('shows an unparseable value as it came, not NaN digits', () => {
+      expect(formatClockTime('not-a-date')).toBe('not-a-date');
+    });
   });
-
-  it('shows the epoch for null', () => {
-    expect(formatTimestamp(missing(null))).toBe('00:00:00.000');
-  });
-
-  it('shows NaN digits for undefined, an empty string or an unparseable value', () => {
-    for (const value of [missing(undefined), '', 'not-a-date']) {
-      expect(formatTimestamp(value)).toBe('NaN:NaN:NaN.NaN');
-    }
-  });
-});
-
-describe('log line time of day in America/New_York', () => {
-  inZone('America/New_York');
-
-  it('shows HH:MM:SS.mmm in the local zone for a valid time', () => {
-    expect(formatTimestamp(VALID)).toBe('10:05:09.042');
-  });
-
-  it('shows the epoch in New York for null', () => {
-    expect(formatTimestamp(missing(null))).toBe('19:00:00.000');
-  });
-
-  it('shows NaN digits for undefined, an empty string or an unparseable value', () => {
-    for (const value of [missing(undefined), '', 'not-a-date']) {
-      expect(formatTimestamp(value)).toBe('NaN:NaN:NaN.NaN');
-    }
-  });
-});
+}

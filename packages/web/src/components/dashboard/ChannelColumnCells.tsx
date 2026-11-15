@@ -13,6 +13,7 @@ import Typography from '@mui/material/Typography';
 import Link from '@mui/material/Link';
 import Tooltip from '@mui/material/Tooltip';
 import { DASHBOARD_COLUMNS, connectorLabel, type DashboardColumnId } from '../../lib/dashboard-columns.js';
+import { formatTimestamp, formatTimestampWith } from '../../lib/format.js';
 
 export interface ChannelCellRow {
   readonly channelId: string;
@@ -37,11 +38,8 @@ export interface GroupTotals {
   readonly queued: number;
 }
 
-/** Compact relative-time label, e.g. "just now", "3m", "2h", "5d", or a date. */
-export function formatUpdated(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+function relativeAge(date: Date): string {
+  const secs = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
   if (secs < 60) return 'just now';
   const mins = Math.floor(secs / 60);
   if (mins < 60) return `${String(mins)}m ago`;
@@ -49,7 +47,16 @@ export function formatUpdated(iso: string): string {
   if (hours < 24) return `${String(hours)}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${String(days)}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return date.toLocaleDateString();
+}
+
+/**
+ * Compact relative-time label, e.g. "just now", "3m ago", "2h ago", "5d ago",
+ * or a date past 30 days. A missing or unparseable time follows
+ * `formatTimestampWith`'s rule.
+ */
+export function formatUpdated(iso: string | null | undefined): string {
+  return formatTimestampWith(iso, relativeAge);
 }
 
 function visibleCols(visible: ReadonlySet<DashboardColumnId>): readonly typeof DASHBOARD_COLUMNS[number][] {
@@ -75,7 +82,7 @@ export function ChannelBodyCells({ row, visible }: { row: ChannelCellRow; visibl
       case 'rev':
         return row.revision;
       case 'updated':
-        return <Tooltip title={new Date(row.updatedAt).toLocaleString()}><Typography variant="caption">{formatUpdated(row.updatedAt)}</Typography></Tooltip>;
+        return <Tooltip title={formatTimestamp(row.updatedAt)}><Typography variant="caption">{formatUpdated(row.updatedAt)}</Typography></Tooltip>;
       case 'received': return row.received.toLocaleString();
       case 'filtered': return row.filtered.toLocaleString();
       case 'sent': return row.sent.toLocaleString();

@@ -89,14 +89,14 @@ for (const zone of ['UTC', 'America/New_York']) {
       expect(formatUpdated(OLD)).toBe(new Date(OLD).toLocaleDateString());
     });
 
-    it('shows the epoch date for null', () => {
-      expect(formatUpdated(missing(null))).toBe(new Date(0).toLocaleDateString());
+    it('shows a dash for null, undefined or an empty string, never the epoch date', () => {
+      for (const value of [null, undefined, '']) {
+        expect(formatUpdated(value)).toBe('—');
+      }
     });
 
-    it('shows nothing for undefined, an empty string or an unparseable value', () => {
-      for (const value of [missing(undefined), '', 'not-a-date']) {
-        expect(formatUpdated(value)).toBe('');
-      }
+    it('shows an unparseable value as it came, not a blank cell', () => {
+      expect(formatUpdated('not-a-date')).toBe('not-a-date');
     });
 
     it('puts the full local date and time in the tooltip', () => {
@@ -104,17 +104,10 @@ for (const zone of ['UTC', 'America/New_York']) {
       expect(screen.getByLabelText(new Date(OLD).toLocaleString())).toBeTruthy();
     });
 
-    it('puts the epoch in the tooltip for null', () => {
+    it('puts a dash in the tooltip and the cell for null, not the epoch', () => {
       renderUpdated(missing(null));
-      expect(screen.getByLabelText(new Date(0).toLocaleString())).toBeTruthy();
+      expect(screen.getByLabelText('—').textContent).toBe('—');
+      expect(screen.queryByText(/1969|1970/)).toBeNull();
     });
   });
 }
-
-describe('formatUpdated in America/New_York for null', () => {
-  inZone('America/New_York');
-
-  it('shows the last day of 1969', () => {
-    expect(formatUpdated(missing(null))).toContain('1969');
-  });
-});
