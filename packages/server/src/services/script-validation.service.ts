@@ -34,7 +34,8 @@ export class ScriptValidationService {
       return { ok: true, value: { valid: true }, error: null };
     }
 
-    const compiled = await compileScript(script);
+    // A syntax check: no source map, and kept out of the cache deploy relies on.
+    const compiled = await compileScript(script, { sourcemap: false, cache: false });
     if (compiled.ok) {
       return { ok: true, value: { valid: true }, error: null };
     }

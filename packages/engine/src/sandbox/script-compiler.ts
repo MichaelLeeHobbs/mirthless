@@ -14,6 +14,11 @@ import type { CompiledScript } from './sandbox-executor.js';
 export interface CompileOptions {
   readonly sourcefile?: string;
   readonly sourcemap?: boolean;
+  /**
+   * Use the compiled-script cache (default true). A one-off syntax check passes
+   * false so it does not evict scripts deploy compiled.
+   */
+  readonly cache?: boolean;
 }
 
 const DEFAULT_COMPILE_OPTIONS: CompileOptions = {
@@ -71,7 +76,8 @@ export async function compileScript(
     const opts = { ...DEFAULT_COMPILE_OPTIONS, ...options };
     // The options change the output (source map, file name), so they are part of the key.
     const key = `${opts.sourcemap ? '1' : '0'}\u0000${opts.sourcefile ?? ''}\u0000${code}`;
-    const cached = scriptCache.get(key);
+    const useCache = opts.cache !== false;
+    const cached = useCache ? scriptCache.get(key) : undefined;
     if (cached) return cached;
 
     const transformOptions: Parameters<typeof transform>[1] = {
@@ -93,7 +99,7 @@ export async function compileScript(
       ? { code: body, sourceMap: result.map }
       : { code: body };
 
-    remember(key, compiled);
+    if (useCache) remember(key, compiled);
     return compiled;
   });
 }

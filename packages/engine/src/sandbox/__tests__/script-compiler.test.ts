@@ -449,6 +449,18 @@ describe('script cache', () => {
     expect(second.value).toBe(first.value);
   });
 
+  it('neither reads nor fills the cache when cache is false', async () => {
+    clearScriptCache();
+    const cached = await compileScript('return 3;', { sourcemap: false });
+    const uncached = await compileScript('return 3;', { sourcemap: false, cache: false });
+    await compileScript('return 4;', { sourcemap: false, cache: false });
+    if (!cached.ok || !uncached.ok) throw new Error('compile failed');
+
+    expect(uncached.value).not.toBe(cached.value);
+    expect(uncached.value.code).toBe(cached.value.code);
+    expect(scriptCacheSize()).toBe(1);
+  });
+
   it('stops growing at its limit, dropping the oldest entries', async () => {
     clearScriptCache();
     for (let i = 0; i < SCRIPT_CACHE_LIMIT + 5; i++) {
