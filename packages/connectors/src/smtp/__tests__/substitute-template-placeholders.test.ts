@@ -18,7 +18,7 @@ const message: ConnectorMessage = {
 describe('substituteTemplate', () => {
   it.each([
     ['a built-in name', '<${msg}>', '<BODY>'],
-    ['a padded built-in name', '<${ messageId }>', '<${ messageId }>'],
+    ['a padded built-in name', '<${ messageId }>', '<42>'],
     ['a built-in over a variable of the same name', '<${msg}>', '<BODY>'],
     ['a plain variable', '<${x}>', '<v>'],
     ['a padded variable', '<${ x }>', '<v>'],
