@@ -2,12 +2,26 @@
 // scripts the types the engine really passes, so these tests compile scripts
 // against them with the same settings the editor and the deploy check use.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import ts from 'typescript';
 import {
   scriptDeclarations, scriptSurfaceKey, templateDeclarations, type ScriptSurface, type TemplateSource,
 } from '../sandbox-declarations.js';
 import { SCRIPT_COMPILER_OPTIONS, IGNORED_SCRIPT_DIAGNOSTICS } from '../script-check.js';
+
+// Each check builds a real TypeScript program: about a second alone, several under
+// the gate's coverage and parallel workers, so the 5 s default is too short.
+vi.setConfig({ testTimeout: 30_000 });
+
+// Parse TypeScript's lib files once per file run instead of once per check.
+const libCache = new Map<string, ts.SourceFile | undefined>();
+
+function cachedLib(
+  name: string, lang: ts.ScriptTarget | ts.CreateSourceFileOptions, read: (n: string, l: ts.ScriptTarget | ts.CreateSourceFileOptions) => ts.SourceFile | undefined,
+): ts.SourceFile | undefined {
+  if (!libCache.has(name)) libCache.set(name, read(name, lang));
+  return libCache.get(name);
+}
 
 /** Type-check one script against a surface; returns the messages TypeScript reports. */
 function check(script: string | readonly string[], surface: ScriptSurface, templates: readonly TemplateSource[] = []): string[] {
@@ -21,7 +35,7 @@ function check(script: string | readonly string[], surface: ScriptSurface, templ
   const host = ts.createCompilerHost(options);
   const readLib = host.getSourceFile.bind(host);
   host.getSourceFile = (name, lang): ts.SourceFile | undefined =>
-    files[name] === undefined ? readLib(name, lang) : ts.createSourceFile(name, files[name], lang, true);
+    files[name] === undefined ? cachedLib(name, lang, readLib) : ts.createSourceFile(name, files[name], lang, true);
   host.fileExists = (name): boolean => files[name] !== undefined || ts.sys.fileExists(name);
   const program = ts.createProgram(Object.keys(files), options, host);
   return ts.getPreEmitDiagnostics(program)
