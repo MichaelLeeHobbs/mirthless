@@ -6,11 +6,10 @@
 
 import { type ReactNode, useState } from 'react';
 import Box from '@mui/material/Box';
-import IconButton from '@mui/material/IconButton';
 import Popover from '@mui/material/Popover';
-import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import KeyboardIcon from '@mui/icons-material/Keyboard';
+import { EditorToolbarButton } from './EditorToolbarButton.js';
 
 /** Shortcut, then what it does. Ctrl means Cmd on a Mac. */
 export const EDITOR_SHORTCUTS: ReadonlyArray<readonly [string, string]> = [
@@ -31,11 +30,14 @@ export function ShortcutsButton(): ReactNode {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   return (
     <>
-      <Tooltip title="Keyboard shortcuts">
-        <IconButton size="small" aria-label="Keyboard shortcuts" onClick={(e) => { setAnchor(e.currentTarget); }}>
-          <KeyboardIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      <EditorToolbarButton
+        icon={<KeyboardIcon fontSize="small" />}
+        label="Shortcuts"
+        ariaLabel="Keyboard shortcuts"
+        tooltip="Keyboard shortcuts"
+        ariaHaspopup="dialog"
+        onClick={(e) => { setAnchor(e.currentTarget); }}
+      />
       <Popover
         open={anchor !== null}
         anchorEl={anchor}

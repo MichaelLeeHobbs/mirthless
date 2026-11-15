@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
-import { monaco } from './monaco.js';
+import { monaco, overflowWidgetsHost } from './monaco.js';
 import { editorThemeName } from '../../styles/editor-theme.js';
 
 type CodeEditor = monaco.editor.IStandaloneCodeEditor;
@@ -74,6 +74,31 @@ export function useCursor(editor: CodeEditor | null): { readonly line: number; r
     return () => { sub.dispose(); };
   }, [editor]);
   return pos;
+}
+
+/** Height an editor needs to hold the open completion list below the cursor line, or 0 when none is open. */
+export function suggestRoom(host: HTMLElement): number {
+  const list = host.querySelector<HTMLElement>('.suggest-widget.visible');
+  return list ? list.offsetHeight + 8 : 0;
+}
+
+/**
+ * Room to add to a fit-to-content editor while its completion list is open, so
+ * the list stays inside the editor instead of covering the status line below.
+ * Completion renders in the shared popup host, so this watches the host and
+ * answers only for the editor that has focus.
+ */
+export function useSuggestRoom(editor: CodeEditor | null, enabled: boolean): number {
+  const [room, setRoom] = useState(0);
+  useEffect(() => {
+    if (!editor || !enabled) return undefined;
+    const update = (): void => { setRoom(editor.hasTextFocus() ? suggestRoom(overflowWidgetsHost) : 0); };
+    const observer = new MutationObserver(update);
+    observer.observe(overflowWidgetsHost, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    const blur = editor.onDidBlurEditorText(() => { setRoom(0); });
+    return () => { observer.disconnect(); blur.dispose(); };
+  }, [editor, enabled]);
+  return room;
 }
 
 /** Move the cursor to a problem and focus the editor. */

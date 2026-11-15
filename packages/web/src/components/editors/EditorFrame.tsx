@@ -8,12 +8,11 @@
 import { type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Dialog from '@mui/material/Dialog';
-import IconButton from '@mui/material/IconButton';
-import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
 import { RADIUS } from '../../styles/tokens.js';
+import { EditorToolbarButton } from './EditorToolbarButton.js';
 
 interface EditorFrameProps {
   /** Accessible name and toolbar title, e.g. "Deploy script". */
@@ -67,15 +66,13 @@ function Frame({ label, showLabel, start, end, status, footer, expanded, onExpan
         {start}
         <Box sx={{ flexGrow: 1 }} />
         {end}
-        <Tooltip title={expanded ? 'Exit full screen (Esc)' : 'Expand to full screen'}>
-          <IconButton
-            size="small"
-            aria-label={expanded ? 'Exit full screen' : 'Expand to full screen'}
-            onClick={() => { onExpandedChange(!expanded); }}
-          >
-            {expanded ? <CloseFullscreenIcon fontSize="small" /> : <OpenInFullIcon fontSize="small" />}
-          </IconButton>
-        </Tooltip>
+        <EditorToolbarButton
+          icon={expanded ? <CloseFullscreenIcon fontSize="small" /> : <OpenInFullIcon fontSize="small" />}
+          label={expanded ? 'Exit full screen' : 'Full screen'}
+          ariaLabel={expanded ? 'Exit full screen' : 'Expand to full screen'}
+          tooltip={expanded ? 'Exit full screen (Esc)' : 'Expand to full screen'}
+          onClick={() => { onExpandedChange(!expanded); }}
+        />
       </Box>
       <Box sx={{ flexGrow: 1, minHeight: 0 }}>{children}</Box>
       {status ? (

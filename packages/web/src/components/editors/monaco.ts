@@ -10,6 +10,8 @@ import { loader } from '@monaco-editor/react';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
 import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker.js?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker.js?worker';
+import { StandaloneServices } from 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices.js';
+import { IStorageService } from 'monaco-editor/esm/vs/platform/storage/common/storage.js';
 import { editorTheme, editorThemeName } from '../../styles/editor-theme.js';
 import {
   IGNORED_SCRIPT_DIAGNOSTICS, SCRIPT_COMPILER_OPTIONS, scriptDeclarations, templateDeclarations,
@@ -25,6 +27,25 @@ self.MonacoEnvironment = {
 };
 
 loader.config({ monaco });
+
+// Show each suggestion's signature and documentation beside the list by default,
+// as the "Ctrl+Space twice" toggle would. Monaco keeps the toggle in its storage
+// service (scope PROFILE = 0, target USER = 0), which exists once an editor does.
+// The list opens 560px wide instead of Monaco's 430, so a code template's name
+// and signature fit on its row (Monaco restores this size each time it opens;
+// the height is its default, 12 rows of 20px plus the border).
+StandaloneServices.withServices(() => {
+  const storage = StandaloneServices.get(IStorageService);
+  storage.store('expandSuggestionDocs', true, 0, 0);
+  storage.store('suggestWidget.size/vs.editor.ICodeEditor/false', JSON.stringify({ width: 560, height: 242 }), 0, 1);
+});
+
+// Monaco breaks the signature in the documentation panel at any letter
+// ("message: s / tring"); break at spaces instead.
+const popupStyle = document.createElement('style');
+popupStyle.textContent = '.monaco-editor .suggest-details > .monaco-scrollable-element > .body > .header > .type.auto-wrap'
+  + ' { word-break: normal; overflow-wrap: break-word; }';
+document.head.append(popupStyle);
 
 monaco.editor.defineTheme(editorThemeName('light'), editorTheme('light'));
 monaco.editor.defineTheme(editorThemeName('dark'), editorTheme('dark'));

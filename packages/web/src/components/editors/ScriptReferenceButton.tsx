@@ -7,7 +7,6 @@
 
 import { type ReactNode, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import InputAdornment from '@mui/material/InputAdornment';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -20,6 +19,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import type { ScriptSurface, TemplateSource } from '@galvaniflow/core-models';
 import type { monaco } from './monaco.js';
 import { scriptReference, type ReferenceEntry } from './script-reference.js';
+import { EditorToolbarButton } from './EditorToolbarButton.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 
 interface ScriptReferenceButtonProps {
@@ -55,16 +55,13 @@ export function ScriptReferenceButton({ editor, surface, templates }: ScriptRefe
 
   return (
     <>
-      <Button
-        size="small"
-        startIcon={<FunctionsIcon fontSize="small" />}
+      <EditorToolbarButton
+        icon={<FunctionsIcon fontSize="small" />}
+        label="Reference"
+        tooltip="Functions and variables a script can use"
+        ariaHaspopup="dialog"
         onClick={(e) => { setAnchor(e.currentTarget); }}
-        aria-label="Reference"
-        aria-haspopup="dialog"
-        sx={{ textTransform: 'none', minWidth: 0, '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } } }}
-      >
-        <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Reference</Box>
-      </Button>
+      />
       <Popover
         open={anchor !== null}
         anchorEl={anchor}

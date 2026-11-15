@@ -93,7 +93,9 @@ export function editorTheme(mode: PaletteMode): editor.IStandaloneThemeData {
       'input.border': col(c.divider),
       'textLink.foreground': col(c.primary.main),
       'textCodeBlock.background': col(c.surfaceSunken),
-      'scrollbarSlider.background': col(c.action.focus),
+      // Neutral, not the focus blue: the diff editor's overview draws its whole
+      // visible region with this colour, a bright band when the file fits.
+      'scrollbarSlider.background': col(c.divider),
       'scrollbarSlider.hoverBackground': col(c.action.focus),
       'diffEditor.insertedTextBackground': `${col(c.status.healthy)}26`,
       'diffEditor.removedTextBackground': `${col(c.status.critical)}26`,

@@ -9,7 +9,7 @@ import { lightTheme } from '../../../styles/theme.js';
 import { ProblemStatus } from '../ProblemStatus.js';
 import { ScriptEditor, AUTO_HEIGHT, autoHeight } from '../ScriptEditor.js';
 import { TextEditor } from '../TextEditor.js';
-import { problemKind, type Problem } from '../editor-hooks.js';
+import { problemKind, suggestRoom, type Problem } from '../editor-hooks.js';
 
 afterEach(() => { cleanup(); });
 
@@ -47,6 +47,14 @@ describe('ProblemStatus', () => {
       .toContain("Line 1: Type 'string' is not assignable to type 'number'.");
   });
 
+  it('counts one syntax error and the rest as following it, since one missing bracket cascades', () => {
+    const problems: Problem[] = Array.from({ length: 8 }, (_, i) => (
+      { severity: 'error', kind: 'syntax', message: "',' expected.", line: i + 1, column: 1 }
+    ));
+    wrap(<ProblemStatus editor={null} problems={problems} />);
+    expect(screen.getByText('1 syntax error (7 more after it)')).toBeTruthy();
+  });
+
   it('jumps the editor to the first problem when clicked', () => {
     const editor = { setPosition: vi.fn(), revealLineInCenter: vi.fn(), focus: vi.fn() };
     const problems: Problem[] = [{ severity: 'error', kind: 'syntax', message: 'x', line: 4, column: 2 }];
@@ -62,6 +70,26 @@ describe('autoHeight', () => {
     expect(autoHeight(60)).toBe(AUTO_HEIGHT.min);
     expect(autoHeight(200.4)).toBe(201);
     expect(autoHeight(5000)).toBe(AUTO_HEIGHT.max);
+  });
+
+  it('grows by the completion list while it is open, so the list stays inside the editor', () => {
+    expect(autoHeight(40, 0)).toBe(AUTO_HEIGHT.min);
+    expect(autoHeight(40, 200)).toBe(240);
+    expect(autoHeight(400, 200)).toBe(AUTO_HEIGHT.max);
+  });
+});
+
+describe('suggestRoom', () => {
+  it('is the open completion list height plus a margin, and nothing when it is closed', () => {
+    const host = document.createElement('div');
+    expect(suggestRoom(host)).toBe(0);
+    const list = document.createElement('div');
+    list.className = 'suggest-widget';
+    Object.defineProperty(list, 'offsetHeight', { value: 180 });
+    host.append(list);
+    expect(suggestRoom(host)).toBe(0);
+    list.classList.add('visible');
+    expect(suggestRoom(host)).toBe(188);
   });
 });
 
@@ -93,11 +121,19 @@ describe('ScriptEditor chrome', () => {
     expect(onLanguageChange).toHaveBeenCalledWith('TYPESCRIPT');
   });
 
-  it('labels a read-only editor and hides formatting', () => {
+  it('labels a read-only editor and hides formatting and the language switch', () => {
     wrap(<ScriptEditor value="" onChange={vi.fn()} readOnly showLanguageToggle />);
     expect(screen.getByText('Read only')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Format document' })).toBeNull();
-    expect((screen.getByRole('button', { name: 'TypeScript' }) as HTMLButtonElement).disabled).toBe(true);
+    // The status line still names the language; a disabled switch only looked editable.
+    expect(screen.queryByRole('button', { name: 'TypeScript' })).toBeNull();
+  });
+
+  it('names every toolbar action in visible text, not only an icon', () => {
+    wrap(<ScriptEditor value="" onChange={vi.fn()} label="Deploy script" />);
+    expect(screen.getByRole('button', { name: 'Format document' }).textContent).toBe('Format');
+    expect(screen.getByRole('button', { name: 'Keyboard shortcuts' }).textContent).toBe('Shortcuts');
+    expect(screen.getByRole('button', { name: 'Expand to full screen' }).textContent).toBe('Full screen');
   });
 
   it('opens full screen and comes back', () => {

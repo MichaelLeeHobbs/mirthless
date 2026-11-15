@@ -134,16 +134,16 @@ declare function $cfg(key: string): unknown;
 
 /**
  * Parse an HL7v2 message string into a proxy object.
- * @param raw - Raw HL7 message string (pipe-delimited).
+ * @param raw Raw HL7 message string (pipe-delimited).
  * @returns Proxy with get/set/delete/toString methods.
  */
 declare function parseHL7(raw: string): Hl7MessageProxy;
 
 /**
  * Create an HL7 ACK message from the original raw message.
- * @param originalRaw - The original HL7 message.
- * @param ackCode - ACK code (e.g., "AA", "AE", "AR").
- * @param textMessage - Optional text message for MSA.3.
+ * @param originalRaw The original HL7 message.
+ * @param ackCode ACK code (e.g., "AA", "AE", "AR").
+ * @param textMessage Optional text message for MSA.3.
  * @returns ACK message string.
  */
 declare function createACK(originalRaw: string, ackCode: string, textMessage?: string): string;
@@ -166,9 +166,9 @@ interface CollectionRecord {
 interface CollectionHandle {
   /**
    * Append a record. Field keys must be in the collection's indexed fields.
-   * @param fields - Indexed field values (strings/numbers/booleans).
-   * @param payload - The value to store.
-   * @param options - Optional per-write TTL override (expireAt ISO or ttlSeconds); else the collection default applies.
+   * @param fields Indexed field values (strings/numbers/booleans).
+   * @param payload The value to store.
+   * @param options Optional per-write TTL override (expireAt ISO or ttlSeconds); else the collection default applies.
    */
   store(
     fields: Record<string, string | number | boolean>,
@@ -207,13 +207,13 @@ interface CollectionHandle {
 /**
  * Access a durable, keyed record store shared across channels. Records are
  * append-only; newest-wins is a query result. Reads/writes hit the database.
- * @param name - The collection name (defined under Collections in the admin UI).
+ * @param name The collection name (defined under Collections in the admin UI).
  */
 declare function getCollection(name: string): CollectionHandle;
 
 /**
  * Load a configured resource's content by name.
- * @param name - The resource name (defined under Resources in the admin UI).
+ * @param name The resource name (defined under Resources in the admin UI).
  * @returns The resource content, or null if no resource has that name.
  */
 declare function getResource(name: string): Promise<string | null>;
@@ -245,9 +245,9 @@ declare function routeMessage(channelName: string, rawData: string): Promise<{ s
  * Run a parameterized query against a named Data Source (defined under Data
  * Sources in the admin UI). Data sources are read-only unless configured
  * otherwise. Never string-interpolate values into sql — use params ($1, $2, …).
- * @param dataSourceName - The data source name.
- * @param sql - Parameterized SQL.
- * @param params - Positional query parameters.
+ * @param dataSourceName The data source name.
+ * @param sql Parameterized SQL.
+ * @param params Positional query parameters.
  */
 declare function dbQuery(
   dataSourceName: string,

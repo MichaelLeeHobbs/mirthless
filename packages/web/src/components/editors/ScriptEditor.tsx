@@ -8,9 +8,7 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import type { SCRIPT_TEST_KINDS, ScriptLanguageCode, ScriptSurface } from '@galvaniflow/core-models';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
-import IconButton from '@mui/material/IconButton';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
@@ -22,7 +20,8 @@ import { useScriptDataType, useScriptTestSample } from './script-context.js';
 import { useCodeTemplates } from '../../hooks/use-code-templates.js';
 import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
-import { useCursor, useEditorTheme, useProblems } from './editor-hooks.js';
+import { useCursor, useEditorTheme, useProblems, useSuggestRoom } from './editor-hooks.js';
+import { EditorToolbarButton } from './EditorToolbarButton.js';
 import { ProblemStatus } from './ProblemStatus.js';
 import { ScriptTestPanel } from './ScriptTestPanel.js';
 import { useScriptTestRun, type ScriptTestRunRequest } from '../../hooks/use-script-test-run.js';
@@ -38,8 +37,8 @@ const LANGUAGE_NAME: Readonly<Record<ScriptLanguageCode, string>> = {
 export const AUTO_HEIGHT = { min: 116, max: 480 } as const;
 
 /** The editor area height for `height="auto"` given Monaco's content height. */
-export function autoHeight(contentHeight: number): number {
-  return Math.min(AUTO_HEIGHT.max, Math.max(AUTO_HEIGHT.min, Math.ceil(contentHeight)));
+export function autoHeight(contentHeight: number, suggestRoomPx = 0): number {
+  return Math.min(AUTO_HEIGHT.max, Math.max(AUTO_HEIGHT.min, Math.ceil(contentHeight + suggestRoomPx)));
 }
 
 const MONACO_LANGUAGE: Readonly<Record<ScriptLanguageCode, string>> = {
@@ -111,6 +110,7 @@ export function ScriptEditor({
   const problems = useProblems(editor);
   const cursor = useCursor(editor);
   const [contentHeight, setContentHeight] = useState<number>(AUTO_HEIGHT.min);
+  const suggestRoomPx = useSuggestRoom(editor, height === 'auto');
 
   useEffect(() => {
     if (!editor || height !== 'auto') return undefined;
@@ -161,12 +161,12 @@ export function ScriptEditor({
     return () => { focus.dispose(); };
   }, [editor, surface, templates]);
 
-  const start = showLanguageToggle ? (
+  // Read-only: the status line names the language; a disabled switch only looked editable.
+  const start = showLanguageToggle && !readOnly ? (
     <ToggleButtonGroup
       value={language}
       exclusive
       size="small"
-      disabled={readOnly}
       aria-label="Script language"
       onChange={(_e, val: ScriptLanguageCode | null) => {
         if (val) { setInternalLang(val); onLanguageChange?.(val); }
@@ -187,33 +187,25 @@ export function ScriptEditor({
     <>
       {readOnly ? <Chip size="small" variant="outlined" label="Read only" /> : null}
       {canTest ? (
-        <Tooltip title="Run against a sample message (Ctrl+Enter)">
-          <Button
-            size="small"
-            aria-label={testOpen ? 'Run again' : 'Test run'}
-            startIcon={<PlayArrowIcon fontSize="small" />}
-            onClick={() => { if (testOpen) runTest(); else setTestOpen(true); }}
-            sx={{ textTransform: 'none', minWidth: 0, '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } } }}
-          >
-            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{testOpen ? 'Run' : 'Test'}</Box>
-          </Button>
-        </Tooltip>
+        <EditorToolbarButton
+          icon={<PlayArrowIcon fontSize="small" />}
+          label={testOpen ? 'Run' : 'Test'}
+          ariaLabel={testOpen ? 'Run again' : 'Test run'}
+          tooltip="Run against a sample message (Ctrl+Enter)"
+          onClick={() => { if (testOpen) runTest(); else setTestOpen(true); }}
+        />
       ) : null}
       {!readOnly ? <ScriptReferenceButton editor={editor} surface={surface} templates={templates ?? []} /> : null}
       <ShortcutsButton />
       {!readOnly ? (
-        <Tooltip title="Format document (Shift+Alt+F)">
-          <span>
-            <IconButton
-              size="small"
-              aria-label="Format document"
-              disabled={!editor}
-              onClick={() => { void editor?.getAction('editor.action.formatDocument')?.run(); }}
-            >
-              <FormatAlignLeftIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        <EditorToolbarButton
+          icon={<FormatAlignLeftIcon fontSize="small" />}
+          label="Format"
+          ariaLabel="Format document"
+          tooltip="Format document (Shift+Alt+F)"
+          disabled={!editor}
+          onClick={() => { void editor?.getAction('editor.action.formatDocument')?.run(); }}
+        />
       ) : null}
     </>
   );
@@ -224,7 +216,7 @@ export function ScriptEditor({
       showLabel={showLabel}
       start={start}
       end={end}
-      height={height === 'auto' ? `${String(autoHeight(contentHeight))}px` : height}
+      height={height === 'auto' ? `${String(autoHeight(contentHeight, suggestRoomPx))}px` : height}
       expanded={expanded}
       onExpandedChange={setExpanded}
       footer={canTest && testOpen ? (
