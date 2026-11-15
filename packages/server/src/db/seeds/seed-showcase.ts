@@ -13,13 +13,14 @@
 // a clean no-op. The data source is gated on content encryption being
 // configured (its password is encrypted at rest); it is skipped otherwise.
 
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { CreateAlertInput, CreateDataSourceInput } from '@galvaniflow/core-models';
 import * as schema from '../schema/index.js';
 import { isContentEncryptionConfigured } from '../../lib/content-crypto.js';
 import { AlertService } from '../../services/alert.service.js';
 import { DataSourceService } from '../../services/data-source.service.js';
+import { findChannelId } from './seed-examples.js';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -295,14 +296,6 @@ async function seedAlert(db: Db): Promise<void> {
 }
 
 // ----- Headline Channel (dest filter + transformer + response transformer) -----
-
-async function findChannelId(db: Db, name: string): Promise<string | null> {
-  const [row] = await db
-    .select({ id: schema.channels.id })
-    .from(schema.channels)
-    .where(and(eq(schema.channels.name, name), isNull(schema.channels.deletedAt)));
-  return row?.id ?? null;
-}
 
 const HEADLINE_SCRIPT_TYPES = ['DEPLOY', 'UNDEPLOY', 'PREPROCESSOR', 'POSTPROCESSOR'] as const;
 
