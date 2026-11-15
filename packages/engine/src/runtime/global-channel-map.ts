@@ -1,13 +1,13 @@
 // ===========================================
 // Global Channel Map
 // ===========================================
-// Per-channel in-memory key-value store that persists
-// across messages within a single deployment.
-// Cleared when the channel is undeployed.
+// In-memory key-value store for a script map that persists across messages.
+// Each deployed channel has one for its channel map, cleared when the channel
+// is undeployed. GlobalMapProxy keeps the server-wide global map in one too.
 
 import { diffMap } from './map-diff.js';
 
-/** Per-channel map persisting across messages within a deployment. */
+/** In-memory script map persisting across messages (a channel's map, or the global map's entries). */
 export class GlobalChannelMap {
   private readonly store = new Map<string, unknown>();
 
