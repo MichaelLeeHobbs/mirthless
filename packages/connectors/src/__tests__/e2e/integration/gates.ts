@@ -3,8 +3,12 @@
 // ===========================================
 // Each connector-integration suite runs only when its backing service is
 // configured (via env), and self-skips otherwise. This keeps the integration
-// lane runnable anywhere while still exercising real protocols in CI / docker.
+// lane runnable anywhere while still exercising real protocols in docker.
+// CI sets CONNECTOR_ITEST_REQUIRED=1, which turns a missing service into a
+// failed run (see the end of this file), so a broken setup cannot pass green.
 
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe } from 'vitest';
 import type { PoolConfig } from '../../../index.js';
 
@@ -166,6 +170,50 @@ export const describeAmqp = amqpConfig ? describe : describe.skip;
 export function requireAmqp(): TestAmqpConfig {
   if (!amqpConfig) throw new Error('AMQP_TEST_HOST is not set');
   return amqpConfig;
+}
+
+// ----- AMQPS (AMQP_TEST_HOST plus the test CA the rabbitmq-test entrypoint writes) -----
+
+export interface TestAmqpTlsConfig {
+  readonly port: number;
+  /** PEM of the CA that signed the broker's test certificate. */
+  readonly ca: string;
+}
+
+/** docker/test-certs/ca.pem at the repository root, six levels above this file's folder. */
+const DEFAULT_TEST_CA = fileURLToPath(new URL('../../../../../../docker/test-certs/ca.pem', import.meta.url));
+
+function readAmqpTlsConfig(): TestAmqpTlsConfig | null {
+  if (!amqpConfig) return null;
+  const caFile = process.env.AMQP_TEST_CA_FILE ?? DEFAULT_TEST_CA;
+  if (!existsSync(caFile)) return null;
+  return {
+    port: process.env.AMQP_TEST_TLS_PORT ? Number(process.env.AMQP_TEST_TLS_PORT) : 5674,
+    ca: readFileSync(caFile, 'utf8'),
+  };
+}
+
+export const amqpTlsConfig = readAmqpTlsConfig();
+export const describeAmqpTls = amqpTlsConfig ? describe : describe.skip;
+export function requireAmqpTls(): TestAmqpTlsConfig {
+  if (!amqpTlsConfig) throw new Error('the AMQP test CA (docker/test-certs/ca.pem or AMQP_TEST_CA_FILE) is missing');
+  return amqpTlsConfig;
+}
+
+// ----- Required mode (CONNECTOR_ITEST_REQUIRED=1) -----
+
+const missingServices = [
+  dbConfig ? null : 'DATABASE_URL (a *_test database)',
+  sftpConfig ? null : 'SFTP_TEST_HOST',
+  mailConfig ? null : 'SMTP_TEST_HOST',
+  kafkaConfig ? null : 'KAFKA_TEST_BROKERS',
+  amqpConfig ? null : 'AMQP_TEST_HOST',
+  amqpTlsConfig ? null : 'the AMQP test CA (docker/test-certs/ca.pem or AMQP_TEST_CA_FILE)',
+].filter((name): name is string => name !== null);
+
+// Thrown at import, so every suite file fails to load and the run goes red.
+if (process.env.CONNECTOR_ITEST_REQUIRED === '1' && missingServices.length > 0) {
+  throw new Error(`CONNECTOR_ITEST_REQUIRED=1 but these are not configured, so their suites would skip: ${missingServices.join(', ')}`);
 }
 
 // (DICOM needs no gate: the dcmjs-dimse connector runs in-process, so its cascade
