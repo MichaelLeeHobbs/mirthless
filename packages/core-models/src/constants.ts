@@ -42,6 +42,7 @@ export const CONNECTOR_TYPE = {
   SMTP: 'SMTP',
   FHIR: 'FHIR',
   EMAIL: 'EMAIL',
+  SFTP: 'SFTP',
   KAFKA: 'KAFKA',
   AMQP: 'AMQP',
 } as const;
