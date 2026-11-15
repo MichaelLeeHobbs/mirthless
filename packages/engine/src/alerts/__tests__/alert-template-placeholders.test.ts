@@ -4,8 +4,8 @@
 // The six alert values are all strings, so the null, object and bigint rows of
 // the shared rule cannot occur here.
 
-import { describe, it, expect } from 'vitest';
-import { substituteAlertTemplate } from '../action-dispatcher.js';
+import { describe, it, expect, vi } from 'vitest';
+import { dispatchActions, substituteAlertTemplate } from '../action-dispatcher.js';
 import type { LoadedAlert, ChannelErrorEvent } from '../alert-evaluator.js';
 
 const alert: LoadedAlert = {
@@ -31,9 +31,10 @@ const event: ChannelErrorEvent = {
 describe('substituteAlertTemplate', () => {
   it.each([
     ['a plain name', '<${alertName}>', '<My Alert>'],
-    ['a padded name', '<${ alertName }>', '<${ alertName }>'],
+    ['a padded name', '<${ alertName }>', '<My Alert>'],
     ['a missing name', '<${error}>', '<${error}>'],
     ['a dotted name', '<${alert.name}>', '<${alert.name}>'],
+    ['a padded dotted name', '<${ alert.name }>', '<${ alert.name }>'],
     ['an inherited key', '<${toString}>', '<${toString}>'],
     ['a value containing ${alertName}', '<${errorMessage}>', '<bad ${alertName}>'],
     ['the timestamp', '<${timestamp}>', '<2024-03-02T00:00:00.000Z>'],
@@ -41,7 +42,23 @@ describe('substituteAlertTemplate', () => {
     expect(substituteAlertTemplate(template, alert, event)).toBe(expected);
   });
 
-  it('throws on an invalid timestamp, even when the template does not use it', () => {
-    expect(() => substituteAlertTemplate('<${alertName}>', alert, { ...event, timestamp: Number.NaN })).toThrow(RangeError);
+  it('fills the other names and leaves ${timestamp} as written when the event time is invalid', () => {
+    const bad = { ...event, timestamp: Number.NaN };
+    expect(substituteAlertTemplate('${alertName} at ${timestamp}', alert, bad)).toBe('My Alert at ${timestamp}');
+  });
+});
+
+describe('dispatchActions with an invalid event time', () => {
+  it.each([
+    ['a body template', 'At ${timestamp}: ${errorMessage}', 'At ${timestamp}: bad ${alertName}'],
+    ['the default body', null, 'Time: invalid timestamp'],
+  ])('still sends the alert with %s', async (_label, bodyTemplate, expected) => {
+    const channelSender = vi.fn().mockResolvedValue(undefined);
+    const withChannel: LoadedAlert = {
+      ...alert, bodyTemplate,
+      actions: [{ id: 'a1', actionType: 'CHANNEL', recipients: [], properties: { channelId: 'target' } }],
+    };
+    await dispatchActions(withChannel, { ...event, timestamp: Number.NaN }, { logger: { warn: vi.fn() }, channelSender });
+    expect(channelSender).toHaveBeenCalledWith('target', expect.stringContaining(expected));
   });
 });
