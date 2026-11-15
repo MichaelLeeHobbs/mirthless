@@ -28,9 +28,7 @@ import { ErrorState } from '../components/common/states/ErrorState.js';
 import { LoadingBlock } from '../components/common/states/LoadingState.js';
 import type { SettingDetail } from '../api/client.js';
 import { FONT_FAMILY_MONO } from '../styles/tokens.js';
-import { fieldFor, groupSettings, isSecret, validateSetting, PRUNER_KEYS, REDACTED, type GroupedSection } from '../lib/settings-catalog.js';
-
-type SettingType = 'string' | 'number' | 'boolean' | 'json' | 'password';
+import { fieldFor, groupSettings, isSecret, settingTypeForSave, validateSetting, PRUNER_KEYS, REDACTED, type GroupedSection } from '../lib/settings-catalog.js';
 
 /** The value a setting's control starts from. A secret starts empty: its stored value never reaches the browser. */
 function savedValue(s: SettingDetail): string {
@@ -150,7 +148,7 @@ export function SettingsPage(): ReactNode {
           settings: plain.map((s) => ({
             key: s.key,
             value: valueOf(s),
-            type: s.type as SettingType,
+            type: settingTypeForSave(s.type),
             description: s.description ?? null,
             category: s.category ?? 'general',
           })),

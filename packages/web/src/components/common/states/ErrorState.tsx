@@ -11,6 +11,7 @@ import AlertTitle from '@mui/material/AlertTitle';
 import Button from '@mui/material/Button';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import type { SxProps, Theme } from '@mui/material/styles';
+import { errorMessage } from '../../../lib/error-message.js';
 
 interface ErrorStateProps {
   /** Short headline, e.g. "Couldn't load channels". */
@@ -22,11 +23,8 @@ interface ErrorStateProps {
   readonly sx?: SxProps<Theme>;
 }
 
-function toMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  return 'An unexpected error occurred.';
-}
+/** Detail text when the error carries no message. */
+const ERROR_STATE_FALLBACK = 'An unexpected error occurred.';
 
 export function ErrorState({ title = 'Something went wrong', error, onRetry, sx }: ErrorStateProps): ReactNode {
   return (
@@ -42,7 +40,7 @@ export function ErrorState({ title = 'Something went wrong', error, onRetry, sx 
       }
     >
       <AlertTitle sx={{ fontWeight: 600 }}>{title}</AlertTitle>
-      {toMessage(error)}
+      {errorMessage(error, ERROR_STATE_FALLBACK)}
     </Alert>
   );
 }

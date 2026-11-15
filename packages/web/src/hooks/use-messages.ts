@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
+import { messageFilterParts, type MessageFilters } from '../lib/message-filter-query.js';
 
 // ----- Response Types -----
 
@@ -55,14 +56,8 @@ export interface MessageDetail {
 
 // ----- Search Params -----
 
-export interface MessageSearchParams {
+export interface MessageSearchParams extends MessageFilters {
   readonly channelId: string;
-  readonly status?: readonly string[];
-  readonly receivedFrom?: string;
-  readonly receivedTo?: string;
-  readonly metaDataId?: number;
-  readonly messageId?: number;
-  readonly contentSearch?: string;
   readonly limit: number;
   readonly offset: number;
   readonly sort: string;
@@ -81,18 +76,9 @@ const MESSAGE_KEYS = {
 
 // ----- Build Query String -----
 
-function buildSearchQuery(params: MessageSearchParams): string {
-  const parts: string[] = [];
-  if (params.status && params.status.length > 0) {
-    for (const s of params.status) {
-      parts.push(`status=${encodeURIComponent(s)}`);
-    }
-  }
-  if (params.receivedFrom) parts.push(`receivedFrom=${encodeURIComponent(params.receivedFrom)}`);
-  if (params.receivedTo) parts.push(`receivedTo=${encodeURIComponent(params.receivedTo)}`);
-  if (params.metaDataId !== undefined) parts.push(`metaDataId=${String(params.metaDataId)}`);
-  if (params.messageId !== undefined) parts.push(`messageId=${String(params.messageId)}`);
-  if (params.contentSearch) parts.push(`contentSearch=${encodeURIComponent(params.contentSearch)}`);
+/** Build the search query string: the filters, then paging and sort. Exported for testing. */
+export function buildSearchQuery(params: MessageSearchParams): string {
+  const parts = messageFilterParts(params);
   parts.push(`limit=${String(params.limit)}`);
   parts.push(`offset=${String(params.offset)}`);
   parts.push(`sort=${params.sort}`);

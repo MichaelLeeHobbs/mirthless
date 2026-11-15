@@ -578,6 +578,30 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(filters.find((f) => f.metaDataId === 1)?.rules[0]?.name).toBe('Only ORM');
   });
 
+  describe('Rule Builder values', () => {
+    const ruleBuilder = (values: string) => (x: string): string => x.replace(
+      '<operator>NONE</operator>\n            <script>return true;</script>',
+      `<operator>NONE</operator>\n            <field>MSH.9.1</field>\n            <condition>EQUALS</condition>\n            ${values}`,
+    );
+    const destRule = (values: string): unknown => convert4x(ruleBuilder(values)).filters.find((f) => f.metaDataId === 1)?.rules[0]?.values;
+
+    it('imports a single value as a one-item list', () => {
+      expect(destRule('<values><string>5</string></values>')).toEqual(['5']);
+    });
+
+    it('imports several values in order', () => {
+      expect(destRule('<values><string>ORM</string><string>0123</string></values>')).toEqual(['ORM', '0123']);
+    });
+
+    it('imports an empty values list as no values', () => {
+      expect(destRule('<values/>')).toEqual([]);
+    });
+
+    it('imports a rule without a values list as no values', () => {
+      expect(destRule('')).toEqual([]);
+    });
+  });
+
   it('keys destinations, their filters and transformers by the metaDataId in the export', () => {
     const channel = convert4x();
     expect(channel.destinations.map((d) => d.metaDataId)).toEqual([1, 3]);

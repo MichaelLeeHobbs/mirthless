@@ -29,13 +29,18 @@ vi.mock('../../lib/db.js', () => ({
   default: mockDb,
 }));
 
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
+function colName(col: unknown): unknown {
+  return (col as { name?: unknown } | undefined)?.name;
+}
+
+vi.mock('drizzle-orm', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  eq: vi.fn((col: unknown, val: unknown) => ({ type: 'eq', col: colName(col), val })),
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   desc: vi.fn((_col: unknown) => ({ type: 'desc' })),
-  inArray: vi.fn((_col: unknown, vals: unknown) => ({ type: 'inArray', vals })),
-  gte: vi.fn((_col: unknown, val: unknown) => ({ type: 'gte', val })),
-  lte: vi.fn((_col: unknown, val: unknown) => ({ type: 'lte', val })),
+  inArray: vi.fn((col: unknown, vals: unknown) => ({ type: 'inArray', col: colName(col), vals })),
+  gte: vi.fn((col: unknown, val: unknown) => ({ type: 'gte', col: colName(col), val })),
+  lte: vi.fn((col: unknown, val: unknown) => ({ type: 'lte', col: colName(col), val })),
 }));
 
 const { EventExportService } = await import('../event-export.service.js');
@@ -294,6 +299,51 @@ describe('EventExportService', () => {
       }));
 
       expect(mockWhere).toHaveBeenCalled();
+    });
+
+    it('filters on trimmed comma-separated levels and names, outcome and both dates', async () => {
+      queryRows = [];
+
+      await EventExportService.exportAsCsv(baseQuery({
+        level: 'ERROR, WARN',
+        name: 'USER_LOGIN,USER_LOGOUT ',
+        outcome: 'FAILURE',
+        startDate: '2026-01-01T00:00:00.000Z',
+        endDate: '2026-01-31T23:59:59.999Z',
+      }));
+
+      expect(mockWhere).toHaveBeenCalledTimes(1);
+      expect(mockWhere).toHaveBeenCalledWith({
+        type: 'and',
+        args: [
+          { type: 'inArray', col: 'level', vals: ['ERROR', 'WARN'] },
+          { type: 'inArray', col: 'name', vals: ['USER_LOGIN', 'USER_LOGOUT'] },
+          { type: 'eq', col: 'outcome', val: 'FAILURE' },
+          { type: 'gte', col: 'created_at', val: new Date('2026-01-01T00:00:00.000Z') },
+          { type: 'lte', col: 'created_at', val: new Date('2026-01-31T23:59:59.999Z') },
+        ],
+      });
+    });
+
+    it('filters on a single condition when only one filter is given', async () => {
+      queryRows = [];
+
+      await EventExportService.exportAsJson(baseQuery({ format: 'json', outcome: 'SUCCESS' }));
+
+      expect(mockWhere).toHaveBeenCalledWith({
+        type: 'and',
+        args: [{ type: 'eq', col: 'outcome', val: 'SUCCESS' }],
+      });
+    });
+
+    it('selects without a where clause when no filter is given', async () => {
+      queryRows = [makeRow()];
+
+      const result = await EventExportService.exportAsCsv(baseQuery());
+
+      expect(result.ok).toBe(true);
+      expect(mockWhere).not.toHaveBeenCalled();
+      expect(mockLimit).toHaveBeenCalledWith(10_000);
     });
 
     it('applies maxRows limit', async () => {

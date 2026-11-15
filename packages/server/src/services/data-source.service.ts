@@ -9,7 +9,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, asc } from 'drizzle-orm';
 import type { CreateDataSourceInput, UpdateDataSourceInput } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
-import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import { emitSuccessEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { dataSources } from '../db/schema/index.js';
 import { encryptContent, decryptContent, isContentEncryptionConfigured } from '../lib/content-crypto.js';
@@ -121,7 +121,7 @@ export class DataSourceService {
         })
         .returning();
 
-      emitDataSourceEvent(context, { action: 'create', dataSourceName: input.name });
+      emitSuccessEvent('DATASOURCE_UPDATED', context, { action: 'create', dataSourceName: input.name });
       return toSummary(row!);
     });
   }
@@ -153,7 +153,7 @@ export class DataSourceService {
       const [row] = await db.update(dataSources).set(updates).where(eq(dataSources.id, id)).returning();
       // Config may have changed — drop the cached pool so the next query rebuilds it.
       await dataSourcePoolManager.invalidate(id);
-      emitDataSourceEvent(context, { action: 'update', dataSourceId: id });
+      emitSuccessEvent('DATASOURCE_UPDATED', context, { action: 'update', dataSourceId: id });
       return toSummary(row!);
     });
   }
@@ -164,7 +164,7 @@ export class DataSourceService {
       if (!existing) throw new ServiceError('NOT_FOUND', `Data source ${id} not found`);
       await db.delete(dataSources).where(eq(dataSources.id, id));
       await dataSourcePoolManager.invalidate(id);
-      emitDataSourceEvent(context, { action: 'delete', dataSourceId: id });
+      emitSuccessEvent('DATASOURCE_UPDATED', context, { action: 'delete', dataSourceId: id });
     });
   }
 
@@ -216,13 +216,4 @@ export class DataSourceService {
       }
     });
   }
-}
-
-function emitDataSourceEvent(context: AuditContext | undefined, attributes: Record<string, unknown>): void {
-  emitEvent({
-    level: 'INFO', name: 'DATASOURCE_UPDATED', outcome: 'SUCCESS',
-    userId: context?.userId ?? null, channelId: null,
-    serverId: null, ipAddress: context?.ipAddress ?? null,
-    attributes,
-  });
 }

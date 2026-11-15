@@ -11,7 +11,7 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import { CertificateSelect } from './CertificateSelect.js';
-import { getStr, getNum, getBool, getTls, getTlsStr, getTlsBool, propertyUpdaters } from './connector-properties.js';
+import { getStr, getNum, getBool, getTlsStr, getTlsBool, propertyUpdaters } from './connector-properties.js';
 
 interface FieldsProps {
   readonly properties: Record<string, unknown>;
@@ -135,10 +135,7 @@ export function AmqpConnectionFields({ properties, onChange }: FieldsProps): Rea
 
 /** TLS on/off, with the CA and client certificate chosen from the certificate store. */
 export function QueueTlsFields({ properties, onChange }: FieldsProps): ReactNode {
-  const { update, handleBool } = propertyUpdaters(properties, onChange);
-  const updateTls = (key: string, value: unknown): void => {
-    update('tls', { ...getTls(properties), [key]: value });
-  };
+  const { updateTls, handleBool } = propertyUpdaters(properties, onChange);
   const useTls = getBool(properties, 'useTls', false);
   return (
     <>

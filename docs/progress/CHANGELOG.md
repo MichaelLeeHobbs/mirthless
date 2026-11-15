@@ -2,6 +2,27 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Reinvention copy groups, batch 3 (branch `batch-2026-11-15-reinvention-3`)
+
+The last merge batch of the approved triage, mostly web and small server helpers:
+
+- **core-util (G0036, G0113):** `unescapeControlChars` replaces the Delimited settings form's `readEscapes` and the importer's `unescapeMirth`, and `isSecretSetting` replaces the server's and the Settings page's copies. The web now depends on `@galvaniflow/core-util`; the browser bundle changed only in SettingsPage (+0.06 kB). From the batch review: `docker/Dockerfile.web` now copies core-util (without it the web image could not build) and the cloud session hook builds it; the web image builds from a clean checkout. A local build from a checkout with installed dependencies still fails for an older reason (#137). Visible change: the Settings page treats a setting typed `secret`, or `Password` in any case, as secret, as the server already did.
+- **Server (G0131, G0180, G0239, G0228, G0167):** the collection service uses `containsPattern` and `requireById`; collections and data sources emit their audit events through one `emitSuccessEvent` (records unchanged); event export uses the event list's `buildEventWhereConditions` (its schema cannot carry the two extra filters, so output is unchanged); the seed scripts share one channel lookup.
+- **Web (G0071, G0076, G0079, G0166, G0229.R, G0257):** one `errorMessage` helper for mutation toasts, `ErrorState` and `ErrorBoundary`, each keeping its fallback text (an empty error message now shows the fallback instead of a blank, and `ErrorBoundary` now shows a thrown string's text instead of the fallback, as the other two already did); one Monaco registration per language; `propertyUpdaters` gains `updateTls` for the HTTP and queue TLS fields; message and event query strings share their filter clauses (`messageFilterParts`, `definedSearchParams`), pinned to the exact strings; the Delimited form uses the shared `update`.
+- Not done here: `use-certificates`, `use-logs` and `use-cross-channel-search` still build query strings by hand and could use `definedSearchParams` (not in the catalog).
+
+## 2026-11-15 — Reinvention copy groups, batch 2 (branch `batch-2026-11-15-reinvention-2`)
+
+Second batch of the approved triage, built on batch 1:
+
+- **Queue (G0175, G0196):** `QueueManagerService.dequeue` and `release` are gone. Nothing outside their unit test called them, and `dequeue` only selected rows without claiming them, so two callers could get the same messages. `MessageService.dequeue`/`release` remain the only ones. `requeueFailed` and `getQueueDepth` stay; neither has a production caller.
+- **SFTP and IMAP clients (G0378, G0391):** `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`. Two behaviour changes, approved in the triage or found by a failing test: the IMAP logout now gives up after 30 s (a hung logout used to stall every later poll while the channel showed STARTED), and a failed IMAP start no longer leaves an unconnected client that stop then tried to log out (stop returned an error). From the batch review: an IMAP connect that fails or times out now closes its client, because imapflow can finish a login after our 30 s limit on a session nobody held (servers that cap sessions per user then lock the account out). The SFTP receiver passes its close too, but ssh2-sftp-client's `end()` does nothing before a connection exists, so for SFTP ssh2's own 20 s ready timeout is what bounds a slow connect. The IMAP receiver drops a client once it has logged it out, so stop, a failed restart and stop again log out only once. From the PR review: stopping or pausing while an email is being dispatched used to leave it unread and untracked after that change, so a resume dispatched it again; stop now waits for the dispatch and its post-action, and a post-action without a client fails so only the post-action is retried.
+- **File dispatcher (G0218):** write and append share one encoding step.
+- **Server mail (G0016):** the server builds its nodemailer transport with the SMTP connector's `createNodemailerTransport`, which now takes connection fields only (`SmtpTransportConfig`). Server mail sends the same options.
+- **Backup restore (G0110):** the ten section restores share one loop, one row helper and one map upsert. 56 new tests pinned every section's counts, error texts and rows before the refactor. The quirks they pin are unchanged: a failed config/global-map lookup counts as created, a null map value is stored as '', and an existing pair is skipped even in OVERWRITE.
+- **Mirth importer (G0074.R):** one `stringList` reader for `<string>` lists. An imported filter rule with no values now stores `[]` instead of null; the engine and the editor treat both the same. The brief's suspected bug (a single numeric value dropped) does not happen, because the parser keeps tag values as text; the test stays as a regression check.
+- `pnpm test:scenarios` 60/60 (26/26) on bfeb452, the same as the last recorded score, run by the PR review session. Not run: any real IMAP/SFTP server.
+
 ## 2026-11-15 — One list per fact in core-models, docs slice 0 (branch `refactor/core-models-single-lists`)
 
 The first slice of the docs restructure (#116): before the docs can be checked against the code, each fact needs one home. A refactor with no behaviour change (D-268).

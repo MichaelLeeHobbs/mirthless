@@ -22,7 +22,7 @@ import {
   extractCodeTemplateLibraries, importCodeTemplateLibraries,
   type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
 } from './mirth-code-templates.js';
-import { isPlainObject } from '@galvaniflow/core-util';
+import { isPlainObject, unescapeControlChars } from '@galvaniflow/core-util';
 
 // ----- Types -----
 
@@ -41,7 +41,7 @@ export interface MirthImportResult {
   readonly codeTemplates: CodeTemplateImportCounts;
 }
 
-const XML_READERS = { isRecord: isPlainObject, getString, toRecordList } as const;
+const XML_READERS = { isRecord: isPlainObject, getString, toRecordList, stringList } as const;
 
 // ----- Connector Type Mapping -----
 
@@ -631,10 +631,7 @@ function linkedMap(node: unknown): Record<string, string> {
   if (!isPlainObject(node)) return result;
   for (const entry of toRecordList(node['entry'])) {
     const name = getString(entry, 'string');
-    const list = entry['list'];
-    const raw = isPlainObject(list) ? list['string'] : undefined;
-    const values = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).map(String);
-    if (name) result[name] = values.join(', ');
+    if (name) result[name] = stringList(entry['list']).join(', ');
   }
   return result;
 }
@@ -950,7 +947,7 @@ function extractFilterFromConnector(
     script: getString(rule, 'script'),
     field: getString(rule, 'field'),
     condition: getString(rule, 'condition'),
-    values: extractStringArray(rule['values']),
+    values: stringList(rule['values']),
   }));
 
   if (rules.length === 0) return null;
@@ -965,15 +962,13 @@ function mapFilterRuleType(type: string | null): string {
   return upper;
 }
 
-function extractStringArray(node: unknown): string[] | null {
-  if (!node) return null;
+/** The `<string>` children of a Mirth string list (`<values><string>a</string></values>`), or a bare array; [] when there are none. */
+function stringList(node: unknown): string[] {
   if (Array.isArray(node)) return node.map(String);
-  if (isPlainObject(node)) {
-    const inner = node['string'];
-    if (Array.isArray(inner)) return inner.map(String);
-    if (typeof inner === 'string') return [inner];
-  }
-  return null;
+  if (!isPlainObject(node)) return [];
+  const raw = node['string'];
+  const list: readonly unknown[] = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+  return list.map(String);
 }
 
 // ----- Transformer Conversion -----
@@ -1052,11 +1047,6 @@ function mirthDataType(name: string | null): string | null {
   return name === 'EDI/X12' ? 'X12' : name;
 }
 
-/** Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`. */
-function unescapeMirth(text: string): string {
-  return text.replace(/\\([nrt\\])/g, (_m, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? '\\');
-}
-
 /**
  * Add GalvaniFlow's `delimited` settings (see delimitedOptionsSchema) to a
  * Delimited transformer's properties, read from Mirth's serializationProperties.
@@ -1067,7 +1057,8 @@ function withDelimitedOptions(props: Record<string, unknown>, dataType: string):
   const ser = props['serializationProperties'];
   const text = (key: string): string | undefined => {
     const value = getString(ser, key);
-    return value === null ? undefined : unescapeMirth(value);
+    // Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`.
+    return value === null ? undefined : unescapeControlChars(value);
   };
   const names = text('columnNames');
   const delimited = {

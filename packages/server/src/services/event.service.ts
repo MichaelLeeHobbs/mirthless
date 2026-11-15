@@ -41,7 +41,14 @@ export interface EventListResult {
 
 // ----- Helpers -----
 
-function buildWhereConditions(query: EventListQuery): ReturnType<typeof and> {
+/** The event filters shared by the event list and the event export. */
+export type EventFilter = Pick<EventListQuery, 'level' | 'name' | 'outcome' | 'userId' | 'channelId' | 'startDate' | 'endDate'>;
+
+/**
+ * Builds the WHERE clause for an event query. `level` and `name` are comma-separated lists.
+ * Returns undefined when no filter is set.
+ */
+export function buildEventWhereConditions(query: EventFilter): ReturnType<typeof and> {
   const conditions = [];
 
   if (query.level !== undefined) {
@@ -84,7 +91,7 @@ export class EventService {
   static async list(query: EventListQuery): Promise<Result<EventListResult>> {
     return tryCatch(async () => {
       const offset = (query.page - 1) * query.pageSize;
-      const where = buildWhereConditions(query);
+      const where = buildEventWhereConditions(query);
 
       const countQuery = db
         .select({ value: count() })
