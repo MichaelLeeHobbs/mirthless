@@ -21,7 +21,7 @@ Mirthless is not a Mirth Connect clone. It's a **modern, open-source healthcare 
 
 The foundation. A single-server deployment that can replace Mirth Connect for common HL7v2/FHIR/HTTP integration workflows.
 
-What already ships is listed, with the tests that prove it, in [What GalvaniFlow can do](../user/capabilities.md). This roadmap lists only work still to do; each open item below is the plan of a row there (D-275).
+What already ships is listed, with the tests that prove it, in [What GalvaniFlow can do](../user/capabilities.md). This roadmap lists only work still to do; each open item below is the plan of a row there (D-279).
 
 ### Mirth migration suite
 
