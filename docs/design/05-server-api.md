@@ -60,7 +60,7 @@ From fullstack-template patterns. JWT + sessions.
 | RBAC | Always-true default (commercial plugin) | Built-in roles + permissions |
 | Password storage | Custom Digester | bcrypt (12 rounds) |
 | Rate limiting | None | express-rate-limit on auth endpoints |
-| MFA | Commercial plugin | Built-in (TOTP via otpauth) |
+| MFA | Commercial plugin | Not built (planned, ROADMAP V4) |
 
 ---
 
@@ -70,41 +70,33 @@ Built-in from day one. Not a commercial add-on.
 
 ### Permissions Model
 
-```typescript
-// Resource + Action + Scope
-interface Permission {
-  resource: 'channels' | 'messages' | 'users' | 'config' | 'alerts' | 'code-templates' | 'events' | 'system';
-  action: 'read' | 'write' | 'deploy' | 'delete' | 'admin';
-  scope: 'all' | ReadonlyArray<ChannelId>; // Channel-scoped permissions
-}
-```
+A permission is a `resource:action` string, such as `channels:read` or `code_templates:delete`. The full list is `PERMISSIONS` in `packages/server/src/db/seeds/permissions.ts`. A user's permissions come from their role at login (`permissionNamesForRole` in `packages/server/src/lib/role-permissions.ts`) and travel in the access token.
+
+Channel-scoped permissions are not built. The `user_permissions` table has a `scope` column that an early design meant to hold a list of channel ids, but the seed writes `'all'` and nothing reads it. Every permission applies to every channel: a user with `messages:read` can read the messages of all channels. ROADMAP lists this as an open gap.
 
 ### Default Roles
 
+Four fixed roles, defined in `packages/server/src/db/seeds/roles.ts`. That file is the source of truth for which permissions each role holds; in short:
+
 | Role | Permissions |
 |---|---|
-| `admin` | All resources, all actions, all channels |
-| `deployer` | channels:read+write+deploy, messages:read, code-templates:read+write |
-| `developer` | channels:read+write (scoped), messages:read (scoped), code-templates:read+write |
-| `viewer` | channels:read (scoped), messages:read (scoped) |
+| `admin` | Every permission |
+| `deployer` | Channels read, write and deploy; messages read and reprocess; code templates, alerts, resources, collections and data sources read, write and delete; read access to events, global scripts, the global and config maps, and system info |
+| `developer` | Channels read and write; messages read; code templates read and write; resources and collections read and write; read access to alerts, events, data sources, global scripts and the global and config maps |
+| `viewer` | Read access to channels, messages, code templates, alerts, events, resources, collections and data sources |
 
 ### Middleware
 
 ```typescript
-// Route-level permission check
-router.put('/channels/:id',
-  authMiddleware,
-  requirePermission('channels', 'write'),
-  channelController.update,
-);
-
-// Channel-scoped permission check
-router.get('/channels/:id/messages',
-  authMiddleware,
-  requireChannelAccess('read'),
-  messageController.search,
+// Route-level permission check: passes when the user holds any of the listed permissions
+router.put('/:id',
+  requirePermission('channels:write'),
+  validate({ params: uuidParamsSchema, body: updateChannelSchema }),
+  ChannelController.update,
 );
 ```
+
+`requireAllPermissions(...)` is the variant that needs every listed permission. There is no per-channel access check.
 
 ---
 

@@ -102,6 +102,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[N11] Iterator transformer step** (+ XSLT / External Script) — 🟡 repeating-segment mapping UX.
 - [ ] **[N12] Code-template per-channel library scoping: editor control** — the engine, API, backup and Mirth import scope libraries to channels (2026-11-12, D-249); the Code Templates page cannot set the scope yet.
 - [ ] **[N13] Custom RBAC roles** (roles as permission sets vs 4 fixed) — 🟡 "dev who can't deploy to prod".
+- [ ] **Channel-scoped permissions** (not built): the `user_permissions` table has a `scope` column, but the seed writes `'all'` and nothing reads it; `requirePermission` checks only the permission string. Every grant covers every channel, so any user with `messages:read` can read, export and download attachments from every channel's messages. Whether to build it is a separate product decision. 🟡
 - [ ] **[N14] Export completeness** (templates/deps/groups/tags + set export) — 🟡
 - [ ] **[N15] Alert per-connector scope + error-stage granularity** — 🟡
 - [ ] **[DECIDE] Extension/plugin platform** — 🔴 strategic: Mirth's third-party plugin loader has no equivalent. Decide curated-built-in vs a modern manifest-based SPI. Not a scheduled task until decided.
@@ -157,7 +158,6 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] 131 REST endpoints across 37 route files
 - [x] JWT + refresh tokens + session management
 - [x] RBAC with 4 roles (admin, deployer, developer, viewer)
-- [x] Channel-scoped permissions
 - [x] Audit logging (fire-and-forget events)
 - [x] Channel export/import (JSON format)
 - [x] Mirth Connect XML import
