@@ -1,5 +1,6 @@
-# Dependencies
-node_modules/
+# Dependencies (every package's, not only the root's: a host install would
+# overwrite the container's own pnpm links when packages/<name>/ is copied)
+**/node_modules/
 
 # Git
 .git/
