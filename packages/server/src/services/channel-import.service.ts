@@ -7,7 +7,7 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { randomUUID } from 'node:crypto';
 import { eq, isNull, and } from 'drizzle-orm';
-import type { ChannelExportEntry, CollisionMode, ImportResult } from '@galvaniflow/core-models';
+import { toScriptLanguage, type ChannelExportEntry, type CollisionMode, type ImportResult } from '@galvaniflow/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
@@ -243,6 +243,7 @@ async function insertRelations(
         channelId,
         scriptType: s.scriptType,
         script: s.script,
+        language: toScriptLanguage(s.language),
       })),
     );
   }
@@ -264,6 +265,8 @@ async function insertRelations(
         rotateQueue: d.rotateQueue,
         queueThreadCount: d.queueThreadCount,
         waitForPrevious: d.waitForPrevious,
+        responseTransformer: d.responseTransformer ?? null,
+        responseTransformerLanguage: toScriptLanguage(d.responseTransformerLanguage),
       })),
     ).returning({ id: channelConnectors.id, metaDataId: channelConnectors.metaDataId });
     for (const row of insertedDestinations) destIdByMetaDataId.set(row.metaDataId, row.id);
@@ -300,6 +303,7 @@ async function insertRelations(
           operator: r.operator,
           type: r.type,
           script: r.script,
+          language: toScriptLanguage(r.language),
           field: r.field,
           condition: r.condition,
           values: r.values,
@@ -333,6 +337,7 @@ async function insertRelations(
           name: s.name,
           type: s.type,
           script: s.script,
+          language: toScriptLanguage(s.language),
           sourceField: s.sourceField,
           targetField: s.targetField,
           defaultValue: s.defaultValue,

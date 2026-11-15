@@ -13,6 +13,11 @@ import { problemKind, type Problem } from '../editor-hooks.js';
 
 afterEach(() => { cleanup(); });
 
+/** Matches the one element whose whole text is `text`, even when it spans nested elements. */
+function fullText(text: string): (content: string, el: Element | null) => boolean {
+  return (_content, el) => el?.textContent === text && [...el.children].every((c) => c.textContent !== text);
+}
+
 function wrap(node: React.ReactNode): void {
   // ScriptEditor reads code templates for completion; no request is made here.
   const client = new QueryClient({ defaultOptions: { queries: { enabled: false } } });
@@ -63,16 +68,21 @@ describe('problemKind', () => {
 
 describe('ScriptEditor chrome', () => {
   it('names the editor group and shows the language in the status line', () => {
-    wrap(<ScriptEditor value="" onChange={vi.fn()} label="Deploy script" language="typescript" />);
+    wrap(<ScriptEditor value="" onChange={vi.fn()} label="Deploy script" language="TYPESCRIPT" />);
     expect(screen.getByRole('group', { name: 'Deploy script' })).toBeTruthy();
-    expect(screen.getByText('TypeScript')).toBeTruthy();
+    expect(screen.getByText(fullText('TypeScript · type-checked before deploy'))).toBeTruthy();
   });
 
-  it('reports a language switch to the host', () => {
+  it('says a JavaScript script is checked for syntax only', () => {
+    wrap(<ScriptEditor value="" onChange={vi.fn()} language="JAVASCRIPT" />);
+    expect(screen.getByText(fullText('JavaScript · syntax only'))).toBeTruthy();
+  });
+
+  it('reports a language switch to the host as the stored language code', () => {
     const onLanguageChange = vi.fn();
-    wrap(<ScriptEditor value="" onChange={vi.fn()} showLanguageToggle language="javascript" onLanguageChange={onLanguageChange} />);
+    wrap(<ScriptEditor value="" onChange={vi.fn()} showLanguageToggle language="JAVASCRIPT" onLanguageChange={onLanguageChange} />);
     fireEvent.click(screen.getByRole('button', { name: 'TypeScript' }));
-    expect(onLanguageChange).toHaveBeenCalledWith('typescript');
+    expect(onLanguageChange).toHaveBeenCalledWith('TYPESCRIPT');
   });
 
   it('labels a read-only editor and hides formatting', () => {

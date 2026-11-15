@@ -276,6 +276,8 @@ export interface GlobalScriptsData {
   readonly undeploy: string;
   readonly preprocessor: string;
   readonly postprocessor: string;
+  /** The language each script is written in; absent from older servers, which read as JavaScript. */
+  readonly languages?: Readonly<Record<'deploy' | 'undeploy' | 'preprocessor' | 'postprocessor', string>>;
 }
 
 /** Convenience methods for common HTTP verbs */

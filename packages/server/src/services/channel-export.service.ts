@@ -4,7 +4,7 @@
 // Exports channels as structured JSON for backup/migration.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import type { ChannelExport, ChannelExportEntry } from '@galvaniflow/core-models';
+import { toScriptLanguage, type ChannelExport, type ChannelExportEntry } from '@galvaniflow/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { redactConnectorProperties } from '../lib/secret-redaction.js';
 import { ChannelService, type ChannelDetail } from './channel.service.js';
@@ -43,6 +43,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
     scripts: detail.scripts.map((s) => ({
       scriptType: s.scriptType,
       script: s.script,
+      language: toScriptLanguage(s.language),
     })),
     destinations: detail.destinations.map((d) => ({
       metaDataId: d.metaDataId,
@@ -56,6 +57,8 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
       rotateQueue: d.rotateQueue,
       queueThreadCount: d.queueThreadCount,
       waitForPrevious: d.waitForPrevious,
+      responseTransformer: d.responseTransformer,
+      responseTransformerLanguage: toScriptLanguage(d.responseTransformerLanguage),
     })),
     metadataColumns: detail.metadataColumns.map((m) => ({
       name: m.name,
@@ -71,6 +74,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
         operator: r.operator,
         type: r.type,
         script: r.script,
+        language: toScriptLanguage(r.language),
         field: r.field,
         condition: r.condition,
         values: r.values ? [...r.values] : null,
@@ -90,6 +94,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
         name: s.name,
         type: s.type,
         script: s.script,
+        language: toScriptLanguage(s.language),
         sourceField: s.sourceField,
         targetField: s.targetField,
         defaultValue: s.defaultValue,

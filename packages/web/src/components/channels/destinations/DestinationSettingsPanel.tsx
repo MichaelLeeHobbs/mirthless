@@ -119,6 +119,8 @@ export function DestinationSettingsPanel({ destination, onChange }: DestinationS
       <ResponseTransformerSection
         value={destination.responseTransformer}
         onChange={(responseTransformer) => { onChange({ responseTransformer }); }}
+        language={destination.responseTransformerLanguage}
+        onLanguageChange={(responseTransformerLanguage) => { onChange({ responseTransformerLanguage }); }}
       />
 
       <Divider sx={{ my: 3 }} />

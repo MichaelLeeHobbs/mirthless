@@ -48,7 +48,7 @@ export function TransformerStepEditor({
 }: TransformerStepEditorProps): ReactNode {
   const title = step.name || `Step ${String(index + 1)}`;
   const typeLabel =
-    step.type === 'JAVASCRIPT' ? 'Script' :
+    step.type === 'JAVASCRIPT' ? `Script · ${step.language === 'TYPESCRIPT' ? 'TypeScript' : 'JavaScript'}` :
     step.type === 'MAPPER' ? 'Mapper' : 'Message Builder';
 
   return (
@@ -125,6 +125,8 @@ export function TransformerStepEditor({
             height="220px"
             label={`${step.name || 'Step'} script`}
             surface={FILTER_TRANSFORMER_SURFACE[stage]}
+            language={step.language}
+            onLanguageChange={(language) => { onChange({ language }); }}
             value={step.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
             showLanguageToggle

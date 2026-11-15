@@ -13,14 +13,17 @@ import AccordionDetails from '@mui/material/AccordionDetails';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import type { ScriptLanguageCode } from '@galvaniflow/core-models';
 import { ScriptEditor } from '../../editors/ScriptEditor.js';
 
 interface ResponseTransformerSectionProps {
   readonly value: string;
   readonly onChange: (script: string) => void;
+  readonly language: ScriptLanguageCode;
+  readonly onLanguageChange: (language: ScriptLanguageCode) => void;
 }
 
-export function ResponseTransformerSection({ value, onChange }: ResponseTransformerSectionProps): ReactNode {
+export function ResponseTransformerSection({ value, onChange, language, onLanguageChange }: ResponseTransformerSectionProps): ReactNode {
   const hasScript = value.trim().length > 0;
 
   return (
@@ -47,16 +50,15 @@ export function ResponseTransformerSection({ value, onChange }: ResponseTransfor
           Transform the response returned by this destination after a successful send.
           The <code>response</code> is available as <code>msg</code>; return the new value.
         </Typography>
-        <Box
-          id="response-transformer-content"
-          sx={{ border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}
-        >
+        <Box id="response-transformer-content">
           <ScriptEditor
             height="240px"
             label="Response transformer script"
             surface={{ templateContext: 'DESTINATION_RESPONSE_TRANSFORMER' }}
             value={value}
-            onChange={(next) => { onChange(next ?? ''); }}
+            onChange={onChange}
+            language={language}
+            onLanguageChange={onLanguageChange}
             showLanguageToggle
           />
         </Box>

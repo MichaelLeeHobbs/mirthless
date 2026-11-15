@@ -10,7 +10,9 @@ import Box from '@mui/material/Box';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Button from '@mui/material/Button';
+import type { ScriptLanguageCode } from '@galvaniflow/core-models';
 import { ScriptEditor } from '../components/editors/ScriptEditor.js';
+import { NEW_SCRIPT_LANGUAGE, loadedScriptLanguage } from '../lib/script-language.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
 import { useBlocker } from 'react-router';
@@ -34,19 +36,26 @@ interface ScriptsState {
   undeploy: string;
   preprocessor: string;
   postprocessor: string;
+  languages: Record<ScriptKey, ScriptLanguageCode>;
 }
+
+const EMPTY_SCRIPTS: ScriptsState = {
+  deploy: '',
+  undeploy: '',
+  preprocessor: '',
+  postprocessor: '',
+  languages: {
+    deploy: NEW_SCRIPT_LANGUAGE, undeploy: NEW_SCRIPT_LANGUAGE,
+    preprocessor: NEW_SCRIPT_LANGUAGE, postprocessor: NEW_SCRIPT_LANGUAGE,
+  },
+};
 
 export function GlobalScriptsPage(): ReactNode {
   const { data, isLoading, isFetching, error, refetch } = useGlobalScripts();
   const updateMutation = useUpdateGlobalScripts();
   const { notify } = useNotification();
 
-  const [scripts, setScripts] = useState<ScriptsState>({
-    deploy: '',
-    undeploy: '',
-    preprocessor: '',
-    postprocessor: '',
-  });
+  const [scripts, setScripts] = useState<ScriptsState>(EMPTY_SCRIPTS);
   const [activeTab, setActiveTab] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [blockerConfirmOpen, setBlockerConfirmOpen] = useState(false);
@@ -59,6 +68,12 @@ export function GlobalScriptsPage(): ReactNode {
         undeploy: data.undeploy,
         preprocessor: data.preprocessor,
         postprocessor: data.postprocessor,
+        languages: {
+          deploy: loadedScriptLanguage(data.deploy, data.languages?.deploy),
+          undeploy: loadedScriptLanguage(data.undeploy, data.languages?.undeploy),
+          preprocessor: loadedScriptLanguage(data.preprocessor, data.languages?.preprocessor),
+          postprocessor: loadedScriptLanguage(data.postprocessor, data.languages?.postprocessor),
+        },
       });
       setDirty(false);
     }
@@ -86,6 +101,11 @@ export function GlobalScriptsPage(): ReactNode {
 
   const handleScriptChange = useCallback((key: ScriptKey, value: string | undefined): void => {
     setScripts((prev) => ({ ...prev, [key]: value ?? '' }));
+    setDirty(true);
+  }, []);
+
+  const handleLanguageChange = useCallback((key: ScriptKey, language: ScriptLanguageCode): void => {
+    setScripts((prev) => ({ ...prev, languages: { ...prev.languages, [key]: language } }));
     setDirty(true);
   }, []);
 
@@ -148,6 +168,8 @@ export function GlobalScriptsPage(): ReactNode {
               height="100%"
               label={`Global ${TABS[activeTab]!.label.toLowerCase()} script`}
               surface={TABS[activeTab]!.surface}
+              language={scripts.languages[activeKey]}
+              onLanguageChange={(language) => { handleLanguageChange(activeKey, language); }}
               value={scripts[activeKey]}
               onChange={(value) => { handleScriptChange(activeKey, value); }}
               showLanguageToggle

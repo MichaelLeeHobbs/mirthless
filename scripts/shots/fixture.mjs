@@ -50,8 +50,8 @@ const channelDetail = {
   removeAttachmentsOnCompletion: false, pruningEnabled: true, pruningMaxAgeDays: 30, pruningArchiveEnabled: false,
   scriptTimeoutSeconds: 30, sourceConnectorProperties: { host: '0.0.0.0', port: 6661 },
   scripts: [
-    { scriptType: 'DEPLOY', script: "// Warm the facility lookup before the first message\nconst facilities = getCollection('facilities');\nlogger.info('ADT channel deployed');\n" },
-    { scriptType: 'PREPROCESSOR', script: '// Strip a trailing segment terminator some senders add\nreturn rawData.replace(/\\r+$/, "");\n' },
+    { scriptType: 'DEPLOY', script: "// Warm the facility lookup before the first message\nconst facilities = getCollection('facilities');\nlogger.info('ADT channel deployed');\n", language: 'TYPESCRIPT' },
+    { scriptType: 'PREPROCESSOR', script: '// Strip a trailing segment terminator some senders add\nreturn rawData.replace(/\\r+$/, "");\n', language: 'JAVASCRIPT' },
   ],
   destinations: [
     { id: 'd1', metaDataId: 1, name: 'To EHR', enabled: true, connectorType: 'TCP_MLLP', properties: { host: 'ehr.example.test', port: 7001 },
@@ -59,10 +59,10 @@ const channelDetail = {
   ],
   metadataColumns: [], tags: [tags[0]],
   filters: [{ connectorId: null, rules: [
-    { enabled: true, name: 'Only inpatient ADT', operator: 'AND', type: 'JAVASCRIPT', script: "const hl7 = parseHL7(rawData);\nreturn hl7.get('PV1.2') === 'I';\n" },
+    { enabled: true, name: 'Only inpatient ADT', operator: 'AND', type: 'JAVASCRIPT', script: "const hl7 = parseHL7(rawData);\nreturn hl7.get('PV1.2') === 'I';\n", language: 'TYPESCRIPT' },
   ] }],
   transformers: [{ connectorId: null, inboundDataType: 'HL7V2', outboundDataType: 'HL7V2', steps: [
-    { enabled: true, name: 'Normalize MRN', type: 'JAVASCRIPT', script: "const hl7 = parseHL7(rawData);\nconst mrn = hl7.get('PID.3.1') ?? '';\nchannelMap['mrn'] = mrn.padStart(10, '0');\n" },
+    { enabled: true, name: 'Normalize MRN', type: 'JAVASCRIPT', script: "const hl7 = parseHL7(rawData);\nconst mrn = hl7.get('PID.3.1') ?? '';\nchannelMap['mrn'] = mrn.padStart(10, '0');\n", language: 'TYPESCRIPT' },
   ] }],
 };
 
@@ -215,7 +215,12 @@ export function route(pathname, search) {
   if (p === '/admin/prune/schedule') return { enabled: true, cronExpression: '0 2 * * *', lastRunAt: ago(720), lastRunResult: { channelsPruned: 4, totalDeleted: 18230, completedAt: ago(715) } };
   if (p === '/code-templates/libraries') return libraries;
   if (p === '/code-templates') return templates;
-  if (p === '/global-scripts') return { deploy: '// Runs when any channel deploys\n', undeploy: '', preprocessor: 'return message;\n', postprocessor: '' };
+  if (p === '/global-scripts') {
+    return {
+      deploy: '// Runs when any channel deploys\n', undeploy: '', preprocessor: 'return rawData;\n', postprocessor: '',
+      languages: { deploy: 'TYPESCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' },
+    };
+  }
   if (p === '/resources') return [
     { id: 'r1', name: 'facility-codes.json', description: 'Facility code lookup', mimeType: 'application/json', sizeBytes: 18234, createdAt: ago(90000), updatedAt: ago(4000) },
     { id: 'r2', name: 'zip-to-county.csv', description: null, mimeType: 'text/csv', sizeBytes: 1048576, createdAt: ago(90000), updatedAt: ago(40000) },

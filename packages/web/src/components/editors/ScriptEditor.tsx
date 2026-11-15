@@ -6,7 +6,7 @@
 // line with the cursor position and the script's problems.
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import type { ScriptSurface } from '@galvaniflow/core-models';
+import type { ScriptLanguageCode, ScriptSurface } from '@galvaniflow/core-models';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
@@ -23,11 +23,14 @@ import { BASE_EDITOR_OPTIONS } from './editor-options.js';
 import { useCursor, useEditorTheme, useProblems } from './editor-hooks.js';
 import { ProblemStatus } from './ProblemStatus.js';
 
-export type ScriptLanguage = 'javascript' | 'typescript';
+const LANGUAGE_NAME: Readonly<Record<ScriptLanguageCode, string>> = {
+  JAVASCRIPT: 'JavaScript',
+  TYPESCRIPT: 'TypeScript',
+};
 
-const LANGUAGE_NAME: Readonly<Record<ScriptLanguage, string>> = {
-  javascript: 'JavaScript',
-  typescript: 'TypeScript',
+const MONACO_LANGUAGE: Readonly<Record<ScriptLanguageCode, string>> = {
+  JAVASCRIPT: 'javascript',
+  TYPESCRIPT: 'typescript',
 };
 
 export interface ScriptEditorProps {
@@ -39,10 +42,11 @@ export interface ScriptEditorProps {
   readonly label?: string;
   /** Show the label in the toolbar. Off when the host already titles the editor. */
   readonly showLabel?: boolean;
-  readonly language?: ScriptLanguage;
+  /** The language stored with the script. TypeScript scripts are type-checked here and at deploy. */
+  readonly language?: ScriptLanguageCode;
   readonly showLanguageToggle?: boolean;
   /** Fired when the user switches JavaScript/TypeScript, so the host can store it. */
-  readonly onLanguageChange?: (language: ScriptLanguage) => void;
+  readonly onLanguageChange?: (language: ScriptLanguageCode) => void;
   /** View-only: the code and the language cannot be changed. */
   readonly readOnly?: boolean;
   /**
@@ -73,7 +77,7 @@ export function ScriptEditor({
     destinationSet: surfaceProp?.destinationSet,
     templateContext: surfaceProp?.templateContext,
   }), [channelDataType, surfaceProp?.message, surfaceProp?.destinationSet, surfaceProp?.templateContext]);
-  const [internalLang, setInternalLang] = useState<ScriptLanguage>('javascript');
+  const [internalLang, setInternalLang] = useState<ScriptLanguageCode>('TYPESCRIPT');
   const language = languageProp ?? internalLang;
   const [editor, setEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -97,7 +101,7 @@ export function ScriptEditor({
       size="small"
       disabled={readOnly}
       aria-label="Script language"
-      onChange={(_e, val: ScriptLanguage | null) => {
+      onChange={(_e, val: ScriptLanguageCode | null) => {
         if (val) { setInternalLang(val); onLanguageChange?.(val); }
       }}
       sx={{
@@ -107,8 +111,8 @@ export function ScriptEditor({
         '& .MuiToggleButton-root.Mui-selected': { color: 'primary.main', bgcolor: 'action.selected', fontWeight: 700 },
       }}
     >
-      <ToggleButton value="javascript" aria-label="JavaScript">JavaScript</ToggleButton>
-      <ToggleButton value="typescript" aria-label="TypeScript">TypeScript</ToggleButton>
+      <ToggleButton value="JAVASCRIPT" aria-label="JavaScript">JavaScript</ToggleButton>
+      <ToggleButton value="TYPESCRIPT" aria-label="TypeScript">TypeScript</ToggleButton>
     </ToggleButtonGroup>
   ) : null;
 
@@ -145,14 +149,24 @@ export function ScriptEditor({
         <>
           <ProblemStatus editor={editor} problems={problems} />
           <Box sx={{ flexGrow: 1 }} />
-          <span>Ln {cursor.line}, Col {cursor.column}</span>
-          <span>{LANGUAGE_NAME[language]}</span>
+          <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Ln {cursor.line}, Col {cursor.column}</Box>
+          <Tooltip title={language === 'TYPESCRIPT'
+            ? 'Saved with the script. Type errors can be saved, but the channel will not deploy until they are fixed.'
+            : 'Saved with the script. JavaScript is checked for syntax only.'}
+          >
+            <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
+              {LANGUAGE_NAME[language]}
+              <Box component="span" sx={{ display: { xs: 'none', md: 'inline' }, fontWeight: 400, color: 'text.secondary' }}>
+                {language === 'TYPESCRIPT' ? ' · type-checked before deploy' : ' · syntax only'}
+              </Box>
+            </Box>
+          </Tooltip>
         </>
       }
     >
       <Editor
         height="100%"
-        language={language}
+        language={MONACO_LANGUAGE[language]}
         theme={theme}
         value={value}
         onChange={(v) => { onChange(v ?? ''); }}

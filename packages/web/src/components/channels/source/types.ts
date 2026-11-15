@@ -4,6 +4,8 @@
 // Shared interfaces for connector-specific settings forms.
 
 import type { Control, FieldErrors } from 'react-hook-form';
+import type { ScriptLanguageCode } from '@galvaniflow/core-models';
+import { NEW_SCRIPT_LANGUAGE } from '../../../lib/script-language.js';
 import type { ChannelFormData } from '../../../pages/ChannelEditorPage.js';
 
 /** Props for connector-specific settings forms (TCP/MLLP, HTTP, etc.) */
@@ -19,6 +21,8 @@ export interface FilterRuleFormValues {
   readonly operator: 'AND' | 'OR';
   readonly type: 'JAVASCRIPT' | 'RULE_BUILDER';
   readonly script: string;
+  /** The language `script` is written in. */
+  readonly language: ScriptLanguageCode;
   readonly field: string;
   readonly condition: string;
   readonly values: readonly string[];
@@ -35,6 +39,8 @@ export interface TransformerStepFormValues {
   readonly name: string;
   readonly type: 'JAVASCRIPT' | 'MAPPER' | 'MESSAGE_BUILDER';
   readonly script: string;
+  /** The language `script` is written in. */
+  readonly language: ScriptLanguageCode;
   readonly sourceField: string;
   readonly targetField: string;
   readonly defaultValue: string;
@@ -78,6 +84,7 @@ export function createDefaultFilterRule(): FilterRuleFormValues {
     operator: 'AND',
     type: 'JAVASCRIPT',
     script: '',
+    language: NEW_SCRIPT_LANGUAGE,
     field: '',
     condition: '',
     values: [],
@@ -91,6 +98,7 @@ export function createDefaultTransformerStep(): TransformerStepFormValues {
     name: '',
     type: 'JAVASCRIPT',
     script: '',
+    language: NEW_SCRIPT_LANGUAGE,
     sourceField: '',
     targetField: '',
     defaultValue: '',

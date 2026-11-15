@@ -60,7 +60,7 @@ export function FilterRuleEditor({
             color: 'text.secondary',
             mr: 1
           }}>
-          {rule.type === 'JAVASCRIPT' ? 'Script' : 'Rule Builder'}
+          {rule.type === 'JAVASCRIPT' ? `Script · ${rule.language === 'TYPESCRIPT' ? 'TypeScript' : 'JavaScript'}` : 'Rule Builder'}
         </Typography>
         {!rule.enabled ? (
           <Typography
@@ -126,6 +126,8 @@ export function FilterRuleEditor({
             height="220px"
             label={`${rule.name || 'Rule'} script`}
             surface={FILTER_TRANSFORMER_SURFACE[stage]}
+            language={rule.language}
+            onLanguageChange={(language) => { onChange({ language }); }}
             value={rule.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
             showLanguageToggle

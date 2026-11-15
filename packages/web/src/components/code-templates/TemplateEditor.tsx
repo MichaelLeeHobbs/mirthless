@@ -19,7 +19,7 @@ import Stack from '@mui/material/Stack';
 import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
 import { ScriptEditor } from '../editors/ScriptEditor.js';
-import { CODE_TEMPLATE_CONTEXTS } from '@galvaniflow/core-models';
+import { CODE_TEMPLATE_CONTEXTS, toScriptLanguage, type ScriptLanguageCode } from '@galvaniflow/core-models';
 import type { CodeTemplateDetail } from '../../api/client.js';
 
 const CONTEXT_LABELS: Record<string, string> = {
@@ -69,7 +69,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? '');
   const [type, setType] = useState(template.type);
-  const [language, setLanguage] = useState(template.language);
+  const [language, setLanguage] = useState<ScriptLanguageCode>(toScriptLanguage(template.language));
   const [code, setCode] = useState(template.code);
   const [contexts, setContexts] = useState<ReadonlySet<string>>(new Set(template.contexts));
 
@@ -78,7 +78,7 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
     setName(template.name);
     setDescription(template.description ?? '');
     setType(template.type);
-    setLanguage(template.language);
+    setLanguage(toScriptLanguage(template.language));
     setCode(template.code);
     setContexts(new Set(template.contexts));
   }, [template.id, template.revision, template.name, template.description, template.type, template.language, template.code, template.contexts]);
@@ -192,15 +192,16 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
         </FormGroup>
       </Box>
 
-      <Box sx={{ flexGrow: 1, minHeight: 360 }}>
+      {/* Small enough that the editor's status line fits in the pane at 1440x900. */}
+      <Box sx={{ flexGrow: 1, minHeight: 240 }}>
         <ScriptEditor
           height="100%"
           label="Template code"
           value={code}
           onChange={(value) => { setCode(value ?? ''); }}
           showLanguageToggle
-          language={language === 'TYPESCRIPT' ? 'typescript' : 'javascript'}
-          onLanguageChange={(lang) => { setLanguage(lang === 'typescript' ? 'TYPESCRIPT' : 'JAVASCRIPT'); }}
+          language={language}
+          onLanguageChange={setLanguage}
           readOnly={readOnly}
         />
       </Box>

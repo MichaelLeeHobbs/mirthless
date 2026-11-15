@@ -24,8 +24,9 @@ import Tooltip from '@mui/material/Tooltip';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
 import HistoryIcon from '@mui/icons-material/History';
-import type { CreateChannelInput, UpdateChannelInput } from '@galvaniflow/core-models';
-import { useChannel, useCreateChannel, useUpdateChannel } from '../hooks/use-channels.js';
+import { type CreateChannelInput, type ScriptLanguageCode, type UpdateChannelInput } from '@galvaniflow/core-models';
+import { useChannel, useCreateChannel, useUpdateChannel, type ChannelDetail } from '../hooks/use-channels.js';
+import type { ScriptsFormValues } from '../components/channels/ScriptsTab.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 import { SummaryTab } from '../components/channels/SummaryTab.js';
@@ -36,6 +37,7 @@ import type { AdvancedFormValues } from '../components/channels/AdvancedTab.js';
 import type { DestinationFormValues } from '../components/channels/destinations/types.js';
 import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, TransformerStepFormValues } from '../components/channels/source/types.js';
 import { createDefaultFilter, createDefaultTransformer, transformerHasContent } from '../components/channels/source/types.js';
+import { NEW_SCRIPT_LANGUAGE, loadedScriptLanguage } from '../lib/script-language.js';
 import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
 import { ScriptDataTypeContext } from '../components/editors/script-context.js';
 import { PageHeader } from '../components/common/PageHeader.js';
@@ -69,12 +71,51 @@ const DEFAULT_VALUES: ChannelFormData = {
   responseMode: 'AUTO_AFTER_DESTINATIONS',
 };
 
-const DEFAULT_SCRIPTS = {
+const DEFAULT_SCRIPTS: ScriptsFormValues = {
   deploy: '',
   undeploy: '',
   preprocessor: '',
   postprocessor: '',
+  languages: {
+    deploy: NEW_SCRIPT_LANGUAGE,
+    undeploy: NEW_SCRIPT_LANGUAGE,
+    preprocessor: NEW_SCRIPT_LANGUAGE,
+    postprocessor: NEW_SCRIPT_LANGUAGE,
+  },
 };
+
+type ApiFilterRule = ChannelDetail['filters'][number]['rules'][number];
+type ApiTransformerStep = ChannelDetail['transformers'][number]['steps'][number];
+
+/** A saved filter rule as form state. */
+function ruleFromApi(r: ApiFilterRule): FilterRuleFormValues {
+  return {
+    enabled: r.enabled,
+    name: r.name ?? '',
+    operator: (r.operator as 'AND' | 'OR') ?? 'AND',
+    type: (r.type as 'JAVASCRIPT' | 'RULE_BUILDER') ?? 'JAVASCRIPT',
+    script: r.script ?? '',
+    language: loadedScriptLanguage(r.script, r.language),
+    field: r.field ?? '',
+    condition: r.condition ?? '',
+    values: r.values ? [...r.values] : [],
+  };
+}
+
+/** A saved transformer step as form state. */
+function stepFromApi(s: ApiTransformerStep): TransformerStepFormValues {
+  return {
+    enabled: s.enabled,
+    name: s.name ?? '',
+    type: (s.type as 'JAVASCRIPT' | 'MAPPER' | 'MESSAGE_BUILDER') ?? 'JAVASCRIPT',
+    script: s.script ?? '',
+    language: loadedScriptLanguage(s.script, s.language),
+    sourceField: s.sourceField ?? '',
+    targetField: s.targetField ?? '',
+    defaultValue: s.defaultValue ?? '',
+    mapping: s.mapping ?? '',
+  };
+}
 
 const DEFAULT_ADVANCED: AdvancedFormValues = {
   messageStorageMode: 'DEVELOPMENT',
@@ -190,16 +231,7 @@ export function ChannelEditorPage(): ReactNode {
           waitForPrevious: d.waitForPrevious,
           filter: dFilter
             ? {
-                rules: dFilter.rules.map((r) => ({
-                  enabled: r.enabled,
-                  name: r.name ?? '',
-                  operator: (r.operator as 'AND' | 'OR') ?? 'AND',
-                  type: (r.type as 'JAVASCRIPT' | 'RULE_BUILDER') ?? 'JAVASCRIPT',
-                  script: r.script ?? '',
-                  field: r.field ?? '',
-                  condition: r.condition ?? '',
-                  values: r.values ? [...r.values] : [],
-                })),
+                rules: dFilter.rules.map(ruleFromApi),
               }
             : createDefaultFilter(),
           transformer: dTransformer
@@ -210,28 +242,21 @@ export function ChannelEditorPage(): ReactNode {
                 outboundTemplate: dTransformer.outboundTemplate ?? null,
                 inboundProperties: (dTransformer.inboundProperties as Record<string, unknown> | undefined) ?? {},
                 outboundProperties: (dTransformer.outboundProperties as Record<string, unknown> | undefined) ?? {},
-                steps: dTransformer.steps.map((s) => ({
-                  enabled: s.enabled,
-                  name: s.name ?? '',
-                  type: (s.type as 'JAVASCRIPT' | 'MAPPER' | 'MESSAGE_BUILDER') ?? 'JAVASCRIPT',
-                  script: s.script ?? '',
-                  sourceField: s.sourceField ?? '',
-                  targetField: s.targetField ?? '',
-                  defaultValue: s.defaultValue ?? '',
-                  mapping: s.mapping ?? '',
-                })),
+                steps: dTransformer.steps.map(stepFromApi),
               }
             : createDefaultTransformer(),
           responseTransformer: d.responseTransformer ?? '',
+          responseTransformerLanguage: loadedScriptLanguage(d.responseTransformer, d.responseTransformerLanguage),
         };
       }));
 
-      // Load scripts
-      const scriptMap = { ...DEFAULT_SCRIPTS };
+      // Load scripts with their languages (an empty script starts as TypeScript).
+      const scriptMap: ScriptsFormValues = { ...DEFAULT_SCRIPTS, languages: { ...DEFAULT_SCRIPTS.languages } };
       for (const s of channel.scripts) {
-        const key = s.scriptType.toLowerCase() as keyof typeof scriptMap;
-        if (key in scriptMap) {
+        const key = s.scriptType.toLowerCase() as keyof ScriptsFormValues['languages'];
+        if (key in scriptMap.languages) {
           scriptMap[key] = s.script;
+          scriptMap.languages[key] = loadedScriptLanguage(s.script, s.language);
         }
       }
       setScripts(scriptMap);
@@ -257,16 +282,7 @@ export function ChannelEditorPage(): ReactNode {
       const srcFilter = channel.filters.find((f) => f.connectorId === null);
       if (srcFilter) {
         setSourceFilter({
-          rules: srcFilter.rules.map((r) => ({
-            enabled: r.enabled,
-            name: r.name ?? '',
-            operator: (r.operator as 'AND' | 'OR') ?? 'AND',
-            type: (r.type as 'JAVASCRIPT' | 'RULE_BUILDER') ?? 'JAVASCRIPT',
-            script: r.script ?? '',
-            field: r.field ?? '',
-            condition: r.condition ?? '',
-            values: r.values ? [...r.values] : [],
-          })),
+          rules: srcFilter.rules.map(ruleFromApi),
         });
       } else {
         setSourceFilter(createDefaultFilter());
@@ -282,16 +298,7 @@ export function ChannelEditorPage(): ReactNode {
           outboundTemplate: srcTransformer.outboundTemplate ?? null,
           inboundProperties: (srcTransformer.inboundProperties as Record<string, unknown> | undefined) ?? {},
           outboundProperties: (srcTransformer.outboundProperties as Record<string, unknown> | undefined) ?? {},
-          steps: srcTransformer.steps.map((s) => ({
-            enabled: s.enabled,
-            name: s.name ?? '',
-            type: (s.type as 'JAVASCRIPT' | 'MAPPER' | 'MESSAGE_BUILDER') ?? 'JAVASCRIPT',
-            script: s.script ?? '',
-            sourceField: s.sourceField ?? '',
-            targetField: s.targetField ?? '',
-            defaultValue: s.defaultValue ?? '',
-            mapping: s.mapping ?? '',
-          })),
+          steps: srcTransformer.steps.map(stepFromApi),
         });
       } else {
         setSourceTransformer(createDefaultTransformer());
@@ -371,6 +378,7 @@ export function ChannelEditorPage(): ReactNode {
     // Per-destination response transformer (CT_RESPONSE_TRANSFORMED). Sent as a
     // single script; null when empty. Round-trips via the destination object.
     responseTransformer: string | null;
+    responseTransformerLanguage: ScriptLanguageCode;
   }> => {
     return destinations.map((d) => ({
       name: d.name,
@@ -384,6 +392,7 @@ export function ChannelEditorPage(): ReactNode {
       queueThreadCount: d.queueThreadCount,
       waitForPrevious: d.waitForPrevious,
       responseTransformer: d.responseTransformer.trim() ? d.responseTransformer : null,
+      responseTransformerLanguage: d.responseTransformerLanguage,
     }));
   };
 
@@ -407,6 +416,7 @@ export function ChannelEditorPage(): ReactNode {
     operator: 'AND';
     type: 'JAVASCRIPT';
     script: string | null;
+    language: ScriptLanguageCode;
     field: string | null;
     condition: string | null;
     values: string[] | null;
@@ -417,6 +427,7 @@ export function ChannelEditorPage(): ReactNode {
       operator: r.operator as 'AND',
       type: r.type as 'JAVASCRIPT',
       script: r.script || null,
+      language: r.language,
       field: r.field || null,
       condition: r.condition || null,
       values: r.values.length > 0 ? [...r.values] : null,
@@ -428,6 +439,7 @@ export function ChannelEditorPage(): ReactNode {
     name: string | undefined;
     type: 'JAVASCRIPT';
     script: string | null;
+    language: ScriptLanguageCode;
     sourceField: string | null;
     targetField: string | null;
     defaultValue: string | null;
@@ -438,6 +450,7 @@ export function ChannelEditorPage(): ReactNode {
       name: s.name || undefined,
       type: s.type as 'JAVASCRIPT',
       script: s.script || null,
+      language: s.language,
       sourceField: s.sourceField || null,
       targetField: s.targetField || null,
       defaultValue: s.defaultValue || null,
@@ -545,6 +558,7 @@ export function ChannelEditorPage(): ReactNode {
               undeploy: scripts.undeploy || null,
               preprocessor: scripts.preprocessor || null,
               postprocessor: scripts.postprocessor || null,
+              languages: scripts.languages,
             },
             destinations: buildDestinationsPayload(),
             metadataColumns: buildMetadataPayload(),
@@ -574,6 +588,7 @@ export function ChannelEditorPage(): ReactNode {
             undeploy: scripts.undeploy || null,
             preprocessor: scripts.preprocessor || null,
             postprocessor: scripts.postprocessor || null,
+            languages: scripts.languages,
           },
         });
         navigate(`/channels/${created.id}`, { replace: true });

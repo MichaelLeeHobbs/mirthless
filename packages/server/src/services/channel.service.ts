@@ -8,6 +8,9 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, isNull, and, count, asc } from 'drizzle-orm';
 import {
   DEFAULT_GROUP_NAME,
+  DEFAULT_STORED_SCRIPT_LANGUAGE,
+  toScriptLanguage,
+  type ScriptLanguageCode,
   type CreateChannelInput,
   type UpdateChannelInput,
   type ChannelListQuery,
@@ -52,6 +55,7 @@ export interface ChannelScript {
   readonly id: string;
   readonly scriptType: string;
   readonly script: string;
+  readonly language: string;
 }
 
 export interface ChannelDestination {
@@ -68,6 +72,7 @@ export interface ChannelDestination {
   readonly queueThreadCount: number;
   readonly waitForPrevious: boolean;
   readonly responseTransformer: string | null;
+  readonly responseTransformerLanguage: string;
 }
 
 export interface ChannelMetadataCol {
@@ -91,6 +96,7 @@ export interface ChannelFilterRuleDetail {
   readonly operator: string;
   readonly type: string;
   readonly script: string | null;
+  readonly language: string;
   readonly field: string | null;
   readonly condition: string | null;
   readonly values: readonly string[] | null;
@@ -109,6 +115,7 @@ export interface ChannelTransformerStepDetail {
   readonly name: string | null;
   readonly type: string;
   readonly script: string | null;
+  readonly language: string;
   readonly sourceField: string | null;
   readonly targetField: string | null;
   readonly defaultValue: string | null;
@@ -195,7 +202,9 @@ interface ChannelRelations {
 async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
   const [scriptRows, destinationRows, metadataRows, tagRows, filterRows, ruleRows, transformerRows, stepRows] = await Promise.all([
     db
-      .select({ id: channelScripts.id, scriptType: channelScripts.scriptType, script: channelScripts.script })
+      .select({
+        id: channelScripts.id, scriptType: channelScripts.scriptType, script: channelScripts.script, language: channelScripts.language,
+      })
       .from(channelScripts)
       .where(eq(channelScripts.channelId, id)),
     db
@@ -213,6 +222,7 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
         queueThreadCount: channelConnectors.queueThreadCount,
         waitForPrevious: channelConnectors.waitForPrevious,
         responseTransformer: channelConnectors.responseTransformer,
+        responseTransformerLanguage: channelConnectors.responseTransformerLanguage,
       })
       .from(channelConnectors)
       .where(eq(channelConnectors.channelId, id))
@@ -245,6 +255,7 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
         operator: filterRules.operator,
         type: filterRules.type,
         script: filterRules.script,
+        language: filterRules.language,
         field: filterRules.field,
         condition: filterRules.condition,
         values: filterRules.values,
@@ -274,6 +285,7 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
         name: transformerSteps.name,
         type: transformerSteps.type,
         script: transformerSteps.script,
+        language: transformerSteps.language,
         sourceField: transformerSteps.sourceField,
         targetField: transformerSteps.targetField,
         defaultValue: transformerSteps.defaultValue,
@@ -296,6 +308,7 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
       operator: r.operator,
       type: r.type,
       script: r.script,
+      language: r.language,
       field: r.field,
       condition: r.condition,
       values: r.values ?? null,
@@ -320,6 +333,7 @@ async function fetchChannelRelations(id: string): Promise<ChannelRelations> {
       name: s.name,
       type: s.type,
       script: s.script,
+      language: s.language,
       sourceField: s.sourceField,
       targetField: s.targetField,
       defaultValue: s.defaultValue,
@@ -389,11 +403,19 @@ function assembleDetail(
 // ----- Clone Helpers -----
 
 function buildCloneScripts(source: ChannelDetail): CreateChannelInput['scripts'] {
+  const find = (type: string): ChannelScript | undefined => source.scripts.find((s) => s.scriptType === type);
+  const language = (type: string): ScriptLanguageCode => toScriptLanguage(find(type)?.language);
   return {
-    deploy: source.scripts.find((s) => s.scriptType === 'DEPLOY')?.script ?? null,
-    undeploy: source.scripts.find((s) => s.scriptType === 'UNDEPLOY')?.script ?? null,
-    preprocessor: source.scripts.find((s) => s.scriptType === 'PREPROCESSOR')?.script ?? null,
-    postprocessor: source.scripts.find((s) => s.scriptType === 'POSTPROCESSOR')?.script ?? null,
+    deploy: find('DEPLOY')?.script ?? null,
+    undeploy: find('UNDEPLOY')?.script ?? null,
+    preprocessor: find('PREPROCESSOR')?.script ?? null,
+    postprocessor: find('POSTPROCESSOR')?.script ?? null,
+    languages: {
+      deploy: language('DEPLOY'),
+      undeploy: language('UNDEPLOY'),
+      preprocessor: language('PREPROCESSOR'),
+      postprocessor: language('POSTPROCESSOR'),
+    },
   };
 }
 
@@ -410,6 +432,7 @@ function buildCloneDestinations(source: ChannelDetail): CreateChannelInput['dest
     queueThreadCount: d.queueThreadCount,
     waitForPrevious: d.waitForPrevious,
     responseTransformer: d.responseTransformer,
+    responseTransformerLanguage: toScriptLanguage(d.responseTransformerLanguage),
   }));
 }
 
@@ -485,6 +508,7 @@ async function syncFilters(
         operator: rule.operator,
         type: rule.type,
         script: rule.script ?? null,
+        language: rule.language,
         field: rule.field ?? null,
         condition: rule.condition ?? null,
         values: rule.values ?? null,
@@ -535,6 +559,7 @@ async function syncTransformers(
         name: step.name ?? null,
         type: step.type,
         script: step.script ?? null,
+        language: step.language,
         sourceField: step.sourceField ?? null,
         targetField: step.targetField ?? null,
         defaultValue: step.defaultValue ?? null,
@@ -658,6 +683,7 @@ export class ChannelService {
             channelId,
             scriptType,
             script: input.scripts?.[key] ?? '',
+            language: input.scripts?.languages[key] ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
           };
         });
 
@@ -681,6 +707,7 @@ export class ChannelService {
             queueThreadCount: dest.queueThreadCount,
             waitForPrevious: dest.waitForPrevious,
             responseTransformer: dest.responseTransformer ?? null,
+            responseTransformerLanguage: dest.responseTransformerLanguage,
           }));
           const insertedDests = await tx.insert(channelConnectors).values(destValues).returning({
             id: channelConnectors.id,
@@ -827,12 +854,13 @@ export class ChannelService {
 
         // Update scripts if provided
         if (input.scripts) {
-          for (const [key, value] of Object.entries(input.scripts)) {
+          const { languages, ...scriptsByKey } = input.scripts;
+          for (const [key, value] of Object.entries(scriptsByKey)) {
             if (value !== undefined) {
               const scriptType = key.toUpperCase();
               await tx
                 .update(channelScripts)
-                .set({ script: value ?? '' })
+                .set({ script: value ?? '', language: languages[key as keyof typeof languages] })
                 .where(and(eq(channelScripts.channelId, id), eq(channelScripts.scriptType, scriptType)));
             }
           }
@@ -857,6 +885,7 @@ export class ChannelService {
               queueThreadCount: dest.queueThreadCount,
               waitForPrevious: dest.waitForPrevious,
               responseTransformer: dest.responseTransformer ?? null,
+              responseTransformerLanguage: dest.responseTransformerLanguage,
             }));
             const insertedDests = await tx.insert(channelConnectors).values(destValues).returning({
               id: channelConnectors.id,

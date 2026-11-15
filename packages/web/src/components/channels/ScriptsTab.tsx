@@ -9,6 +9,7 @@ import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import type { ScriptLanguageCode } from '@galvaniflow/core-models';
 import { ScriptEditor } from '../editors/ScriptEditor.js';
 
 // Deploy and undeploy run without a message, so msg is not typed there.
@@ -19,11 +20,15 @@ const SCRIPT_SECTIONS = [
   { key: 'postprocessor', label: 'Postprocessor', description: 'Runs after all destinations have processed', surface: { templateContext: 'CHANNEL_POSTPROCESSOR' } },
 ] as const;
 
-interface ScriptsFormValues {
+type ScriptKey = typeof SCRIPT_SECTIONS[number]['key'];
+
+export interface ScriptsFormValues {
   deploy: string;
   undeploy: string;
   preprocessor: string;
   postprocessor: string;
+  /** The language each script is written in. */
+  languages: Record<ScriptKey, ScriptLanguageCode>;
 }
 
 interface ScriptsTabProps {
@@ -32,8 +37,11 @@ interface ScriptsTabProps {
 }
 
 export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
-  const handleScriptChange = (key: keyof ScriptsFormValues, value: string | undefined): void => {
+  const handleScriptChange = (key: ScriptKey, value: string | undefined): void => {
     onChange({ ...scripts, [key]: value ?? '' });
+  };
+  const handleLanguageChange = (key: ScriptKey, language: ScriptLanguageCode): void => {
+    onChange({ ...scripts, languages: { ...scripts.languages, [key]: language } });
   };
 
   return (
@@ -56,6 +64,8 @@ export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
               surface={section.surface}
               value={scripts[section.key]}
               onChange={(value) => { handleScriptChange(section.key, value); }}
+              language={scripts.languages[section.key]}
+              onLanguageChange={(language) => { handleLanguageChange(section.key, language); }}
               showLanguageToggle
             />
           </AccordionDetails>

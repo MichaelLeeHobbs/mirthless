@@ -8,7 +8,7 @@
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { createChannelSchema } from '@galvaniflow/core-models';
+import { createChannelSchema, updateChannelSchema } from '@galvaniflow/core-models';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('Channel export and import (real Postgres)', () => {
@@ -65,6 +65,73 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     ));
     expect(again.errors).toEqual([]);
     await expectAttachedToSecond(copyId);
+  });
+
+  it('keeps every script language and the response transformer through save, export and import', async () => {
+    const { ChannelService } = mods;
+    const name = `itest-languages-${randomUUID()}`;
+    const source = unwrap(await ChannelService.create(createChannelSchema.parse({
+      name,
+      enabled: false,
+      inboundDataType: 'HL7V2',
+      outboundDataType: 'HL7V2',
+      sourceConnectorType: 'JAVASCRIPT',
+      sourceConnectorProperties: {},
+      responseMode: 'AUTO_AFTER_DESTINATIONS',
+      scripts: { preprocessor: 'return rawData;', languages: { preprocessor: 'TYPESCRIPT' } },
+      destinations: [{
+        name: 'To EHR', connectorType: 'JAVASCRIPT', properties: { script: 'return;' },
+        responseTransformer: 'return msg;', responseTransformerLanguage: 'TYPESCRIPT',
+      }],
+      filters: [{ rules: [{ name: 'TS rule', type: 'JAVASCRIPT', operator: 'AND', script: 'return true;', language: 'TYPESCRIPT' }] }],
+      transformers: [{ inboundDataType: 'HL7V2', outboundDataType: 'HL7V2', steps: [{ name: 'JS step', type: 'JAVASCRIPT', script: 'msg = msg;' }] }],
+    })));
+    created.push(source.id);
+
+    const expectLanguages = async (id: string): Promise<void> => {
+      const detail = unwrap(await ChannelService.getById(id));
+      expect(detail.scripts.find((s) => s.scriptType === 'PREPROCESSOR')?.language).toBe('TYPESCRIPT');
+      expect(detail.scripts.find((s) => s.scriptType === 'DEPLOY')?.language).toBe('JAVASCRIPT');
+      expect(detail.filters[0]?.rules[0]?.language).toBe('TYPESCRIPT');
+      // A step sent without a language is stored as JavaScript, how it was written.
+      expect(detail.transformers[0]?.steps[0]?.language).toBe('JAVASCRIPT');
+      expect(detail.destinations[0]?.responseTransformer).toBe('return msg;');
+      expect(detail.destinations[0]?.responseTransformerLanguage).toBe('TYPESCRIPT');
+    };
+    await expectLanguages(source.id);
+
+    const exported = unwrap(await exportMod.ChannelExportService.exportChannel(source.id));
+    const copyId = randomUUID();
+    created.push(copyId);
+    const result = unwrap(await importMod.ChannelImportService.importChannels(
+      [{ ...exported.channels[0]!, id: copyId, name: `${name}-copy` }], 'CREATE_NEW',
+    ));
+    expect(result.errors).toEqual([]);
+    await expectLanguages(copyId);
+  });
+
+  it('updates a channel script language, and an update without languages resets them to JavaScript', async () => {
+    const { ChannelService } = mods;
+    const created1 = unwrap(await ChannelService.create(createChannelSchema.parse({
+      name: `itest-lang-update-${randomUUID()}`, enabled: false, inboundDataType: 'RAW', outboundDataType: 'RAW',
+      sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'NONE',
+    })));
+    created.push(created1.id);
+    const before = unwrap(await ChannelService.getById(created1.id));
+
+    const updated = unwrap(await ChannelService.update(created1.id, updateChannelSchema.parse({
+      revision: before.revision,
+      scripts: { deploy: 'logger.info("up");', languages: { deploy: 'TYPESCRIPT' } },
+    })));
+    const afterTs = unwrap(await ChannelService.getById(created1.id));
+    expect(afterTs.scripts.find((s) => s.scriptType === 'DEPLOY')).toMatchObject({ script: 'logger.info("up");', language: 'TYPESCRIPT' });
+
+    // The scripts object replaces all four scripts, languages included.
+    unwrap(await ChannelService.update(created1.id, updateChannelSchema.parse({
+      revision: updated.revision, scripts: { deploy: 'logger.info("js");' },
+    })));
+    const afterJs = unwrap(await ChannelService.getById(created1.id));
+    expect(afterJs.scripts.find((s) => s.scriptType === 'DEPLOY')?.language).toBe('JAVASCRIPT');
   });
 
   it('refuses a destination filter named only by another server\'s connector id', async () => {
