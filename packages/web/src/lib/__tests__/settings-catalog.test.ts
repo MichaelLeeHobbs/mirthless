@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { fieldFor, groupSettings, isSecret, validateSetting, SETTING_SECTIONS } from '../settings-catalog.js';
+import { upsertSettingSchema } from '@galvaniflow/core-models';
+import { fieldFor, groupSettings, isSecret, settingTypeForSave, validateSetting, SETTING_SECTIONS } from '../settings-catalog.js';
+
+// A row's stored type can be any string up to 20 characters; the save API takes
+// five lowercase names. Sending the stored type as is made the whole bulk save 400.
+describe('settingTypeForSave', () => {
+  it.each([
+    ['string', 'string'], ['number', 'number'], ['boolean', 'boolean'], ['json', 'json'], ['password', 'password'],
+    ['Password', 'password'], ['PASSWORD', 'password'], ['secret', 'password'], ['Secret', 'password'], ['Number', 'number'],
+  ])('sends %s as %s, which the save schema accepts', (stored, sent) => {
+    expect(settingTypeForSave(stored)).toBe(sent);
+    expect(upsertSettingSchema.safeParse({ key: 'k', value: 'v', type: settingTypeForSave(stored) }).success).toBe(true);
+  });
+
+  it('keeps a secret row secret on the server after the save', () => {
+    expect(isSecret('custom.api', settingTypeForSave('secret'))).toBe(true);
+  });
+});
 
 describe('groupSettings', () => {
   it('puts settings in catalog sections, in catalog order, whatever order the server sends', () => {
