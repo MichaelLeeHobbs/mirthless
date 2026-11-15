@@ -14,6 +14,16 @@ Michael decided to build Kafka and AMQP connectors rather than partner (D-261, d
 - **Coverage**: the connectors coverage run counted the integration lane's own files (`*.itest.ts`, `gates.ts`) as uncovered source, so adding the real-broker suite pushed the package under its minimums. They are excluded now, and the minimums rose to 89/78/85/91 (AGENTS.md table).
 - Not done: TLS against a real broker (unit tests cover the option mapping only). The connectors integration lane (`*.itest.ts`) still does not run in CI. Locally the parallel `pnpm gate` fails seven of engine's sandbox timing tests (50 ms timeouts) under load; they pass when packages run one at a time, and engine is unchanged here.
 
+## 2026-11-14 — Editor controls for Delimited settings and the database type (branch `claude/editor-delimited-db-vendor`)
+
+Michael asked for the editor controls the Delimited and MySQL work left out.
+
+- **Delimited settings** in the source transformer when its inbound type is Delimited: delimiters (typed as `\t`, `\r\n`), quote, quote escape, column names, CR handling. The form checks them with the schema the server checks at deploy and says when the channel would not deploy.
+- **Database type** on the Database Reader and Writer: PostgreSQL or MySQL/MariaDB; a port still at one database's default moves to the other's. A database imported from Mirth with no driver (sqlserver, oracle) shows as such and says the channel will not deploy.
+- **Test Connection** for a database now connects with the connector's own pool for its type. It always spoke PostgreSQL, so a MySQL test failed.
+- The source transformer's data type row wraps on a phone instead of running past the card.
+- `pnpm shots` gains `source-delimited` and `destination-database`, and a shot's `click` takes a list.
+
 ## 2026-11-14 — Test Connection reaches private networks (branch `fix/test-connection-private-addresses`)
 
 - **Test Connection allows private addresses (D-262).** It refused every 10.x, 172.16-31.x, 192.168.x and (since D-256) 100.64/10 address, so on a hospital network it failed for nearly every real endpoint. It now refuses only loopback, link-local (cloud metadata) and other reserved ranges. Script `httpFetch` is unchanged.

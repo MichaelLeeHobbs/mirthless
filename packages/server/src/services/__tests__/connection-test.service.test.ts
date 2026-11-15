@@ -111,8 +111,9 @@ vi.stubGlobal('fetch', mockFetch);
 
 // ----- DB/SMTP factory mocks -----
 
-const mockPoolQuery = vi.fn();
-const mockPoolEnd = vi.fn();
+const mockPoolVendor = vi.fn();
+const mockPoolCreate = vi.fn();
+const mockPoolDestroy = vi.fn();
 
 const mockTransportVerify = vi.fn();
 const mockTransportClose = vi.fn();
@@ -150,10 +151,12 @@ describe('ConnectionTestService', () => {
     vi.clearAllMocks();
 
     // Inject mock factories for DATABASE and SMTP
-    setPoolFactory(() => ({
-      query: mockPoolQuery,
-      end: mockPoolEnd,
-    }));
+    mockPoolCreate.mockResolvedValue({ ok: true, value: undefined, error: null });
+    mockPoolDestroy.mockResolvedValue({ ok: true, value: undefined, error: null });
+    setPoolFactory((vendor) => {
+      mockPoolVendor(vendor);
+      return { create: mockPoolCreate, destroy: mockPoolDestroy };
+    });
 
     setSmtpTransportFactory(() => ({
       verify: mockTransportVerify,
@@ -367,10 +370,7 @@ describe('ConnectionTestService', () => {
   // ----- DATABASE -----
 
   describe('DATABASE', () => {
-    it('returns success when SELECT 1 succeeds', async () => {
-      mockPoolQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
-      mockPoolEnd.mockResolvedValueOnce(undefined);
-
+    it('returns success when the connector pool connects', async () => {
       const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
         host: 'db.example.com',
         port: 5432,
@@ -381,31 +381,36 @@ describe('ConnectionTestService', () => {
       if (!result.ok) return;
       expect(result.value.success).toBe(true);
       expect(result.value.message).toContain('db.example.com');
+      expect(mockPoolVendor).toHaveBeenCalledWith('postgresql');
     });
 
     it('signs in with the account and TLS setting the connector form saves', async () => {
-      const seen: Array<Record<string, unknown>> = [];
-      setPoolFactory((config) => {
-        seen.push(config as unknown as Record<string, unknown>);
-        return { query: mockPoolQuery, end: mockPoolEnd };
-      });
-      mockPoolQuery.mockResolvedValue({ rows: [] });
-      mockPoolEnd.mockResolvedValue(undefined);
-
       await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
         host: 'db.example.com', port: 5432, database: 'testdb', username: 'reader', password: 'pw', tls: true,
       });
       await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
-        host: 'db.example.com', port: 5432, database: 'testdb', username: 'reader', password: 'pw',
+        host: 'db.example.com', port: 5432, database: 'testdb',
       });
 
-      expect(seen[0]).toMatchObject({ user: 'reader', password: 'pw', ssl: { rejectUnauthorized: true } });
-      expect(seen[1]).toMatchObject({ user: 'reader', ssl: false });
+      expect(mockPoolCreate.mock.calls[0]![0]).toMatchObject({ user: 'reader', password: 'pw', tls: true });
+      expect(mockPoolCreate.mock.calls[1]![0]).toMatchObject({ user: '', password: '', tls: false });
+    });
+
+    it('connects to MySQL with the MySQL pool, and refuses a database with no driver', async () => {
+      await ConnectionTestService.testConnection('DATABASE', 'DESTINATION', {
+        vendor: 'mysql', host: 'db.example.com', port: 3306, database: 'partner',
+      });
+      expect(mockPoolVendor).toHaveBeenCalledWith('mysql');
+
+      const refused = await ConnectionTestService.testConnection('DATABASE', 'DESTINATION', {
+        vendor: 'sqlserver', host: 'db.example.com', port: 1433, database: 'partner',
+      });
+      expect(refused.ok && refused.value).toMatchObject({ success: false, message: 'Database "sqlserver" is not supported (PostgreSQL and MySQL are)' });
+      expect(mockPoolVendor).toHaveBeenCalledTimes(1);
     });
 
     it('returns failure when database connection fails', async () => {
-      mockPoolQuery.mockRejectedValueOnce(new Error('connection refused'));
-      mockPoolEnd.mockResolvedValueOnce(undefined);
+      mockPoolCreate.mockResolvedValueOnce({ ok: false, value: null, error: new Error('connection refused') });
 
       const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
         host: 'db.example.com',
@@ -430,17 +435,20 @@ describe('ConnectionTestService', () => {
       expect(result.error.message).toContain('host');
     });
 
-    it('always calls pool.end in finally block', async () => {
-      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
-      mockPoolEnd.mockResolvedValueOnce(undefined);
+    it.each(['/var/run/postgresql', '127.0.0.1'])('refuses %s before opening a pool', async (host) => {
+      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host, port: 5432, database: 'testdb' });
 
-      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
-        host: 'db.example.com',
-        port: 5432,
-        database: 'testdb',
-      });
+      expect(result.ok).toBe(false);
+      expect(mockPoolVendor).not.toHaveBeenCalled();
+      expect(mockPoolCreate).not.toHaveBeenCalled();
+    });
 
-      expect(mockPoolEnd).toHaveBeenCalled();
+    it('closes the pool whether or not it connected', async () => {
+      mockPoolCreate.mockResolvedValueOnce({ ok: false, value: null, error: new Error('refused') });
+      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host: 'db.example.com', port: 5432, database: 'testdb' });
+      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host: 'db.example.com', port: 5432, database: 'testdb' });
+
+      expect(mockPoolDestroy).toHaveBeenCalledTimes(2);
     });
   });
 

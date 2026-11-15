@@ -17,6 +17,13 @@ import AddIcon from '@mui/icons-material/Add';
 import type { TransformerFormValues, TransformerStepFormValues } from './types.js';
 import { createDefaultTransformerStep } from './types.js';
 import { TransformerStepEditor } from './TransformerStepEditor.js';
+import { DelimitedSettings } from './DelimitedSettings.js';
+
+/** The source transformer's saved Delimited settings, or none. */
+function delimitedSettings(inboundProperties: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const saved = inboundProperties['delimited'];
+  return saved !== null && typeof saved === 'object' && !Array.isArray(saved) ? saved as Record<string, unknown> : {};
+}
 
 const DATA_TYPES = [
   { value: 'RAW', label: 'Raw' },
@@ -80,7 +87,7 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
         </Typography>
       </AccordionSummary>
       <AccordionDetails>
-        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
           <TextField
             label="Inbound Data Type"
             value={transformer.inboundDataType}
@@ -110,6 +117,15 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
             ))}
           </TextField>
         </Box>
+
+        {transformer.inboundDataType === 'DELIMITED' && (
+          <Box sx={{ mb: 3 }}>
+            <DelimitedSettings
+              settings={delimitedSettings(transformer.inboundProperties)}
+              onChange={(delimited) => { onChange({ ...transformer, inboundProperties: { ...transformer.inboundProperties, delimited } }); }}
+            />
+          </Box>
+        )}
 
         {transformer.steps.length === 0 ? (
           <Typography

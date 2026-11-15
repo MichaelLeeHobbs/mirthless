@@ -61,7 +61,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 > `pnpm test:scenarios` (D-237, `docs/testing/migration-scenarios.md`) scores 55/60 on 2026-11-13. The three that fail each need a decision first: [`docs/design/17-remaining-migration-gaps.md`](../design/17-remaining-migration-gaps.md).
 
 - [x] **S15** Database Reader and Writer talk to MySQL as well as PostgreSQL (D-259). SQL Server and Oracle are still open under [1] below.
-- [x] **S19** Delimited data is an array of row objects keyed by column name (D-257). Not yet: fixed-width columns, Process Batch per row, editor controls for the settings.
+- [x] **S19** Delimited data is an array of row objects keyed by column name (D-257). Not yet: fixed-width columns, Process Batch per row. The source transformer edits the settings (2026-11-14).
 - [x] **S20** X12 data type on the HL7 path API (D-258). Not yet: envelope validation, 999/TA1 acknowledgements, X12 batch splitting.
 - [x] S08, S09, S11, S12, S14, S16, S17, S18, S21, S26 pass since 2026-11-13 (D-250 to D-255).
 - [ ] Editor controls for what the engine now supports: custom metadata columns (N5), code template library scope (N12), the HTTP listener's `matchSubpaths`, a destination `template`, HTTP Sender parameters and Basic credentials, TCP frame bytes.
@@ -71,7 +71,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 > Full analysis + fix specs + migration matrix: [`docs/design/12-connector-parity-gap-analysis.md`](../design/12-connector-parity-gap-analysis.md).
 > The connectors above exist but several are **partial** — these gaps block whole classes of channel migration. Ranked by channels unblocked, not effort.
 
-- [ ] **[1] Multi-vendor Database connector** — SQL Server (`tedious`) and Oracle (`oracledb`) behind the pool interface, + JS mode. 🔴 Oracle/SQL Server DB channels **cannot migrate** (they refuse to deploy and say so). PostgreSQL and MySQL/MariaDB done 2026-11-13 (D-259); the editor has no vendor control yet.
+- [ ] **[1] Multi-vendor Database connector** — SQL Server (`tedious`) and Oracle (`oracledb`) behind the pool interface, + JS mode. 🔴 Oracle/SQL Server DB channels **cannot migrate** (they refuse to deploy and say so). PostgreSQL and MySQL/MariaDB done 2026-11-13 (D-259); the Database Reader and Writer forms pick the database type, and Test Connection uses the connector's own driver (2026-11-14).
 - [ ] **[2] File scheme abstraction** — FTP/FTPS, SMB, S3; fold standalone SFTP in as a scheme. 🔴 Local-disk-only today.
 - [x] **[3] Configurable TCP framing + Basic mode** — `frameStart`/`frameEnd` hex bytes on TCP listeners and senders, imported from Mirth (2026-11-13, D-253). No form field yet.
 - [x] **[4] Surface hidden runtime options in forms** — surfaced TCP responseMode/charset/maxFrameBytes/acquireTimeoutMs, HTTP-source errorStatusCode/maxBodyBytes, SMTP requireTLS (2026-07-15). TCP TLS deferred to the rank-8 cert-resolver work (not surfacing-only); HTTP inbound auth folded into rank 5. 🟡 cheapest wins.
