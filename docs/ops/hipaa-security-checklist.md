@@ -20,6 +20,7 @@ the known gaps. Reviewed against the code on 2026-10-09.
 | Turn on pruning with a retention period that matches your policy | Pruning is off by default per channel | Channel summary tab |
 | Encrypt and access-control backup exports and `pg_dump` files | Backup export is plain JSON; dumps contain PHI | [backup-restore.md](backup-restore.md) |
 | Give each person their own account with the least role that works; use **viewer** sparingly (it can read and export messages) | Accounts are the audit identity | Users page |
+| Give the roles that can edit channels, code templates or global scripts (admin, deployer, developer) only to trusted administrators | Channel scripts are isolated on a best-effort basis. The sandbox blocks accidental and casual access to the host, but it is not a security boundary. Treat anyone who can create or edit a channel, code template or global script as able to run code on the GalvaniFlow server. That server holds PHI and the database credentials | Users page; [SECURITY.md](../../SECURITY.md) |
 | Change the seeded `admin` password at first login (enforced) and keep at least two admins | Recovery if one admin is locked out | Users page |
 | Keep `LOG_HTTP_HEADERS` unset and `LOG_LEVEL` at `info` or quieter | Header logging is for debugging only | Environment |
 | Configure a `NO_MESSAGES` alert on critical interfaces | Silent interfaces are a patient-safety risk | Alerts page |

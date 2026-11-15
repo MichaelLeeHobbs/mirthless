@@ -24,6 +24,12 @@ GalvaniFlow keeps what works (channels, transformers, filters, the pipeline mode
 - **13ms message processing** — batched CTE queries on native Postgres. Mirth does ~70ms for comparable workloads
 - **Real-time dashboard** — WebSocket-driven updates, not polling
 
+## Security model
+
+Channel scripts are isolated on a best-effort basis. The sandbox blocks accidental and casual access to the host, but it is not a security boundary. Treat anyone who can create or edit a channel, code template or global script as able to run code on the GalvaniFlow server.
+
+In practice that means the admin, deployer and developer roles: limit them to people you would trust with a shell on the server. Scripts run in `node:vm` with no `require`, `process` or file system, and reach the network and databases only through the bridges the engine provides. This is an improvement on Mirth Connect and OIE, where Rhino scripts have full Java access by design, but it is not the isolation of a separate process. Process isolation per channel, opt-in and with a performance cost, could be added later for deployments whose script authors are not trusted; it is not built. Details: [SECURITY.md](SECURITY.md) and [`packages/engine/src/sandbox/README.md`](packages/engine/src/sandbox/README.md).
+
 ## Quick Start
 
 ```bash
