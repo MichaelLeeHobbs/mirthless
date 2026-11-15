@@ -5,12 +5,10 @@
 // Used by the AlertManager to dispatch EMAIL alert actions.
 // All methods return Result<T> using tryCatch from stderr-lib.
 
-import { createRequire } from 'module';
 import { tryCatch, type Result } from 'stderr-lib';
+import { createNodemailerTransport, type SmtpTransport as ConnectorSmtpTransport } from '@galvaniflow/connectors';
 import { SettingsService } from './settings.service.js';
 import logger from '../lib/logger.js';
-
-const require = createRequire(import.meta.url);
 
 // ----- Types -----
 
@@ -23,27 +21,26 @@ export interface SmtpConfig {
   readonly authPass: string;
 }
 
-/** Nodemailer transport interface (subset used by this service). */
-export interface SmtpTransport {
-  sendMail(options: Record<string, unknown>): Promise<unknown>;
-  close(): void;
-}
+/** Nodemailer transport interface: the SMTP connector's `{ sendMail, close }`. */
+export type SmtpTransport = ConnectorSmtpTransport;
 
 /** Factory function to create an SMTP transport. */
 export type TransportFactory = (config: SmtpConfig) => SmtpTransport;
 
 // ----- Transport Factory -----
 
-/** Default transport factory using nodemailer. */
+/**
+ * Default transport factory: the SMTP connector's nodemailer transport.
+ * Server mail never asks for STARTTLS (`requireTLS: false`); the builder sends
+ * auth only when a user is set.
+ */
 function defaultTransportFactory(config: SmtpConfig): SmtpTransport {
-  const nodemailer = require('nodemailer') as {
-    createTransport: (opts: Record<string, unknown>) => SmtpTransport;
-  };
-  return nodemailer.createTransport({
+  return createNodemailerTransport({
     host: config.host,
     port: config.port,
     secure: config.secure,
-    ...(config.authUser ? { auth: { user: config.authUser, pass: config.authPass } } : {}),
+    requireTLS: false,
+    auth: { user: config.authUser, pass: config.authPass },
   });
 }
 
