@@ -728,6 +728,52 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     it('gives both warnings for a SQL Server connector in JavaScript mode', () => {
       expect(databaseWarnings(convert(withWriter(writer('jdbc:sqlserver://db:1433;databaseName=lab', 'true'))))).toHaveLength(2);
     });
+
+    const writerProps = (url: string): Record<string, unknown> => {
+      const result = MirthImportService.convertXml(withWriter(writer(url))(loadFixture('mirth-4x-channel.xml')));
+      if (!result.ok) throw result.error;
+      return result.value.channels[0]?.destinations[0]?.properties ?? {};
+    };
+
+    it('warns that a ${...} reference URL must be filled in by hand, and guesses no location', () => {
+      const warnings = databaseWarnings(convert(withWriter(writer('${LAB_DB_URL}'))));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('Database Writer');
+      expect(warnings[0]).toContain('${LAB_DB_URL}');
+      expect(warnings[0]).toContain('by hand');
+      const readerWarnings = databaseWarnings(convert(withReader(reader('${LAB_DB_URL}'))));
+      expect(readerWarnings).toHaveLength(1);
+      expect(readerWarnings[0]).toContain('Database Reader');
+      expect(writerProps('${LAB_DB_URL}')).not.toHaveProperty('host');
+    });
+
+    it.each([
+      ['jdbc:mysql://h1,h2/lab'],
+      ['jdbc:postgresql://h1:5432,h2:5432/lab'],
+    ])('warns that the multi-host URL %s must be filled in by hand, and guesses no host', (url) => {
+      const warnings = databaseWarnings(convert(withWriter(writer(url))));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('several hosts');
+      const props = writerProps(url);
+      expect(props).not.toHaveProperty('host');
+      expect(props).not.toHaveProperty('port');
+      expect(props).not.toHaveProperty('database');
+    });
+
+    it.each([
+      ['jdbc:mysql:loadbalance://h1,h2/lab', 'loadbalance'],
+      ['jdbc:mysql:replication://h1:3306,h2:3306/lab', 'replication'],
+    ])('warns that the MySQL %s URL must be filled in by hand, and guesses no host', (url, mode) => {
+      const warnings = databaseWarnings(convert(withWriter(writer(url))));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain(mode);
+      expect(writerProps(url)).not.toHaveProperty('host');
+    });
+
+    it('does not put the URL itself in a multi-host warning, which can carry credentials', () => {
+      const warnings = databaseWarnings(convert(withWriter(writer('jdbc:mysql://h1,h2/lab?password=s3cret'))));
+      expect(warnings.join(' ')).not.toContain('s3cret');
+    });
   });
 
   it('keeps a polling source\'s interval and gives a JavaScript Reader only its script', () => {
