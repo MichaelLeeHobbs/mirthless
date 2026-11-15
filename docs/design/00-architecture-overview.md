@@ -311,7 +311,7 @@ Connect has 15 API servlets with ~120 endpoints. We consolidate into Express rou
 
 ### Auth Model (From Scratch)
 
-- JWT access tokens (15min) + refresh tokens (7 days) — from fullstack-template
+- JWT access tokens (15min) + refresh tokens whose lifetime, shared by the session and its cookie, comes from `JWT_REFRESH_EXPIRES_IN` (default 7d); each refresh starts a new session of that length — from fullstack-template
 - Session-backed with httpOnly cookies
 - RBAC with roles and permissions (not Connect's always-true default)
 - Channel-level access control built-in

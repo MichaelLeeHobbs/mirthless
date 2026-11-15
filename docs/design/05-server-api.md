@@ -49,7 +49,7 @@ From fullstack-template patterns. JWT + sessions.
 
 1. Login: validate credentials → create session → return `{ accessToken, refreshToken }`
 2. Access token: JWT, 15min TTL, contains `{ userId, sessionId, permissions }`
-3. Refresh token: JWT, 7 days TTL, hashed and stored in `sessions` table
+3. Refresh token: JWT, hashed and stored in `sessions` table. Its lifetime, the session row's and the refresh cookie's all come from `JWT_REFRESH_EXPIRES_IN` (default 7d); each refresh starts a new session of that length
 4. Auth middleware: check `Authorization: Bearer <token>` header, verify JWT, load user
 
 ### Key Differences from Connect
