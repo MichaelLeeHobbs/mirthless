@@ -8,33 +8,18 @@
 
 import { useState, useCallback } from 'react';
 import { useAuthStore } from '../stores/auth.store.js';
+import { messageFilterParts, type MessageFilters } from '../lib/message-filter-query.js';
 
 export type ExportFormat = 'csv' | 'json';
 
 /** Filter subset shared with the message list query. */
-export interface MessageExportFilters {
-  readonly status?: readonly string[];
-  readonly receivedFrom?: string;
-  readonly receivedTo?: string;
-  readonly metaDataId?: number;
-  readonly messageId?: number;
-  readonly contentSearch?: string;
-}
+export type MessageExportFilters = MessageFilters;
 
 const BASE_URL = '/api/v1';
 
 /** Build the export query string from format + filters. Exported for testing. */
 export function buildExportQuery(format: ExportFormat, filters: MessageExportFilters): string {
-  const parts: string[] = [`format=${format}`];
-  if (filters.status && filters.status.length > 0) {
-    for (const s of filters.status) parts.push(`status=${encodeURIComponent(s)}`);
-  }
-  if (filters.receivedFrom) parts.push(`receivedFrom=${encodeURIComponent(filters.receivedFrom)}`);
-  if (filters.receivedTo) parts.push(`receivedTo=${encodeURIComponent(filters.receivedTo)}`);
-  if (filters.metaDataId !== undefined) parts.push(`metaDataId=${String(filters.metaDataId)}`);
-  if (filters.messageId !== undefined) parts.push(`messageId=${String(filters.messageId)}`);
-  if (filters.contentSearch) parts.push(`contentSearch=${encodeURIComponent(filters.contentSearch)}`);
-  return parts.join('&');
+  return [`format=${format}`, ...messageFilterParts(filters)].join('&');
 }
 
 interface ExportArgs {

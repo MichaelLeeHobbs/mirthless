@@ -90,6 +90,24 @@ describe('GlobalMapProxy', () => {
       expect(s.remove).toHaveBeenCalledWith('gone');
       expect(s.save).not.toHaveBeenCalled();
     });
+
+    it('marks both set and removed keys in one call, and only those', async () => {
+      proxy.load([{ key: 'keep', value: 'k', isJson: false }, { key: 'drop', value: 'd', isJson: false }]);
+      proxy.applyChanges(proxy.toRecord(), { keep: 'k', added: 'a' });
+      await proxy.flush();
+      expect(s.save).toHaveBeenCalledTimes(1);
+      expect(s.save).toHaveBeenCalledWith('added', 'a', false);
+      expect(s.remove).toHaveBeenCalledTimes(1);
+      expect(s.remove).toHaveBeenCalledWith('drop');
+    });
+
+    it('saves a value a script set to null rather than removing the key', async () => {
+      proxy.applyChanges({}, { n: null });
+      expect(proxy.toRecord()).toEqual({ n: null });
+      await proxy.flush();
+      expect(s.save).toHaveBeenCalledWith('n', 'null', true);
+      expect(s.remove).not.toHaveBeenCalled();
+    });
   });
 
   describe('flush', () => {
@@ -140,6 +158,42 @@ describe('GlobalMapProxy', () => {
       expect(proxy.toRecord()['k']).toBe('fromApi');
       await proxy.flush();
       expect(s.save.mock.calls).toEqual([['k', 'fromApi', false]]);
+    });
+
+    // An API edit marks the key dirty (#92): a script save of the same key can
+    // commit after the API's write, so the next flush rewrites the API's state.
+
+    it('set after a script removed the key keeps the value and writes it again', async () => {
+      proxy.load([{ key: 'k', value: 'old', isJson: false }]);
+      proxy.applyChanges(proxy.toRecord(), {});
+      proxy.set({ key: 'k', value: '{"n":1}', isJson: true });
+      expect(proxy.toRecord()).toEqual({ k: { n: 1 } });
+      await proxy.flush();
+      expect(s.save.mock.calls).toEqual([['k', '{"n":1}', true]]);
+      expect(s.remove).not.toHaveBeenCalled();
+    });
+
+    it('delete drops a pending script change and the next flush removes the key', async () => {
+      proxy.applyChanges({}, { k: 'fromScript' });
+      proxy.delete('k');
+      await proxy.flush();
+      expect(s.save).not.toHaveBeenCalled();
+      expect(s.remove.mock.calls).toEqual([['k']]);
+    });
+
+    it('clear drops every pending script change and the next flush removes each key', async () => {
+      proxy.load([{ key: 'gone', value: 'x', isJson: false }]);
+      proxy.applyChanges(proxy.toRecord(), { added: 1 });
+      proxy.clear();
+      await proxy.flush();
+      expect(s.save).not.toHaveBeenCalled();
+      expect(s.remove.mock.calls.map((c) => c[0]).sort()).toEqual(['added', 'gone']);
+    });
+
+    it('load does not mark entries for saving', async () => {
+      proxy.load([{ key: 'k', value: 'v', isJson: false }]);
+      await proxy.flush();
+      expect(s.save).not.toHaveBeenCalled();
     });
 
     it('delete and clear drop entries', () => {

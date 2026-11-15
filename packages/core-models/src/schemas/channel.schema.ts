@@ -3,67 +3,14 @@
 // ===========================================
 
 import { z } from 'zod/v4';
+import { CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES } from '../constants.js';
 import { filterInputSchema } from './filter.schema.js';
 import { transformerInputSchema } from './transformer.schema.js';
 
 // ----- Shared Enums -----
 
-/**
- * Connector types that have a source factory in the connector registry
- * (packages/connectors/src/registry.ts). A connectors test keeps the two equal.
- */
-export const SOURCE_CONNECTOR_TYPES = [
-  'TCP_MLLP',
-  'HTTP',
-  'FILE',
-  'DATABASE',
-  'JAVASCRIPT',
-  'CHANNEL',
-  'DICOM',
-  'EMAIL',
-  'SFTP',
-  'KAFKA',
-  'AMQP',
-] as const;
-export type SourceConnectorType = (typeof SOURCE_CONNECTOR_TYPES)[number];
-
-/**
- * Connector types that have a destination factory in the connector registry.
- * A connectors test keeps the two equal.
- */
-export const DESTINATION_CONNECTOR_TYPES = [
-  'TCP_MLLP',
-  'HTTP',
-  'FILE',
-  'DATABASE',
-  'JAVASCRIPT',
-  'CHANNEL',
-  'DICOM',
-  'FHIR',
-  'SMTP',
-  'SFTP',
-  'KAFKA',
-  'AMQP',
-] as const;
-export type DestinationConnectorType = (typeof DESTINATION_CONNECTOR_TYPES)[number];
-
-/** Union of all source and destination connector types. */
-export const CONNECTOR_TYPES = [
-  'TCP_MLLP',
-  'HTTP',
-  'FILE',
-  'DATABASE',
-  'JAVASCRIPT',
-  'CHANNEL',
-  'DICOM',
-  'FHIR',
-  'SMTP',
-  'EMAIL',
-  'SFTP',
-  'KAFKA',
-  'AMQP',
-] as const;
-
+// Every connector type, in either direction (see SOURCE_CONNECTOR_TYPES and
+// DESTINATION_CONNECTOR_TYPES in constants.ts).
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);
 export const sourceConnectorTypeSchema = z.enum(SOURCE_CONNECTOR_TYPES);
 export const destinationConnectorTypeSchema = z.enum(DESTINATION_CONNECTOR_TYPES);

@@ -10,13 +10,17 @@ import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 /**
- * The authenticated user's id, or null after answering 401. Preferences belong
- * to a user, so a request without one must fail rather than read user ''.
+ * The authenticated user's id, or null after answering 500. Preferences belong
+ * to a user, so a request without one must fail rather than read user ''. The
+ * routes sit behind `authenticate`, so a missing user is a server bug: answer
+ * 500, not 401, which the web client would read as an expired session (D-263)
+ * and sign the user out.
  */
 function requireUserId(req: Request, res: Response): string | null {
   const userId = req.user?.id;
   if (userId) return userId;
-  res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+  logger.error({ path: req.path }, 'User preference request reached the controller without an authenticated user');
+  res.status(500).json({ success: false, error: errorResponse(null) });
   return null;
 }
 

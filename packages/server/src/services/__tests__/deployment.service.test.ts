@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Result } from 'stderr-lib';
+import { ServiceError } from '../../lib/service-error.js';
 
 // ----- Mock Engine -----
 
@@ -27,6 +28,7 @@ const mockEngine = {
   getRuntime: vi.fn().mockImplementation((id: string) => deployedChannels.get(id)),
   getAll: vi.fn().mockReturnValue(deployedChannels),
   checkScripts: vi.fn().mockResolvedValue(undefined),
+  sendMessage: vi.fn(),
   dispose: vi.fn(),
 };
 
@@ -172,6 +174,29 @@ describe('DeploymentService', () => {
       expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
       expect(result.error.message).toContain('destination');
       expect(result.error.message).toContain('SMTP');
+      expect(mockEngine.deploy).not.toHaveBeenCalled();
+    });
+
+    it('names the destination (and its metaDataId) whose properties are invalid', async () => {
+      const dest = {
+        id: 'dest-x', enabled: true, properties: {}, queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 10000,
+        rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+      };
+      const badChannel = {
+        ...CHANNEL_DETAIL,
+        destinations: [
+          { ...dest, id: 'dest-1', metaDataId: 1, name: 'To LIS', connectorType: 'TCP_MLLP', properties: { host: 'lis', port: 6661 } },
+          { ...dest, id: 'dest-2', metaDataId: 2, name: 'To Archive', connectorType: 'FILE' },  // missing directory
+        ],
+      };
+      mockChannelService.getById.mockResolvedValue(ok(badChannel));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('Destination "To Archive" (metaDataId 2)');
+      expect(result.error.message).toContain('directory');
       expect(mockEngine.deploy).not.toHaveBeenCalled();
     });
 
@@ -483,76 +508,33 @@ describe('DeploymentService', () => {
   });
 
   describe('sendMessage', () => {
-    const mockProcessMessage = vi.fn();
+    // The guards themselves live in EngineManager.sendMessage and are tested in
+    // engine-send-message.test.ts; this service only hands the call through.
 
-    it('sends message to STARTED channel and returns messageId', async () => {
-      mockRuntime.getState.mockReturnValue('STARTED');
-      mockProcessMessage.mockResolvedValue({ ok: true, value: { messageId: 42 }, error: null });
-      deployedChannels.set(CHANNEL_ID, {
-        channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [],
-        processMessage: mockProcessMessage,
-      });
+    it('returns the engine dispatch outcome for the channel', async () => {
+      const outcome = { messageId: 42, status: 'SENT', response: 'ACK' };
+      mockEngine.sendMessage.mockResolvedValue(ok(outcome));
 
       const result = await DeploymentService.sendMessage(CHANNEL_ID, 'MSH|^~\\&|...');
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.messageId).toBe(42);
-      expect(mockProcessMessage).toHaveBeenCalledWith('MSH|^~\\&|...');
+      expect(mockEngine.sendMessage).toHaveBeenCalledWith(CHANNEL_ID, 'MSH|^~\\&|...');
+      expect(result).toEqual(ok(outcome));
     });
 
-    it('returns NOT_FOUND when channel is not deployed', async () => {
-      const result = await DeploymentService.sendMessage(CHANNEL_ID, 'test');
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
-    });
-
-    it('returns CONFLICT when channel is STOPPED', async () => {
-      mockRuntime.getState.mockReturnValue('STOPPED');
-      deployedChannels.set(CHANNEL_ID, {
-        channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [],
-        processMessage: mockProcessMessage,
-      });
+    it.each([
+      ['NOT_FOUND', `Channel ${CHANNEL_ID} is not deployed`],
+      ['CONFLICT', 'Channel is STOPPED, must be STARTED to receive messages'],
+      ['CONFLICT', 'Processing failed'],
+    ] as const)('passes the engine %s error "%s" to the caller unchanged', async (code, message) => {
+      const error = new ServiceError(code, message);
+      mockEngine.sendMessage.mockResolvedValue({ ok: false, value: null, error });
 
       const result = await DeploymentService.sendMessage(CHANNEL_ID, 'test');
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'CONFLICT');
-      expect(result.error.message).toContain('STOPPED');
-    });
-
-    it('returns CONFLICT when channel is PAUSED', async () => {
-      mockRuntime.getState.mockReturnValue('PAUSED');
-      deployedChannels.set(CHANNEL_ID, {
-        channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [],
-        processMessage: mockProcessMessage,
-      });
-
-      const result = await DeploymentService.sendMessage(CHANNEL_ID, 'test');
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'CONFLICT');
-      expect(result.error.message).toContain('PAUSED');
-    });
-
-    it('returns CONFLICT when processMessage fails', async () => {
-      mockRuntime.getState.mockReturnValue('STARTED');
-      mockProcessMessage.mockResolvedValue({ ok: false, value: null, error: new Error('Processing failed') });
-      deployedChannels.set(CHANNEL_ID, {
-        channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [],
-        processMessage: mockProcessMessage,
-      });
-
-      const result = await DeploymentService.sendMessage(CHANNEL_ID, 'bad message');
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'CONFLICT');
-      expect(result.error.message).toContain('Processing failed');
+      expect(result.error).toHaveProperty('code', code);
+      expect(result.error.message).toBe(message);
     });
   });
 

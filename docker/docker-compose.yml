@@ -32,7 +32,7 @@ services:
 
   mail-test:
     # GreenMail: SMTP (3025) + IMAP (3143) in one container for mail connectors.
-    image: greenmail/standalone:2.1.0
+    image: greenmail/standalone:2.1.15
     container_name: galvaniflow-mail-test
     profiles: ["test"]
     environment:
@@ -60,7 +60,7 @@ services:
   kafka-test:
     # Single-node KRaft Kafka for the Kafka connectors. 19092 is plaintext,
     # 19093 is SASL/PLAIN (user mirth / mirthpw). Topics are not auto-created.
-    image: apache/kafka:3.9.1
+    image: apache/kafka:4.3.1
     container_name: galvaniflow-kafka-test
     profiles: ["test"]
     environment:
@@ -89,7 +89,7 @@ services:
   rabbitmq-test:
     # RabbitMQ for the AMQP connectors; the management API (15673) lets the
     # suite drop client connections to test reconnects.
-    image: rabbitmq:4.1-management-alpine
+    image: rabbitmq:4.4-management-alpine
     container_name: galvaniflow-rabbitmq-test
     profiles: ["test"]
     environment:

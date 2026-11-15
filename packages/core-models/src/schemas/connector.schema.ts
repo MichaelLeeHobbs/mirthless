@@ -3,24 +3,12 @@
 // ===========================================
 
 import { z } from 'zod/v4';
+import { DESTINATION_CONNECTOR_TYPES } from '../constants.js';
 
 export const createDestinationConnectorSchema = z.object({
   name: z.string().min(1).max(255),
   enabled: z.boolean().default(true),
-  connectorType: z.enum([
-    'TCP_MLLP',
-    'HTTP',
-    'FILE',
-    'DATABASE',
-    'JAVASCRIPT',
-    'CHANNEL',
-    'DICOM',
-    'SMTP',
-    'FHIR',
-    'SFTP',
-    'KAFKA',
-    'AMQP',
-  ]),
+  connectorType: z.enum(DESTINATION_CONNECTOR_TYPES),
   properties: z.record(z.string(), z.unknown()),
   queueMode: z.enum(['NEVER', 'ON_FAILURE', 'ALWAYS']).default('NEVER'),
   retryCount: z.number().int().nonnegative().default(0),

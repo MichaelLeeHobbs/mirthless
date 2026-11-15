@@ -15,7 +15,7 @@ import {
   extractCodeTemplateLibraries, importCodeTemplateLibraries,
   type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
 } from './mirth-code-templates.js';
-import { isPlainObject } from '@galvaniflow/core-util';
+import { isPlainObject, unescapeControlChars } from '@galvaniflow/core-util';
 import { DATABASE_VENDOR } from '@galvaniflow/connectors';
 
 // ----- Types -----
@@ -35,7 +35,7 @@ export interface MirthImportResult {
   readonly codeTemplates: CodeTemplateImportCounts;
 }
 
-const XML_READERS = { isRecord: isPlainObject, getString, toRecordList } as const;
+const XML_READERS = { isRecord: isPlainObject, getString, toRecordList, stringList } as const;
 
 // ----- Connector Type Mapping -----
 
@@ -610,10 +610,7 @@ function linkedMap(node: unknown): Record<string, string> {
   if (!isPlainObject(node)) return result;
   for (const entry of toRecordList(node['entry'])) {
     const name = getString(entry, 'string');
-    const list = entry['list'];
-    const raw = isPlainObject(list) ? list['string'] : undefined;
-    const values = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).map(String);
-    if (name) result[name] = values.join(', ');
+    if (name) result[name] = stringList(entry['list']).join(', ');
   }
   return result;
 }
@@ -668,6 +665,7 @@ const RUNNABLE_DB_VENDORS: ReadonlySet<string> = new Set(Object.values(DATABASE_
 
 /** Host, port and database from a JDBC URL, in the standard form or SQL Server's `;databaseName=` form. */
 function jdbcLocation(url: string): Record<string, unknown> {
+  if (unreadableUrl(url)) return {};
   const standard = JDBC_URL.exec(url);
   if (standard) return { host: standard[2], ...(standard[3] ? { port: Number(standard[3]) } : {}), database: standard[4] };
   const sqlServer = SQLSERVER_URL.exec(url);
@@ -676,13 +674,37 @@ function jdbcLocation(url: string): Record<string, unknown> {
   return { host: sqlServer[1], ...(sqlServer[2] ? { port: Number(sqlServer[2]) } : {}), ...(database ? { database } : {}) };
 }
 
+/** MySQL Connector/J's `jdbc:mysql:loadbalance://` and `jdbc:mysql:replication://` URLs. */
+const MYSQL_MULTI_HOST_MODE = /^jdbc:mysql:(loadbalance|replication):\/\//i;
+
+/** A JDBC URL whose host part lists several hosts (`//h1,h2/db`). */
+const MULTI_HOST_URL = /^jdbc:[\w:]+\/\/[^/?;]*,/i;
+
+/**
+ * Why the importer cannot read one host, port and database from a Database
+ * URL, or null when it can. The importer then guesses no location. The text
+ * never quotes the URL, which can carry credentials, except a bare `${...}`.
+ */
+function unreadableUrl(url: string): string | null {
+  if (!/^jdbc:/i.test(url) && url.includes('${')) return `URL is the reference ${url}, whose database type, host, port and database the import cannot read`;
+  const mode = MYSQL_MULTI_HOST_MODE.exec(url)?.[1]?.toLowerCase();
+  if (mode) return `URL uses MySQL's ${mode} mode over several hosts, which GalvaniFlow does not have`;
+  if (MULTI_HOST_URL.test(url)) return 'URL lists several hosts, and GalvaniFlow connects to one';
+  return null;
+}
+
 /**
  * Preview warnings for a Database Reader or Writer that will not run as
- * imported: a vendor with no driver here, or Mirth's JavaScript mode
- * (`useScript`), whose script lands in the SQL query fields.
+ * imported: a URL the import cannot read a location from, a vendor with no
+ * driver here, or Mirth's JavaScript mode (`useScript`), whose script lands
+ * in the SQL query fields.
  */
 function databaseWarnings(propsNode: Record<string, unknown>, vendor: unknown, connector: string, channelName: string): string[] {
   const warnings: string[] = [];
+  const unreadable = unreadableUrl(getString(propsNode, 'url') ?? '');
+  if (unreadable) {
+    warnings.push(`Channel "${channelName}": the ${connector}'s ${unreadable}; fill in the database type, host, port and database by hand before deploying`);
+  }
   if (typeof vendor === 'string' && !RUNNABLE_DB_VENDORS.has(vendor)) {
     warnings.push(`Channel "${channelName}": the ${connector} uses ${vendor}, which GalvaniFlow cannot connect to (PostgreSQL and MySQL/MariaDB only); it will not deploy`);
   }
@@ -961,7 +983,7 @@ function extractFilterFromConnector(
     script: getString(rule, 'script'),
     field: getString(rule, 'field'),
     condition: getString(rule, 'condition'),
-    values: extractStringArray(rule['values']),
+    values: stringList(rule['values']),
   }));
 
   if (rules.length === 0) return null;
@@ -976,15 +998,13 @@ function mapFilterRuleType(type: string | null): string {
   return upper;
 }
 
-function extractStringArray(node: unknown): string[] | null {
-  if (!node) return null;
+/** The `<string>` children of a Mirth string list (`<values><string>a</string></values>`), or a bare array; [] when there are none. */
+function stringList(node: unknown): string[] {
   if (Array.isArray(node)) return node.map(String);
-  if (isPlainObject(node)) {
-    const inner = node['string'];
-    if (Array.isArray(inner)) return inner.map(String);
-    if (typeof inner === 'string') return [inner];
-  }
-  return null;
+  if (!isPlainObject(node)) return [];
+  const raw = node['string'];
+  const list: readonly unknown[] = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+  return list.map(String);
 }
 
 // ----- Transformer Conversion -----
@@ -1063,11 +1083,6 @@ function mirthDataType(name: string | null): string | null {
   return name === 'EDI/X12' ? 'X12' : name;
 }
 
-/** Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`. */
-function unescapeMirth(text: string): string {
-  return text.replace(/\\([nrt\\])/g, (_m, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? '\\');
-}
-
 /**
  * Add GalvaniFlow's `delimited` settings (see delimitedOptionsSchema) to a
  * Delimited transformer's properties, read from Mirth's serializationProperties.
@@ -1078,7 +1093,8 @@ function withDelimitedOptions(props: Record<string, unknown>, dataType: string):
   const ser = props['serializationProperties'];
   const text = (key: string): string | undefined => {
     const value = getString(ser, key);
-    return value === null ? undefined : unescapeMirth(value);
+    // Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`.
+    return value === null ? undefined : unescapeControlChars(value);
   };
   const names = text('columnNames');
   const delimited = {

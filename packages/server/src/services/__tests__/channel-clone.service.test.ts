@@ -82,6 +82,7 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   count: vi.fn(() => 'count_agg'),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
+  sql: vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ type: 'sql', text: strings.join('?'), values })),
 }));
 
 vi.mock('../../lib/event-emitter.js', () => ({
@@ -107,7 +108,7 @@ vi.mock('../../lib/logger.js', () => ({
 // Must import after mocks
 const { ChannelService } = await import('../channel.service.js');
 const { emitEvent } = await import('../../lib/event-emitter.js');
-const { channels, channelConnectors, channelFilters, filterRules, channelTransformers, transformerSteps } =
+const { channels, channelConnectors, channelFilters, filterRules, channelTransformers, transformerSteps, codeTemplateLibraries } =
   await import('../../db/schema/index.js');
 
 // ----- Fixtures -----
@@ -237,16 +238,30 @@ function setupCreateMocks(channel: Record<string, unknown>): void {
         };
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      update: txUpdate,
     };
     return fn(tx);
   });
 }
+
+// Records every tx.update(table).set(values).where(condition) in the create transaction.
+interface RecordedUpdate { table: unknown; values: Record<string, unknown>; condition: unknown }
+let txUpdates: RecordedUpdate[] = [];
+const txUpdate = vi.fn((table: unknown) => ({
+  set: (values: Record<string, unknown>) => ({
+    where: (condition: unknown) => {
+      txUpdates.push({ table, values, condition });
+      return Promise.resolve(undefined);
+    },
+  }),
+}));
 
 // ----- Tests -----
 
 beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
+  txUpdates = [];
   mockSet.mockReturnValue({ where: mockUpdateWhere });
   mockUpdateWhere.mockResolvedValue(undefined);
   mockDeleteWhere.mockResolvedValue(undefined);
@@ -530,6 +545,7 @@ describe('ChannelService.clone', () => {
         },
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      update: txUpdate,
     }));
 
     const result = await ChannelService.clone(CHANNEL_ID, 'Cloned Channel');
@@ -564,5 +580,32 @@ describe('ChannelService.clone', () => {
     if (result.ok) return;
     expect(result.error).toHaveProperty('code', 'INTERNAL');
     expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it('adds the clone to the code template libraries that list the original, inside the create transaction', async () => {
+    setupGetByIdMocks(makeChannel());
+    setupCreateMocks(makeClonedChannel());
+
+    const result = await ChannelService.clone(CHANNEL_ID, 'Cloned Channel');
+
+    expect(result.ok).toBe(true);
+    const libraryUpdates = txUpdates.filter((u) => u.table === codeTemplateLibraries);
+    expect(libraryUpdates).toHaveLength(1);
+    // Only libraries whose list contains the original (a null list matches nothing in SQL).
+    expect(libraryUpdates[0]!.condition).toEqual(expect.objectContaining({ values: [expect.anything(), JSON.stringify([CHANNEL_ID])] }));
+    // The clone's id is appended to the list.
+    expect(libraryUpdates[0]!.values['channelIds']).toEqual(expect.objectContaining({ values: [expect.anything(), JSON.stringify([CLONED_ID])] }));
+  });
+
+  it('does not touch code template libraries when creating a channel that is not a clone', async () => {
+    setupCreateMocks(makeClonedChannel());
+
+    const result = await ChannelService.create({
+      name: 'Fresh', description: '', enabled: false, inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
+      sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: {}, responseMode: 'AUTO_AFTER_DESTINATIONS',
+    } as Parameters<typeof ChannelService.create>[0]);
+
+    expect(result.ok).toBe(true);
+    expect(txUpdates.filter((u) => u.table === codeTemplateLibraries)).toEqual([]);
   });
 });

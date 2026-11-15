@@ -51,3 +51,6 @@ bash.exe.stackdump
 
 # Scratch prompts and agent notes
 /tmp/
+
+# Agent scratch files (prompts, triage notes)
+tmp/

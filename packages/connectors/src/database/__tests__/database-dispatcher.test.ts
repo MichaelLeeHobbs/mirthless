@@ -130,6 +130,29 @@ describe('DatabaseDispatcher', () => {
       expect(createFn).toHaveBeenCalledTimes(1);
     });
 
+    it('opens the pool without a statement timeout and TLS off unless tls is true', async () => {
+      const { pool, createFn } = makeMockPool();
+      dispatcher = new DatabaseDispatcher(makeConfig(), pool);
+
+      await dispatcher.onStart();
+
+      expect(createFn.mock.calls[0]![0]).toStrictEqual({
+        host: 'localhost', port: 5432, database: 'testdb', user: 'testuser', password: 'testpass',
+        maxConnections: 5, idleTimeoutMs: 30_000, connectionTimeoutMs: 10_000, tls: false,
+      });
+    });
+
+    it('opens the pool with TLS when tls is true', async () => {
+      const { pool, createFn } = makeMockPool();
+      dispatcher = new DatabaseDispatcher(makeConfig({ tls: true }), pool);
+
+      await dispatcher.onStart();
+
+      const config = createFn.mock.calls[0]![0] as Record<string, unknown>;
+      expect(config['tls']).toBe(true);
+      expect('statementTimeoutMs' in config).toBe(false);
+    });
+
     it('fails if pool creation fails', async () => {
       const { pool, createFn } = makeMockPool();
       createFn.mockResolvedValue({
@@ -170,7 +193,7 @@ describe('DatabaseDispatcher', () => {
     });
 
     it('executes parameterized query', async () => {
-      const { pool, queryFn } = makeMockPool();
+      const { pool, queryFn, transactionFn } = makeMockPool();
       dispatcher = new DatabaseDispatcher(makeConfig(), pool);
       await dispatcher.onStart();
 
@@ -178,6 +201,7 @@ describe('DatabaseDispatcher', () => {
 
       expect(result.ok).toBe(true);
       expect(queryFn).toHaveBeenCalledTimes(1);
+      expect(transactionFn).not.toHaveBeenCalled();
 
       const [sql, params] = queryFn.mock.calls[0]!;
       expect(sql).toBe('INSERT INTO messages (content, channel_id) VALUES ($1, $2)');
@@ -239,6 +263,7 @@ describe('DatabaseDispatcher', () => {
       const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
 
       expect(result.ok).toBe(false);
+      expect(!result.ok && result.error.message).toContain('constraint violation');
     });
 
     it('parses JSON content for template substitution', async () => {
@@ -322,6 +347,17 @@ describe('DatabaseDispatcher', () => {
       expect(queryFn).not.toHaveBeenCalled();
     });
 
+    it('returns the row count when returnGeneratedKeys is false', async () => {
+      const { pool, txQueryFn } = makeMockPool();
+      txQueryFn.mockResolvedValue({ rows: [{ id: 7 }], rowCount: 3 });
+      dispatcher = new DatabaseDispatcher(makeConfig({ useTransaction: true }), pool);
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+      expect(result.ok && result.value).toStrictEqual({ status: 'SENT', content: '3' });
+    });
+
     it('fails the send when the transaction fails', async () => {
       const { pool, txQueryFn } = makeMockPool();
       txQueryFn.mockRejectedValue(new Error('Constraint violation'));
@@ -332,6 +368,18 @@ describe('DatabaseDispatcher', () => {
 
       expect(result.ok).toBe(false);
       expect(!result.ok && result.error.message).toContain('Constraint violation');
+    });
+
+    it('lets a failed query throw inside the transaction so the pool rolls it back', async () => {
+      const { pool, transactionFn, txQueryFn } = makeMockPool();
+      txQueryFn.mockRejectedValue(new Error('Constraint violation'));
+      dispatcher = new DatabaseDispatcher(makeConfig({ useTransaction: true }), pool);
+      await dispatcher.onStart();
+
+      await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+      const callback = transactionFn.mock.calls[0]![0] as (tx: TxQuery) => Promise<unknown>;
+      await expect(callback({ query: txQueryFn } as unknown as TxQuery)).rejects.toThrow('Constraint violation');
     });
   });
 

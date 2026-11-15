@@ -192,6 +192,42 @@ describe('a message the pipeline never stores', () => {
     expect(queue.acked).toEqual(['ok-1', 'ok-2', 'ok-3']);
   });
 
+  it('does not report a fatal error once the channel was restarted while the stop was closing the connection', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|poison');
+    let releaseClose: (() => void) | undefined;
+    let closing = false;
+    let connections = 0;
+    const slowFirstClose: typeof queue.consume = async (c, onDelivery) => {
+      const consumer = await queue.consume(c, onDelivery);
+      connections += 1;
+      if (connections > 1) return consumer;
+      return {
+        closed: consumer.closed,
+        close: async () => {
+          closing = true;
+          await new Promise<void>((resolve) => { releaseClose = resolve; });
+          await consumer.close();
+        },
+      };
+    };
+    let calls = 0;
+    const p = pipeline(() => { calls += 1; return calls === 1 ? notStored('rejected') : stored(calls); });
+    const fatal: Error[] = [];
+    receiver = new AmqpReceiver({ ...config, maxStoreAttempts: 1 }, slowFirstClose, makeMockLogger().logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(closing).toBe(true); });
+
+    // The operator halts and starts the channel while the cap's close is still going.
+    await receiver.onHalt();
+    await receiver.onStart();
+    releaseClose?.();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(fatal).toEqual([]);
+  });
+
   it('does not report a fatal error for a failure that comes back during a stop', async () => {
     const queue = new FakeAmqpQueue();
     queue.publish('MSH|1');
@@ -232,6 +268,59 @@ describe('a message the pipeline never stores', () => {
     expect(fatal).toEqual([]);
     queue.publish('MSH|2');
     await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+  });
+});
+
+describe('a delivery that throws', () => {
+  it('returns a message whose dispatch throws to the queue and keeps consuming', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let calls = 0;
+    const offered: string[] = [];
+    const { log } = await start(queue, async (raw) => {
+      offered.push(raw.content);
+      calls += 1;
+      if (calls === 1) throw new Error('dispatcher bug');
+      return stored(calls);
+    });
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+    queue.publish('MSH|2');
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+    expect(offered).toEqual(['MSH|1', 'MSH|1', 'MSH|2']);
+    expect(JSON.stringify(log.errors)).not.toContain('MSH|1');
+  });
+
+  it('keeps consuming after converting a delivery throws', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let first = true;
+    const throwingOnce: typeof queue.consume = (c, onDelivery) => queue.consume(c, (d) => {
+      if (!first) { onDelivery(d); return; }
+      first = false;
+      onDelivery(Object.defineProperty({ ...d }, 'content', { get: () => { throw new RangeError('decoder unavailable'); } }));
+    });
+    const p = pipeline();
+    receiver = new AmqpReceiver(config, throwingOnce, makeMockLogger().logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+    queue.publish('MSH|2');
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+  });
+
+  it('a start does not wait behind a dispatch that hung before a halt', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let calls = 0;
+    await start(queue, async () => {
+      calls += 1;
+      if (calls === 1) return new Promise<Result<DispatchResult>>(() => undefined); // never answers
+      return stored(calls);
+    });
+    await vi.waitFor(() => { expect(calls).toBe(1); });
+    await receiver?.onHalt();
+    await receiver?.onStart();
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
   });
 });
 

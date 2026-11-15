@@ -45,6 +45,16 @@ describe('ErrorState', () => {
     expect(screen.getByText('An unexpected error occurred.')).toBeTruthy();
   });
 
+  it('renders the fallback instead of a blank when the Error message is empty', () => {
+    renderThemed(<ErrorState error={new Error('')} />);
+    expect(screen.getByText('An unexpected error occurred.')).toBeTruthy();
+  });
+
+  it('renders the fallback instead of a blank for an empty string', () => {
+    renderThemed(<ErrorState error="" />);
+    expect(screen.getByText('An unexpected error occurred.')).toBeTruthy();
+  });
+
   it('calls onRetry when the retry button is clicked', () => {
     const onRetry = vi.fn();
     renderThemed(<ErrorState error="nope" onRetry={onRetry} />);

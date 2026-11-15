@@ -6,7 +6,7 @@
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
-import type { DatabasePool, PoolConfig } from './connection-pool.js';
+import { toPoolConfig, type DatabasePool } from './connection-pool.js';
 import { prepare, type PreparedQuery } from './query-builder.js';
 import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
 
@@ -25,22 +25,6 @@ export interface DatabaseDispatcherConfig {
   readonly tls?: boolean;
   /** The database it talks to (default PostgreSQL). */
   readonly vendor?: DatabaseVendor;
-}
-
-// ----- Default Pool Config -----
-
-function toPoolConfig(config: DatabaseDispatcherConfig): PoolConfig {
-  return {
-    host: config.host,
-    port: config.port,
-    database: config.database,
-    user: config.username,
-    password: config.password,
-    maxConnections: 5,
-    idleTimeoutMs: 30_000,
-    connectionTimeoutMs: 10_000,
-    tls: config.tls === true,
-  };
 }
 
 // ----- Dispatcher -----
@@ -91,10 +75,7 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
       });
     }
 
-    if (this.config.useTransaction) {
-      return this.sendWithTransaction(message);
-    }
-    return this.sendDirect(message);
+    return this.execute(message, this.config.useTransaction);
   }
 
   async onStop(): Promise<Result<void>> {
@@ -127,23 +108,13 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
     return { status: 'SENT' as const, content };
   }
 
-  /** Execute query directly (no transaction). */
-  private async sendDirect(message: ConnectorMessage): Promise<Result<ConnectorResponse>> {
+  /** Execute the query, inside a transaction (rolled back if it fails) when `useTransaction` is set. */
+  private async execute(message: ConnectorMessage, useTransaction: boolean): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
-      const prepared = this.prepared(message);
-      const result = await this.pool.query(prepared.sql, prepared.params);
-      if (!result.ok) {
-        throw result.error;
-      }
-      return this.response(result.value.rows, result.value.rowCount);
-    });
-  }
-
-  /** Execute query inside a transaction, rolled back if it fails. */
-  private async sendWithTransaction(message: ConnectorMessage): Promise<Result<ConnectorResponse>> {
-    return tryCatch(async () => {
-      const prepared = this.prepared(message);
-      const result = await this.pool.transaction((tx) => tx.query(prepared.sql, prepared.params));
+      const { sql, params } = this.prepared(message);
+      const result = useTransaction
+        ? await this.pool.transaction((tx) => tx.query(sql, params))
+        : await this.pool.query(sql, params);
       if (!result.ok) {
         throw result.error;
       }

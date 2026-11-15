@@ -13,13 +13,39 @@ import { z } from 'zod/v4';
 loadEnv({ path: '../../.env', quiet: true });
 loadEnv({ path: '.env', quiet: true });
 
-/** A jsonwebtoken `expiresIn` duration such as '15m', '7d' or '1 hour'. */
+const SECOND = 1000;
+const DAY = 86_400 * SECOND;
+
+/** Milliseconds per unit, as jsonwebtoken's `ms` package reads them (a year is 365.25 days). */
+const UNIT_MS: ReadonlyArray<readonly [RegExp, number]> = [
+  [/^(ms|msecs?|milliseconds?)$/, 1],
+  [/^(s|secs?|seconds?)$/, SECOND],
+  [/^(m|mins?|minutes?)$/, 60 * SECOND],
+  [/^(h|hrs?|hours?)$/, 3600 * SECOND],
+  [/^(d|days?)$/, DAY],
+  [/^(w|weeks?)$/, 7 * DAY],
+  [/^(y|yrs?|years?)$/, 365.25 * DAY],
+];
+
+/**
+ * A duration with a unit ('15m', '7d', '1 hour') in milliseconds, or null.
+ * A bare number is null on purpose: jsonwebtoken reads '604800' as
+ * milliseconds, not seconds, which nobody setting a token lifetime means.
+ * This mirrors `ms`, which jsonwebtoken uses but this package does not depend on.
+ */
+export function durationMs(value: string): number | null {
+  const match = /^(\d+(?:\.\d+)?)\s?([a-z]+)$/i.exec(value);
+  if (!match?.[1] || !match[2]) return null;
+  const unit = match[2].toLowerCase();
+  const perUnit = UNIT_MS.find(([pattern]) => pattern.test(unit))?.[1];
+  return perUnit === undefined ? null : Number(match[1]) * perUnit;
+}
+
+/** A jsonwebtoken `expiresIn` duration with a unit and above zero, such as '15m', '7d' or '1 hour'. */
 export const jwtDuration = z
   .string()
-  .regex(
-    /^\d+(\.\d+)?\s?(ms|msecs?|milliseconds?|s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|d|days?|w|weeks?|y|yrs?|years?)?$/i,
-    'must be a duration such as 15m or 7d',
-  )
+  .refine((v) => durationMs(v) !== null, 'must be a number with a unit (ms, s, m, h, d, w or y), such as 15m or 7d')
+  .refine((v) => (durationMs(v) ?? 0) > 0, 'must be longer than zero')
   .transform((v) => v as NonNullable<SignOptions['expiresIn']>);
 
 export const configSchema = z.object({
@@ -107,7 +133,19 @@ export function isWeakJwtSecret(secret: string): boolean {
   return false;
 }
 
-const refinedSchema = configSchema.superRefine((data, ctx) => {
+/** configSchema plus the checks that compare fields; this is what startup validates the environment with. */
+export const validatedConfigSchema = configSchema.superRefine((data, ctx) => {
+  // A refresh token that dies before the access token it renews makes every
+  // session end at the refresh lifetime with a confusing failed refresh.
+  const accessMs = durationMs(String(data.JWT_ACCESS_EXPIRES_IN)) ?? 0;
+  const refreshMs = durationMs(String(data.JWT_REFRESH_EXPIRES_IN)) ?? 0;
+  if (refreshMs < accessMs) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['JWT_REFRESH_EXPIRES_IN'],
+      message: `JWT_REFRESH_EXPIRES_IN (${String(data.JWT_REFRESH_EXPIRES_IN)}) must be at least JWT_ACCESS_EXPIRES_IN (${String(data.JWT_ACCESS_EXPIRES_IN)}).`,
+    });
+  }
   if (data.NODE_ENV === 'production' && isWeakJwtSecret(data.JWT_SECRET)) {
     ctx.addIssue({
       code: 'custom',
@@ -119,7 +157,7 @@ const refinedSchema = configSchema.superRefine((data, ctx) => {
   }
 });
 
-const result = refinedSchema.safeParse(process.env);
+const result = validatedConfigSchema.safeParse(process.env);
 
 if (!result.success) {
   // eslint-disable-next-line no-console

@@ -19,7 +19,13 @@ const SCRIPT_TYPES = ['DEPLOY', 'UNDEPLOY', 'PREPROCESSOR', 'POSTPROCESSOR'] as 
 
 // ----- Helpers -----
 
-async function findChannel(db: Db, name: string): Promise<string | null> {
+/**
+ * Looks up a channel that has not been soft-deleted by its name.
+ * @param db - Drizzle database handle
+ * @param name - Channel name
+ * @returns The channel id, or null when no live channel has that name
+ */
+export async function findChannelId(db: Db, name: string): Promise<string | null> {
   const [row] = await db
     .select({ id: schema.channels.id })
     .from(schema.channels)
@@ -167,7 +173,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
     name: string,
     fn: () => Promise<string>,
   ): Promise<string> => {
-    const existing = await findChannel(db, name);
+    const existing = await findChannelId(db, name);
     if (existing) {
       // eslint-disable-next-line no-console
       console.log(`  = ${name} (exists)`);

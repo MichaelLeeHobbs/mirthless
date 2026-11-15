@@ -6,6 +6,7 @@
 // list, so giving a new setting a home is one entry here. A setting the server
 // returns that isn't listed still shows, under "Other", so nothing is hidden.
 
+import { SETTING_TYPE, type SettingType } from '@galvaniflow/core-models';
 import { humanize } from './format.js';
 
 /** Extra checks beyond the setting's type. */
@@ -103,12 +104,22 @@ export function fieldFor(key: string): SettingField {
   return { key, label: humanize(name), help: '' };
 }
 
-// Mirrors the server's rule (server/src/lib/secret-redaction.ts): these values never come back from GET.
-const SECRET_KEY_RE = /(password|passwd|_pass$|secret|token|apikey|api_key|private_?key|passphrase|credential)/i;
+/** The server's rule for a secret setting, whose value never comes back from GET. */
+export { isSecretSetting as isSecret } from '@galvaniflow/core-util';
 
-/** A secret is typed `password` or has a secret-looking key; the server masks its value. */
-export function isSecret(key: string, type: string): boolean {
-  return type === 'password' || SECRET_KEY_RE.test(key);
+const SAVE_TYPES: ReadonlySet<string> = new Set(Object.values(SETTING_TYPE));
+
+/**
+ * The type to send when saving a setting. A row's stored type can be any short
+ * string (an older database or a restore may hold `secret` or `Password`), but
+ * the save API takes only its five lowercase names, and one unknown type fails
+ * the whole bulk save. Case is dropped, and `secret` becomes `password`, the one
+ * secret type the API knows; the server treats both as secret.
+ */
+export function settingTypeForSave(type: string): SettingType {
+  const lower = type.toLowerCase();
+  if (lower === 'secret') return SETTING_TYPE.PASSWORD;
+  return SAVE_TYPES.has(lower) ? (lower as SettingType) : SETTING_TYPE.STRING;
 }
 
 interface Keyed { readonly key: string }

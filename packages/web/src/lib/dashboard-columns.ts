@@ -5,6 +5,8 @@
 // are always shown; everything here is toggleable per-user. Order here is the
 // render order (config columns, then the stat counters).
 
+import type { ConnectorType } from '@galvaniflow/core-models';
+
 export type DashboardColumnId =
   | 'source' | 'dataTypes' | 'rev' | 'updated'
   | 'received' | 'filtered' | 'sent' | 'errored' | 'queued';
@@ -33,12 +35,12 @@ export const DASHBOARD_COLUMNS: readonly DashboardColumnDef[] = [
 export const DEFAULT_VISIBLE_COLUMNS: readonly DashboardColumnId[] =
   DASHBOARD_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id);
 
-const CONNECTOR_TYPE_LABELS: Readonly<Record<string, string>> = {
+const CONNECTOR_TYPE_LABELS: Readonly<Record<ConnectorType, string>> = {
   TCP_MLLP: 'TCP/MLLP', HTTP: 'HTTP', FILE: 'File', DATABASE: 'Database',
   JAVASCRIPT: 'JavaScript', CHANNEL: 'Channel', DICOM: 'DICOM', EMAIL: 'Email',
   FHIR: 'FHIR', SFTP: 'SFTP', SMTP: 'SMTP', KAFKA: 'Kafka', AMQP: 'AMQP',
 };
 
 export function connectorLabel(type: string): string {
-  return CONNECTOR_TYPE_LABELS[type] ?? type;
+  return (CONNECTOR_TYPE_LABELS as Readonly<Record<string, string>>)[type] ?? type;
 }

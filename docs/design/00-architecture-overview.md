@@ -160,7 +160,7 @@ core-models  ←── core-util  ←── engine  ←── connectors/*
 - `engine` depends on `core-models`, `core-util`
 - `connectors/*` depend on `engine`, `core-models`
 - `server` depends on `engine`, `connectors`, `core-models`, `core-util`
-- `web` depends on `core-models` (shared types only)
+- `web` depends on `core-models` and `core-util` (core-util must stay browser-safe, D-272)
 - `cli` depends on `server` (API client)
 
 ---

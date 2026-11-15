@@ -12,9 +12,8 @@ import {
   channelPropertiesSchema,
   destinationInputSchema,
   metadataColumnInputSchema,
-  SOURCE_CONNECTOR_TYPES,
-  DESTINATION_CONNECTOR_TYPES,
 } from '../channel.schema.js';
+import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '../../constants.js';
 
 describe('createChannelSchema', () => {
   it('accepts payload from NewChannelDialog', () => {

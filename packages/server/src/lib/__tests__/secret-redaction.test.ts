@@ -7,29 +7,19 @@ import { kafkaDestinationPropertiesSchema, amqpDestinationPropertiesSchema } fro
 import {
   redactChannelDetail,
   REDACTED,
-  isSecretSettingType,
-  isSecretSetting,
   isSecretPropertyKey,
   redactSettingValue,
   redactConnectorProperties,
 } from '../secret-redaction.js';
 
 describe('secret-redaction — settings', () => {
-  it('detects secret types', () => {
-    expect(isSecretSettingType('password')).toBe(true);
-    expect(isSecretSettingType('secret')).toBe(true);
-    expect(isSecretSettingType('string')).toBe(false);
-    expect(isSecretSettingType(null)).toBe(false);
-  });
-
-  it('detects secret settings by key even when type is string (legacy)', () => {
-    expect(isSecretSetting('smtp.auth_pass', 'string')).toBe(true);
-    expect(isSecretSetting('some.api_token', 'string')).toBe(true);
-    expect(isSecretSetting('smtp.host', 'string')).toBe(false);
-  });
-
   it('masks a present secret value', () => {
     expect(redactSettingValue('smtp.auth_pass', 'password', 'hunter2')).toBe(REDACTED);
+  });
+
+  it('masks a value typed secret in any case, or with a secret key typed string', () => {
+    expect(redactSettingValue('custom.value', 'Secret', 'hunter2')).toBe(REDACTED);
+    expect(redactSettingValue('some.api_token', 'string', 'hunter2')).toBe(REDACTED);
   });
 
   it('passes through empty/null secret values (nothing to hide)', () => {

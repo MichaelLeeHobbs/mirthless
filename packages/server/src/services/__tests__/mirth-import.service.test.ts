@@ -542,6 +542,30 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(filters.find((f) => f.metaDataId === 1)?.rules[0]?.name).toBe('Only ORM');
   });
 
+  describe('Rule Builder values', () => {
+    const ruleBuilder = (values: string) => (x: string): string => x.replace(
+      '<operator>NONE</operator>\n            <script>return true;</script>',
+      `<operator>NONE</operator>\n            <field>MSH.9.1</field>\n            <condition>EQUALS</condition>\n            ${values}`,
+    );
+    const destRule = (values: string): unknown => convert4x(ruleBuilder(values)).filters.find((f) => f.metaDataId === 1)?.rules[0]?.values;
+
+    it('imports a single value as a one-item list', () => {
+      expect(destRule('<values><string>5</string></values>')).toEqual(['5']);
+    });
+
+    it('imports several values in order', () => {
+      expect(destRule('<values><string>ORM</string><string>0123</string></values>')).toEqual(['ORM', '0123']);
+    });
+
+    it('imports an empty values list as no values', () => {
+      expect(destRule('<values/>')).toEqual([]);
+    });
+
+    it('imports a rule without a values list as no values', () => {
+      expect(destRule('')).toEqual([]);
+    });
+  });
+
   it('keys destinations, their filters and transformers by the metaDataId in the export', () => {
     const channel = convert4x();
     expect(channel.destinations.map((d) => d.metaDataId)).toEqual([1, 3]);
@@ -703,6 +727,52 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
 
     it('gives both warnings for a SQL Server connector in JavaScript mode', () => {
       expect(databaseWarnings(convert(withWriter(writer('jdbc:sqlserver://db:1433;databaseName=lab', 'true'))))).toHaveLength(2);
+    });
+
+    const writerProps = (url: string): Record<string, unknown> => {
+      const result = MirthImportService.convertXml(withWriter(writer(url))(loadFixture('mirth-4x-channel.xml')));
+      if (!result.ok) throw result.error;
+      return result.value.channels[0]?.destinations[0]?.properties ?? {};
+    };
+
+    it('warns that a ${...} reference URL must be filled in by hand, and guesses no location', () => {
+      const warnings = databaseWarnings(convert(withWriter(writer('${LAB_DB_URL}'))));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('Database Writer');
+      expect(warnings[0]).toContain('${LAB_DB_URL}');
+      expect(warnings[0]).toContain('by hand');
+      const readerWarnings = databaseWarnings(convert(withReader(reader('${LAB_DB_URL}'))));
+      expect(readerWarnings).toHaveLength(1);
+      expect(readerWarnings[0]).toContain('Database Reader');
+      expect(writerProps('${LAB_DB_URL}')).not.toHaveProperty('host');
+    });
+
+    it.each([
+      ['jdbc:mysql://h1,h2/lab'],
+      ['jdbc:postgresql://h1:5432,h2:5432/lab'],
+    ])('warns that the multi-host URL %s must be filled in by hand, and guesses no host', (url) => {
+      const warnings = databaseWarnings(convert(withWriter(writer(url))));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('several hosts');
+      const props = writerProps(url);
+      expect(props).not.toHaveProperty('host');
+      expect(props).not.toHaveProperty('port');
+      expect(props).not.toHaveProperty('database');
+    });
+
+    it.each([
+      ['jdbc:mysql:loadbalance://h1,h2/lab', 'loadbalance'],
+      ['jdbc:mysql:replication://h1:3306,h2:3306/lab', 'replication'],
+    ])('warns that the MySQL %s URL must be filled in by hand, and guesses no host', (url, mode) => {
+      const warnings = databaseWarnings(convert(withWriter(writer(url))));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain(mode);
+      expect(writerProps(url)).not.toHaveProperty('host');
+    });
+
+    it('does not put the URL itself in a multi-host warning, which can carry credentials', () => {
+      const warnings = databaseWarnings(convert(withWriter(writer('jdbc:mysql://h1,h2/lab?password=s3cret'))));
+      expect(warnings.join(' ')).not.toContain('s3cret');
     });
   });
 
