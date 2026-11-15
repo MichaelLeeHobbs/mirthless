@@ -98,7 +98,10 @@ export class DeploymentService {
           dest.connectorType, 'destination', dest.properties,
         );
         if (!destValidation.ok) {
-          throw new ServiceError('INVALID_INPUT', destValidation.error.message);
+          throw new ServiceError(
+            'INVALID_INPUT',
+            `Destination "${dest.name}" (metaDataId ${String(dest.metaDataId)}): ${destValidation.error.message}`,
+          );
         }
       }
 
