@@ -90,6 +90,24 @@ describe('GlobalMapProxy', () => {
       expect(s.remove).toHaveBeenCalledWith('gone');
       expect(s.save).not.toHaveBeenCalled();
     });
+
+    it('marks both set and removed keys in one call, and only those', async () => {
+      proxy.load([{ key: 'keep', value: 'k', isJson: false }, { key: 'drop', value: 'd', isJson: false }]);
+      proxy.applyChanges(proxy.toRecord(), { keep: 'k', added: 'a' });
+      await proxy.flush();
+      expect(s.save).toHaveBeenCalledTimes(1);
+      expect(s.save).toHaveBeenCalledWith('added', 'a', false);
+      expect(s.remove).toHaveBeenCalledTimes(1);
+      expect(s.remove).toHaveBeenCalledWith('drop');
+    });
+
+    it('saves a value a script set to null rather than removing the key', async () => {
+      proxy.applyChanges({}, { n: null });
+      expect(proxy.toRecord()).toEqual({ n: null });
+      await proxy.flush();
+      expect(s.save).toHaveBeenCalledWith('n', 'null', true);
+      expect(s.remove).not.toHaveBeenCalled();
+    });
   });
 
   describe('flush', () => {
@@ -138,6 +156,39 @@ describe('GlobalMapProxy', () => {
       proxy.applyChanges({}, { k: 'fromScript' });
       proxy.set({ key: 'k', value: 'fromApi', isJson: false });
       expect(proxy.toRecord()['k']).toBe('fromApi');
+      await proxy.flush();
+      expect(s.save).not.toHaveBeenCalled();
+    });
+
+    it('set after a script removed the key keeps the value and saves nothing', async () => {
+      proxy.load([{ key: 'k', value: 'old', isJson: false }]);
+      proxy.applyChanges(proxy.toRecord(), {});
+      proxy.set({ key: 'k', value: '{"n":1}', isJson: true });
+      expect(proxy.toRecord()).toEqual({ k: { n: 1 } });
+      await proxy.flush();
+      expect(s.save).not.toHaveBeenCalled();
+      expect(s.remove).not.toHaveBeenCalled();
+    });
+
+    it('delete drops a pending script change so flush does not write it', async () => {
+      proxy.applyChanges({}, { k: 'fromScript' });
+      proxy.delete('k');
+      await proxy.flush();
+      expect(s.save).not.toHaveBeenCalled();
+      expect(s.remove).not.toHaveBeenCalled();
+    });
+
+    it('clear drops every pending script change', async () => {
+      proxy.load([{ key: 'gone', value: 'x', isJson: false }]);
+      proxy.applyChanges(proxy.toRecord(), { added: 1 });
+      proxy.clear();
+      await proxy.flush();
+      expect(s.save).not.toHaveBeenCalled();
+      expect(s.remove).not.toHaveBeenCalled();
+    });
+
+    it('load does not mark entries for saving', async () => {
+      proxy.load([{ key: 'k', value: 'v', isJson: false }]);
       await proxy.flush();
       expect(s.save).not.toHaveBeenCalled();
     });
