@@ -4,7 +4,7 @@
 
 ## 2026-11-15 — Capabilities page, docs slice 3 (branch `docs/capabilities`)
 
-Slice 3 of the docs restructure (#116): one page that shows what GalvaniFlow does and what it doesn't, so users can check before they commit and maintainers can see the gaps (D-275).
+Slice 3 of the docs restructure (#116): one page that shows what GalvaniFlow does and what it doesn't, so users can check before they commit and maintainers can see the gaps (D-279).
 
 - **`docs/user/capabilities.md`.** About 170 capability rows across connectors, access control, data types, pipeline and scripting, messages and storage, channels, monitoring and alerts, and operations, each with a status, limits, plan, docs, Mirth equivalent and proof. A Mirth migration section says what each Mirth connector and setting imports as, whether it deploys, and whether the preview warns.
 - **Guard.** `packages/server/src/__tests__/docs/capabilities.test.ts` enforces the page's rules: Yes needs a gate or CI test (lane read from the path), No needs an issue or open ROADMAP ID, Won't quotes an existing decision, proof files exist, and every open ROADMAP item is cited by a row, so the page stays the gap list.
