@@ -102,6 +102,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[N11] Iterator transformer step** (+ XSLT / External Script) — 🟡 repeating-segment mapping UX.
 - [ ] **[N12] Code-template per-channel library scoping: editor control** — the engine, API, backup and Mirth import scope libraries to channels (2026-11-12, D-249); the Code Templates page cannot set the scope yet.
 - [ ] **[N13] Custom RBAC roles** (roles as permission sets vs 4 fixed) — 🟡 "dev who can't deploy to prod".
+- [ ] **Channel-scoped permissions** (not built): the `user_permissions` table has a `scope` column, but the seed writes `'all'` and nothing reads it; `requirePermission` checks only the permission string. Every grant covers every channel, so any user with `messages:read` can read, export and download attachments from every channel's messages. Whether to build it is a separate product decision. 🟡
 - [ ] **[N14] Export completeness** (templates/deps/groups/tags + set export) — 🟡
 - [ ] **[N15] Alert per-connector scope + error-stage granularity** — 🟡
 - [ ] **[DECIDE] Extension/plugin platform** — 🔴 strategic: Mirth's third-party plugin loader has no equivalent. Decide curated-built-in vs a modern manifest-based SPI. Not a scheduled task until decided.
@@ -144,8 +145,8 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[V13]** Docs site, recipe gallery, generated channel docs, guided first channel (DOC1, DOC3, UI13, UI3)
 - [ ] **[V14]** Generated API clients, MCP server, AI-assisted mapping (API1, AI2, AI1)
 - [x] **[V15]** Kafka and AMQP (RabbitMQ) source and destination connectors on maintained Node clients; no broker of our own (CON10, D-261) — shipped 2026-11-14 (D-265, D-266)
-  - [ ] A message the store always rejects (e.g. a NUL byte in a text column) blocks its queue or topic for good: no alert, retry cap or dead-letter
-  - [ ] Both sources decode the payload with `toString('utf8')`, which corrupts a non-UTF-8 payload
+  - [x] A message the store always rejects (e.g. a NUL byte in a text column) blocks its queue or topic for good: no alert, retry cap or dead-letter — after `maxStoreAttempts` the channel stops and alerts, message kept (D-271, #86)
+  - [x] Both sources decode the payload with `toString('utf8')`, which corrupts a non-UTF-8 payload — `charset` setting, invalid UTF-8 flagged (D-270, #87)
   - [ ] No timeout of ours on joining the Kafka group (`kafka-receiver.ts` `onStart` and the rejoin in `run`)
   - [ ] A Kafka halt during a rejoin, then a restart, can orphan the consumer that rejoin opens
   - [ ] An empty AMQP username connects as guest/guest (amqplib's default) instead of failing validation
@@ -157,7 +158,6 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] 131 REST endpoints across 37 route files
 - [x] JWT + refresh tokens + session management
 - [x] RBAC with 4 roles (admin, deployer, developer, viewer)
-- [x] Channel-scoped permissions
 - [x] Audit logging (fire-and-forget events)
 - [x] Channel export/import (JSON format)
 - [x] Mirth Connect XML import

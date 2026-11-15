@@ -1,105 +1,115 @@
-// ===========================================
-// TLS Property Reader Tests
-// ===========================================
-// Pins what readTlsServerOptions and readTlsClientOptions return for each shape
-// a stored `tls` bag can take. A bag that is present but not a plain object (a
-// string, an array, a number) is refused loudly instead of read as "no TLS".
-
 import { describe, it, expect } from 'vitest';
 import { readTlsServerOptions, readTlsClientOptions } from '../tls.js';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
 
-const EXTRA = { cert: 'C', key: 'K', ca: 'A', caCertId: 'ca-1', note: 'x' };
-const NOT_AN_OBJECT = 'Connector tls settings must be an object';
-const JUNK: ReadonlyArray<readonly [string, unknown]> = [
-  ['a string', 'abc'],
-  ['an array', []],
-  ['a number', 1],
-  ['true', true],
-];
+const CERT = '-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----';
+const KEY = '-----BEGIN PRIVATE KEY-----\nBBB\n-----END PRIVATE KEY-----';
 
-describe('readTlsServerOptions', () => {
-  it.each([
-    ['absent', undefined],
-    ['null', null],
-    ['false', false],
-    ['an empty object', {}],
-    ['a cert without a key', { cert: 'C' }],
-    ['only rejectUnauthorized', { rejectUnauthorized: false }],
-  ])('returns undefined when tls is %s', (_label, tls) => {
-    expect(readTlsServerOptions({ tls })).toBeUndefined();
+describe('readTlsServerOptions()', () => {
+  it('is undefined (plaintext) when no tls object is configured', () => {
+    expect(readTlsServerOptions({})).toBeUndefined();
+    expect(readTlsServerOptions({ tls: undefined })).toBeUndefined();
+    expect(readTlsServerOptions({ tls: null })).toBeUndefined();
+    expect(readTlsServerOptions({ tls: false })).toBeUndefined();
   });
 
-  it.each(JUNK)('throws when tls is %s', (_label, tls) => {
-    expect(() => readTlsServerOptions({ tls })).toThrow(NOT_AN_OBJECT);
+  it('throws for a tls object present without cert and key, instead of listening in plaintext', () => {
+    expect(() => readTlsServerOptions({ tls: {} })).toThrow(/incomplete/);
+    expect(() => readTlsServerOptions({ tls: { requireClientCert: true } })).toThrow(/incomplete/);
+    expect(() => readTlsServerOptions({ tls: { cert: '', key: '' } })).toThrow(/incomplete/);
   });
 
-  it('returns cert and key when both are set', () => {
-    expect(readTlsServerOptions({ tls: { cert: 'C', key: 'K' } })).toEqual({ cert: 'C', key: 'K', ca: undefined, requireClientCert: undefined });
+  it('returns the options when both cert and key are set', () => {
+    expect(readTlsServerOptions({ tls: { cert: CERT, key: KEY, ca: CERT, requireClientCert: true } }))
+      .toEqual({ cert: CERT, key: KEY, ca: CERT, requireClientCert: true });
   });
 
-  it('keeps only the four server fields from a bag with extra keys', () => {
-    expect(readTlsServerOptions({ tls: { ...EXTRA, requireClientCert: true } })).toEqual({ cert: 'C', key: 'K', ca: 'A', requireClientCert: true });
-  });
-});
-
-describe('readTlsClientOptions', () => {
-  it.each([
-    ['missing', {}],
-    ['undefined', { tls: undefined }],
-    ['null', { tls: null }],
-    ['false', { tls: false }],
-  ])('returns undefined when tls is %s', (_label, props) => {
-    expect(readTlsClientOptions(props)).toBeUndefined();
+  it('throws when a certificate is set without its key', () => {
+    expect(() => readTlsServerOptions({ tls: { cert: CERT } })).toThrow(/tls\.key/);
+    expect(() => readTlsServerOptions({ tls: { cert: CERT, key: '' } })).toThrow(/tls\.key/);
   });
 
-  it.each(JUNK)('throws when tls is %s', (_label, tls) => {
-    expect(() => readTlsClientOptions({ tls })).toThrow(NOT_AN_OBJECT);
+  it('throws when a key is set without its certificate', () => {
+    expect(() => readTlsServerOptions({ tls: { key: KEY } })).toThrow(/tls\.cert/);
   });
 
-  it('returns an object of undefined fields for an empty object, so TLS stays on with defaults', () => {
-    expect(readTlsClientOptions({ tls: {} })).toEqual({ cert: undefined, key: undefined, ca: undefined, rejectUnauthorized: undefined });
+  it('throws when only a CA bundle is set, since a listener cannot terminate TLS without cert and key', () => {
+    expect(() => readTlsServerOptions({ tls: { ca: CERT } })).toThrow(/incomplete/);
   });
 
-  it('returns an object of undefined fields for a bag of certificate ids only', () => {
-    expect(readTlsClientOptions({ tls: { caCertId: 'x' } })).toEqual({ cert: undefined, key: undefined, ca: undefined, rejectUnauthorized: undefined });
+  it('throws when tls is set to something other than an object', () => {
+    expect(() => readTlsServerOptions({ tls: true })).toThrow(/object/);
+    expect(() => readTlsServerOptions({ tls: CERT })).toThrow(/object/);
   });
 
-  it('returns a lone cert', () => {
-    expect(readTlsClientOptions({ tls: { cert: 'C' } })).toEqual({ cert: 'C', key: undefined, ca: undefined, rejectUnauthorized: undefined });
+  it('throws when cert or key is not a string', () => {
+    expect(() => readTlsServerOptions({ tls: { cert: 42, key: KEY } })).toThrow(/tls\.cert/);
   });
 
-  it('returns cert and key for mutual TLS', () => {
-    expect(readTlsClientOptions({ tls: { cert: 'C', key: 'K' } })).toEqual({ cert: 'C', key: 'K', ca: undefined, rejectUnauthorized: undefined });
-  });
-
-  it('returns rejectUnauthorized: false when verification is switched off', () => {
-    expect(readTlsClientOptions({ tls: { rejectUnauthorized: false } })).toEqual({ cert: undefined, key: undefined, ca: undefined, rejectUnauthorized: false });
-  });
-
-  it('keeps only the four client fields from a bag with extra keys', () => {
-    expect(readTlsClientOptions({ tls: { ...EXTRA, rejectUnauthorized: true } })).toEqual({ cert: 'C', key: 'K', ca: 'A', rejectUnauthorized: true });
+  it('never puts PEM material in the error message', () => {
+    expect(() => readTlsServerOptions({ tls: { cert: CERT } })).not.toThrow(/BEGIN/);
   });
 });
 
-describe('creating a connector with a malformed tls bag', () => {
-  it.each([['abc'], [[]]])('refuses a TCP/MLLP destination with tls %j', (tls) => {
-    expect(() => createDestinationConnector('TCP_MLLP', { host: 'h', port: 6661, tls })).toThrow(NOT_AN_OBJECT);
+describe('readTlsClientOptions()', () => {
+  it('is undefined when no tls object is configured', () => {
+    expect(readTlsClientOptions({})).toBeUndefined();
+    expect(readTlsClientOptions({ tls: null })).toBeUndefined();
+    expect(readTlsClientOptions({ tls: false })).toBeUndefined();
   });
 
-  it.each([['abc'], [[]]])('refuses an HTTP destination with tls %j', (tls) => {
-    expect(() => createDestinationConnector('HTTP', { url: 'https://x', tls })).toThrow(NOT_AN_OBJECT);
+  it('returns options without a client certificate (server-auth-only TLS)', () => {
+    expect(readTlsClientOptions({ tls: { ca: CERT, rejectUnauthorized: true } }))
+      .toEqual({ cert: undefined, key: undefined, ca: CERT, rejectUnauthorized: true });
   });
 
-  it.each([['abc'], [[]]])('refuses a TCP/MLLP source with tls %j', (tls) => {
-    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls })).toThrow(NOT_AN_OBJECT);
+  it('returns a client certificate and key together', () => {
+    expect(readTlsClientOptions({ tls: { cert: CERT, key: KEY } })).toMatchObject({ cert: CERT, key: KEY });
   });
 
-  it.each([[{}], [{ caCertId: 'x' }]])('still builds a TCP/MLLP destination with tls %j', (tls) => {
-    expect(() => createDestinationConnector('TCP_MLLP', { host: 'h', port: 6661, tls })).not.toThrow();
+  it('throws when a client certificate is set without its key, or a key without its certificate', () => {
+    expect(() => readTlsClientOptions({ tls: { cert: CERT } })).toThrow(/tls\.key/);
+    expect(() => readTlsClientOptions({ tls: { key: KEY } })).toThrow(/tls\.cert/);
   });
 
-  it('builds a queue connector with junk in tls while useTls is off', () => {
-    expect(() => createDestinationConnector('AMQP', { host: 'rabbit', queue: 'q', useTls: false, tls: 'abc' })).not.toThrow();
+  it('throws when tls is set to something other than an object', () => {
+    expect(() => readTlsClientOptions({ tls: true })).toThrow(/object/);
+  });
+});
+
+describe('registry factories with half-configured TLS', () => {
+  it('refuses to build a TCP/MLLP source whose tls has a cert but no key, instead of listening in plaintext', () => {
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls: { cert: CERT } })).toThrow(/tls\.key/);
+  });
+
+  it('refuses to build a TCP/MLLP source whose tls object is empty or has settings but no cert and key', () => {
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls: {} })).toThrow(/incomplete/);
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls: { requireClientCert: true } })).toThrow(/incomplete/);
+  });
+
+  it('refuses to build an HTTPS source whose tls has a key but no cert, or no tls at all', () => {
+    expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTPS', tls: { key: KEY } })).toThrow(/tls\.cert/);
+    expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTPS' })).toThrow(/HTTPS/);
+  });
+
+  it('refuses to build an HTTP source whose tls holds PEM while the scheme is not HTTPS', () => {
+    expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTP', tls: { cert: CERT, key: KEY } })).toThrow(/scheme is not HTTPS/);
+    expect(() => createSourceConnector('HTTP', { port: 8080, tls: { key: KEY } })).toThrow(/scheme is not HTTPS/);
+  });
+
+  it('builds an HTTPS source from resolved PEM material', () => {
+    expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTPS', tls: { cert: CERT, key: KEY, requireClientCert: false } })).not.toThrow();
+  });
+
+  it('still builds a plaintext TCP/MLLP source and an HTTP source on scheme HTTP with its id-based tls bag', () => {
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661 })).not.toThrow();
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls: null })).not.toThrow();
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls: false })).not.toThrow();
+    expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTP', tls: { serverCertId: '', caCertId: '', requireClientCert: false } })).not.toThrow();
+    expect(() => createSourceConnector('HTTP', { port: 8080, tls: { serverCertId: 'abc', caCertId: '', requireClientCert: true } })).not.toThrow();
+  });
+
+  it('refuses to build a TCP/MLLP destination with a client certificate but no key', () => {
+    expect(() => createDestinationConnector('TCP_MLLP', { host: 'h', port: 6661, tls: { cert: CERT } })).toThrow(/tls\.key/);
   });
 });

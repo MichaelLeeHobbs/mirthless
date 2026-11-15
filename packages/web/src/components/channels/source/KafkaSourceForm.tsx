@@ -12,7 +12,7 @@ import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { KAFKA_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
-import { KafkaConnectionFields, QueueTlsFields } from '../common/QueueConnectionFields.js';
+import { KafkaConnectionFields, QueueCharsetField, QueueStoreAttemptsField, QueueTlsFields } from '../common/QueueConnectionFields.js';
 import { getStr, propertyUpdaters } from '../common/connector-properties.js';
 
 const START_FROM = [
@@ -67,8 +67,10 @@ export function KafkaSourceForm({ properties, onChange }: SourceConnectorFormPro
         >
           {START_FROM.map((s) => <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>)}
         </TextField>
+        <QueueCharsetField properties={properties} onChange={onChange} />
+        <QueueStoreAttemptsField properties={properties} onChange={onChange} />
         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-          A record is committed only after the channel has stored it. After a crash or a lost connection a record can arrive twice; its topic, partition and offset are in the source map.
+          A record is committed only after the channel has stored it. One the channel keeps failing to store stops the channel, uncommitted. After a crash or a lost connection a record can arrive twice; its topic, partition and offset are in the source map.
         </Typography>
       </Grid>
 

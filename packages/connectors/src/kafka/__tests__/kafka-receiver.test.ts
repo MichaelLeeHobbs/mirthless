@@ -146,6 +146,163 @@ describe('consuming', () => {
   });
 });
 
+describe('a record the pipeline never stores', () => {
+  it('stops retrying after the cap, reports a fatal error and does not commit', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|poison');
+    topic.produce('MSH|next');
+    const p = pipeline(() => notStored('invalid byte sequence for encoding "UTF8": 0x00'));
+    const fatal: Error[] = [];
+    const log = makeMockLogger();
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 3 }, topic.subscribe, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    await receiver.onStart();
+
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(p.offered).toEqual(['MSH|poison', 'MSH|poison', 'MSH|poison']);
+    expect(topic.committed).toBe(0);
+    expect(topic.isSubscribed).toBe(false);
+    expect(fatal[0]?.message).toContain('offset 0');
+    expect(fatal[0]?.message).toContain('3 attempts');
+    expect(log.errors.some((e) => e.msg.includes('Kafka source stopped'))).toBe(true);
+  });
+
+  it('counts a record that cannot be converted toward the cap, instead of rejoining forever', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    const p = pipeline();
+    const fatal: Error[] = [];
+    const log = makeMockLogger();
+    const subscribe: typeof topic.subscribe = async (c) => {
+      const sub = await topic.subscribe(c);
+      return {
+        close: (force: boolean) => sub.close(force),
+        async *[Symbol.asyncIterator]() {
+          for await (const record of sub) {
+            yield Object.defineProperty({ ...record }, 'value', { get: () => { throw new RangeError('decoder unavailable'); } });
+          }
+        },
+      };
+    };
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 2 }, subscribe, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    expect(fatal[0]?.message).toContain('decoder unavailable');
+    expect(p.offered).toEqual([]);
+    expect(topic.committed).toBe(0);
+  });
+
+  it('defaults the cap to 5 attempts', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|poison');
+    const p = pipeline(() => notStored('rejected'));
+    let fatal = 0;
+    await start(topic, p.dispatch);
+    receiver?.setFatalHandler(() => { fatal += 1; });
+    await vi.waitFor(() => { expect(fatal).toBe(1); });
+    expect(p.offered).toHaveLength(5);
+  });
+
+  it('counts failures per record, so a transient failure that then succeeds starts the next record at zero', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    topic.produce('MSH|2');
+    // Each record fails twice (database briefly down), then is stored: 4 failures in all, never 3 on one record.
+    const failuresLeft = new Map([['MSH|1', 2], ['MSH|2', 2]]);
+    const p = pipeline((raw, n) => {
+      const left = failuresLeft.get(raw.content) ?? 0;
+      failuresLeft.set(raw.content, left - 1);
+      return left > 0 ? notStored('database unavailable') : stored(n);
+    });
+    let fatal = 0;
+    const log = makeMockLogger();
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 3 }, topic.subscribe, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler(() => { fatal += 1; });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(topic.committed).toBe(2); });
+    expect(fatal).toBe(0);
+    expect(p.offered).toEqual(['MSH|1', 'MSH|1', 'MSH|1', 'MSH|2', 'MSH|2', 'MSH|2']);
+  });
+
+  it('does not report a fatal error for a failure that comes back during a stop', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let entered = false;
+    let fatal = 0;
+    const log = makeMockLogger();
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 1 }, topic.subscribe, log.logger, 5);
+    receiver.setDispatcher(async () => { entered = true; await held; return notStored('database closed during shutdown'); });
+    receiver.setFatalHandler(() => { fatal += 1; });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(entered).toBe(true); });
+
+    const stopping = receiver.onStop();
+    release?.();
+    await stopping;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fatal).toBe(0);
+    expect(topic.committed).toBe(0);
+    receiver = null;
+  });
+
+  it('ignores a failed dispatch left over from before a halt and restart', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    let releaseFirst: (() => void) | undefined;
+    let calls = 0;
+    let fatal = 0;
+    const log = makeMockLogger();
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 1 }, topic.subscribe, log.logger, 5);
+    receiver.setDispatcher(async () => {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => { releaseFirst = resolve; });
+        return notStored('cancelled by the halt');
+      }
+      return stored(calls);
+    });
+    receiver.setFatalHandler(() => { fatal += 1; });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(calls).toBe(1); });
+    await receiver.onHalt();
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
+
+    releaseFirst?.();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fatal).toBe(0);
+    topic.produce('MSH|2');
+    await vi.waitFor(() => { expect(topic.committed).toBe(2); });
+  });
+
+  it('gives a record a fresh count after the channel is started again', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|poison');
+    let fail = true;
+    const p = pipeline((_raw, n) => (fail ? notStored('rejected') : stored(n)));
+    let fatal = 0;
+    const log = makeMockLogger();
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 2 }, topic.subscribe, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler(() => { fatal += 1; });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(fatal).toBe(1); });
+    await receiver.onStop();
+
+    fail = false; // the operator fixed the cause
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
+    expect(p.offered).toEqual(['MSH|poison', 'MSH|poison', 'MSH|poison']);
+  });
+});
+
 describe('broker disconnect', () => {
   it('rejoins after the connection drops and resumes from the committed offset', async () => {
     const topic = new FakeKafkaTopic();
@@ -271,5 +428,57 @@ describe('toRawMessage', () => {
     const topic = new FakeKafkaTopic();
     topic.produce('ignored', 'k');
     expect(toRawMessage({ ...topic.record(0), value: undefined }).content).toBe('');
+  });
+
+  it('decodes a Latin-1 payload when the charset is latin1', () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('x');
+    // "PID|José" in ISO-8859-1: é is the single byte 0xE9, which is not valid UTF-8.
+    const value = Buffer.from([...Buffer.from('PID|Jos'), 0xe9]);
+    const raw = toRawMessage({ ...topic.record(0), value }, 'latin1');
+    expect(raw.content).toBe('PID|José');
+    expect(raw.sourceMap['charsetError']).toBeUndefined();
+  });
+
+  it('keeps a binary payload intact as base64 when the charset is base64', () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('x');
+    const value = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff, 0xfe, 0x80, 0x0a]);
+    const raw = toRawMessage({ ...topic.record(0), value }, 'base64');
+    expect(Buffer.from(raw.content, 'base64').equals(value)).toBe(true);
+  });
+
+  it('flags a payload that is not valid UTF-8 instead of storing it as if nothing happened', () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('x');
+    const raw = toRawMessage({ ...topic.record(0), value: Buffer.from([0x41, 0xe9, 0x42]) });
+    expect(raw.content).toBe('A�B');
+    expect(raw.sourceMap['charsetError']).toContain('not valid UTF-8');
+  });
+});
+
+describe('charset', () => {
+  it('logs a warning, without the payload, for a record that is not valid UTF-8, and still stores it', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('x');
+    const p = pipeline();
+    const log = makeMockLogger();
+    // The fake produces text, so swap in bytes that are not valid UTF-8.
+    const subscribe: typeof topic.subscribe = async (c) => {
+      const sub = await topic.subscribe(c);
+      return {
+        close: (force: boolean) => sub.close(force),
+        async *[Symbol.asyncIterator]() {
+          for await (const record of sub) yield { ...record, value: Buffer.from([0x50, 0xe9]) };
+        },
+      };
+    };
+    receiver = new KafkaReceiver(config, subscribe, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
+    const warning = log.warnings.find((w) => w.msg.includes('not valid UTF-8'));
+    expect(warning).toBeDefined();
+    expect(JSON.stringify(warning)).not.toContain('P�');
   });
 });

@@ -17,7 +17,7 @@ export class AttachmentController {
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack, channelId, messageId }, 'Failed to list attachments');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 

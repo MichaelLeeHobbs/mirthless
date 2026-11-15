@@ -21,6 +21,8 @@ export class FakeAmqpQueue {
   connectCount = 0;
   /** Connect attempts left to fail. */
   failConnects = 0;
+  /** Put a nacked-with-requeue message at the tail, as a quorum queue may, instead of the head. */
+  requeueAtTail = false;
   private outstanding: QueuedMessage | null = null;
   private connection: FakeConsumer | null = null;
   private readonly consumers: FakeConsumer[] = [];
@@ -112,7 +114,8 @@ export class FakeAmqpQueue {
         settle(() => {
           if (requeue) {
             next.redelivered = true;
-            this.messages.unshift(next);
+            if (this.requeueAtTail) this.messages.push(next);
+            else this.messages.unshift(next);
           } else {
             this.deadLettered.push(next.body);
           }

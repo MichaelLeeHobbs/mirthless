@@ -35,56 +35,74 @@ export interface TlsClientOptions {
   readonly rejectUnauthorized?: boolean | undefined;
 }
 
-/** Error text for a stored `tls` value that is present but not a plain object. */
-export const TLS_NOT_AN_OBJECT = 'Connector tls settings must be an object';
-
 /**
- * The stored `tls` bag: undefined when absent (undefined, null or false).
- * Throws for any other value that is not a plain object, so a malformed bag
- * fails the deploy instead of quietly reading as "no TLS".
+ * The `tls` bag from a connector's raw properties: undefined when TLS is not
+ * configured (absent, null or false). Throws for any other non-object value,
+ * so a malformed setting fails the deploy instead of meaning "plaintext".
  */
-function readTlsObject(props: Readonly<Record<string, unknown>>): Record<string, unknown> | undefined {
+function readTlsBag(props: Readonly<Record<string, unknown>>): Record<string, unknown> | undefined {
   const tls = props['tls'];
   if (tls === undefined || tls === null || tls === false) return undefined;
-  if (!isPlainObject(tls)) throw new Error(TLS_NOT_AN_OBJECT);
+  if (!isPlainObject(tls)) throw new Error('TLS configuration is invalid: tls must be an object with cert and key');
   return tls;
+}
+
+/** A PEM field from the tls bag: undefined when unset or empty, throws when not a string. */
+function readPem(tls: Readonly<Record<string, unknown>>, field: string): string | undefined {
+  const value = tls[field];
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') throw new Error(`TLS configuration is invalid: tls.${field} must be a PEM string`);
+  return value;
+}
+
+/**
+ * Fail when exactly one of cert and key is set. Half a key pair never means
+ * "TLS off": a listener would fall back to plaintext and a client would drop
+ * its certificate, so the connector refuses to build and the deploy fails.
+ * Messages name the missing field only, never the PEM material.
+ */
+function assertKeyPair(cert: string | undefined, key: string | undefined): void {
+  if (cert !== undefined && key === undefined) {
+    throw new Error('TLS configuration is incomplete: tls.cert is set but tls.key (the private key) is missing');
+  }
+  if (key !== undefined && cert === undefined) {
+    throw new Error('TLS configuration is incomplete: tls.key is set but tls.cert (the certificate) is missing');
+  }
 }
 
 /**
  * Read TLS server options from a connector's raw property bag.
- * Returns undefined when no TLS material is configured.
- * @throws Error when `tls` is present but not an object.
+ * Returns undefined only when TLS is not configured: `tls` absent, null or
+ * false. Any other `tls` value must carry both cert and key, or this throws:
+ * a listener never falls back to plaintext. (The HTTP source factory skips
+ * its id-based bag on scheme HTTP before calling this.)
  */
 export function readTlsServerOptions(
   props: Readonly<Record<string, unknown>>,
 ): TlsServerOptions | undefined {
-  const tls = readTlsObject(props);
+  const tls = readTlsBag(props);
   if (!tls) return undefined;
-  const cert = tls['cert'] as string | undefined;
-  const key = tls['key'] as string | undefined;
-  if (!cert || !key) return undefined;
-  return {
-    cert,
-    key,
-    ca: tls['ca'] as string | undefined,
-    requireClientCert: tls['requireClientCert'] as boolean | undefined,
-  };
+  const cert = readPem(tls, 'cert');
+  const key = readPem(tls, 'key');
+  assertKeyPair(cert, key);
+  if (cert === undefined || key === undefined) {
+    throw new Error('TLS configuration is incomplete: a tls object is set but tls.cert and tls.key are missing');
+  }
+  return { cert, key, ca: readPem(tls, 'ca'), requireClientCert: tls['requireClientCert'] as boolean | undefined };
 }
 
 /**
  * Read TLS client options from a connector's raw property bag.
- * Returns undefined when TLS is not enabled; any object, even `{}`, enables it.
- * @throws Error when `tls` is present but not an object.
+ * Returns undefined when TLS is not configured. A client certificate is
+ * optional, but one without its key (or a key without its certificate) throws.
  */
 export function readTlsClientOptions(
   props: Readonly<Record<string, unknown>>,
 ): TlsClientOptions | undefined {
-  const tls = readTlsObject(props);
+  const tls = readTlsBag(props);
   if (!tls) return undefined;
-  return {
-    cert: tls['cert'] as string | undefined,
-    key: tls['key'] as string | undefined,
-    ca: tls['ca'] as string | undefined,
-    rejectUnauthorized: tls['rejectUnauthorized'] as boolean | undefined,
-  };
+  const cert = readPem(tls, 'cert');
+  const key = readPem(tls, 'key');
+  assertKeyPair(cert, key);
+  return { cert, key, ca: readPem(tls, 'ca'), rejectUnauthorized: tls['rejectUnauthorized'] as boolean | undefined };
 }

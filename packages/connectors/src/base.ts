@@ -81,10 +81,20 @@ export function dispatchFailure(result: Result<DispatchResult>): Error | null {
 /** Callback provided by the engine to process incoming messages. */
 export type MessageDispatcher = (raw: RawMessage) => Promise<Result<DispatchResult>>;
 
+/**
+ * Called by a source that has stopped itself because of an error it cannot
+ * get past on its own (a message the pipeline never stores). The engine stops
+ * the channel and raises an event and an alert; an operator fixes the cause
+ * and starts the channel again.
+ */
+export type SourceFatalHandler = (error: Error) => void;
+
 /** Source connector that receives messages and dispatches them into the pipeline. */
 export interface SourceConnectorRuntime extends ConnectorLifecycle {
   /** Set the callback used to dispatch messages to the engine. */
   setDispatcher(dispatcher: MessageDispatcher): void;
+  /** Set the callback for a fatal error; only sources that can stop themselves have it. */
+  setFatalHandler?(handler: SourceFatalHandler): void;
 }
 
 // ----- Destination Connector -----
