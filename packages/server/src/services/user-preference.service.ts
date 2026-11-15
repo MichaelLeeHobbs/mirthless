@@ -105,15 +105,23 @@ export class UserPreferenceService {
     });
   }
 
-  /** Bulk upsert multiple preferences. */
+  /**
+   * Bulk upsert multiple preferences. An empty list is a no-op, and a key
+   * repeated in one batch takes its last value (Postgres rejects an INSERT ...
+   * ON CONFLICT that touches the same row twice).
+   */
   static async bulkUpsert(
     userId: string,
     entries: readonly { readonly key: string; readonly value: string | null }[],
   ): Promise<Result<readonly UserPreferenceEntry[]>> {
     return tryCatch(async () => {
+      const latest = new Map<string, string | null>();
+      for (const e of entries) latest.set(e.key, e.value);
+      if (latest.size === 0) return [];
+
       const rows = await db
         .insert(userPreferences)
-        .values(entries.map((e) => ({ userId, key: e.key, value: e.value })))
+        .values([...latest].map(([key, value]) => ({ userId, key, value })))
         .onConflictDoUpdate({
           target: [userPreferences.userId, userPreferences.key],
           set: { value: sql`excluded.value` },

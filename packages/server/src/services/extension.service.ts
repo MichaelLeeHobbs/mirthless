@@ -99,13 +99,14 @@ export class ExtensionService {
         throw new ServiceError('NOT_FOUND', `Extension "${id}" not found`);
       }
 
-      await SettingsService.upsert({
+      const upsert = await SettingsService.upsert({
         key: settingsKey(ext.id),
         value: String(enabled),
         type: 'boolean',
         description: `Enable/disable ${ext.name} extension`,
         category: 'extensions',
       });
+      if (!upsert.ok) throw upsert.error;
 
       return { ...ext, enabled };
     });

@@ -4,6 +4,7 @@
 // Zod schemas for channel export/import payloads.
 
 import { z } from 'zod/v4';
+import { sourceConnectorTypeSchema, destinationConnectorTypeSchema } from './channel.schema.js';
 
 // ----- Export Schema -----
 
@@ -131,10 +132,36 @@ type CollisionMode = typeof COLLISION_MODE[keyof typeof COLLISION_MODE];
 export { COLLISION_MODE };
 export type { CollisionMode };
 
+/**
+ * Refuse connector types the registry cannot build in their position, naming
+ * the channel (and destination) so the client can find it in a large file.
+ * Import writes channels straight to the database, so it checks what the
+ * channel API checks. The export and backup schemas keep plain strings, so a
+ * channel saved before this check still exports and a backup holding one
+ * still restores.
+ */
+function checkImportConnectorTypes(channel: z.infer<typeof channelExportEntrySchema>, ctx: z.RefinementCtx): void {
+  if (!sourceConnectorTypeSchema.safeParse(channel.sourceConnectorType).success) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['sourceConnectorType'],
+      message: `Channel "${channel.name}": ${channel.sourceConnectorType} cannot be a source connector`,
+    });
+  }
+  channel.destinations.forEach((dest, i) => {
+    if (destinationConnectorTypeSchema.safeParse(dest.connectorType).success) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: ['destinations', i, 'connectorType'],
+      message: `Channel "${channel.name}", destination "${dest.name}": ${dest.connectorType} cannot be a destination connector`,
+    });
+  });
+}
+
 export const channelImportSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  channels: z.array(channelExportEntrySchema),
+  channels: z.array(channelExportEntrySchema.superRefine(checkImportConnectorTypes)),
   collisionMode: z.enum(['SKIP', 'OVERWRITE', 'CREATE_NEW']),
 });
 

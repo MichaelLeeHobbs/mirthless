@@ -154,6 +154,7 @@ export {
   SftpReceiver,
   SftpDispatcher,
   joinRemote,
+  createSsh2SftpClient,
   validateAuth,
   makeHostVerifier,
   buildConnectOptions,

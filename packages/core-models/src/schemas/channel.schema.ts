@@ -3,7 +3,7 @@
 // ===========================================
 
 import { z } from 'zod/v4';
-import { CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '../constants.js';
+import { CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES } from '../constants.js';
 import { filterInputSchema } from './filter.schema.js';
 import { transformerInputSchema } from './transformer.schema.js';
 

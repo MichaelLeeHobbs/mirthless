@@ -6,8 +6,11 @@ property keys each connector actually reads, sourced from
 `packages/connectors/src/registry.ts` (the registry is the source of truth). Defaults
 shown are the values the registry applies when a property is omitted.
 
-Source types: `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `CHANNEL`, `DICOM`, `EMAIL`, `KAFKA`, `AMQP`
-Destination types: `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `SMTP`, `CHANNEL`, `FHIR`, `DICOM`, `KAFKA`, `AMQP`
+Source types (11): `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `CHANNEL`, `DICOM`, `EMAIL`, `SFTP`, `KAFKA`, `AMQP`
+
+Destination types (12): `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `SMTP`, `CHANNEL`, `FHIR`, `DICOM`, `SFTP`, `KAFKA`, `AMQP`
+
+That is 13 connector types in all: `EMAIL` is source only, and `SMTP` and `FHIR` are destination only.
 
 The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`; their delivery guarantees are in D-266.
 
@@ -53,12 +56,13 @@ Polls a directory and ingests files.
 | `moveToDirectory` | `''` | Target when `postAction=MOVE`. |
 
 ### DATABASE (source)
-Polls a PostgreSQL database with a select query.
+Polls a PostgreSQL or MySQL database with a select query.
 
 | Property | Default | Notes |
 |---|---|---|
+| `vendor` | `postgresql` | `postgresql` or `mysql`. |
 | `host` | — (required) | DB host. |
-| `port` | `5432` | DB port. |
+| `port` | `5432` (`3306` for `mysql`) | DB port. |
 | `database` | — (required) | Database name. |
 | `username` | — (required) | DB user. |
 | `password` | — (required) | DB password. |
@@ -67,6 +71,7 @@ Polls a PostgreSQL database with a select query.
 | `updateMode` | `NEVER` | When to run `updateQuery`. |
 | `pollingIntervalMs` | `5000` | Poll interval. |
 | `rowFormat` | `JSON` | Row serialization format. |
+| `tls` | `false` | `true` connects with TLS and verifies the server certificate against the system's trusted CAs. |
 
 ### JAVASCRIPT (source)
 Runs a user script on a timer to generate messages.
@@ -117,8 +122,31 @@ Polls a mailbox (IMAP/POP3).
 | `subjectFilter` | `''` | Only ingest matching subjects. |
 | `includeAttachments` | `false` | Attach message attachments. |
 
+### SFTP (source)
+Polls a directory on an SFTP server, sends each matching file through the channel, then deletes, moves or leaves it. Files are read in name order. Source map: `originalFilename`, `remoteDirectory`, `fileSize`, `lastModified`.
+
+| Property | Default | Notes |
+|---|---|---|
+| `host` | — (required) | SFTP server host. |
+| `port` | `22` | 1 to 65535. |
+| `username` | — (required) | Login user. |
+| `password` | — | Password login. Set `password`, `privateKey` or both; deploy fails with neither. |
+| `privateKey` | — | Private key (PEM or OpenSSH text) for key login. |
+| `passphrase` | — | Passphrase for an encrypted `privateKey`. |
+| `strictHostKey` | `true` | Verify the server's host key against `hostKey`. With no `hostKey` set, every connection is refused. |
+| `hostKey` | — | The server's public host key, base64 (the key field of a `known_hosts` line, without the key type). |
+| `remoteDirectory` | — (required) | Directory to poll. |
+| `filePattern` | `*` | Glob (`*` / `?` wildcards). |
+| `pollingIntervalMs` | `5000` | Poll interval; at least 100. |
+| `minFileAgeMs` | `1000` | Skip files modified more recently than this (still being written). |
+| `afterProcessing` | `DELETE` | After read: `DELETE` / `MOVE` / `NONE`. |
+| `moveToDirectory` | `''` | Target when `afterProcessing=MOVE`; required then, and created if missing. |
+| `charset` | `utf-8` | Read encoding; an encoding the runtime cannot decode fails the deploy. |
+
+A file the channel recorded with an error, or whose delete or move failed after it was sent, is left in place and not read again. The list of those files is kept in `.galvaniflow-quarantine.json` in the remote directory, so it survives a restart; that file is never read as a message.
+
 ### KAFKA (source)
-Reads a topic as a member of a consumer group and commits a record only after the channel has stored it. Source map: `topic`, `partition`, `offset`, `key`, `headers`, `timestamp`.
+Reads a topic as a member of a consumer group and commits a record only after the channel has stored it. Source map: `topic`, `partition`, `offset`, `key`, `headers`, `timestamp`, and `charsetError` when a UTF-8 payload had invalid bytes. The key and header values are always read as UTF-8, whatever `charset` is set to; `charset` applies to the record value only.
 
 | Property | Default | Notes |
 |---|---|---|
@@ -127,13 +155,15 @@ Reads a topic as a member of a consumer group and commits a record only after th
 | `topic` | — (required) | An existing topic. |
 | `groupId` | — (required) | Consumer group; one per channel. |
 | `startFrom` | `EARLIEST` | `EARLIEST` or `LATEST`, for a group with no committed offset. |
+| `maxStoreAttempts` | `5` | Failures in a row to store the same record before the source stops (1 to 1000). The record is not committed; the channel stops, an ERROR `CHANNEL_STOPPED` event is recorded and a `SOURCE_CONNECTOR` alert fires. Fix the cause and start the channel; it reads that record first. |
+| `charset` | `utf-8` | How the record value becomes message text: `utf-8`, `latin1` (ISO-8859-1), `windows-1252`, or `base64` to keep a binary payload intact. In `utf-8` mode a value with invalid bytes is stored with them replaced by U+FFFD, flagged with `charsetError` in the source map, and logged as a warning. `windows-1252` needs a Node with full ICU (the official builds have it); without it the deploy fails. A record that cannot be converted counts as a failed store attempt toward `maxStoreAttempts`. |
 | `saslMechanism` | `NONE` | `NONE`, `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`. |
 | `saslUsername`, `saslPassword` | `''` | Required with a mechanism. |
 | `useTls` | `false` | TLS to the brokers. |
 | `tls` | — | `caCertId`, `clientCertId` (certificate store ids), `rejectUnauthorized` (default `true`). |
 
 ### AMQP (source)
-Consumes an existing RabbitMQ (AMQP 0-9-1) queue and acks a message only after the channel has stored it. Source map: `queue`, `exchange`, `routingKey`, `redelivered`, `headers`, and `messageId`/`contentType` when set.
+Consumes an existing RabbitMQ (AMQP 0-9-1) queue and acks a message only after the channel has stored it. Source map: `queue`, `exchange`, `routingKey`, `redelivered`, `headers`, `messageId`/`contentType` when set, and `charsetError` when a UTF-8 payload had invalid bytes.
 
 | Property | Default | Notes |
 |---|---|---|
@@ -142,6 +172,8 @@ Consumes an existing RabbitMQ (AMQP 0-9-1) queue and acks a message only after t
 | `vhost` | `/` | Virtual host. |
 | `username`, `password` | `''` | Login; the broker's default when empty. |
 | `queue` | — (required) | An existing queue; never declared. |
+| `charset` | `utf-8` | As for Kafka, for the message body. A message that cannot be converted goes back to the queue and counts toward `maxStoreAttempts`. |
+| `maxStoreAttempts` | `5` | As for Kafka. The message is neither acked nor dead-lettered; it stays on the queue. Failures are counted per AMQP `messageId`. A message without one is counted in a row, which assumes it comes straight back before the messages behind it: true for a classic queue with prefetch 1, not promised by a quorum queue, so set a `messageId` on messages sent to a quorum queue. The broker's `x-delivery-count` is not used, because RabbitMQ 4.x does not raise it for the `nack` with requeue this source returns a message with. It does raise it when a connection closes with the message unacknowledged, which happens each time this cap stops the channel (and on a lost connection); a quorum queue drops the message, or dead-letters it if it has a dead-letter exchange, once that count passes its delivery-limit (20 by default from RabbitMQ 4.0). On RabbitMQ 3.x a requeue counts too, so keep `maxStoreAttempts` below the queue's delivery-limit, or the broker removes the message first. |
 | `useTls`, `tls` | `false` | As for Kafka. |
 
 ---
@@ -182,18 +214,20 @@ Writes the message to a file.
 | `appendMode` | `false` | Append instead of overwrite. |
 
 ### DATABASE (destination)
-Runs an insert/update query against PostgreSQL.
+Runs an insert/update query against PostgreSQL or MySQL.
 
 | Property | Default | Notes |
 |---|---|---|
+| `vendor` | `postgresql` | `postgresql` or `mysql`. |
 | `host` | — (required) | DB host. |
-| `port` | `5432` | DB port. |
+| `port` | `5432` (`3306` for `mysql`) | DB port. |
 | `database` | — (required) | Database name. |
 | `username` | — (required) | DB user. |
 | `password` | — (required) | DB password. |
 | `query` | — (required) | Parameterized write query. |
 | `useTransaction` | `false` | Wrap in a transaction. |
 | `returnGeneratedKeys` | `false` | Return generated keys. |
+| `tls` | `false` | As for the source. |
 
 ### JAVASCRIPT (destination)
 Runs a user script to dispatch the message however you like.
@@ -261,6 +295,15 @@ DICOM C-STORE SCU — sends objects to a PACS.
 | `maxRetries` | `3` | Retry attempts. |
 | `retryDelayMs` | `1000` | Delay between retries. |
 | `timeoutMs` | `30000` | Association timeout. |
+
+### SFTP (destination)
+Writes the message to a file on an SFTP server, as UTF-8. Each send opens its own connection, creates `remoteDirectory` if it is missing, writes the file and disconnects; a send that takes over 30 seconds is an error. The response content is the remote path written. Connection properties (`host`, `port`, `username`, `password`, `privateKey`, `passphrase`, `strictHostKey`, `hostKey`) as for the source.
+
+| Property | Default | Notes |
+|---|---|---|
+| `remoteDirectory` | — (required) | Output directory. |
+| `fileNameTemplate` | `${messageId}.dat` | File name; `${messageId}` and `${timestamp}` are filled per message, and any other `${name}` fails the deploy. |
+| `appendMode` | `false` | Append to an existing file instead of overwriting it. |
 
 ### KAFKA (destination)
 Publishes to a topic; SENT once every in-sync replica has the record (acks=all). Connection properties (`brokers`, `clientId`, SASL, TLS) as for the source.

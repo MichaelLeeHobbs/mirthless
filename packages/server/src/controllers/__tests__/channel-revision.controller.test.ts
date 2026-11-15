@@ -60,6 +60,28 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('ChannelRevisionController.list', () => {
+  it('answers 404 with the service error when the channel does not exist', async () => {
+    mockService.listRevisions.mockResolvedValue({ ok: false, error: new ServiceError('NOT_FOUND', 'Channel not found') });
+    const res = makeRes();
+
+    await ChannelRevisionController.list(makeReq(['channels:read']), res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'NOT_FOUND', message: 'Channel not found' } });
+  });
+
+  it('answers 500 with a generic body for an error that is not a service error', async () => {
+    mockService.listRevisions.mockResolvedValue({ ok: false, error: new Error('connection refused') });
+    const res = makeRes();
+
+    await ChannelRevisionController.list(makeReq(['channels:read']), res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+  });
+});
+
 describe('ChannelRevisionController.getByRevision', () => {
   it('masks snapshot credentials for a caller without channels:write', async () => {
     mockService.getRevision.mockResolvedValue({ ok: true, value: makeRevision() });

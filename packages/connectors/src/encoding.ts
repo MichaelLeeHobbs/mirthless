@@ -7,6 +7,8 @@
 // poll/write. The file connectors refuse an unknown value at deploy (see
 // isKnownEncoding): decoding with the wrong charset corrupts text in silence.
 
+import type { QueueCharset } from '@galvaniflow/core-models';
+
 const ALIASES: Readonly<Record<string, BufferEncoding>> = {
   'utf8': 'utf8',
   'utf-8': 'utf8',
@@ -43,6 +45,68 @@ export function normalizeEncoding(charset: string | undefined | null): BufferEnc
 export function isKnownEncoding(charset: string | undefined | null): boolean {
   if (typeof charset !== 'string' || charset.length === 0) return true;
   return Object.hasOwn(ALIASES, charset.toLowerCase());
+}
+
+/** A payload as text, and whether bytes had to be replaced to get there. */
+export interface DecodedPayload {
+  readonly text: string;
+  /** True when the bytes were not valid UTF-8 and invalid ones became U+FFFD. */
+  readonly replaced: boolean;
+}
+
+/** What a queue source puts in the source map (`charsetError`) for a payload that was not valid UTF-8. */
+export const INVALID_UTF8_MESSAGE = 'Payload is not valid UTF-8; invalid bytes were replaced with U+FFFD. Set the source charset to match the sender.';
+
+/** `fatal` makes invalid UTF-8 throw instead of being replaced in silence; `ignoreBOM` keeps a BOM as Buffer.toString does. */
+const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+/**
+ * Built on first use: a Node without full ICU throws for windows-1252, and at
+ * module load that would take every connector down with it.
+ */
+let windows1252: InstanceType<typeof TextDecoder> | null = null;
+function windows1252Decoder(): InstanceType<typeof TextDecoder> {
+  windows1252 ??= new TextDecoder('windows-1252');
+  return windows1252;
+}
+
+/**
+ * Throw when this server cannot decode `charset`, so a queue source set to it
+ * fails to deploy instead of failing on every message. Only windows-1252 can
+ * be missing (a Node built without full ICU).
+ */
+export function assertCharsetAvailable(charset: QueueCharset | undefined): void {
+  if (charset !== 'windows-1252') return;
+  try {
+    windows1252Decoder();
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(`Charset windows-1252 is not available on this server (${reason}); Node needs full ICU. Choose another charset.`, { cause: err });
+  }
+}
+
+/**
+ * Decode a queue payload (Kafka, AMQP) with the source's charset. In UTF-8
+ * mode a payload that is not valid UTF-8 is still decoded (invalid bytes
+ * become U+FFFD) but reported, so the caller can flag it.
+ */
+export function decodePayload(bytes: Buffer, charset: QueueCharset): DecodedPayload {
+  switch (charset) {
+    case 'utf-8':
+      try {
+        return { text: STRICT_UTF8.decode(bytes), replaced: false };
+      } catch {
+        return { text: bytes.toString('utf8'), replaced: true };
+      }
+    case 'latin1':
+    case 'base64':
+      return { text: bytes.toString(charset), replaced: false };
+    case 'windows-1252':
+      return { text: windows1252Decoder().decode(bytes), replaced: false };
+    default: {
+      const unreachable: never = charset;
+      throw new Error(`Unknown charset ${String(unreachable)}`);
+    }
+  }
 }
 
 /** Error text for a charset that failed {@link isKnownEncoding}. */

@@ -26,6 +26,25 @@ export const clientTlsRefSchema = z.object({
 /** Name/value pairs sent with each message; values may use `${name}`. */
 const headers = z.record(z.string(), z.string()).default({});
 
+/**
+ * How a queue source turns a payload's bytes into message text. `latin1` is
+ * ISO-8859-1. `base64` keeps a binary payload (a PDF, an image, Avro) intact
+ * as base64 text.
+ */
+export const QUEUE_CHARSETS = ['utf-8', 'latin1', 'windows-1252', 'base64'] as const;
+export type QueueCharset = (typeof QUEUE_CHARSETS)[number];
+
+const charset = z.enum(QUEUE_CHARSETS).default('utf-8');
+
+/**
+ * Failures in a row to store the same message before a queue source stops the
+ * channel. Without a cap, a message the store always rejects blocks its queue
+ * or partition forever. The message is left on the queue (not acknowledged,
+ * committed or dead-lettered) for when the channel is started again.
+ */
+export const DEFAULT_MAX_STORE_ATTEMPTS = 5;
+const maxStoreAttempts = z.coerce.number().int().min(1).max(1_000).default(DEFAULT_MAX_STORE_ATTEMPTS);
+
 // ----- Kafka -----
 
 export const KAFKA_SASL_MECHANISMS = ['NONE', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512'] as const;
@@ -62,6 +81,8 @@ export const kafkaSourcePropertiesSchema = z.object({
   topic: required,
   groupId: required,
   startFrom: z.enum(KAFKA_START_FROM).default('EARLIEST'),
+  charset,
+  maxStoreAttempts,
 }).refine(saslHasUsername, saslUsernameIssue);
 export type KafkaSourceProperties = z.infer<typeof kafkaSourcePropertiesSchema>;
 
@@ -94,6 +115,8 @@ export const amqpSourcePropertiesSchema = z.object({
   ...amqpConnection,
   /** An existing queue; the connector never declares one. */
   queue: required,
+  charset,
+  maxStoreAttempts,
 });
 export type AmqpSourceProperties = z.infer<typeof amqpSourcePropertiesSchema>;
 

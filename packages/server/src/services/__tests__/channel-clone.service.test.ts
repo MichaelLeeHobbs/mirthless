@@ -82,6 +82,7 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   count: vi.fn(() => 'count_agg'),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
+  sql: vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ type: 'sql', text: strings.join('?'), values })),
 }));
 
 vi.mock('../../lib/event-emitter.js', () => ({
@@ -107,6 +108,8 @@ vi.mock('../../lib/logger.js', () => ({
 // Must import after mocks
 const { ChannelService } = await import('../channel.service.js');
 const { emitEvent } = await import('../../lib/event-emitter.js');
+const { channels, channelConnectors, channelFilters, filterRules, channelTransformers, transformerSteps, codeTemplateLibraries } =
+  await import('../../db/schema/index.js');
 
 // ----- Fixtures -----
 
@@ -188,6 +191,10 @@ function setupGetByIdMocks(
     scripts?: unknown[];
     destinations?: unknown[];
     metadataColumns?: unknown[];
+    filters?: unknown[];
+    filterRules?: unknown[];
+    transformers?: unknown[];
+    transformerSteps?: unknown[];
   },
 ): void {
   pushResponse([channel]);                                                    // findChannel
@@ -195,10 +202,10 @@ function setupGetByIdMocks(
   pushResponse(relations?.destinations ?? [], { orderable: true });           // destinations
   pushResponse(relations?.metadataColumns ?? []);                             // metadataColumns
   pushResponse([]);                                                           // tags
-  pushResponse([]);                                                           // filters
-  pushResponse([]);                                                           // filter rules
-  pushResponse([]);                                                           // transformers
-  pushResponse([]);                                                           // transformer steps
+  pushResponse(relations?.filters ?? []);                                     // filters
+  pushResponse(relations?.filterRules ?? []);                                 // filter rules
+  pushResponse(relations?.transformers ?? []);                                // transformers
+  pushResponse(relations?.transformerSteps ?? []);                            // transformer steps
 }
 
 function setupCreateMocks(channel: Record<string, unknown>): void {
@@ -231,16 +238,30 @@ function setupCreateMocks(channel: Record<string, unknown>): void {
         };
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      update: txUpdate,
     };
     return fn(tx);
   });
 }
+
+// Records every tx.update(table).set(values).where(condition) in the create transaction.
+interface RecordedUpdate { table: unknown; values: Record<string, unknown>; condition: unknown }
+let txUpdates: RecordedUpdate[] = [];
+const txUpdate = vi.fn((table: unknown) => ({
+  set: (values: Record<string, unknown>) => ({
+    where: (condition: unknown) => {
+      txUpdates.push({ table, values, condition });
+      return Promise.resolve(undefined);
+    },
+  }),
+}));
 
 // ----- Tests -----
 
 beforeEach(() => {
   vi.clearAllMocks();
   resetSelectState();
+  txUpdates = [];
   mockSet.mockReturnValue({ where: mockUpdateWhere });
   mockUpdateWhere.mockResolvedValue(undefined);
   mockDeleteWhere.mockResolvedValue(undefined);
@@ -491,5 +512,113 @@ describe('ChannelService.clone', () => {
     expect(createSpy.mock.calls[0]![0].description).toBe('');
 
     createSpy.mockRestore();
+  });
+
+  it('copies the source filter, a destination transformer and a response transformer onto the clone', async () => {
+    // The source's destinations have metaDataIds 1 and 3 (2 was deleted). The
+    // clone renumbers them 1 and 2, so the transformer on the second
+    // destination must land on the clone's second destination row.
+    const destinations = [
+      { ...DESTINATIONS[0]!, id: 'd1', metaDataId: 1, responseTransformer: null },
+      { ...DESTINATIONS[1]!, id: 'd3', metaDataId: 3, responseTransformer: 'responseStatus = SENT;' },
+    ];
+    setupGetByIdMocks(makeChannel(), {
+      destinations,
+      filters: [{ id: 'f1', connectorId: null }],
+      filterRules: [{
+        id: 'r1', filterId: 'f1', sequenceNumber: 0, enabled: true, name: 'ADT only',
+        operator: 'AND', type: 'JAVASCRIPT', script: 'return msg.MSH[9] === "ADT";',
+        field: null, condition: null, values: null,
+      }],
+      transformers: [{
+        id: 't1', connectorId: 'd3', inboundDataType: 'HL7V2', outboundDataType: 'XML',
+        inboundProperties: {}, outboundProperties: {}, inboundTemplate: null, outboundTemplate: null,
+      }],
+      transformerSteps: [{
+        id: 'st1', transformerId: 't1', sequenceNumber: 0, enabled: true, name: 'Set MRN',
+        type: 'JAVASCRIPT', script: 'tmp.mrn = msg.PID[3];', sourceField: null, targetField: null,
+        defaultValue: null, mapping: null,
+      }],
+    });
+    setupCreateMocks(makeClonedChannel());
+
+    const inserted = new Map<unknown, unknown[]>();
+    const returnedRows = new Map<unknown, unknown[]>([
+      [channels, [makeClonedChannel()]],
+      [channelConnectors, [{ id: 'new-d1', metaDataId: 1 }, { id: 'new-d2', metaDataId: 2 }]],
+      [channelFilters, [{ id: 'new-f1' }]],
+      [channelTransformers, [{ id: 'new-t1' }]],
+    ]);
+    mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
+      insert: (table: unknown) => ({
+        values: (values: unknown) => {
+          inserted.set(table, [...(inserted.get(table) ?? []), values]);
+          const rows = returnedRows.get(table) ?? [];
+          return Object.assign(Promise.resolve(rows), { returning: vi.fn().mockResolvedValue(rows) });
+        },
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      update: txUpdate,
+    }));
+
+    const result = await ChannelService.clone(CHANNEL_ID, 'Cloned Channel');
+    expect(result.ok).toBe(true);
+
+    // Source filter: no connector, with its rule.
+    expect(inserted.get(channelFilters)).toEqual([{ channelId: CLONED_ID, connectorId: null }]);
+    expect(inserted.get(filterRules)).toEqual([[
+      expect.objectContaining({ filterId: 'new-f1', name: 'ADT only', script: 'return msg.MSH[9] === "ADT";' }),
+    ]]);
+    // Destination transformer: on the clone's second destination, not the source's d3.
+    expect(inserted.get(channelTransformers)).toEqual([
+      expect.objectContaining({ channelId: CLONED_ID, connectorId: 'new-d2', outboundDataType: 'XML' }),
+    ]);
+    expect(inserted.get(transformerSteps)).toEqual([[
+      expect.objectContaining({ transformerId: 'new-t1', name: 'Set MRN', script: 'tmp.mrn = msg.PID[3];' }),
+    ]]);
+    // Response transformer travels with its destination.
+    const destValues = inserted.get(channelConnectors)?.[0] as readonly Record<string, unknown>[];
+    expect(destValues[1]).toEqual(expect.objectContaining({ metaDataId: 2, responseTransformer: 'responseStatus = SENT;' }));
+  });
+
+  it('fails without creating a clone when a filter names a connector the channel does not have', async () => {
+    setupGetByIdMocks(makeChannel(), {
+      destinations: DESTINATIONS,
+      filters: [{ id: 'f1', connectorId: 'missing-connector' }],
+    });
+
+    const result = await ChannelService.clone(CHANNEL_ID, 'Cloned Channel');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toHaveProperty('code', 'INTERNAL');
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it('adds the clone to the code template libraries that list the original, inside the create transaction', async () => {
+    setupGetByIdMocks(makeChannel());
+    setupCreateMocks(makeClonedChannel());
+
+    const result = await ChannelService.clone(CHANNEL_ID, 'Cloned Channel');
+
+    expect(result.ok).toBe(true);
+    const libraryUpdates = txUpdates.filter((u) => u.table === codeTemplateLibraries);
+    expect(libraryUpdates).toHaveLength(1);
+    // Only libraries whose list contains the original (a null list matches nothing in SQL).
+    expect(libraryUpdates[0]!.condition).toEqual(expect.objectContaining({ values: [expect.anything(), JSON.stringify([CHANNEL_ID])] }));
+    // The clone's id is appended to the list.
+    expect(libraryUpdates[0]!.values['channelIds']).toEqual(expect.objectContaining({ values: [expect.anything(), JSON.stringify([CLONED_ID])] }));
+  });
+
+  it('does not touch code template libraries when creating a channel that is not a clone', async () => {
+    setupCreateMocks(makeClonedChannel());
+
+    const result = await ChannelService.create({
+      name: 'Fresh', description: '', enabled: false, inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
+      sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: {}, responseMode: 'AUTO_AFTER_DESTINATIONS',
+    } as Parameters<typeof ChannelService.create>[0]);
+
+    expect(result.ok).toBe(true);
+    expect(txUpdates.filter((u) => u.table === codeTemplateLibraries)).toEqual([]);
   });
 });

@@ -35,6 +35,20 @@ export function signRefreshToken(payload: Omit<JwtPayload, 'type'>): string {
   });
 }
 
+/**
+ * When a token signed here expires, read from its `exp` claim. The session row
+ * and the refresh cookie take their lifetime from this, so the duration in
+ * JWT_REFRESH_EXPIRES_IN is parsed once, by jsonwebtoken, for all three.
+ * Throws if the token carries no `exp`, which a token from this module always has.
+ */
+export function tokenExpiresAt(token: string): Date {
+  const decoded = jwt.decode(token);
+  if (decoded === null || typeof decoded === 'string' || decoded.exp === undefined) {
+    throw new Error('Token has no exp claim');
+  }
+  return new Date(decoded.exp * 1000);
+}
+
 export function verifyAccessToken(token: string): JwtPayload {
   const decoded = jwt.verify(token, config.JWT_SECRET, { algorithms: [JWT_ALGORITHM] }) as JwtPayload;
   if (decoded.type !== 'access') {

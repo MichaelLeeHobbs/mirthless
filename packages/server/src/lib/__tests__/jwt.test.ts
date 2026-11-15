@@ -12,7 +12,24 @@ vi.mock('../../config/index.js', () => ({
   },
 }));
 
-const { signRefreshToken, verifyRefreshToken } = await import('../jwt.js');
+const { signRefreshToken, verifyRefreshToken, tokenExpiresAt } = await import('../jwt.js');
+const jwt = (await import('jsonwebtoken')).default;
+
+describe('tokenExpiresAt', () => {
+  it('returns the exp claim of a refresh token, set by JWT_REFRESH_EXPIRES_IN', () => {
+    const expiresAt = tokenExpiresAt(signRefreshToken({ userId: 'u1' }));
+    expect(Math.abs(expiresAt.getTime() - (Date.now() + 7 * 24 * 60 * 60 * 1000))).toBeLessThan(5_000);
+  });
+
+  it('throws for a token without an exp claim', () => {
+    const noExp = jwt.sign({ userId: 'u1' }, 'unit-test-secret-that-is-at-least-32-characters');
+    expect(() => tokenExpiresAt(noExp)).toThrow('Token has no exp claim');
+  });
+
+  it('throws for a value that is not a JWT', () => {
+    expect(() => tokenExpiresAt('not-a-token')).toThrow('Token has no exp claim');
+  });
+});
 
 describe('signRefreshToken', () => {
   it('issues a different token for each login, even in the same second', () => {

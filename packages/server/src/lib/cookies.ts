@@ -5,22 +5,23 @@
 
 import type { Response, CookieOptions } from 'express';
 import { config } from '../config/index.js';
+import { tokenExpiresAt } from './jwt.js';
 
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
-const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
 
-function getCookieOptions(): CookieOptions {
+/** The cookie lives as long as the refresh token it carries (JWT_REFRESH_EXPIRES_IN). */
+function getCookieOptions(refreshToken: string): CookieOptions {
   return {
     httpOnly: true,
     secure: config.NODE_ENV === 'production',
     sameSite: 'strict',
     path: '/api/v1/auth',
-    maxAge: REFRESH_TOKEN_MAX_AGE,
+    maxAge: Math.max(0, tokenExpiresAt(refreshToken).getTime() - Date.now()),
   };
 }
 
 export function setRefreshTokenCookie(res: Response, refreshToken: string): void {
-  res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, getCookieOptions());
+  res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, getCookieOptions(refreshToken));
 }
 
 export function clearRefreshTokenCookie(res: Response): void {
