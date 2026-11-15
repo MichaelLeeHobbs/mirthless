@@ -23,8 +23,8 @@ describe('renderDestinationTemplate', () => {
     ['a null value, from the next map', '<${none}>', '<second>'],
     ['an object value', '<${obj}>', '<{"a":1}>'],
     ['a bigint value', '<${big}>', '<10>'],
-    ['a function value', '<${fn}>', '<' + String(named) + '>'],
-    ['an inherited key', '<${toString}>', '<function toString() { [native code] }>'],
+    ['a function value', '<${fn}>', '<undefined>'],
+    ['an inherited key', '<${toString}>', '<${toString}>'],
     ['a value containing ${x}', '<${ref}>', '<${x}>'],
   ])('fills %s by the shared rule', (_label, template, expected) => {
     expect(renderDestinationTemplate(template, message, maps)).toBe(expected);

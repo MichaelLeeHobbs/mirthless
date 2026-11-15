@@ -6,17 +6,13 @@
 // `${message.encodedData}` the message itself. The template is filled once,
 // before the outbound content is stored, so a queued retry sends the same text.
 
+import { fillPlaceholders, recordLookup } from '@galvaniflow/core-util';
+
 /** Values a template can name besides the maps. */
 export interface TemplateMessage {
   readonly encoded: string;
   readonly raw: string;
   readonly messageId: number;
-}
-
-const REFERENCE = /\$\{([^}]+)\}/g;
-
-function asText(value: unknown): string {
-  return typeof value === 'string' ? value : typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
 /** One record of the maps' variables; for a name in several maps the first map's value wins. */
@@ -31,9 +27,10 @@ export function mergeVariables(maps: readonly Readonly<Record<string, unknown>>[
 }
 
 /**
- * Fill `${...}` references: `message.encodedData` (also `message.transformedData`),
- * `message.rawData` and `messageId`, then variables from the maps in the order
- * given. A reference nothing defines is left as written, so a mistake shows in
+ * Fill `${...}` references by the shared rule in {@link fillPlaceholders}:
+ * `message.encodedData` (also `message.transformedData`), `message.rawData`
+ * and `messageId`, then variables from the maps in the order given (own keys
+ * only). A reference nothing defines is left as written, so a mistake shows in
  * the sent content rather than silently becoming an empty string.
  */
 export function renderDestinationTemplate(
@@ -41,15 +38,18 @@ export function renderDestinationTemplate(
   message: TemplateMessage,
   maps: readonly Readonly<Record<string, unknown>>[],
 ): string {
-  return template.replace(REFERENCE, (whole, rawKey: string) => {
-    const key = rawKey.trim();
-    if (key === 'message.encodedData' || key === 'message.transformedData') return message.encoded;
-    if (key === 'message.rawData') return message.raw;
-    if (key === 'messageId') return String(message.messageId);
-    for (const map of maps) {
-      const value = map[key];
-      if (value !== undefined && value !== null) return asText(value);
+  const builtIns = recordLookup({
+    'message.encodedData': message.encoded,
+    'message.transformedData': message.encoded,
+    'message.rawData': message.raw,
+    messageId: String(message.messageId),
+  });
+  const variables = maps.map(recordLookup);
+  return fillPlaceholders(template, (name) => {
+    for (const lookup of [builtIns, ...variables]) {
+      const value = lookup(name);
+      if (value !== undefined && value !== null) return value;
     }
-    return whole;
+    return undefined;
   });
 }
