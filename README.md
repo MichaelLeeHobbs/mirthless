@@ -65,7 +65,7 @@ front of it, or set `WEB_BIND=0.0.0.0` in `.env` to try it from another machine.
 ### Documentation
 
 - [Quickstart: create your first channel](docs/user/quickstart-first-channel.md)
-- [Connector reference](docs/user/connector-reference.md) — all 10 connector types and their settings
+- [Which connectors can receive, which can send, and what can each do?](docs/user/connector-reference.md#connectors-at-a-glance) Every connector type, its settings and limits.
 - [Transformer scripting API](docs/user/scripting-api.md) — the sandbox surface for filters/transformers
 
 ### Operations
@@ -75,7 +75,7 @@ Running GalvaniFlow in production? See the operator guides in [`docs/ops/`](docs
 - [Deployment](docs/ops/deployment.md) — first install, required settings, listener ports, known limitations
 - [Backup & restore](docs/ops/backup-restore.md) — Postgres `pg_dump`/`pg_restore` plus the config backup API
 - [Upgrade procedure](docs/ops/upgrade.md) — migrations, downtime, and rollback
-- [TLS & PHI-in-transit](docs/ops/tls-and-phi.md) — edge TLS and connector-level TLS
+- [TLS & PHI-in-transit](docs/ops/tls-and-phi.md) — edge TLS, connector-level TLS, and how to check TLS is on
 - [Resource sizing & observability](docs/ops/resource-and-observability.md) — health, `/metrics`, logging, sizing
 - [Throughput benchmark](docs/ops/throughput-benchmark.md) — how to measure msgs/sec, with a baseline
 
@@ -102,7 +102,7 @@ packages/
 
 This is a working system with about 2,500 unit tests plus real-Postgres integration and Playwright end-to-end suites. You can create channels, write transformers in TypeScript, deploy them, send messages, and watch them flow through the pipeline. The 10 seeded example channels demonstrate HL7v2, JSON, XML, channel-to-channel routing, filtering, error handling, and more.
 
-What works: channels, pipeline, sandbox, 10 connector types, RBAC, audit logging, message browser, code templates, alerts, groups, tags, dark mode, CLI.
+What works: channels, pipeline, sandbox, 13 connector types, RBAC, audit logging, message browser, code templates, alerts, groups, tags, dark mode, CLI.
 
 What's next: visual flow builder (think Node-RED for healthcare), plugin system, clustering. See [ROADMAP](docs/progress/ROADMAP.md).
 

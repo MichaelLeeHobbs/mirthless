@@ -28,8 +28,7 @@ The source is the inbound side — where messages arrive.
    - **Host** — leave `0.0.0.0` to listen on all interfaces.
 3. Use **Test Connection** to sanity-check the binding, then save.
 
-See the [Connector Reference](./connector-reference.md) for every source type and its
-settings.
+See the [connector matrix](./connector-reference.md#connectors-at-a-glance) for every source type, and the connector reference for its settings.
 
 ## 3. Add a transformer
 
@@ -95,7 +94,6 @@ You can also point any HL7 sending application at `localhost:6661`.
 
 ## Next steps
 
-- Swap the destination for **HTTP**, **DATABASE**, **FHIR**, or **CHANNEL** to route
-  onward — see the [Connector Reference](./connector-reference.md).
+- Swap the destination for **HTTP**, **DATABASE** or **CHANNEL** to route onward; see the [Connector Reference](./connector-reference.md). A **FHIR** destination posts the message as-is, so an HL7 v2 message fails there: it needs a transformer that produces a FHIR resource first (see [FHIR](./connector-reference.md#fhir)).
 - Add **Code Templates** (reusable functions) and reference them from transformers.
 - Configure **Alerts** to notify on channel errors.

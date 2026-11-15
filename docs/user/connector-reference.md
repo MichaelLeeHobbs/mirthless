@@ -1,282 +1,605 @@
-# Connector Reference
+# Connector reference
 
-GalvaniFlow connectors are protocol adapters. A **source** connector receives inbound
-messages; a **destination** connector sends outbound. This reference documents the
-property keys each connector actually reads, sourced from
-`packages/connectors/src/registry.ts` (the registry is the source of truth). Defaults
-shown are the values the registry applies when a property is omitted.
+A connector is the part of a channel that talks to the outside world. A source connector receives messages into a channel; a destination connector sends them out.
 
-Source types: `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `CHANNEL`, `DICOM`, `EMAIL`, `KAFKA`, `AMQP`
-Destination types: `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `SMTP`, `CHANNEL`, `FHIR`, `DICOM`, `KAFKA`, `AMQP`
+Every property below is the key the connector reads from the channel's saved properties. Where the channel editor has no control for a key, the notes say so: set it through the REST API or in a channel export you import.
 
-The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`; their delivery guarantees are in D-266.
+## Connectors at a glance
 
----
+| Connector | Source | Destination | Covers | Transport security | Auth | Mirth equivalent |
+|---|---|---|---|---|---|---|
+| [TCP_MLLP](#tcp_mllp) | Yes | Yes | HL7 v2 (or other text) over TCP with MLLP or custom frame bytes | Optional TLS from raw PEM in a `tls` block, set through the API or an import (no editor control). A source `tls` block missing its cert or key listens in plaintext without an error (see [#98](https://github.com/MichaelLeeHobbs/mirthless/issues/98)); run the check in [tls-and-phi.md](../ops/tls-and-phi.md#check-tls-is-on) | Mutual TLS only; no other sign-in | TCP Listener / TCP Sender |
+| [HTTP](#http) | Yes | Yes | HTTP and HTTPS requests in either direction | `scheme` HTTPS with certificates from the certificate store. An HTTPS source with no server certificate refuses to deploy. A destination verifies the server certificate by default | Source: Basic or bearer token (API only), client certificates. Destination: Basic, custom headers, client certificate | HTTP Listener / HTTP Sender |
+| [FILE](#file) | Yes | Yes | Local disk and OS mounts only. No SMB, S3, FTP or WebDAV | None in the connector; protect the mount | File system permissions of the server process | File Reader / File Writer |
+| [SFTP](#sftp) | Yes | Yes | Files on a remote SFTP server | SSH, with host key checking on by default; an empty `hostKey` rejects every server | Password or private key | File Reader / File Writer with the sftp scheme, imported automatically by the Mirth importer |
+| [DATABASE](#database) | Yes | Yes | PostgreSQL and MySQL/MariaDB only. No SQL Server or Oracle | `tls` flag; when on, the server certificate is verified | Database username and password | Database Reader / Database Writer |
+| [JAVASCRIPT](#javascript) | Yes | Yes | Whatever a sandboxed script can produce or reach through the script bridges | Not applicable (runs in the server) | Not applicable | JavaScript Reader / JavaScript Writer |
+| [CHANNEL](#channel) | Yes | Yes | Another GalvaniFlow channel on the same server | Not applicable (in memory) | Not applicable | Channel Reader / Channel Writer |
+| [DICOM](#dicom) | Yes | Yes | DICOM C-STORE in and out | No TLS | None. The listener accepts any calling and called AE title | DICOM Listener / DICOM Sender |
+| [EMAIL](#email) | Yes | No | Reading an IMAP mailbox. POP3 refuses to deploy | `secure` (IMAP over TLS), on by default | Mailbox username and password | Email Reader |
+| [SMTP](#smtp) | No | Yes | Sending email only | `secure` (implicit TLS) and `requireTLS` (STARTTLS required); both off by default | Optional username and password | SMTP Sender |
+| [FHIR](#fhir) | No | Yes | Posting a message that is already a FHIR R4 resource. No HL7 v2 to FHIR mapping | HTTPS when `baseUrl` is https, with the Node trust store | None, Basic, bearer token or API key header | FHIR Sender (commercial extension in Mirth) |
+| [KAFKA](#kafka) | Yes | Yes | Kafka topics | `useTls` with a CA and client certificate from the certificate store | SASL PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512, or client certificate | none |
+| [AMQP](#amqp) | Yes | Yes | AMQP 0-9-1 brokers such as RabbitMQ | `useTls` with a CA and client certificate from the certificate store | Broker username and password, or client certificate | none |
 
-## Source connectors
+## TCP_MLLP
 
-### TCP_MLLP (source)
-HL7 lower-layer protocol over TCP.
+### TCP_MLLP: what it does
 
-| Property | Default | Notes |
+The source listens on a TCP port and reads framed messages, by default MLLP (0x0B before the message, 0x1C 0x0D after it). The destination opens pooled connections to a partner and sends each message in the same framing.
+
+The source answers every message. With `responseMode` AUTO_ACK it builds an HL7 ACK from the inbound MSH: AA when the pipeline accepted the message (a filtered message counts as accepted), AE when it failed. It never sends AR. With PASSTHROUGH it returns the response the pipeline produced, and falls back to the same ACK when there is none.
+
+The destination waits for the partner's acknowledgement and reads MSA-1. AA or CA is SENT. Anything else is an ERROR with the code and MSA-3 text in the error message: a NAK (AE, AR, CE, CR), a missing MSA-1, an acknowledgement it cannot parse, an MSA-2 that names a different message control ID, or the connection closing before an acknowledgement arrives. An ERROR is retried only if the destination's queue is on.
+
+### TCP_MLLP security
+
+TLS is turned on by the presence of a `tls` object holding PEM text. The channel editor has no TLS control for this connector, and the server does not resolve certificate IDs for it, so the PEM goes into the properties through the API or a channel import.
+
+On the source, `tls.cert` and `tls.key` must both be present. If either is missing, the connector treats the block as absent and listens in plaintext with no error or warning (issue [#98](https://github.com/MichaelLeeHobbs/mirthless/issues/98)). After deploying a TLS listener, run the check in [Check TLS is on](../ops/tls-and-phi.md#check-tls-is-on).
+
+On the destination, any `tls` object turns TLS on, even an empty one, and the partner's certificate is verified against `tls.ca` or the Node trust store unless `tls.rejectUnauthorized` is false.
+
+### TCP_MLLP as a source
+
+| Property | Required | Notes |
 |---|---|---|
-| `host` | `0.0.0.0` | Interface to bind. |
-| `port` | — (required) | TCP listen port. |
-| `maxConnections` | `10` | Concurrent inbound connections. |
+| `port` | Yes | Port to listen on, 1 to 65535. |
+| `host` | No | Interface to bind. Defaults to `0.0.0.0`, every interface. |
+| `maxConnections` | No | Most open connections at once. |
+| `responseMode` | No | `AUTO_ACK` (default) or `PASSTHROUGH`. See what it does. |
+| `charset` | No | Node encoding used to read and write frames, such as `utf-8` or `latin1`. |
+| `maxFrameBytes` | No | Most bytes buffered for one message before the connection is refused. |
+| `frameStart` | No | Start bytes in hex, such as `02` for STX. API or Mirth import only. Invalid hex refuses to deploy. |
+| `frameEnd` | No | End bytes in hex, such as `03` for ETX. API or Mirth import only. |
+| `tls.cert` | No | Server certificate chain, PEM. API only. Without `tls.key` the listener runs plaintext (#98). |
+| `tls.key` | No | Server private key, PEM. API only. Without `tls.cert` the listener runs plaintext (#98). |
+| `tls.ca` | No | CA bundle, PEM, used to verify client certificates. |
+| `tls.requireClientCert` | No | `true` requires and verifies a client certificate (mutual TLS). |
 
-### HTTP (source)
-HTTP listener.
+### TCP_MLLP as a destination
 
-| Property | Default | Notes |
+| Property | Required | Notes |
 |---|---|---|
-| `host` | `0.0.0.0` | Interface to bind. |
-| `port` | — (required) | Listen port. |
-| `path` | `/` | Request path to accept. |
-| `method` | `POST` | Accepted HTTP method. |
-| `responseContentType` | `text/plain` | Content-Type of the response. |
-| `responseStatusCode` | `200` | Status code returned to the caller. |
+| `host` | Yes | Partner host name or address. |
+| `port` | Yes | Partner port. |
+| `maxConnections` | No | Size of the connection pool. |
+| `responseTimeout` | No | Milliseconds to wait for the acknowledgement before the send is an ERROR. |
+| `acquireTimeoutMs` | No | Milliseconds to wait for a free pooled connection. |
+| `charset` | No | Node encoding used to write the message and read the acknowledgement. |
+| `frameStart` | No | Start bytes in hex. API or Mirth import only. |
+| `frameEnd` | No | End bytes in hex. API or Mirth import only. |
+| `tls.cert` | No | Client certificate, PEM, for mutual TLS. Any `tls` object turns TLS on. |
+| `tls.key` | No | Client private key, PEM. |
+| `tls.ca` | No | CA bundle, PEM, used to verify the partner. The Node trust store when empty. |
+| `tls.rejectUnauthorized` | No | Verification is on unless this is `false`. Set it false only for an audited exception. |
 
-### FILE (source)
-Polls a directory and ingests files.
+### TCP_MLLP limits
 
-| Property | Default | Notes |
+- A source `tls` block with a missing cert or key listens in plaintext without an error (#98).
+- No TLS control in the channel editor, and no certificate store support: TLS needs raw PEM in the properties.
+- The source sends AA or AE only. There is no setting to send AR or a custom acknowledgement apart from PASSTHROUGH.
+
+## HTTP
+
+### HTTP: what it does
+
+The source runs an HTTP or HTTPS server on its own port and accepts requests on one path and one method. A wrong method gets 405, a wrong path 404, failed authentication 401, a body over `maxBodyBytes` 413, and a Content-Type charset the server cannot decode 415. An accepted request answers `responseStatusCode` (a filtered message counts as accepted) and a pipeline failure answers `errorStatusCode`.
+
+The destination sends each message as the request body. A 2xx response is SENT. A 3xx is an ERROR because redirects are not followed, and any other status is an ERROR with the status in the message.
+
+### HTTP security
+
+Set `scheme` to `HTTPS` and pick certificates from the certificate store. At deploy the server replaces the certificate IDs with PEM.
+
+The source refuses to deploy when `scheme` is HTTPS and there is no `tls.serverCertId`, when that certificate has no private key, or when a referenced certificate does not exist. It cannot run plaintext by accident.
+
+The destination verifies the server certificate against `tls.caCertId` or the Node trust store. With `scheme` HTTPS, a client certificate without a private key refuses to deploy. With no `scheme` and an `https://` URL, the request uses the Node trust store; to trust a private CA that way, set `NODE_EXTRA_CA_CERTS` for the server.
+
+### HTTP as a source
+
+| Property | Required | Notes |
 |---|---|---|
-| `directory` | — (required) | Directory to poll. |
-| `fileFilter` | `*` | Glob (`*` / `?` wildcards). |
-| `pollingIntervalMs` | `5000` | Poll interval. |
-| `sortBy` | `NAME` | Processing order (`NAME`, etc.). |
-| `charset` | `utf-8` | Read encoding. |
-| `binary` | `false` | Read as binary (base64) vs text. |
-| `checkFileAge` | `true` | Skip files still being written. |
-| `fileAgeMs` | `1000` | Minimum file age before pickup. |
-| `postAction` | `DELETE` | After read: `DELETE` / `MOVE` / `NONE`. |
-| `moveToDirectory` | `''` | Target when `postAction=MOVE`. |
+| `port` | Yes | Port to listen on. |
+| `host` | No | Interface to bind. Defaults to `0.0.0.0`. |
+| `path` | No | Path to accept, `/` by default. |
+| `matchSubpaths` | No | `true` also accepts any path below `path` (`/api` takes `/api/report`, not `/apix`). API or Mirth import only. |
+| `method` | No | The one method accepted, `POST` by default. |
+| `responseContentType` | No | Content-Type of the reply. |
+| `responseStatusCode` | No | Status for an accepted message. |
+| `errorStatusCode` | No | Status when the pipeline fails. |
+| `maxBodyBytes` | No | Largest request body; a larger one gets 413. |
+| `auth.type` | No | `BASIC` or `TOKEN`. With no `auth` object, anyone who can reach the port can post. API only. |
+| `auth.username` | No | Expected Basic username. |
+| `auth.password` | No | Expected Basic password. |
+| `auth.token` | No | Expected bearer token, compared with `Authorization: Bearer <token>`. |
+| `scheme` | No | `HTTP` or `HTTPS`. HTTPS needs `tls.serverCertId`. |
+| `tls.serverCertId` | No | Certificate store entry with a private key. Required when `scheme` is HTTPS. |
+| `tls.caCertId` | No | CA used to verify client certificates. |
+| `tls.requireClientCert` | No | `true` requires a client certificate (mutual TLS). |
 
-### DATABASE (source)
-Polls a PostgreSQL database with a select query.
+### HTTP as a destination
 
-| Property | Default | Notes |
+| Property | Required | Notes |
 |---|---|---|
-| `host` | — (required) | DB host. |
-| `port` | `5432` | DB port. |
-| `database` | — (required) | Database name. |
-| `username` | — (required) | DB user. |
-| `password` | — (required) | DB password. |
-| `selectQuery` | — (required) | Query returning rows to ingest. |
-| `updateQuery` | `''` | Optional post-read mark query. |
-| `updateMode` | `NEVER` | When to run `updateQuery`. |
-| `pollingIntervalMs` | `5000` | Poll interval. |
-| `rowFormat` | `JSON` | Row serialization format. |
+| `url` | Yes | Target URL. May use `${name}` message variables. |
+| `method` | No | HTTP method, `POST` by default. |
+| `headers` | No | Name and value pairs; values may use `${name}`. |
+| `parameters` | No | Query parameters added to the URL; values may use `${name}`. API or Mirth import only. |
+| `basicAuth` | No | Object with `username` and `password`; sent only when the username is set. API or Mirth import only. |
+| `contentType` | No | Content-Type of the request body. |
+| `responseTimeout` | No | Milliseconds before the send is an ERROR. |
+| `scheme` | No | `HTTPS` always uses TLS with the certificates below, whatever the URL says. |
+| `tls.caCertId` | No | CA used to verify the server. The Node trust store when empty. |
+| `tls.clientCertId` | No | Client certificate with a private key, for mutual TLS. |
+| `tls.rejectUnauthorized` | No | Verification is on unless this is `false`. |
 
-### JAVASCRIPT (source)
-Runs a user script on a timer to generate messages.
+### HTTP limits
 
-| Property | Default | Notes |
+- Redirects are not followed; set the final URL.
+- The source's `auth`, `matchSubpaths`, and the destination's `parameters` and `basicAuth` have no editor control.
+- The source accepts one method per connector.
+
+## FILE
+
+### FILE: what it does
+
+The source polls a local directory for files that match a glob, reads each one as a message, and then deletes, moves or leaves it. The destination writes each message to a file in a local directory.
+
+Only paths the server process can open are reachable: the local disk and anything the operating system has mounted. There is no FTP, SMB, S3 or WebDAV. For SFTP use the [SFTP](#sftp) connector.
+
+### FILE security
+
+The connector adds no transport security. A network share must be protected where it is mounted, and the server process's file permissions decide what it can read and write. A destination writes through a temporary file and renames it by default, so a partner never reads half a file.
+
+### FILE as a source
+
+| Property | Required | Notes |
 |---|---|---|
-| `script` | `''` | Script executed each poll (sandboxed). |
-| `pollingIntervalMs` | `5000` | Poll interval. |
+| `directory` | Yes | Directory to poll. |
+| `fileFilter` | No | Glob for the files to read, `*` by default. |
+| `pollingIntervalMs` | No | Milliseconds between polls. |
+| `sortBy` | No | `NAME`, `DATE` or `SIZE`: the order files are read in. |
+| `charset` | No | Character set to decode the file. One Node cannot decode refuses to deploy. |
+| `binary` | No | `true` reads the file as base64 instead of text. |
+| `checkFileAge` | No | On by default: skip files younger than `fileAgeMs`, so a file still being written is not read. |
+| `fileAgeMs` | No | Minimum file age in milliseconds. |
+| `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes each file after the pipeline accepts it. |
+| `moveToDirectory` | No | Where `MOVE` puts processed files. |
 
-### CHANNEL (source)
-Receives messages routed from another channel's CHANNEL destination.
+### FILE as a destination
 
-| Property | Default | Notes |
+| Property | Required | Notes |
 |---|---|---|
-| `channelId` | — (required) | This channel's own ID as the routing target. |
+| `directory` | Yes | Directory to write to; created if missing. |
+| `outputPattern` | No | File name. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. Without `${messageId}` and with append off, each message overwrites the last file of that name (a warning is logged). |
+| `charset` | No | Character set to encode the file. |
+| `binary` | No | `true` decodes the content from base64 and writes the bytes. |
+| `tempFileEnabled` | No | On by default: write a temporary file, then rename it. |
+| `appendMode` | No | `true` appends to the file instead of replacing it. |
 
-### DICOM (source)
-DICOM C-STORE SCP. Files are large; the file path is stored in message content and
-metadata in the source map.
+### FILE limits
 
-| Property | Default | Notes |
+- Local paths and OS mounts only. FTP, SMB, S3 and WebDAV are not supported; the Mirth importer warns that such a channel will not deploy.
+- No `${originalFilename}` in `outputPattern`: the destination does not receive the source file name (D-219 in [DECISIONS.md](../progress/DECISIONS.md)).
+
+## SFTP
+
+### SFTP: what it does
+
+The source polls a directory on an SFTP server for files that match a glob, downloads each one as a message, and then deletes, moves or leaves it. The destination uploads each message as a file. A Mirth File Reader or File Writer with the sftp scheme imports as this connector.
+
+### SFTP security
+
+The connection is SSH. Host key checking is on by default: the connector accepts the server only if its key matches `hostKey`, and with `hostKey` empty it rejects every server, so a new SFTP connector fails to connect until you fill it in.
+
+`hostKey` is the base64 public key blob, not a `SHA256:` fingerprint. Get it with `ssh-keyscan -t ed25519 sftp.example.org` and copy the third field of the output line (the text after `ssh-ed25519`, starting `AAAA`). Do not paste the whole line or the key type. Use the key type the server presents; for an RSA-only server use `-t rsa`. Check the value against the server's own `/etc/ssh/ssh_host_ed25519_key.pub` over a trusted path, because `ssh-keyscan` itself trusts the network.
+
+Setting `strictHostKey` to false turns the check off and lets anyone who can intercept the connection receive the files. Don't do that for PHI.
+
+### SFTP as a source
+
+| Property | Required | Notes |
 |---|---|---|
-| `port` | — (required) | DICOM listen port. |
-| `storageDir` | — (required) | Where received objects are written. |
-| `aeTitle` | `GALVANIFLOW` | Application Entity title. |
-| `minPoolSize` | `2` | Association worker pool minimum. |
-| `maxPoolSize` | `10` | Association worker pool maximum. |
-| `connectionTimeoutMs` | `10000` | Association timeout. |
-| `dispatchMode` | `PER_FILE` | `PER_FILE` (one msg per object) or `PER_ASSOCIATION` (JSON array). |
-| `postAction` | `DELETE` | After store: `DELETE` / `MOVE` / `NONE`. |
-| `moveToDirectory` | `''` | Target when `postAction=MOVE`. |
+| `host` | Yes | SFTP server. |
+| `port` | No | SSH port. |
+| `username` | Yes | Login name. |
+| `password` | No | Password. One of `password` or `privateKey` is needed. |
+| `privateKey` | No | Private key, PEM. |
+| `passphrase` | No | Passphrase for `privateKey`. |
+| `remoteDirectory` | Yes | Remote directory to poll. |
+| `filePattern` | No | Glob for the files to read, `*` by default. |
+| `pollingIntervalMs` | No | Milliseconds between polls. |
+| `afterProcessing` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes the remote file after the pipeline accepts it. |
+| `moveToDirectory` | No | Remote directory for `MOVE`. |
+| `minFileAgeMs` | No | Skip files younger than this, so a file still being uploaded is not read. |
+| `strictHostKey` | No | On by default. See security. |
+| `hostKey` | Yes | Server's base64 public key. Required while `strictHostKey` is on; empty rejects every server. |
+| `charset` | No | Character set to decode the file. |
 
-### EMAIL (source)
-Polls a mailbox (IMAP/POP3).
+### SFTP as a destination
 
-| Property | Default | Notes |
+| Property | Required | Notes |
 |---|---|---|
-| `host` | — (required) | Mail server host. |
-| `port` | `993` | Server port. |
-| `secure` | `true` | Use TLS. |
-| `username` | `''` | Mailbox user. |
-| `password` | `''` | Mailbox password. |
-| `protocol` | `IMAP` | `IMAP` or `POP3`. |
-| `folder` | `INBOX` | Folder to poll. |
-| `pollingIntervalMs` | `60000` | Poll interval. |
-| `postAction` | `MARK_READ` | After read action. |
-| `moveToFolder` | `''` | Target folder when moving. |
-| `subjectFilter` | `''` | Only ingest matching subjects. |
-| `includeAttachments` | `false` | Attach message attachments. |
+| `host` | Yes | SFTP server. |
+| `port` | No | SSH port. |
+| `username` | Yes | Login name. |
+| `password` | No | Password. One of `password` or `privateKey` is needed. |
+| `privateKey` | No | Private key, PEM. |
+| `passphrase` | No | Passphrase for `privateKey`. |
+| `remoteDirectory` | Yes | Remote directory to write to. |
+| `fileNameTemplate` | No | File name. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. |
+| `appendMode` | No | `true` appends to the remote file instead of replacing it. |
+| `strictHostKey` | No | On by default. See security. |
+| `hostKey` | Yes | Server's base64 public key. Required while `strictHostKey` is on; empty rejects every server. |
 
-### KAFKA (source)
-Reads a topic as a member of a consumer group and commits a record only after the channel has stored it. Source map: `topic`, `partition`, `offset`, `key`, `headers`, `timestamp`.
+### SFTP limits
 
-| Property | Default | Notes |
+- No `${originalFilename}` in `fileNameTemplate` (D-219 in [DECISIONS.md](../progress/DECISIONS.md)).
+- Deploy does not validate SFTP properties, so a missing host or bad port shows up as a connection failure while polling (#102).
+- Test Connection always fails with "Unknown connector type: SFTP" (#89).
+
+## DATABASE
+
+### DATABASE: what it does
+
+The source runs `selectQuery` on each poll and sends every row as a JSON message, at most 1,000 rows per poll; it can then run `updateQuery` to mark rows as read. The destination runs `query` once per message. `${name}` parameters in a query are sent as bound parameters, never pasted into the SQL.
+
+It talks to PostgreSQL and to MySQL or MariaDB, picked with `vendor` (D-259 in [DECISIONS.md](../progress/DECISIONS.md)). Any other vendor, such as SQL Server or Oracle, refuses to deploy.
+
+### DATABASE security
+
+Set `tls` to true to connect over TLS. The database server's certificate is then verified against the Node trust store, and an untrusted one fails the connection. With `tls` off the connection, and the PHI in it, is plaintext.
+
+### DATABASE as a source
+
+| Property | Required | Notes |
 |---|---|---|
-| `brokers` | — (required) | `host:port`, comma separated. |
-| `clientId` | `galvaniflow` | Shown in broker logs. |
-| `topic` | — (required) | An existing topic. |
-| `groupId` | — (required) | Consumer group; one per channel. |
-| `startFrom` | `EARLIEST` | `EARLIEST` or `LATEST`, for a group with no committed offset. |
-| `saslMechanism` | `NONE` | `NONE`, `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`. |
-| `saslUsername`, `saslPassword` | `''` | Required with a mechanism. |
-| `useTls` | `false` | TLS to the brokers. |
-| `tls` | — | `caCertId`, `clientCertId` (certificate store ids), `rejectUnauthorized` (default `true`). |
+| `vendor` | No | `postgresql` (default) or `mysql`. MariaDB uses `mysql`. Any other value refuses to deploy. |
+| `host` | Yes | Database server. |
+| `port` | Yes | Deploy checks it is a number; the editor fills 5432 or 3306 for the vendor. |
+| `database` | Yes | Database name. |
+| `username` | Yes | Database user. |
+| `password` | No | Password, if the database asks for one. |
+| `selectQuery` | Yes | Query that returns the rows to send. |
+| `updateQuery` | No | Statement run after rows are sent, such as marking them processed. |
+| `updateMode` | No | `NEVER` (default), `ALWAYS` or `ON_SUCCESS`: when `updateQuery` runs. With `NEVER`, the next poll returns the same rows again unless `selectQuery` excludes them. |
+| `pollingIntervalMs` | No | Milliseconds between polls. |
+| `rowFormat` | No | `JSON`, the only format. |
+| `tls` | No | `true` connects over TLS with certificate verification. |
 
-### AMQP (source)
-Consumes an existing RabbitMQ (AMQP 0-9-1) queue and acks a message only after the channel has stored it. Source map: `queue`, `exchange`, `routingKey`, `redelivered`, `headers`, and `messageId`/`contentType` when set.
+### DATABASE as a destination
 
-| Property | Default | Notes |
+| Property | Required | Notes |
 |---|---|---|
-| `host` | — (required) | Broker host. |
-| `port` | `5672` | 5671 is the usual TLS port. |
-| `vhost` | `/` | Virtual host. |
-| `username`, `password` | `''` | Login; the broker's default when empty. |
-| `queue` | — (required) | An existing queue; never declared. |
-| `useTls`, `tls` | `false` | As for Kafka. |
+| `vendor` | No | `postgresql` (default) or `mysql`. MariaDB uses `mysql`. |
+| `host` | Yes | Database server. |
+| `port` | Yes | Deploy checks it is a number; the editor fills the vendor's port. |
+| `database` | Yes | Database name. |
+| `username` | Yes | Database user. |
+| `password` | No | Password, if the database asks for one. |
+| `query` | Yes | Statement run for each message. |
+| `useTransaction` | No | `true` runs the statement in a transaction. |
+| `returnGeneratedKeys` | No | `true` returns the generated keys as the response. |
+| `tls` | No | `true` connects over TLS with certificate verification. |
 
----
+### DATABASE limits
 
-## Destination connectors
+- PostgreSQL and MySQL/MariaDB only. A Mirth channel on SQL Server or Oracle imports but refuses to deploy (#103 covers the missing import warning).
+- One poll sends at most 1,000 rows; the rest wait for the next poll.
+- The only row format is JSON.
 
-### TCP_MLLP (destination)
-Sends HL7 over MLLP and waits for the ACK.
+## JAVASCRIPT
 
-| Property | Default | Notes |
+### JAVASCRIPT: what it does
+
+The source runs a script on a timer and sends each value it returns as a message: a string is one message, an array of strings is one message each, and an empty string, null or undefined sends nothing. The destination runs a script with the message in scope, and the script's return value becomes the response.
+
+Both run in the engine's script sandbox, with the same bridges as transformers. See [scripting-api.md](./scripting-api.md).
+
+### JAVASCRIPT security
+
+The script runs inside the server. Whatever it reaches through the script bridges uses the security of that bridge, such as an HTTPS URL for `httpFetch`. The sandbox limits what a script can do, but it is not a security boundary against a hostile author: only give script access to people you would trust with the server.
+
+### JAVASCRIPT as a source
+
+| Property | Required | Notes |
 |---|---|---|
-| `host` | — (required) | Target host. |
-| `port` | — (required) | Target port. |
-| `maxConnections` | `5` | Connection pool size. |
-| `responseTimeout` | `30000` | ACK wait timeout (ms). |
+| `script` | Yes | Script whose return value is sent. An empty script refuses to deploy. |
+| `pollingIntervalMs` | No | Milliseconds between runs. |
 
-### HTTP (destination)
-POSTs (or other method) the message to a URL.
+### JAVASCRIPT as a destination
 
-| Property | Default | Notes |
+| Property | Required | Notes |
 |---|---|---|
-| `url` | — (required) | Target URL. |
-| `method` | `POST` | HTTP method. |
-| `headers` | `{}` | Extra request headers. |
-| `contentType` | `text/plain` | Request Content-Type. |
-| `responseTimeout` | `30000` | Response timeout (ms). |
+| `script` | Yes | Script run for each message. An empty script refuses to deploy. |
 
-### FILE (destination)
-Writes the message to a file.
+### JAVASCRIPT limits
 
-| Property | Default | Notes |
+- No Rhino, E4X or Java API emulation: Mirth scripts that call Java classes need rewriting.
+
+## CHANNEL
+
+### CHANNEL: what it does
+
+A CHANNEL destination hands the message to another GalvaniFlow channel's CHANNEL source in memory, on the same server, without a network hop. With `waitForResponse` on, the destination's response is the target channel's response; otherwise it is `messageId=<n>` for the message the target created.
+
+The send is an ERROR when the target is not deployed, when the target stores the message with an ERROR status, or when a message has passed through 10 channel hops, which stops a routing loop.
+
+### CHANNEL security
+
+No network is involved, so there is nothing to encrypt. The message stays inside the server process.
+
+### CHANNEL as a source
+
+| Property | Required | Notes |
 |---|---|---|
-| `directory` | — (required) | Output directory. |
-| `outputPattern` | `${messageId}.txt` | File name template. |
-| `charset` | `utf-8` | Write encoding. |
-| `binary` | `false` | Write binary vs text. |
-| `tempFileEnabled` | `true` | Write to temp then rename (atomic). |
-| `appendMode` | `false` | Append instead of overwrite. |
+| `channelId` | No | Set for you at deploy to this channel's own ID, which is what a CHANNEL destination puts in `targetChannelId`. Any stored value is replaced, and the editor has no field for it. |
 
-### DATABASE (destination)
-Runs an insert/update query against PostgreSQL.
+### CHANNEL as a destination
 
-| Property | Default | Notes |
+| Property | Required | Notes |
 |---|---|---|
-| `host` | — (required) | DB host. |
-| `port` | `5432` | DB port. |
-| `database` | — (required) | Database name. |
-| `username` | — (required) | DB user. |
-| `password` | — (required) | DB password. |
-| `query` | — (required) | Parameterized write query. |
-| `useTransaction` | `false` | Wrap in a transaction. |
-| `returnGeneratedKeys` | `false` | Return generated keys. |
+| `targetChannelId` | Yes | The target channel's ID. May be a `${name}` reference filled per message, so a router can pick the channel; a variable the message lacks is an ERROR. |
+| `waitForResponse` | No | `true` returns the target channel's response instead of its message ID. |
 
-### JAVASCRIPT (destination)
-Runs a user script to dispatch the message however you like.
+### CHANNEL limits
 
-| Property | Default | Notes |
+- Same server only; there is no channel routing between servers.
+- At most 10 chained channel hops per message.
+
+## DICOM
+
+### DICOM: what it does
+
+The source is a DICOM storage SCP. It accepts C-STORE associations, writes each instance to `storageDir` as `<SOPInstanceUID>.dcm`, and sends a message whose content is the file path, with the dataset's attributes and the AE titles in the source map. In `PER_ASSOCIATION` mode it sends one message per association whose content is a JSON list of file paths.
+
+The destination is a storage SCU. The message content must be the path of a DICOM file on the server, which it sends with C-STORE.
+
+### DICOM security
+
+DICOM traffic is not encrypted: neither direction supports TLS. The source accepts every association whatever the calling and called AE titles, so anyone who can reach the port can store files. Keep DICOM on a trusted network or a VPN.
+
+### DICOM as a source
+
+| Property | Required | Notes |
 |---|---|---|
-| `script` | `''` | Dispatch script (sandboxed). |
+| `port` | Yes | Port to listen on. |
+| `storageDir` | Yes | Directory received files are written to. |
+| `aeTitle` | No | This listener's AE title. Not checked against incoming associations. |
+| `minPoolSize` | No | Checked at deploy (at least 1) but not used by the current listener. |
+| `maxPoolSize` | No | Checked at deploy (not below `minPoolSize`) but not used by the current listener. |
+| `connectionTimeoutMs` | No | Connect, association and PDU timeout in milliseconds. |
+| `dispatchMode` | No | `PER_FILE` (default) or `PER_ASSOCIATION`. |
+| `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The message holds only the file path, and the default deletes the file once the pipeline accepts it, so a queued destination or a later reprocess has no file to read. Use `MOVE` or `NONE` if anything reads the file afterwards. |
+| `moveToDirectory` | No | Where `MOVE` puts files. Required when `postAction` is `MOVE`. |
 
-### SMTP (destination)
-Sends the message as email.
+### DICOM as a destination
 
-| Property | Default | Notes |
+| Property | Required | Notes |
 |---|---|---|
-| `host` | `''` | SMTP host. |
-| `port` | `587` | SMTP port. |
-| `secure` | `false` | Use TLS on connect. |
-| `authUser` | `''` | SMTP auth user (maps to `auth.user`). |
-| `authPass` | `''` | SMTP auth password (maps to `auth.pass`). |
-| `from` | `''` | From address. |
-| `to` | `''` | To address(es). |
-| `cc` | `''` | Cc address(es). |
-| `bcc` | `''` | Bcc address(es). |
-| `subject` | `''` | Subject line. |
-| `bodyTemplate` | `${msg}` | Body template. |
-| `contentType` | `text/plain` | `text/plain` or `text/html`. |
-| `attachContent` | `false` | Attach the message content. |
+| `host` | Yes | Remote SCP host. |
+| `port` | Yes | Remote SCP port. |
+| `calledAETitle` | No | The remote AE title, `PACS` by default. |
+| `callingAETitle` | No | This sender's AE title. |
+| `mode` | No | `single` or `multiple`. Read but not used by the current sender. |
+| `maxAssociations` | No | Read but not used by the current sender. |
+| `maxRetries` | No | Retries of a failed send. |
+| `retryDelayMs` | No | Milliseconds between retries. |
+| `timeoutMs` | No | Milliseconds before the send fails. |
 
-### CHANNEL (destination)
-Routes the message to another channel's CHANNEL source.
+### DICOM limits
 
-| Property | Default | Notes |
+- No TLS in either direction, and no AE title filtering on the listener.
+- The destination sends whatever readable local file the message content names; nothing limits it to the receiver's storage directory.
+- `mode` and `maxAssociations` on the destination, and `minPoolSize` and `maxPoolSize` on the source, have no effect.
+
+## EMAIL
+
+### EMAIL: what it does
+
+EMAIL can only receive; it cannot send messages. Use [SMTP](#smtp) to send email.
+
+It polls an IMAP mailbox folder for unread messages and sends each message body, with subject, from, to, date and the attachment count in the source map. Afterwards it marks the email read, deletes it or moves it.
+
+### EMAIL security
+
+`secure` is on by default and connects with IMAP over TLS (port 993). Turning it off sends the mailbox password and the PHI in plaintext.
+
+### EMAIL as a source
+
+| Property | Required | Notes |
 |---|---|---|
-| `targetChannelId` | `''` | Destination channel ID. |
-| `waitForResponse` | `false` | Block for the target's response. |
+| `host` | Yes | IMAP server. |
+| `port` | Yes | IMAP port. |
+| `secure` | No | On by default: IMAP over TLS. |
+| `username` | Yes | Mailbox user. |
+| `password` | Yes | Mailbox password. |
+| `protocol` | No | `IMAP`. `POP3` refuses to deploy. |
+| `folder` | No | Folder to read, `INBOX` by default. |
+| `pollingIntervalMs` | No | Milliseconds between polls. |
+| `postAction` | No | `MARK_READ` (default), `DELETE` or `MOVE`. |
+| `moveToFolder` | No | Folder for `MOVE`. |
+| `subjectFilter` | No | Only read emails whose subject contains this text, ignoring case. |
+| `includeAttachments` | No | Read but not used: attachments are never read, whatever this says. |
 
-### FHIR (destination)
-Sends a FHIR resource to a FHIR server.
+### EMAIL limits
 
-| Property | Default | Notes |
+- IMAP only; POP3 is refused at deploy.
+- Attachments are not read; the message is the email body. `includeAttachments` has no effect.
+- No OAuth sign-in; the mailbox needs a username and password.
+
+## SMTP
+
+### SMTP: what it does
+
+SMTP can only send; it cannot receive messages. Use [EMAIL](#email) to read a mailbox.
+
+It sends one email per message. The subject, body and attachment fields may use `${msg}` (the message content), `${messageId}`, `${channelId}`, `${metaDataId}` and other `${name}` message variables.
+
+### SMTP security
+
+`secure` connects with implicit TLS, usually on port 465. `requireTLS` makes the connection upgrade with STARTTLS, usually on port 587, and fails if the server cannot. Both are off by default, and with both off the email can travel in plaintext if the server offers no encryption. For PHI, turn one of them on.
+
+### SMTP as a destination
+
+| Property | Required | Notes |
 |---|---|---|
-| `baseUrl` | `''` | FHIR server base URL. |
-| `resourceType` | `Patient` | Resource type. |
-| `method` | `POST` | `POST` or `PUT`. |
-| `authType` | `NONE` | `NONE` / `BASIC` / `BEARER` / `API_KEY`. |
-| `authUsername` | — | Basic auth user. |
-| `authPassword` | — | Basic auth password. |
-| `authToken` | — | Bearer token. |
-| `authHeaderName` | — | Header name for `API_KEY`. |
-| `authApiKey` | — | API key value. |
-| `format` | `json` | `json` or `xml`. |
-| `timeout` | `30000` | Request timeout (ms). |
-| `headers` | `{}` | Extra request headers. |
+| `host` | Yes | SMTP server. |
+| `port` | Yes | SMTP port. |
+| `secure` | No | `true` for implicit TLS. Off by default. |
+| `requireTLS` | No | `true` to require STARTTLS. Off by default. |
+| `authUser` | No | Username; with none set, the server is used as an anonymous relay. |
+| `authPass` | No | Password for `authUser`. |
+| `from` | No | Sender address. |
+| `to` | Yes | Recipients. |
+| `cc` | No | Copy recipients. |
+| `bcc` | No | Blind copy recipients. |
+| `subject` | No | Subject; may use `${name}` variables. |
+| `bodyTemplate` | No | Body, `${msg}` by default. |
+| `contentType` | No | `text/plain` or `text/html`. |
+| `attachContent` | No | `true` also attaches the message content as a file. |
+| `attachments` | No | List of `filename`, `content` and optional `mimeType`; filename and content may use variables. Entries without a filename or content are skipped. |
 
-### DICOM (destination)
-DICOM C-STORE SCU — sends objects to a PACS.
+### SMTP limits
 
-| Property | Default | Notes |
+- Sending only.
+- No OAuth sign-in; authentication is a username and password.
+
+## FHIR
+
+### FHIR: what it does
+
+FHIR can only send; it cannot receive messages. There is no FHIR source.
+
+It posts the message content as-is to a FHIR R4 server: POST to `<baseUrl>/<resourceType>`, or PUT to `<baseUrl>/<resourceType>/<id>` with the id read from the resource. The message must already be a FHIR resource in the configured format. An HL7 v2 message sent here is posted unchanged and the server rejects it; write a transformer that builds the resource first. A 2xx response is SENT, anything else an ERROR.
+
+### FHIR security
+
+An `https://` base URL uses TLS with the Node trust store. There is no certificate store or client certificate support; to trust a private CA, set `NODE_EXTRA_CA_CERTS` for the server. An `http://` base URL sends PHI in plaintext.
+
+### FHIR as a destination
+
+| Property | Required | Notes |
 |---|---|---|
-| `host` | — (required) | PACS host. |
-| `port` | — (required) | PACS port. |
-| `calledAETitle` | `PACS` | Remote AE title. |
-| `callingAETitle` | `GALVANIFLOW` | Local AE title. |
-| `mode` | `multiple` | `single` or `multiple` associations. |
-| `maxAssociations` | `4` | Max concurrent associations. |
-| `maxRetries` | `3` | Retry attempts. |
-| `retryDelayMs` | `1000` | Delay between retries. |
-| `timeoutMs` | `30000` | Association timeout. |
+| `baseUrl` | Yes | FHIR server base URL. |
+| `resourceType` | No | Resource type in the URL. Defaults to `Patient`, so set it for any other resource. |
+| `method` | No | `POST` (create) or `PUT` (update). `PUT` needs an `id` in the resource, and an id outside the FHIR id rules is refused. |
+| `authType` | No | `NONE`, `BASIC`, `BEARER` or `API_KEY`. |
+| `authUsername` | No | Basic username. |
+| `authPassword` | No | Basic password. |
+| `authToken` | No | Bearer token. |
+| `authHeaderName` | No | Header that carries the API key. |
+| `authApiKey` | No | API key value. |
+| `format` | No | `json` or `xml`. |
+| `timeout` | No | Milliseconds before the send is an ERROR. |
+| `headers` | No | Extra request headers. |
 
-### KAFKA (destination)
-Publishes to a topic; SENT once every in-sync replica has the record (acks=all). Connection properties (`brokers`, `clientId`, SASL, TLS) as for the source.
+### FHIR limits
 
-| Property | Default | Notes |
+- No FHIR source connector.
+- No HL7 v2 to FHIR mapping; the message must already be a FHIR resource.
+- No client certificate (mutual TLS) support.
+
+## KAFKA
+
+### KAFKA: what it does
+
+The source joins a consumer group on a topic and sends each record as a message, with the topic, partition, offset and key in the source map. The destination writes each message to a topic.
+
+Delivery is at least once: a record's offset is committed only after the pipeline has stored it, so a crash between storing and committing delivers that record twice, which you can recognise by the same `topic`, `partition` and `offset` in the source map (D-266 in [DECISIONS.md](../progress/DECISIONS.md)). The destination reports SENT only when every in-sync replica has the record (acks=all). Topics are the broker administrator's; the connector checks they exist and never creates them.
+
+### KAFKA security
+
+Set `useTls` to connect over TLS. The broker's certificate is verified against `tls.caCertId` or the system trust store, and `tls.clientCertId` adds a client certificate. At deploy the server replaces the IDs with PEM and refuses to deploy if one is missing or a client certificate has no private key. SASL sends its password inside that connection, so use SASL with `useTls`.
+
+### KAFKA as a source
+
+| Property | Required | Notes |
 |---|---|---|
-| `topic` | — (required) | An existing topic; `${name}` is filled per message, and a name the message lacks is an error. |
-| `messageKey` | `''` | Record key, `${name}` allowed; empty sends no key. |
-| `headers` | `{}` | Record headers; values may use `${name}`. |
+| `brokers` | Yes | `host:port` pairs, comma separated. |
+| `clientId` | No | Client ID sent to the broker. |
+| `useTls` | No | `true` connects over TLS. |
+| `tls.caCertId` | No | CA that verifies the broker; the system trust store when empty. |
+| `tls.clientCertId` | No | Client certificate with a private key, for mutual TLS. |
+| `tls.rejectUnauthorized` | No | Verification is on unless this is `false`. |
+| `saslMechanism` | No | `NONE`, `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`. Anything but `NONE` needs `saslUsername`. |
+| `saslUsername` | No | SASL user. |
+| `saslPassword` | No | SASL password. |
+| `topic` | Yes | Topic to read. |
+| `groupId` | Yes | Consumer group. |
+| `startFrom` | No | `EARLIEST` (default) or `LATEST`: where a group with no committed offset starts. The default reads the whole topic the first time a new group connects. |
 
-### AMQP (destination)
-Publishes a persistent message; SENT once the broker confirms it. A message no queue would receive is returned by the broker and is an error. Connection properties as for the source. The message id is `channelId:messageId:metaDataId`, the same on every retry.
+### KAFKA as a destination
 
-| Property | Default | Notes |
+| Property | Required | Notes |
 |---|---|---|
-| `exchange` | `''` | An existing exchange; empty is the default exchange (routing key = queue name). |
-| `routingKey` | `''` | `${name}` allowed; a name the message lacks is an error. Required with the default exchange. |
-| `headers` | `{}` | Message headers; values may use `${name}`. |
-| `contentType` | `text/plain` | AMQP content type. |
+| `brokers` | Yes | `host:port` pairs, comma separated. |
+| `clientId` | No | Client ID sent to the broker. |
+| `useTls` | No | `true` connects over TLS. |
+| `tls.caCertId` | No | CA that verifies the broker. |
+| `tls.clientCertId` | No | Client certificate with a private key. |
+| `tls.rejectUnauthorized` | No | Verification is on unless this is `false`. |
+| `saslMechanism` | No | `NONE`, `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`. |
+| `saslUsername` | No | SASL user. |
+| `saslPassword` | No | SASL password. |
+| `topic` | Yes | Topic per message; may use `${name}`. A variable the message lacks is an error. |
+| `messageKey` | No | Record key per message; may use `${name}`. Empty sends no key. |
+| `headers` | No | Record headers; values may use `${name}`. |
+
+### KAFKA limits
+
+- Payloads, keys and headers are read and written as UTF-8 only; other encodings and binary payloads are corrupted without an error (#87).
+- A record the pipeline can never store is retried forever and blocks its partition (#86).
+- TLS has not been tested against a real Kafka broker (#151).
+
+## AMQP
+
+### AMQP: what it does
+
+The source consumes an existing queue on an AMQP 0-9-1 broker such as RabbitMQ and sends each delivery as a message. The destination publishes each message to an existing exchange as a persistent message.
+
+Delivery is at least once: a message is acked only after the pipeline has stored it, so a crash or lost connection between storing and acking delivers it again with `redelivered: true` in the source map, and the destination sends a stable `messageId` (`channelId:messageId:metaDataId`) that partners can deduplicate on (D-266 in [DECISIONS.md](../progress/DECISIONS.md)). The destination reports SENT only when the broker confirms the message, and a message no queue would receive is an ERROR rather than a silent drop. A message stored with an ERROR status is rejected without requeue, which sends it to the queue's dead-letter exchange if one is set. The connector never declares queues or exchanges.
+
+### AMQP security
+
+Set `useTls` to connect with AMQPS. The broker's certificate is verified against `tls.caCertId` or the system trust store, and `tls.clientCertId` adds a client certificate. At deploy the server replaces the IDs with PEM and refuses to deploy if one is missing or a client certificate has no private key. Without `useTls` the broker password and the PHI travel in plaintext. Turning on `useTls` does not change the port, which defaults to 5672; AMQPS brokers usually listen on 5671, so set `port` too.
+
+### AMQP as a source
+
+| Property | Required | Notes |
+|---|---|---|
+| `host` | Yes | Broker host. |
+| `port` | No | Broker port. |
+| `vhost` | No | Virtual host, `/` by default. |
+| `username` | No | Broker user. |
+| `password` | No | Broker password. |
+| `useTls` | No | `true` connects with AMQPS. |
+| `tls.caCertId` | No | CA that verifies the broker; the system trust store when empty. |
+| `tls.clientCertId` | No | Client certificate with a private key, for mutual TLS. |
+| `tls.rejectUnauthorized` | No | Verification is on unless this is `false`. |
+| `queue` | Yes | Existing queue to consume. |
+
+### AMQP as a destination
+
+| Property | Required | Notes |
+|---|---|---|
+| `host` | Yes | Broker host. |
+| `port` | No | Broker port. |
+| `vhost` | No | Virtual host. |
+| `username` | No | Broker user. |
+| `password` | No | Broker password. |
+| `useTls` | No | `true` connects with AMQPS. |
+| `tls.caCertId` | No | CA that verifies the broker. |
+| `tls.clientCertId` | No | Client certificate with a private key. |
+| `tls.rejectUnauthorized` | No | Verification is on unless this is `false`. |
+| `exchange` | No | Existing exchange. Empty is the default exchange, where the routing key is the queue name. |
+| `routingKey` | No | Routing key per message; may use `${name}`. With the default exchange, set it to the target queue's name, or every send is an ERROR. |
+| `headers` | No | Message headers; values may use `${name}`. |
+| `contentType` | No | Content type property of the message. |
+
+### AMQP limits
+
+- Payloads are read as UTF-8 only; other encodings and binary payloads are corrupted without an error (#87).
+- A message the pipeline can never store is requeued forever and blocks the queue (#86).
+- AMQP 0-9-1 only; no AMQP 1.0 brokers.
