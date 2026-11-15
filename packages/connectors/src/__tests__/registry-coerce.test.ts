@@ -54,6 +54,11 @@ describe('registry num() coercion', () => {
     ['number 5432', 5432, 5432],
     ['decimal string', '5432', 5432],
     ['padded decimal string', ' 30000 ', 30000],
+    // Decimal text a ${PORT} configuration reference can resolve to: a port must not
+    // silently become 0 (an ephemeral port) because of a sign or a stray dot.
+    ['explicit plus sign', '+6661', 6661],
+    ['trailing dot', '6661.', 6661],
+    ['leading dot', '.5', 0.5],
     ['exponent string', '1e3', 99],
     ['blank string', ' ', 99],
     ['empty string', '', 99],
