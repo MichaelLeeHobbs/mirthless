@@ -5,10 +5,13 @@
 // maintainers see the gaps. It is only useful if its statuses mean what the page
 // says they mean, so this guard enforces the rules stated at its top:
 // - Yes is proved by a test that runs in the gate or in CI, and the file exists;
-// - No names its plan (an issue, or a ROADMAP ID that is open);
-// - Won't names a decision that exists and quotes it;
+// - Partial says in Limits what doesn't work;
+// - No names its plan (an issue in this repository, or a ROADMAP ID that is open);
+// - Won't names a decision that exists and quotes at least three words of it;
 // - every open ROADMAP item is the plan of some row, so the page is the gap list.
-// Whether a Yes is still true beyond its proof test is not checked.
+// Not checked: whether a proof test really covers the row (a reviewer's job),
+// whether a cited issue is still open (that needs the network), open ROADMAP
+// items with no bracketed ID, and the free-text cells of the migration table.
 
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
@@ -102,11 +105,25 @@ describe('capabilities page: statuses mean what the page says', () => {
     }
   });
 
+  it('says what is missing for every Partial', () => {
+    for (const r of rows().filter((x) => x.cells[1] === 'Partial')) {
+      expect((r.cells[2] ?? '').length, `"${r.cells[0] ?? ''}" is Partial with no Limits`).toBeGreaterThan(10);
+    }
+  });
+
+  it('points every issue link in a plan at this repository', () => {
+    for (const r of rows()) {
+      for (const m of (r.cells[3] ?? '').matchAll(/\]\((https?:\/\/[^)]+)\)/g)) {
+        expect(m[1], `"${r.cells[0] ?? ''}" plan link`).toMatch(/^https:\/\/github\.com\/MichaelLeeHobbs\/mirthless\/issues\/\d+$/);
+      }
+    }
+  });
+
   it('gives every No a plan', () => {
     const open = openRoadmapIds();
     for (const r of rows().filter((x) => x.cells[1] === 'No')) {
       const plan = r.cells[3] ?? '';
-      const issue = /issues\/\d+/.test(plan);
+      const issue = /github\.com\/MichaelLeeHobbs\/mirthless\/issues\/\d+/.test(plan);
       const roadmap = roadmapIdsIn(plan);
       expect(issue || roadmap.length > 0, `"${r.cells[0] ?? ''}" is No without a plan`).toBe(true);
       for (const id of roadmap) expect(open.has(id), `"${r.cells[0] ?? ''}" cites ROADMAP ${id}, which is not an open item`).toBe(true);
@@ -117,6 +134,7 @@ describe('capabilities page: statuses mean what the page says', () => {
     for (const r of rows().filter((x) => x.cells[1] === "Won't")) {
       const m = /(D-\d+)\s*"([^"]+)"/.exec(r.cells[3] ?? '');
       expect(m, `"${r.cells[0] ?? ''}" is Won't without D-NNN "quote"`).not.toBeNull();
+      expect((m?.[2] ?? '').trim().split(/\s+/).length, `"${r.cells[0] ?? ''}" quotes fewer than 3 words`).toBeGreaterThanOrEqual(3);
       const text = decisionText(m?.[1] ?? '');
       expect(text, `${m?.[1] ?? ''} does not exist`).not.toBeNull();
       expect(text?.toLowerCase(), `${m?.[1] ?? ''} does not say "${m?.[2] ?? ''}"`).toContain((m?.[2] ?? '').toLowerCase());
