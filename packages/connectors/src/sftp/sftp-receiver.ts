@@ -215,7 +215,8 @@ export class SftpReceiver implements SourceConnectorRuntime {
 
   /** (Re)establish the SFTP connection. Throws on failure (caught by caller). */
   private async reconnect(): Promise<void> {
-    this.client = await connectFresh(this.createClient(this.config), SFTP_OP_TIMEOUT_MS, 'SFTP connect');
+    const client = this.createClient(this.config);
+    this.client = await connectFresh(client, SFTP_OP_TIMEOUT_MS, 'SFTP connect', () => client.end());
   }
 
   /** List remote entries matching the glob, sorted by name, respecting file age. */

@@ -219,7 +219,8 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   /** (Re)establish the IMAP connection. Throws on failure (caught by caller). */
   private async reconnect(): Promise<void> {
-    this.client = await connectFresh(this.createClient(this.config), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
+    const client = this.createClient(this.config);
+    this.client = await connectFresh(client, IMAP_OP_TIMEOUT_MS, 'IMAP connect', () => client.disconnect());
   }
 
   /** Disconnect the current client under a timeout, logging and ignoring errors. */
@@ -332,9 +333,11 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   /** Disconnect the IMAP client if connected. */
   private async disconnectClient(): Promise<void> {
-    if (this.client) {
-      await withTimeout(this.client.disconnect(), IMAP_OP_TIMEOUT_MS, 'IMAP disconnect');
-    }
+    const client = this.client;
+    if (!client) return;
+    // Drop it first: a later stop or a failed restart must not log this session out again.
+    this.client = null;
+    await withTimeout(client.disconnect(), IMAP_OP_TIMEOUT_MS, 'IMAP disconnect');
   }
 
   /** Clear the poll interval timer. */
