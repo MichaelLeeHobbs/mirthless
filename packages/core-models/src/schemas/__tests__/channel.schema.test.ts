@@ -13,6 +13,7 @@ import {
   destinationInputSchema,
   metadataColumnInputSchema,
 } from '../channel.schema.js';
+import { SOURCE_CONNECTOR_TYPES } from '../../constants.js';
 
 describe('createChannelSchema', () => {
   it('accepts payload from NewChannelDialog', () => {
@@ -212,10 +213,8 @@ describe('createChannelSchema', () => {
     }
   });
 
-  it('accepts all valid source connector types', () => {
-    const connectorTypes = ['TCP_MLLP', 'HTTP', 'FILE', 'DATABASE', 'JAVASCRIPT', 'CHANNEL', 'DICOM', 'FHIR'] as const;
-
-    for (const ct of connectorTypes) {
+  it('accepts every source connector type', () => {
+    for (const ct of SOURCE_CONNECTOR_TYPES) {
       const payload = {
         name: `Channel ${ct}`,
         inboundDataType: 'HL7V2' as const,

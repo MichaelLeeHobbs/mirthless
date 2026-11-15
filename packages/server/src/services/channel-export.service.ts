@@ -4,7 +4,7 @@
 // Exports channels as structured JSON for backup/migration.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import type { ChannelExport, ChannelExportEntry } from '@galvaniflow/core-models';
+import type { ChannelExport, ChannelExportEntry, SourceConnectorType, DestinationConnectorType } from '@galvaniflow/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { redactConnectorProperties } from '../lib/secret-redaction.js';
 import { ChannelService, type ChannelDetail } from './channel.service.js';
@@ -26,7 +26,8 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
     revision: detail.revision,
     inboundDataType: detail.inboundDataType,
     outboundDataType: detail.outboundDataType,
-    sourceConnectorType: detail.sourceConnectorType,
+    // Stored types were validated by direction when the channel was saved.
+    sourceConnectorType: detail.sourceConnectorType as SourceConnectorType,
     // Secret credentials are redacted from exports so a backup file cannot leak
     // DB/SMTP/IMAP passwords. Re-import requires re-entering credentials.
     sourceConnectorProperties: redactConnectorProperties(detail.sourceConnectorProperties),
@@ -48,7 +49,7 @@ function channelToExportEntry(detail: ChannelDetail): ChannelExportEntry {
       metaDataId: d.metaDataId,
       name: d.name,
       enabled: d.enabled,
-      connectorType: d.connectorType,
+      connectorType: d.connectorType as DestinationConnectorType,
       properties: redactConnectorProperties(d.properties),
       queueMode: d.queueMode,
       retryCount: d.retryCount,
