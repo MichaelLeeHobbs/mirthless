@@ -6,8 +6,7 @@
 
 `.github/dependabot.yml` covered GitHub Actions only. It now also proposes npm updates for the pnpm workspace (weekly; minor and patch grouped into one runtime and one dev PR, each major alone, 3-day cooldown so pnpm's minimum release age accepts the version) and base-image updates for `docker/Dockerfile.*` and `docker/docker-compose*.yml` (monthly; Node and Postgres majors ignored, since those are deliberate choices).
 
-- Dependabot alerts and security updates (repo settings, not in the file) were off; Michael had them turned on the same day.
-- Not done: Dependabot's dependency graph does not yet read pnpm 12's two-document `pnpm-lock.yaml`, so npm alerts may not appear until GitHub fixes that; version updates are unaffected.
+- Dependabot alerts and security updates (repo settings, not in the file) were off; Michael had them turned on the same day. GitHub reads the pnpm 12 lockfile despite its documented two-document limitation: it raised 16 alerts on main straight away, all transitive npm packages.
 
 ## 2026-11-14 — Kafka and AMQP connectors, V15 (branch `feat/kafka-amqp-connectors`)
 
