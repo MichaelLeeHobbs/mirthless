@@ -106,6 +106,7 @@ jobs:
       DATABASE_URL: postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test
       SFTP_TEST_HOST: localhost
       SMTP_TEST_HOST: localhost
+      KAFKA_TEST_BROKERS: localhost:19092
       AMQP_TEST_HOST: localhost
       LOG_LEVEL: error
 
