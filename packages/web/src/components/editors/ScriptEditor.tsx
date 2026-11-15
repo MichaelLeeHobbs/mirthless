@@ -5,23 +5,27 @@
 // scripts, code templates): a language switch, format, full screen, and a status
 // line with the cursor position and the script's problems.
 
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import type { ScriptLanguageCode, ScriptSurface } from '@galvaniflow/core-models';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import type { SCRIPT_TEST_KINDS, ScriptLanguageCode, ScriptSurface } from '@galvaniflow/core-models';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import FormatAlignLeftIcon from '@mui/icons-material/FormatAlignLeft';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import Editor from '@monaco-editor/react';
 import { applyScriptSurface, monaco } from './monaco.js';
-import { useScriptDataType } from './script-context.js';
+import { useScriptDataType, useScriptTestSample } from './script-context.js';
 import { useCodeTemplates } from '../../hooks/use-code-templates.js';
 import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
 import { useCursor, useEditorTheme, useProblems } from './editor-hooks.js';
 import { ProblemStatus } from './ProblemStatus.js';
+import { ScriptTestPanel } from './ScriptTestPanel.js';
+import { useScriptTestRun, type ScriptTestRunRequest } from '../../hooks/use-script-test-run.js';
 import { ScriptReferenceButton } from './ScriptReferenceButton.js';
 import { ShortcutsButton } from './ShortcutsButton.js';
 
@@ -69,7 +73,15 @@ export interface ScriptEditorProps {
    * (deploy, undeploy); otherwise msg is typed from the channel's data type.
    */
   readonly surface?: Omit<ScriptSurface, 'dataType'> & { readonly message?: boolean };
+  /**
+   * How the pipeline reads this script, which turns on the Run button inside a
+   * channel: filter (accepted or filtered), transformer (the changed message) or
+   * script (anything else).
+   */
+  readonly testKind?: ScriptTestKind;
 }
+
+type ScriptTestKind = (typeof SCRIPT_TEST_KINDS)[number];
 
 export function ScriptEditor({
   value,
@@ -82,6 +94,7 @@ export function ScriptEditor({
   onLanguageChange,
   readOnly = false,
   surface: surfaceProp,
+  testKind,
 }: ScriptEditorProps): ReactNode {
   const theme = useEditorTheme();
   const channelDataType = useScriptDataType();
@@ -105,6 +118,38 @@ export function ScriptEditor({
     const sub = editor.onDidContentSizeChange((e) => { setContentHeight(e.contentHeight); });
     return () => { sub.dispose(); };
   }, [editor, height]);
+
+  // Test runs: only inside a channel (which provides the sample) and when editable.
+  const testSample = useScriptTestSample();
+  const testRun = useScriptTestRun();
+  const [testOpen, setTestOpen] = useState(false);
+  const canTest = testKind !== undefined && testSample !== undefined && !readOnly;
+  const runTest = (): void => {
+    if (!canTest) return;
+    setTestOpen(true);
+    testRun.mutate({
+      script: value,
+      kind: testKind,
+      sample: testSample.sample,
+      dataType: surface.dataType as ScriptTestRunRequest['dataType'],
+      templateContext: surface.templateContext as ScriptTestRunRequest['templateContext'],
+      destinationSet: surface.destinationSet === true,
+      channelId: testSample.channelId,
+    });
+  };
+  // Ctrl+Enter in the editor runs the latest script, so the action reads it through a ref.
+  const runRef = useRef(runTest);
+  runRef.current = runTest;
+  useEffect(() => {
+    if (!editor || !canTest) return undefined;
+    const action = editor.addAction({
+      id: 'galvaniflow.runScriptTest',
+      label: 'Run against the sample message',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+      run: () => { runRef.current(); },
+    });
+    return () => { action.dispose(); };
+  }, [editor, canTest]);
 
   // The type service holds one set of globals; this editor's surface applies on
   // mount and whenever it takes focus.
@@ -141,6 +186,19 @@ export function ScriptEditor({
   const end = (
     <>
       {readOnly ? <Chip size="small" variant="outlined" label="Read only" /> : null}
+      {canTest ? (
+        <Tooltip title="Run against a sample message (Ctrl+Enter)">
+          <Button
+            size="small"
+            aria-label={testOpen ? 'Run again' : 'Test run'}
+            startIcon={<PlayArrowIcon fontSize="small" />}
+            onClick={() => { if (testOpen) runTest(); else setTestOpen(true); }}
+            sx={{ textTransform: 'none', minWidth: 0, '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } } }}
+          >
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{testOpen ? 'Run' : 'Test'}</Box>
+          </Button>
+        </Tooltip>
+      ) : null}
       {!readOnly ? <ScriptReferenceButton editor={editor} surface={surface} templates={templates ?? []} /> : null}
       <ShortcutsButton />
       {!readOnly ? (
@@ -169,6 +227,17 @@ export function ScriptEditor({
       height={height === 'auto' ? `${String(autoHeight(contentHeight))}px` : height}
       expanded={expanded}
       onExpandedChange={setExpanded}
+      footer={canTest && testOpen ? (
+        <ScriptTestPanel
+          dataType={surface.dataType}
+          sample={testSample.sample}
+          onSampleChange={testSample.setSample}
+          onRun={runTest}
+          running={testRun.isPending}
+          result={testRun.data}
+          requestError={testRun.error?.message}
+        />
+      ) : undefined}
       status={
         <>
           <ProblemStatus editor={editor} problems={problems} />

@@ -38,6 +38,8 @@ describe('runScriptTest', () => {
     const result = await run({ kind: 'transformer', script: "msg.set('PID.5.1', 'SMITH');" });
     expect(result.outcome).toBe('completed');
     expect(result.output?.split('\r')[1]).toBe('PID|1||4821193^^^HOSP^MR||SMITH^AVERY');
+    // The compiled steps hand back msg itself; that is the output, not a returned value.
+    expect(result.returned).toBeNull();
   });
 
   it('reports logger output, map changes and the destinations a source script left', async () => {

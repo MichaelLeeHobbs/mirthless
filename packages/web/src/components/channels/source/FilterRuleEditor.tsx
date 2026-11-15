@@ -125,6 +125,7 @@ export function FilterRuleEditor({
             showLabel={false}
             label={`${rule.name || 'Rule'} script`}
             surface={FILTER_TRANSFORMER_SURFACE[stage]}
+            testKind="filter"
             language={rule.language}
             onLanguageChange={(language) => { onChange({ language }); }}
             value={rule.script}

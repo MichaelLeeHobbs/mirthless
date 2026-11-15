@@ -55,6 +55,7 @@ export function ResponseTransformerSection({ value, onChange, language, onLangua
             height="auto"
             label="Response transformer script"
             surface={{ templateContext: 'DESTINATION_RESPONSE_TRANSFORMER' }}
+            testKind="transformer"
             value={value}
             onChange={onChange}
             language={language}

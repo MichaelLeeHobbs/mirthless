@@ -4,7 +4,7 @@
 // Container for editing/creating channels with tabbed interface.
 
 import { useBeforeUnload } from '../hooks/use-beforeunload.js';
-import { useState, useEffect, useRef, useCallback, type ReactNode, type SyntheticEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode, type SyntheticEvent } from 'react';
 import { useParams, useNavigate, useBlocker } from 'react-router';
 import { useForm } from 'react-hook-form';
 import Box from '@mui/material/Box';
@@ -39,7 +39,7 @@ import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, Tra
 import { createDefaultFilter, createDefaultTransformer, transformerHasContent } from '../components/channels/source/types.js';
 import { NEW_SCRIPT_LANGUAGE, loadedScriptLanguage } from '../lib/script-language.js';
 import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
-import { ScriptDataTypeContext } from '../components/editors/script-context.js';
+import { ScriptDataTypeContext, ScriptTestSampleContext } from '../components/editors/script-context.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { ChannelHealth } from '../components/channels/ChannelHealth.js';
 import Chip from '@mui/material/Chip';
@@ -189,6 +189,12 @@ export function ChannelEditorPage(): ReactNode {
   const nameValue = watch('name');
   const sourceConnectorType = watch('sourceConnectorType');
   const inboundDataType = watch('inboundDataType');
+  // One sample message for every script's test run on this page; memory only (PHI).
+  const [sampleMessage, setSampleMessage] = useState('');
+  const testSample = useMemo(
+    () => ({ channelId: id, sample: sampleMessage, setSample: setSampleMessage }),
+    [id, sampleMessage],
+  );
   const sourceConnectorProperties = watch('sourceConnectorProperties');
 
   // Track previous connector type to detect user-initiated changes
@@ -683,6 +689,7 @@ export function ChannelEditorPage(): ReactNode {
 
       {/* Tab content. Script editors type msg from the channel's inbound data type. */}
       <ScriptDataTypeContext.Provider value={inboundDataType}>
+      <ScriptTestSampleContext.Provider value={testSample}>
       <Paper sx={{ p: { xs: 1.5, sm: 3 } }}>
         <TabPanel value={activeTab} index={0}>
           <SummaryTab
@@ -718,6 +725,7 @@ export function ChannelEditorPage(): ReactNode {
           <ScriptsTab scripts={scripts} onChange={handleScriptsChange} />
         </TabPanel>
       </Paper>
+      </ScriptTestSampleContext.Provider>
       </ScriptDataTypeContext.Provider>
 
       {/* Unsaved changes dialog */}

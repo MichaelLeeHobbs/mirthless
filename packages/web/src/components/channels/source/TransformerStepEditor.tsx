@@ -124,6 +124,7 @@ export function TransformerStepEditor({
             showLabel={false}
             label={`${step.name || 'Step'} script`}
             surface={FILTER_TRANSFORMER_SURFACE[stage]}
+            testKind="transformer"
             language={step.language}
             onLanguageChange={(language) => { onChange({ language }); }}
             value={step.script}

@@ -62,6 +62,7 @@ export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
               label={section.label}
               showLabel={false}
               surface={section.surface}
+              testKind="script"
               value={scripts[section.key]}
               onChange={(value) => { handleScriptChange(section.key, value); }}
               language={scripts.languages[section.key]}

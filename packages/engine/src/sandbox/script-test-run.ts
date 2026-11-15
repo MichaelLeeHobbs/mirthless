@@ -12,7 +12,7 @@
 
 import type { Result } from '@galvaniflow/core-util';
 import { tryCatch } from '@galvaniflow/core-util';
-import { templateDeclarations, type ScriptSurface, type TemplateSource } from '@galvaniflow/core-models';
+import { templateDeclarations, type ScriptSurface, type ScriptTestResult, type TemplateSource } from '@galvaniflow/core-models';
 import { compileScript, compileFilterRulesToScript, compileTransformerStepsToScript } from './script-compiler.js';
 import { VmSandboxExecutor } from './sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from './sandbox-context.js';
@@ -42,24 +42,7 @@ export interface ScriptTestInput {
   readonly readers?: ScriptTestReaders;
 }
 
-/** What a test run reports. Script failures are an outcome, not an error. */
-export interface ScriptTestResult {
-  /** filter: accepted/filtered; transformer and script: completed; any failure: error. */
-  readonly outcome: 'accepted' | 'filtered' | 'completed' | 'error';
-  /** The message after a transformer or script, serialized as the pipeline would. */
-  readonly output: string | null;
-  /** What the script returned, as text (null when it returned nothing). */
-  readonly returned: string | null;
-  readonly logs: ReadonlyArray<{ readonly level: string; readonly message: string }>;
-  /** Map entries the script set. */
-  readonly maps: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
-  /** Destinations the message would still go to (source scripts only). */
-  readonly destinations: readonly string[] | null;
-  /** Calls that would have had side effects and were not performed. */
-  readonly skipped: readonly string[];
-  readonly error: string | null;
-  readonly durationMs: number;
-}
+export type { ScriptTestResult };
 
 /** The pipeline's rule: a returned value replaces the message unless it is nothing or a boolean. */
 function replacement(returnValue: unknown, msg: unknown): unknown {
@@ -154,7 +137,8 @@ export async function runScriptTest(input: ScriptTestInput): Promise<Result<Scri
     return {
       outcome: filter ? (returnValue === true ? 'accepted' : 'filtered') : 'completed',
       output,
-      returned: asText(returnValue),
+      // Compiled transformer steps end with `return msg`: that is the output, not a returned value.
+      returned: returnValue === msg ? null : asText(returnValue),
       logs: logLines,
       maps: Object.fromEntries(Object.entries(mapUpdates).filter(([, entries]) => Object.keys(entries).length > 0)),
       destinations: destSet ? [...destSet.getConnectorNames()] : null,

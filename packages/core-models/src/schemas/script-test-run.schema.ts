@@ -29,3 +29,22 @@ export const scriptTestRunSchema = z.object({
 });
 
 export type ScriptTestRunInput = z.infer<typeof scriptTestRunSchema>;
+
+/** What a test run reports. A failing script is an outcome, not a request error. */
+export interface ScriptTestResult {
+  /** filter: accepted/filtered; transformer and script: completed; any failure: error. */
+  readonly outcome: 'accepted' | 'filtered' | 'completed' | 'error';
+  /** The message after a transformer or script, serialized as the pipeline would. */
+  readonly output: string | null;
+  /** What the script returned, as text (null when it returned nothing). */
+  readonly returned: string | null;
+  readonly logs: ReadonlyArray<{ readonly level: string; readonly message: string }>;
+  /** Map entries the script set, by map name. */
+  readonly maps: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  /** Destinations the message would still go to (source scripts only). */
+  readonly destinations: readonly string[] | null;
+  /** Calls that would have had side effects and were not performed. */
+  readonly skipped: readonly string[];
+  readonly error: string | null;
+  readonly durationMs: number;
+}

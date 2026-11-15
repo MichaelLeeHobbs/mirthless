@@ -27,3 +27,20 @@ export const FILTER_TRANSFORMER_SURFACE = {
 export function useScriptDataType(): string | undefined {
   return useContext(ScriptDataTypeContext);
 }
+
+/**
+ * The sample message for test runs, shared by every script editor in a channel
+ * so it is pasted once. Held in memory only: it can be PHI, so it is never
+ * written to storage. Absent outside a channel, where scripts have no Run button.
+ */
+export interface ScriptTestSample {
+  readonly channelId: string | undefined;
+  readonly sample: string;
+  readonly setSample: (sample: string) => void;
+}
+
+export const ScriptTestSampleContext = createContext<ScriptTestSample | undefined>(undefined);
+
+export function useScriptTestSample(): ScriptTestSample | undefined {
+  return useContext(ScriptTestSampleContext);
+}

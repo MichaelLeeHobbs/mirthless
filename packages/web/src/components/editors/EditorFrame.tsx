@@ -26,6 +26,8 @@ interface EditorFrameProps {
   readonly end?: ReactNode;
   /** The status line. */
   readonly status?: ReactNode;
+  /** Shown below the status line (the test run panel). */
+  readonly footer?: ReactNode;
   /** Height of the editor area when not expanded (CSS length or px). */
   readonly height: string | number;
   readonly expanded: boolean;
@@ -33,7 +35,7 @@ interface EditorFrameProps {
   readonly children: ReactNode;
 }
 
-function Frame({ label, showLabel, start, end, status, expanded, onExpandedChange, children, fill, rounded = false }: Omit<EditorFrameProps, 'height'> & { readonly fill: boolean; readonly rounded?: boolean }): ReactNode {
+function Frame({ label, showLabel, start, end, status, footer, expanded, onExpandedChange, children, fill, rounded = false }: Omit<EditorFrameProps, 'height'> & { readonly fill: boolean; readonly rounded?: boolean }): ReactNode {
   return (
     <Box
       role="group"
@@ -87,6 +89,7 @@ function Frame({ label, showLabel, start, end, status, expanded, onExpandedChang
           {status}
         </Box>
       ) : null}
+      {footer}
     </Box>
   );
 }
