@@ -16,7 +16,7 @@ Every property below is the key the connector reads from the channel's saved pro
 | [JAVASCRIPT](#javascript) | Yes | Yes | Whatever a sandboxed script can produce or reach through the script bridges | Not applicable (runs in the server) | Not applicable | JavaScript Reader / JavaScript Writer |
 | [CHANNEL](#channel) | Yes | Yes | Another GalvaniFlow channel on the same server | Not applicable (in memory) | Not applicable | Channel Reader / Channel Writer |
 | [DICOM](#dicom) | Yes | Yes | DICOM C-STORE in and out | No TLS | None. The listener accepts any calling and called AE title | DICOM Listener / DICOM Sender |
-| [EMAIL](#email) | Yes | No | Reading an IMAP mailbox. POP3 refuses to deploy | `secure` (IMAP over TLS), on by default | Mailbox username and password | Email Reader |
+| [EMAIL](#email) | Yes | No | Reading an IMAP mailbox. POP3 refuses to deploy | `secure` (IMAP over TLS), on by default | Mailbox username and password | none (Mirth Connect has no email reader connector) |
 | [SMTP](#smtp) | No | Yes | Sending email only | `secure` (implicit TLS) and `requireTLS` (STARTTLS required); both off by default | Optional username and password | SMTP Sender |
 | [FHIR](#fhir) | No | Yes | Posting a message that is already a FHIR R4 resource. No HL7 v2 to FHIR mapping | HTTPS when `baseUrl` is https, with the Node trust store | None, Basic, bearer token or API key header | FHIR Sender (commercial extension in Mirth) |
 | [KAFKA](#kafka) | Yes | Yes | Kafka topics | `useTls` with a CA and client certificate from the certificate store | SASL PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512, or client certificate | none |
