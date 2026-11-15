@@ -18,6 +18,7 @@
     "@emotion/styled": "^11.13.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@galvaniflow/core-models": "workspace:*",
+    "@galvaniflow/core-util": "workspace:*",
     "@monaco-editor/react": "^4.7.0",
     "@mui/icons-material": "^9.5.0",
     "@mui/material": "^9.5.0",

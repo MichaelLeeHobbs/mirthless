@@ -5,13 +5,10 @@
 // leave the server in GET / export responses. Values are never returned in the
 // clear to a read-level caller — only overwritten via explicit writes.
 
-import { isPlainObject } from '@galvaniflow/core-util';
+import { isPlainObject, isSecretSetting } from '@galvaniflow/core-util';
 
 /** Masked stand-in returned in place of a real secret that has a value. */
 export const REDACTED = '__REDACTED__';
-
-/** Setting `type` values that denote a secret whose value must be masked. */
-const SECRET_SETTING_TYPES: ReadonlySet<string> = new Set(['password', 'secret']);
 
 /**
  * Connector property keys (case-insensitive) that hold credentials. Matched as a
@@ -34,22 +31,6 @@ const SECRET_KEY_FRAGMENTS: readonly string[] = [
  * key PEM (`tls.key`); as a fragment it would also hit `keyColumn` and friends.
  */
 const SECRET_EXACT_KEYS: ReadonlySet<string> = new Set(['key']);
-
-/**
- * Setting keys that hold secrets even when their `type` was seeded as a plain
- * string on an older database (e.g. `smtp.auth_pass`).
- */
-const SECRET_SETTING_KEY_RE = /(password|passwd|_pass$|secret|token|apikey|api_key|private_?key|passphrase|credential)/i;
-
-/** True when a setting's type marks it as a secret. */
-export function isSecretSettingType(type: string | null | undefined): boolean {
-  return typeof type === 'string' && SECRET_SETTING_TYPES.has(type.toLowerCase());
-}
-
-/** True when a setting is a secret, by type OR by key naming. */
-export function isSecretSetting(key: string, type: string | null | undefined): boolean {
-  return isSecretSettingType(type) || SECRET_SETTING_KEY_RE.test(key);
-}
 
 /** True when a connector property key looks like a credential field. */
 export function isSecretPropertyKey(key: string): boolean {

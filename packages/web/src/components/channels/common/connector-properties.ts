@@ -47,6 +47,8 @@ export function getTlsBool(props: Props, key: string, fallback: boolean): boolea
 /** Change handlers that write one property and pass the whole bag to `onChange`. */
 export interface PropertyUpdaters {
   readonly update: (key: string, value: unknown) => void;
+  /** Writes one key inside the nested `tls` object, keeping its other keys. */
+  readonly updateTls: (key: string, value: unknown) => void;
   readonly handleText: (key: string) => (e: ChangeEvent<HTMLInputElement>) => void;
   /** Parses an integer; an empty or non-numeric field stores 0. */
   readonly handleNumber: (key: string) => (e: ChangeEvent<HTMLInputElement>) => void;
@@ -63,6 +65,7 @@ export function propertyUpdaters(
   };
   return {
     update,
+    updateTls: (key, value): void => { update('tls', { ...getTls(properties), [key]: value }); },
     handleText: (key) => (e): void => { update(key, e.target.value); },
     handleNumber: (key) => (e): void => {
       const parsed = parseInt(e.target.value, 10);

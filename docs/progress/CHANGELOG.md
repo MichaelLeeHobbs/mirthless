@@ -14,6 +14,15 @@ Slice 1 of the docs restructure (#116): a user can now find out, from one page, 
 - **README:** the Documentation link is a question, and "10 connector types" is 13.
 - **Found on the way:** five connector settings that do nothing (#154); a DICOM destination file-path exposure, reported as a draft security advisory.
 
+## 2026-11-15 — Reinvention copy groups, batch 3 (branch `batch-2026-11-15-reinvention-3`)
+
+The last merge batch of the approved triage, mostly web and small server helpers:
+
+- **core-util (G0036, G0113):** `unescapeControlChars` replaces the Delimited settings form's `readEscapes` and the importer's `unescapeMirth`, and `isSecretSetting` replaces the server's and the Settings page's copies. The web now depends on `@galvaniflow/core-util`; the browser bundle changed only in SettingsPage (+0.06 kB). From the batch review: `docker/Dockerfile.web` now copies core-util (without it the web image could not build) and the cloud session hook builds it; the web image builds from a clean checkout. A local build from a checkout with installed dependencies still fails for an older reason (#137). Visible change: the Settings page treats a setting typed `secret`, or `Password` in any case, as secret, as the server already did.
+- **Server (G0131, G0180, G0239, G0228, G0167):** the collection service uses `containsPattern` and `requireById`; collections and data sources emit their audit events through one `emitSuccessEvent` (records unchanged); event export uses the event list's `buildEventWhereConditions` (its schema cannot carry the two extra filters, so output is unchanged); the seed scripts share one channel lookup.
+- **Web (G0071, G0076, G0079, G0166, G0229.R, G0257):** one `errorMessage` helper for mutation toasts, `ErrorState` and `ErrorBoundary`, each keeping its fallback text (an empty error message now shows the fallback instead of a blank, and `ErrorBoundary` now shows a thrown string's text instead of the fallback, as the other two already did); one Monaco registration per language; `propertyUpdaters` gains `updateTls` for the HTTP and queue TLS fields; message and event query strings share their filter clauses (`messageFilterParts`, `definedSearchParams`), pinned to the exact strings; the Delimited form uses the shared `update`.
+- Not done here: `use-certificates`, `use-logs` and `use-cross-channel-search` still build query strings by hand and could use `definedSearchParams` (not in the catalog).
+
 ## 2026-11-15 — Reinvention copy groups, batch 2 (branch `batch-2026-11-15-reinvention-2`)
 
 Second batch of the approved triage, built on batch 1:
