@@ -48,7 +48,7 @@ From fullstack-template patterns. JWT + sessions.
 ### Token Flow
 
 1. Login: validate credentials → create session → return `{ accessToken, refreshToken }`
-2. Access token: JWT, 15min TTL, contains `{ userId, sessionId, permissions }`
+2. Access token: JWT, 15min TTL, contains `{ userId, sessionId }` (permissions are resolved from the role on each request)
 3. Refresh token: JWT, hashed and stored in `sessions` table. Its lifetime, the session row's and the refresh cookie's all come from `JWT_REFRESH_EXPIRES_IN` (default 7d); each refresh starts a new session of that length
 4. Auth middleware: check `Authorization: Bearer <token>` header, verify JWT, load user
 
@@ -70,7 +70,7 @@ Built-in from day one. Not a commercial add-on.
 
 ### Permissions Model
 
-A permission is a `resource:action` string, such as `channels:read` or `code_templates:delete`. The full list is `PERMISSIONS` in `packages/server/src/db/seeds/permissions.ts`. A user's permissions come from their role at login (`permissionNamesForRole` in `packages/server/src/lib/role-permissions.ts`) and travel in the access token.
+A permission is a `resource:action` string, such as `channels:read` or `code_templates:delete`. The full list is `PERMISSIONS` in `packages/core-models/src/constants.ts`. Permissions are not stored in the access token: on every request the auth middleware (`packages/server/src/middleware/auth.middleware.ts`) loads the user and works out their permissions from their current role with `permissionNamesForRole` (`packages/server/src/lib/role-permissions.ts`), so a role change takes effect on the next request.
 
 Channel-scoped permissions are not built. The `user_permissions` table has a `scope` column that an early design meant to hold a list of channel ids, but the seed writes `'all'` and nothing reads it. Every permission applies to every channel: a user with `messages:read` can read the messages of all channels. ROADMAP lists this as an open gap.
 
