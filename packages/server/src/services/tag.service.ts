@@ -136,11 +136,15 @@ export class TagService {
       if (input.name !== undefined) updates['name'] = input.name;
       if (input.color !== undefined) updates['color'] = input.color;
 
-      const [row] = await db
-        .update(channelTags)
-        .set(updates)
-        .where(eq(channelTags.id, id))
-        .returning();
+      // Tags have no updatedAt column, so an empty input leaves nothing to SET,
+      // and Drizzle rejects set({}). Nothing to change: return the tag as it is.
+      const [row] = Object.keys(updates).length === 0
+        ? [existing]
+        : await db
+          .update(channelTags)
+          .set(updates)
+          .where(eq(channelTags.id, id))
+          .returning();
 
       const [countRow] = await db
         .select({ value: count() })

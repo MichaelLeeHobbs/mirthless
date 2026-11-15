@@ -13,6 +13,7 @@ import {
   destinationInputSchema,
   metadataColumnInputSchema,
 } from '../channel.schema.js';
+import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '../../constants.js';
 
 describe('createChannelSchema', () => {
   it('accepts payload from NewChannelDialog', () => {
@@ -213,9 +214,7 @@ describe('createChannelSchema', () => {
   });
 
   it('accepts all valid source connector types', () => {
-    const connectorTypes = ['TCP_MLLP', 'HTTP', 'FILE', 'DATABASE', 'JAVASCRIPT', 'CHANNEL', 'DICOM', 'FHIR'] as const;
-
-    for (const ct of connectorTypes) {
+    for (const ct of SOURCE_CONNECTOR_TYPES) {
       const payload = {
         name: `Channel ${ct}`,
         inboundDataType: 'HL7V2' as const,
@@ -227,6 +226,17 @@ describe('createChannelSchema', () => {
       const result = createChannelSchema.safeParse(payload);
       expect(result.success, `Expected ${ct} to be valid`).toBe(true);
     }
+  });
+
+  it.each(['SMTP', 'FHIR'])('rejects destination-only connector %s as the source', (ct) => {
+    const result = createChannelSchema.safeParse({
+      name: `Channel ${ct}`,
+      inboundDataType: 'HL7V2',
+      outboundDataType: 'HL7V2',
+      sourceConnectorType: ct,
+      sourceConnectorProperties: {},
+    });
+    expect(result.success).toBe(false);
   });
 });
 
@@ -484,10 +494,13 @@ describe('destinationInputSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('accepts all valid connector types', () => {
-    const types = ['TCP_MLLP', 'HTTP', 'FILE', 'DATABASE', 'JAVASCRIPT', 'CHANNEL', 'DICOM', 'FHIR'] as const;
+  it('rejects source-only connector EMAIL as a destination', () => {
+    const result = destinationInputSchema.safeParse({ name: 'Bad', connectorType: 'EMAIL', properties: {} });
+    expect(result.success).toBe(false);
+  });
 
-    for (const ct of types) {
+  it('accepts all valid connector types', () => {
+    for (const ct of DESTINATION_CONNECTOR_TYPES) {
       const result = destinationInputSchema.safeParse({
         name: `Dest ${ct}`,
         connectorType: ct,

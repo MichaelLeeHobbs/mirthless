@@ -203,6 +203,19 @@ describe('TagService', () => {
       expect(result.value.color).toBe('#00FF00');
     });
 
+    it('returns the tag unchanged and runs no UPDATE for an empty input', async () => {
+      pushResponse([makeTagRow({ color: '#123456' })]);
+      pushResponse([{ value: 3 }]);
+
+      const result = await TagService.update(TAG_ID, {});
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.color).toBe('#123456');
+      expect(result.value.assignmentCount).toBe(3);
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
     it('returns NOT_FOUND for missing id', async () => {
       pushResponse([]);
 

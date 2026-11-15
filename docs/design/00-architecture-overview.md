@@ -90,7 +90,7 @@ Channels can declare dependencies on other channels. The deployment system uses 
 ### Problem 6: No Authorization by Default
 **Connect:** `DefaultAuthorizationController.isUserAuthorized()` always returns `true`. RBAC is a commercial plugin.
 
-**GalvaniFlow:** RBAC built into core from day one. Role-based permissions with channel-level access control. Based on fullstack-template auth patterns (JWT + sessions, bcrypt, PBKDF2).
+**GalvaniFlow:** RBAC built into core from day one. Role-based permissions; there is no per-channel access control (every permission applies to all channels). Based on fullstack-template auth patterns (JWT + sessions, bcrypt, PBKDF2).
 
 ### Problem 7: Rhino JavaScript Engine
 **Connect:** Uses patched Mozilla Rhino with full Java interop. User scripts can access any Java class. No sandbox. Runs in interpreted mode for debugging.
@@ -311,10 +311,10 @@ Connect has 15 API servlets with ~120 endpoints. We consolidate into Express rou
 
 ### Auth Model (From Scratch)
 
-- JWT access tokens (15min) + refresh tokens (7 days) — from fullstack-template
+- JWT access tokens (15min) + refresh tokens whose lifetime, shared by the session and its cookie, comes from `JWT_REFRESH_EXPIRES_IN` (default 7d); each refresh starts a new session of that length — from fullstack-template
 - Session-backed with httpOnly cookies
 - RBAC with roles and permissions (not Connect's always-true default)
-- Channel-level access control built-in
+- No channel-level access control: permissions apply to every channel (an open gap in ROADMAP)
 - Rate limiting on auth endpoints
 - Account lockout (keep from Connect)
 - Password policy enforcement (keep from Connect)

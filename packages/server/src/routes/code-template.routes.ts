@@ -45,7 +45,7 @@ router.put(
 
 router.delete(
   '/libraries/:id',
-  requirePermission('code_templates:write'),
+  requirePermission('code_templates:delete'),
   validate({ params: codeTemplateUuidParamSchema }),
   CodeTemplateController.deleteLibrary,
 );
@@ -75,7 +75,7 @@ router.put(
 
 router.delete(
   '/:id',
-  requirePermission('code_templates:write'),
+  requirePermission('code_templates:delete'),
   validate({ params: codeTemplateUuidParamSchema }),
   CodeTemplateController.deleteTemplate,
 );
