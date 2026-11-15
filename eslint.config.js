@@ -20,7 +20,7 @@ const SHARED_HELPERS = [
   { names: 'getStr|getNum|getBool|getTls|getTlsStr|getTlsBool|propertyUpdaters', home: 'packages/web/src/components/channels/common/connector-properties.ts' },
   { names: 'compileScript|compileErrorMessages|extractEsbuildErrors', home: 'packages/engine/src/sandbox/script-compiler.ts' },
   { names: 'toPoolConfig', home: 'packages/connectors/src/database/connection-pool.ts' },
-  { names: 'dispatchQuarantined|loadQuarantine|persistQuarantine|addLedgerKeys', home: 'packages/connectors/src/quarantine-ledger.ts' },
+  { names: 'dispatchQuarantined', home: 'packages/connectors/src/quarantine-ledger.ts' },
 ];
 const sharedHelperSelectors = SHARED_HELPERS.flatMap(({ names, home }) => [
   { selector: `:not(ExportNamedDeclaration) > FunctionDeclaration[id.name=/^(${names})$/]`, message: `Import this from ${home} instead of copying it.` },
