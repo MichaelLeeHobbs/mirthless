@@ -242,8 +242,9 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
 /**
  * Build nodemailer transport options from SMTP connection settings.
  * Auth is included ONLY when credentials are present — never an empty auth
- * object — and requireTLS is always forwarded so credentials are not sent
- * over a plaintext connection.
+ * object. requireTLS is forwarded as given: the SMTP connector sets it from its
+ * properties so credentials are not sent in plaintext; the server's own mail
+ * passes false, as it always has.
  */
 export function buildNodemailerOptions(config: SmtpTransportConfig): Record<string, unknown> {
   const hasCreds = !!config.auth && !!config.auth.user;
