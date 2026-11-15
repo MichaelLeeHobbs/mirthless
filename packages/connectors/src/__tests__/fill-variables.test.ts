@@ -20,14 +20,11 @@ describe('fillVariables', () => {
     ['a missing name', '<${y}>', '<${y}>'],
     ['a null value', '<${none}>', '<${none}>'],
     ['an object value', '<${obj}>', '<{"a":1}>'],
-    ['an inherited key', '<${toString}>', '<undefined>'],
+    ['a bigint value', '<${big}>', '<10>'],
+    ['an inherited key', '<${toString}>', '<${toString}>'],
     ['a value containing ${x}', '<${ref}>', '<${x}>'],
   ])('fills %s by the shared rule', (_label, text, expected) => {
     expect(fillVariables(text, { variables })).toBe(expected);
-  });
-
-  it('throws on a bigint value', () => {
-    expect(() => fillVariables('<${big}>', { variables })).toThrow(TypeError);
   });
 
   it('returns the text unchanged when the message has no variables', () => {

@@ -25,7 +25,8 @@ describe('substituteTemplate', () => {
     ['a missing name', '<${y}>', '<${y}>'],
     ['a null value', '<${none}>', '<${none}>'],
     ['an object value', '<${obj}>', '<{"a":1}>'],
-    ['an inherited key', '<${toString}>', '<undefined>'],
+    ['a bigint value', '<${big}>', '<10>'],
+    ['an inherited key', '<${toString}>', '<${toString}>'],
     ['a value containing ${x}', '<${ref}>', '<${x}>'],
     ['content containing ${x}', '<${msg}>', '<BODY>'],
   ])('fills %s by the shared rule', (_label, template, expected) => {
@@ -34,9 +35,5 @@ describe('substituteTemplate', () => {
 
   it('does not expand placeholders in the content', () => {
     expect(substituteTemplate('${msg}', 'has ${x}', message)).toBe('has ${x}');
-  });
-
-  it('throws on a bigint variable', () => {
-    expect(() => substituteTemplate('<${big}>', 'BODY', message)).toThrow(TypeError);
   });
 });
