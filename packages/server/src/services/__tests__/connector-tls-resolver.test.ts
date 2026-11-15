@@ -223,6 +223,10 @@ describe('reading the stored tls bag', () => {
     ['a string', 'abc'],
     ['an array', []],
     ['a number', 1],
+    // Read as {} before D-277, so a channel saved through the API with tls: true deployed
+    // with an empty bag; it now fails the deploy (D-277 names true explicitly).
+    ['the boolean true', true],
+    ['the text "true"', 'true'],
   ];
 
   it.each(junk)('fails an HTTPS destination when tls is %s', async (_label, tls) => {
