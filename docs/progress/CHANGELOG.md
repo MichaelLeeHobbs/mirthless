@@ -14,6 +14,10 @@ Slice 1 of the docs restructure (#116): a user can now find out, from one page, 
 - **README:** the Documentation link is a question, and "10 connector types" is 13.
 - **Found on the way:** five connector settings that do nothing (#154); a DICOM destination file-path exposure, reported as a draft security advisory.
 
+## 2026-11-15 — TCP/MLLP property schema (branch `feat/115-tcp-mllp-props-schema`)
+
+First slice of #115 (D-274). TCP/MLLP source and destination properties have a strict schema in `core-models/src/schemas/tcp-mllp-connector.schema.ts`. Deploy validation and the registry both use it, so a misspelled key, an unsupported charset or a non-numeric setting fails the deploy instead of being ignored or failing on the first message. A test checks the web defaults and the form's charset and response-mode lists against it, and another checks the connector reference tables, which gained the six TCP/MLLP keys they were missing. Upgrade note with a query to find affected channels: `docs/ops/upgrade.md`. HTTP and DATABASE follow in their own PRs.
+
 ## 2026-11-15 — Connector integration lane in CI (gh-88, branch `ci/connector-itests`)
 
 - **CI:** a new `connector-integration` job starts `sftp-test`, `mail-test`, `kafka-test` and `rabbitmq-test` from the compose `test` profile, plus a Postgres service, and runs `pnpm --filter @galvaniflow/connectors test:integration`. Until now no connector `*.itest.ts` ran in CI.
@@ -64,6 +68,7 @@ The first slice of the docs restructure (#116): before the docs can be checked a
 - **Permissions and roles:** `PERMISSIONS` and `Permission` move to core-models. The server seed derives its rows from them, the web file re-exports them under its old names, and roles everywhere use `USER_ROLE`. The seed and role code share one `permissionRow()` split.
 - **Typed checks:** `requirePermission`, `requireAllPermissions` and the socket room map take `Permission`.
 - **`pnpm shots`** read permissions by scraping the web file, which broke when it became a re-export; it imports them from core-models now.
+- **Direction check (#109, branch `fix/source-connector-direction`):** on top of the schema checks #131 added for create, update and JSON import, backup restore and Mirth import now check each channel in `ChannelImportService` and report a wrong-direction one in the import errors while the rest still import. Clone refuses a stored wrong-direction channel. The Mirth importer imports a wrong-direction connector as JAVASCRIPT with a warning.
 - **Found on the way:** the engine sandbox tests and three server engine tests depend on wall-clock timing and fail on a slower Windows machine (#125). An E2E spec fails intermittently with ECONNRESET (#126). Neither touches this branch's code.
 
 

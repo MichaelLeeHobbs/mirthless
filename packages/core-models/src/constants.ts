@@ -70,10 +70,20 @@ export type DestinationConnectorType = (typeof DESTINATION_CONNECTOR_TYPES)[numb
 
 export type ConnectorType = SourceConnectorType | DestinationConnectorType;
 
+/** True when the type can be a channel's source. */
+export function isSourceConnectorType(type: string): type is SourceConnectorType {
+  return (SOURCE_CONNECTOR_TYPES as readonly string[]).includes(type);
+}
+
+/** True when the type can be a channel's destination. */
+export function isDestinationConnectorType(type: string): type is DestinationConnectorType {
+  return (DESTINATION_CONNECTOR_TYPES as readonly string[]).includes(type);
+}
+
 /** Every connector type, in either direction. */
 export const CONNECTOR_TYPES = [
   ...SOURCE_CONNECTOR_TYPES,
-  ...DESTINATION_CONNECTOR_TYPES.filter((t) => !(SOURCE_CONNECTOR_TYPES as readonly string[]).includes(t)),
+  ...DESTINATION_CONNECTOR_TYPES.filter((t) => !isSourceConnectorType(t)),
 ] as unknown as readonly [ConnectorType, ...ConnectorType[]];
 
 export const RESPONSE_MODE = {

@@ -21,7 +21,7 @@ const REMINDERS = [
     text:
       'You edited what a connector reads. If a property was added, renamed or removed, or its security changed, ' +
       "update docs/user/connector-reference.md (the connector's property table, and its matrix row for direction or " +
-      'transport security). The docs guard in pnpm gate checks connector types and headings, not property keys (#115).',
+      'transport security). The gate checks property keys only for connectors with a core-models schema (#115).',
   },
 ];
 

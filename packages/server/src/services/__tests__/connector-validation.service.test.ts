@@ -135,11 +135,30 @@ describe('validateConnectorProperties', () => {
       expect(result.ok).toBe(false);
     });
 
-    it('allows extra properties via passthrough', () => {
-      const result = validateConnectorProperties('TCP_MLLP', 'source', {
-        port: 6661, bufferSize: 65536, charset: 'UTF-8',
-      });
-      expect(result.ok).toBe(true);
+    it('rejects a TCP_MLLP key the schema does not list, naming it', () => {
+      const result = validateConnectorProperties('TCP_MLLP', 'source', { port: 6661, maxConnection: 5 });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('maxConnection');
+    });
+
+    it('rejects a TCP_MLLP charset the connector does not support', () => {
+      const result = validateConnectorProperties('TCP_MLLP', 'source', { port: 6661, charset: 'windows-1252' });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('charset:');
+    });
+
+    it('accepts a TCP_MLLP channel the 2026-02 to 2026-07 editor saved', () => {
+      const source = { host: '0.0.0.0', port: 6661, maxConnections: 10, receiveTimeout: 0, bufferSize: 65536, keepConnectionOpen: true, charset: 'UTF-8', transmissionMode: 'MLLP' };
+      const dest = { host: 'localhost', port: 6661, sendTimeout: 10000, keepConnectionOpen: true, charset: 'UTF-8', transmissionMode: 'MLLP', bufferSize: 65536 };
+      expect(validateConnectorProperties('TCP_MLLP', 'source', source).ok).toBe(true);
+      expect(validateConnectorProperties('TCP_MLLP', 'destination', dest).ok).toBe(true);
+    });
+
+    it('accepts the keys the engine reads from every TCP_MLLP connector', () => {
+      expect(validateConnectorProperties('TCP_MLLP', 'source', { port: 6661, processBatch: true }).ok).toBe(true);
+      expect(validateConnectorProperties('TCP_MLLP', 'destination', { host: 'lis', port: 6661, template: 'x' }).ok).toBe(true);
     });
   });
 
