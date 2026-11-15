@@ -200,8 +200,13 @@ export class EmailReceiver implements SourceConnectorRuntime {
         this.client.fetchUnread(this.config.folder), IMAP_OP_TIMEOUT_MS, 'IMAP fetchUnread',
       );
       for (const msg of messages) {
-        if (this.matchesSubjectFilter(msg)) {
+        if (!this.matchesSubjectFilter(msg)) continue;
+        // One email that throws must not stop the emails after it or drop a
+        // working connection. It stays unread, so the next poll retries it.
+        try {
           await this.processMessage(msg);
+        } catch (err) {
+          this.logger.error({ ...errorInfo(err), uid: msg.uid }, 'Email could not be processed; continuing with the next email');
         }
       }
     } catch (err) {
