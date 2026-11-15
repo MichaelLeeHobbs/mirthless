@@ -49,14 +49,20 @@ export class GlobalChannelMap {
    * Apply what a script changed. `before` is the snapshot the script was given
    * and `after` is the map it left; only keys that differ are written, so a
    * key another message changed in the meantime is kept.
+   *
+   * @returns The keys written or removed, so a caller can track what changed.
    */
-  applyChanges(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): void {
+  applyChanges(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): ReadonlyArray<string> {
     const changes = diffMap(before, after);
+    const changed: string[] = [];
     for (const [key, value] of changes.set) {
       this.store.set(key, value);
+      changed.push(key);
     }
     for (const key of changes.removed) {
       this.store.delete(key);
+      changed.push(key);
     }
+    return changed;
   }
 }
