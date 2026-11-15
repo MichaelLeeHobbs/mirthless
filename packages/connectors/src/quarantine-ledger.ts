@@ -8,6 +8,8 @@
 // restart does not re-dispatch. Each receiver supplies the storage (local fs or
 // a remote SFTP client); this module owns the set, its parsing and its logging.
 
+import type { MessageDispatcher, RawMessage } from './base.js';
+import { dispatchFailure } from './base.js';
 import { errorInfo, type ConnectorLogger } from './logger.js';
 
 /** Where a receiver keeps its ledger files. */
@@ -105,5 +107,67 @@ export class QuarantineLedger {
         'Quarantine ledger is corrupt; ignoring it (files may be re-dispatched)',
       );
     }
+  }
+}
+
+/** One polled file to dispatch under quarantine. */
+export interface QuarantinedFile {
+  readonly ledger: QuarantineLedger;
+  readonly logger: ConnectorLogger;
+  /** The file's `name:mtime` quarantine key. */
+  readonly key: string;
+  /** The file as it appears in the `file` field of every log record. */
+  readonly file: string;
+  /** Read the file into a message; `null` skips it this poll. */
+  readonly read: () => Promise<RawMessage | null>;
+  readonly dispatcher: MessageDispatcher;
+  /** Apply the configured delete or move after a clean dispatch. */
+  readonly postProcess: () => Promise<void>;
+}
+
+/**
+ * Dispatch one polled file unless it is quarantined. A file the pipeline
+ * recorded an error for, or whose post-action fails, is quarantined so it is
+ * never read again. Errors from `read` and `dispatcher` propagate.
+ */
+export async function dispatchQuarantined(job: QuarantinedFile): Promise<void> {
+  const { ledger, logger, key, file } = job;
+  if (ledger.has(key)) {
+    // Already dispatched: its post-action failed, or the pipeline recorded an
+    // error for it. Skip to avoid a duplicate delivery. Reported once per
+    // start, not on every poll, so the log stays readable.
+    if (ledger.reportOnce(key)) {
+      logger.error(
+        { file },
+        'File quarantined after an earlier dispatch; skipping to avoid duplicate delivery (reported once per start)',
+      );
+    }
+    return;
+  }
+
+  const raw = await job.read();
+  if (raw === null) return;
+
+  const result = await job.dispatcher(raw);
+  // Not taken by the pipeline at all: leave the file for the next poll.
+  if (!result.ok) return;
+
+  const failure = dispatchFailure(result);
+  if (failure !== null) {
+    // Recorded with an error. Do not delete or move the file (that would report
+    // success), and do not read it again (that would process it twice).
+    await ledger.add(key);
+    logger.error(
+      { ...errorInfo(failure), file },
+      'Pipeline recorded an error for this file; file kept in place and quarantined so it is not read again',
+    );
+    return;
+  }
+
+  try {
+    await job.postProcess();
+  } catch (err) {
+    await ledger.add(key);
+    logger.error({ ...errorInfo(err), file }, 'Post-action failed after successful dispatch; quarantining file');
   }
 }

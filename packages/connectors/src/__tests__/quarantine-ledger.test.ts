@@ -3,7 +3,9 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { QuarantineLedger, type LedgerStorage } from '../quarantine-ledger.js';
+import type { Result } from '@galvaniflow/core-util';
+import type { DispatchResult, RawMessage } from '../base.js';
+import { QuarantineLedger, dispatchQuarantined, type LedgerStorage, type QuarantinedFile } from '../quarantine-ledger.js';
 import { makeMockLogger, type MockLogger } from '../__fixtures__/mock-logger.js';
 
 const LEDGER = '/in/.galvaniflow-quarantine.json';
@@ -119,5 +121,103 @@ describe('QuarantineLedger.reportOnce', () => {
     expect(ledger.reportOnce('a.hl7:1')).toBe(true);
     expect(ledger.reportOnce('a.hl7:1')).toBe(false);
     expect(ledger.reportOnce('b.hl7:2')).toBe(true);
+  });
+});
+
+// ----- dispatchQuarantined -----
+
+const RAW: RawMessage = { content: 'MSH|^~\\&|X', sourceMap: {} };
+
+function ok(value: DispatchResult): Result<DispatchResult> {
+  return { ok: true, value, error: null };
+}
+
+interface Run {
+  readonly job: QuarantinedFile;
+  readonly log: MockLogger;
+  readonly storage: MemoryStorage;
+  readonly calls: string[];
+}
+
+function makeJob(overrides: Partial<QuarantinedFile> = {}): Run {
+  const { storage, log, ledger } = setup();
+  const calls: string[] = [];
+  const job: QuarantinedFile = {
+    ledger,
+    logger: log.logger,
+    key: 'a.hl7:1',
+    file: '/in/a.hl7',
+    read: async () => { calls.push('read'); return RAW; },
+    dispatcher: async () => { calls.push('dispatch'); return ok({ messageId: 1 }); },
+    postProcess: async () => { calls.push('post'); },
+    ...overrides,
+  };
+  return { job, log, storage, calls };
+}
+
+describe('dispatchQuarantined', () => {
+  it('reads, dispatches and post-processes a file that is not quarantined', async () => {
+    const { job, log, calls } = makeJob();
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read', 'dispatch', 'post']);
+    expect(log.errors).toEqual([]);
+  });
+
+  it('skips a quarantined file without reading it and reports it once', async () => {
+    const { job, log, calls } = makeJob();
+    await job.ledger.add(job.key);
+    await dispatchQuarantined(job);
+    await dispatchQuarantined(job);
+    expect(calls).toEqual([]);
+    expect(log.errors).toHaveLength(1);
+    expect(log.errors[0]!.obj).toEqual({ file: '/in/a.hl7' });
+    expect(log.errors[0]!.msg).toContain('skipping to avoid duplicate delivery');
+  });
+
+  it('does nothing more when the read returns null', async () => {
+    const { job, calls } = makeJob({ read: async () => null });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual([]);
+    expect(job.ledger.has(job.key)).toBe(false);
+  });
+
+  it('leaves the file for the next poll when the pipeline did not take it', async () => {
+    const { job, calls, log } = makeJob({
+      dispatcher: async () => ({ ok: false, value: null, error: new Error('queue full') }),
+    });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read']);
+    expect(job.ledger.has(job.key)).toBe(false);
+    expect(log.errors).toEqual([]);
+  });
+
+  it('quarantines and persists, without post-processing, a file the pipeline recorded an error for', async () => {
+    const { job, calls, log, storage } = makeJob({
+      dispatcher: async () => ok({ messageId: 9, status: 'ERROR' }),
+    });
+    await dispatchQuarantined(job);
+    expect(calls).toEqual(['read']);
+    expect(job.ledger.has(job.key)).toBe(true);
+    expect(storage.files.get(LEDGER)).toBe('["a.hl7:1"]');
+    expect(log.errors).toHaveLength(1);
+    expect(log.errors[0]!.obj['file']).toBe('/in/a.hl7');
+    expect(log.errors[0]!.msg).toBe('Pipeline recorded an error for this file; file kept in place and quarantined so it is not read again');
+  });
+
+  it('quarantines and persists a file whose post-action fails', async () => {
+    const { job, log, storage } = makeJob({ postProcess: async () => { throw new Error('EPERM'); } });
+    await dispatchQuarantined(job);
+    expect(job.ledger.has(job.key)).toBe(true);
+    expect(storage.files.get(LEDGER)).toBe('["a.hl7:1"]');
+    expect(log.errors).toHaveLength(1);
+    expect(log.errors[0]!.obj['errMsg']).toBe('EPERM');
+    expect(log.errors[0]!.obj['file']).toBe('/in/a.hl7');
+    expect(log.errors[0]!.msg).toBe('Post-action failed after successful dispatch; quarantining file');
+  });
+
+  it('lets a read failure propagate without quarantining', async () => {
+    const { job } = makeJob({ read: async () => { throw new Error('SFTP get failed'); } });
+    await expect(dispatchQuarantined(job)).rejects.toThrow('SFTP get failed');
+    expect(job.ledger.has(job.key)).toBe(false);
   });
 });

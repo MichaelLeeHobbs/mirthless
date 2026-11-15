@@ -9,10 +9,9 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
-import { dispatchFailure } from '../base.js';
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
-import { QuarantineLedger, type LedgerStorage } from '../quarantine-ledger.js';
+import { QuarantineLedger, dispatchQuarantined, type LedgerStorage } from '../quarantine-ledger.js';
 
 // ----- Constants -----
 
@@ -284,68 +283,26 @@ export class FileReceiver implements SourceConnectorRuntime {
   /** Read a single file, dispatch it, and apply post-processing. */
   private async processFile(entry: FileEntry): Promise<void> {
     if (!this.dispatcher) return;
-
-    const key = `${entry.name}:${String(entry.mtime)}`;
-    if (this.quarantine.has(key)) {
-      // Already dispatched: its post-action failed, or the pipeline recorded an
-      // error for it. Skip to avoid a duplicate delivery. Reported once per
-      // start, not on every poll, so the log stays readable.
-      if (this.quarantine.reportOnce(key)) {
-        this.logger.error(
-          { file: entry.fullPath },
-          'File quarantined after an earlier dispatch; skipping to avoid duplicate delivery (reported once per start)',
-        );
-      }
-      return;
-    }
-
-    const content = await this.readContent(entry);
-    if (content === null) return;
-
-    const raw: RawMessage = {
-      content,
-      sourceMap: {
-        originalFilename: entry.name,
-        directory: this.config.directory,
-        fileSize: entry.size,
-        lastModified: entry.mtime,
-      },
-    };
-
-    const result = await this.dispatcher(raw);
-    // Not taken by the pipeline at all: leave the file for the next poll.
-    if (!result.ok) return;
-
-    const failure = dispatchFailure(result);
-    if (failure !== null) {
-      // Recorded with an error. Do not delete or move the file (that would report
-      // success), and do not read it again (that would process it twice).
-      await this.quarantine.add(key);
-      this.logger.error(
-        { ...errorInfo(failure), file: entry.fullPath },
-        'Pipeline recorded an error for this file; file kept in place and quarantined so it is not read again',
-      );
-      return;
-    }
-
-    try {
-      await this.postProcess(entry);
-    } catch (err) {
-      await this.quarantine.add(key);
-      this.logger.error(
-        { ...errorInfo(err), file: entry.fullPath },
-        'Post-action failed after successful dispatch; quarantining file',
-      );
-    }
+    await dispatchQuarantined({
+      ledger: this.quarantine,
+      logger: this.logger,
+      key: `${entry.name}:${String(entry.mtime)}`,
+      file: entry.fullPath,
+      read: () => this.readMessage(entry),
+      dispatcher: this.dispatcher,
+      postProcess: () => this.postProcess(entry),
+    });
   }
 
   /**
-   * Read one file. A file that cannot be read is reported and skipped, so it
-   * does not hold up the files after it; it is tried again on the next poll.
+   * Read one file into a message. A file that cannot be read is reported and
+   * skipped, so it does not hold up the files after it; it is tried again on
+   * the next poll.
    */
-  private async readContent(entry: FileEntry): Promise<string | null> {
+  private async readMessage(entry: FileEntry): Promise<RawMessage | null> {
+    let content: string;
     try {
-      return this.config.binary
+      content = this.config.binary
         ? (await fs.readFile(entry.fullPath)).toString('base64')
         : await fs.readFile(entry.fullPath, { encoding: normalizeEncoding(this.config.charset) });
     } catch (err) {
@@ -355,6 +312,15 @@ export class FileReceiver implements SourceConnectorRuntime {
       );
       return null;
     }
+    return {
+      content,
+      sourceMap: {
+        originalFilename: entry.name,
+        directory: this.config.directory,
+        fileSize: entry.size,
+        lastModified: entry.mtime,
+      },
+    };
   }
 
   /** Apply post-processing action to a processed file. */

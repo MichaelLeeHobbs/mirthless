@@ -11,11 +11,10 @@
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
-import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { matchGlob } from '../file/file-receiver.js';
 import { withTimeout } from '../timeout.js';
-import { QuarantineLedger, type LedgerStorage } from '../quarantine-ledger.js';
+import { QuarantineLedger, dispatchQuarantined, type LedgerStorage } from '../quarantine-ledger.js';
 import {
   createSsh2SftpClient,
   validateAuth,
@@ -242,22 +241,23 @@ export class SftpReceiver implements SourceConnectorRuntime {
   /** Download a single file, dispatch it, and apply post-processing. */
   private async processFile(entry: SftpFileInfo): Promise<void> {
     if (!this.dispatcher || !this.client) return;
+    const client = this.client;
+    await dispatchQuarantined({
+      ledger: this.quarantine,
+      logger: this.logger,
+      key: `${entry.name}:${String(entry.modifyTime)}`,
+      file: entry.name,
+      read: () => this.downloadMessage(client, entry),
+      dispatcher: this.dispatcher,
+      postProcess: () => this.postProcess(entry),
+    });
+  }
 
-    const key = `${entry.name}:${String(entry.modifyTime)}`;
-    if (this.quarantine.has(key)) {
-      if (this.quarantine.reportOnce(key)) {
-        this.logger.error(
-          { file: entry.name },
-          'File quarantined after an earlier dispatch; skipping to avoid duplicate delivery (reported once per start)',
-        );
-      }
-      return;
-    }
-
+  /** Download one file into a message. Throws when the download fails or times out. */
+  private async downloadMessage(client: SftpClient, entry: SftpFileInfo): Promise<RawMessage> {
     const remotePath = joinRemote(this.config.remoteDirectory, entry.name);
-    const buffer = await withTimeout(this.client.get(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP get');
-
-    const raw: RawMessage = {
+    const buffer = await withTimeout(client.get(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP get');
+    return {
       content: buffer.toString(normalizeEncoding(this.config.charset)),
       sourceMap: {
         originalFilename: entry.name,
@@ -266,32 +266,6 @@ export class SftpReceiver implements SourceConnectorRuntime {
         lastModified: entry.modifyTime,
       },
     };
-
-    const result = await this.dispatcher(raw);
-    // Not taken by the pipeline at all: leave the file for the next poll.
-    if (!result.ok) return;
-
-    const failure = dispatchFailure(result);
-    if (failure !== null) {
-      // Recorded with an error. Do not delete or move the file (that would report
-      // success), and do not read it again (that would process it twice).
-      await this.quarantine.add(key);
-      this.logger.error(
-        { ...errorInfo(failure), file: entry.name },
-        'Pipeline recorded an error for this file; file kept in place and quarantined so it is not read again',
-      );
-      return;
-    }
-
-    try {
-      await this.postProcess(entry);
-    } catch (err) {
-      await this.quarantine.add(key);
-      this.logger.error(
-        { ...errorInfo(err), file: entry.name },
-        'Post-action failed after successful dispatch; quarantining file',
-      );
-    }
   }
 
   /** Apply post-processing action to a processed file. */
