@@ -8,13 +8,46 @@ import { transformerInputSchema } from './transformer.schema.js';
 
 // ----- Shared Enums -----
 
-// Union of all source and destination connector types. Source-valid:
-// TCP_MLLP, HTTP, FILE, DATABASE, JAVASCRIPT, CHANNEL, DICOM, EMAIL.
-// Destination-valid: TCP_MLLP, HTTP, FILE, DATABASE, JAVASCRIPT, SMTP, CHANNEL,
-// FHIR, DICOM. The UI dropdowns enforce the source/destination split; the
-// connector registry (packages/connectors) is the runtime source of truth.
-// SMTP and EMAIL were previously absent — an SMTP destination or EMAIL source
-// therefore failed channel validation despite the connectors existing.
+/**
+ * Connector types that have a source factory in the connector registry
+ * (packages/connectors/src/registry.ts). A connectors test keeps the two equal.
+ */
+export const SOURCE_CONNECTOR_TYPES = [
+  'TCP_MLLP',
+  'HTTP',
+  'FILE',
+  'DATABASE',
+  'JAVASCRIPT',
+  'CHANNEL',
+  'DICOM',
+  'EMAIL',
+  'SFTP',
+  'KAFKA',
+  'AMQP',
+] as const;
+export type SourceConnectorType = (typeof SOURCE_CONNECTOR_TYPES)[number];
+
+/**
+ * Connector types that have a destination factory in the connector registry.
+ * A connectors test keeps the two equal.
+ */
+export const DESTINATION_CONNECTOR_TYPES = [
+  'TCP_MLLP',
+  'HTTP',
+  'FILE',
+  'DATABASE',
+  'JAVASCRIPT',
+  'CHANNEL',
+  'DICOM',
+  'FHIR',
+  'SMTP',
+  'SFTP',
+  'KAFKA',
+  'AMQP',
+] as const;
+export type DestinationConnectorType = (typeof DESTINATION_CONNECTOR_TYPES)[number];
+
+/** Union of all source and destination connector types. */
 export const CONNECTOR_TYPES = [
   'TCP_MLLP',
   'HTTP',
@@ -32,6 +65,8 @@ export const CONNECTOR_TYPES = [
 ] as const;
 
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);
+export const sourceConnectorTypeSchema = z.enum(SOURCE_CONNECTOR_TYPES);
+export const destinationConnectorTypeSchema = z.enum(DESTINATION_CONNECTOR_TYPES);
 
 // ----- Channel Properties -----
 
@@ -54,7 +89,7 @@ export const channelPropertiesSchema = z.object({
 export const destinationInputSchema = z.object({
   name: z.string().min(1).max(255),
   enabled: z.boolean().default(true),
-  connectorType: connectorTypeSchema,
+  connectorType: destinationConnectorTypeSchema,
   properties: z.record(z.string(), z.unknown()),
   queueMode: z.enum(['NEVER', 'ON_FAILURE', 'ALWAYS']).default('NEVER'),
   retryCount: z.number().int().nonnegative().default(0),
@@ -91,7 +126,7 @@ export const createChannelSchema = z.object({
   enabled: z.boolean().default(false),
   inboundDataType: z.enum(['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR', 'X12']),
   outboundDataType: z.enum(['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR', 'X12']),
-  sourceConnectorType: connectorTypeSchema,
+  sourceConnectorType: sourceConnectorTypeSchema,
   sourceConnectorProperties: z.record(z.string(), z.unknown()),
   responseMode: z
     .enum([
