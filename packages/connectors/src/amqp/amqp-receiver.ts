@@ -18,11 +18,11 @@
 // starts it again.
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
-import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage } from '../base.js';
+import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
-import { decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
+import { assertCharsetAvailable, decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
 import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvaniflow/core-models';
 import { consumeAmqp, type AmqpConnectionConfig, type AmqpConsume, type AmqpConsumer, type AmqpDelivery } from './amqp-client.js';
 
@@ -86,7 +86,9 @@ export class AmqpReceiver implements SourceConnectorRuntime {
    */
   private readonly failures = new Map<string, number>();
 
+  /** Throws when the configured charset cannot be decoded here, so the deploy fails. */
   constructor(config: AmqpReceiverConfig, consume?: AmqpConsume, logger?: ConnectorLogger, retryDelayMs?: number) {
+    assertCharsetAvailable(config.charset);
     this.config = config;
     this.consume = consume ?? consumeAmqp;
     this.logger = logger ?? createConnectorLogger('AMQP');
@@ -117,6 +119,8 @@ export class AmqpReceiver implements SourceConnectorRuntime {
       const generation = this.generation;
       this.running = true;
       this.failures.clear();
+      // A dispatch left hanging by a halt must not hold up this start's deliveries.
+      this.queue = Promise.resolve();
       try {
         this.consumer = await this.consume(this.config, (d) => { this.enqueue(generation, d); });
       } catch (err) {
@@ -188,21 +192,43 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     }
   }
 
+  /**
+   * Handle deliveries one after another. The chain must never stay rejected:
+   * every later delivery would be skipped while the channel shows STARTED.
+   */
   private enqueue(generation: number, delivery: AmqpDelivery): void {
-    this.queue = this.queue.then(() => this.handle(generation, delivery));
+    this.queue = this.queue
+      .then(() => this.handle(generation, delivery))
+      .catch((err: unknown) => {
+        this.logger.error({ ...errorInfo(err), queue: this.config.queue, routingKey: delivery.routingKey }, 'AMQP message handling failed unexpectedly; returning it to the queue');
+        this.settle({ queue: this.config.queue }, () => { delivery.nack(true); });
+      });
   }
 
-  /** Dispatch one delivery and settle it with the broker. Never rejects. */
+  /**
+   * Convert and dispatch a delivery. A throw (a decoder that cannot be built, a
+   * dispatcher bug) becomes a failed result, so the message goes back to the
+   * queue and counts toward the cap like any message the pipeline did not store.
+   */
+  private async dispatchDelivery(dispatcher: MessageDispatcher, delivery: AmqpDelivery, where: Readonly<Record<string, unknown>>): Promise<Result<DispatchResult>> {
+    return tryCatch(async () => {
+      const raw = toRawMessage(delivery, this.config.queue, this.config.charset);
+      if (raw.sourceMap['charsetError']) {
+        this.logger.warn(where, 'AMQP message body is not valid UTF-8; invalid bytes were replaced and the message is flagged (charsetError in the source map)');
+      }
+      const result = await dispatcher(raw);
+      if (!result.ok) throw result.error;
+      return result.value;
+    });
+  }
+
+  /** Dispatch one delivery and settle it with the broker. */
   private async handle(generation: number, delivery: AmqpDelivery): Promise<void> {
     const dispatcher = this.dispatcher;
     // Not acknowledged: the channel closes on stop and the broker requeues it.
     if (!dispatcher || !this.isCurrent(generation)) return;
     const where = { queue: this.config.queue, routingKey: delivery.routingKey, redelivered: delivery.redelivered };
-    const raw = toRawMessage(delivery, this.config.queue, this.config.charset);
-    if (raw.sourceMap['charsetError']) {
-      this.logger.warn(where, 'AMQP message body is not valid UTF-8; invalid bytes were replaced and the message is flagged (charsetError in the source map)');
-    }
-    const result = await dispatcher(raw);
+    const result = await this.dispatchDelivery(dispatcher, delivery, where);
     if (!result.ok) {
       await this.notStored(generation, delivery, result.error, where);
       return;

@@ -235,6 +235,59 @@ describe('a message the pipeline never stores', () => {
   });
 });
 
+describe('a delivery that throws', () => {
+  it('returns a message whose dispatch throws to the queue and keeps consuming', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let calls = 0;
+    const offered: string[] = [];
+    const { log } = await start(queue, async (raw) => {
+      offered.push(raw.content);
+      calls += 1;
+      if (calls === 1) throw new Error('dispatcher bug');
+      return stored(calls);
+    });
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+    queue.publish('MSH|2');
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+    expect(offered).toEqual(['MSH|1', 'MSH|1', 'MSH|2']);
+    expect(JSON.stringify(log.errors)).not.toContain('MSH|1');
+  });
+
+  it('keeps consuming after converting a delivery throws', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let first = true;
+    const throwingOnce: typeof queue.consume = (c, onDelivery) => queue.consume(c, (d) => {
+      if (!first) { onDelivery(d); return; }
+      first = false;
+      onDelivery(Object.defineProperty({ ...d }, 'content', { get: () => { throw new RangeError('decoder unavailable'); } }));
+    });
+    const p = pipeline();
+    receiver = new AmqpReceiver(config, throwingOnce, makeMockLogger().logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+    queue.publish('MSH|2');
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+  });
+
+  it('a start does not wait behind a dispatch that hung before a halt', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let calls = 0;
+    await start(queue, async () => {
+      calls += 1;
+      if (calls === 1) return new Promise<Result<DispatchResult>>(() => undefined); // never answers
+      return stored(calls);
+    });
+    await vi.waitFor(() => { expect(calls).toBe(1); });
+    await receiver?.onHalt();
+    await receiver?.onStart();
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+  });
+});
+
 describe('broker disconnect', () => {
   it('reconnects after the connection drops, and the message that was in flight is delivered again', async () => {
     const queue = new FakeAmqpQueue();

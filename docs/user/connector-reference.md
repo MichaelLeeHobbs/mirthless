@@ -146,7 +146,7 @@ Polls a directory on an SFTP server, sends each matching file through the channe
 A file the channel recorded with an error, or whose delete or move failed after it was sent, is left in place and not read again. The list of those files is kept in `.galvaniflow-quarantine.json` in the remote directory, so it survives a restart; that file is never read as a message.
 
 ### KAFKA (source)
-Reads a topic as a member of a consumer group and commits a record only after the channel has stored it. Source map: `topic`, `partition`, `offset`, `key`, `headers`, `timestamp`, and `charsetError` when a UTF-8 payload had invalid bytes. The key and headers are always read as UTF-8.
+Reads a topic as a member of a consumer group and commits a record only after the channel has stored it. Source map: `topic`, `partition`, `offset`, `key`, `headers`, `timestamp`, and `charsetError` when a UTF-8 payload had invalid bytes. The key and header values are always read as UTF-8, whatever `charset` is set to; `charset` applies to the record value only.
 
 | Property | Default | Notes |
 |---|---|---|
@@ -156,7 +156,7 @@ Reads a topic as a member of a consumer group and commits a record only after th
 | `groupId` | — (required) | Consumer group; one per channel. |
 | `startFrom` | `EARLIEST` | `EARLIEST` or `LATEST`, for a group with no committed offset. |
 | `maxStoreAttempts` | `5` | Failures in a row to store the same record before the source stops (1 to 1000). The record is not committed; the channel stops, an ERROR `CHANNEL_STOPPED` event is recorded and a `SOURCE_CONNECTOR` alert fires. Fix the cause and start the channel; it reads that record first. |
-| `charset` | `utf-8` | How the record value becomes message text: `utf-8`, `latin1` (ISO-8859-1), `windows-1252`, or `base64` to keep a binary payload intact. In `utf-8` mode a value with invalid bytes is stored with them replaced by U+FFFD, flagged with `charsetError` in the source map, and logged as a warning. |
+| `charset` | `utf-8` | How the record value becomes message text: `utf-8`, `latin1` (ISO-8859-1), `windows-1252`, or `base64` to keep a binary payload intact. In `utf-8` mode a value with invalid bytes is stored with them replaced by U+FFFD, flagged with `charsetError` in the source map, and logged as a warning. `windows-1252` needs a Node with full ICU (the official builds have it); without it the deploy fails. A record that cannot be converted counts as a failed store attempt toward `maxStoreAttempts`. |
 | `saslMechanism` | `NONE` | `NONE`, `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`. |
 | `saslUsername`, `saslPassword` | `''` | Required with a mechanism. |
 | `useTls` | `false` | TLS to the brokers. |
@@ -172,7 +172,7 @@ Consumes an existing RabbitMQ (AMQP 0-9-1) queue and acks a message only after t
 | `vhost` | `/` | Virtual host. |
 | `username`, `password` | `''` | Login; the broker's default when empty. |
 | `queue` | — (required) | An existing queue; never declared. |
-| `charset` | `utf-8` | As for Kafka, for the message body. |
+| `charset` | `utf-8` | As for Kafka, for the message body. A message that cannot be converted goes back to the queue and counts toward `maxStoreAttempts`. |
 | `maxStoreAttempts` | `5` | As for Kafka. The message is neither acked nor dead-lettered; it stays on the queue. Failures are counted per AMQP `messageId`. A message without one is counted in a row, which assumes it comes straight back before the messages behind it: true for a classic queue with prefetch 1, not promised by a quorum queue, so set a `messageId` on messages sent to a quorum queue. The broker's `x-delivery-count` is not used, because RabbitMQ 4.x does not raise it for the `nack` with requeue this source returns a message with. It does raise it when a connection closes with the message unacknowledged, which happens each time this cap stops the channel (and on a lost connection); a quorum queue drops the message, or dead-letters it if it has a dead-letter exchange, once that count passes its delivery-limit (20 by default from RabbitMQ 4.0). On RabbitMQ 3.x a requeue counts too, so keep `maxStoreAttempts` below the queue's delivery-limit, or the broker removes the message first. |
 | `useTls`, `tls` | `false` | As for Kafka. |
 
