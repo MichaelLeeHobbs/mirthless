@@ -67,6 +67,11 @@ describe('runScriptTest', () => {
       ["await dbQuery('billing', 'delete from x');", 'dbQuery on "billing"'],
       ["await routeMessage('Archive', rawData);", 'routeMessage to "Archive"'],
       ["await getCollection('orders').store({ k: 'v' }, 'x');", 'collection "orders" store'],
+      ["await getCollection('orders').update('id-1', { k: 'v' });", 'collection "orders" update'],
+      ["await getCollection('orders').delete('id-1');", 'collection "orders" delete'],
+      // Reads are refused too when the caller gives no reader, rather than reaching a store.
+      ["await getResource('codes');", 'getResource "codes"'],
+      ["await getCollection('orders').find({ k: 'v' });", 'collection "orders" find'],
     ] as const) {
       const result = await run({ kind: 'script', script });
       expect(result.outcome, script).toBe('error');
@@ -80,6 +85,26 @@ describe('runScriptTest', () => {
     const result = await run({ kind: 'script', script: "logger.info(await getResource('codes'));", readers: { getResource } });
     expect(getResource).toHaveBeenCalledWith('codes');
     expect(result.logs).toEqual([{ level: 'INFO', message: 'lookup-table' }]);
+  });
+
+  it('reports what a script returned as text, and nothing when it returned nothing', async () => {
+    expect((await run({ kind: 'script', script: 'return 42;' })).returned).toBe('42');
+    expect((await run({ kind: 'script', script: "return { mrn: '0004821193' };" })).returned).toBe('{"mrn":"0004821193"}');
+    expect((await run({ kind: 'script', script: "logger.info('x');" })).returned).toBeNull();
+  });
+
+  it('uses a returned string as the transformer output, as the pipeline does', async () => {
+    const replaced = 'MSH|^~\\&|EPIC|HOSP|GF|HOSP|20261115093000||ADT^A08|MSG2|P|2.5.1';
+    const result = await run({ kind: 'transformer', script: `return ${JSON.stringify(replaced)};` });
+    expect(result.output).toBe(replaced);
+    expect(result.returned).toBe(replaced);
+  });
+
+  it('passes the sample through as text when the script has no data type', async () => {
+    const result = await run({ kind: 'transformer', script: "logger.info(typeof msg + ' ' + msg.length);", surface: { templateContext: 'GLOBAL_PREPROCESSOR' }, sample: 'abc' });
+    expect(result.logs).toEqual([{ level: 'INFO', message: 'string 3' }]);
+    expect(result.output).toBeNull();
+    expect(result.destinations).toBeNull();
   });
 
   it('reports a sample that does not parse as the channel data type', async () => {
