@@ -9,7 +9,8 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 // copy: import the shared one. The exported definition in its home file doesn't
 // match, and neither does a plain value such as `const errorMessage = '...'`.
 const SHARED_HELPERS = [
-  { names: 'mapErrorToStatus|errorResponse|errorMessage|errorCode', home: 'packages/server/src/lib/controller-helpers.ts' },
+  { names: 'mapErrorToStatus|errorResponse', home: 'packages/server/src/lib/controller-helpers.ts' },
+  { names: 'errorMessage|errorCode', home: 'packages/server/src/lib/controller-helpers.ts (errorResponse(error).message or .code)' },
   { names: 'escapeCsvField', home: 'packages/server/src/lib/csv.ts' },
   { names: 'isBlockedIp|isBlockedHost|isBlockedHostname|isBlockedAddress|isReservedHostname|isReservedAddress', home: 'packages/engine/src/sandbox/ssrf.ts' },
   { names: 'isPlainObject|isRecord', home: '@galvaniflow/core-util (validation.ts)' },
