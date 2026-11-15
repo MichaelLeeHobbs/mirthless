@@ -4,7 +4,7 @@
 // The one in-memory copy of the global map, shared by every deployed channel.
 // Tracks which keys scripts changed and saves them to the database on a timer.
 
-import { diffMap } from './map-diff.js';
+import { GlobalChannelMap } from './global-channel-map.js';
 
 // ----- Types -----
 
@@ -40,7 +40,7 @@ function fromRow(row: GlobalMapRow): unknown {
 
 /** In-memory global map with change tracking and periodic flush. */
 export class GlobalMapProxy {
-  private readonly store = new Map<string, unknown>();
+  private readonly map = new GlobalChannelMap();
   private readonly dirty = new Set<string>();
   private readonly persistence: GlobalMapStore;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
@@ -54,7 +54,7 @@ export class GlobalMapProxy {
   /** Initialize from persisted entries. Plain text stays text; JSON entries get their type back. */
   load(entries: ReadonlyArray<GlobalMapRow>): void {
     for (const entry of entries) {
-      this.store.set(entry.key, fromRow(entry));
+      this.map.put(entry.key, fromRow(entry));
     }
   }
 
@@ -68,11 +68,7 @@ export class GlobalMapProxy {
 
   /** Get a snapshot as a plain record for sandbox injection. */
   toRecord(): Record<string, unknown> {
-    const record: Record<string, unknown> = {};
-    for (const [key, value] of this.store) {
-      record[key] = value;
-    }
-    return record;
+    return this.map.toRecord();
   }
 
   /**
@@ -80,32 +76,26 @@ export class GlobalMapProxy {
    * and `after` is the map it left; only keys that differ are written.
    */
   applyChanges(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): void {
-    const changes = diffMap(before, after);
-    for (const [key, value] of changes.set) {
-      this.store.set(key, value);
-      this.dirty.add(key);
-    }
-    for (const key of changes.removed) {
-      this.store.delete(key);
+    for (const key of this.map.applyChanges(before, after)) {
       this.dirty.add(key);
     }
   }
 
   /** Take an entry that is already persisted (an edit made through the API). */
   set(row: GlobalMapRow): void {
-    this.store.set(row.key, fromRow(row));
+    this.map.put(row.key, fromRow(row));
     this.dirty.delete(row.key);
   }
 
   /** Drop an entry that is already removed from the database. */
   delete(key: string): void {
-    this.store.delete(key);
+    this.map.remove(key);
     this.dirty.delete(key);
   }
 
   /** Drop every entry; the database is already cleared. */
   clear(): void {
-    this.store.clear();
+    this.map.clear();
     this.dirty.clear();
   }
 
@@ -136,11 +126,11 @@ export class GlobalMapProxy {
   }
 
   private async persistKey(key: string): Promise<void> {
-    if (!this.store.has(key)) {
+    if (!this.map.containsKey(key)) {
       await this.persistence.remove(key);
       return;
     }
-    const value = this.store.get(key);
+    const value = this.map.get(key);
     if (typeof value === 'string') {
       await this.persistence.save(key, value, false);
     } else {
