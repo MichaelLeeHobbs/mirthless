@@ -10,7 +10,7 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 // match, and neither does a plain value such as `const errorMessage = '...'`.
 const SHARED_HELPERS = [
   { names: 'mapErrorToStatus|errorResponse', home: 'packages/server/src/lib/controller-helpers.ts' },
-  { names: 'errorMessage|errorCode', home: 'packages/server/src/lib/controller-helpers.ts (errorResponse(error).message or .code)' },
+  { names: 'errorMessage|errorCode', home: 'packages/server/src/lib/controller-helpers.ts (errorResponse(error).message or .code) on the server, packages/web/src/lib/error-message.ts (errorMessage) in web' },
   { names: 'escapeCsvField', home: 'packages/server/src/lib/csv.ts' },
   { names: 'isBlockedIp|isBlockedHost|isBlockedHostname|isBlockedAddress|isReservedHostname|isReservedAddress', home: 'packages/engine/src/sandbox/ssrf.ts' },
   { names: 'isPlainObject|isRecord', home: '@galvaniflow/core-util (validation.ts)' },
@@ -22,6 +22,12 @@ const SHARED_HELPERS = [
   { names: 'toPoolConfig', home: 'packages/connectors/src/database/connection-pool.ts' },
   { names: 'dispatchQuarantined', home: 'packages/connectors/src/quarantine-ledger.ts' },
   { names: 'connectFresh|closeQuietly', home: 'packages/connectors/src/client-lifecycle.ts' },
+  { names: 'unescapeControlChars|readEscapes|unescapeMirth', home: '@galvaniflow/core-util (delimited.ts)' },
+  { names: 'isSecretSetting|isSecretSettingType|isSecret', home: '@galvaniflow/core-util (secret-setting.ts)' },
+  { names: 'containsPattern|likePattern', home: 'packages/server/src/lib/like.ts' },
+  { names: 'emitSuccessEvent|emitCollectionEvent|emitDataSourceEvent', home: 'packages/server/src/lib/event-emitter.ts' },
+  { names: 'buildEventWhereConditions|buildExportWhereConditions', home: 'packages/server/src/services/event.service.ts' },
+  { names: 'definedSearchParams|messageFilterParts', home: 'packages/web/src/lib/search-params.ts and message-filter-query.ts' },
   { names: 'createNodemailerTransport|buildNodemailerOptions', home: '@galvaniflow/connectors (smtp/smtp-dispatcher.ts)' },
 ];
 const sharedHelperSelectors = SHARED_HELPERS.flatMap(({ names, home }) => [

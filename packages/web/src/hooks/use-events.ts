@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type EventListResult, type EventDetail } from '../api/client.js';
+import { definedSearchParams } from '../lib/search-params.js';
 
 // ----- Query Keys -----
 
@@ -28,18 +29,19 @@ export interface EventListParams {
   readonly endDate?: string;
 }
 
-function buildEventQueryString(params: EventListParams): string {
-  const searchParams = new URLSearchParams();
-  if (params.page !== undefined) searchParams.set('page', String(params.page));
-  if (params.pageSize !== undefined) searchParams.set('pageSize', String(params.pageSize));
-  if (params.level !== undefined && params.level !== '') searchParams.set('level', params.level);
-  if (params.name !== undefined && params.name !== '') searchParams.set('name', params.name);
-  if (params.outcome !== undefined && params.outcome !== '') searchParams.set('outcome', params.outcome);
-  if (params.userId !== undefined && params.userId !== '') searchParams.set('userId', params.userId);
-  if (params.channelId !== undefined && params.channelId !== '') searchParams.set('channelId', params.channelId);
-  if (params.startDate !== undefined && params.startDate !== '') searchParams.set('startDate', params.startDate);
-  if (params.endDate !== undefined && params.endDate !== '') searchParams.set('endDate', params.endDate);
-  const qs = searchParams.toString();
+/** The `?...` suffix for the event list, or '' when nothing is set. Exported for testing. */
+export function buildEventQueryString(params: EventListParams): string {
+  const qs = definedSearchParams({
+    page: params.page,
+    pageSize: params.pageSize,
+    level: params.level,
+    name: params.name,
+    outcome: params.outcome,
+    userId: params.userId,
+    channelId: params.channelId,
+    startDate: params.startDate,
+    endDate: params.endDate,
+  }).toString();
   return qs ? `?${qs}` : '';
 }
 

@@ -55,6 +55,21 @@ describe('propertyUpdaters', () => {
     expect(onChange.mock.calls.map((c: unknown[]) => (c[0] as { port: number }).port)).toEqual([8080, 0, 0]);
   });
 
+  it('writes one key into tls and keeps the other tls keys and properties', () => {
+    const onChange = vi.fn();
+    const withTls = { host: 'h', tls: { caCertId: 'ca-1', rejectUnauthorized: true } };
+    propertyUpdaters(withTls, onChange).updateTls('clientCertId', 'cl-1');
+    expect(onChange).toHaveBeenCalledWith({
+      host: 'h', tls: { caCertId: 'ca-1', rejectUnauthorized: true, clientCertId: 'cl-1' },
+    });
+  });
+
+  it('starts a tls object when tls is missing', () => {
+    const onChange = vi.fn();
+    propertyUpdaters(properties, onChange).updateTls('caCertId', 'ca-1');
+    expect(onChange).toHaveBeenCalledWith({ host: 'h', port: 1, tls: { caCertId: 'ca-1' } });
+  });
+
   it('stores the switch state', () => {
     const onChange = vi.fn();
     propertyUpdaters(properties, onChange).handleBool('keepOpen')(input(''), true);

@@ -26,52 +26,28 @@ interface ScriptEditorProps {
   readonly readOnly?: boolean;
 }
 
-let jsTypesRegistered = false;
-let tsTypesRegistered = false;
+type LanguageDefaults = Parameters<BeforeMount>[0]['languages']['typescript']['javascriptDefaults'];
+type CompilerOptions = Parameters<LanguageDefaults['setCompilerOptions']>[0];
 
-function registerJsDefaults(monaco: Parameters<BeforeMount>[0]): void {
-  if (jsTypesRegistered) return;
+/** Languages whose Monaco defaults are already set; Monaco keeps them for the page's lifetime. */
+const registeredLanguages = new Set<ScriptLanguage>();
 
-  monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+/** Sets diagnostics, compiler options and the sandbox type lib for one language, once per page load. */
+function registerDefaults(
+  language: ScriptLanguage,
+  defaults: LanguageDefaults,
+  compilerOptions: CompilerOptions,
+): void {
+  if (registeredLanguages.has(language)) return;
+
+  defaults.setDiagnosticsOptions({
     noSemanticValidation: true,
     noSyntaxValidation: false,
   });
+  defaults.setCompilerOptions(compilerOptions);
+  defaults.addExtraLib(SANDBOX_TYPE_DEFS, 'file:///sandbox-globals.d.ts');
 
-  monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
-    target: monaco.languages.typescript.ScriptTarget.ES2020,
-    allowNonTsExtensions: true,
-    allowJs: true,
-    checkJs: false,
-  });
-
-  monaco.languages.typescript.javascriptDefaults.addExtraLib(
-    SANDBOX_TYPE_DEFS,
-    'file:///sandbox-globals.d.ts',
-  );
-
-  jsTypesRegistered = true;
-}
-
-function registerTsDefaults(monaco: Parameters<BeforeMount>[0]): void {
-  if (tsTypesRegistered) return;
-
-  monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
-    noSemanticValidation: true,
-    noSyntaxValidation: false,
-  });
-
-  monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-    target: monaco.languages.typescript.ScriptTarget.ES2020,
-    allowNonTsExtensions: true,
-    strict: true,
-  });
-
-  monaco.languages.typescript.typescriptDefaults.addExtraLib(
-    SANDBOX_TYPE_DEFS,
-    'file:///sandbox-globals.d.ts',
-  );
-
-  tsTypesRegistered = true;
+  registeredLanguages.add(language);
 }
 
 export function ScriptEditor({
@@ -90,8 +66,18 @@ export function ScriptEditor({
   const language = languageProp ?? internalLang;
 
   const handleBeforeMount: BeforeMount = (monaco) => {
-    registerJsDefaults(monaco);
-    registerTsDefaults(monaco);
+    const { typescript } = monaco.languages;
+    registerDefaults('javascript', typescript.javascriptDefaults, {
+      target: typescript.ScriptTarget.ES2020,
+      allowNonTsExtensions: true,
+      allowJs: true,
+      checkJs: false,
+    });
+    registerDefaults('typescript', typescript.typescriptDefaults, {
+      target: typescript.ScriptTarget.ES2020,
+      allowNonTsExtensions: true,
+      strict: true,
+    });
   };
 
   return (

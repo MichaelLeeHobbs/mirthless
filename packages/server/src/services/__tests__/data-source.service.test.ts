@@ -22,7 +22,10 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_c: unknown, v: unknown) => ({ v })),
   asc: vi.fn(() => ({})),
 }));
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
+// The real event emitter runs; the event store underneath it is the boundary,
+// so the tests see the exact audit record that would be written.
+const createEvent = vi.fn().mockResolvedValue({ ok: true, value: undefined });
+vi.mock('../event.service.js', () => ({ EventService: { create: createEvent } }));
 vi.mock('../data-source-pool-manager.js', () => ({
   dataSourcePoolManager: { invalidate: vi.fn(), runQuery: vi.fn(), shutdown: vi.fn() },
 }));
@@ -89,5 +92,37 @@ describe('DataSourceService.create — credential encryption guard', () => {
     if (!result.ok) return;
     expect((result.value as unknown as Record<string, unknown>)['password']).toBeUndefined();
     expect((result.value as unknown as Record<string, unknown>)['passwordEncrypted']).toBeUndefined();
+  });
+});
+
+describe('DataSourceService audit events', () => {
+  it('records a DATASOURCE_UPDATED success event with the caller and attributes on create', async () => {
+    mockIsConfigured.mockReturnValue(true);
+    const returning = vi.fn().mockResolvedValue([{ id: 'id-1', name: input.name, createdAt: new Date(), updatedAt: new Date() }]);
+    mockDb.insert.mockReturnValue({ values: vi.fn().mockReturnValue({ returning }) });
+
+    const result = await DataSourceService.create(input, { userId: 'user-1', ipAddress: '192.0.2.1' });
+
+    expect(result.ok).toBe(true);
+    expect(createEvent).toHaveBeenCalledTimes(1);
+    expect(createEvent.mock.calls[0]?.[0]).toStrictEqual({
+      level: 'INFO', name: 'DATASOURCE_UPDATED', outcome: 'SUCCESS',
+      userId: 'user-1', channelId: null, serverId: null, ipAddress: '192.0.2.1',
+      attributes: { action: 'create', dataSourceName: 'reporting-db' },
+    });
+  });
+
+  it('records null user and address when there is no audit context', async () => {
+    selectWhere.mockResolvedValue([{ id: 'id-1' }]);
+    mockDb.delete.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+
+    const result = await DataSourceService.delete('id-1');
+
+    expect(result.ok).toBe(true);
+    expect(createEvent.mock.calls[0]?.[0]).toStrictEqual({
+      level: 'INFO', name: 'DATASOURCE_UPDATED', outcome: 'SUCCESS',
+      userId: null, channelId: null, serverId: null, ipAddress: null,
+      attributes: { action: 'delete', dataSourceId: 'id-1' },
+    });
   });
 });

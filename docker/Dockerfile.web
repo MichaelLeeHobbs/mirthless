@@ -8,6 +8,7 @@ WORKDIR /app
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/core-models/package.json packages/core-models/
+COPY packages/core-util/package.json packages/core-util/
 COPY packages/web/package.json packages/web/
 RUN pnpm install --frozen-lockfile --prod=false
 
@@ -16,6 +17,7 @@ FROM deps AS build
 # Every package tsconfig extends the root one.
 COPY tsconfig.json ./
 COPY packages/core-models/ packages/core-models/
+COPY packages/core-util/ packages/core-util/
 COPY packages/web/ packages/web/
 ARG VITE_API_URL=/api/v1
 ENV VITE_API_URL=$VITE_API_URL

@@ -9,6 +9,10 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
+import { errorMessage } from '../../lib/error-message.js';
+
+/** Shown when the caught error carries no message. */
+const ERROR_BOUNDARY_FALLBACK = 'An unexpected error occurred';
 
 interface ErrorBoundaryProps {
   readonly children: ReactNode;
@@ -26,8 +30,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
-    const message = error instanceof Error ? error.message : 'An unexpected error occurred';
-    return { hasError: true, errorMessage: message };
+    return { hasError: true, errorMessage: errorMessage(error, ERROR_BOUNDARY_FALLBACK) };
   }
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
