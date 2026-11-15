@@ -19,6 +19,7 @@ import type {
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
+import { containsPattern } from '../lib/like.js';
 import { collections, collectionRecords } from '../db/schema/index.js';
 
 /** Maximum stored payload size (1 MiB). Larger writes are rejected. */
@@ -371,16 +372,11 @@ function columnExpr(column: RecordColumn, indexedFields: readonly string[]): SQL
   }
 }
 
-/** Escape LIKE wildcards so a search for "50%" finds that text, not everything. */
-function likePattern(text: string): string {
-  return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-}
-
 /** Case-insensitive substring match on one column, or on every field and the payload. */
 function searchCondition(query: ListRecordsQuery, indexedFields: readonly string[]): SQL | undefined {
   const text = query.q?.trim() ?? '';
   if (text === '') return undefined;
-  const pattern = likePattern(text);
+  const pattern = containsPattern(text);
   if (query.in !== undefined) return sql`(${columnExpr(query.in, indexedFields)})::text ilike ${pattern}`;
   return or(
     sql`exists (select 1 from jsonb_each_text(${collectionRecords.fields}) as f where f.value ilike ${pattern})`,

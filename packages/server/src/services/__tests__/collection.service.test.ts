@@ -36,10 +36,12 @@ vi.mock('drizzle-orm', () => ({
   desc: vi.fn(() => ({})),
   inArray: vi.fn(() => ({})),
   lt: vi.fn(() => ({})),
+  or: vi.fn((...args: unknown[]) => ({ or: args })),
   sql: vi.fn(() => ({})),
 }));
 const emitEvent = vi.fn();
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent }));
+const { sql } = await import('drizzle-orm');
 
 const { CollectionService } = await import('../collection.service.js');
 
@@ -134,6 +136,34 @@ describe('CollectionService.getById', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+  });
+});
+
+describe('CollectionService.listRecords search', () => {
+  /** Mock the three queries listRecords runs: the collection, one page of rows, the count. */
+  function mockListQueries(): void {
+    mockDb.select
+      .mockReturnValueOnce({ from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([makeRow()]) })) })
+      .mockReturnValueOnce({ from: vi.fn(() => ({ where: vi.fn(() => ({ orderBy: vi.fn(() => ({ limit: vi.fn(() => ({ offset: vi.fn().mockResolvedValue([]) })) })) })) })) })
+      .mockReturnValueOnce({ from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ total: 0 }]) })) });
+  }
+
+  /** The string values bound into sql`` fragments that look like LIKE patterns. */
+  function boundPatterns(): unknown[] {
+    return vi.mocked(sql).mock.calls.flatMap((call) => call.slice(1)).filter((v) => typeof v === 'string' && v.startsWith('%'));
+  }
+
+  it('escapes %, _ and \\ in the search text so they match literally', async () => {
+    mockListQueries();
+
+    const result = await CollectionService.listRecords('col-1', {
+      page: 1, pageSize: 25, sort: 'createdAt', order: 'desc', q: ' 50%_a\\b ',
+    });
+
+    expect(result.ok).toBe(true);
+    const patterns = boundPatterns();
+    expect(patterns.length).toBeGreaterThan(0);
+    for (const p of patterns) expect(p).toBe('%50\\%\\_a\\\\b%');
   });
 });
 
