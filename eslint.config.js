@@ -11,7 +11,7 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 const SHARED_HELPERS = [
   { names: 'mapErrorToStatus|errorResponse|errorMessage|errorCode', home: 'packages/server/src/lib/controller-helpers.ts' },
   { names: 'escapeCsvField', home: 'packages/server/src/lib/csv.ts' },
-  { names: 'isBlockedIp|isBlockedHost|isBlockedHostname|isBlockedAddress', home: 'packages/engine/src/sandbox/ssrf.ts' },
+  { names: 'isBlockedIp|isBlockedHost|isBlockedHostname|isBlockedAddress|isReservedHostname|isReservedAddress', home: 'packages/engine/src/sandbox/ssrf.ts' },
   { names: 'isPlainObject|isRecord', home: '@galvaniflow/core-util (validation.ts)' },
   { names: 'errorInfo', home: '@galvaniflow/core-util (error-info.ts)' },
   { names: 'formatBytes', home: 'packages/web/src/lib/system-health.ts' },

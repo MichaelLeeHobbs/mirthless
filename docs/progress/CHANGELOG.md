@@ -7,10 +7,14 @@
 Michael asked for the rest of the `/find-reinvention` report (`.claude/reinvention/report.md`) to be worked through, one concern per PR. PR #70 had already taken the two security findings.
 
 - **Bugs fixed:** `formatBytes` printed `"512.0 undefined"` for 0.5 and `"NaN undefined"` for NaN. A null timestamp rendered as 31 Dec 1969 on the message, event and certificate screens, and now shows "—" ("Never" on Users). The File and SFTP writers re-expanded a substituted value that held another `${...}`. A fatal-handler log lost the message of a thrown plain object.
-- **Status codes (D-262):** the 24 controllers' local `mapErrorToStatus` copies are gone. Conflicts return 409 instead of 500 on 12 endpoints, and deleting the default channel group returns 403.
-- **One copy each:** `isPlainObject`, `escapeCsvField`, certificate expiry, the connector-form getters (18 forms) and `errorInfo` (D-263).
+- **Status codes (D-263):** the 24 controllers' local `mapErrorToStatus` copies are gone. Conflicts return 409 instead of 500 on 12 endpoints, and deleting the default channel group returns 403.
+- **One copy each:** `isPlainObject`, `escapeCsvField`, certificate expiry, the connector-form getters (18 forms) and `errorInfo` (D-264).
 - **Prevention:** AGENTS.md says to look in `lib/` and `core-util` before writing a helper and lists the shared ones. `eslint.config.js` fails a local copy of any of them.
 - Not done: delegating wrappers, the unjudged residual groups and controller handler boilerplate, all out of scope by Michael's call.
+
+## 2026-11-14 — Test Connection reaches private networks (branch `fix/test-connection-private-addresses`)
+
+- **Test Connection allows private addresses (D-262).** It refused every 10.x, 172.16-31.x, 192.168.x and (since D-256) 100.64/10 address, so on a hospital network it failed for nearly every real endpoint. It now refuses only loopback, link-local (cloud metadata) and other reserved ranges. Script `httpFetch` is unchanged.
 
 ## 2026-11-13 — Delimited, X12 and MySQL (branch `claude/doc17-delimited-x12-mysql`)
 

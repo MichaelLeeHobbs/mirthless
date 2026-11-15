@@ -15,7 +15,7 @@ import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
 import { stderr, type Result } from 'stderr-lib';
 import type { ConnectionTestResult } from '@galvaniflow/core-models';
-import { isBlockedAddress, isBlockedHostname } from '@galvaniflow/engine';
+import { isReservedAddress, isReservedHostname } from '@galvaniflow/engine';
 import { ServiceError } from '../lib/service-error.js';
 import { resolveHttpDestinationTls, resolveHttpSourceTls } from './connector-tls-resolver.js';
 
@@ -82,15 +82,22 @@ export function resetFactories(): void {
 // ----- SSRF Protection -----
 
 /**
- * Full SSRF guard: reject localhost names, private or reserved IP literals, and
- * DNS names (or decimal/hex encodings) that RESOLVE to one. The address policy is
- * the engine's (`sandbox/ssrf.ts`), the same one script httpFetch uses.
+ * SSRF guard: reject localhost names, reserved IP literals (loopback, link-local
+ * cloud metadata, multicast...) and DNS names (or decimal/hex encodings) that
+ * RESOLVE to one. Private networks are allowed: the endpoints an administrator
+ * tests (MLLP, databases, SFTP) live there, and a deployed channel reaches them
+ * anyway (D-262). The ranges are the engine's (`sandbox/ssrf.ts`).
  * Unresolvable hosts are allowed through; the connection attempt itself will fail
  * loudly, which is not an SSRF exposure.
  */
 async function assertHostAllowed(hostname: string): Promise<void> {
-  if (isBlockedHostname(hostname)) {
-    throw new ServiceError('INVALID_INPUT', `Connection to ${hostname} is blocked (private/reserved address)`);
+  // pg reads a host starting with "/" as a Unix socket directory: a local server
+  // that no address check below would see.
+  if (/[/\\]/.test(hostname)) {
+    throw new ServiceError('INVALID_INPUT', `Connection to ${hostname} is blocked (not a hostname or IP address)`);
+  }
+  if (isReservedHostname(hostname)) {
+    throw new ServiceError('INVALID_INPUT', `Connection to ${hostname} is blocked (loopback or reserved address)`);
   }
 
   // An IP literal (bracketed IPv6 included) passed the check above; there is nothing to resolve.
@@ -104,10 +111,10 @@ async function assertHostAllowed(hostname: string): Promise<void> {
   }
 
   for (const addr of addresses) {
-    if (isBlockedAddress(addr.address)) {
+    if (isReservedAddress(addr.address)) {
       throw new ServiceError(
         'INVALID_INPUT',
-        `Connection to ${hostname} is blocked (resolves to private/reserved address ${addr.address})`,
+        `Connection to ${hostname} is blocked (resolves to loopback or reserved address ${addr.address})`,
       );
     }
   }

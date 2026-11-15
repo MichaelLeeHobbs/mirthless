@@ -38,7 +38,7 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
 - No premature abstractions: don't build a helper for one caller. Before writing a helper, search `lib/` and `packages/core-util` for one that already does the job. A second copy of an existing helper is a defect. The helpers below each had copies before. Lint (`eslint.config.js`, `SHARED_HELPERS`) fails a non-exported function, or a const holding a function, named like one of them. `formatTimestamp` is the exception, because `LogViewer` and the HL7 formatter use the name for different formats.
   - `mapErrorToStatus` and `errorResponse` in `server/src/lib/controller-helpers.ts`: ServiceError code to HTTP status (500 otherwise), and the `{ code, message }` body (`INTERNAL` otherwise). A controller with a different status for one code wraps `mapErrorToStatus`, as `user.controller.ts` does.
   - `escapeCsvField` in `server/src/lib/csv.ts`.
-  - `isBlockedHostname` and `isBlockedAddress` in `engine/src/sandbox/ssrf.ts`: the one SSRF policy.
+  - `isBlockedHostname`/`isBlockedAddress` (script `httpFetch`) and `isReservedHostname`/`isReservedAddress` (Test Connection) in `engine/src/sandbox/ssrf.ts`: both SSRF policies, built from one set of ranges.
   - `isPlainObject` and `errorInfo` in `core-util`. `errorInfo` builds the `{ errMsg, name, stack }` log record for any thrown value.
   - `formatBytes` in `web/src/lib/system-health.ts`, `formatTimestamp` in `web/src/lib/format.ts` (the caller passes the label for a missing time), and the certificate `expiry*` helpers in `web/src/lib/certificate-expiry.ts`.
   - `getStr`, `getNum`, `getBool`, `getTls*` and `propertyUpdaters` in `web/src/components/channels/common/connector-properties.ts` for connector forms.
