@@ -5,6 +5,7 @@
 
 import { useState, useCallback } from 'react';
 import { useAuthStore } from '../stores/auth.store.js';
+import { definedSearchParams } from '../lib/search-params.js';
 
 const BASE_URL = '/api/v1';
 
@@ -24,15 +25,17 @@ interface EventExportState {
   readonly exportEvents: (params: EventExportParams) => Promise<void>;
 }
 
-function buildExportUrl(params: EventExportParams): string {
-  const searchParams = new URLSearchParams();
-  searchParams.set('format', params.format);
-  if (params.startDate !== undefined && params.startDate !== '') searchParams.set('startDate', params.startDate);
-  if (params.endDate !== undefined && params.endDate !== '') searchParams.set('endDate', params.endDate);
-  if (params.level !== undefined && params.level !== '') searchParams.set('level', params.level);
-  if (params.name !== undefined && params.name !== '') searchParams.set('name', params.name);
-  if (params.outcome !== undefined && params.outcome !== '') searchParams.set('outcome', params.outcome);
-  if (params.maxRows !== undefined) searchParams.set('maxRows', String(params.maxRows));
+/** The export endpoint URL for the format and the filters that are set. Exported for testing. */
+export function buildExportUrl(params: EventExportParams): string {
+  const searchParams = definedSearchParams({
+    format: params.format,
+    startDate: params.startDate,
+    endDate: params.endDate,
+    level: params.level,
+    name: params.name,
+    outcome: params.outcome,
+    maxRows: params.maxRows,
+  });
   return `${BASE_URL}/events/export?${searchParams.toString()}`;
 }
 
