@@ -720,7 +720,16 @@ describe('ConnectionTestService', () => {
       expect(sftpFactory).toHaveBeenCalledWith(expect.objectContaining({ port: 22 }));
     });
 
-    it('fails when the remote directory does not exist', async () => {
+    it('says it found a remote path, not a directory, since exists() is true for a file too', async () => {
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.message).toContain('remote path /inbound found');
+      expect(result.value.message).not.toContain('directory');
+    });
+
+    it('fails a source whose remote path does not exist', async () => {
       mockSftpExists.mockResolvedValue(false);
 
       const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
@@ -730,6 +739,19 @@ describe('ConnectionTestService', () => {
       expect(result.value.success).toBe(false);
       expect(result.value.message).toContain('/inbound');
       expect(result.value.message).toContain('not found');
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('passes a destination whose remote directory does not exist yet, since the dispatcher creates it', async () => {
+      mockSftpExists.mockResolvedValue(false);
+
+      const result = await ConnectionTestService.testConnection('SFTP', 'DESTINATION', { ...SFTP_PROPS, remoteDirectory: '/outbound' });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(true);
+      expect(result.value.message).toContain('/outbound');
+      expect(result.value.message).toContain('will be created on first send');
       expect(mockSftpEnd).toHaveBeenCalledOnce();
     });
 

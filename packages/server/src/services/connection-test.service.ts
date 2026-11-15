@@ -535,11 +535,30 @@ async function closeSftp(client: SftpClient): Promise<void> {
 }
 
 /**
- * SFTP tester: connect and log in with the configured credentials and host
- * key, check that the remote directory exists, then close. The connect and
- * the check together are bounded by the test timeout.
+ * The result of an SFTP session that logged in. The client's exists() is true
+ * for a file as well as a directory, so the message says "path". A missing
+ * path fails a source; a destination creates its directory on first send.
  */
-const testSftp: Tester = async (_mode, props) => {
+function sftpPathResult(
+  mode: string,
+  found: boolean,
+  latency: number,
+  where: { readonly target: string; readonly path: string },
+): ConnectionTestResult {
+  const { target, path } = where;
+  if (found) return successResult(`SFTP connected: ${target}, remote path ${path} found`, latency);
+  if (mode === 'DESTINATION') {
+    return successResult(`SFTP connected: ${target}, remote directory ${path} does not exist yet and will be created on first send`, latency);
+  }
+  return failureResult(`SFTP connected to ${target} but remote path ${path} was not found`, latency);
+}
+
+/**
+ * SFTP tester: connect and log in with the configured credentials and host
+ * key, check the remote path, then close. The connect and the check together
+ * are bounded by the test timeout.
+ */
+const testSftp: Tester = async (mode, props) => {
   const options = readSftpOptions(props);
   const remoteDirectory = requireString(props, 'remoteDirectory');
   await assertHostAllowed(options.host);
@@ -553,10 +572,7 @@ const testSftp: Tester = async (_mode, props) => {
       TEST_TIMEOUT_MS,
       'SFTP connection test',
     );
-    const latency = performance.now() - start;
-    return found
-      ? successResult(`SFTP connected: ${target}, remote directory ${remoteDirectory} found`, latency)
-      : failureResult(`SFTP connected to ${target} but remote directory ${remoteDirectory} was not found`, latency);
+    return sftpPathResult(mode, found, performance.now() - start, { target, path: remoteDirectory });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return failureResult(`SFTP connection failed: ${msg}`, performance.now() - start);
