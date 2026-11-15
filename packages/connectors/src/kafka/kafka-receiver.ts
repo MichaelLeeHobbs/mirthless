@@ -194,7 +194,7 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   private async consume(generation: number, subscription: KafkaSubscription): Promise<void> {
     for await (const record of subscription) {
       if (!this.isCurrent(generation)) return;
-      this.current = this.handle(record);
+      this.current = this.handle(generation, record);
       const stored = await this.current;
       this.current = null;
       if (!stored) return;
@@ -203,7 +203,7 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   }
 
   /** Dispatch one record; commit unless the pipeline did not take it. */
-  private async handle(record: KafkaInboundRecord): Promise<boolean> {
+  private async handle(generation: number, record: KafkaInboundRecord): Promise<boolean> {
     const dispatcher = this.dispatcher;
     if (!dispatcher) return false;
     const where = { topic: record.topic, partition: record.partition, offset: record.offset.toString() };
@@ -214,7 +214,10 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     const result = await dispatcher(raw);
     const position = `${String(record.partition)}:${where.offset}`;
     if (!result.ok) {
-      this.notStored(position, result.error, where);
+      // A failure that comes back after a stop or halt (the pipeline was being
+      // shut down) is not the record's fault, and must not stop a later start.
+      if (this.isCurrent(generation)) this.notStored(position, result.error, where);
+      else this.logger.warn({ ...errorInfo(result.error), ...where }, 'Pipeline did not store the Kafka record while the source was stopping; it is not committed and will be read again');
       return false;
     }
     this.failures.delete(position);

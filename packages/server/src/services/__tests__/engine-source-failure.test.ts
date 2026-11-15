@@ -138,16 +138,41 @@ describe('EngineManager source failure', () => {
     await engine.dispose();
   });
 
-  it('records the event and alert but leaves a channel that is already stopped alone', async () => {
+  it('ignores a report once the channel has been stopped: no event, no alert', async () => {
     const engine = new EngineManager('test-server');
     await engine.deploy(CHANNEL);
+    const deployed = engine.getRuntime(CHANNEL_ID)!;
+    await deployed.runtime.start();
+    await deployed.runtime.stop();
+    sourceMock.onStop.mockClear();
 
     source.fatal?.(new Error('AMQP source stopped'));
+    await new Promise((resolve) => { setTimeout(resolve, 30); });
 
-    await vi.waitFor(() => { expect(alerts.sendMail).toHaveBeenCalledTimes(1); });
-    expect(events.emitEvent).toHaveBeenCalledWith(expect.objectContaining({ level: 'ERROR', channelId: CHANNEL_ID }));
+    expect(events.emitEvent).not.toHaveBeenCalled();
+    expect(alerts.sendMail).not.toHaveBeenCalled();
     expect(sourceMock.onStop).not.toHaveBeenCalled();
-    expect(engine.getRuntime(CHANNEL_ID)!.runtime.getState()).toBe('STOPPED');
+    await engine.dispose();
+  });
+
+  it('ignores a report from the source of an earlier deployment of the channel', async () => {
+    const engine = new EngineManager('test-server');
+    await engine.deploy(CHANNEL);
+    await engine.getRuntime(CHANNEL_ID)!.runtime.start();
+    const oldHandler = source.fatal;
+    await engine.undeploy(CHANNEL_ID);
+    await engine.deploy(CHANNEL);
+    const redeployed = engine.getRuntime(CHANNEL_ID)!;
+    await redeployed.runtime.start();
+    sourceMock.onStop.mockClear();
+
+    oldHandler?.(new Error('Kafka source stopped (old deployment)'));
+    await new Promise((resolve) => { setTimeout(resolve, 30); });
+
+    expect(redeployed.runtime.getState()).toBe('STARTED');
+    expect(events.emitEvent).not.toHaveBeenCalled();
+    expect(alerts.sendMail).not.toHaveBeenCalled();
+    expect(sourceMock.onStop).not.toHaveBeenCalled();
     await engine.dispose();
   });
 });

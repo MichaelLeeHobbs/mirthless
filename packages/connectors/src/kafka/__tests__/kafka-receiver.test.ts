@@ -202,6 +202,59 @@ describe('a record the pipeline never stores', () => {
     expect(p.offered).toEqual(['MSH|1', 'MSH|1', 'MSH|1', 'MSH|2', 'MSH|2', 'MSH|2']);
   });
 
+  it('does not report a fatal error for a failure that comes back during a stop', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let entered = false;
+    let fatal = 0;
+    const log = makeMockLogger();
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 1 }, topic.subscribe, log.logger, 5);
+    receiver.setDispatcher(async () => { entered = true; await held; return notStored('database closed during shutdown'); });
+    receiver.setFatalHandler(() => { fatal += 1; });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(entered).toBe(true); });
+
+    const stopping = receiver.onStop();
+    release?.();
+    await stopping;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fatal).toBe(0);
+    expect(topic.committed).toBe(0);
+    receiver = null;
+  });
+
+  it('ignores a failed dispatch left over from before a halt and restart', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    let releaseFirst: (() => void) | undefined;
+    let calls = 0;
+    let fatal = 0;
+    const log = makeMockLogger();
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 1 }, topic.subscribe, log.logger, 5);
+    receiver.setDispatcher(async () => {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => { releaseFirst = resolve; });
+        return notStored('cancelled by the halt');
+      }
+      return stored(calls);
+    });
+    receiver.setFatalHandler(() => { fatal += 1; });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(calls).toBe(1); });
+    await receiver.onHalt();
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
+
+    releaseFirst?.();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fatal).toBe(0);
+    topic.produce('MSH|2');
+    await vi.waitFor(() => { expect(topic.committed).toBe(2); });
+  });
+
   it('gives a record a fresh count after the channel is started again', async () => {
     const topic = new FakeKafkaTopic();
     topic.produce('MSH|poison');

@@ -477,6 +477,14 @@ const NEVER_RAN_MESSAGE = 'Not delivered: the server stopped before this destina
 
 type TlsResolver = (props: Readonly<Record<string, unknown>>) => Promise<Result<Record<string, unknown>>>;
 /** Connector types whose certificate-id references are resolved to PEM before the connector is built. */
+/** A source's report that it stopped itself, with the deployment it came from. */
+interface SourceFailureReport {
+  readonly channelId: string;
+  readonly runtime: ChannelRuntime;
+  readonly error: Error;
+  readonly raiseAlert: (event: Parameters<AlertManager['handleEvent']>[0]) => Promise<void>;
+}
+
 const SOURCE_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpSourceTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
 const DESTINATION_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpDestinationTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
 
@@ -708,7 +716,9 @@ export class EngineManager {
 
     // A Kafka or AMQP source stops itself when a message keeps failing to store;
     // the channel must not then look STARTED while nothing is read.
-    source.setFatalHandler?.((error) => { void this.stopAfterSourceFailure(channel.id, error, raiseAlert); });
+    // The runtime identifies this deployment (and its source): a report that
+    // arrives after an undeploy and redeploy must not stop the new one.
+    source.setFatalHandler?.((error) => { void this.stopAfterSourceFailure({ channelId: channel.id, runtime, error, raiseAlert }); });
 
     // Build configMap record (key format: "category.name")
     const configMapRecord: Record<string, unknown> = {};
@@ -893,11 +903,16 @@ export class EngineManager {
    * it stopped. The message that failed is still on its queue or topic; an
    * operator fixes the cause and starts the channel again.
    */
-  private async stopAfterSourceFailure(
-    channelId: string,
-    error: Error,
-    raiseAlert: (event: Parameters<AlertManager['handleEvent']>[0]) => Promise<void>,
-  ): Promise<void> {
+  private async stopAfterSourceFailure(report: SourceFailureReport): Promise<void> {
+    const { channelId, runtime, error, raiseAlert } = report;
+    const deployed = this.runtimes.get(channelId);
+    const state = runtime.getState();
+    // Only the running deployment that registered the handler may stop the
+    // channel; a late report from a stopped or replaced one is logged and dropped.
+    if (!deployed || deployed.runtime !== runtime || (state !== 'STARTED' && state !== 'PAUSED')) {
+      logger.warn({ channelId, state, errMsg: error.message }, 'Ignoring a fatal source report from a source that is no longer running');
+      return;
+    }
     logger.error({ channelId, errMsg: error.message }, 'Source connector stopped after a fatal error; stopping the channel');
     emitEvent({
       level: 'ERROR', name: 'CHANNEL_STOPPED', outcome: 'FAILURE', userId: null, channelId,
@@ -905,9 +920,6 @@ export class EngineManager {
     });
     await raiseAlert({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage: error.message, timestamp: Date.now() });
 
-    const deployed = this.runtimes.get(channelId);
-    const state = deployed?.runtime.getState();
-    if (!deployed || (state !== 'STARTED' && state !== 'PAUSED')) return;
     await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
     const stopped = await deployed.runtime.stop();
     if (!stopped.ok) {
