@@ -2,6 +2,17 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Open issues batch (branch `batch-2026-11-15-open-issues`)
+
+Michael asked for the open issues to be worked through. 16 of 18 were fixed as one batch, one branch and merge commit per issue; #115 (one property schema per connector) and #88 (CI job for the real-broker suites) were left for their own sessions.
+
+- **Fail loudly instead of later:** a TCP/MLLP or HTTPS source with an incomplete `tls` setting fails its deploy instead of listening in plaintext (#98). SFTP properties are validated and an unknown connector type fails validation (#102, D-267). The channel API and channel import reject a destination-only type as the source and a source-only type as a destination (#109).
+- **Kafka/AMQP:** a `charset` source setting (UTF-8, Latin-1, Windows-1252, base64), with invalid UTF-8 flagged as `charsetError` in the source map (#87, D-268). A message the store rejects `maxStoreAttempts` times in a row (default 5) stops the channel with an ERROR event and alert, and the message stays on the queue (#86, D-269). A report from a stopped or earlier deployment is ignored.
+- **Fixes:** cloning a channel keeps its filters and transformers (#91). Code template deletes check `code_templates:delete`, and the UI hides delete from roles without it; developers lose delete (#96). Session row, refresh cookie and refresh JWT all use `JWT_REFRESH_EXPIRES_IN` (#99; no absolute cap, by Michael's call). SFTP Test Connection works (#89). The Mirth import preview warns on SQL Server/Oracle and script-mode database channels and parses `;databaseName=` URLs (#103). Seven handler and service defects from the reinvention audit, including the global-map flush race; five handlers now map service errors to 404/400/409 (#92, approved). Two #92 items did not reproduce (collections URL encoding, empty `IN ()`).
+- **Dependencies:** 15 of 16 Dependabot alerts cleared by lockfile refresh, two bumps and three bounded overrides (#100). The esbuild alert remains: drizzle-kit pulls esbuild 0.18 and the fix is a breaking 0.25.
+- **Docs:** the connector reference covers SFTP and MySQL, README counts 13 types (#93); ROADMAP and design docs no longer claim channel-scoped permissions or MFA (#94); the TLS runbook matches the connectors (#95); README, SECURITY.md and the user docs say the script sandbox is best-effort, not a security boundary (#64).
+- Not done: engine sandbox timing tests fail under load (#125, unchanged by this batch). The channel-group integration test and the real-broker queue suite were not run (no Postgres or brokers here).
+
 ## 2026-11-15 — Dependabot for npm and Docker (branch `claude/dependabot-setup-14e08c`)
 
 `.github/dependabot.yml` covered GitHub Actions only. It now also proposes npm updates for the pnpm workspace (weekly; minor and patch grouped into one runtime and one dev PR, each major alone, 3-day cooldown so pnpm's minimum release age accepts the version) and base-image updates for `docker/Dockerfile.*` and `docker/docker-compose*.yml` (monthly; Node and Postgres majors ignored, since those are deliberate choices).
