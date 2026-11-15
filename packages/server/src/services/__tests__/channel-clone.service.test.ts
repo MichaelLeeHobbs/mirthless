@@ -407,6 +407,19 @@ describe('ChannelService.clone', () => {
     expect(result.error).toHaveProperty('code', 'NOT_FOUND');
   });
 
+  it('refuses to clone a channel whose source points the wrong way (#109)', async () => {
+    setupGetByIdMocks(makeChannel({ sourceConnectorType: 'SMTP' }));
+    const createSpy = vi.spyOn(ChannelService, 'create');
+
+    const result = await ChannelService.clone(CHANNEL_ID, 'Copy');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+    expect(createSpy).not.toHaveBeenCalled();
+    createSpy.mockRestore();
+  });
+
   it('returns ALREADY_EXISTS when clone name conflicts', async () => {
     const source = makeChannel();
     makeClonedChannel();

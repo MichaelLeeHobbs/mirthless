@@ -4,7 +4,6 @@
 // Zod schemas for channel export/import payloads.
 
 import { z } from 'zod/v4';
-import { sourceConnectorTypeSchema, destinationConnectorTypeSchema } from './channel.schema.js';
 
 // ----- Export Schema -----
 
@@ -61,7 +60,9 @@ const channelExportDestinationSchema = z.object({
   metaDataId: z.number(),
   name: z.string(),
   enabled: z.boolean(),
-  connectorType: destinationConnectorTypeSchema,
+  // Direction is checked per channel by the import service, so one bad channel
+  // is reported instead of refusing a whole backup.
+  connectorType: z.string(),
   properties: z.record(z.string(), z.unknown()),
   queueMode: z.string(),
   retryCount: z.number(),
@@ -90,7 +91,7 @@ export const channelExportEntrySchema = z.object({
   revision: z.number(),
   inboundDataType: z.string(),
   outboundDataType: z.string(),
-  sourceConnectorType: sourceConnectorTypeSchema,
+  sourceConnectorType: z.string(),
   sourceConnectorProperties: z.record(z.string(), z.unknown()),
   responseMode: z.string(),
   responseConnectorName: z.string().nullable(),
