@@ -5,7 +5,7 @@
 // Source connectors additionally dispatch messages into the pipeline.
 // Destination connectors send messages to external systems.
 
-import type { Result } from '@galvaniflow/core-util';
+import { fillPlaceholders, recordLookup, type Result } from '@galvaniflow/core-util';
 
 // ----- Lifecycle -----
 
@@ -117,18 +117,12 @@ export interface ConnectorMessage {
 }
 
 /**
- * Fill each `${name}` in a connector setting from the message's variables
- * (strings as they are, other values as JSON). A name the message does not
+ * Fill each `${name}` in a connector setting from the message's variables, by
+ * the shared rule in {@link fillPlaceholders}. A name the message does not
  * have is left as written, so a mistake shows in what is sent.
  */
 export function fillVariables(text: string, message: Pick<ConnectorMessage, 'variables'>): string {
-  const variables = message.variables;
-  if (!variables || !text.includes('${')) return text;
-  return text.replace(/\$\{([^}]+)\}/g, (whole, key: string) => {
-    const value = variables[key.trim()];
-    if (value === undefined || value === null) return whole;
-    return typeof value === 'string' ? value : JSON.stringify(value);
-  });
+  return message.variables ? fillPlaceholders(text, recordLookup(message.variables)) : text;
 }
 
 /** Response from a destination connector after sending. */

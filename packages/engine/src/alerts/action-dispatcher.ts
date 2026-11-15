@@ -5,6 +5,7 @@
 // CHANNEL routes error details to a target channel.
 
 import type { AlertTemplateVariable } from '@galvaniflow/core-models';
+import { fillPlaceholders, recordLookup } from '@galvaniflow/core-util';
 import type { LoadedAlert, AlertAction, ChannelErrorEvent } from './alert-evaluator.js';
 
 // ----- Types -----
@@ -134,13 +135,21 @@ function defaultAlertBody(alert: LoadedAlert, event: ChannelErrorEvent): string 
     `Channel: ${event.channelId}`,
     `Error Type: ${event.errorType}`,
     `Error: ${event.errorMessage}`,
-    `Time: ${new Date(event.timestamp).toISOString()}`,
+    `Time: ${alertTime(event.timestamp) ?? 'invalid timestamp'}`,
   ].join('\n');
 }
 
+/** The event time as UTC ISO text, or undefined when the timestamp is not a valid time. */
+function alertTime(timestamp: number): string | undefined {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
 /**
- * Substitute `${name}` placeholders in an alert template. Only the variables in
- * ALERT_TEMPLATE_VARIABLES are replaced; anything else is left as written.
+ * Substitute `${name}` placeholders in an alert template by the shared rule in
+ * {@link fillPlaceholders}. Only the variables in ALERT_TEMPLATE_VARIABLES are
+ * replaced; anything else, and `${timestamp}` when the event time is invalid,
+ * is left as written.
  */
 export function substituteAlertTemplate(
   template: string,
@@ -148,14 +157,13 @@ export function substituteAlertTemplate(
   event: ChannelErrorEvent,
   channelName?: string,
 ): string {
-  const values: Readonly<Record<AlertTemplateVariable, string>> = {
+  const values: Readonly<Record<AlertTemplateVariable, string | undefined>> = {
     alertName: alert.name,
     channelName: channelName ?? event.channelId,
     channelId: event.channelId,
     errorType: event.errorType,
     errorMessage: event.errorMessage,
-    timestamp: new Date(event.timestamp).toISOString(),
+    timestamp: alertTime(event.timestamp),
   };
-  return template.replace(/\$\{(\w+)\}/g, (placeholder, name: string) =>
-    Object.hasOwn(values, name) ? values[name as AlertTemplateVariable] : placeholder);
+  return fillPlaceholders(template, recordLookup(values));
 }

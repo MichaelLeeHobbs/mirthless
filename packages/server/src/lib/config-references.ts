@@ -5,14 +5,14 @@
 // or `${vns.MIRTH_SENDER_HOST}`. They are resolved when the channel deploys, so
 // one export runs against each environment's own hosts and ports.
 
+import { fillPlaceholders } from '@galvaniflow/core-util';
+
 /** A configuration map entry as the service lists it. */
 export interface ConfigEntry {
   readonly category: string;
   readonly name: string;
   readonly value: string | null;
 }
-
-const REFERENCE = /\$\{([^}]+)\}/g;
 
 /**
  * Values by `category.name`, and by bare `name` when only one category has
@@ -47,7 +47,7 @@ export function resolveConfigReferences(
   lookup: ReadonlyMap<string, string>,
 ): Record<string, unknown> {
   if (lookup.size === 0) return { ...properties };
-  const replace = (text: string): string => text.replace(REFERENCE, (whole, key: string) => lookup.get(key.trim()) ?? whole);
+  const replace = (text: string): string => fillPlaceholders(text, (name) => lookup.get(name));
   return JSON.parse(JSON.stringify(properties), (key, value: unknown) =>
     (typeof value === 'string' && !CODE_OR_SQL_KEYS.has(key) ? replace(value) : value)) as Record<string, unknown>;
 }
