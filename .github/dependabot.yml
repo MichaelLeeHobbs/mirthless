@@ -30,6 +30,11 @@ updates:
       dev-minor-patch:
         dependency-type: development
         update-types: [minor, patch]
+    # @types/node follows the Node major we run (package.json engines), so a
+    # newer major would type APIs that Node 24 does not have.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
 
   # Base images in docker/Dockerfile.*. Node and Postgres majors are deliberate
   # choices (package.json engines, PostgreSQL 17), so only minor and patch tags.
@@ -41,11 +46,14 @@ updates:
       - dependency-name: node
         update-types: [version-update:semver-major]
 
-  # Service images in docker/docker-compose*.yml.
+  # Service images in docker/docker-compose*.yml. The MySQL test server stays on
+  # the 8.4 long-term-support line rather than the newest release.
   - package-ecosystem: docker-compose
     directory: /docker
     schedule:
       interval: monthly
     ignore:
       - dependency-name: postgres
+        update-types: [version-update:semver-major]
+      - dependency-name: mysql
         update-types: [version-update:semver-major]
