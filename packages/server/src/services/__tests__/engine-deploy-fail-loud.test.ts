@@ -332,3 +332,14 @@ describe('EngineManager.deploy of one channel twice at once', () => {
     await expect(engine.deploy(makeChannel())).resolves.toBeUndefined();
   });
 });
+
+describe('EngineManager.deploy with a connector that cannot be built', () => {
+  it('fails the deploy with the connector error and registers no runtime', async () => {
+    const { createSourceConnector } = await import('@galvaniflow/connectors');
+    vi.mocked(createSourceConnector).mockImplementationOnce(() => {
+      throw new Error('Connector tls settings must be an object');
+    });
+    expect(await deployError(makeChannel({ sourceConnectorProperties: { port: 6661, tls: 'abc' } })))
+      .toBe('Connector tls settings must be an object');
+  });
+});

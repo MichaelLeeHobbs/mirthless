@@ -14,6 +14,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { isPlainObject } from '@galvaniflow/core-util';
+import { TLS_NOT_AN_OBJECT } from '@galvaniflow/connectors';
 import { ServiceError } from '../lib/service-error.js';
 import { CertificateService } from './certificate.service.js';
 
@@ -30,10 +31,15 @@ async function loadMaterial(
   return result.value;
 }
 
-/** Read the nested id-based tls bag from raw props; anything but a plain object reads as empty. */
+/**
+ * Read the nested id-based tls bag from raw props: empty when absent
+ * (undefined, null or false); any other value that is not a plain object fails loud.
+ */
 function readTlsBag(props: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const tls = props['tls'];
-  return isPlainObject(tls) ? tls : {};
+  if (tls === undefined || tls === null || tls === false) return {};
+  if (!isPlainObject(tls)) throw new ServiceError('INVALID_INPUT', TLS_NOT_AN_OBJECT);
+  return tls;
 }
 
 /** Read an optional string id from a tls bag. */
