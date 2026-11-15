@@ -72,9 +72,10 @@ function assertKeyPair(cert: string | undefined, key: string | undefined): void 
 
 /**
  * Read TLS server options from a connector's raw property bag.
- * Returns undefined when TLS is not configured: no `tls` bag, or a bag with no
- * PEM material (an HTTP source on scheme HTTP keeps its id-based bag). Throws
- * when the bag has some PEM material but not both cert and key.
+ * Returns undefined only when TLS is not configured: `tls` absent, null or
+ * false. Any other `tls` value must carry both cert and key, or this throws:
+ * a listener never falls back to plaintext. (The HTTP source factory skips
+ * its id-based bag on scheme HTTP before calling this.)
  */
 export function readTlsServerOptions(
   props: Readonly<Record<string, unknown>>,
@@ -83,13 +84,11 @@ export function readTlsServerOptions(
   if (!tls) return undefined;
   const cert = readPem(tls, 'cert');
   const key = readPem(tls, 'key');
-  const ca = readPem(tls, 'ca');
   assertKeyPair(cert, key);
   if (cert === undefined || key === undefined) {
-    if (ca !== undefined) throw new Error('TLS configuration is incomplete: tls.ca is set but tls.cert and tls.key are missing');
-    return undefined;
+    throw new Error('TLS configuration is incomplete: a tls object is set but tls.cert and tls.key are missing');
   }
-  return { cert, key, ca, requireClientCert: tls['requireClientCert'] as boolean | undefined };
+  return { cert, key, ca: readPem(tls, 'ca'), requireClientCert: tls['requireClientCert'] as boolean | undefined };
 }
 
 /**
