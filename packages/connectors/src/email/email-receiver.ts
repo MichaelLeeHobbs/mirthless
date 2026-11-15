@@ -160,8 +160,8 @@ export class EmailReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
-      this.client = this.createClient(this.config);
-      await withTimeout(this.client.connect(), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
+      // Stored only once connected: a failed start must not leave stop to log out a dead session.
+      await this.reconnect();
 
       this.pollTimer = setInterval(() => {
         void this.pollCycle();

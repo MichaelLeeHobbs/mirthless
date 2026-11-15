@@ -502,6 +502,21 @@ describe('EmailReceiver', () => {
       const result = await receiver.onStart();
       expect(result.ok).toBe(false);
     });
+
+    it('does not keep a client whose connect failed on start, so stop does not disconnect it', async () => {
+      const client = makeMockClient();
+      vi.mocked(client.connect).mockRejectedValue(new Error('Connection refused'));
+      // Logging out a session that never connected fails.
+      vi.mocked(client.disconnect).mockRejectedValue(new Error('Not connected'));
+
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
+      receiver.setDispatcher(makeDispatcher());
+      expect((await receiver.onStart()).ok).toBe(false);
+
+      const stopResult = await receiver.onStop();
+      expect(stopResult.ok).toBe(true);
+      expect(client.disconnect).not.toHaveBeenCalled();
+    });
   });
 
   describe('lifecycle', () => {
