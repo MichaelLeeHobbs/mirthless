@@ -21,6 +21,24 @@ describe('property getters', () => {
     expect(getBool(props, 'missing', false)).toBe(false);
   });
 
+  // Each row: the stored value and what getNum() reads with fallback 99.
+  const numRows: ReadonlyArray<readonly [string, unknown, number]> = [
+    ['number 5432', 5432, 5432],
+    ['decimal string', '5432', 99],
+    ['blank string', ' ', 99],
+    ['empty string', '', 99],
+    ['boolean true', true, 99],
+    ['hex string', '0x10', 99],
+    ['NaN', Number.NaN, Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
+    ['number -1', -1, -1],
+    ['undefined', undefined, 99],
+    ['null', null, 99],
+  ];
+  it.each(numRows)('getNum reads %s as the expected number', (_label, value, expected) => {
+    expect(getNum({ v: value }, 'v', 99)).toBe(expected);
+  });
+
   it('read inside tls and tolerate a missing or invalid tls value', () => {
     expect(getTlsStr(props, 'caCertificateId')).toBe('c1');
     expect(getTlsBool(props, 'enabled', false)).toBe(true);

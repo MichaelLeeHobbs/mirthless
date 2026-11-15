@@ -48,6 +48,24 @@ describe('registry num() coercion', () => {
     expect(num({ port: 'abc' }, 'port', 22)).toBe(22);
     expect(num({ port: undefined }, 'port', 22)).toBe(22);
   });
+
+  // Each row: the stored value and what num() reads with fallback 99.
+  const rows: ReadonlyArray<readonly [string, unknown, number]> = [
+    ['number 5432', 5432, 5432],
+    ['decimal string', '5432', 5432],
+    ['blank string', ' ', 0],
+    ['empty string', '', 99],
+    ['boolean true', true, 1],
+    ['hex string', '0x10', 16],
+    ['NaN', Number.NaN, 99],
+    ['Infinity', Number.POSITIVE_INFINITY, 99],
+    ['number -1', -1, -1],
+    ['undefined', undefined, 99],
+    ['null', null, 99],
+  ];
+  it.each(rows)('reads %s as the expected number', (_label, value, expected) => {
+    expect(num({ v: value }, 'v', 99)).toBe(expected);
+  });
 });
 
 describe('registry readSmtpAttachments()', () => {
