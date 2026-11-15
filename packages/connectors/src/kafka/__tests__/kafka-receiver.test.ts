@@ -169,6 +169,33 @@ describe('a record the pipeline never stores', () => {
     expect(log.errors.some((e) => e.msg.includes('Kafka source stopped'))).toBe(true);
   });
 
+  it('counts a record that cannot be converted toward the cap, instead of rejoining forever', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    const p = pipeline();
+    const fatal: Error[] = [];
+    const log = makeMockLogger();
+    const subscribe: typeof topic.subscribe = async (c) => {
+      const sub = await topic.subscribe(c);
+      return {
+        close: (force: boolean) => sub.close(force),
+        async *[Symbol.asyncIterator]() {
+          for await (const record of sub) {
+            yield Object.defineProperty({ ...record }, 'value', { get: () => { throw new RangeError('decoder unavailable'); } });
+          }
+        },
+      };
+    };
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 2 }, subscribe, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    expect(fatal[0]?.message).toContain('decoder unavailable');
+    expect(p.offered).toEqual([]);
+    expect(topic.committed).toBe(0);
+  });
+
   it('defaults the cap to 5 attempts', async () => {
     const topic = new FakeKafkaTopic();
     topic.produce('MSH|poison');

@@ -15,11 +15,11 @@
 // error, which stops the channel. An operator fixes the cause and starts it.
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
-import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage } from '../base.js';
+import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
-import { decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
+import { assertCharsetAvailable, decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
 import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvaniflow/core-models';
 import {
   subscribeKafka,
@@ -99,7 +99,9 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   /** Failures in a row per record (`partition:offset`); a stored record is removed. */
   private readonly failures = new Map<string, number>();
 
+  /** Throws when the configured charset cannot be decoded here, so the deploy fails. */
   constructor(config: KafkaReceiverConfig, subscribe?: KafkaSubscribe, logger?: ConnectorLogger, retryDelayMs?: number) {
+    assertCharsetAvailable(config.charset);
     this.config = config;
     this.subscribe = subscribe ?? subscribeKafka;
     this.logger = logger ?? createConnectorLogger('KAFKA');
@@ -202,16 +204,29 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     if (this.isCurrent(generation)) this.logger.warn({ topic: this.config.topic }, 'Kafka stream ended; rejoining');
   }
 
+  /**
+   * Convert and dispatch a record. A throw (a decoder that cannot be built, a
+   * dispatcher bug) becomes a failed result, so it counts toward the cap like
+   * any record the pipeline did not store.
+   */
+  private async dispatchRecord(dispatcher: MessageDispatcher, record: KafkaInboundRecord, where: RecordPosition): Promise<Result<DispatchResult>> {
+    return tryCatch(async () => {
+      const raw = toRawMessage(record, this.config.charset);
+      if (raw.sourceMap['charsetError']) {
+        this.logger.warn({ ...where }, 'Kafka record value is not valid UTF-8; invalid bytes were replaced and the message is flagged (charsetError in the source map)');
+      }
+      const result = await dispatcher(raw);
+      if (!result.ok) throw result.error;
+      return result.value;
+    });
+  }
+
   /** Dispatch one record; commit unless the pipeline did not take it. */
   private async handle(generation: number, record: KafkaInboundRecord): Promise<boolean> {
     const dispatcher = this.dispatcher;
     if (!dispatcher) return false;
     const where = { topic: record.topic, partition: record.partition, offset: record.offset.toString() };
-    const raw = toRawMessage(record, this.config.charset);
-    if (raw.sourceMap['charsetError']) {
-      this.logger.warn(where, 'Kafka record value is not valid UTF-8; invalid bytes were replaced and the message is flagged (charsetError in the source map)');
-    }
-    const result = await dispatcher(raw);
+    const result = await this.dispatchRecord(dispatcher, record, where);
     const position = `${String(record.partition)}:${where.offset}`;
     if (!result.ok) {
       // A failure that comes back after a stop or halt (the pipeline was being

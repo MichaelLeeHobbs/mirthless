@@ -70,6 +70,21 @@ function windows1252Decoder(): InstanceType<typeof TextDecoder> {
 }
 
 /**
+ * Throw when this server cannot decode `charset`, so a queue source set to it
+ * fails to deploy instead of failing on every message. Only windows-1252 can
+ * be missing (a Node built without full ICU).
+ */
+export function assertCharsetAvailable(charset: QueueCharset | undefined): void {
+  if (charset !== 'windows-1252') return;
+  try {
+    windows1252Decoder();
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(`Charset windows-1252 is not available on this server (${reason}); Node needs full ICU. Choose another charset.`, { cause: err });
+  }
+}
+
+/**
  * Decode a queue payload (Kafka, AMQP) with the source's charset. In UTF-8
  * mode a payload that is not valid UTF-8 is still decoded (invalid bytes
  * become U+FFFD) but reported, so the caller can flag it.

@@ -62,4 +62,21 @@ describe('decodePayload on a Node without windows-1252 (no full ICU)', () => {
     expect(decodePayload(Buffer.from([0xe9]), 'latin1').text).toBe('é');
     expect(() => decodePayload(Buffer.from([0x93]), 'windows-1252')).toThrow('windows-1252');
   });
+
+  it('fails to build a Kafka or AMQP source set to windows-1252, so the deploy fails', async () => {
+    const Real = globalThis.TextDecoder;
+    vi.stubGlobal('TextDecoder', class extends Real {
+      constructor(label?: string, options?: TextDecoderOptions) {
+        if (label === 'windows-1252') throw new RangeError('The "windows-1252" encoding is not supported');
+        super(label, options);
+      }
+    });
+    vi.resetModules();
+    const { createSourceConnector } = await import('../registry.js');
+    const kafka = { brokers: 'k:9092', topic: 't', groupId: 'g' };
+    const amqp = { host: 'rabbit', queue: 'q' };
+    expect(() => createSourceConnector('KAFKA', { ...kafka, charset: 'windows-1252' })).toThrow(/windows-1252.*not available/);
+    expect(() => createSourceConnector('AMQP', { ...amqp, charset: 'windows-1252' })).toThrow(/windows-1252.*not available/);
+    expect(() => createSourceConnector('AMQP', { ...amqp, charset: 'latin1' })).not.toThrow();
+  }, 30_000); // a fresh import of the registry loads every connector
 });
