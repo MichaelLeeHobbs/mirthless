@@ -71,6 +71,7 @@ front of it, or set `WEB_BIND=0.0.0.0` in `.env` to try it from another machine.
 ### Documentation
 
 - [Quickstart: create your first channel](docs/user/quickstart-first-channel.md)
+- [What can GalvaniFlow do, and what is missing?](docs/user/capabilities.md) Every capability with its status, limits, plan and the tests that prove it, including what a Mirth channel imports as.
 - [Which connectors can receive, which can send, and what can each do?](docs/user/connector-reference.md#connectors-at-a-glance) Every connector type, its settings and limits.
 - [Who can do what? Users, roles, sign-in and cutting someone off](docs/user/access-control.md) The role and permission matrix, sessions, and what is not supported (SSO, MFA, per-channel access).
 - [Transformer scripting API](docs/user/scripting-api.md) — the sandbox surface for filters/transformers
