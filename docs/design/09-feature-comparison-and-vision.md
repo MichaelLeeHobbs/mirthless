@@ -329,7 +329,7 @@ Based on analysis of the Mirth Connect source code, community forums, GitHub iss
 
 **The complaint:** RBAC, MFA, channel history, cross-channel search, FHIR connector, advanced alerting, and clustering are all paid add-ons. The open-source version is deliberately crippled. As of v4.6 (2025), even the open-source version became proprietary.
 
-**Our advantage:** Everything in Mirth's Gold tier ships as built-in open-source. RBAC, MFA, channel history, cross-channel search, FHIR, alerting -- all included. This is our single biggest competitive argument. The community frustration around Mirth's licensing changes is our adoption opportunity.
+**Our advantage:** Most of Mirth's Gold tier ships as built-in open-source: RBAC, channel history, cross-channel search, FHIR and alerting are all included. MFA is the exception: it is planned (ROADMAP V4) but not built. This is our single biggest competitive argument. The community frustration around Mirth's licensing changes is our adoption opportunity.
 
 ### 4.5 Operational Complexity
 

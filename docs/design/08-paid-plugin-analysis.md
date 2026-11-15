@@ -40,7 +40,7 @@ As of v4.6 (2025), Connect transitioned from open-source to fully commercial/pro
 
 **What Connect charges for:** ONC certification compliance bundle (RBAC + MFA + SSL + FHIR packaged for regulatory checkbox). US-specific.
 
-**GalvaniFlow: Not a plugin — documentation.** Since RBAC, MFA, TLS, and FHIR are all built-in, Cures compliance is a documentation/certification effort. We publish a compliance matrix against ONC 2015 Edition Cures Update criteria.
+**GalvaniFlow: Not a plugin — documentation.** RBAC, TLS and FHIR are built-in; MFA is not built yet (planned, ROADMAP V4). Once it ships, Cures compliance is a documentation/certification effort. We publish a compliance matrix against ONC 2015 Edition Cures Update criteria.
 
 ---
 
@@ -138,4 +138,4 @@ Connect's "basic" alerting is so limited that "advanced" is really just "compete
 | IHE Profiles | Paid (Interop Suite) | **Plugin** | P3/P4 |
 | Serial Connector | Paid | **Plugin** | P4 |
 
-**Competitive positioning:** Everything Connect charges for in their Gold tier ships as built-in open-source in GalvaniFlow. The community frustration around paywalled essential features (RBAC, MFA, channel history, cross-channel search) is our biggest opportunity.
+**Competitive positioning:** Most of what Connect charges for in their Gold tier ships as built-in open-source in GalvaniFlow; MFA is the exception (planned, ROADMAP V4, not built). The community frustration around paywalled essential features (RBAC, MFA, channel history, cross-channel search) is our biggest opportunity.
