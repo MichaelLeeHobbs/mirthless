@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — One list per fact in core-models, docs slice 0 (branch `refactor/core-models-single-lists`)
+
+The first slice of the docs restructure (#116): before the docs can be checked against the code, each fact needs one home. A refactor with no behaviour change (D-268).
+
+- **Connector types:** `SOURCE_CONNECTOR_TYPES`, `DESTINATION_CONNECTOR_TYPES` and `CONNECTOR_TYPES` in core-models replace seven hand-written lists (three schemas, three web components, and a dead `CONNECTOR_TYPE` without SFTP). The registry's maps are keyed by those types, and `registry-types.test.ts` checks every listed type has a factory.
+- **Permissions and roles:** `PERMISSIONS` and `Permission` move to core-models. The server seed derives its rows from them, the web file re-exports them under its old names, and roles everywhere use `USER_ROLE`. The seed and role code share one `permissionRow()` split.
+- **Typed checks:** `requirePermission`, `requireAllPermissions` and the socket room map take `Permission`.
+- **`pnpm shots`** read permissions by scraping the web file, which broke when it became a re-export; it imports them from core-models now.
+- **Found on the way:** the engine sandbox tests and three server engine tests depend on wall-clock timing and fail on a slower Windows machine (#125). An E2E spec fails intermittently with ECONNRESET (#126). Neither touches this branch's code.
+
 ## 2026-11-15 — Reinvention copy groups, batch 1 (branch `batch-2026-11-15-reinvention-1`)
 
 Michael approved a triage of the 186 copy groups the audit re-run found (#90): 33 to merge in three batches, 6 waiting on his decisions 1 to 4, 147 closed in `.claude/reinvention/accepted.jsonl` (D-267). This batch merged the riskiest:

@@ -3,6 +3,7 @@
 // ===========================================
 
 import { z } from 'zod/v4';
+import { USER_ROLE } from '../constants.js';
 
 /**
  * Password policy: 8-128 chars with basic complexity — at least one letter and
@@ -28,14 +29,14 @@ export const createUserSchema = z.object({
   password: passwordSchema,
   firstName: z.string().max(100).nullable().optional(),
   lastName: z.string().max(100).nullable().optional(),
-  role: z.enum(['admin', 'deployer', 'developer', 'viewer']).default('viewer'),
+  role: z.enum(USER_ROLE).default(USER_ROLE.VIEWER),
 });
 
 export const updateUserSchema = z.object({
   email: z.string().email().max(255).optional(),
   firstName: z.string().max(100).nullable().optional(),
   lastName: z.string().max(100).nullable().optional(),
-  role: z.enum(['admin', 'deployer', 'developer', 'viewer']).optional(),
+  role: z.enum(USER_ROLE).optional(),
   enabled: z.boolean().optional(),
 });
 
