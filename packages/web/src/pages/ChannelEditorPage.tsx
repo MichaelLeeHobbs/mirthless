@@ -683,7 +683,7 @@ export function ChannelEditorPage(): ReactNode {
 
       {/* Tab content. Script editors type msg from the channel's inbound data type. */}
       <ScriptDataTypeContext.Provider value={inboundDataType}>
-      <Paper sx={{ p: 3 }}>
+      <Paper sx={{ p: { xs: 1.5, sm: 3 } }}>
         <TabPanel value={activeTab} index={0}>
           <SummaryTab
             control={control}

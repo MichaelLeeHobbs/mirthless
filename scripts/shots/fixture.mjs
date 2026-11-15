@@ -158,9 +158,9 @@ const templates = [
   ['t2', 'l1', 'normalizeMrn', null],
   ['t3', 'l2', 'toIsoDate', 'HL7 TS to ISO 8601'],
 ].map(([id, libraryId, name, description]) => ({
-  id, libraryId, name, description, type: 'FUNCTION', language: 'JAVASCRIPT',
+  id, libraryId, name, description, type: 'FUNCTION', language: name === 'getPatientName' ? 'TYPESCRIPT' : 'JAVASCRIPT',
   code: name === 'getPatientName'
-    ? "/**\n * Formats PID-5 as \"Last, First\".\n * @param raw - the raw HL7 message\n */\nfunction getPatientName(raw) {\n  const hl7 = parseHL7(raw);\n  return `${hl7.get('PID.5.1') ?? ''}, ${hl7.get('PID.5.2') ?? ''}`;\n}"
+    ? "/**\n * Formats PID-5 as \"Last, First\".\n * @param raw - the raw HL7 message\n */\nfunction getPatientName(raw: string): string {\n  const hl7 = parseHL7(raw);\n  return `${hl7.get('PID.5.1') ?? ''}, ${hl7.get('PID.5.2') ?? ''}`;\n}"
     : `function ${name}(value) {\n  return value;\n}`,
   contexts: ['SOURCE_FILTER_TRANSFORMER'], revision: 1, createdAt: ago(9000), updatedAt: ago(900),
 }));

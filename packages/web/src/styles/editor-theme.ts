@@ -99,6 +99,9 @@ export function editorTheme(mode: PaletteMode): editor.IStandaloneThemeData {
       'diffEditor.removedTextBackground': `${col(c.status.critical)}26`,
       'diffEditor.insertedLineBackground': `${col(c.status.healthy)}14`,
       'diffEditor.removedLineBackground': `${col(c.status.critical)}14`,
+      'diffEditorOverview.insertedForeground': `${col(c.status.healthy)}80`,
+      'diffEditorOverview.removedForeground': `${col(c.status.critical)}80`,
+      'editorOverviewRuler.background': col(c.surfaceSunken),
       focusBorder: col(c.primary.main),
     },
   };

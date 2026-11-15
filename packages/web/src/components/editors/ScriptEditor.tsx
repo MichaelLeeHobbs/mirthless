@@ -22,6 +22,8 @@ import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
 import { useCursor, useEditorTheme, useProblems } from './editor-hooks.js';
 import { ProblemStatus } from './ProblemStatus.js';
+import { ScriptReferenceButton } from './ScriptReferenceButton.js';
+import { ShortcutsButton } from './ShortcutsButton.js';
 
 const LANGUAGE_NAME: Readonly<Record<ScriptLanguageCode, string>> = {
   JAVASCRIPT: 'JavaScript',
@@ -119,6 +121,8 @@ export function ScriptEditor({
   const end = (
     <>
       {readOnly ? <Chip size="small" variant="outlined" label="Read only" /> : null}
+      {!readOnly ? <ScriptReferenceButton editor={editor} surface={surface} templates={templates ?? []} /> : null}
+      <ShortcutsButton />
       {!readOnly ? (
         <Tooltip title="Format document (Shift+Alt+F)">
           <span>
