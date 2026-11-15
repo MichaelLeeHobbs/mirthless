@@ -2,6 +2,8 @@
 
 > Express REST API, authentication, authorization, and deployment orchestration.
 
+> **Status (2026-11): original design.** Kept for its reasoning; parts were built differently. Who can do what today: [access control](../user/access-control.md); what is missing: [What GalvaniFlow can do](../user/capabilities.md).
+
 ## Architecture
 
 ```

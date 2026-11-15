@@ -1,8 +1,9 @@
 # 13 — Non-Connector Gap Analysis (GalvaniFlow vs Mirth Connect / OIE 4.6.0)
 
-> **Status:** Draft for review · **Date:** 2026-07-15 · **Owner:** Michael Hobbs
+> **Status (2026-11): historical analysis.** Written 2026-07-15 and kept for its reasoning; its status claims are no longer kept current. What ships today, what is missing and the plan for each gap are in [What GalvaniFlow can do](../user/capabilities.md).
+>
 > **Scope:** Everything *except* connectors (those are in [`12-connector-parity-gap-analysis.md`](./12-connector-parity-gap-analysis.md)) — the message engine, storage, scripting/sandbox API, data types, transformers, channel lifecycle, code templates, admin/server, the extension model, alerts, events, and monitoring.
-> **Baselines:** GalvaniFlow `feature/real-e2e-testing` · Mirth reference `reference/connect/` · OIE **4.6.0** at `C:\Users\mhobb\WebstormProjects\_temp\engine`.
+> **Baselines:** GalvaniFlow `feature/real-e2e-testing` · Mirth reference `reference/connect/` · OIE **4.6.0**.
 
 ---
 
@@ -236,4 +237,4 @@ Ranked by real-world impact (channels blocked / correctness / daily-use pain), n
 **GalvaniFlow — engine/storage:** `packages/server/src/engine.ts` (`shouldStoreContent`, `storageModeSupportsQueue`, encrypt gating), `packages/server/src/services/{data-pruner,message-query,message-reprocess,message-export}.service.ts`, `packages/engine/src/runtime/{queue-consumer,recovery-manager}.ts`
 **GalvaniFlow — lifecycle/admin/monitoring:** `packages/server/src/services/{deployment,channel-dependency,code-template,global-script,channel-export,extension,alert,event,event-export,statistics}.service.ts`, `packages/server/src/lib/{socket,metrics}.ts`, `packages/web/src/components/messages/*`
 **Mirth reference:** `reference/connect/server/src/com/mirth/connect/server/userutil/*`, `.../plugins/datatypes/{edi,ncpdp,hl7v3,dicom,delimited}/*`, `.../donkey/.../StorageSettings.java`, `.../queue/DestinationQueue.java`, `.../model/MessageStorageMode.java`, `.../model/filters/{MessageFilter,EventFilter}.java`, `.../plugins/datapruner/DataPruner.java`, `.../server/controllers/DefaultExtensionController.java`, `.../plugins/dashboardstatus/*`, `.../model/codetemplates/CodeTemplateLibrary.java`, `.../core-util/.../ChannelDependencyGraph.java`
-**OIE 4.6.0:** `C:\Users\mhobb\WebstormProjects\_temp\engine` (connector/datatype set confirmed identical to reference)
+**OIE 4.6.0:** a local checkout of the OIE 4.6.0 source (connector/datatype set confirmed identical to reference)
