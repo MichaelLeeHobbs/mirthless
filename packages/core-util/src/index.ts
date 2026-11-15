@@ -10,3 +10,4 @@ export * from './error-info.js';
 export * from './hl7/index.js';
 export * from './delimited.js';
 export * from './x12.js';
+export * from './secret-setting.js';

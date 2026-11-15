@@ -42,6 +42,12 @@ describe('isSecret', () => {
     expect(isSecret('api.token', 'string')).toBe(true);
     expect(isSecret('smtp.host', 'string')).toBe(false);
   });
+
+  it('treats a setting typed secret, or Password in any case, as a secret like the server does', () => {
+    expect(isSecret('custom.value', 'secret')).toBe(true);
+    expect(isSecret('custom.value', 'Password')).toBe(true);
+    expect(isSecret('custom.value', 'SECRET')).toBe(true);
+  });
 });
 
 describe('validateSetting', () => {

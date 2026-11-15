@@ -15,7 +15,7 @@ import {
   extractCodeTemplateLibraries, importCodeTemplateLibraries,
   type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
 } from './mirth-code-templates.js';
-import { isPlainObject } from '@galvaniflow/core-util';
+import { isPlainObject, unescapeControlChars } from '@galvaniflow/core-util';
 
 // ----- Types -----
 
@@ -1025,11 +1025,6 @@ function mirthDataType(name: string | null): string | null {
   return name === 'EDI/X12' ? 'X12' : name;
 }
 
-/** Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`. */
-function unescapeMirth(text: string): string {
-  return text.replace(/\\([nrt\\])/g, (_m, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? '\\');
-}
-
 /**
  * Add GalvaniFlow's `delimited` settings (see delimitedOptionsSchema) to a
  * Delimited transformer's properties, read from Mirth's serializationProperties.
@@ -1040,7 +1035,8 @@ function withDelimitedOptions(props: Record<string, unknown>, dataType: string):
   const ser = props['serializationProperties'];
   const text = (key: string): string | undefined => {
     const value = getString(ser, key);
-    return value === null ? undefined : unescapeMirth(value);
+    // Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`.
+    return value === null ? undefined : unescapeControlChars(value);
   };
   const names = text('columnNames');
   const delimited = {

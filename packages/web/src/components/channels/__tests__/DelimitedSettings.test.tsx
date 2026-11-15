@@ -8,7 +8,8 @@ import { ThemeProvider } from '@mui/material/styles';
 import { useState, type ReactElement } from 'react';
 import { darkTheme } from '../../../styles/theme.js';
 import { SourceTransformerSection } from '../source/SourceTransformerSection.js';
-import { readEscapes, showEscapes, readColumnNames, delimitedProblem } from '../source/DelimitedSettings.js';
+import { unescapeControlChars } from '@galvaniflow/core-util';
+import { showEscapes, readColumnNames, delimitedProblem } from '../source/DelimitedSettings.js';
 import type { TransformerFormValues } from '../source/types.js';
 
 let last: TransformerFormValues | undefined;
@@ -44,8 +45,8 @@ describe('Delimited settings helpers', () => {
   it('shows control characters as escapes and reads them back', () => {
     expect(showEscapes('\t')).toBe('\\t');
     expect(showEscapes('\r\n')).toBe('\\r\\n');
-    expect(readEscapes('\\r\\n')).toBe('\r\n');
-    expect(readEscapes(showEscapes('a\\b\t'))).toBe('a\\b\t');
+    expect(unescapeControlChars('\\r\\n')).toBe('\r\n');
+    expect(unescapeControlChars(showEscapes('a\\b\t'))).toBe('a\\b\t');
   });
 
   it('reads comma-separated column names, ignoring blanks', () => {

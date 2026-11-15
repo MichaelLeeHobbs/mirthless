@@ -103,13 +103,8 @@ export function fieldFor(key: string): SettingField {
   return { key, label: humanize(name), help: '' };
 }
 
-// Mirrors the server's rule (server/src/lib/secret-redaction.ts): these values never come back from GET.
-const SECRET_KEY_RE = /(password|passwd|_pass$|secret|token|apikey|api_key|private_?key|passphrase|credential)/i;
-
-/** A secret is typed `password` or has a secret-looking key; the server masks its value. */
-export function isSecret(key: string, type: string): boolean {
-  return type === 'password' || SECRET_KEY_RE.test(key);
-}
+/** The server's rule for a secret setting, whose value never comes back from GET. */
+export { isSecretSetting as isSecret } from '@galvaniflow/core-util';
 
 interface Keyed { readonly key: string }
 
