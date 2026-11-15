@@ -44,6 +44,8 @@ export interface XmlReaders {
   readonly isRecord: (v: unknown) => v is Record<string, unknown>;
   readonly getString: (obj: unknown, key: string) => string | null;
   readonly toRecordList: (node: unknown) => readonly Record<string, unknown>[];
+  /** The `<string>` children of a Mirth string list; [] when there are none. */
+  readonly stringList: (node: unknown) => string[];
 }
 
 // ----- Conversion -----
@@ -76,14 +78,6 @@ function convertTemplate(node: Record<string, unknown>, xml: XmlReaders): MirthC
   };
 }
 
-/** The `<string>` children of a Mirth id list. */
-function idList(node: unknown, xml: XmlReaders): string[] {
-  if (!xml.isRecord(node)) return [];
-  const raw = node['string'];
-  const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
-  return list.map(String);
-}
-
 /**
  * Which channels get a library: Mirth's "include new channels" means every
  * channel (an exclusion list is not kept, so the import warns about one);
@@ -91,12 +85,12 @@ function idList(node: unknown, xml: XmlReaders): string[] {
  */
 function libraryScope(lib: Record<string, unknown>, name: string, xml: XmlReaders, warnings: string[]): readonly string[] | null {
   if (xml.getString(lib, 'includeNewChannels') === 'true') {
-    if (idList(lib['disabledChannelIds'], xml).length > 0) {
+    if (xml.stringList(lib['disabledChannelIds']).length > 0) {
       warnings.push(`Code template library "${name}": Mirth disabled it for some channels; here it applies to every channel`);
     }
     return null;
   }
-  return idList(lib['enabledChannelIds'], xml);
+  return xml.stringList(lib['enabledChannelIds']);
 }
 
 /** Libraries in a server backup (`serverConfiguration/codeTemplateLibraries`), scoped as Mirth scoped them. */
