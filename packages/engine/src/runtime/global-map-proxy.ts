@@ -42,6 +42,8 @@ function fromRow(row: GlobalMapRow): unknown {
 export class GlobalMapProxy {
   private readonly store = new Map<string, unknown>();
   private readonly dirty = new Set<string>();
+  /** The latest write of each key that has not settled yet. */
+  private readonly inFlight = new Map<string, Promise<void>>();
   private readonly persistence: GlobalMapStore;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private readonly flushIntervalMs: number;
@@ -94,19 +96,20 @@ export class GlobalMapProxy {
   /** Take an entry that is already persisted (an edit made through the API). */
   set(row: GlobalMapRow): void {
     this.store.set(row.key, fromRow(row));
-    this.dirty.delete(row.key);
+    this.settleApiWrite(row.key);
   }
 
   /** Drop an entry that is already removed from the database. */
   delete(key: string): void {
     this.store.delete(key);
-    this.dirty.delete(key);
+    this.settleApiWrite(key);
   }
 
   /** Drop every entry; the database is already cleared. */
   clear(): void {
     this.store.clear();
     this.dirty.clear();
+    for (const key of this.inFlight.keys()) this.dirty.add(key);
   }
 
   /** Save every changed key. Never rejects: failures are reported and retried next time. */
@@ -116,7 +119,7 @@ export class GlobalMapProxy {
     const keys = [...this.dirty];
     this.dirty.clear();
 
-    const results = await Promise.allSettled(keys.map((key) => this.persistKey(key)));
+    const results = await Promise.allSettled(keys.map((key) => this.persistInOrder(key)));
     results.forEach((result, i) => {
       const key = keys[i];
       if (result.status === 'rejected' && key !== undefined) {
@@ -133,6 +136,35 @@ export class GlobalMapProxy {
       this.flushTimer = null;
     }
     await this.flush();
+  }
+
+  /**
+   * The API has already written this key to the database. A save of a script
+   * value still in flight for it can land after that write, so save the key
+   * again (from the API's value now in memory) on the next flush. Otherwise the
+   * database already holds it and nothing is pending.
+   */
+  private settleApiWrite(key: string): void {
+    if (this.inFlight.has(key)) this.dirty.add(key);
+    else this.dirty.delete(key);
+  }
+
+  /**
+   * Persist a key after any earlier write of the same key has settled, so two
+   * flushes can never land one key's values out of order. The value is read
+   * when the write starts, not when it is queued.
+   */
+  private persistInOrder(key: string): Promise<void> {
+    const previous = this.inFlight.get(key);
+    const write = previous === undefined
+      ? this.persistKey(key)
+      : previous.then(() => this.persistKey(key), () => this.persistKey(key));
+    this.inFlight.set(key, write);
+    const settle = (): void => {
+      if (this.inFlight.get(key) === write) this.inFlight.delete(key);
+    };
+    void write.then(settle, settle);
+    return write;
   }
 
   private async persistKey(key: string): Promise<void> {
