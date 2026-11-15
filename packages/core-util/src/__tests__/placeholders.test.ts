@@ -23,6 +23,9 @@ describe('placeholderText', () => {
     ['a string as it is', 'a "b"', 'a "b"'],
     ['a bigint as decimal digits', -12345678901234567890n, '-12345678901234567890'],
     ['a number as JSON', 1.5, '1.5'],
+    // JSON would write these as "null", which reads like a real value in an outbound message.
+    ['NaN as NaN', Number.NaN, 'NaN'],
+    ['Infinity as Infinity', Number.NEGATIVE_INFINITY, '-Infinity'],
     ['a boolean as JSON', true, 'true'],
     ['an object as JSON', { a: [1] }, '{"a":[1]}'],
     ['a function as the text undefined', (): number => 1, 'undefined'],
@@ -49,8 +52,11 @@ describe('fillPlaceholders', () => {
     ['a value containing ${x} without expanding it', '<${ref}>', '<${x}>'],
     ['each of several placeholders', '${x}-${x}-${y}', 'v-v-${y}'],
     ['replacement patterns in a value literally', '${dollar}', '$& $1 $$'],
+    // A function or symbol has no text worth sending: left as written, like a missing name.
+    ['a function or symbol value as written', '<${fn}|${sym}>', '<${fn}|${sym}>'],
   ])('fills %s', (_label, text, expected) => {
-    const withDollar = (name: string): unknown => (name === 'dollar' ? '$& $1 $$' : lookup(name));
+    const extra: Readonly<Record<string, unknown>> = { dollar: '$& $1 $$', fn: (): number => 1, sym: Symbol('s') };
+    const withDollar = (name: string): unknown => (Object.hasOwn(extra, name) ? extra[name] : lookup(name));
     expect(fillPlaceholders(text, withDollar)).toBe(expected);
   });
 
