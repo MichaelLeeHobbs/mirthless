@@ -7,7 +7,7 @@ export { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from './sandbox-executor
 export type { SandboxContext, SandboxLogger, LogEntry } from './sandbox-context.js';
 export { createSandboxContext } from './sandbox-context.js';
 export type { CompileOptions, FilterRuleInput, TransformerStepInput } from './script-compiler.js';
-export { compileScript, clearScriptCache, compileFilterRulesToScript, compileTransformerStepsToScript } from './script-compiler.js';
+export { compileScript, compileErrorMessages, clearScriptCache, compileFilterRulesToScript, compileTransformerStepsToScript } from './script-compiler.js';
 export type { BridgeFunctions, Hl7MessageProxy, BridgeDependencies, HttpFetchOptions, HttpFetchResult, RouteMessageResult } from './bridge-functions.js';
 export { createBridgeFunctions } from './bridge-functions.js';
 export { isAllowedHost, isBlockedAddress, isBlockedHostname, isReservedAddress, isReservedHostname } from './ssrf.js';
