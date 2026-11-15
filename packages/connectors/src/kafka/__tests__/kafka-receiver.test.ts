@@ -146,6 +146,83 @@ describe('consuming', () => {
   });
 });
 
+describe('a record the pipeline never stores', () => {
+  it('stops retrying after the cap, reports a fatal error and does not commit', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|poison');
+    topic.produce('MSH|next');
+    const p = pipeline(() => notStored('invalid byte sequence for encoding "UTF8": 0x00'));
+    const fatal: Error[] = [];
+    const log = makeMockLogger();
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 3 }, topic.subscribe, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    await receiver.onStart();
+
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(p.offered).toEqual(['MSH|poison', 'MSH|poison', 'MSH|poison']);
+    expect(topic.committed).toBe(0);
+    expect(topic.isSubscribed).toBe(false);
+    expect(fatal[0]?.message).toContain('offset 0');
+    expect(fatal[0]?.message).toContain('3 attempts');
+    expect(log.errors.some((e) => e.msg.includes('Kafka source stopped'))).toBe(true);
+  });
+
+  it('defaults the cap to 5 attempts', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|poison');
+    const p = pipeline(() => notStored('rejected'));
+    let fatal = 0;
+    await start(topic, p.dispatch);
+    receiver?.setFatalHandler(() => { fatal += 1; });
+    await vi.waitFor(() => { expect(fatal).toBe(1); });
+    expect(p.offered).toHaveLength(5);
+  });
+
+  it('counts failures per record, so a transient failure that then succeeds starts the next record at zero', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|1');
+    topic.produce('MSH|2');
+    // Each record fails twice (database briefly down), then is stored: 4 failures in all, never 3 on one record.
+    const failuresLeft = new Map([['MSH|1', 2], ['MSH|2', 2]]);
+    const p = pipeline((raw, n) => {
+      const left = failuresLeft.get(raw.content) ?? 0;
+      failuresLeft.set(raw.content, left - 1);
+      return left > 0 ? notStored('database unavailable') : stored(n);
+    });
+    let fatal = 0;
+    const log = makeMockLogger();
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 3 }, topic.subscribe, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler(() => { fatal += 1; });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(topic.committed).toBe(2); });
+    expect(fatal).toBe(0);
+    expect(p.offered).toEqual(['MSH|1', 'MSH|1', 'MSH|1', 'MSH|2', 'MSH|2', 'MSH|2']);
+  });
+
+  it('gives a record a fresh count after the channel is started again', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('MSH|poison');
+    let fail = true;
+    const p = pipeline((_raw, n) => (fail ? notStored('rejected') : stored(n)));
+    let fatal = 0;
+    const log = makeMockLogger();
+    receiver = new KafkaReceiver({ ...config, maxStoreAttempts: 2 }, topic.subscribe, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler(() => { fatal += 1; });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(fatal).toBe(1); });
+    await receiver.onStop();
+
+    fail = false; // the operator fixed the cause
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
+    expect(p.offered).toEqual(['MSH|poison', 'MSH|poison', 'MSH|poison']);
+  });
+});
+
 describe('broker disconnect', () => {
   it('rejoins after the connection drops and resumes from the committed offset', async () => {
     const topic = new FakeKafkaTopic();

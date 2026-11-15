@@ -118,6 +118,60 @@ describe('consuming', () => {
   });
 });
 
+describe('a message the pipeline never stores', () => {
+  function startCapped(queue: FakeAmqpQueue, dispatch: Dispatch, maxStoreAttempts?: number) {
+    const log = makeMockLogger();
+    const fatal: Error[] = [];
+    receiver = new AmqpReceiver(maxStoreAttempts === undefined ? config : { ...config, maxStoreAttempts }, queue.consume, log.logger, 5);
+    receiver.setDispatcher(dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    return { log, fatal, started: receiver.onStart() };
+  }
+
+  it('stops retrying after the cap, reports a fatal error, and neither acks nor dead-letters it', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|poison');
+    queue.publish('MSH|next');
+    const p = pipeline(() => notStored('invalid byte sequence for encoding "UTF8": 0x00'));
+    const { log, fatal } = startCapped(queue, p.dispatch, 3);
+
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    await vi.waitFor(() => { expect(queue.connected).toBe(false); });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(p.offered.map((r) => r.content)).toEqual(['MSH|poison', 'MSH|poison', 'MSH|poison']);
+    expect(queue.acked).toEqual([]);
+    expect(queue.deadLettered).toEqual([]);
+    // Still on the queue, first, for when the channel is started again.
+    expect(queue.messages.map((m) => m.body)).toEqual(['MSH|poison', 'MSH|next']);
+    expect(fatal[0]?.message).toContain('3 attempts');
+    expect(log.errors.some((e) => e.msg.includes('AMQP source stopped'))).toBe(true);
+  });
+
+  it('defaults the cap to 5 attempts', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|poison');
+    const p = pipeline(() => notStored('rejected'));
+    const { fatal } = startCapped(queue, p.dispatch);
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    expect(p.offered).toHaveLength(5);
+  });
+
+  it('resets the count when a message is stored, so transient failures never add up to the cap', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    queue.publish('MSH|2');
+    const failuresLeft = new Map([['MSH|1', 2], ['MSH|2', 2]]);
+    const p = pipeline((raw, n) => {
+      const left = failuresLeft.get(raw.content) ?? 0;
+      failuresLeft.set(raw.content, left - 1);
+      return left > 0 ? notStored('database unavailable') : stored(n);
+    });
+    const { fatal } = startCapped(queue, p.dispatch, 3);
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+    expect(fatal).toEqual([]);
+  });
+});
+
 describe('broker disconnect', () => {
   it('reconnects after the connection drops, and the message that was in flight is delivered again', async () => {
     const queue = new FakeAmqpQueue();

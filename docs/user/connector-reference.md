@@ -127,6 +127,7 @@ Reads a topic as a member of a consumer group and commits a record only after th
 | `topic` | — (required) | An existing topic. |
 | `groupId` | — (required) | Consumer group; one per channel. |
 | `startFrom` | `EARLIEST` | `EARLIEST` or `LATEST`, for a group with no committed offset. |
+| `maxStoreAttempts` | `5` | Failures in a row to store the same record before the source stops (1 to 1000). The record is not committed; the channel stops, an ERROR `CHANNEL_STOPPED` event is recorded and a `SOURCE_CONNECTOR` alert fires. Fix the cause and start the channel; it reads that record first. |
 | `charset` | `utf-8` | How the record value becomes message text: `utf-8`, `latin1` (ISO-8859-1), `windows-1252`, or `base64` to keep a binary payload intact. In `utf-8` mode a value with invalid bytes is stored with them replaced by U+FFFD, flagged with `charsetError` in the source map, and logged as a warning. |
 | `saslMechanism` | `NONE` | `NONE`, `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`. |
 | `saslUsername`, `saslPassword` | `''` | Required with a mechanism. |
@@ -144,6 +145,7 @@ Consumes an existing RabbitMQ (AMQP 0-9-1) queue and acks a message only after t
 | `username`, `password` | `''` | Login; the broker's default when empty. |
 | `queue` | — (required) | An existing queue; never declared. |
 | `charset` | `utf-8` | As for Kafka, for the message body. |
+| `maxStoreAttempts` | `5` | As for Kafka. The message is neither acked nor dead-lettered; it stays at the head of the queue. |
 | `useTls`, `tls` | `false` | As for Kafka. |
 
 ---

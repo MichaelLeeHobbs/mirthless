@@ -5,7 +5,7 @@
 // destination forms.
 
 import type { ReactNode } from 'react';
-import type { QueueCharset } from '@galvaniflow/core-models';
+import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvaniflow/core-models';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -49,6 +49,23 @@ export function QueueCharsetField({ properties, onChange }: FieldsProps): ReactN
     >
       {QUEUE_CHARSETS.map((c) => <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>)}
     </TextField>
+  );
+}
+
+/** How many failures in a row to store one message a Kafka or AMQP source allows before it stops the channel. */
+export function QueueStoreAttemptsField({ properties, onChange }: FieldsProps): ReactNode {
+  const { handleNumber } = propertyUpdaters(properties, onChange);
+  return (
+    <TextField
+      label="Store Attempts Before Stopping"
+      type="number"
+      value={getNum(properties, 'maxStoreAttempts', DEFAULT_MAX_STORE_ATTEMPTS)}
+      onChange={handleNumber('maxStoreAttempts')}
+      helperText="After this many failures in a row to store the same message, the channel stops and alerts. The message stays on the queue."
+      fullWidth
+      sx={{ mb: 2 }}
+      slotProps={{ htmlInput: { min: 1, max: 1000 } }}
+    />
   );
 }
 

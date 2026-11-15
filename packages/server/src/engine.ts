@@ -50,7 +50,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@galvaniflow/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema } from '@galvaniflow/core-models';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema } from '@galvaniflow/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
@@ -70,6 +70,8 @@ import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
+import { emitEvent } from './lib/event-emitter.js';
+import { emitToAll } from './lib/socket.js';
 import type { ChannelDetail } from './services/channel.service.js';
 
 // ----- Types -----
@@ -704,6 +706,10 @@ export class EngineManager {
       return Promise.resolve();
     };
 
+    // A Kafka or AMQP source stops itself when a message keeps failing to store;
+    // the channel must not then look STARTED while nothing is read.
+    source.setFatalHandler?.((error) => { void this.stopAfterSourceFailure(channel.id, error, raiseAlert); });
+
     // Build configMap record (key format: "category.name")
     const configMapRecord: Record<string, unknown> = {};
     for (const entry of configMapResult.value) {
@@ -878,6 +884,36 @@ export class EngineManager {
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, recoverOnce, resetClaimsOnce, activity });
     this.silenceTimer ??= setInterval(() => { void this.checkSilentChannels(); }, SILENCE_CHECK_INTERVAL_MS).unref();
+  }
+
+  /**
+   * Fail loudly after the source stopped itself on an error it cannot get past:
+   * record an ERROR event, raise a SOURCE_CONNECTOR alert and stop the channel
+   * (queue consumers too, as a stop from the UI does), so the dashboard shows
+   * it stopped. The message that failed is still on its queue or topic; an
+   * operator fixes the cause and starts the channel again.
+   */
+  private async stopAfterSourceFailure(
+    channelId: string,
+    error: Error,
+    raiseAlert: (event: Parameters<AlertManager['handleEvent']>[0]) => Promise<void>,
+  ): Promise<void> {
+    logger.error({ channelId, errMsg: error.message }, 'Source connector stopped after a fatal error; stopping the channel');
+    emitEvent({
+      level: 'ERROR', name: 'CHANNEL_STOPPED', outcome: 'FAILURE', userId: null, channelId,
+      serverId: null, ipAddress: null, attributes: { reason: 'SOURCE_FAILED', error: error.message },
+    });
+    await raiseAlert({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage: error.message, timestamp: Date.now() });
+
+    const deployed = this.runtimes.get(channelId);
+    const state = deployed?.runtime.getState();
+    if (!deployed || (state !== 'STARTED' && state !== 'PAUSED')) return;
+    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
+    const stopped = await deployed.runtime.stop();
+    if (!stopped.ok) {
+      logger.error({ channelId, errMsg: stopped.error.message }, 'Could not stop the channel after its source failed');
+    }
+    emitToAll(SOCKET_EVENT.CHANNEL_STATE, { channelId, state: deployed.runtime.getState() });
   }
 
   /**

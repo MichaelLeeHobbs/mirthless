@@ -57,6 +57,13 @@ describe('kafkaSourcePropertiesSchema', () => {
   it('rejects a charset the source cannot decode', () => {
     expect(kafkaSourcePropertiesSchema.safeParse({ ...base, charset: 'ebcdic' }).success).toBe(false);
   });
+
+  it('stops after 5 failed store attempts unless told otherwise, and needs at least 1', () => {
+    expect(kafkaSourcePropertiesSchema.parse(base).maxStoreAttempts).toBe(5);
+    expect(kafkaSourcePropertiesSchema.parse({ ...base, maxStoreAttempts: '12' }).maxStoreAttempts).toBe(12);
+    expect(kafkaSourcePropertiesSchema.safeParse({ ...base, maxStoreAttempts: 0 }).success).toBe(false);
+    expect(kafkaSourcePropertiesSchema.safeParse({ ...base, maxStoreAttempts: 2.5 }).success).toBe(false);
+  });
 });
 
 describe('kafkaDestinationPropertiesSchema', () => {
@@ -95,6 +102,11 @@ describe('amqpSourcePropertiesSchema', () => {
     expect(amqpSourcePropertiesSchema.parse({ host: 'rabbit', queue: 'adt' }).charset).toBe('utf-8');
     expect(amqpSourcePropertiesSchema.parse({ host: 'rabbit', queue: 'adt', charset: 'base64' }).charset).toBe('base64');
     expect(amqpSourcePropertiesSchema.safeParse({ host: 'rabbit', queue: 'adt', charset: 'utf-16' }).success).toBe(false);
+  });
+
+  it('stops after 5 failed store attempts unless told otherwise', () => {
+    expect(amqpSourcePropertiesSchema.parse({ host: 'rabbit', queue: 'adt' }).maxStoreAttempts).toBe(5);
+    expect(amqpSourcePropertiesSchema.safeParse({ host: 'rabbit', queue: 'adt', maxStoreAttempts: -1 }).success).toBe(false);
   });
 });
 
