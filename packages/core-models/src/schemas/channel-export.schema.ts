@@ -4,6 +4,7 @@
 // Zod schemas for channel export/import payloads.
 
 import { z } from 'zod/v4';
+import { sourceConnectorTypeSchema, destinationConnectorTypeSchema } from './channel.schema.js';
 
 // ----- Export Schema -----
 
@@ -129,10 +130,22 @@ type CollisionMode = typeof COLLISION_MODE[keyof typeof COLLISION_MODE];
 export { COLLISION_MODE };
 export type { CollisionMode };
 
+/**
+ * An exported channel as import accepts it. Import writes channels straight to
+ * the database, so it checks connector types against what the registry can
+ * build in each position, as the channel API does. The export and backup
+ * schemas keep plain strings, so a channel saved before this check still
+ * exports and a backup holding one still restores.
+ */
+const channelImportEntrySchema = channelExportEntrySchema.extend({
+  sourceConnectorType: sourceConnectorTypeSchema,
+  destinations: z.array(channelExportDestinationSchema.extend({ connectorType: destinationConnectorTypeSchema })),
+});
+
 export const channelImportSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  channels: z.array(channelExportEntrySchema),
+  channels: z.array(channelImportEntrySchema),
   collisionMode: z.enum(['SKIP', 'OVERWRITE', 'CREATE_NEW']),
 });
 
