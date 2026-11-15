@@ -30,8 +30,13 @@ import {
   withTimeout,
   DATABASE_VENDOR,
   createPool,
+  createSsh2SftpClient,
+  validateAuth,
   type DatabasePool,
   type DatabaseVendor,
+  type SftpClient,
+  type SftpClientFactory,
+  type SftpConnectionOptions,
 } from '@galvaniflow/connectors';
 import { ServiceError } from '../lib/service-error.js';
 import { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } from './connector-tls-resolver.js';
@@ -41,6 +46,8 @@ const nodeRequire = createRequire(import.meta.url);
 // ----- Constants -----
 
 const TEST_TIMEOUT_MS = 10_000;
+/** How long to wait for an SFTP session to close after a test before giving up on it. */
+const SFTP_CLOSE_TIMEOUT_MS = 2_000;
 
 // ----- Injectable Factories (for testing) -----
 
@@ -72,6 +79,7 @@ function defaultSmtpTransportFactory(config: Record<string, unknown>): SmtpVerif
 /** Module-level factories. Overridable for tests. */
 let poolFactory: PoolFactory = defaultPoolFactory;
 let smtpTransportFactory: SmtpTransportFactory = defaultSmtpTransportFactory;
+let sftpClientFactory: SftpClientFactory = createSsh2SftpClient;
 
 /** Override pool factory (for testing). */
 export function setPoolFactory(factory: PoolFactory): void {
@@ -83,10 +91,16 @@ export function setSmtpTransportFactory(factory: SmtpTransportFactory): void {
   smtpTransportFactory = factory;
 }
 
+/** Override the SFTP client factory (for testing). */
+export function setSftpClientFactory(factory: SftpClientFactory): void {
+  sftpClientFactory = factory;
+}
+
 /** Reset factories to defaults (for testing). */
 export function resetFactories(): void {
   poolFactory = defaultPoolFactory;
   smtpTransportFactory = defaultSmtpTransportFactory;
+  sftpClientFactory = createSsh2SftpClient;
 }
 
 // ----- SSRF Protection -----
@@ -481,6 +495,76 @@ const testEmail: Tester = async (_mode, props) => {
   return testTcpConnect(host, port);
 };
 
+/** An optional string property; undefined unless it is a non-empty string. */
+function optionalString(props: Readonly<Record<string, unknown>>, key: string): string | undefined {
+  const val = props[key];
+  return typeof val === 'string' && val.length > 0 ? val : undefined;
+}
+
+/**
+ * SFTP connection options read as the registry's SFTP factories read them
+ * (port 22 and host key checking on by default). Refuses settings the
+ * connector could never connect with, before any network I/O.
+ */
+function readSftpOptions(props: Readonly<Record<string, unknown>>): SftpConnectionOptions {
+  const options: SftpConnectionOptions = {
+    host: requireString(props, 'host'),
+    port: props['port'] === undefined || props['port'] === '' ? 22 : requireNumber(props, 'port'),
+    username: requireString(props, 'username'),
+    password: optionalString(props, 'password'),
+    privateKey: optionalString(props, 'privateKey'),
+    passphrase: optionalString(props, 'passphrase'),
+    strictHostKey: props['strictHostKey'] !== false,
+    hostKey: optionalString(props, 'hostKey'),
+  };
+  const authError = validateAuth(options);
+  if (authError) throw new ServiceError('INVALID_INPUT', authError);
+  if (options.strictHostKey && !options.hostKey?.trim()) {
+    throw new ServiceError('INVALID_INPUT', 'Host key checking is on but no host key is set');
+  }
+  return options;
+}
+
+/** Close an SFTP session after a test. The result is already decided, so a failed or slow close does not change it. */
+async function closeSftp(client: SftpClient): Promise<void> {
+  try {
+    await withTimeout(client.end(), SFTP_CLOSE_TIMEOUT_MS, 'SFTP close');
+  } catch {
+    // Nothing to report: the session either never opened or the server dropped it.
+  }
+}
+
+/**
+ * SFTP tester: connect and log in with the configured credentials and host
+ * key, check that the remote directory exists, then close. The connect and
+ * the check together are bounded by the test timeout.
+ */
+const testSftp: Tester = async (_mode, props) => {
+  const options = readSftpOptions(props);
+  const remoteDirectory = requireString(props, 'remoteDirectory');
+  await assertHostAllowed(options.host);
+
+  const start = performance.now();
+  const target = `${options.host}:${String(options.port)}`;
+  const client = sftpClientFactory(options);
+  try {
+    const found = await withTimeout(
+      client.connect().then(() => client.exists(remoteDirectory)),
+      TEST_TIMEOUT_MS,
+      'SFTP connection test',
+    );
+    const latency = performance.now() - start;
+    return found
+      ? successResult(`SFTP connected: ${target}, remote directory ${remoteDirectory} found`, latency)
+      : failureResult(`SFTP connected to ${target} but remote directory ${remoteDirectory} was not found`, latency);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return failureResult(`SFTP connection failed: ${msg}`, performance.now() - start);
+  } finally {
+    await closeSftp(client);
+  }
+};
+
 /** Parse props with a connector schema, failing as invalid input with the schema's reasons. */
 function parseProps<S extends z.ZodType>(schema: S, props: unknown): z.output<S> {
   const parsed = schema.safeParse(props);
@@ -555,6 +639,7 @@ const TESTERS: Readonly<Record<string, Tester>> = {
   CHANNEL: testChannel,
   JAVASCRIPT: testJavascript,
   EMAIL: testEmail,
+  SFTP: testSftp,
   KAFKA: testKafka,
   AMQP: testAmqp,
 };

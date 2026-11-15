@@ -17,9 +17,11 @@ import {
   ConnectionTestService,
   setPoolFactory,
   setSmtpTransportFactory,
+  setSftpClientFactory,
   resetFactories,
   _testing,
 } from '../connection-test.service.js';
+import type { SftpClient, SftpConnectionOptions } from '@galvaniflow/connectors';
 
 // ----- TLS fixtures (self-signed CN=localhost pair; test-only) -----
 
@@ -670,6 +672,133 @@ describe('ConnectionTestService', () => {
       if (!result.ok) return;
       expect(result.value.success).toBe(false);
       expect(result.value.message).toContain('ECONNREFUSED');
+    });
+  });
+
+  // ----- SFTP -----
+
+  describe('SFTP', () => {
+    const SFTP_PROPS = {
+      host: 'sftp.lab.example', port: 2222, username: 'lab', password: 'pw', privateKey: '', passphrase: '',
+      remoteDirectory: '/inbound', strictHostKey: true, hostKey: 'AAAAkey',
+    };
+    const mockSftpConnect = vi.fn<() => Promise<void>>();
+    const mockSftpExists = vi.fn<(path: string) => Promise<boolean>>();
+    const mockSftpEnd = vi.fn<() => Promise<void>>();
+    const sftpFactory = vi.fn<(options: SftpConnectionOptions) => SftpClient>();
+
+    beforeEach(() => {
+      mockSftpConnect.mockResolvedValue(undefined);
+      mockSftpExists.mockResolvedValue(true);
+      mockSftpEnd.mockResolvedValue(undefined);
+      sftpFactory.mockImplementation(() => ({
+        connect: mockSftpConnect, exists: mockSftpExists, end: mockSftpEnd,
+      }) as unknown as SftpClient);
+      setSftpClientFactory(sftpFactory);
+    });
+
+    afterEach(() => { vi.useRealTimers(); });
+
+    it.each(['SOURCE', 'DESTINATION'])('connects, finds the remote directory and closes (%s)', async (mode) => {
+      const result = await ConnectionTestService.testConnection('SFTP', mode, SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(true);
+      expect(result.value.message).toContain('sftp.lab.example:2222');
+      expect(result.value.message).toContain('/inbound');
+      expect(sftpFactory).toHaveBeenCalledWith(expect.objectContaining({
+        host: 'sftp.lab.example', port: 2222, username: 'lab', password: 'pw', strictHostKey: true, hostKey: 'AAAAkey',
+      }));
+      expect(mockSftpExists).toHaveBeenCalledWith('/inbound');
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('uses port 22 when none is set, as the connector does', async () => {
+      const { port: _port, ...noPort } = SFTP_PROPS;
+      await ConnectionTestService.testConnection('SFTP', 'SOURCE', noPort);
+      expect(sftpFactory).toHaveBeenCalledWith(expect.objectContaining({ port: 22 }));
+    });
+
+    it('fails when the remote directory does not exist', async () => {
+      mockSftpExists.mockResolvedValue(false);
+
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toContain('/inbound');
+      expect(result.value.message).toContain('not found');
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('fails with the server reason when login or host key verification is refused', async () => {
+      mockSftpConnect.mockRejectedValue(new Error('All configured authentication methods failed'));
+
+      const result = await ConnectionTestService.testConnection('SFTP', 'DESTINATION', SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toContain('All configured authentication methods failed');
+      expect(mockSftpExists).not.toHaveBeenCalled();
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('fails when the server does not answer within the test timeout', async () => {
+      vi.useFakeTimers();
+      mockSftpConnect.mockReturnValue(new Promise<void>(() => undefined));
+
+      const pending = ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+      await vi.advanceTimersByTimeAsync(_testing.TEST_TIMEOUT_MS);
+      const result = await pending;
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toContain('timed out');
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('still reports the result when closing the session fails', async () => {
+      mockSftpEnd.mockRejectedValue(new Error('not connected'));
+
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(true);
+    });
+
+    it.each([
+      ['no host', { host: '' }, 'host'],
+      ['no remote directory', { remoteDirectory: '' }, 'remoteDirectory'],
+      ['neither password nor private key', { password: '', privateKey: '' }, 'password or a privateKey'],
+      ['host key checking on but no host key', { hostKey: '' }, 'host key'],
+    ])('refuses %s without connecting', async (_label, override, expected) => {
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', { ...SFTP_PROPS, ...override });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+      expect(result.error.message).toContain(expected);
+      expect(sftpFactory).not.toHaveBeenCalled();
+    });
+
+    it('connects without a host key when host key checking is off', async () => {
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', { ...SFTP_PROPS, strictHostKey: false, hostKey: '' });
+      expect(result.ok).toBe(true);
+      expect(sftpFactory).toHaveBeenCalledWith(expect.objectContaining({ strictHostKey: false }));
+    });
+
+    it('blocks a loopback SFTP host', async () => {
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', { ...SFTP_PROPS, host: '127.0.0.1' });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('blocked');
+      expect(sftpFactory).not.toHaveBeenCalled();
     });
   });
 
