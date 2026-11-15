@@ -12,7 +12,8 @@ Michael approved a triage of the 186 copy groups the audit re-run found (#90): 3
 - **Database connectors (G0013.R, G0204):** one `toPoolConfig` for receiver and dispatcher, one send path in the dispatcher.
 - **File and SFTP sources (G0268 and three more):** one `QuarantineLedger` and one dispatch-then-quarantine step. One behaviour change, approved in the triage: the File source used to ignore a quarantine ledger it could not read; now only a missing one is silent, and any other read error is logged as the SFTP source already did.
 - **Found on the way:** #91 (a cloned channel loses its filters and transformers) and #92 (nine defects in handler and service code the judge read).
-- Not done: batches 2 and 3, decisions 1 to 4, and teaching `/find-reinvention` to read `accepted.jsonl` (MichaelLeeHobbs/skills#31). `packages/server/package.json` still lists `esbuild`, which no server code imports now.
+- Not done: batches 2 and 3, decisions 1 to 4, and teaching `/find-reinvention` to read `accepted.jsonl` (MichaelLeeHobbs/skills#31).
+- **From the batch review:** script validation no longer fills deploy's compiled-script cache (`compileScript` takes `cache: false`), the server no longer declares `esbuild` (the engine does), and accepted groups match on path, name and hash, not line number.
 
 ## 2026-11-14 — Kafka and AMQP connectors, V15 (branch `feat/kafka-amqp-connectors`)
 
