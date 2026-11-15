@@ -83,7 +83,8 @@ Michael tests this project by hand, and it is too big for that. Every change you
 4. **A new flow gets an automated check.** UI: a `pnpm shots` page and, for a multi-step flow, a Playwright spec in `e2e/`. Server: a route test, plus an integration test when it touches SQL.
 5. **Small, reviewable steps.** One concern per commit. Don't mix refactors with behaviour changes.
 6. **Ask before anything you can't undo**: production data, force pushes, deleting branches, publishing.
-7. **Keep the docs true.** If you change a command, a rule or a decision, update this file, `docs/progress/` and any doc that names it in the same change.
+7. **Keep the docs true.** If you change a command, a rule or a decision, update this file, `docs/progress/` and any doc that names it in the same change. User pages that restate code are checked by docs guards in `packages/server/src/__tests__/docs/`, which run in `pnpm gate`: `docs/user/connector-reference.md` must list every connector type with the right directions and section headings. When a guard fails, fix the page, not the guard.
+8. **Security defects go to an advisory, not an issue.** A defect where the code protects less than the docs or config promise, and an outsider or a lower role can use it (a route serving PHI without its permission check, a sandbox escape, a TLS or host-key check that fails open, a revoked session that still works), goes to a draft GitHub security advisory as `SECURITY.md` says. The agent drafts it and tells Michael, and the fix lands from the advisory's private fork. Design limits and defaults ("no MFA", "no per-channel scope") are documented and filed publicly. A finding that is already public stays public, and the docs carry its mitigation until the fix ships.
 
 ## Verification Matrix
 
@@ -97,6 +98,7 @@ Run what matches the files you touched. `pnpm gate` runs build, lint and every p
 | `packages/server/src/db/schema` | `pnpm db:generate`, commit the migration | `pnpm test:integration` against Postgres |
 | SQL, queues, pruning, partitions | `pnpm test:integration` | |
 | Engine pipeline or a connector | The package's tests (`pnpm --filter @galvaniflow/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes |
+| A connector's type, direction or properties | `pnpm --filter @galvaniflow/server test` (the docs guards) | Update `docs/user/connector-reference.md`; for a new connector, work through "Adding a connector" below |
 | Throughput or memory | `pnpm soak` (see `docs/ops/soak-test.md`) | Compare with the recorded baseline |
 | The Mirth importer, or behaviour a migrated channel relies on | `pnpm test:scenarios` (needs Postgres and the test containers, see `docs/testing/migration-scenarios.md`) | Compare the score with the last recorded one; nothing that passed may fail |
 | Docs only | Check the commands and paths you mention exist | |
@@ -301,6 +303,17 @@ const CHANNEL_STATE = {
 type ChannelState = typeof CHANNEL_STATE[keyof typeof CHANNEL_STATE];
 ```
 
+### Adding a connector
+
+Start with the type lists in `packages/core-models/src/constants.ts` (`SOURCE_CONNECTOR_TYPES`, `DESTINATION_CONNECTOR_TYPES`). From there the compiler or a test names most of what is missing: the registry factory (`registry-types.test.ts`), the docs page (the docs guard), the destination dropdown label and the dashboard label (typed by connector type). These places are keyed by a plain string, so nothing tells you when one is missing:
+
+- Deploy validation schemas in `packages/server/src/services/connector-validation.service.ts`. A type with no schema passes unchecked (#102).
+- Test Connection testers in `packages/server/src/services/connection-test.service.ts` (#89 is SFTP's missing tester).
+- Certificate-ID resolvers in `packages/server/src/engine.ts` (`SOURCE_TLS_RESOLVERS`, `DESTINATION_TLS_RESOLVERS`), if the connector takes certificates from the store.
+- Editor forms and defaults: `SOURCE_CONNECTOR_FORMS` in `packages/web/src/components/channels/source/ConnectorSettingsSection.tsx`, `DEST_CONNECTOR_FORMS` in `destinations/DestinationConnectorSettings.tsx`, and the defaults maps in both `connector-defaults.ts` files.
+- The Mirth importer's class map in `packages/server/src/services/mirth-import.service.ts`, if Mirth has an equivalent.
+- The property tables in `docs/user/connector-reference.md`. The guard checks the sections, not the keys (#115).
+
 ---
 
 ## Agent Tooling
@@ -313,7 +326,7 @@ Lives in `.claude/` and is checked in, so every agent and teammate gets the same
 | `write-tests` skill | `.claude/skills/write-tests/` | Which test layer to use and how to write it |
 | `create-ui` skill | `.claude/skills/create-ui/` | Builds and screenshots UI in the visual language |
 | Session start hook | `.claude/hooks/session-start.mjs` | In cloud sessions only, installs dependencies and builds core-models |
-| Schema hook | `.claude/hooks/schema-changed.mjs` | After a schema edit, reminds the agent to generate and commit a migration |
+| Reminder hook | `.claude/hooks/schema-changed.mjs` | After an edit, reminds the agent what else must change: a migration after a schema edit, the connector reference after a registry edit |
 | Permissions | `.claude/settings.json` | Allows the routine checks without prompts; denies force pushes, `rm -rf` and real `.env` files |
 
 ---
@@ -369,12 +382,12 @@ galvaniflow/             — repository root (the GitHub repository is still nam
 │   └── cli/             — CLI for server management
 ├── e2e/                 — Playwright specs (`pnpm test:e2e`)
 ├── docker/              — Dockerfiles, Compose (development and production), nginx
-├── docs/design/         — Design documents (00-16)
+├── docs/design/         — Design documents and dated analyses (00-18)
 ├── docs/ops/            — Deployment, TLS, backup, upgrade, soak test
 ├── docs/progress/       — Roadmap, changelog, decisions
 ├── docs/standards/      — Coding, logging, and config standards
 ├── docs/testing/        — Manual test scenarios
-├── docs/user/           — User documentation (scripting API)
+├── docs/user/           — User documentation (connector reference, quickstart, scripting API)
 ├── scripts/             — DB init, benchmarks, soak test, screenshots (`scripts/shots`)
 ├── .claude/             — Agent skills, hooks and settings (see Agent Tooling)
 ├── reference/           — Mirth Connect source + code samples (git-ignored)
