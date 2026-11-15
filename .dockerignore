@@ -1,5 +1,6 @@
-# Dependencies
-node_modules/
+# Dependencies (every package's, not only the root's: a host install would
+# overwrite the image's own, and on Windows its links point nowhere)
+**/node_modules/
 
 # Git
 .git/
