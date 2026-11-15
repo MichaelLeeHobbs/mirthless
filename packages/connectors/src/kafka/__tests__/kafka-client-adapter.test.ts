@@ -151,7 +151,8 @@ describe('createKafkaProducer', () => {
   it('waits for every in-sync replica and sends header names as Buffers', async () => {
     const producer = createKafkaProducer(connection);
     const written = await producer.send({ topic: 'results', key: Buffer.from('P42'), value: Buffer.from('MSH'), headers: { site: Buffer.from('north') } });
-    expect(lib.producerOptions[0]).toMatchObject({ acks: -1 });
+    // Idempotent, with the client's retry bound kept (it would otherwise retry without limit).
+    expect(lib.producerOptions[0]).toMatchObject({ acks: -1, idempotent: true, retries: 3 });
     const sent = lib.sent[0] as { key: Buffer; headers: Map<Buffer, Buffer> };
     expect(sent.key.toString()).toBe('P42');
     // The client's default serializers need Buffer header names; strings failed to encode.

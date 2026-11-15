@@ -33,6 +33,8 @@ export interface KafkaConnectionConfig {
 
 /** Bound on each broker request and on connecting. */
 const KAFKA_REQUEST_TIMEOUT_MS = 30_000;
+/** The client's default; it must stay above 1, or an idempotent producer retries without limit. */
+const KAFKA_SEND_RETRIES = 3;
 
 /** Split the broker list into `host:port` entries. */
 export function parseBrokers(brokers: string): string[] {
@@ -200,7 +202,10 @@ export function describeKafkaError(err: unknown): Error {
 }
 
 export const createKafkaProducer: KafkaProducerFactory = (config) => {
-  const producer = new Producer({ ...clientOptions(config), acks: ProduceAcks.ALL });
+  // Idempotent, so a request the client retries (its broker wrote it, but the
+  // answer was lost) is not written twice. The client would then retry without
+  // limit; keep its usual 3, so a send the dispatcher gave up on stops retrying.
+  const producer = new Producer({ ...clientOptions(config), acks: ProduceAcks.ALL, idempotent: true, retries: KAFKA_SEND_RETRIES });
   return {
     async send(record): Promise<KafkaWriteResult | undefined> {
       let result;
