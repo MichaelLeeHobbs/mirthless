@@ -40,8 +40,8 @@ import {
   amqpDestinationPropertiesSchema,
 } from '@galvaniflow/core-models';
 
-/** A plain decimal number as text: optional minus, digits, optional fraction. */
-const DECIMAL_TEXT = /^-?\d+(?:\.\d+)?$/;
+/** A plain decimal number as text: optional sign, digits with an optional dot and fraction, or a dot and fraction. */
+const DECIMAL_TEXT = /^[+-]?(?:\d+\.?\d*|\.\d+)$/;
 
 /**
  * A config property as a finite number, or `fallback`. A plain decimal string
