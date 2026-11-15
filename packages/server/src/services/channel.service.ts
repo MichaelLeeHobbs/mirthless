@@ -413,6 +413,65 @@ function buildCloneDestinations(source: ChannelDetail): CreateChannelInput['dest
   }));
 }
 
+type CloneFilter = NonNullable<CreateChannelInput['filters']>[number];
+type CloneTransformer = NonNullable<CreateChannelInput['transformers']>[number];
+
+/**
+ * The metaDataId a source-channel connector row gets on the clone: `create`
+ * numbers destinations by position (index + 1), so a source with a gap in its
+ * metaDataIds is renumbered. Null for the source connector. Throws when the row
+ * names a connector the channel does not have, rather than silently moving a
+ * destination's filter or transformer onto the source.
+ */
+function cloneMetaDataId(source: ChannelDetail, connectorId: string | null): number | null {
+  if (connectorId === null) return null;
+  const index = source.destinations.findIndex((d) => d.id === connectorId);
+  if (index < 0) {
+    throw new ServiceError('INTERNAL', `Channel ${source.id} has a filter or transformer on unknown connector ${connectorId}`);
+  }
+  return index + 1;
+}
+
+function buildCloneFilters(source: ChannelDetail): CloneFilter[] {
+  return source.filters.map((f) => ({
+    connectorId: null,
+    metaDataId: cloneMetaDataId(source, f.connectorId),
+    rules: f.rules.map((r) => ({
+      enabled: r.enabled,
+      ...(r.name !== null ? { name: r.name } : {}),
+      operator: r.operator as CloneFilter['rules'][number]['operator'],
+      type: r.type as CloneFilter['rules'][number]['type'],
+      script: r.script,
+      field: r.field,
+      condition: r.condition,
+      values: r.values ? [...r.values] : null,
+    })),
+  }));
+}
+
+function buildCloneTransformers(source: ChannelDetail): CloneTransformer[] {
+  return source.transformers.map((t) => ({
+    connectorId: null,
+    metaDataId: cloneMetaDataId(source, t.connectorId),
+    inboundDataType: t.inboundDataType,
+    outboundDataType: t.outboundDataType,
+    inboundProperties: t.inboundProperties,
+    outboundProperties: t.outboundProperties,
+    inboundTemplate: t.inboundTemplate,
+    outboundTemplate: t.outboundTemplate,
+    steps: t.steps.map((s) => ({
+      enabled: s.enabled,
+      ...(s.name !== null ? { name: s.name } : {}),
+      type: s.type as CloneTransformer['steps'][number]['type'],
+      script: s.script,
+      sourceField: s.sourceField,
+      targetField: s.targetField,
+      defaultValue: s.defaultValue,
+      mapping: s.mapping,
+    })),
+  }));
+}
+
 function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelInput {
   return {
     name: newName,
@@ -444,6 +503,8 @@ function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelI
       dataType: c.dataType as 'STRING' | 'NUMBER' | 'BOOLEAN' | 'TIMESTAMP',
       mappingExpression: c.mappingExpression,
     })),
+    filters: buildCloneFilters(source),
+    transformers: buildCloneTransformers(source),
   };
 }
 
