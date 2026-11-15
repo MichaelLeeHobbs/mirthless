@@ -9,8 +9,8 @@ function named(): number { return 1; }
 
 const message = { encoded: 'ENCODED', raw: 'RAW', messageId: 42 };
 const maps: readonly Readonly<Record<string, unknown>>[] = [
-  { x: 'v', none: null, messageId: 'from a map', fn: named, nan: Number.NaN },
-  { none: 'second', obj: { a: 1 }, big: 10n, ref: '${x}' },
+  { x: 'v', none: null, messageId: 'from a map', fn: named, nan: Number.NaN, shadowed: named },
+  { none: 'second', obj: { a: 1 }, big: 10n, ref: '${x}', shadowed: 'from the second map' },
 ];
 
 describe('renderDestinationTemplate', () => {
@@ -26,6 +26,8 @@ describe('renderDestinationTemplate', () => {
     ['a function value, left as written', '<${fn}>', '<${fn}>'],
     // A failed parseFloat in a transformer: written as NaN, as before the shared rule, not as null.
     ['a NaN value', '<${nan}>', '<NaN>'],
+    // A function has no text, so the search goes on to the next map, as for null.
+    ['a function value, from the next map', '<${shadowed}>', '<from the second map>'],
     ['an inherited key', '<${toString}>', '<${toString}>'],
     ['a value containing ${x}', '<${ref}>', '<${x}>'],
   ])('fills %s by the shared rule', (_label, template, expected) => {

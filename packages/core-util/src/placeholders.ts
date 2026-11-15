@@ -23,8 +23,12 @@ export function placeholderText(value: unknown): string {
   return String(JSON.stringify(value));
 }
 
-/** A value with text worth writing; a function or symbol has none. */
-function hasText(value: unknown): boolean {
+/**
+ * True when a placeholder value has text worth writing: not undefined, null, a
+ * function or a symbol. A look-up over several sources uses it to move on to
+ * the next source instead of stopping at a value that cannot be written.
+ */
+export function hasPlaceholderText(value: unknown): boolean {
   return value !== undefined && value !== null && typeof value !== 'function' && typeof value !== 'symbol';
 }
 
@@ -40,7 +44,7 @@ export function fillPlaceholders(text: string, lookup: PlaceholderLookup): strin
     const name = raw.trim();
     if (name === '') return whole;
     const value = lookup(name);
-    return hasText(value) ? placeholderText(value) : whole;
+    return hasPlaceholderText(value) ? placeholderText(value) : whole;
   });
 }
 

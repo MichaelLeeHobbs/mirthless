@@ -335,11 +335,12 @@ describe('EngineManager.deploy of one channel twice at once', () => {
 
 describe('EngineManager.deploy with a connector that cannot be built', () => {
   it('fails the deploy with the connector error and registers no runtime', async () => {
+    // The real factory and TLS reader, so the test covers what a deploy actually
+    // does with a non-object tls, not only that a thrown error is passed along.
+    const actual = await vi.importActual<typeof import('@galvaniflow/connectors')>('@galvaniflow/connectors');
     const { createSourceConnector } = await import('@galvaniflow/connectors');
-    vi.mocked(createSourceConnector).mockImplementationOnce(() => {
-      throw new Error('Connector tls settings must be an object');
-    });
+    vi.mocked(createSourceConnector).mockImplementationOnce((type, props) => actual.createSourceConnector(type, props));
     expect(await deployError(makeChannel({ sourceConnectorProperties: { port: 6661, tls: 'abc' } })))
-      .toBe('Connector tls settings must be an object');
+      .toBe('TLS configuration is invalid: tls must be an object with cert and key');
   });
 });
