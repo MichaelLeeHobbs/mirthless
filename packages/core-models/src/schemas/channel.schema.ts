@@ -9,10 +9,13 @@ import { transformerInputSchema } from './transformer.schema.js';
 
 // ----- Shared Enums -----
 
-// Every connector type, in either direction (see SOURCE_CONNECTOR_TYPES and
-// DESTINATION_CONNECTOR_TYPES in constants.ts).
+/** Every connector type, in either direction. */
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);
+
+/** A type that can be a channel's source (SMTP and FHIR only send). */
 export const sourceConnectorTypeSchema = z.enum(SOURCE_CONNECTOR_TYPES);
+
+/** A type that can be a channel's destination (EMAIL only receives). */
 export const destinationConnectorTypeSchema = z.enum(DESTINATION_CONNECTOR_TYPES);
 
 // ----- Channel Properties -----
