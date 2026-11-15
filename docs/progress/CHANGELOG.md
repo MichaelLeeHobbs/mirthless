@@ -4,7 +4,7 @@
 
 ## 2026-11-15 — TCP/MLLP property schema (branch `feat/115-tcp-mllp-props-schema`)
 
-First slice of #115 (D-273). TCP/MLLP source and destination properties have a strict schema in `core-models/src/schemas/tcp-mllp-connector.schema.ts`. Deploy validation and the registry both use it, so a misspelled key, an unsupported charset or a non-numeric setting fails the deploy instead of being ignored or failing on the first message. A test checks the web defaults and the form's charset and response-mode lists against it, and another checks the connector reference tables, which gained the six TCP/MLLP keys they were missing. Upgrade note with a query to find affected channels: `docs/ops/upgrade.md`. HTTP and DATABASE follow in their own PRs.
+First slice of #115 (D-274). TCP/MLLP source and destination properties have a strict schema in `core-models/src/schemas/tcp-mllp-connector.schema.ts`. Deploy validation and the registry both use it, so a misspelled key, an unsupported charset or a non-numeric setting fails the deploy instead of being ignored or failing on the first message. A test checks the web defaults and the form's charset and response-mode lists against it, and another checks the connector reference tables, which gained the six TCP/MLLP keys they were missing. Upgrade note with a query to find affected channels: `docs/ops/upgrade.md`. HTTP and DATABASE follow in their own PRs.
 
 ## 2026-11-15 — Reinvention copy groups, batch 3 (branch `batch-2026-11-15-reinvention-3`)
 
