@@ -59,7 +59,15 @@ export const INVALID_UTF8_MESSAGE = 'Payload is not valid UTF-8; invalid bytes w
 
 /** `fatal` makes invalid UTF-8 throw instead of being replaced in silence; `ignoreBOM` keeps a BOM as Buffer.toString does. */
 const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-const WINDOWS_1252 = new TextDecoder('windows-1252');
+/**
+ * Built on first use: a Node without full ICU throws for windows-1252, and at
+ * module load that would take every connector down with it.
+ */
+let windows1252: InstanceType<typeof TextDecoder> | null = null;
+function windows1252Decoder(): InstanceType<typeof TextDecoder> {
+  windows1252 ??= new TextDecoder('windows-1252');
+  return windows1252;
+}
 
 /**
  * Decode a queue payload (Kafka, AMQP) with the source's charset. In UTF-8
@@ -78,7 +86,7 @@ export function decodePayload(bytes: Buffer, charset: QueueCharset): DecodedPayl
     case 'base64':
       return { text: bytes.toString(charset), replaced: false };
     case 'windows-1252':
-      return { text: WINDOWS_1252.decode(bytes), replaced: false };
+      return { text: windows1252Decoder().decode(bytes), replaced: false };
     default: {
       const unreachable: never = charset;
       throw new Error(`Unknown charset ${String(unreachable)}`);

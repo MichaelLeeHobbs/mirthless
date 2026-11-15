@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { normalizeEncoding, isKnownEncoding } from '../encoding.js';
 
 describe('normalizeEncoding', () => {
@@ -39,5 +39,27 @@ describe('isKnownEncoding', () => {
     for (const name of ['windows-1252', 'shift_jis', 'utf-9']) {
       expect(isKnownEncoding(name)).toBe(false);
     }
+  });
+});
+
+describe('decodePayload on a Node without windows-1252 (no full ICU)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it('still loads and decodes the other charsets; only windows-1252 fails, when used', async () => {
+    const Real = globalThis.TextDecoder;
+    vi.stubGlobal('TextDecoder', class extends Real {
+      constructor(label?: string, options?: TextDecoderOptions) {
+        if (label === 'windows-1252') throw new RangeError('The "windows-1252" encoding is not supported');
+        super(label, options);
+      }
+    });
+    vi.resetModules();
+    const { decodePayload } = await import('../encoding.js');
+    expect(decodePayload(Buffer.from('MSH|1'), 'utf-8')).toEqual({ text: 'MSH|1', replaced: false });
+    expect(decodePayload(Buffer.from([0xe9]), 'latin1').text).toBe('é');
+    expect(() => decodePayload(Buffer.from([0x93]), 'windows-1252')).toThrow('windows-1252');
   });
 });
