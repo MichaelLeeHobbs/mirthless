@@ -127,12 +127,14 @@ export const KAFKA_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   groupId: '',
   startFrom: 'EARLIEST',
   charset: 'utf-8',
+  maxStoreAttempts: 5,
 };
 
 export const AMQP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   ...AMQP_CONNECTION_DEFAULTS,
   queue: '',
   charset: 'utf-8',
+  maxStoreAttempts: 5,
 };
 
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {

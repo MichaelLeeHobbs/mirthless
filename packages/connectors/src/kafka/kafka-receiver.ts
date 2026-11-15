@@ -8,14 +8,19 @@
 // read again (at-least-once). A crash between storing and committing also
 // reads it again, so a channel may see a duplicate; the source map's
 // topic/partition/offset identify one.
+//
+// A record the pipeline refuses every time (one the store rejects) would block
+// its partition forever. After `maxStoreAttempts` failures in a row on the same
+// record the receiver stops, leaves the record uncommitted and reports a fatal
+// error, which stops the channel. An operator fixes the cause and starts it.
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
-import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
+import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
 import { decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
-import type { QueueCharset } from '@galvaniflow/core-models';
+import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvaniflow/core-models';
 import {
   subscribeKafka,
   parseBrokers,
@@ -36,6 +41,15 @@ export interface KafkaReceiverConfig extends KafkaConnectionConfig {
   readonly startFrom: 'EARLIEST' | 'LATEST';
   /** How a record value becomes message text; UTF-8 when absent. */
   readonly charset?: QueueCharset;
+  /** Failures in a row on one record before the receiver stops; DEFAULT_MAX_STORE_ATTEMPTS when absent. */
+  readonly maxStoreAttempts?: number;
+}
+
+/** Where a record is, for logs and errors (never its content). */
+interface RecordPosition {
+  readonly topic: string;
+  readonly partition: number;
+  readonly offset: string;
 }
 
 /** Header names and values as UTF-8 text. */
@@ -81,6 +95,9 @@ export class KafkaReceiver implements SourceConnectorRuntime {
   private current: Promise<boolean> | null = null;
   /** Ends the wait between attempts early when the channel stops. */
   private wake: (() => void) | null = null;
+  private onFatal: SourceFatalHandler | null = null;
+  /** Failures in a row per record (`partition:offset`); a stored record is removed. */
+  private readonly failures = new Map<string, number>();
 
   constructor(config: KafkaReceiverConfig, subscribe?: KafkaSubscribe, logger?: ConnectorLogger, retryDelayMs?: number) {
     this.config = config;
@@ -91,6 +108,10 @@ export class KafkaReceiver implements SourceConnectorRuntime {
 
   setDispatcher(dispatcher: MessageDispatcher): void {
     this.dispatcher = dispatcher;
+  }
+
+  setFatalHandler(handler: SourceFatalHandler): void {
+    this.onFatal = handler;
   }
 
   async onDeploy(): Promise<Result<void>> {
@@ -106,6 +127,7 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     return tryCatch(async () => {
       if (!this.dispatcher) throw new Error('Dispatcher not set — call setDispatcher before start');
       const subscription = await this.subscribe(this.config);
+      this.failures.clear();
       this.generation += 1;
       this.running = true;
       this.loop = this.run(this.generation, subscription);
@@ -190,10 +212,12 @@ export class KafkaReceiver implements SourceConnectorRuntime {
       this.logger.warn(where, 'Kafka record value is not valid UTF-8; invalid bytes were replaced and the message is flagged (charsetError in the source map)');
     }
     const result = await dispatcher(raw);
+    const position = `${String(record.partition)}:${where.offset}`;
     if (!result.ok) {
-      this.logger.error({ ...errorInfo(result.error), ...where }, 'Pipeline did not store the Kafka record; it is not committed and will be read again');
+      this.notStored(position, result.error, where);
       return false;
     }
+    this.failures.delete(position);
     const failure = dispatchFailure(result);
     if (failure) {
       // Stored with an error and alerted; reading it again would process it twice.
@@ -206,6 +230,34 @@ export class KafkaReceiver implements SourceConnectorRuntime {
       this.logger.error({ ...errorInfo(err), ...where }, 'Kafka offset commit failed; the record may be delivered again');
     }
     return true;
+  }
+
+  /** Count a failure to store the record; at the cap, stop instead of reading it again. */
+  private notStored(position: string, cause: Error, where: RecordPosition): void {
+    const attempts = (this.failures.get(position) ?? 0) + 1;
+    this.failures.set(position, attempts);
+    if (attempts >= (this.config.maxStoreAttempts ?? DEFAULT_MAX_STORE_ATTEMPTS)) {
+      this.giveUp(cause, where, attempts);
+      return;
+    }
+    this.logger.error({ ...errorInfo(cause), ...where, attempts }, 'Pipeline did not store the Kafka record; it is not committed and will be read again');
+  }
+
+  /**
+   * Stop reading after a record failed `attempts` times in a row. The record
+   * stays uncommitted (the loop closes the subscription without committing),
+   * so a restart reads it first.
+   */
+  private giveUp(cause: Error, where: RecordPosition, attempts: number): void {
+    this.running = false;
+    this.wake?.();
+    const error = new Error(
+      `Kafka source stopped: the channel could not store the record at topic ${where.topic} partition ${String(where.partition)} ` +
+      `offset ${where.offset} after ${String(attempts)} attempts (${cause.message}). The record is not committed; ` +
+      'fix the cause and start the channel again.',
+    );
+    this.logger.error({ ...errorInfo(cause), ...where, attempts }, 'Kafka source stopped: the record failed too many times in a row; it is not committed');
+    this.onFatal?.(error);
   }
 
   private async closeSubscription(subscription: KafkaSubscription | null, force: boolean): Promise<void> {

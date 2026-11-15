@@ -145,7 +145,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[V13]** Docs site, recipe gallery, generated channel docs, guided first channel (DOC1, DOC3, UI13, UI3)
 - [ ] **[V14]** Generated API clients, MCP server, AI-assisted mapping (API1, AI2, AI1)
 - [x] **[V15]** Kafka and AMQP (RabbitMQ) source and destination connectors on maintained Node clients; no broker of our own (CON10, D-261) — shipped 2026-11-14 (D-265, D-266)
-  - [ ] A message the store always rejects (e.g. a NUL byte in a text column) blocks its queue or topic for good: no alert, retry cap or dead-letter
+  - [x] A message the store always rejects (e.g. a NUL byte in a text column) blocks its queue or topic for good: no alert, retry cap or dead-letter — after `maxStoreAttempts` the channel stops and alerts, message kept (D-269, #86)
   - [x] Both sources decode the payload with `toString('utf8')`, which corrupts a non-UTF-8 payload — `charset` setting, invalid UTF-8 flagged (D-268, #87)
   - [ ] No timeout of ours on joining the Kafka group (`kafka-receiver.ts` `onStart` and the rejoin in `run`)
   - [ ] A Kafka halt during a rejoin, then a restart, can orphan the consumer that rejoin opens

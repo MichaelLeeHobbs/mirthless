@@ -120,6 +120,13 @@ describe('KafkaSourceForm', () => {
     selectOption('Charset', 'ISO-8859-1 (Latin-1)');
     expect(lastProps['charset']).toBe('latin1');
   });
+
+  it('stops after 5 failed store attempts by default and writes a new cap', () => {
+    renderForm(KafkaSourceForm, { ...KAFKA_SOURCE_DEFAULTS });
+    expect(lastProps['maxStoreAttempts']).toBe(5);
+    fireEvent.change(screen.getByLabelText('Store Attempts Before Stopping'), { target: { value: '10' } });
+    expect(lastProps['maxStoreAttempts']).toBe(10);
+  });
 });
 
 describe('TLS fields', () => {
@@ -150,6 +157,12 @@ describe('AmqpSourceForm', () => {
     renderForm(AmqpSourceForm, { ...AMQP_SOURCE_DEFAULTS });
     selectOption('Charset', 'Binary (keep bytes as base64)');
     expect(lastProps['charset']).toBe('base64');
+  });
+
+  it('writes the store attempt cap', () => {
+    renderForm(AmqpSourceForm, { ...AMQP_SOURCE_DEFAULTS });
+    fireEvent.change(screen.getByLabelText('Store Attempts Before Stopping'), { target: { value: '3' } });
+    expect(lastProps['maxStoreAttempts']).toBe(3);
   });
 });
 

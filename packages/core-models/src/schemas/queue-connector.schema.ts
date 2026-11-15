@@ -36,6 +36,15 @@ export type QueueCharset = (typeof QUEUE_CHARSETS)[number];
 
 const charset = z.enum(QUEUE_CHARSETS).default('utf-8');
 
+/**
+ * Failures in a row to store the same message before a queue source stops the
+ * channel. Without a cap, a message the store always rejects blocks its queue
+ * or partition forever. The message is left on the queue (not acknowledged,
+ * committed or dead-lettered) for when the channel is started again.
+ */
+export const DEFAULT_MAX_STORE_ATTEMPTS = 5;
+const maxStoreAttempts = z.coerce.number().int().min(1).max(1_000).default(DEFAULT_MAX_STORE_ATTEMPTS);
+
 // ----- Kafka -----
 
 export const KAFKA_SASL_MECHANISMS = ['NONE', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512'] as const;
@@ -73,6 +82,7 @@ export const kafkaSourcePropertiesSchema = z.object({
   groupId: required,
   startFrom: z.enum(KAFKA_START_FROM).default('EARLIEST'),
   charset,
+  maxStoreAttempts,
 }).refine(saslHasUsername, saslUsernameIssue);
 export type KafkaSourceProperties = z.infer<typeof kafkaSourcePropertiesSchema>;
 
@@ -106,6 +116,7 @@ export const amqpSourcePropertiesSchema = z.object({
   /** An existing queue; the connector never declares one. */
   queue: required,
   charset,
+  maxStoreAttempts,
 });
 export type AmqpSourceProperties = z.infer<typeof amqpSourcePropertiesSchema>;
 
