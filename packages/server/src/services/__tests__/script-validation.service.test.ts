@@ -66,18 +66,32 @@ describe('ScriptValidationService', () => {
       expect(result.value?.valid).toBe(true);
     });
 
-    it('includes line numbers in error messages', async () => {
+    it('reports the error on the line of the user script it is on', async () => {
       const result = await ScriptValidationService.validate(
-        'const x = {\n\n}}}',
+        'const a = 1;\nconst b = 2;\nconst c = ;',
         'javascript',
       );
       expect(result.ok).toBe(true);
-      if (result.value && !result.value.valid && result.value.errors) {
-        const hasLineRef = result.value.errors.some((e) =>
-          /Line \d+/.test(e),
-        );
-        expect(hasLineRef).toBe(true);
-      }
+      expect(result.value?.valid).toBe(false);
+      expect(result.value?.errors?.[0]).toMatch(/^Line 3: /);
+    });
+
+    it('returns valid for a script with top-level await and return, as deploy compiles it', async () => {
+      const result = await ScriptValidationService.validate(
+        'const x = await Promise.resolve(1);\nreturn x;',
+        'javascript',
+      );
+      expect(result.ok).toBe(true);
+      expect(result.value?.valid).toBe(true);
+    });
+
+    it('accepts type annotations in a JavaScript script, as deploy compiles every script as TypeScript', async () => {
+      const result = await ScriptValidationService.validate(
+        'const x: number = 1;\nreturn x;',
+        'javascript',
+      );
+      expect(result.ok).toBe(true);
+      expect(result.value?.valid).toBe(true);
     });
 
     it('returns invalid for unexpected token', async () => {
