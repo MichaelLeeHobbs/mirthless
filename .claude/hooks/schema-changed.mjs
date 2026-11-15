@@ -23,6 +23,18 @@ const REMINDERS = [
       "update docs/user/connector-reference.md (the connector's property table, and its matrix row for direction or " +
       'transport security). The docs guard in pnpm gate checks connector types and headings, not property keys (#115).',
   },
+  {
+    match: (file) =>
+      file.endsWith('packages/server/src/db/seeds/roles.ts') ||
+      file.endsWith('packages/core-models/src/constants.ts') ||
+      file.includes('packages/server/src/routes/') ||
+      file.endsWith('packages/server/src/lib/socket.ts'),
+    text:
+      'If you changed a role, a permission, which permission a route or socket room checks, or added a route with no ' +
+      'permission check, update docs/user/access-control.md (the role matrix, "Also allows", or the list of endpoints ' +
+      'anyone signed in can call) and the ENDPOINTS table in packages/server/src/routes/__tests__/role-access.test.ts for ' +
+      'PHI or destructive endpoints. If you changed connector types, update docs/user/connector-reference.md.',
+  },
 ];
 
 let input = {};
