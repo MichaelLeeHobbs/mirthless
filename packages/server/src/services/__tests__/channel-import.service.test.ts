@@ -49,7 +49,7 @@ vi.mock('../../db/schema/index.js', () => ({
   transformerSteps: { transformerId: 'transformerId' },
 }));
 
-import { ChannelImportService, stripRedactedProperties } from '../channel-import.service.js';
+import { ChannelImportService, stripRedactedProperties, connectorDirectionError } from '../channel-import.service.js';
 
 describe('stripRedactedProperties', () => {
   it('drops redacted credential values but keeps everything else', () => {
@@ -175,5 +175,39 @@ describe('ChannelImportService.importChannels', () => {
     const entry = makeEntry({ name: 'My Channel' });
     const result = await ChannelImportService.importChannels([entry], 'SKIP');
     expect(result.ok).toBe(true);
+  });
+});
+
+// ----- Connector direction (#109) -----
+
+describe('ChannelImportService connector direction', () => {
+  const destination = (name: string, connectorType: string): ChannelExportEntry['destinations'][number] =>
+    ({ metaDataId: 1, name, enabled: true, connectorType, properties: {}, queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 0, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false }) as ChannelExportEntry['destinations'][number];
+
+  it('reports a channel with a send-only source and still imports the rest of the file', async () => {
+    const entries = [
+      makeEntry({ id: 'ch-bad', name: 'Bad Source', sourceConnectorType: 'SMTP' }),
+      makeEntry({ id: 'ch-good', name: 'Good Channel' }),
+    ];
+
+    const result = await ChannelImportService.importChannels(entries, 'SKIP');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.created).toBe(1);
+    expect(result.value.errors).toEqual(['Channel "Bad Source": SMTP cannot be a source; not imported']);
+  });
+
+  it('names a destination that cannot send', () => {
+    const entry = makeEntry({ name: 'Mailbox', destinations: [destination('To EHR', 'TCP_MLLP'), destination('Inbox', 'EMAIL')] });
+    expect(connectorDirectionError(entry)).toBe('Channel "Mailbox": destination "Inbox" uses EMAIL, which cannot be a destination; not imported');
+  });
+
+  it('rejects a type that is not a connector at all', () => {
+    expect(connectorDirectionError(makeEntry({ sourceConnectorType: 'FTP' }))).toMatch(/FTP cannot be a source/);
+  });
+
+  it('accepts connectors pointing the right way', () => {
+    expect(connectorDirectionError(makeEntry({ sourceConnectorType: 'EMAIL', destinations: [destination('Mail', 'SMTP'), destination('FHIR', 'FHIR')] }))).toBeNull();
   });
 });

@@ -68,6 +68,8 @@ const channelExportDestinationSchema = z.object({
   metaDataId: z.number(),
   name: z.string(),
   enabled: z.boolean(),
+  // Direction is checked per channel by the import service, so one bad channel
+  // is reported instead of refusing a whole backup.
   connectorType: z.string(),
   properties: z.record(z.string(), z.unknown()),
   queueMode: z.string(),

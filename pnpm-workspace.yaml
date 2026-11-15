@@ -26,7 +26,7 @@ minimumReleaseAgeExclude:
 
 # Monaco places completion and its documentation panel by page coordinates,
 # so on a scrolled page they opened in the wrong place. Drop this patch when
-# an upgrade fixes suggestWidget.js and overlayWidgets.js (see D-277).
+# an upgrade fixes suggestWidget.js and overlayWidgets.js (see D-278).
 patchedDependencies:
   monaco-editor@0.55.1: patches/monaco-editor@0.55.1.patch
 

@@ -6,18 +6,28 @@
 
 Michael asked for a scored climb of the code editor to 9+, with the TypeScript side covered and the editor as one reusable component. A blind judge scored 24 to 27 editor screenshots on six criteria (TypeScript counts double). Baseline 3.2; rounds A 5.6, B 7.15, C 7.25 (kept as a requirement), D 7.9; E (phone toolbar, popups positioned relative to the editor, documentation beside completions) scored 7.8 and was reverted to a patch. The climb stopped short of 9 at a plateau; it resumed on a desktop-only rubric (2.9 baseline, 7.83 after the test-run work, 8.27 after rounds H and I). The climb log and evidence are in `tmp/editor-climb/`.
 
-- **One editor family (D-273).** ScriptEditor, TextEditor and CodeDiffEditor in a shared frame with toolbar, status line (problem count by kind, first problem as a jump link, cursor, language) and full screen. The message generator, send-message dialog and revision diff used raw Monaco. Monaco is bundled (no CDN), themed from the app tokens, and HL7 text is highlighted. Ctrl+K inside an editor no longer opens Jump to.
-- **TypeScript (D-275).** Type errors in the editor and at deploy from shared declarations: `msg` typed by data type, code templates offered and checked per context, `destinationSet` only where it exists. A reference panel lists everything a script can use and inserts it; a shortcuts list.
-- **Languages stored (D-274).** Migration 0015 adds a language to every script; export/import and backups carry it. Export also dropped each destination's response transformer; it is exported and imported now.
+- **One editor family (D-274).** ScriptEditor, TextEditor and CodeDiffEditor in a shared frame with toolbar, status line (problem count by kind, first problem as a jump link, cursor, language) and full screen. The message generator, send-message dialog and revision diff used raw Monaco. Monaco is bundled (no CDN), themed from the app tokens, and HL7 text is highlighted. Ctrl+K inside an editor no longer opens Jump to.
+- **TypeScript (D-276).** Type errors in the editor and at deploy from shared declarations: `msg` typed by data type, code templates offered and checked per context, `destinationSet` only where it exists. A reference panel lists everything a script can use and inserts it; a shortcuts list.
+- **Languages stored (D-275).** Migration 0015 adds a language to every script; export/import and backups carry it. Export also dropped each destination's response transformer; it is exported and imported now.
 - **Less wasted space** (Michael's review): step and rule actions share the settings row, transformer data types share the Add Step row, and script editors fit their code.
 - **Doc 19** records research on embeddable TypeScript editors (stay on Monaco) and a ranked list of the editor tools script authors need next, led by running a script against a sample message.
-- **Popups placed right (D-277).** A patch to Monaco 0.55.1 makes completion open below the line on a scrolled page, and the documentation panel beside it opens beside the list instead of below the window.
+- **Popups placed right (D-278).** A patch to Monaco 0.55.1 makes completion open below the line on a scrolled page, and the documentation panel beside it opens beside the list instead of below the window.
 - **Completion and toolbar (rounds H and I).** Completion opens 560px wide with the signature and docs beside it; a fit-to-content editor grows while the list is open so the list never covers the status line; every toolbar action has a visible label; one missing bracket reads "1 syntax error (7 more after it)"; a read-only script shows no language switch.
 - **Phone dropped from the score.** Michael: nobody edits scripts on a phone. Issue #130 asks the docs to say which screens must work on one.
 - **Stricter deploy scripts and quieter feedback (round K).** Deploy and undeploy scripts no longer see `msg`, `tmp` or `rawData`, in the editor and in the deploy check, since the engine passes them empty. The status line always counts warnings and skips the syntax error on a word still being completed. Ctrl+Space no longer hides the docs beside completions, and a template's `@param name - text` shows without a stray dash.
 - **Less wasted space (round J).** An open rule or step puts its name, type, enabled and order controls in its header row instead of a title row above them, and the filter and transformer cards sit 12px apart instead of 48px with a divider.
-- **Test runs (D-276).** Filter rules, transformer steps, response transformers and channel scripts have a Test run button (Ctrl+Enter). It runs the script through the engine's own compile and sandbox against a sample message (pasted, or a generated fake ADT) and shows the outcome, output message, logger lines, map changes and destinations. Calls that would send, write or route are refused and listed. The sample stays in the page; the audit event records the run, not the sample.
+- **Test runs (D-277).** Filter rules, transformer steps, response transformers and channel scripts have a Test run button (Ctrl+Enter). It runs the script through the engine's own compile and sandbox against a sample message (pasted, or a generated fake ADT) and shows the outcome, output message, logger lines, map changes and destinations. Calls that would send, write or route are refused and listed. The sample stays in the page; the audit event records the run, not the sample.
 - Not done: a syntax error reports Monaco's cascade (one missing `)` can show as several errors); the editor offers every template enabled for the context while deploy uses only templates whose library includes the channel.
+
+## 2026-11-15 — Connector integration lane in CI (gh-88, branch `ci/connector-itests`)
+
+- **CI:** a new `connector-integration` job starts `sftp-test`, `mail-test`, `kafka-test` and `rabbitmq-test` from the compose `test` profile, plus a Postgres service, and runs `pnpm --filter @galvaniflow/connectors test:integration`. Until now no connector `*.itest.ts` ran in CI.
+- **Required mode:** with `CONNECTOR_ITEST_REQUIRED=1` (set by that job) `gates.ts` throws at import when any service is unconfigured, so every suite fails instead of skipping, and the lane fails if it finds no suite (D-273).
+- **AMQPS:** `rabbitmq-test` has a TLS listener on 5674. Its entrypoint writes a throwaway CA and server certificate to `docker/test-certs` (git-ignored) on first start, so `compose up` needs no setup step. Two new tests send and receive over AMQPS with the certificate verified, and check that a connection without the CA is refused.
+- **Quorum queue:** a new test fails the store twice for a message on a quorum queue and checks that it is redelivered and stored once. The real-broker case for the `maxStoreAttempts` cap from gh-86 (D-271) is not here; #151 tracks it.
+- **Compose:** healthchecks on `kafka-test` and `rabbitmq-test`, so `up --wait` returns once they serve. The RabbitMQ check runs as the `rabbitmq` user: run as root, the CLI wrote the Erlang cookie first and the broker could not start.
+- **Verified:** locally the lane passed 17/17 in required mode with nothing skipped, and unsetting `KAFKA_TEST_BROKERS` failed it.
+- Not done: Kafka over TLS (ROADMAP V15).
 
 ## 2026-11-15 — Reinvention copy groups, batch 3 (branch `batch-2026-11-15-reinvention-3`)
 
@@ -59,7 +69,9 @@ The first slice of the docs restructure (#116): before the docs can be checked a
 - **Permissions and roles:** `PERMISSIONS` and `Permission` move to core-models. The server seed derives its rows from them, the web file re-exports them under its old names, and roles everywhere use `USER_ROLE`. The seed and role code share one `permissionRow()` split.
 - **Typed checks:** `requirePermission`, `requireAllPermissions` and the socket room map take `Permission`.
 - **`pnpm shots`** read permissions by scraping the web file, which broke when it became a re-export; it imports them from core-models now.
+- **Direction check (#109, branch `fix/source-connector-direction`):** on top of the schema checks #131 added for create, update and JSON import, backup restore and Mirth import now check each channel in `ChannelImportService` and report a wrong-direction one in the import errors while the rest still import. Clone refuses a stored wrong-direction channel. The Mirth importer imports a wrong-direction connector as JAVASCRIPT with a warning.
 - **Found on the way:** the engine sandbox tests and three server engine tests depend on wall-clock timing and fail on a slower Windows machine (#125). An E2E spec fails intermittently with ECONNRESET (#126). Neither touches this branch's code.
+
 
 ## 2026-11-15 — Reinvention copy groups, batch 1 (branch `batch-2026-11-15-reinvention-1`)
 

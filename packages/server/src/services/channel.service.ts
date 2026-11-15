@@ -15,6 +15,8 @@ import {
   type UpdateChannelInput,
   type ChannelListQuery,
   type DestinationConnectorType,
+  isSourceConnectorType,
+  isDestinationConnectorType,
 } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -1061,6 +1063,9 @@ export class ChannelService {
       const sourceResult = await ChannelService.getById(id);
       if (!sourceResult.ok) throw sourceResult.error;
       const source = sourceResult.value;
+      if (!isSourceConnectorType(source.sourceConnectorType) || source.destinations.some((d) => !isDestinationConnectorType(d.connectorType))) {
+        throw new ServiceError('INVALID_INPUT', `Channel "${source.name}" has a connector in the wrong direction; change its type before cloning it`);
+      }
 
       const input = buildCloneInput(source, newName);
       const createResult = await ChannelService.create(input, context, id);

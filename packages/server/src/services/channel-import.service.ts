@@ -7,7 +7,14 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { randomUUID } from 'node:crypto';
 import { eq, isNull, and } from 'drizzle-orm';
-import { toScriptLanguage, type ChannelExportEntry, type CollisionMode, type ImportResult } from '@galvaniflow/core-models';
+import {
+  isSourceConnectorType,
+  isDestinationConnectorType,
+  toScriptLanguage,
+  type ChannelExportEntry,
+  type CollisionMode,
+  type ImportResult,
+} from '@galvaniflow/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
@@ -99,11 +106,29 @@ export class ChannelImportService {
 
 type ImportOutcome = 'created' | 'updated' | 'skipped' | string;
 
+/**
+ * Why a channel's connectors can't run, or null. A source must be a type that
+ * receives and each destination a type that sends (#109). Checked per channel so
+ * one bad channel in a backup is reported while the others still import.
+ */
+export function connectorDirectionError(entry: ChannelExportEntry): string | null {
+  if (!isSourceConnectorType(entry.sourceConnectorType)) {
+    return `Channel "${entry.name}": ${entry.sourceConnectorType} cannot be a source; not imported`;
+  }
+  const bad = entry.destinations.find((d) => !isDestinationConnectorType(d.connectorType));
+  if (bad) {
+    return `Channel "${entry.name}": destination "${bad.name}" uses ${bad.connectorType}, which cannot be a destination; not imported`;
+  }
+  return null;
+}
+
 async function importSingleChannel(
   entry: ChannelExportEntry,
   mode: CollisionMode,
   context?: AuditContext,
 ): Promise<ImportOutcome> {
+  const directionError = connectorDirectionError(entry);
+  if (directionError) return directionError;
   try {
     // Check if channel with this ID already exists
     const [existing] = await db
