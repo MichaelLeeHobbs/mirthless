@@ -20,9 +20,12 @@ export default defineConfig({
       output: {
         codeSplitting: {
           groups: [
+            // Vite's preload helper is shared by every lazy import. Left alone it lands in
+            // vendor-monaco (Monaco uses dynamic imports too) and drags 4 MB into the first load.
+            { name: 'preload-helper', test: /preload-helper/, priority: 100 },
             { name: 'vendor-react', test: /node_modules[\\/](react|react-dom|react-router|scheduler)[\\/]/ },
             { name: 'vendor-mui', test: /node_modules[\\/](@mui|@emotion)[\\/]/ },
-            { name: 'vendor-monaco', test: /node_modules[\\/]@monaco-editor[\\/]/ },
+            { name: 'vendor-monaco', test: /node_modules[\\/](@monaco-editor|monaco-editor)[\\/]/ },
             { name: 'vendor-data', test: /node_modules[\\/](@tanstack|zustand|socket\.io-client|zod)[\\/]/ },
           ],
         },

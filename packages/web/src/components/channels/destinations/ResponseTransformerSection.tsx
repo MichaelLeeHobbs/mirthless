@@ -53,6 +53,7 @@ export function ResponseTransformerSection({ value, onChange }: ResponseTransfor
         >
           <ScriptEditor
             height="240px"
+            label="Response transformer script"
             value={value}
             onChange={(next) => { onChange(next ?? ''); }}
             showLanguageToggle

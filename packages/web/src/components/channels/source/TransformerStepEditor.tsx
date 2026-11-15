@@ -117,7 +117,8 @@ export function TransformerStepEditor({
         ) : null}
         {step.type === 'JAVASCRIPT' || step.type === 'MESSAGE_BUILDER' ? (
           <ScriptEditor
-            height="200px"
+            height="220px"
+            label={`${step.name || 'Step'} script`}
             value={step.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
             showLanguageToggle

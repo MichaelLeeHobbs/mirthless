@@ -14,14 +14,10 @@ import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
-import IconButton from '@mui/material/IconButton';
-import Tooltip from '@mui/material/Tooltip';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import type { GenerateMessagesInput } from '@galvaniflow/core-models';
-import Editor from '@monaco-editor/react';
-import { useUiStore } from '../stores/ui.store.js';
 import { useGenerateMessages } from '../hooks/use-message-generator.js';
 import { PageHeader } from '../components/common/PageHeader.js';
+import { TextEditor } from '../components/editors/TextEditor.js';
 
 const MESSAGE_TYPE_OPTIONS = [
   { value: 'ADT_A01', label: 'ADT^A01 — Admit/Visit' },
@@ -31,12 +27,10 @@ const MESSAGE_TYPE_OPTIONS = [
 ] as const;
 
 export function MessageGeneratorPage(): ReactNode {
-  const themeMode = useUiStore((state) => state.themeMode);
   const [messageType, setMessageType] = useState<GenerateMessagesInput['messageType']>('ADT_A01');
   const [count, setCount] = useState(1);
   const [seed, setSeed] = useState('');
   const [output, setOutput] = useState('');
-  const [copied, setCopied] = useState(false);
 
   const generateMutation = useGenerateMessages();
 
@@ -50,13 +44,6 @@ export function MessageGeneratorPage(): ReactNode {
       onSuccess: (data) => {
         setOutput(data.messages.join('\n\n---\n\n'));
       },
-    });
-  };
-
-  const handleCopy = (): void => {
-    void navigator.clipboard.writeText(output).then(() => {
-      setCopied(true);
-      setTimeout(() => { setCopied(false); }, 2000);
     });
   };
 
@@ -119,28 +106,7 @@ export function MessageGeneratorPage(): ReactNode {
       ) : null}
 
       {output ? (
-        <Paper sx={{ position: 'relative' }}>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 1 }}>
-            <Tooltip title={copied ? 'Copied!' : 'Copy to clipboard'}>
-              <IconButton size="small" aria-label="Copy messages" onClick={handleCopy}>
-                <ContentCopyIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
-          <Editor
-            height="400px"
-            defaultLanguage="text"
-            value={output}
-            theme={themeMode === 'dark' ? 'vs-dark' : 'light'}
-            options={{
-              readOnly: true,
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              wordWrap: 'on',
-              lineNumbers: 'off',
-            }}
-          />
-        </Paper>
+        <TextEditor label="Generated messages" value={output} language="hl7" height="400px" />
       ) : null}
     </Box>
   );

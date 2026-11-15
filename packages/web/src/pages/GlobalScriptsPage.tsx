@@ -142,9 +142,10 @@ export function GlobalScriptsPage(): ReactNode {
           </Tabs>
 
           {/* Editor */}
-          <Box sx={{ flexGrow: 1, mt: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+          <Box sx={{ flexGrow: 1, minHeight: 0, mt: 2 }}>
             <ScriptEditor
               height="100%"
+              label={`Global ${TABS[activeTab]!.label.toLowerCase()} script`}
               value={scripts[activeKey]}
               onChange={(value) => { handleScriptChange(activeKey, value); }}
               showLanguageToggle

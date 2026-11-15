@@ -192,9 +192,10 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
         </FormGroup>
       </Box>
 
-      <Box sx={{ flexGrow: 1, minHeight: 300, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+      <Box sx={{ flexGrow: 1, minHeight: 360 }}>
         <ScriptEditor
           height="100%"
+          label="Template code"
           value={code}
           onChange={(value) => { setCode(value ?? ''); }}
           showLanguageToggle

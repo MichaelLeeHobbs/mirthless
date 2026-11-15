@@ -1,0 +1,74 @@
+// ===========================================
+// Editor hooks
+// ===========================================
+
+import { useEffect, useState } from 'react';
+import { useTheme } from '@mui/material/styles';
+import { monaco } from './monaco.js';
+import { editorThemeName } from '../../styles/editor-theme.js';
+
+type CodeEditor = monaco.editor.IStandaloneCodeEditor;
+
+/** Monaco theme name that matches the app's current light/dark mode. */
+export function useEditorTheme(): string {
+  return editorThemeName(useTheme().palette.mode);
+}
+
+/** One problem in the editor, as shown in the status line. */
+export interface Problem {
+  readonly severity: 'error' | 'warning';
+  readonly message: string;
+  readonly line: number;
+  readonly column: number;
+}
+
+/** Errors first, then by position. */
+function toProblems(markers: readonly monaco.editor.IMarker[]): Problem[] {
+  return markers
+    .filter((m) => m.severity >= monaco.MarkerSeverity.Warning)
+    .map((m): Problem => ({
+      severity: m.severity === monaco.MarkerSeverity.Error ? 'error' : 'warning',
+      message: m.message,
+      line: m.startLineNumber,
+      column: m.startColumn,
+    }))
+    .sort((a, b) => (a.severity === b.severity ? a.line - b.line || a.column - b.column : a.severity === 'error' ? -1 : 1));
+}
+
+/** Live problems (errors and warnings) for the editor's model. */
+export function useProblems(editor: CodeEditor | null): readonly Problem[] {
+  const [problems, setProblems] = useState<readonly Problem[]>([]);
+  useEffect(() => {
+    if (!editor) return undefined;
+    const read = (): void => {
+      const model = editor.getModel();
+      setProblems(model ? toProblems(monaco.editor.getModelMarkers({ resource: model.uri })) : []);
+    };
+    read();
+    const markers = monaco.editor.onDidChangeMarkers((uris) => {
+      const model = editor.getModel();
+      if (model && uris.some((u) => u.toString() === model.uri.toString())) read();
+    });
+    const modelChange = editor.onDidChangeModel(read);
+    return () => { markers.dispose(); modelChange.dispose(); };
+  }, [editor]);
+  return problems;
+}
+
+/** Cursor line and column. */
+export function useCursor(editor: CodeEditor | null): { readonly line: number; readonly column: number } {
+  const [pos, setPos] = useState({ line: 1, column: 1 });
+  useEffect(() => {
+    if (!editor) return undefined;
+    const sub = editor.onDidChangeCursorPosition((e) => { setPos({ line: e.position.lineNumber, column: e.position.column }); });
+    return () => { sub.dispose(); };
+  }, [editor]);
+  return pos;
+}
+
+/** Move the cursor to a problem and focus the editor. */
+export function revealProblem(editor: CodeEditor, problem: Problem): void {
+  editor.setPosition({ lineNumber: problem.line, column: problem.column });
+  editor.revealLineInCenter(problem.line);
+  editor.focus();
+}

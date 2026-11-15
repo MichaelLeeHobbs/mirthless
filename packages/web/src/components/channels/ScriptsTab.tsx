@@ -47,9 +47,11 @@ export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
               {section.description}
             </Typography>
           </AccordionSummary>
-          <AccordionDetails sx={{ p: 0 }}>
+          <AccordionDetails sx={{ px: 2, pt: 0, pb: 2 }}>
             <ScriptEditor
               height="250px"
+              label={section.label}
+              showLabel={false}
               value={scripts[section.key]}
               onChange={(value) => { handleScriptChange(section.key, value); }}
               showLanguageToggle

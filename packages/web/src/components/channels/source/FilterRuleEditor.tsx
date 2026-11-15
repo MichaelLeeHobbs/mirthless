@@ -118,7 +118,8 @@ export function FilterRuleEditor({
 
         {rule.type === 'JAVASCRIPT' ? (
           <ScriptEditor
-            height="200px"
+            height="220px"
+            label={`${rule.name || 'Rule'} script`}
             value={rule.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
             showLanguageToggle
