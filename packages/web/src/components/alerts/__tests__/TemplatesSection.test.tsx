@@ -28,6 +28,16 @@ describe('findUnknownVariables', () => {
   it('reports each unknown placeholder once', () => {
     expect(findUnknownVariables('${error} on ${channelName}: ${error} ${}')).toEqual(['error', '']);
   });
+
+  it.each([
+    ['a dotted name', '${alert.name}', []],
+    ['a name with a space', '${error message}', []],
+    ['a name with a dash', '${error-type}', []],
+    ['a padded unknown name', '${ error }', []],
+    ['a padded known name', '${ alertName }', []],
+  ])('reports %s by the shared rule', (_label, template, expected) => {
+    expect(findUnknownVariables(template)).toEqual(expected);
+  });
 });
 
 describe('TemplatesSection', () => {
