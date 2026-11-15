@@ -13,19 +13,25 @@ const PLACEHOLDER = /\$\{([^}]*)\}/g;
 export type PlaceholderLookup = (name: string) => unknown;
 
 /**
- * The text a placeholder's value is written as: a string as it is, a bigint as
- * its decimal digits, anything else as JSON.
+ * The text a placeholder's value is written as: a string as it is, a number or
+ * bigint as its digits (NaN and Infinity by name, where JSON would write a
+ * misleading "null"), anything else as JSON.
  */
 export function placeholderText(value: unknown): string {
   if (typeof value === 'string') return value;
-  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'number' || typeof value === 'bigint') return String(value);
   return String(JSON.stringify(value));
+}
+
+/** A value with text worth writing; a function or symbol has none. */
+function hasText(value: unknown): boolean {
+  return value !== undefined && value !== null && typeof value !== 'function' && typeof value !== 'symbol';
 }
 
 /**
  * Fill each `${name}` in `text` from `lookup(name)`, with the name trimmed. A
- * name with no value (undefined or null), or an empty name, is left as
- * written, so a mistake shows in what is sent. One pass: a value put in is
+ * name with no value (undefined, null, a function or a symbol), or an empty
+ * name, is left as written, so a mistake shows in what is sent. One pass: a value put in is
  * never scanned for further placeholders.
  */
 export function fillPlaceholders(text: string, lookup: PlaceholderLookup): string {
@@ -34,7 +40,7 @@ export function fillPlaceholders(text: string, lookup: PlaceholderLookup): strin
     const name = raw.trim();
     if (name === '') return whole;
     const value = lookup(name);
-    return value === undefined || value === null ? whole : placeholderText(value);
+    return hasText(value) ? placeholderText(value) : whole;
   });
 }
 
