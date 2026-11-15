@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import { delimitedOptionsSchema } from '@galvaniflow/core-models';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
+import { propertyUpdaters } from '../common/connector-properties.js';
 
 type Settings = Readonly<Record<string, unknown>>;
 
@@ -87,7 +88,7 @@ interface DelimitedSettingsProps {
 
 export function DelimitedSettings({ settings, onChange }: DelimitedSettingsProps): ReactNode {
   const s = shown(settings);
-  const set = (key: string, value: unknown): void => { onChange({ ...settings, [key]: value }); };
+  const { update: set } = propertyUpdaters(settings, onChange);
   const problem = delimitedProblem(settings);
   return (
     <>
