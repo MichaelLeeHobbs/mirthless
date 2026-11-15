@@ -312,7 +312,7 @@ Lives in `.claude/` and is checked in, so every agent and teammate gets the same
 | `verify-and-finish` skill | `.claude/skills/verify-and-finish/` | Runs the matrix above and reports DONE / NEEDS YOU / NOT DONE |
 | `write-tests` skill | `.claude/skills/write-tests/` | Which test layer to use and how to write it |
 | `create-ui` skill | `.claude/skills/create-ui/` | Builds and screenshots UI in the visual language |
-| Session start hook | `.claude/hooks/session-start.mjs` | In cloud sessions only, installs dependencies and builds core-models |
+| Session start hook | `.claude/hooks/session-start.mjs` | In cloud sessions only, installs dependencies and builds core-models and core-util |
 | Schema hook | `.claude/hooks/schema-changed.mjs` | After a schema edit, reminds the agent to generate and commit a migration |
 | Permissions | `.claude/settings.json` | Allows the routine checks without prompts; denies force pushes, `rm -rf` and real `.env` files |
 
