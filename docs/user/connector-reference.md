@@ -8,10 +8,10 @@ Every property below is the key the connector reads from the channel's saved pro
 
 | Connector | Source | Destination | Covers | Transport security | Auth | Mirth equivalent |
 |---|---|---|---|---|---|---|
-| [TCP_MLLP](#tcp_mllp) | Yes | Yes | HL7 v2 (or other text) over TCP with MLLP or custom frame bytes | Optional TLS from raw PEM in a `tls` block, set through the API or an import (no editor control). A source `tls` block missing its cert or key listens in plaintext without an error (see [#98](https://github.com/MichaelLeeHobbs/mirthless/issues/98)); run the check in [tls-and-phi.md](../ops/tls-and-phi.md#check-tls-is-on) | Mutual TLS only; no other sign-in | TCP Listener / TCP Sender |
+| [TCP_MLLP](#tcp_mllp) | Yes | Yes | HL7 v2 (or other text) over TCP with MLLP or custom frame bytes | Optional TLS from raw PEM in a `tls` block, set through the API or an import (no editor control). A source `tls` block missing its cert or key fails the deploy; the check in [tls-and-phi.md](../ops/tls-and-phi.md#check-tls-is-on) confirms a listener speaks TLS | Mutual TLS only; no other sign-in | TCP Listener / TCP Sender |
 | [HTTP](#http) | Yes | Yes | HTTP and HTTPS requests in either direction | `scheme` HTTPS with certificates from the certificate store. An HTTPS source with no server certificate refuses to deploy. A destination verifies the server certificate by default | Source: Basic or bearer token (API only), client certificates. Destination: Basic, custom headers, client certificate | HTTP Listener / HTTP Sender |
 | [FILE](#file) | Yes | Yes | Local disk and OS mounts only. No SMB, S3, FTP or WebDAV | None in the connector; protect the mount | File system permissions of the server process | File Reader / File Writer |
-| [SFTP](#sftp) | Yes | Yes | Files on a remote SFTP server | SSH, with host key checking on by default; an empty `hostKey` rejects every server | Password or private key | File Reader / File Writer with the sftp scheme, imported automatically by the Mirth importer |
+| [SFTP](#sftp) | Yes | Yes | Files on a remote SFTP server | SSH, with host key checking on by default; an empty `hostKey` refuses to deploy while it is on | Password or private key | File Reader / File Writer with the sftp scheme, imported automatically by the Mirth importer |
 | [DATABASE](#database) | Yes | Yes | PostgreSQL and MySQL/MariaDB only. No SQL Server or Oracle | `tls` flag; when on, the server certificate is verified | Database username and password | Database Reader / Database Writer |
 | [JAVASCRIPT](#javascript) | Yes | Yes | Whatever a sandboxed script can produce or reach through the script bridges | Not applicable (runs in the server) | Not applicable | JavaScript Reader / JavaScript Writer |
 | [CHANNEL](#channel) | Yes | Yes | Another GalvaniFlow channel on the same server | Not applicable (in memory) | Not applicable | Channel Reader / Channel Writer |
@@ -36,9 +36,9 @@ The destination waits for the partner's acknowledgement and reads MSA-1. AA or C
 
 TLS is turned on by the presence of a `tls` object holding PEM text. The channel editor has no TLS control for this connector, and the server does not resolve certificate IDs for it, so the PEM goes into the properties through the API or a channel import.
 
-On the source, `tls.cert` and `tls.key` must both be present. If either is missing, the connector treats the block as absent and listens in plaintext with no error or warning (issue [#98](https://github.com/MichaelLeeHobbs/mirthless/issues/98)). After deploying a TLS listener, run the check in [Check TLS is on](../ops/tls-and-phi.md#check-tls-is-on).
+On the source, any `tls` object turns TLS on, and it must hold both `tls.cert` and `tls.key`. A `tls` object missing either one, or an empty one, fails the deploy with an error that starts `TLS configuration is incomplete:`. A `tls` value that is not an object fails with `TLS configuration is invalid:`. The listener never falls back to plaintext. To run without TLS, remove `tls` or set it to `false`. After deploying a TLS listener, [Check TLS is on](../ops/tls-and-phi.md#check-tls-is-on) shows how to confirm it from another machine.
 
-On the destination, any `tls` object turns TLS on, even an empty one, and the partner's certificate is verified against `tls.ca` or the Node trust store unless `tls.rejectUnauthorized` is false.
+On the destination, any `tls` object turns TLS on, even an empty one, and the partner's certificate is verified against `tls.ca` or the Node trust store unless `tls.rejectUnauthorized` is false. A client `tls.cert` without its `tls.key`, or the reverse, fails the deploy.
 
 ### TCP_MLLP as a source
 
@@ -52,8 +52,8 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 | `maxFrameBytes` | No | Most bytes buffered for one message before the connection is refused. |
 | `frameStart` | No | Start bytes in hex, such as `02` for STX. API or Mirth import only. Invalid hex refuses to deploy. |
 | `frameEnd` | No | End bytes in hex, such as `03` for ETX. API or Mirth import only. |
-| `tls.cert` | No | Server certificate chain, PEM. API only. Without `tls.key` the listener runs plaintext (#98). |
-| `tls.key` | No | Server private key, PEM. API only. Without `tls.cert` the listener runs plaintext (#98). |
+| `tls.cert` | No | Server certificate chain, PEM. API only. Required whenever `tls` is set; without it the deploy fails. |
+| `tls.key` | No | Server private key, PEM. API only. Required whenever `tls` is set; without it the deploy fails. |
 | `tls.ca` | No | CA bundle, PEM, used to verify client certificates. |
 | `tls.requireClientCert` | No | `true` requires and verifies a client certificate (mutual TLS). |
 
@@ -69,14 +69,13 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 | `charset` | No | Node encoding used to write the message and read the acknowledgement. |
 | `frameStart` | No | Start bytes in hex. API or Mirth import only. |
 | `frameEnd` | No | End bytes in hex. API or Mirth import only. |
-| `tls.cert` | No | Client certificate, PEM, for mutual TLS. Any `tls` object turns TLS on. |
-| `tls.key` | No | Client private key, PEM. |
+| `tls.cert` | No | Client certificate, PEM, for mutual TLS. Any `tls` object turns TLS on. Needs `tls.key`. |
+| `tls.key` | No | Client private key, PEM. Needs `tls.cert`. |
 | `tls.ca` | No | CA bundle, PEM, used to verify the partner. The Node trust store when empty. |
 | `tls.rejectUnauthorized` | No | Verification is on unless this is `false`. Set it false only for an audited exception. |
 
 ### TCP_MLLP limits
 
-- A source `tls` block with a missing cert or key listens in plaintext without an error (#98).
 - No TLS control in the channel editor, and no certificate store support: TLS needs raw PEM in the properties.
 - The source sends AA or AE only. There is no setting to send AR or a custom acknowledgement apart from PASSTHROUGH.
 
@@ -187,11 +186,17 @@ The connector adds no transport security. A network share must be protected wher
 
 ### SFTP: what it does
 
-The source polls a directory on an SFTP server for files that match a glob, downloads each one as a message, and then deletes, moves or leaves it. The destination uploads each message as a file. A Mirth File Reader or File Writer with the sftp scheme imports as this connector.
+The source polls a directory on an SFTP server for files that match a glob, downloads each one as a message in name order, and then deletes, moves or leaves it. The source map holds `originalFilename`, `remoteDirectory`, `fileSize` and `lastModified`.
+
+A file the channel stored with an ERROR status, or whose delete or move failed after it was sent, is left in place and not read again. The list of those files is kept in `.galvaniflow-quarantine.json` in the remote directory, so it survives a restart, and that file is never read as a message. The list records each file by name and modification time, so a file uploaded again with a new modification time is read.
+
+The destination uploads each message as a file, encoded as UTF-8. Each send opens its own connection, creates `remoteDirectory` if it is missing, writes the file and disconnects. A send that takes over 30 seconds is an ERROR. The response is the remote path written.
+
+A Mirth File Reader or File Writer with the sftp scheme imports as this connector.
 
 ### SFTP security
 
-The connection is SSH. Host key checking is on by default: the connector accepts the server only if its key matches `hostKey`, and with `hostKey` empty it rejects every server, so a new SFTP connector fails to connect until you fill it in.
+The connection is SSH. Host key checking is on by default: the connector accepts the server only if its key matches `hostKey`, so a channel with `strictHostKey` on and `hostKey` empty refuses to deploy.
 
 `hostKey` is the base64 public key blob, not a `SHA256:` fingerprint. Get it with `ssh-keyscan -t ed25519 sftp.example.org` and copy the third field of the output line (the text after `ssh-ed25519`, starting `AAAA`). Do not paste the whole line or the key type. Use the key type the server presents; for an RSA-only server use `-t rsa`. Check the value against the server's own `/etc/ssh/ssh_host_ed25519_key.pub` over a trusted path, because `ssh-keyscan` itself trusts the network.
 
@@ -202,42 +207,41 @@ Setting `strictHostKey` to false turns the check off and lets anyone who can int
 | Property | Required | Notes |
 |---|---|---|
 | `host` | Yes | SFTP server. |
-| `port` | No | SSH port. |
+| `port` | No | SSH port, 22 by default, 1 to 65535. |
 | `username` | Yes | Login name. |
-| `password` | No | Password. One of `password` or `privateKey` is needed. |
-| `privateKey` | No | Private key, PEM. |
-| `passphrase` | No | Passphrase for `privateKey`. |
+| `password` | No | Password. Set `password`, `privateKey` or both; with neither the deploy fails. |
+| `privateKey` | No | Private key, PEM or OpenSSH text. |
+| `passphrase` | No | Passphrase for an encrypted `privateKey`. |
 | `remoteDirectory` | Yes | Remote directory to poll. |
 | `filePattern` | No | Glob for the files to read, `*` by default. |
-| `pollingIntervalMs` | No | Milliseconds between polls. |
+| `pollingIntervalMs` | No | Milliseconds between polls, at least 100. |
 | `afterProcessing` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes the remote file after the pipeline accepts it. |
-| `moveToDirectory` | No | Remote directory for `MOVE`. |
+| `moveToDirectory` | No | Remote directory for `MOVE`, created if missing. Required when `afterProcessing` is `MOVE`. |
 | `minFileAgeMs` | No | Skip files younger than this, so a file still being uploaded is not read. |
 | `strictHostKey` | No | On by default. See security. |
-| `hostKey` | Yes | Server's base64 public key. Required while `strictHostKey` is on; empty rejects every server. |
-| `charset` | No | Character set to decode the file. |
+| `hostKey` | Yes | Server's base64 public key. Deploy requires it while `strictHostKey` is on; only `strictHostKey` false lets it be empty. |
+| `charset` | No | Character set to decode the file. One Node cannot decode refuses to deploy. |
 
 ### SFTP as a destination
 
 | Property | Required | Notes |
 |---|---|---|
 | `host` | Yes | SFTP server. |
-| `port` | No | SSH port. |
+| `port` | No | SSH port, 22 by default, 1 to 65535. |
 | `username` | Yes | Login name. |
-| `password` | No | Password. One of `password` or `privateKey` is needed. |
-| `privateKey` | No | Private key, PEM. |
-| `passphrase` | No | Passphrase for `privateKey`. |
-| `remoteDirectory` | Yes | Remote directory to write to. |
+| `password` | No | Password. Set `password`, `privateKey` or both; with neither the deploy fails. |
+| `privateKey` | No | Private key, PEM or OpenSSH text. |
+| `passphrase` | No | Passphrase for an encrypted `privateKey`. |
+| `remoteDirectory` | Yes | Remote directory to write to; created if missing. |
 | `fileNameTemplate` | No | File name. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. |
 | `appendMode` | No | `true` appends to the remote file instead of replacing it. |
 | `strictHostKey` | No | On by default. See security. |
-| `hostKey` | Yes | Server's base64 public key. Required while `strictHostKey` is on; empty rejects every server. |
+| `hostKey` | Yes | Server's base64 public key. Deploy requires it while `strictHostKey` is on; only `strictHostKey` false lets it be empty. |
 
 ### SFTP limits
 
 - No `${originalFilename}` in `fileNameTemplate` (D-219 in [DECISIONS.md](../progress/DECISIONS.md)).
-- Deploy does not validate SFTP properties, so a missing host or bad port shows up as a connection failure while polling (#102).
-- Test Connection always fails with "Unknown connector type: SFTP" (#89).
+- The destination writes UTF-8 text only; it has no `charset` or binary setting.
 
 ## DATABASE
 
@@ -259,7 +263,7 @@ Set `tls` to true to connect over TLS. The database server's certificate is then
 | `host` | Yes | Database server. |
 | `port` | Yes | Deploy checks it is a number; the editor fills 5432 or 3306 for the vendor. |
 | `database` | Yes | Database name. |
-| `username` | Yes | Database user. |
+| `username` | No | Database user. Deploy does not check it. Left empty, PostgreSQL connects as the `PGUSER` environment variable or the server process's operating system user, and MySQL connects with no user name. Set it. |
 | `password` | No | Password, if the database asks for one. |
 | `selectQuery` | Yes | Query that returns the rows to send. |
 | `updateQuery` | No | Statement run after rows are sent, such as marking them processed. |
@@ -276,16 +280,16 @@ Set `tls` to true to connect over TLS. The database server's certificate is then
 | `host` | Yes | Database server. |
 | `port` | Yes | Deploy checks it is a number; the editor fills the vendor's port. |
 | `database` | Yes | Database name. |
-| `username` | Yes | Database user. |
+| `username` | No | Database user. Deploy does not check it; left empty, the drivers fall back as for the source. Set it. |
 | `password` | No | Password, if the database asks for one. |
 | `query` | Yes | Statement run for each message. |
 | `useTransaction` | No | `true` runs the statement in a transaction. |
-| `returnGeneratedKeys` | No | `true` returns the generated keys as the response. |
+| `returnGeneratedKeys` | No | `true` makes the response a JSON array instead of the affected row count. On PostgreSQL it holds the rows the statement returns, which is `[]` unless the query has a `RETURNING` clause (such as `RETURNING id`). On MySQL a write gives `[{"insertId": <n>}]` with the first generated id, or `[]` when no id was generated; a `SELECT` gives its rows. |
 | `tls` | No | `true` connects over TLS with certificate verification. |
 
 ### DATABASE limits
 
-- PostgreSQL and MySQL/MariaDB only. A Mirth channel on SQL Server or Oracle imports but refuses to deploy (#103 covers the missing import warning).
+- PostgreSQL and MySQL/MariaDB only. A Mirth channel on SQL Server or Oracle imports with a warning but refuses to deploy.
 - One poll sends at most 1,000 rows; the rest wait for the next poll.
 - The only row format is JSON.
 
@@ -474,6 +478,8 @@ FHIR can only send; it cannot receive messages. There is no FHIR source.
 
 It posts the message content as-is to a FHIR R4 server: POST to `<baseUrl>/<resourceType>`, or PUT to `<baseUrl>/<resourceType>/<id>` with the id read from the resource. The message must already be a FHIR resource in the configured format. An HL7 v2 message sent here is posted unchanged and the server rejects it; write a transformer that builds the resource first. A 2xx response is SENT, anything else an ERROR.
 
+Unlike the HTTP destination, FHIR follows redirects. A 301, 302 or 303 turns the POST into a GET with no body, so a 200 from that GET is recorded as SENT although nothing was created ([#163](https://github.com/MichaelLeeHobbs/mirthless/issues/163)). Point `baseUrl` at the server's final address, not one that redirects.
+
 ### FHIR security
 
 An `https://` base URL uses TLS with the Node trust store. There is no certificate store or client certificate support; to trust a private CA, set `NODE_EXTRA_CA_CERTS` for the server. An `http://` base URL sends PHI in plaintext.
@@ -482,7 +488,7 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 
 | Property | Required | Notes |
 |---|---|---|
-| `baseUrl` | Yes | FHIR server base URL. |
+| `baseUrl` | Yes | FHIR server base URL. Use the final address: redirects are followed (see what it does). |
 | `resourceType` | No | Resource type in the URL. Defaults to `Patient`, so set it for any other resource. |
 | `method` | No | `POST` (create) or `PUT` (update). `PUT` needs an `id` in the resource, and an id outside the FHIR id rules is refused. |
 | `authType` | No | `NONE`, `BASIC`, `BEARER` or `API_KEY`. |
@@ -500,12 +506,15 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 - No FHIR source connector.
 - No HL7 v2 to FHIR mapping; the message must already be a FHIR resource.
 - No client certificate (mutual TLS) support.
+- Redirects are followed, and a redirected POST can be recorded as SENT with nothing created ([#163](https://github.com/MichaelLeeHobbs/mirthless/issues/163)).
 
 ## KAFKA
 
 ### KAFKA: what it does
 
-The source joins a consumer group on a topic and sends each record as a message, with the topic, partition, offset and key in the source map. The destination writes each message to a topic.
+The source joins a consumer group on a topic and sends each record as a message. The source map holds `topic`, `partition`, `offset`, `key`, `headers` and `timestamp`, and `charsetError` when a UTF-8 value had invalid bytes. The destination writes each message to a topic as UTF-8.
+
+A record the pipeline fails to store is not committed and is read again. After `maxStoreAttempts` failures in a row on the same record, the source stops the channel, records an ERROR `CHANNEL_STOPPED` event and fires a `SOURCE_CONNECTOR` alert. The record stays uncommitted: fix the cause and start the channel, and it reads that record first.
 
 Delivery is at least once: a record's offset is committed only after the pipeline has stored it, so a crash between storing and committing delivers that record twice, which you can recognise by the same `topic`, `partition` and `offset` in the source map (D-266 in [DECISIONS.md](../progress/DECISIONS.md)). The destination reports SENT only when every in-sync replica has the record (acks=all). Topics are the broker administrator's; the connector checks they exist and never creates them.
 
@@ -529,6 +538,8 @@ Set `useTls` to connect over TLS. The broker's certificate is verified against `
 | `topic` | Yes | Topic to read. |
 | `groupId` | Yes | Consumer group. |
 | `startFrom` | No | `EARLIEST` (default) or `LATEST`: where a group with no committed offset starts. The default reads the whole topic the first time a new group connects. |
+| `charset` | No | How the record value becomes message text: `utf-8` (default), `latin1` (ISO-8859-1), `windows-1252`, or `base64` to keep a binary payload intact. In `utf-8` mode invalid bytes are replaced with U+FFFD, the message is flagged with `charsetError` in the source map, and a warning is logged. `windows-1252` needs a Node with full ICU (the official builds have it); without it the deploy fails. The key and header values are always read as UTF-8. |
+| `maxStoreAttempts` | No | Failures in a row to store the same record before the source stops the channel, 1 to 1000, 5 by default. A record that cannot be converted counts as a failure. |
 
 ### KAFKA as a destination
 
@@ -549,15 +560,19 @@ Set `useTls` to connect over TLS. The broker's certificate is verified against `
 
 ### KAFKA limits
 
-- Payloads, keys and headers are read and written as UTF-8 only; other encodings and binary payloads are corrupted without an error (#87).
-- A record the pipeline can never store is retried forever and blocks its partition (#86).
-- TLS has not been tested against a real Kafka broker (#151).
+- The destination writes the value, key and headers as UTF-8 only; it has no `charset` setting.
+- The source reads keys and header values as UTF-8 whatever `charset` says.
+- TLS and the `maxStoreAttempts` stop have not been tested against a real Kafka broker ([#151](https://github.com/MichaelLeeHobbs/mirthless/issues/151)).
 
 ## AMQP
 
 ### AMQP: what it does
 
-The source consumes an existing queue on an AMQP 0-9-1 broker such as RabbitMQ and sends each delivery as a message. The destination publishes each message to an existing exchange as a persistent message.
+The source consumes an existing queue on an AMQP 0-9-1 broker such as RabbitMQ and sends each delivery as a message. The source map holds `queue`, `exchange`, `routingKey`, `redelivered` and `headers`, `messageId` and `contentType` when the message has them, and `charsetError` when a UTF-8 body had invalid bytes. The destination publishes each message to an existing exchange as a persistent message, encoded as UTF-8.
+
+A message the pipeline fails to store goes back to the queue. After `maxStoreAttempts` failures to store the same message, the source stops the channel, records an ERROR `CHANNEL_STOPPED` event and fires a `SOURCE_CONNECTOR` alert. The message is neither acked nor dead-lettered; it stays on the queue for when the channel is started again. Failures are counted per AMQP `messageId`. A message without one is counted as failures in a row, which assumes it comes straight back before the messages behind it: true for a classic queue with prefetch 1, not promised by a quorum queue, so set a `messageId` on messages sent to a quorum queue.
+
+The broker's `x-delivery-count` is not used, because RabbitMQ 4.x does not raise it for the requeue this source returns a message with. RabbitMQ does raise it when a connection closes with the message unacknowledged, which happens each time this cap stops the channel. A quorum queue drops the message, or dead-letters it if it has a dead-letter exchange, once that count passes its delivery limit (20 by default from RabbitMQ 4.0). On RabbitMQ 3.x a requeue counts too, so keep `maxStoreAttempts` below the queue's delivery limit, or the broker removes the message first.
 
 Delivery is at least once: a message is acked only after the pipeline has stored it, so a crash or lost connection between storing and acking delivers it again with `redelivered: true` in the source map, and the destination sends a stable `messageId` (`channelId:messageId:metaDataId`) that partners can deduplicate on (D-266 in [DECISIONS.md](../progress/DECISIONS.md)). The destination reports SENT only when the broker confirms the message, and a message no queue would receive is an ERROR rather than a silent drop. A message stored with an ERROR status is rejected without requeue, which sends it to the queue's dead-letter exchange if one is set. The connector never declares queues or exchanges.
 
@@ -579,6 +594,8 @@ Set `useTls` to connect with AMQPS. The broker's certificate is verified against
 | `tls.clientCertId` | No | Client certificate with a private key, for mutual TLS. |
 | `tls.rejectUnauthorized` | No | Verification is on unless this is `false`. |
 | `queue` | Yes | Existing queue to consume. |
+| `charset` | No | How the body becomes message text: `utf-8` (default), `latin1`, `windows-1252` or `base64`, as for the Kafka source. A message that cannot be converted goes back to the queue and counts toward `maxStoreAttempts`. |
+| `maxStoreAttempts` | No | Failures to store the same message before the source stops the channel, 1 to 1000, 5 by default. See what it does. |
 
 ### AMQP as a destination
 
@@ -600,6 +617,6 @@ Set `useTls` to connect with AMQPS. The broker's certificate is verified against
 
 ### AMQP limits
 
-- Payloads are read as UTF-8 only; other encodings and binary payloads are corrupted without an error (#87).
-- A message the pipeline can never store is requeued forever and blocks the queue (#86).
+- The destination writes the body as UTF-8 only; it has no `charset` setting.
+- On a quorum queue, a message without a `messageId` may not be counted correctly toward `maxStoreAttempts`.
 - AMQP 0-9-1 only; no AMQP 1.0 brokers.

@@ -310,12 +310,12 @@ type ChannelState = typeof CHANNEL_STATE[keyof typeof CHANNEL_STATE];
 
 Start with the type lists in `packages/core-models/src/constants.ts` (`SOURCE_CONNECTOR_TYPES`, `DESTINATION_CONNECTOR_TYPES`). From there the compiler or a test names most of what is missing: the registry factory (`registry-types.test.ts`), the docs page (the docs guard), the destination dropdown label and the dashboard label (typed by connector type). These places are keyed by a plain string, so nothing tells you when one is missing:
 
-- Deploy validation schemas in `packages/server/src/services/connector-validation.service.ts`. A type with no schema passes unchecked (#102).
-- Test Connection testers in `packages/server/src/services/connection-test.service.ts` (#89 is SFTP's missing tester).
+- Deploy validation schemas (`SOURCE_SCHEMAS`, `DEST_SCHEMAS`) in `packages/server/src/services/connector-validation.service.ts`. A type with no schema in a direction fails every deploy with `Unknown source connector type` or `Unknown destination connector type`, so add one for each direction the connector has.
+- Test Connection testers (`TESTERS`) in `packages/server/src/services/connection-test.service.ts`. Without one, Test Connection fails with `Unknown connector type`.
 - Certificate-ID resolvers in `packages/server/src/engine.ts` (`SOURCE_TLS_RESOLVERS`, `DESTINATION_TLS_RESOLVERS`), if the connector takes certificates from the store.
 - Editor forms and defaults: `SOURCE_CONNECTOR_FORMS` in `packages/web/src/components/channels/source/ConnectorSettingsSection.tsx`, `DEST_CONNECTOR_FORMS` in `destinations/DestinationConnectorSettings.tsx`, and the defaults maps in both `connector-defaults.ts` files.
-- The Mirth importer's class map in `packages/server/src/services/mirth-import.service.ts`, if Mirth has an equivalent.
-- The property tables in `docs/user/connector-reference.md`. The guard checks the sections, not the keys (#115).
+- The Mirth importer in `packages/server/src/services/mirth-import.service.ts`, if Mirth has an equivalent: the class map (`CONNECTOR_TYPE_MAP`), the `transportMap` in `mapTransportName`, and a case in the `extractConnectorProperties` switch. A connector missing from the maps imports as JAVASCRIPT with a warning. One with no case in the switch keeps Mirth's own property names, which the connector does not read, so its settings are lost on import.
+- The property tables in `docs/user/connector-reference.md`. The guard checks the sections, not the keys ([#115](https://github.com/MichaelLeeHobbs/mirthless/issues/115)).
 
 ---
 

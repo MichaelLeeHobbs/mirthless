@@ -58,7 +58,7 @@ Either way: set `FRONTEND_URL=https://your-domain.com` so CORS matches the TLS o
 
 ## 2. Connector-level TLS
 
-Individual connectors carry their own optional TLS configuration, independent of the edge. This is what protects the actual HL7, HTTP, database, mail and broker feeds to and from partner systems. How TLS is switched on differs by connector:
+Individual connectors carry their own optional TLS configuration, independent of the edge. This is what protects the actual HL7, HTTP, database, mail and broker feeds to and from partner systems. The [connector matrix](../user/connector-reference.md#connectors-at-a-glance) lists every connector's transport security and sign-in. How TLS is switched on differs by connector:
 
 | Connector | Turns TLS on | Certificates |
 |---|---|---|
@@ -108,9 +108,31 @@ With `scheme: 'HTTPS'` the HTTP destination sends over `node:https` and applies 
 
 DATABASE (`tls: true`) verifies the server certificate against the system's trusted CAs and has no option to add a CA or a client certificate. SMTP, EMAIL and FHIR use the Node runtime's trust store. To trust a private CA for these, give it to the runtime (for example `NODE_EXTRA_CA_CERTS`).
 
-### Check TLS is on
+### Connectors without TLS options today
 
 FILE, JAVASCRIPT, CHANNEL and DICOM have no TLS option. SFTP has none either because SSH encrypts it; leave its `strictHostKey` check on so the server is authenticated. Where a DICOM feed carries PHI across a network, secure it at the network layer (VPN or private networking).
+
+### Check TLS is on
+
+After deploying a TCP/MLLP or HTTPS listener with TLS, check from another machine that it speaks TLS. Replace `host` and `port` with the listener's.
+
+1. A TLS handshake succeeds and shows your certificate:
+
+   ```bash
+   timeout 10 openssl s_client -connect host:port -servername host < /dev/null
+   ```
+
+   The output should show the certificate chain and `Verify return code: 0 (ok)`, or the code you expect for a private CA. If the command hangs until `timeout` ends it, the port is not speaking TLS: a plaintext MLLP listener waits for the end of a frame and never answers the handshake. `wrong version number` also means the listener is not speaking TLS.
+
+   A listener with `requireClientCert` on ends the handshake with a certificate-required alert (a handshake failure alert on TLS 1.2) when you give no client certificate. That is expected and still proves TLS is on. To see the full handshake, add `-cert client.pem -key client-key.pem` with a certificate the listener's `ca` trusts.
+
+2. For a TCP/MLLP listener, a plaintext MLLP frame gets no HL7 acknowledgement. This step sends a test HL7 message, so run it before any destination is enabled or against a test copy of the channel, never against a live channel:
+
+   ```bash
+   printf '\013MSH|^~\\&|TEST|TEST|GF|GF|20260101000000||ADT^A01|TLSCHECK|P|2.5\015\034\015' | timeout 10 nc -w 5 host port
+   ```
+
+   The frame is MLLP: a VT byte (`\013`, 0x0B) before the message and FS CR (`\034\015`, 0x1C 0x0D) after it. A TLS listener closes the connection or prints nothing readable. If an acknowledgement containing `MSA|` comes back, the listener is plaintext: undeploy it and set a `tls` object with both `cert` and `key`. A plaintext listener also takes the test message into the channel, so find message control ID `TLSCHECK` and remove it.
 
 ---
 
