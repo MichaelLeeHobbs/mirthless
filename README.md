@@ -72,6 +72,7 @@ front of it, or set `WEB_BIND=0.0.0.0` in `.env` to try it from another machine.
 
 - [Quickstart: create your first channel](docs/user/quickstart-first-channel.md)
 - [Which connectors can receive, which can send, and what can each do?](docs/user/connector-reference.md#connectors-at-a-glance) Every connector type, its settings and limits.
+- [Who can do what? Users, roles, sign-in and cutting someone off](docs/user/access-control.md) The role and permission matrix, sessions, and what is not supported (SSO, MFA, per-channel access).
 - [Transformer scripting API](docs/user/scripting-api.md) — the sandbox surface for filters/transformers
 
 ### Operations
@@ -82,6 +83,7 @@ Running GalvaniFlow in production? See the operator guides in [`docs/ops/`](docs
 - [Backup & restore](docs/ops/backup-restore.md) — Postgres `pg_dump`/`pg_restore` plus the config backup API
 - [Upgrade procedure](docs/ops/upgrade.md) — migrations, downtime, and rollback
 - [TLS & PHI-in-transit](docs/ops/tls-and-phi.md) — edge TLS, connector-level TLS, and how to check TLS is on
+- [Access control](docs/user/access-control.md) — roles and permissions, sessions, cutting off a user who left, and where PHI can leave
 - [Resource sizing & observability](docs/ops/resource-and-observability.md) — health, `/metrics`, logging, sizing
 - [Throughput benchmark](docs/ops/throughput-benchmark.md) — how to measure msgs/sec, with a baseline
 
