@@ -6,8 +6,8 @@
 
 Michael took the report's defaults for the four decisions, with one change to decision 3 after the agent found the literal default would turn TCP/MLLP TLS off:
 
-- **Placeholders (G0251, G0250, D-273):** one `fillPlaceholders` rule in core-util for File/SFTP names, SMTP and alert templates, destination templates and configuration references; `placeholderNames` for the alert editor and the File/SFTP deploy check. Padded names fill, objects write as JSON, bigints as digits, inherited keys stay as written. An alert with an invalid timestamp is still sent; before, the default body threw and stopped later alerts.
-- **Numbers (G0012, G0363, D-274):** connector properties read finite numbers or plain decimal text (a `${name}` reference resolves to text); blank, boolean, hex and exponent text fall back; the forms ignore a stored NaN or Infinity.
+- **Placeholders (G0251, G0250, D-273):** one `fillPlaceholders` rule in core-util for File/SFTP names, SMTP and alert templates, destination templates and configuration references; `placeholderNames` for the alert editor and the File/SFTP deploy check. Padded names fill (SMTP's built-ins included), bigints write as digits, NaN as NaN, inherited keys and function values stay as written. An alert with an invalid timestamp is still sent; before, the default body threw and stopped later alerts.
+- **Numbers (G0012, G0363, D-274):** connector properties read finite numbers or decimal text such as `'6661'` or `'+6661'` (a `${name}` reference resolves to text); blank, boolean, hex and exponent text fall back; the forms ignore a stored NaN or Infinity.
 - **TLS (G0013, D-275):** a plain `tls` object reads as before (`{}` still means TLS on TCP/MLLP); a non-object fails the deploy with a clear message instead of reading as plaintext.
 - **Times (G0144, D-276):** the log viewer, the channel list's Updated column and its tooltip show "—" for a missing time and the raw value for an unparseable one.
 - Found on the way: Test Connection does not resolve configuration references, so a channel with a `${PORT}` port deploys but fails its test (#92).
