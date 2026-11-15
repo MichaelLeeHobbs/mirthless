@@ -22,6 +22,24 @@ Every property below is the key the connector reads from the channel's saved pro
 | [KAFKA](#kafka) | Yes | Yes | Kafka topics | `useTls` with a CA and client certificate from the certificate store | SASL PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512, or client certificate | none |
 | [AMQP](#amqp) | Yes | Yes | AMQP 0-9-1 brokers such as RabbitMQ | `useTls` with a CA and client certificate from the certificate store | Broker username and password, or client certificate | none |
 
+The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`; their delivery guarantees are in D-266. The TCP_MLLP property schemas are in `packages/core-models/src/schemas/tcp-mllp-connector.schema.ts`.
+
+A connector's properties are checked when the channel deploys. TCP_MLLP rejects a key its table below does not list, so a misspelled key fails the deploy instead of being ignored. The exceptions are five keys the editor saved before 2026-07, which are dropped (see `docs/ops/upgrade.md`). A test (`packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`) fails when a TCP_MLLP table and its schema list different keys.
+
+## Keys on every connector
+
+### Every source
+
+| Property | Required | Notes |
+|---|---|---|
+| `processBatch` | No | Off by default. Split an inbound HL7 batch into one message per `MSH` segment. The Mirth importer sets it; the editor has no field for it. |
+
+### Every destination
+
+| Property | Required | Notes |
+|---|---|---|
+| `template` | No | What to send instead of the encoded message; `${...}` values are filled per message. The Mirth importer sets it from a sender's template; the editor has no field for it. |
+
 ## TCP_MLLP
 
 ### TCP_MLLP: what it does
@@ -48,7 +66,7 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 | `host` | No | Interface to bind. Defaults to `0.0.0.0`, every interface. |
 | `maxConnections` | No | Most open connections at once. |
 | `responseMode` | No | `AUTO_ACK` (default) or `PASSTHROUGH`. See what it does. |
-| `charset` | No | Node encoding used to read and write frames, such as `utf-8` or `latin1`. |
+| `charset` | No | `utf-8` (default), `latin1` (ISO-8859-1), `ascii` or `utf16le`, used to read and write frames. Case is ignored, and `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. |
 | `maxFrameBytes` | No | Most bytes buffered for one message before the connection is refused. |
 | `frameStart` | No | Start bytes in hex, such as `02` for STX. API or Mirth import only. Invalid hex refuses to deploy. |
 | `frameEnd` | No | End bytes in hex, such as `03` for ETX. API or Mirth import only. |
@@ -66,7 +84,7 @@ On the destination, any `tls` object turns TLS on, even an empty one, and the pa
 | `maxConnections` | No | Size of the connection pool. |
 | `responseTimeout` | No | Milliseconds to wait for the acknowledgement before the send is an ERROR. |
 | `acquireTimeoutMs` | No | Milliseconds to wait for a free pooled connection. |
-| `charset` | No | Node encoding used to write the message and read the acknowledgement. |
+| `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to write the message and read the acknowledgement. |
 | `frameStart` | No | Start bytes in hex. API or Mirth import only. |
 | `frameEnd` | No | End bytes in hex. API or Mirth import only. |
 | `tls.cert` | No | Client certificate, PEM, for mutual TLS. Any `tls` object turns TLS on. Needs `tls.key`. |

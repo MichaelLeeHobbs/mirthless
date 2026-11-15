@@ -67,7 +67,7 @@ describe('connector reference: at-a-glance matrix', () => {
 
 describe('connector reference: one section per connector', () => {
   it('has a level-2 section for every connector and no other level-2 sections', () => {
-    const allowed = new Set<string>(['Connectors at a glance', 'Choosing a connector', ...CONNECTOR_TYPES]);
+    const allowed = new Set<string>(['Connectors at a glance', 'Keys on every connector', 'Choosing a connector', ...CONNECTOR_TYPES]);
     const level2 = headings(markdown).filter((h) => h.level === 2).map((h) => h.text);
     for (const type of CONNECTOR_TYPES) expect(level2, `missing "## ${type}"`).toContain(type);
     for (const text of level2) expect(allowed.has(text), `unexpected "## ${text}"`).toBe(true);

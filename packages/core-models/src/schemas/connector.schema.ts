@@ -3,12 +3,12 @@
 // ===========================================
 
 import { z } from 'zod/v4';
-import { DESTINATION_CONNECTOR_TYPES } from '../constants.js';
+import { destinationConnectorTypeSchema } from './channel.schema.js';
 
 export const createDestinationConnectorSchema = z.object({
   name: z.string().min(1).max(255),
   enabled: z.boolean().default(true),
-  connectorType: z.enum(DESTINATION_CONNECTOR_TYPES),
+  connectorType: destinationConnectorTypeSchema,
   properties: z.record(z.string(), z.unknown()),
   queueMode: z.enum(['NEVER', 'ON_FAILURE', 'ALWAYS']).default('NEVER'),
   retryCount: z.number().int().nonnegative().default(0),

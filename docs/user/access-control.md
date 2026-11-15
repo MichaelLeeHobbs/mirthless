@@ -20,7 +20,7 @@ This page describes who can sign in to GalvaniFlow, how sessions work, how to cu
 
 **Password rules.** 8 to 128 characters, with at least one letter and at least one digit. The same rule applies when an admin creates a user, when an admin resets a password, and when users change their own.
 
-**Account lockout.** Five failed logins for a username, with no successful login in between, lock that account for 15 minutes. While it is locked, even the correct password is refused. Lockout is per username, not per client, so anyone who knows a username can lock that account out. An admin can unlock it early from the Users page (`POST /api/v1/users/:id/unlock`, permission `users:write`).
+**Account lockout.** Five failed logins for a username, with no successful login in between, lock that account for 15 minutes. While it is locked, even the correct password is refused. The failure count is not reset when the lock expires, so after the first lock a single wrong password locks the account again until someone signs in successfully ([#174](https://github.com/MichaelLeeHobbs/mirthless/issues/174)). Lockout is per username, not per client, so anyone who knows a username can lock that account out. An admin can unlock it early from the Users page (`POST /api/v1/users/:id/unlock`, permission `users:write`).
 
 **Login rate limit.** `POST /api/v1/auth/login` allows 5 failed attempts per client address per 15 minutes, and only when `NODE_ENV=production`. Successful logins do not count. In any other `NODE_ENV` the limit is 1000. The client address comes from Express's `trust proxy` setting, which `TRUST_PROXY` sets. Behind a proxy, set it to the number of proxies in front of the server (the production example uses `1` for the bundled nginx). If it is `false` behind a proxy, every client has the proxy's address and shares one limit, so five failures from anyone block every login for 15 minutes. If it trusts more hops than there are proxies, a client can choose its own address with `X-Forwarded-For` and avoid the limit. Token refreshes have their own, looser limit (300 per 15 minutes in production).
 
@@ -36,7 +36,7 @@ This page describes who can sign in to GalvaniFlow, how sessions work, how to cu
 
 **Refresh token.** A separate JWT in a cookie named `refreshToken` that is `httpOnly`, `SameSite=strict`, limited to the path `/api/v1/auth`, and `Secure` when `NODE_ENV=production`. The browser cannot read it from script, and other sites cannot send it.
 
-**Session record.** Each login creates a row in the `sessions` table holding a SHA-256 hash of the refresh token, the user agent, the client address and an expiry `JWT_REFRESH_EXPIRES_IN` later (default 7 days). Logout deletes the row.
+**Session record.** Each login creates a row in the `sessions` table holding a SHA-256 hash of the refresh token, the user agent and client address of the login (sessions created by a refresh record neither, [#174](https://github.com/MichaelLeeHobbs/mirthless/issues/174)), and an expiry `JWT_REFRESH_EXPIRES_IN` later (default 7 days). Logout deletes the row.
 
 **Rotation.** `POST /api/v1/auth/refresh` checks the refresh token's signature, finds its session, and checks that the user still exists and is enabled. It then deletes that session and creates a new one with a new refresh token and a new expiry. A refresh token works once.
 
@@ -72,14 +72,14 @@ None of these actions changes a secret the person knew. Rotate them yourself: da
 | Permission | admin | deployer | developer | viewer | Also allows |
 |---|---|---|---|---|---|
 | `channels:read` | Yes | Yes | Yes | Yes | Reads every channel's scripts and connector settings (secret fields masked) and exports channels. Lists message IDs, status and times across all channels (cross-channel search). Validates scripts, previews Mirth imports, generates sample messages, and joins the dashboard and channel live feeds. |
-| `channels:write` | Yes | Yes | Yes | No | Runs code on the server: the channel's scripts, filters and transformers run at its next deploy, and the server deploys every enabled channel when it starts. Also imports channels (including Mirth XML), clones them, enables and disables them, and manages channel groups. |
+| `channels:write` | Yes | Yes | Yes | No | Runs code on the server: the channel's scripts, filters and transformers run at its next deploy, and the server deploys every enabled channel when it starts. Also imports channels (including Mirth XML), clones them, enables and disables them, and manages channel groups. Reads every channel's connector settings and revisions with secret fields unmasked (passwords, keys, tokens); those reads write no audit event. |
 | `channels:deploy` | Yes | Yes | No | No | Deploying runs the channel's code. Also sends test messages into a channel, runs Test Connection (the server connects to the host in the form), resets statistics and edits channel dependencies. |
 | `channels:delete` | Yes | No | No | No | Deleting hides the channel; its messages are kept. |
 | `messages:read` | Yes | Yes | Yes | Yes | Bulk message export and attachment download, on every channel. |
 | `messages:reprocess` | Yes | Yes | No | No | Reprocessing and resending send stored message content to destinations again. |
 | `messages:delete` | Yes | No | No | No | Bulk delete as well as single messages. |
 | `code_templates:read` | Yes | Yes | Yes | Yes | |
-| `code_templates:write` | Yes | Yes | Yes | No | Runs code on the server: a template reaches every channel that includes it at that channel's next deploy. Also deletes templates and libraries, because both delete routes check this permission. |
+| `code_templates:write` | Yes | Yes | Yes | No | Runs code on the server: a template reaches every channel that includes it at that channel's next deploy. |
 | `code_templates:delete` | Yes | Yes | No | No | |
 | `alerts:read` | Yes | Yes | Yes | Yes | |
 | `alerts:write` | Yes | Yes | No | No | Alert emails carry the error text of the failure that triggered them to any address the alert names. |
@@ -132,6 +132,7 @@ Scripts run in a `node:vm` sandbox. [SECURITY.md](../../SECURITY.md) says this s
 | Global map and configuration map values | `global_map:read`, `config_map:read` | admin, deployer, developer | No |
 | Audit event export (`GET /api/v1/events/export`) | `events:read` | All four | No |
 | Channel export (scripts and connector settings, secret fields masked) | `channels:read` | All four | Yes: `CHANNEL_EXPORTED` |
+| Connector credentials (channel and revision reads with secrets unmasked) | `channels:write` | admin, deployer, developer | No |
 | Server log and live log stream | `system:info` | admin, deployer | No |
 | Server backup | `system:backup` | admin | Yes: `SERVER_BACKUP_EXPORTED` |
 | Alert emails | `alerts:write` to set recipients | admin, deployer | The alert change is (`ALERT_UPDATED`); each email is not |
@@ -152,7 +153,7 @@ These write no audit event:
 - Reading channels, code templates, resources, data sources and settings. Channel export is audited.
 - Listing a message's attachments. Downloads are audited.
 - Sending a test message into a channel, Test Connection, and the data source connection test.
-- Resetting channel statistics, unlocking an account, and enabling or disabling an extension.
+- Resetting channel statistics and unlocking an account. Enabling or disabling an extension writes a `SETTINGS_CHANGED` event with no user or client address.
 - Token refreshes.
 - Requests refused with 401 or 403. They leave only a debug log line ([#158](https://github.com/MichaelLeeHobbs/mirthless/issues/158)).
 
