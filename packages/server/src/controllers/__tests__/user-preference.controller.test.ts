@@ -19,6 +19,7 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 const { UserPreferenceController } = await import('../user-preference.controller.js');
+const { ServiceError } = await import('../../lib/service-error.js');
 
 function makeRes(): Response {
   return { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis(), send: vi.fn().mockReturnThis() } as unknown as Response;
@@ -59,5 +60,25 @@ describe('UserPreferenceController with a user', () => {
 
     expect(mockService.list).toHaveBeenCalledWith('u1');
     expect(res.json).toHaveBeenCalledWith({ success: true, data: [] });
+  });
+
+  it('list answers a NOT_FOUND service error with 404', async () => {
+    mockService.list.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'User not found') });
+    const res = makeRes();
+
+    await UserPreferenceController.list(makeReq(true), res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
+  });
+
+  it('list answers an unknown error with 500 and a generic body', async () => {
+    mockService.list.mockResolvedValue({ ok: false, value: null, error: new Error('connection refused') });
+    const res = makeRes();
+
+    await UserPreferenceController.list(makeReq(true), res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
   });
 });

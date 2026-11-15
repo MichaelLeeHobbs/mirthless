@@ -7,7 +7,7 @@ import type { Request, Response } from 'express';
 import type { ChannelImportInput } from '@galvaniflow/core-models';
 import { ChannelExportService } from '../services/channel-export.service.js';
 import { ChannelImportService } from '../services/channel-import.service.js';
-import { isServiceError } from '../lib/service-error.js';
+import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
 export class ChannelExportController {
@@ -18,12 +18,8 @@ export class ChannelExportController {
     const result = await ChannelExportService.exportChannel(id, context);
 
     if (!result.ok) {
-      if (isServiceError(result.error, 'NOT_FOUND')) {
-        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Channel not found' } });
-        return;
-      }
-      logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to export channel');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Export failed' } });
+      logger.error({ errMsg: result.error.message, stack: result.error.stack, channelId: id }, 'Failed to export channel');
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
