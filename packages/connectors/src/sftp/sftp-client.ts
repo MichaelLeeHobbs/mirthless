@@ -103,8 +103,9 @@ function normalizeHostKey(key: string): string {
  * SFTP connection that an ARP/DNS attacker could MITM; it can be explicitly
  * disabled per channel. When enabled, the presented key is accepted only if it
  * matches the configured {@link SftpConnectionOptions.hostKey} (compared as base64
- * or as the raw provided string). A missing hostKey rejects everything — the
- * operator must paste the server's public key fingerprint.
+ * or as the raw provided string). A missing hostKey rejects everything: the
+ * operator pastes the server's base64 public key blob (the third field of
+ * `ssh-keyscan` output), not a `SHA256:` fingerprint, which never matches.
  */
 export function makeHostVerifier(
   options: SftpConnectionOptions,

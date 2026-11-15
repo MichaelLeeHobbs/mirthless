@@ -35,7 +35,7 @@ Every line of code you write may be part of a system that routes patient lab res
 Do NOT build features, abstractions, or flexibility that aren't explicitly required by the current task.
 
 - No "just in case" parameters, config options, or extension points
-- No premature abstractions: don't build a helper for one caller. Before writing a helper, search `lib/` and `packages/core-util` for one that already does the job. A second copy of an existing helper is a defect. The helpers below each had copies before. Lint (`eslint.config.js`, `SHARED_HELPERS`) fails a non-exported function, or a const holding a function, named like one of them. `formatTimestamp` is the exception, because `LogViewer` and the HL7 formatter use the name for different formats.
+- No premature abstractions: don't build a helper for one caller. Before writing a helper, search `lib/` and `packages/core-util` for one that already does the job. A second copy of an existing helper is a defect. The helpers below each had copies before. Lint (`eslint.config.js`, `SHARED_HELPERS`) fails a non-exported function, or a const holding a function, named like one of them. `formatTimestamp` is the exception, because core-util's HL7 formatter uses the name for another format.
   - `mapErrorToStatus` and `errorResponse` in `server/src/lib/controller-helpers.ts`: ServiceError code to HTTP status (500 otherwise), and the `{ code, message }` body (`INTERNAL` otherwise). A controller with a different status for one code wraps `mapErrorToStatus`, as `user.controller.ts` does.
   - `escapeCsvField` in `server/src/lib/csv.ts`.
   - `isBlockedHostname`/`isBlockedAddress` (script `httpFetch`) and `isReservedHostname`/`isReservedAddress` (Test Connection) in `engine/src/sandbox/ssrf.ts`: both SSRF policies, built from one set of ranges.
@@ -48,6 +48,9 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`: connect a polling receiver's remote client, or close it, under a timeout.
   - `createNodemailerTransport` in `connectors/src/smtp/smtp-dispatcher.ts` (exported from `@galvaniflow/connectors`): builds a nodemailer transport for the SMTP connector and the server's own mail. SMTP Test Connection (`connection-test.service.ts`) still builds its own; see #92.
   - `unescapeControlChars` (typed `\n`, `\r`, `\t`, `\\` to the characters) and `isSecretSetting` (which settings hold secrets) in `core-util`. The web depends on core-util.
+  - `fillPlaceholders`, `recordLookup` and `placeholderNames` in `core-util/src/placeholders.ts`: every `${name}` template (D-275). A template with built-in names looks those up first and passes the rest to it.
+  - `formatTimestampWith` in `web/src/lib/format.ts`: the missing/unparseable rule for any time on screen, with the screen's own view of a valid time (D-278).
+  - `num` in `connectors/src/registry.ts` and `getNum` read only finite numbers (D-276); `readTlsServerOptions`/`readTlsClientOptions` in `connectors/src/tls.ts` refuse a non-object `tls` (D-277).
   - `containsPattern` in `server/src/lib/like.ts` (a LIKE pattern from user text), `emitSuccessEvent` in `server/src/lib/event-emitter.ts` (an INFO/SUCCESS audit event), and `buildEventWhereConditions` in `server/src/services/event.service.ts` (the event list and export filters).
   - `errorMessage` in `web/src/lib/error-message.ts` (text for an unknown thrown value, with the caller's fallback), `definedSearchParams` in `web/src/lib/search-params.ts` (query params without the unset ones), `messageFilterParts` in `web/src/lib/message-filter-query.ts` (the message search and export filters), and `updateTls` on `propertyUpdaters` for a connector form's TLS fields.
   - `GlobalChannelMap` in `engine/src/runtime/global-channel-map.ts` is the in-memory script map; `GlobalMapProxy` keeps its entries in one rather than its own `Map`.
@@ -86,7 +89,8 @@ Michael tests this project by hand, and it is too big for that. Every change you
 4. **A new flow gets an automated check.** UI: a `pnpm shots` page and, for a multi-step flow, a Playwright spec in `e2e/`. Server: a route test, plus an integration test when it touches SQL.
 5. **Small, reviewable steps.** One concern per commit. Don't mix refactors with behaviour changes.
 6. **Ask before anything you can't undo**: production data, force pushes, deleting branches, publishing.
-7. **Keep the docs true.** If you change a command, a rule or a decision, update this file, `docs/progress/` and any doc that names it in the same change.
+7. **Keep the docs true.** If you change a command, a rule or a decision, update this file, `docs/progress/` and any doc that names it in the same change. User pages that restate code are checked by docs guards in `packages/server/src/__tests__/docs/`, which run in `pnpm gate`: `docs/user/connector-reference.md` must list every connector type with the right directions and section headings. When a guard fails, fix the page, not the guard.
+8. **Security defects go to an advisory, not an issue.** A defect where the code protects less than the docs or config promise, and an outsider or a lower role can use it (a route serving PHI without its permission check, a sandbox escape, a TLS or host-key check that fails open, a revoked session that still works), goes to a draft GitHub security advisory as `SECURITY.md` says. The agent drafts it and tells Michael, and the fix lands from the advisory's private fork. Design limits and defaults ("no MFA", "no per-channel scope") are documented and filed publicly. A finding that is already public stays public, and the docs carry its mitigation until the fix ships.
 
 ## Verification Matrix
 
@@ -100,6 +104,7 @@ Run what matches the files you touched. `pnpm gate` runs build, lint and every p
 | `packages/server/src/db/schema` | `pnpm db:generate`, commit the migration | `pnpm test:integration` against Postgres |
 | SQL, queues, pruning, partitions | `pnpm test:integration` | |
 | Engine pipeline or a connector | The package's tests (`pnpm --filter @galvaniflow/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes. For a connector, `pnpm --filter @galvaniflow/connectors test:integration` with the compose `test` profile up (CI job `connector-integration` runs it, D-273) |
+| A connector's type, direction or properties | `pnpm --filter @galvaniflow/server test` (the docs guards) | Update `docs/user/connector-reference.md`; for a new connector, work through "Adding a connector" below |
 | Throughput or memory | `pnpm soak` (see `docs/ops/soak-test.md`) | Compare with the recorded baseline |
 | The Mirth importer, or behaviour a migrated channel relies on | `pnpm test:scenarios` (needs Postgres and the test containers, see `docs/testing/migration-scenarios.md`) | Compare the score with the last recorded one; nothing that passed may fail |
 | Docs only | Check the commands and paths you mention exist | |
@@ -303,6 +308,17 @@ const CHANNEL_STATE = {
 type ChannelState = typeof CHANNEL_STATE[keyof typeof CHANNEL_STATE];
 ```
 
+### Adding a connector
+
+Start with the type lists in `packages/core-models/src/constants.ts` (`SOURCE_CONNECTOR_TYPES`, `DESTINATION_CONNECTOR_TYPES`). From there the compiler or a test names most of what is missing: the registry factory (`registry-types.test.ts`), the docs page (the docs guard), the destination dropdown label and the dashboard label (typed by connector type). These places are keyed by a plain string, so nothing tells you when one is missing:
+
+- Deploy validation schemas (`SOURCE_SCHEMAS`, `DEST_SCHEMAS`) in `packages/server/src/services/connector-validation.service.ts`. A type with no schema in a direction fails every deploy with `Unknown source connector type` or `Unknown destination connector type`, so add one for each direction the connector has.
+- Test Connection testers (`TESTERS`) in `packages/server/src/services/connection-test.service.ts`. Without one, Test Connection fails with `Unknown connector type`.
+- Certificate-ID resolvers in `packages/server/src/engine.ts` (`SOURCE_TLS_RESOLVERS`, `DESTINATION_TLS_RESOLVERS`), if the connector takes certificates from the store.
+- Editor forms and defaults: `SOURCE_CONNECTOR_FORMS` in `packages/web/src/components/channels/source/ConnectorSettingsSection.tsx`, `DEST_CONNECTOR_FORMS` in `destinations/DestinationConnectorSettings.tsx`, and the defaults maps in both `connector-defaults.ts` files.
+- The Mirth importer in `packages/server/src/services/mirth-import.service.ts`, if Mirth has an equivalent: the class map (`CONNECTOR_TYPE_MAP`), the `transportMap` in `mapTransportName`, and a case in the `extractConnectorProperties` switch. A connector missing from the maps imports as JAVASCRIPT with a warning. One with no case in the switch keeps Mirth's own property names, which the connector does not read, so its settings are lost on import.
+- The property tables in `docs/user/connector-reference.md`. Their keys are checked only for connectors whose properties have a core-models schema, by `packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts` (TCP_MLLP today); add the connector there when its schema lands ([#115](https://github.com/MichaelLeeHobbs/mirthless/issues/115)).
+
 ---
 
 ## Agent Tooling
@@ -315,7 +331,7 @@ Lives in `.claude/` and is checked in, so every agent and teammate gets the same
 | `write-tests` skill | `.claude/skills/write-tests/` | Which test layer to use and how to write it |
 | `create-ui` skill | `.claude/skills/create-ui/` | Builds and screenshots UI in the visual language |
 | Session start hook | `.claude/hooks/session-start.mjs` | In cloud sessions only, installs dependencies and builds core-models and core-util |
-| Schema hook | `.claude/hooks/schema-changed.mjs` | After a schema edit, reminds the agent to generate and commit a migration |
+| Reminder hook | `.claude/hooks/schema-changed.mjs` | After an edit, reminds the agent what else must change: a migration after a schema edit, the connector reference after a registry edit |
 | Permissions | `.claude/settings.json` | Allows the routine checks without prompts; denies force pushes, `rm -rf` and real `.env` files |
 
 ---
@@ -370,12 +386,12 @@ galvaniflow/             — repository root (the GitHub repository is still nam
 │   └── web/             — React + MUI admin: channel editor, message browser, dashboard
 ├── e2e/                 — Playwright specs (`pnpm test:e2e`)
 ├── docker/              — Dockerfiles, Compose (development and production), nginx
-├── docs/design/         — Design documents (00-16)
+├── docs/design/         — Design documents and dated analyses (00-18)
 ├── docs/ops/            — Deployment, TLS, backup, upgrade, soak test
 ├── docs/progress/       — Roadmap, changelog, decisions
 ├── docs/standards/      — Coding, logging, and config standards
 ├── docs/testing/        — Manual test scenarios
-├── docs/user/           — User documentation (scripting API)
+├── docs/user/           — User documentation (connector reference, quickstart, scripting API)
 ├── scripts/             — DB init, benchmarks, soak test, screenshots (`scripts/shots`)
 ├── .claude/             — Agent skills, hooks and settings (see Agent Tooling)
 ├── reference/           — Mirth Connect source + code samples (git-ignored)

@@ -4,9 +4,36 @@
 
 ## 2026-11-15 — Removed the CLI (branch `remove-cli`, #145)
 
-- **`packages/cli` deleted** (D-274). It had no users and wrapped one REST endpoint per command. Its coverage row is gone from `AGENTS.md`, along with the "CLI session refresh" roadmap item (L25).
+- **`packages/cli` deleted** (D-280). It had no users and wrapped one REST endpoint per command. Its coverage row is gone from `AGENTS.md`, along with the "CLI session refresh" roadmap item (L25).
 - **`docs/ops/api-automation.md`:** `curl` recipes for log in, export, import and redeploy. Redeploy returns once the channel is in its final state and fails when it can't start, so a CI job doesn't need to poll.
 - Not done here: API tokens (#144) and the break-glass admin reset (#141). Until #144, the recipes log in with a password, which won't work for an account with MFA.
+
+## 2026-11-15 — Reinvention decisions 1 to 4, batch 4 (branch `batch-2026-11-15-reinvention-4`)
+
+Michael took the report's defaults for the four decisions, with one change to decision 3 after the agent found the literal default would turn TCP/MLLP TLS off:
+
+- **Placeholders (G0251, G0250, D-275):** one `fillPlaceholders` rule in core-util for File/SFTP names, SMTP and alert templates, destination templates and configuration references; `placeholderNames` for the alert editor and the File/SFTP deploy check. Padded names fill (SMTP's built-ins included), bigints write as digits, NaN as NaN, inherited keys and function values stay as written. An alert with an invalid timestamp is still sent; before, the default body threw and stopped later alerts.
+- **Numbers (G0012, G0363, D-276):** connector properties read finite numbers or decimal text such as `'6661'` or `'+6661'` (a `${name}` reference resolves to text); blank, boolean, hex and exponent text fall back; the forms ignore a stored NaN or Infinity.
+- **TLS (G0013, D-277):** a plain `tls` object reads as before (`{}` still means TLS on TCP/MLLP); a non-object fails the deploy with a clear message instead of reading as plaintext.
+- **Times (G0144, D-278):** the log viewer, the channel list's Updated column and its tooltip show "—" for a missing time and the raw value for an unparseable one.
+- Found on the way: Test Connection does not resolve configuration references, so a channel with a `${PORT}` port deploys but fails its test (#92).
+- After this batch the next audit will still list G0012, G0363 and G0013 with a VARIANT member each, by design (Test Connection's throwing validator, the deploy-time decimal-text reader, the web form getters); they belong in `accepted.jsonl` with these records once the run gives their new hashes.
+
+## 2026-11-15 — Connector reference, docs slice 1 (branch `docs/connector-reference`)
+
+Slice 1 of the docs restructure (#116): a user can now find out, from one page, which connectors can receive, which can send, and what each can do.
+
+- **`docs/user/connector-reference.md` rewritten.** An at-a-glance matrix (source, destination, what it covers, transport security, auth, Mirth equivalent) and one section per connector: what it does, security, a property table per direction, limits. SFTP was missing (#93). The property tables list every key the registry reads, including keys read by helpers (`vendor`, `frameStart`, `tls.*`).
+- **Docs guard.** `packages/server/src/__tests__/docs/connector-reference.test.ts` fails `pnpm gate` when the matrix, the directions or the section headings disagree with the core-models connector lists. Its Markdown parser (`packages/server/test/markdown.ts`) has its own tests. Property keys are not checked yet (#115).
+- **`docs/ops/tls-and-phi.md` corrected** (#95): the per-connector TLS list is now a link to the matrix, the HTTP destination, Database, SMTP, Kafka and AMQP TLS options are described as the code has them, and a "Check TLS is on" step covers the TCP/MLLP plaintext fallback (#98).
+- **Quickstart:** the FHIR suggestion now says a transformer must produce a FHIR resource first.
+- **AGENTS.md:** the docs guards in "Keep the docs true", a disclosure rule (security defects go to a draft advisory, decision 8 of #116), a verification row for connector changes, an "Adding a connector" checklist of the places nothing checks, and the hook rename. The reminder hook now also fires on registry edits.
+- **README:** the Documentation link is a question, and "10 connector types" is 13.
+- **Found on the way:** five connector settings that do nothing (#154); a DICOM destination file-path exposure, reported as a draft security advisory.
+
+## 2026-11-15 — TCP/MLLP property schema (branch `feat/115-tcp-mllp-props-schema`)
+
+First slice of #115 (D-274). TCP/MLLP source and destination properties have a strict schema in `core-models/src/schemas/tcp-mllp-connector.schema.ts`. Deploy validation and the registry both use it, so a misspelled key, an unsupported charset or a non-numeric setting fails the deploy instead of being ignored or failing on the first message. A test checks the web defaults and the form's charset and response-mode lists against it, and another checks the connector reference tables, which gained the six TCP/MLLP keys they were missing. Upgrade note with a query to find affected channels: `docs/ops/upgrade.md`. HTTP and DATABASE follow in their own PRs.
 
 ## 2026-11-15 — Connector integration lane in CI (gh-88, branch `ci/connector-itests`)
 
@@ -58,6 +85,7 @@ The first slice of the docs restructure (#116): before the docs can be checked a
 - **Permissions and roles:** `PERMISSIONS` and `Permission` move to core-models. The server seed derives its rows from them, the web file re-exports them under its old names, and roles everywhere use `USER_ROLE`. The seed and role code share one `permissionRow()` split.
 - **Typed checks:** `requirePermission`, `requireAllPermissions` and the socket room map take `Permission`.
 - **`pnpm shots`** read permissions by scraping the web file, which broke when it became a re-export; it imports them from core-models now.
+- **Direction check (#109, branch `fix/source-connector-direction`):** on top of the schema checks #131 added for create, update and JSON import, backup restore and Mirth import now check each channel in `ChannelImportService` and report a wrong-direction one in the import errors while the rest still import. Clone refuses a stored wrong-direction channel. The Mirth importer imports a wrong-direction connector as JAVASCRIPT with a warning.
 - **Found on the way:** the engine sandbox tests and three server engine tests depend on wall-clock timing and fail on a slower Windows machine (#125). An E2E spec fails intermittently with ECONNRESET (#126). Neither touches this branch's code.
 
 

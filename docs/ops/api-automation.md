@@ -1,6 +1,6 @@
 # Scripting the REST API
 
-GalvaniFlow has no command-line client (D-274). Scripts and CI jobs call the REST API directly. The full API is described at `/api-docs` on a running server. These recipes cover the usual pipeline: export a channel, commit it, then import and deploy it on another server.
+GalvaniFlow has no command-line client (D-280). Scripts and CI jobs call the REST API directly. The full API is described at `/api-docs` on a running server. These recipes cover the usual pipeline: export a channel, commit it, then import and deploy it on another server.
 
 Every response has the shape `{ "success": true, "data": ... }` or `{ "success": false, "error": { "code", "message" } }`, and a failure has a non-2xx status. Use `curl --fail-with-body` so a failed call fails the script and still prints the error.
 

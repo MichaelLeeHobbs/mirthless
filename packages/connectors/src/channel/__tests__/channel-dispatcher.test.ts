@@ -4,7 +4,25 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ConnectorMessage } from '../../base.js';
-import { ChannelDispatcher, type ChannelDispatcherConfig } from '../channel-dispatcher.js';
+import { ChannelDispatcher, resolveTarget, type ChannelDispatcherConfig } from '../channel-dispatcher.js';
+
+// The target channel id is a template like the others, filled by the shared rule (D-275).
+describe('resolveTarget', () => {
+  const variables: Readonly<Record<string, unknown>> = { site: 'east', none: null, count: 5, blank: '', obj: { a: 1 } };
+  it.each([
+    ['a plain name', 'route-${site}', 'route-east'],
+    ['a padded name', 'route-${ site }', 'route-east'],
+    ['a missing name as written', 'route-${other}', 'route-${other}'],
+    ['a null value as written', 'route-${none}', 'route-${none}'],
+    ['an inherited key as written', 'route-${toString}', 'route-${toString}'],
+    ['a number as its digits', 'route-${count}', 'route-5'],
+    ['an empty string as empty', 'route-${blank}', 'route-'],
+    ['an object as JSON', '${obj}', '{"a":1}'],
+    ['no variables', 'route-${site}', 'route-${site}'],
+  ])('fills %s', (label, target, expected) => {
+    expect(resolveTarget(target, label === 'no variables' ? undefined : variables)).toBe(expected);
+  });
+});
 import { registerChannel, clearChannelRegistry } from '../channel-registry.js';
 import type { RawMessage } from '../../base.js';
 

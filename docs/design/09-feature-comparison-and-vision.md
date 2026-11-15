@@ -235,7 +235,7 @@ These are capabilities that modern integration engines, developer tools, and clo
 
 **Why it matters:** Mirth channels live exclusively inside the Mirth database. Moving channels between environments requires manual export/import through the GUI. There is no version control, no diff, no approval workflow. Modern DevOps teams expect infrastructure-as-code patterns.
 
-**Implementation path:** Channel export/import and redeploy APIs exist, and `docs/ops/api-automation.md` scripts them with `curl`. The first CLI was removed because it only wrapped single endpoints (D-274); a CLI built for this workflow would be new. This is about building the workflow on top: a `deploy` CLI command that reads a directory of channel JSON files, diffs against the running server, and deploys changes. A GitHub Actions action that calls the CLI.
+**Implementation path:** Channel export/import and redeploy APIs exist, and `docs/ops/api-automation.md` scripts them with `curl`. The first CLI was removed because it only wrapped single endpoints (D-280); a CLI built for this workflow would be new. This is about building the workflow on top: a `deploy` CLI command that reads a directory of channel JSON files, diffs against the running server, and deploys changes. A GitHub Actions action that calls the CLI.
 
 ### 3.6 Cloud-Native Deployment (P2-P3)
 

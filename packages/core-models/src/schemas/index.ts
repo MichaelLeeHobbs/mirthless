@@ -33,3 +33,5 @@ export * from './mirth-import.schema.js';
 export * from './certificate.schema.js';
 export * from './deployment.schema.js';
 export * from './queue-connector.schema.js';
+export * from './connector-property-fields.js';
+export * from './tcp-mllp-connector.schema.js';

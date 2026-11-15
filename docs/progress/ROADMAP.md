@@ -178,7 +178,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] Send Message dialog (fire-and-forget)
 
 ### CLI (removed)
-- [x] ~~Commander-based CLI~~ removed 2026-11-15 (D-274). Scripts use the REST API (`docs/ops/api-automation.md`); break-glass admin recovery is #141.
+- [x] ~~Commander-based CLI~~ removed 2026-11-15 (D-280). Scripts use the REST API (`docs/ops/api-automation.md`); break-glass admin recovery is #141.
 
 ### Remaining for v1.0
 - [x] ~~Data type serialization — XML/JSON/HL7v2 parsed `msg` object in sandbox~~

@@ -8,7 +8,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { fillPlaceholders, placeholderNames, recordLookup, tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
@@ -28,15 +28,15 @@ export interface FileDispatcherConfig {
 
 /**
  * Resolve an output filename by substituting placeholders in the pattern with
- * values from the message context. One pass over the pattern: a value is
- * inserted as-is and never scanned for further placeholders.
+ * values from the message context, by the shared rule in
+ * {@link fillPlaceholders}. One pass over the pattern: a value is inserted
+ * as-is and never scanned for further placeholders.
  */
 export function resolveOutputFilename(
   pattern: string,
-  context: Readonly<Record<string, string>>,
+  context: Readonly<Record<string, unknown>>,
 ): string {
-  return pattern.replace(/\$\{([^}]*)\}/g, (placeholder, name: string) =>
-    Object.hasOwn(context, name) ? (context[name] ?? placeholder) : placeholder);
+  return fillPlaceholders(pattern, recordLookup(context));
 }
 
 /** Placeholders an output filename pattern can use. */
@@ -48,8 +48,7 @@ export const FILENAME_PLACEHOLDERS: readonly string[] = ['messageId', 'timestamp
  * into the filename as literal text.
  */
 export function unknownPlaceholders(pattern: string): readonly string[] {
-  const found = [...pattern.matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1] ?? '');
-  return [...new Set(found.filter((name) => !FILENAME_PLACEHOLDERS.includes(name)))];
+  return placeholderNames(pattern).filter((name) => !FILENAME_PLACEHOLDERS.includes(name));
 }
 
 /** Error text for a pattern that failed {@link unknownPlaceholders}. */
