@@ -36,7 +36,7 @@
     "ssh2-sftp-client": "^12.1.1"
   },
   "devDependencies": {
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
     "@types/ssh2-sftp-client": "^9.0.6",
