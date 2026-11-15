@@ -435,6 +435,14 @@ describe('ConnectionTestService', () => {
       expect(result.error.message).toContain('host');
     });
 
+    it.each(['/var/run/postgresql', '127.0.0.1'])('refuses %s before opening a pool', async (host) => {
+      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host, port: 5432, database: 'testdb' });
+
+      expect(result.ok).toBe(false);
+      expect(mockPoolVendor).not.toHaveBeenCalled();
+      expect(mockPoolCreate).not.toHaveBeenCalled();
+    });
+
     it('closes the pool whether or not it connected', async () => {
       mockPoolCreate.mockResolvedValueOnce({ ok: false, value: null, error: new Error('refused') });
       await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host: 'db.example.com', port: 5432, database: 'testdb' });
