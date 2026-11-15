@@ -151,6 +151,86 @@ describe('GlobalMapProxy', () => {
     });
   });
 
+  describe('an API edit while a script value is being saved', () => {
+    /** Make the next save hang until the returned function is called. */
+    function holdNextSave(): () => void {
+      let release: () => void = () => {};
+      s.save.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+      return () => release();
+    }
+
+    it('saves the API value again after the in-flight script save, so the database ends on it', async () => {
+      const release = holdNextSave();
+      proxy.applyChanges({}, { k: 'V1' });
+      const flushing = proxy.flush();
+
+      proxy.set({ key: 'k', value: 'V2', isJson: false }); // API already wrote V2
+      release(); // V1 lands after V2
+      await flushing;
+      await proxy.flush();
+
+      expect(s.save.mock.calls.map((c) => c[1])).toEqual(['V1', 'V2']);
+      expect(proxy.toRecord()['k']).toBe('V2');
+    });
+
+    it('removes the key again after the in-flight save when the API deleted it', async () => {
+      const release = holdNextSave();
+      proxy.applyChanges({}, { k: 'V1' });
+      const flushing = proxy.flush();
+
+      proxy.delete('k');
+      release();
+      await flushing;
+      await proxy.flush();
+
+      expect(s.remove).toHaveBeenCalledWith('k');
+      expect(s.remove.mock.invocationCallOrder[0]).toBeGreaterThan(s.save.mock.invocationCallOrder[0]!);
+    });
+
+    it('removes in-flight keys again after the API cleared the map', async () => {
+      const release = holdNextSave();
+      proxy.applyChanges({}, { k: 'V1' });
+      const flushing = proxy.flush();
+
+      proxy.clear();
+      release();
+      await flushing;
+      await proxy.flush();
+
+      expect(s.remove).toHaveBeenCalledWith('k');
+    });
+
+    it('reports a failed re-save and retries it on the next flush', async () => {
+      const release = holdNextSave();
+      proxy.applyChanges({}, { k: 'V1' });
+      const flushing = proxy.flush();
+
+      s.save.mockRejectedValueOnce(new Error('db down'));
+      proxy.set({ key: 'k', value: 'V2', isJson: false });
+      release();
+      await flushing;
+      await proxy.flush(); // re-save of V2 fails and is reported
+      await proxy.flush(); // and is retried
+
+      expect(s.onFlushError).toHaveBeenCalledWith('k', expect.any(Error));
+      expect(s.save.mock.calls.at(-1)).toEqual(['k', 'V2', false]);
+    });
+
+    it('writes a key in the order its flushes started', async () => {
+      const release = holdNextSave();
+      proxy.applyChanges({}, { k: 'V1' });
+      const first = proxy.flush();
+      proxy.applyChanges({ k: 'V1' }, { k: 'V3' });
+      const second = proxy.flush();
+
+      expect(s.save).toHaveBeenCalledTimes(1); // V3 waits for V1
+      release();
+      await Promise.all([first, second]);
+
+      expect(s.save.mock.calls.map((c) => c[1])).toEqual(['V1', 'V3']);
+    });
+  });
+
   describe('timer', () => {
     it('flushes on the interval and stops on dispose', async () => {
       vi.useFakeTimers();

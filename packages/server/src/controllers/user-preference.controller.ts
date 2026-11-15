@@ -9,14 +9,26 @@ import { UserPreferenceService } from '../services/user-preference.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 
+/**
+ * The authenticated user's id, or null after answering 401. Preferences belong
+ * to a user, so a request without one must fail rather than read user ''.
+ */
+function requireUserId(req: Request, res: Response): string | null {
+  const userId = req.user?.id;
+  if (userId) return userId;
+  res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+  return null;
+}
+
 export class UserPreferenceController {
   static async list(req: Request, res: Response): Promise<void> {
-    const userId = req.user?.id ?? '';
+    const userId = requireUserId(req, res);
+    if (userId === null) return;
     const result = await UserPreferenceService.list(userId);
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list user preferences');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Internal server error' } });
+      res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }
 
@@ -24,7 +36,8 @@ export class UserPreferenceController {
   }
 
   static async getByKey(req: Request, res: Response): Promise<void> {
-    const userId = req.user?.id ?? '';
+    const userId = requireUserId(req, res);
+    if (userId === null) return;
     const key = req.params['key'] as string;
     const result = await UserPreferenceService.getByKey(userId, key);
 
@@ -39,7 +52,8 @@ export class UserPreferenceController {
   }
 
   static async upsert(req: Request, res: Response): Promise<void> {
-    const userId = req.user?.id ?? '';
+    const userId = requireUserId(req, res);
+    if (userId === null) return;
     const input = req.body as UpsertPreferenceInput;
     const result = await UserPreferenceService.upsert(userId, input.key, input.value);
 
@@ -53,7 +67,8 @@ export class UserPreferenceController {
   }
 
   static async bulkUpsert(req: Request, res: Response): Promise<void> {
-    const userId = req.user?.id ?? '';
+    const userId = requireUserId(req, res);
+    if (userId === null) return;
     const input = req.body as BulkUpsertPreferencesInput;
     const result = await UserPreferenceService.bulkUpsert(userId, input.entries);
 
@@ -67,7 +82,8 @@ export class UserPreferenceController {
   }
 
   static async delete(req: Request, res: Response): Promise<void> {
-    const userId = req.user?.id ?? '';
+    const userId = requireUserId(req, res);
+    if (userId === null) return;
     const key = req.params['key'] as string;
     const result = await UserPreferenceService.delete(userId, key);
 

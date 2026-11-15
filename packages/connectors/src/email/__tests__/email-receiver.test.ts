@@ -462,6 +462,27 @@ describe('EmailReceiver', () => {
       expect(errors.some((e) => e.msg.includes('dispatch failed'))).toBe(true);
       expect(client.markRead).not.toHaveBeenCalled();
     });
+
+    it('keeps processing the rest of the cycle and the client when one email throws', async () => {
+      const client = makeMockClient([makeMessage({ uid: 1 }), makeMessage({ uid: 2, body: 'second' })]);
+      const dispatched: string[] = [];
+      const { logger, errors } = makeMockLogger();
+
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client), logger);
+      receiver.setDispatcher(async (raw) => {
+        if (raw.content !== 'second') throw new Error('dispatcher blew up');
+        dispatched.push(raw.content);
+        return { ok: true as const, value: { messageId: 2 }, error: null };
+      });
+      await receiver.onStart();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(dispatched).toEqual(['second']);
+      expect(client.markRead).toHaveBeenCalledWith(2);
+      expect(client.disconnect).not.toHaveBeenCalled();
+      expect(errors.some((e) => e.msg.includes('could not be processed') && e.obj['uid'] === 1)).toBe(true);
+    });
   });
 
   describe('connection error handling', () => {

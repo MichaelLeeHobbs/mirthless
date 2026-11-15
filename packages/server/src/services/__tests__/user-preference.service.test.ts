@@ -222,5 +222,33 @@ describe('UserPreferenceService', () => {
       // Verify single insert call (not N+1)
       expect(mockInsert).toHaveBeenCalledTimes(1);
     });
+
+    it('succeeds as a no-op for an empty list without touching the database', async () => {
+      const result = await UserPreferenceService.bulkUpsert(USER_ID, []);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toEqual([]);
+      expect(mockInsert).not.toHaveBeenCalled();
+    });
+
+    it('sends one row per key, keeping the last value of a duplicated key', async () => {
+      mockReturning.mockResolvedValueOnce([
+        makeEntry({ key: 'theme', value: 'light' }),
+        makeEntry({ key: 'locale', value: 'en-US' }),
+      ]);
+
+      const result = await UserPreferenceService.bulkUpsert(USER_ID, [
+        { key: 'theme', value: 'dark' },
+        { key: 'locale', value: 'en-US' },
+        { key: 'theme', value: 'light' },
+      ]);
+
+      expect(result.ok).toBe(true);
+      expect(mockInsertValues).toHaveBeenCalledWith([
+        { userId: USER_ID, key: 'theme', value: 'light' },
+        { userId: USER_ID, key: 'locale', value: 'en-US' },
+      ]);
+    });
   });
 });
