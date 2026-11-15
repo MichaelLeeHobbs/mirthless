@@ -9,8 +9,6 @@ allowBuilds:
   '@scarf/scarf': false
   core-js-pure: false
 
-# Security overrides — bounded to the current major so we only take the patch.
-# adm-zip is pinned to 0.6.1 under dcmjs, which declares it but never imports it.
 minimumReleaseAgeExclude:
   - '@tanstack/query-core@5.105.0'
   - '@tanstack/react-query@5.105.0'
@@ -26,16 +24,22 @@ minimumReleaseAgeExclude:
   - '@typescript-eslint/visitor-keys@8.72.1'
   - typescript-eslint@8.72.1
 
-# Monaco's suggest widget compares page coordinates with the viewport height,
-# so on a scrolled page completion opened upward over the editor. Drop this
-# patch when an upgrade fixes suggestWidget.js _layout (see D-263).
+# Monaco places completion and its documentation panel by page coordinates,
+# so on a scrolled page they opened in the wrong place. Drop this patch when
+# an upgrade fixes suggestWidget.js and overlayWidgets.js (see D-277).
 patchedDependencies:
   monaco-editor@0.55.1: patches/monaco-editor@0.55.1.patch
 
+# Security overrides — bounded to the current major so we only take the patch.
+# adm-zip is pinned to 0.6.1 under dcmjs, which declares it but never imports it.
+# Two cross a major because the parent's range has no patched release:
+# dcmjs 0.50 -> 0.52 (dcmjs-dimse asks for ^0.50.1) and minimatch 10 -> 11
+# (@typescript-eslint/typescript-estree asks for ^10.2.2). Drop them when the
+# parents move.
 overrides:
   express-rate-limit@8: '>=8.2.2 <9'
   socket.io-parser@4: '>=4.2.7 <5'
-  fast-xml-parser@5: '>=5.10.1 <6'
+  fast-xml-parser@5: '>=5.12.0 <6'
   ws@8: '>=8.20.1 <9'
   yaml@1: '>=1.10.3 <2'
   dompurify@3: '>=3.4.17 <4'
@@ -45,3 +49,5 @@ overrides:
   compression@1: '>=1.8.2 <2'
   ip-address@10: '>=10.7.4 <11'
   adm-zip@0.5: 0.6.1
+  dcmjs@0.50: '>=0.52.0 <0.53'
+  minimatch@10: '>=11.0.1 <12'

@@ -328,6 +328,46 @@ describe('FileDispatcher', () => {
       const writeContent = mockWriteFile.mock.calls[0]![1];
       expect(Buffer.isBuffer(writeContent)).toBe(true);
       expect(writeContent).toEqual(Buffer.from([0x00, 0x01, 0xFF]));
+      expect(mockWriteFile.mock.calls[0]![2]).toBeUndefined();
+    });
+
+    it('writes text in the normalized configured charset', async () => {
+      dispatcher = new FileDispatcher(makeConfig({
+        charset: 'ISO-8859-1' as BufferEncoding,
+        tempFileEnabled: false,
+      }));
+      await dispatcher.onStart();
+
+      await dispatcher.send(makeMessage({ content: 'Café' }), AbortSignal.timeout(5_000));
+
+      expect(mockWriteFile.mock.calls[0]![1]).toBe('Café');
+      expect(mockWriteFile.mock.calls[0]![2]).toEqual({ encoding: 'latin1' });
+    });
+
+    it('appends text in the normalized configured charset', async () => {
+      dispatcher = new FileDispatcher(makeConfig({
+        charset: 'ISO-8859-1' as BufferEncoding,
+        appendMode: true,
+      }));
+      await dispatcher.onStart();
+
+      await dispatcher.send(makeMessage({ content: 'Café' }), AbortSignal.timeout(5_000));
+
+      expect(mockAppendFile.mock.calls[0]![1]).toBe('Café');
+      expect(mockAppendFile.mock.calls[0]![2]).toEqual({ encoding: 'latin1' });
+    });
+
+    it('appends base64 decoded bytes with no encoding in binary mode', async () => {
+      dispatcher = new FileDispatcher(makeConfig({ binary: true, appendMode: true }));
+      await dispatcher.onStart();
+
+      const binaryBase64 = Buffer.from([0x00, 0x01, 0xFF]).toString('base64');
+      await dispatcher.send(makeMessage({ content: binaryBase64 }), AbortSignal.timeout(5_000));
+
+      const appended = mockAppendFile.mock.calls[0]![1];
+      expect(Buffer.isBuffer(appended)).toBe(true);
+      expect(appended).toEqual(Buffer.from([0x00, 0x01, 0xFF]));
+      expect(mockAppendFile.mock.calls[0]![2]).toBeUndefined();
     });
   });
 

@@ -90,6 +90,24 @@ describe('GlobalMapProxy', () => {
       expect(s.remove).toHaveBeenCalledWith('gone');
       expect(s.save).not.toHaveBeenCalled();
     });
+
+    it('marks both set and removed keys in one call, and only those', async () => {
+      proxy.load([{ key: 'keep', value: 'k', isJson: false }, { key: 'drop', value: 'd', isJson: false }]);
+      proxy.applyChanges(proxy.toRecord(), { keep: 'k', added: 'a' });
+      await proxy.flush();
+      expect(s.save).toHaveBeenCalledTimes(1);
+      expect(s.save).toHaveBeenCalledWith('added', 'a', false);
+      expect(s.remove).toHaveBeenCalledTimes(1);
+      expect(s.remove).toHaveBeenCalledWith('drop');
+    });
+
+    it('saves a value a script set to null rather than removing the key', async () => {
+      proxy.applyChanges({}, { n: null });
+      expect(proxy.toRecord()).toEqual({ n: null });
+      await proxy.flush();
+      expect(s.save).toHaveBeenCalledWith('n', 'null', true);
+      expect(s.remove).not.toHaveBeenCalled();
+    });
   });
 
   describe('flush', () => {
@@ -134,10 +152,46 @@ describe('GlobalMapProxy', () => {
   });
 
   describe('edits made outside scripts', () => {
-    it('set replaces the value without saving it again', async () => {
+    it('set replaces the value, and the next flush writes the API value, not the script one', async () => {
       proxy.applyChanges({}, { k: 'fromScript' });
       proxy.set({ key: 'k', value: 'fromApi', isJson: false });
       expect(proxy.toRecord()['k']).toBe('fromApi');
+      await proxy.flush();
+      expect(s.save.mock.calls).toEqual([['k', 'fromApi', false]]);
+    });
+
+    // An API edit marks the key dirty (#92): a script save of the same key can
+    // commit after the API's write, so the next flush rewrites the API's state.
+
+    it('set after a script removed the key keeps the value and writes it again', async () => {
+      proxy.load([{ key: 'k', value: 'old', isJson: false }]);
+      proxy.applyChanges(proxy.toRecord(), {});
+      proxy.set({ key: 'k', value: '{"n":1}', isJson: true });
+      expect(proxy.toRecord()).toEqual({ k: { n: 1 } });
+      await proxy.flush();
+      expect(s.save.mock.calls).toEqual([['k', '{"n":1}', true]]);
+      expect(s.remove).not.toHaveBeenCalled();
+    });
+
+    it('delete drops a pending script change and the next flush removes the key', async () => {
+      proxy.applyChanges({}, { k: 'fromScript' });
+      proxy.delete('k');
+      await proxy.flush();
+      expect(s.save).not.toHaveBeenCalled();
+      expect(s.remove.mock.calls).toEqual([['k']]);
+    });
+
+    it('clear drops every pending script change and the next flush removes each key', async () => {
+      proxy.load([{ key: 'gone', value: 'x', isJson: false }]);
+      proxy.applyChanges(proxy.toRecord(), { added: 1 });
+      proxy.clear();
+      await proxy.flush();
+      expect(s.save).not.toHaveBeenCalled();
+      expect(s.remove.mock.calls.map((c) => c[0]).sort()).toEqual(['added', 'gone']);
+    });
+
+    it('load does not mark entries for saving', async () => {
+      proxy.load([{ key: 'k', value: 'v', isJson: false }]);
       await proxy.flush();
       expect(s.save).not.toHaveBeenCalled();
     });
@@ -148,6 +202,115 @@ describe('GlobalMapProxy', () => {
       expect(proxy.toRecord()).toEqual({ b: '2' });
       proxy.clear();
       expect(proxy.toRecord()).toEqual({});
+    });
+  });
+
+  describe('an API edit while a script value is being saved', () => {
+    /** Make the next save hang until the returned function is called. */
+    function holdNextSave(): () => void {
+      let release: () => void = () => {};
+      s.save.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+      return () => release();
+    }
+
+    it('saves the API value again after the in-flight script save, so the database ends on it', async () => {
+      const release = holdNextSave();
+      proxy.applyChanges({}, { k: 'V1' });
+      const flushing = proxy.flush();
+
+      proxy.set({ key: 'k', value: 'V2', isJson: false }); // API already wrote V2
+      release(); // V1 lands after V2
+      await flushing;
+      await proxy.flush();
+
+      expect(s.save.mock.calls.map((c) => c[1])).toEqual(['V1', 'V2']);
+      expect(proxy.toRecord()['k']).toBe('V2');
+    });
+
+    it('saves the API value again when the script save settled just before set() ran', async () => {
+      // The API commits V2, the script's V1 commits after it on another connection
+      // and its save resolves, and only then does the API path call set(V2).
+      proxy.applyChanges({}, { k: 'V1' });
+      await proxy.flush();
+      proxy.set({ key: 'k', value: 'V2', isJson: false });
+      await proxy.flush();
+
+      expect(s.save.mock.calls.map((c) => c[1])).toEqual(['V1', 'V2']);
+    });
+
+    it('removes the key again when the script save settled just before delete() ran', async () => {
+      proxy.applyChanges({}, { k: 'V1' });
+      await proxy.flush();
+      proxy.delete('k');
+      await proxy.flush();
+
+      expect(s.remove).toHaveBeenCalledWith('k');
+    });
+
+    it('removes every key again when the script save settled just before clear() ran', async () => {
+      proxy.applyChanges({}, { k: 'V1' });
+      await proxy.flush();
+      proxy.clear();
+      await proxy.flush();
+
+      expect(s.remove).toHaveBeenCalledWith('k');
+    });
+
+    it('removes the key again after the in-flight save when the API deleted it', async () => {
+      const release = holdNextSave();
+      proxy.applyChanges({}, { k: 'V1' });
+      const flushing = proxy.flush();
+
+      proxy.delete('k');
+      release();
+      await flushing;
+      await proxy.flush();
+
+      expect(s.remove).toHaveBeenCalledWith('k');
+      expect(s.remove.mock.invocationCallOrder[0]).toBeGreaterThan(s.save.mock.invocationCallOrder[0]!);
+    });
+
+    it('removes in-flight keys again after the API cleared the map', async () => {
+      const release = holdNextSave();
+      proxy.applyChanges({}, { k: 'V1' });
+      const flushing = proxy.flush();
+
+      proxy.clear();
+      release();
+      await flushing;
+      await proxy.flush();
+
+      expect(s.remove).toHaveBeenCalledWith('k');
+    });
+
+    it('reports a failed re-save and retries it on the next flush', async () => {
+      const release = holdNextSave();
+      proxy.applyChanges({}, { k: 'V1' });
+      const flushing = proxy.flush();
+
+      s.save.mockRejectedValueOnce(new Error('db down'));
+      proxy.set({ key: 'k', value: 'V2', isJson: false });
+      release();
+      await flushing;
+      await proxy.flush(); // re-save of V2 fails and is reported
+      await proxy.flush(); // and is retried
+
+      expect(s.onFlushError).toHaveBeenCalledWith('k', expect.any(Error));
+      expect(s.save.mock.calls.at(-1)).toEqual(['k', 'V2', false]);
+    });
+
+    it('writes a key in the order its flushes started', async () => {
+      const release = holdNextSave();
+      proxy.applyChanges({}, { k: 'V1' });
+      const first = proxy.flush();
+      proxy.applyChanges({ k: 'V1' }, { k: 'V3' });
+      const second = proxy.flush();
+
+      expect(s.save).toHaveBeenCalledTimes(1); // V3 waits for V1
+      release();
+      await Promise.all([first, second]);
+
+      expect(s.save.mock.calls.map((c) => c[1])).toEqual(['V1', 'V3']);
     });
   });
 

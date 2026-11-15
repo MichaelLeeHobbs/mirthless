@@ -31,8 +31,10 @@ interface LibraryTreeProps {
   readonly onCreateTemplate: (libraryId: string) => void;
   readonly onEditLibrary: (library: CodeTemplateLibrary) => void;
   readonly onDeleteLibrary: (library: CodeTemplateLibrary) => void;
-  /** Hide add/edit/delete buttons for users without code_templates:write. */
+  /** Hide add/edit buttons for users without code_templates:write. */
   readonly readOnly: boolean;
+  /** Show the delete library button only to users with code_templates:delete. */
+  readonly canDelete: boolean;
 }
 
 export function LibraryTree({
@@ -44,6 +46,7 @@ export function LibraryTree({
   onEditLibrary,
   onDeleteLibrary,
   readOnly,
+  canDelete,
 }: LibraryTreeProps): ReactNode {
   const [expandedLibraries, setExpandedLibraries] = useState<ReadonlySet<string>>(
     new Set(libraries.map((l) => l.id)),
@@ -115,6 +118,8 @@ export function LibraryTree({
                     <EditIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
+              </>)}
+              {canDelete ? (
                 <Tooltip title="Delete library">
                   <IconButton
                     size="small"
@@ -123,7 +128,7 @@ export function LibraryTree({
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
-              </>)}
+              ) : null}
               {isExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
             </ListItemButton>
             <Collapse in={isExpanded} timeout="auto" unmountOnExit>

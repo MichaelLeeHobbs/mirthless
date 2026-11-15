@@ -2,6 +2,7 @@
 // Email Service Tests
 // ===========================================
 
+import { createRequire } from 'node:module';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ----- Mocks -----
@@ -277,6 +278,70 @@ describe('EmailService', () => {
         authUser: 'user@example.com',
         authPass: 'secret123',
       });
+    });
+  });
+
+  // ===== default transport factory (nodemailer boundary) =====
+
+  describe('default transport factory', () => {
+    type CreateTransport = (opts: Record<string, unknown>) => unknown;
+    const nodemailer = createRequire(import.meta.url)('nodemailer') as { createTransport: CreateTransport };
+    const realSendMail = vi.fn().mockResolvedValue({ messageId: 'real-id' });
+    const realClose = vi.fn();
+
+    beforeEach(() => {
+      resetTransportFactory();
+      vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail: realSendMail, close: realClose });
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    /** The single options object nodemailer.createTransport received. */
+    function transportOptions(): Record<string, unknown> {
+      const spy = vi.mocked(nodemailer.createTransport);
+      expect(spy).toHaveBeenCalledTimes(1);
+      return spy.mock.calls[0]![0];
+    }
+
+    /** requireTLS must stay off for server mail: absent or false, never true. */
+    function expectRequireTlsOff(opts: Record<string, unknown>): void {
+      expect(opts['requireTLS'] === undefined || opts['requireTLS'] === false).toBe(true);
+    }
+
+    it('hands nodemailer host, port, secure and auth when a user is set', async () => {
+      mockSmtpSettings({ 'smtp.secure': 'true', 'smtp.port': '465' });
+
+      const result = await EmailService.sendMail(['admin@example.com'], 'Subj', 'Body');
+
+      expect(result.ok).toBe(true);
+      const { requireTLS: _requireTLS, ...rest } = transportOptions();
+      expect(rest).toEqual({
+        host: 'smtp.example.com',
+        port: 465,
+        secure: true,
+        auth: { user: 'user@example.com', pass: 'secret123' },
+      });
+      expectRequireTlsOff(transportOptions());
+      expect(realSendMail).toHaveBeenCalledWith({
+        from: 'alerts@example.com',
+        to: 'admin@example.com',
+        subject: 'Subj',
+        text: 'Body',
+      });
+      expect(realClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends no auth to nodemailer when no user is set', async () => {
+      mockSmtpSettings({ 'smtp.auth_user': '', 'smtp.auth_pass': 'ignored' });
+
+      const result = await EmailService.sendMail(['admin@example.com'], 'Subj', 'Body');
+
+      expect(result.ok).toBe(true);
+      const { requireTLS: _requireTLS, ...rest } = transportOptions();
+      expect(rest).toEqual({ host: 'smtp.example.com', port: 587, secure: false });
+      expectRequireTlsOff(transportOptions());
     });
   });
 });

@@ -10,6 +10,7 @@ import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../b
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
+import { connectFresh, closeQuietly } from '../client-lifecycle.js';
 import { createRequire } from 'node:module';
 
 // The package is ESM, so a bare `require` is undefined at runtime (vitest
@@ -108,6 +109,8 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
+  /** The email being dispatched and post-processed, which stop waits for so it gets its post-action. */
+  private dispatchInFlight: Promise<void> | null = null;
   private client: ImapClient | null = null;
   /**
    * UIDs already dispatched whose post-action (mark read / move / delete) has
@@ -159,8 +162,8 @@ export class EmailReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
-      this.client = this.createClient(this.config);
-      await withTimeout(this.client.connect(), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
+      // Stored only once connected: a failed start must not leave stop to log out a dead session.
+      await this.reconnect();
 
       this.pollTimer = setInterval(() => {
         void this.pollCycle();
@@ -171,6 +174,10 @@ export class EmailReceiver implements SourceConnectorRuntime {
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.clearPollTimer();
+      // Let an email being dispatched finish its post-action on the open session;
+      // logging out first would leave it unread and dispatch it again after a
+      // resume. A fetch in progress is not waited for: it dispatches nothing.
+      if (this.dispatchInFlight !== null) await this.dispatchInFlight;
       await this.disconnectClient();
     });
   }
@@ -200,8 +207,17 @@ export class EmailReceiver implements SourceConnectorRuntime {
         this.client.fetchUnread(this.config.folder), IMAP_OP_TIMEOUT_MS, 'IMAP fetchUnread',
       );
       for (const msg of messages) {
-        if (this.matchesSubjectFilter(msg)) {
-          await this.processMessage(msg);
+        if (!this.matchesSubjectFilter(msg)) continue;
+        // One email that throws must not stop the emails after it or drop a
+        // working connection. It stays unread, so the next poll retries it.
+        const processing = this.processMessage(msg);
+        this.dispatchInFlight = processing.catch(() => undefined);
+        try {
+          await processing;
+        } catch (err) {
+          this.logger.error({ ...errorInfo(err), uid: msg.uid }, 'Email could not be processed; continuing with the next email');
+        } finally {
+          this.dispatchInFlight = null;
         }
       }
     } catch (err) {
@@ -219,18 +235,20 @@ export class EmailReceiver implements SourceConnectorRuntime {
   /** (Re)establish the IMAP connection. Throws on failure (caught by caller). */
   private async reconnect(): Promise<void> {
     const client = this.createClient(this.config);
-    await withTimeout(client.connect(), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
-    this.client = client;
+    this.client = await connectFresh(client, IMAP_OP_TIMEOUT_MS, 'IMAP connect', () => client.disconnect());
   }
 
-  /** Disconnect the current client, ignoring errors. */
+  /** Disconnect the current client under a timeout, logging and ignoring errors. */
   private async safeDisconnect(): Promise<void> {
-    if (!this.client) return;
-    try {
-      await this.client.disconnect();
-    } catch (err) {
-      this.logger.warn(errorInfo(err), 'Error disconnecting IMAP client during reconnect');
-    }
+    const client = this.client;
+    if (!client) return;
+    await closeQuietly({
+      close: () => client.disconnect(),
+      timeoutMs: IMAP_OP_TIMEOUT_MS,
+      label: 'IMAP disconnect',
+      logger: this.logger,
+      message: 'Error disconnecting IMAP client during reconnect',
+    });
   }
 
   /** Check if a message matches the subject filter (if configured). */
@@ -293,9 +311,10 @@ export class EmailReceiver implements SourceConnectorRuntime {
    * is logged, not fatal: the in-memory set still prevents a duplicate until restart.
    */
   private async recordDispatched(uid: number): Promise<void> {
-    if (!this.client) return;
+    const client = this.client;
     try {
-      const stored = await withTimeout(this.client.markDispatched(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markDispatched');
+      if (!client) throw new Error('IMAP client is not connected (channel stopped or halted)');
+      const stored = await withTimeout(client.markDispatched(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markDispatched');
       if (!stored && !this.warnedNoKeywords) {
         this.warnedNoKeywords = true;
         this.logger.warn(
@@ -313,7 +332,9 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   /** Apply post-processing action to a processed email. */
   private async postProcess(uid: number): Promise<void> {
-    if (!this.client) return;
+    // Throw rather than return: the caller would take a silent return as done and
+    // stop tracking an email that is still unread, which a later poll then dispatches again.
+    if (!this.client) throw new Error('IMAP client is not connected (channel stopped or halted)');
 
     switch (this.config.postAction) {
       case EMAIL_POST_ACTION.DELETE:
@@ -330,9 +351,11 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   /** Disconnect the IMAP client if connected. */
   private async disconnectClient(): Promise<void> {
-    if (this.client) {
-      await withTimeout(this.client.disconnect(), IMAP_OP_TIMEOUT_MS, 'IMAP disconnect');
-    }
+    const client = this.client;
+    if (!client) return;
+    // Drop it first: a later stop or a failed restart must not log this session out again.
+    this.client = null;
+    await withTimeout(client.disconnect(), IMAP_OP_TIMEOUT_MS, 'IMAP disconnect');
   }
 
   /** Clear the poll interval timer. */

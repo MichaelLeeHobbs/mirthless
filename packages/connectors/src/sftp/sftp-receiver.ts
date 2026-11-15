@@ -11,10 +11,11 @@
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
-import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { matchGlob } from '../file/file-receiver.js';
 import { withTimeout } from '../timeout.js';
+import { connectFresh, closeQuietly } from '../client-lifecycle.js';
+import { QuarantineLedger, dispatchQuarantined, type LedgerStorage } from '../quarantine-ledger.js';
 import {
   createSsh2SftpClient,
   validateAuth,
@@ -84,21 +85,20 @@ export class SftpReceiver implements SourceConnectorRuntime {
   /** False once stop or halt is asked for, so a poll cycle in progress takes no more files. */
   private running = false;
   private client: SftpClient | null = null;
-  /** Quarantined files already reported in this run, so each is logged once, not every poll. */
-  private readonly quarantineReported = new Set<string>();
   /**
-   * Files that dispatched successfully but whose post-action (delete/move)
-   * failed. Tracked by name+modifyTime so they are NOT re-dispatched next
-   * cycle, preventing duplicate delivery. Persisted to a remote sidecar ledger.
+   * Files already dispatched whose pipeline recorded an error or whose
+   * post-action (delete/move) failed, keyed by name+modifyTime so they are NOT
+   * re-dispatched. Persisted to a remote sidecar ledger.
    */
-  private readonly quarantined = new Set<string>();
-  private readonly ledgerPath: string;
+  private readonly quarantine: QuarantineLedger;
 
   constructor(config: SftpReceiverConfig, createClient?: SftpClientFactory, logger?: ConnectorLogger) {
     this.config = config;
     this.createClient = createClient ?? createSsh2SftpClient;
     this.logger = logger ?? createConnectorLogger('SFTP');
-    this.ledgerPath = joinRemote(config.remoteDirectory, QUARANTINE_LEDGER);
+    this.quarantine = new QuarantineLedger(
+      this.remoteLedgerStorage(), joinRemote(config.remoteDirectory, QUARANTINE_LEDGER), this.logger,
+    );
   }
 
   setDispatcher(dispatcher: MessageDispatcher): void {
@@ -136,7 +136,12 @@ export class SftpReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
       await this.reconnect();
-      await this.loadQuarantine();
+      // Merge the current and legacy (pre-rename) ledgers, so entries
+      // quarantined before the rename are still skipped.
+      await this.quarantine.load([
+        joinRemote(this.config.remoteDirectory, QUARANTINE_LEDGER),
+        joinRemote(this.config.remoteDirectory, LEGACY_QUARANTINE_LEDGER),
+      ]);
       this.running = true;
       this.pollTimer = setInterval(() => {
         void this.pollCycle();
@@ -211,8 +216,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
   /** (Re)establish the SFTP connection. Throws on failure (caught by caller). */
   private async reconnect(): Promise<void> {
     const client = this.createClient(this.config);
-    await withTimeout(client.connect(), SFTP_OP_TIMEOUT_MS, 'SFTP connect');
-    this.client = client;
+    this.client = await connectFresh(client, SFTP_OP_TIMEOUT_MS, 'SFTP connect', () => client.end());
   }
 
   /** List remote entries matching the glob, sorted by name, respecting file age. */
@@ -237,23 +241,23 @@ export class SftpReceiver implements SourceConnectorRuntime {
   /** Download a single file, dispatch it, and apply post-processing. */
   private async processFile(entry: SftpFileInfo): Promise<void> {
     if (!this.dispatcher || !this.client) return;
+    const client = this.client;
+    await dispatchQuarantined({
+      ledger: this.quarantine,
+      logger: this.logger,
+      key: `${entry.name}:${String(entry.modifyTime)}`,
+      file: entry.name,
+      read: () => this.downloadMessage(client, entry),
+      dispatcher: this.dispatcher,
+      postProcess: () => this.postProcess(entry),
+    });
+  }
 
-    const key = `${entry.name}:${String(entry.modifyTime)}`;
-    if (this.quarantined.has(key)) {
-      if (!this.quarantineReported.has(key)) {
-        this.quarantineReported.add(key);
-        this.logger.error(
-          { file: entry.name },
-          'File quarantined after an earlier dispatch; skipping to avoid duplicate delivery (reported once per start)',
-        );
-      }
-      return;
-    }
-
+  /** Download one file into a message. Throws when the download fails or times out. */
+  private async downloadMessage(client: SftpClient, entry: SftpFileInfo): Promise<RawMessage> {
     const remotePath = joinRemote(this.config.remoteDirectory, entry.name);
-    const buffer = await withTimeout(this.client.get(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP get');
-
-    const raw: RawMessage = {
+    const buffer = await withTimeout(client.get(remotePath), SFTP_OP_TIMEOUT_MS, 'SFTP get');
+    return {
       content: buffer.toString(normalizeEncoding(this.config.charset)),
       sourceMap: {
         originalFilename: entry.name,
@@ -262,34 +266,6 @@ export class SftpReceiver implements SourceConnectorRuntime {
         lastModified: entry.modifyTime,
       },
     };
-
-    const result = await this.dispatcher(raw);
-    // Not taken by the pipeline at all: leave the file for the next poll.
-    if (!result.ok) return;
-
-    const failure = dispatchFailure(result);
-    if (failure !== null) {
-      // Recorded with an error. Do not delete or move the file (that would report
-      // success), and do not read it again (that would process it twice).
-      this.quarantined.add(key);
-      await this.persistQuarantine();
-      this.logger.error(
-        { ...errorInfo(failure), file: entry.name },
-        'Pipeline recorded an error for this file; file kept in place and quarantined so it is not read again',
-      );
-      return;
-    }
-
-    try {
-      await this.postProcess(entry);
-    } catch (err) {
-      this.quarantined.add(key);
-      await this.persistQuarantine();
-      this.logger.error(
-        { ...errorInfo(err), file: entry.name },
-        'Post-action failed after successful dispatch; quarantining file',
-      );
-    }
   }
 
   /** Apply post-processing action to a processed file. */
@@ -313,86 +289,42 @@ export class SftpReceiver implements SourceConnectorRuntime {
   }
 
   /**
-   * Load the current and legacy remote ledgers and merge them into memory, so
-   * entries quarantined before the rename are still skipped.
+   * Ledgers in the remote directory, every operation under a timeout. With no
+   * client, or when the existence check fails, a ledger reads as absent and a
+   * write is skipped.
    */
-  private async loadQuarantine(): Promise<void> {
-    await this.loadLedgerFile(this.ledgerPath);
-    await this.loadLedgerFile(joinRemote(this.config.remoteDirectory, LEGACY_QUARANTINE_LEDGER));
-  }
-
-  /**
-   * Add one remote ledger's keys to the quarantine set. Resilient: a missing
-   * ledger adds nothing; a corrupt ledger is logged and ignored (a startup read
-   * must never crash the connector).
-   */
-  private async loadLedgerFile(ledgerPath: string): Promise<void> {
-    if (!this.client) return;
-    let exists: boolean;
-    try {
-      exists = await withTimeout(this.client.exists(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP exists');
-    } catch {
-      return;
-    }
-    if (!exists) return;
-    let text: string;
-    try {
-      const buf = await withTimeout(this.client.get(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP get ledger');
-      text = buf.toString('utf8').trim();
-    } catch (err) {
-      this.logger.error(
-        { ...errorInfo(err), file: ledgerPath },
-        'Failed to read quarantine ledger; ignoring it (files may be re-dispatched)',
-      );
-      return;
-    }
-    if (!text.startsWith('[')) return;
-    this.addLedgerKeys(text, ledgerPath);
-  }
-
-  /** Parse ledger JSON into the quarantine set; corruption is logged, not fatal. */
-  private addLedgerKeys(text: string, ledgerPath: string): void {
-    try {
-      const parsed: unknown = JSON.parse(text);
-      if (Array.isArray(parsed)) {
-        for (const k of parsed) {
-          if (typeof k === 'string') this.quarantined.add(k);
+  private remoteLedgerStorage(): LedgerStorage {
+    return {
+      read: async (ledgerPath: string): Promise<string | null> => {
+        if (!this.client) return null;
+        let exists: boolean;
+        try {
+          exists = await withTimeout(this.client.exists(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP exists');
+        } catch {
+          return null;
         }
-      }
-    } catch (err) {
-      this.logger.error(
-        { ...errorInfo(err), file: ledgerPath },
-        'Quarantine ledger is corrupt; ignoring it (files may be re-dispatched)',
-      );
-    }
+        if (!exists) return null;
+        const buf = await withTimeout(this.client.get(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP get ledger');
+        return buf.toString('utf8');
+      },
+      write: async (ledgerPath: string, text: string): Promise<void> => {
+        if (!this.client) return;
+        await withTimeout(this.client.put(Buffer.from(text, 'utf8'), ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP put ledger');
+      },
+    };
   }
 
-  /**
-   * Persist the quarantine set to the remote sidecar ledger. A write failure is
-   * logged loudly: the in-memory guard still holds this session, but a restart
-   * could re-dispatch, so an operator must know.
-   */
-  private async persistQuarantine(): Promise<void> {
-    if (!this.client) return;
-    try {
-      const data = Buffer.from(JSON.stringify([...this.quarantined]), 'utf8');
-      await withTimeout(this.client.put(data, this.ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP put ledger');
-    } catch (err) {
-      this.logger.error(
-        { ...errorInfo(err), file: this.ledgerPath },
-        'Failed to persist quarantine ledger; quarantine will not survive a restart',
-      );
-    }
-  }
-
-  /** Disconnect the current client, ignoring errors. */
+  /** Disconnect the current client under a timeout, logging and ignoring errors. */
   private async safeDisconnect(): Promise<void> {
-    if (!this.client) return;
-    try {
-      await withTimeout(this.client.end(), SFTP_OP_TIMEOUT_MS, 'SFTP end');
-    } catch (err) {
-      this.logger.warn(errorInfo(err), 'Error disconnecting SFTP client');
-    }
+    const client = this.client;
+    if (!client) return;
+    await closeQuietly({
+      close: () => client.end(),
+      timeoutMs: SFTP_OP_TIMEOUT_MS,
+      label: 'SFTP end',
+      logger: this.logger,
+      message: 'Error disconnecting SFTP client',
+    });
   }
 
   /** Clear the poll interval timer. */

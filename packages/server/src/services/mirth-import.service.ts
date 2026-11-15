@@ -15,7 +15,8 @@ import {
   extractCodeTemplateLibraries, importCodeTemplateLibraries,
   type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
 } from './mirth-code-templates.js';
-import { isPlainObject } from '@galvaniflow/core-util';
+import { isPlainObject, unescapeControlChars } from '@galvaniflow/core-util';
+import { DATABASE_VENDOR } from '@galvaniflow/connectors';
 
 // ----- Types -----
 
@@ -34,7 +35,7 @@ export interface MirthImportResult {
   readonly codeTemplates: CodeTemplateImportCounts;
 }
 
-const XML_READERS = { isRecord: isPlainObject, getString, toRecordList } as const;
+const XML_READERS = { isRecord: isPlainObject, getString, toRecordList, stringList } as const;
 
 // ----- Connector Type Mapping -----
 
@@ -423,11 +424,12 @@ function convertSourceConnector(
     : mapTransportName(transportName, channelName, warnings);
 
   const remote = remoteFileConnector(finalType, propsNode, 'source', channelName, warnings);
-  const properties = {
+  const properties: Record<string, unknown> = {
     ...(remote?.properties ?? extractConnectorProperties(propsNode, finalType)),
     ...pollingInterval(propsNode),
     ...(getBoolean(getNestedRecord(propsNode, 'sourceConnectorProperties') ?? {}, 'processBatch', false) ? { processBatch: true } : {}),
   };
+  if (finalType === 'DATABASE') warnings.push(...databaseWarnings(propsNode, properties['vendor'], 'Database Reader', channelName));
   return { type: remote?.type ?? finalType, properties };
 }
 
@@ -608,10 +610,7 @@ function linkedMap(node: unknown): Record<string, string> {
   if (!isPlainObject(node)) return result;
   for (const entry of toRecordList(node['entry'])) {
     const name = getString(entry, 'string');
-    const list = entry['list'];
-    const raw = isPlainObject(list) ? list['string'] : undefined;
-    const values = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).map(String);
-    if (name) result[name] = values.join(', ');
+    if (name) result[name] = stringList(entry['list']).join(', ');
   }
   return result;
 }
@@ -655,6 +654,66 @@ function smtpProperties(propsNode: Record<string, unknown>): Record<string, unkn
 /** `jdbc:<vendor>://host[:port]/database[?options]` */
 const JDBC_URL = /^jdbc:(\w+):\/\/([^:/?;]+)(?::(\d+))?\/([^?;]+)/;
 
+/** `jdbc:sqlserver://host[\instance][:port][;databaseName=name;...]` */
+const SQLSERVER_URL = /^jdbc:sqlserver:\/\/([^:;/]+)(?::(\d+))?/i;
+
+/** The database a SQL Server URL names in its `;databaseName=` (or `;database=`) property. */
+const SQLSERVER_DATABASE = /;(?:databaseName|database)=([^;]+)/i;
+
+/** The vendors GalvaniFlow's Database Reader and Writer can connect to. */
+const RUNNABLE_DB_VENDORS: ReadonlySet<string> = new Set(Object.values(DATABASE_VENDOR));
+
+/** Host, port and database from a JDBC URL, in the standard form or SQL Server's `;databaseName=` form. */
+function jdbcLocation(url: string): Record<string, unknown> {
+  if (unreadableUrl(url)) return {};
+  const standard = JDBC_URL.exec(url);
+  if (standard) return { host: standard[2], ...(standard[3] ? { port: Number(standard[3]) } : {}), database: standard[4] };
+  const sqlServer = SQLSERVER_URL.exec(url);
+  if (!sqlServer) return {};
+  const database = SQLSERVER_DATABASE.exec(url)?.[1];
+  return { host: sqlServer[1], ...(sqlServer[2] ? { port: Number(sqlServer[2]) } : {}), ...(database ? { database } : {}) };
+}
+
+/** MySQL Connector/J's `jdbc:mysql:loadbalance://` and `jdbc:mysql:replication://` URLs. */
+const MYSQL_MULTI_HOST_MODE = /^jdbc:mysql:(loadbalance|replication):\/\//i;
+
+/** A JDBC URL whose host part lists several hosts (`//h1,h2/db`). */
+const MULTI_HOST_URL = /^jdbc:[\w:]+\/\/[^/?;]*,/i;
+
+/**
+ * Why the importer cannot read one host, port and database from a Database
+ * URL, or null when it can. The importer then guesses no location. The text
+ * never quotes the URL, which can carry credentials, except a bare `${...}`.
+ */
+function unreadableUrl(url: string): string | null {
+  if (!/^jdbc:/i.test(url) && url.includes('${')) return `URL is the reference ${url}, whose database type, host, port and database the import cannot read`;
+  const mode = MYSQL_MULTI_HOST_MODE.exec(url)?.[1]?.toLowerCase();
+  if (mode) return `URL uses MySQL's ${mode} mode over several hosts, which GalvaniFlow does not have`;
+  if (MULTI_HOST_URL.test(url)) return 'URL lists several hosts, and GalvaniFlow connects to one';
+  return null;
+}
+
+/**
+ * Preview warnings for a Database Reader or Writer that will not run as
+ * imported: a URL the import cannot read a location from, a vendor with no
+ * driver here, or Mirth's JavaScript mode (`useScript`), whose script lands
+ * in the SQL query fields.
+ */
+function databaseWarnings(propsNode: Record<string, unknown>, vendor: unknown, connector: string, channelName: string): string[] {
+  const warnings: string[] = [];
+  const unreadable = unreadableUrl(getString(propsNode, 'url') ?? '');
+  if (unreadable) {
+    warnings.push(`Channel "${channelName}": the ${connector}'s ${unreadable}; fill in the database type, host, port and database by hand before deploying`);
+  }
+  if (typeof vendor === 'string' && !RUNNABLE_DB_VENDORS.has(vendor)) {
+    warnings.push(`Channel "${channelName}": the ${connector} uses ${vendor}, which GalvaniFlow cannot connect to (PostgreSQL and MySQL/MariaDB only); it will not deploy`);
+  }
+  if (getBoolean(propsNode, 'useScript', false)) {
+    warnings.push(`Channel "${channelName}": the ${connector} uses Mirth's JavaScript mode, which GalvaniFlow does not have; its script was copied into the SQL query field and will fail as SQL. Rewrite it as SQL or use a JavaScript connector`);
+  }
+  return warnings;
+}
+
 /** Mirth's Database Reader update modes: 1 never, 2 once after all rows, 3 after each row. */
 const DB_UPDATE_MODE: Readonly<Record<string, string>> = { '1': 'NEVER', '2': 'ALWAYS', '3': 'ON_SUCCESS' };
 
@@ -662,7 +721,8 @@ const DB_UPDATE_MODE: Readonly<Record<string, string>> = { '1': 'NEVER', '2': 'A
  * Mirth's Database Reader/Writer take a JDBC URL; GalvaniFlow's take a vendor,
  * host, port and database. The vendor is the URL's scheme (MariaDB speaks
  * MySQL's protocol); one with no driver here (sqlserver, oracle) is kept, so
- * the channel refuses to deploy and says which. Queries keep their `${name}`
+ * the channel refuses to deploy and says which, and the preview warns about it
+ * (see {@link databaseWarnings}). Queries keep their `${name}`
  * parameters, which bind from the row (reader) or the message's variables (writer).
  */
 function databaseProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
@@ -670,12 +730,7 @@ function databaseProperties(propsNode: Record<string, unknown>): Record<string, 
   const url = getString(propsNode, 'url') ?? '';
   const scheme = /^jdbc:(\w+):/.exec(url)?.[1]?.toLowerCase();
   if (scheme) result['vendor'] = scheme === 'mariadb' ? 'mysql' : scheme;
-  const match = JDBC_URL.exec(url);
-  if (match) {
-    result['host'] = match[2];
-    if (match[3]) result['port'] = Number(match[3]);
-    result['database'] = match[4];
-  }
+  Object.assign(result, jdbcLocation(url));
   for (const [from, to] of [['username', 'username'], ['password', 'password'], ['query', 'query'], ['select', 'selectQuery'], ['update', 'updateQuery']] as const) {
     const value = getString(propsNode, from);
     if (value) result[to] = value;
@@ -771,13 +826,16 @@ function convertDestinations(
     }
 
     const remote = remoteFileConnector(connectorType, propsNode, 'destination', channelName, warnings);
+    const name = getString(dest, 'name') ?? `Destination ${idx + 1}`;
+    const properties = remote?.properties ?? extractConnectorProperties(propsNode, connectorType);
+    if (connectorType === 'DATABASE') warnings.push(...databaseWarnings(propsNode, properties['vendor'], `Database Writer "${name}"`, channelName));
 
     return {
       metaDataId: destinationMetaDataId(dest, idx),
-      name: getString(dest, 'name') ?? `Destination ${idx + 1}`,
+      name,
       enabled: getBoolean(dest, 'enabled', true),
       connectorType: remote?.type ?? connectorType,
-      properties: remote?.properties ?? extractConnectorProperties(propsNode, connectorType),
+      properties,
       ...convertQueueSettings(dest, propsNode),
       waitForPrevious: getBoolean(dest, 'waitForPrevious', false),
     };
@@ -925,7 +983,7 @@ function extractFilterFromConnector(
     script: getString(rule, 'script'),
     field: getString(rule, 'field'),
     condition: getString(rule, 'condition'),
-    values: extractStringArray(rule['values']),
+    values: stringList(rule['values']),
   }));
 
   if (rules.length === 0) return null;
@@ -940,15 +998,13 @@ function mapFilterRuleType(type: string | null): string {
   return upper;
 }
 
-function extractStringArray(node: unknown): string[] | null {
-  if (!node) return null;
+/** The `<string>` children of a Mirth string list (`<values><string>a</string></values>`), or a bare array; [] when there are none. */
+function stringList(node: unknown): string[] {
   if (Array.isArray(node)) return node.map(String);
-  if (isPlainObject(node)) {
-    const inner = node['string'];
-    if (Array.isArray(inner)) return inner.map(String);
-    if (typeof inner === 'string') return [inner];
-  }
-  return null;
+  if (!isPlainObject(node)) return [];
+  const raw = node['string'];
+  const list: readonly unknown[] = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+  return list.map(String);
 }
 
 // ----- Transformer Conversion -----
@@ -1027,11 +1083,6 @@ function mirthDataType(name: string | null): string | null {
   return name === 'EDI/X12' ? 'X12' : name;
 }
 
-/** Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`. */
-function unescapeMirth(text: string): string {
-  return text.replace(/\\([nrt\\])/g, (_m, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? '\\');
-}
-
 /**
  * Add GalvaniFlow's `delimited` settings (see delimitedOptionsSchema) to a
  * Delimited transformer's properties, read from Mirth's serializationProperties.
@@ -1042,7 +1093,8 @@ function withDelimitedOptions(props: Record<string, unknown>, dataType: string):
   const ser = props['serializationProperties'];
   const text = (key: string): string | undefined => {
     const value = getString(ser, key);
-    return value === null ? undefined : unescapeMirth(value);
+    // Mirth writes control characters in Delimited settings as `\n`, `\r`, `\t` and `\\`.
+    return value === null ? undefined : unescapeControlChars(value);
   };
   const names = text('columnNames');
   const delimited = {

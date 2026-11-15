@@ -5,7 +5,7 @@
 // All methods return Result<T> using tryCatch from stderr-lib.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, isNull, and, count, asc } from 'drizzle-orm';
+import { eq, isNull, and, count, asc, sql } from 'drizzle-orm';
 import {
   DEFAULT_GROUP_NAME,
   DEFAULT_STORED_SCRIPT_LANGUAGE,
@@ -14,6 +14,7 @@ import {
   type CreateChannelInput,
   type UpdateChannelInput,
   type ChannelListQuery,
+  type DestinationConnectorType,
 } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -34,6 +35,7 @@ import {
   transformerSteps,
   channelGroups,
   channelGroupMembers,
+  codeTemplateLibraries,
 } from '../db/schema/index.js';
 
 // ----- Response Types -----
@@ -423,7 +425,7 @@ function buildCloneDestinations(source: ChannelDetail): CreateChannelInput['dest
   return source.destinations.map((d) => ({
     name: d.name,
     enabled: d.enabled,
-    connectorType: d.connectorType as CreateChannelInput['sourceConnectorType'],
+    connectorType: d.connectorType as DestinationConnectorType,
     properties: d.properties,
     queueMode: d.queueMode as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
     retryCount: d.retryCount,
@@ -433,6 +435,67 @@ function buildCloneDestinations(source: ChannelDetail): CreateChannelInput['dest
     waitForPrevious: d.waitForPrevious,
     responseTransformer: d.responseTransformer,
     responseTransformerLanguage: toScriptLanguage(d.responseTransformerLanguage),
+  }));
+}
+
+type CloneFilter = NonNullable<CreateChannelInput['filters']>[number];
+type CloneTransformer = NonNullable<CreateChannelInput['transformers']>[number];
+
+/**
+ * The metaDataId a source-channel connector row gets on the clone: `create`
+ * numbers destinations by position (index + 1), so a source with a gap in its
+ * metaDataIds is renumbered. Null for the source connector. Throws when the row
+ * names a connector the channel does not have, rather than silently moving a
+ * destination's filter or transformer onto the source.
+ */
+function cloneMetaDataId(source: ChannelDetail, connectorId: string | null): number | null {
+  if (connectorId === null) return null;
+  const index = source.destinations.findIndex((d) => d.id === connectorId);
+  if (index < 0) {
+    throw new ServiceError('INTERNAL', `Channel ${source.id} has a filter or transformer on unknown connector ${connectorId}`);
+  }
+  return index + 1;
+}
+
+function buildCloneFilters(source: ChannelDetail): CloneFilter[] {
+  return source.filters.map((f) => ({
+    connectorId: null,
+    metaDataId: cloneMetaDataId(source, f.connectorId),
+    rules: f.rules.map((r) => ({
+      enabled: r.enabled,
+      ...(r.name !== null ? { name: r.name } : {}),
+      operator: r.operator as CloneFilter['rules'][number]['operator'],
+      type: r.type as CloneFilter['rules'][number]['type'],
+      script: r.script,
+      language: toScriptLanguage(r.language),
+      field: r.field,
+      condition: r.condition,
+      values: r.values ? [...r.values] : null,
+    })),
+  }));
+}
+
+function buildCloneTransformers(source: ChannelDetail): CloneTransformer[] {
+  return source.transformers.map((t) => ({
+    connectorId: null,
+    metaDataId: cloneMetaDataId(source, t.connectorId),
+    inboundDataType: t.inboundDataType,
+    outboundDataType: t.outboundDataType,
+    inboundProperties: t.inboundProperties,
+    outboundProperties: t.outboundProperties,
+    inboundTemplate: t.inboundTemplate,
+    outboundTemplate: t.outboundTemplate,
+    steps: t.steps.map((s) => ({
+      enabled: s.enabled,
+      ...(s.name !== null ? { name: s.name } : {}),
+      type: s.type as CloneTransformer['steps'][number]['type'],
+      script: s.script,
+      language: toScriptLanguage(s.language),
+      sourceField: s.sourceField,
+      targetField: s.targetField,
+      defaultValue: s.defaultValue,
+      mapping: s.mapping,
+    })),
   }));
 }
 
@@ -467,6 +530,8 @@ function buildCloneInput(source: ChannelDetail, newName: string): CreateChannelI
       dataType: c.dataType as 'STRING' | 'NUMBER' | 'BOOLEAN' | 'TIMESTAMP',
       mappingExpression: c.mappingExpression,
     })),
+    filters: buildCloneFilters(source),
+    transformers: buildCloneTransformers(source),
   };
 }
 
@@ -570,6 +635,24 @@ async function syncTransformers(
   }
 }
 
+/**
+ * Add a clone to every code template library whose channel list names the
+ * channel it was cloned from (D-249), so the clone's scripts get the same
+ * template functions. A library with a null list already reaches every channel
+ * and does not match `@>`, so it is left alone. The revision goes up so an
+ * editor holding the old list gets a conflict instead of dropping the clone.
+ */
+async function addCloneToLibraries(tx: ChannelTx, sourceId: string, cloneId: string): Promise<void> {
+  await tx
+    .update(codeTemplateLibraries)
+    .set({
+      channelIds: sql`${codeTemplateLibraries.channelIds} || ${JSON.stringify([cloneId])}::jsonb`,
+      revision: sql`${codeTemplateLibraries.revision} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(sql`${codeTemplateLibraries.channelIds} @> ${JSON.stringify([sourceId])}::jsonb`);
+}
+
 // ----- Service -----
 
 export class ChannelService {
@@ -626,8 +709,12 @@ export class ChannelService {
     });
   }
 
-  /** Create a new channel with default scripts. */
-  static async create(input: CreateChannelInput, context?: AuditContext): Promise<Result<ChannelDetail>> {
+  /**
+   * Create a new channel with default scripts. `cloneOf` names the channel this
+   * one copies: the new channel joins every code template library that lists
+   * that channel, in the same transaction (see `addCloneToLibraries`).
+   */
+  static async create(input: CreateChannelInput, context?: AuditContext, cloneOf?: string): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       // Check name uniqueness among non-deleted channels
       const [existing] = await db
@@ -736,6 +823,7 @@ export class ChannelService {
         if (input.transformers && input.transformers.length > 0) {
           await syncTransformers(tx, channelId, input.transformers, destIdByMetaDataId);
         }
+        if (cloneOf !== undefined) await addCloneToLibraries(tx, cloneOf, channelId);
 
         return inserted;
       });
@@ -975,7 +1063,7 @@ export class ChannelService {
       const source = sourceResult.value;
 
       const input = buildCloneInput(source, newName);
-      const createResult = await ChannelService.create(input, context);
+      const createResult = await ChannelService.create(input, context, id);
       if (!createResult.ok) throw createResult.error;
 
       emitEvent({

@@ -3,6 +3,8 @@
 // ===========================================
 // Default property objects for each source connector type.
 
+import { KAFKA_CONNECTION_DEFAULTS, AMQP_CONNECTION_DEFAULTS } from '../common/queue-connection-defaults.js';
+
 // Keys must match what packages/connectors/src/registry.ts reads for each type.
 // The TcpMllpReceiver consumes host/port/maxConnections/responseMode/charset/
 // maxFrameBytes (TLS is resolved server-side and not surfaced here yet — see the
@@ -119,6 +121,22 @@ export const SFTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   hostKey: '',
 };
 
+export const KAFKA_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  ...KAFKA_CONNECTION_DEFAULTS,
+  topic: '',
+  groupId: '',
+  startFrom: 'EARLIEST',
+  charset: 'utf-8',
+  maxStoreAttempts: 5,
+};
+
+export const AMQP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  ...AMQP_CONNECTION_DEFAULTS,
+  queue: '',
+  charset: 'utf-8',
+  maxStoreAttempts: 5,
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_SOURCE_DEFAULTS,
   HTTP: HTTP_SOURCE_DEFAULTS,
@@ -129,6 +147,8 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   DICOM: DICOM_SOURCE_DEFAULTS,
   EMAIL: EMAIL_SOURCE_DEFAULTS,
   SFTP: SFTP_SOURCE_DEFAULTS,
+  KAFKA: KAFKA_SOURCE_DEFAULTS,
+  AMQP: AMQP_SOURCE_DEFAULTS,
 };
 
 /** Get default properties for a connector type. Returns empty object for unknown types. */

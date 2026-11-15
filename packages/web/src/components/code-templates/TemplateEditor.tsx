@@ -54,8 +54,10 @@ interface TemplateEditorProps {
   readonly onDelete: (id: string) => void;
   readonly onClose: () => void;
   readonly saving: boolean;
-  /** Hide Delete and Save for users without code_templates:write. */
+  /** Hide Save and disable the fields for users without code_templates:write. */
   readonly readOnly: boolean;
+  /** Show Delete only to users with code_templates:delete. */
+  readonly canDelete: boolean;
   /** Reports unsaved-changes state up so the page can guard navigation/switching. */
   readonly onDirtyChange?: (dirty: boolean) => void;
 }
@@ -65,7 +67,7 @@ function contextsEqual(a: ReadonlySet<string>, b: readonly string[]): boolean {
   return b.every((c) => a.has(c));
 }
 
-export function TemplateEditor({ template, onSave, onDelete, onClose, saving, readOnly, onDirtyChange }: TemplateEditorProps): ReactNode {
+export function TemplateEditor({ template, onSave, onDelete, onClose, saving, readOnly, canDelete, onDirtyChange }: TemplateEditorProps): ReactNode {
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? '');
   const [type, setType] = useState(template.type);
@@ -206,24 +208,28 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
         />
       </Box>
 
-      {readOnly ? null : (
+      {readOnly && !canDelete ? null : (
         <Stack direction="row" spacing={1} sx={{
           justifyContent: 'flex-end'
         }}>
-          <Button
-            variant="outlined"
-            color="error"
-            onClick={() => { onDelete(template.id); }}
-          >
-            Delete
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            disabled={saving || !name.trim()}
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
+          {canDelete ? (
+            <Button
+              variant="outlined"
+              color="error"
+              onClick={() => { onDelete(template.id); }}
+            >
+              Delete
+            </Button>
+          ) : null}
+          {readOnly ? null : (
+            <Button
+              variant="contained"
+              onClick={handleSave}
+              disabled={saving || !name.trim()}
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+          )}
         </Stack>
       )}
     </Box>

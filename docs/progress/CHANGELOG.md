@@ -6,18 +6,111 @@
 
 Michael asked for a scored climb of the code editor to 9+, with the TypeScript side covered and the editor as one reusable component. A blind judge scored 24 to 27 editor screenshots on six criteria (TypeScript counts double). Baseline 3.2; rounds A 5.6, B 7.15, C 7.25 (kept as a requirement), D 7.9; E (phone toolbar, popups positioned relative to the editor, documentation beside completions) scored 7.8 and was reverted to a patch. The climb stopped short of 9 at a plateau; it resumed on a desktop-only rubric (2.9 baseline, 7.83 after the test-run work, 8.27 after rounds H and I). The climb log and evidence are in `tmp/editor-climb/`.
 
-- **One editor family (D-263).** ScriptEditor, TextEditor and CodeDiffEditor in a shared frame with toolbar, status line (problem count by kind, first problem as a jump link, cursor, language) and full screen. The message generator, send-message dialog and revision diff used raw Monaco. Monaco is bundled (no CDN), themed from the app tokens, and HL7 text is highlighted. Ctrl+K inside an editor no longer opens Jump to.
-- **TypeScript (D-265).** Type errors in the editor and at deploy from shared declarations: `msg` typed by data type, code templates offered and checked per context, `destinationSet` only where it exists. A reference panel lists everything a script can use and inserts it; a shortcuts list.
-- **Languages stored (D-264).** Migration 0015 adds a language to every script; export/import and backups carry it. Export also dropped each destination's response transformer; it is exported and imported now.
+- **One editor family (D-273).** ScriptEditor, TextEditor and CodeDiffEditor in a shared frame with toolbar, status line (problem count by kind, first problem as a jump link, cursor, language) and full screen. The message generator, send-message dialog and revision diff used raw Monaco. Monaco is bundled (no CDN), themed from the app tokens, and HL7 text is highlighted. Ctrl+K inside an editor no longer opens Jump to.
+- **TypeScript (D-275).** Type errors in the editor and at deploy from shared declarations: `msg` typed by data type, code templates offered and checked per context, `destinationSet` only where it exists. A reference panel lists everything a script can use and inserts it; a shortcuts list.
+- **Languages stored (D-274).** Migration 0015 adds a language to every script; export/import and backups carry it. Export also dropped each destination's response transformer; it is exported and imported now.
 - **Less wasted space** (Michael's review): step and rule actions share the settings row, transformer data types share the Add Step row, and script editors fit their code.
 - **Doc 19** records research on embeddable TypeScript editors (stay on Monaco) and a ranked list of the editor tools script authors need next, led by running a script against a sample message.
-- **Popups placed right (D-267).** A patch to Monaco 0.55.1 makes completion open below the line on a scrolled page, and the documentation panel beside it opens beside the list instead of below the window.
+- **Popups placed right (D-277).** A patch to Monaco 0.55.1 makes completion open below the line on a scrolled page, and the documentation panel beside it opens beside the list instead of below the window.
 - **Completion and toolbar (rounds H and I).** Completion opens 560px wide with the signature and docs beside it; a fit-to-content editor grows while the list is open so the list never covers the status line; every toolbar action has a visible label; one missing bracket reads "1 syntax error (7 more after it)"; a read-only script shows no language switch.
 - **Phone dropped from the score.** Michael: nobody edits scripts on a phone. Issue #130 asks the docs to say which screens must work on one.
 - **Stricter deploy scripts and quieter feedback (round K).** Deploy and undeploy scripts no longer see `msg`, `tmp` or `rawData`, in the editor and in the deploy check, since the engine passes them empty. The status line always counts warnings and skips the syntax error on a word still being completed. Ctrl+Space no longer hides the docs beside completions, and a template's `@param name - text` shows without a stray dash.
 - **Less wasted space (round J).** An open rule or step puts its name, type, enabled and order controls in its header row instead of a title row above them, and the filter and transformer cards sit 12px apart instead of 48px with a divider.
-- **Test runs (D-266).** Filter rules, transformer steps, response transformers and channel scripts have a Test run button (Ctrl+Enter). It runs the script through the engine's own compile and sandbox against a sample message (pasted, or a generated fake ADT) and shows the outcome, output message, logger lines, map changes and destinations. Calls that would send, write or route are refused and listed. The sample stays in the page; the audit event records the run, not the sample.
+- **Test runs (D-276).** Filter rules, transformer steps, response transformers and channel scripts have a Test run button (Ctrl+Enter). It runs the script through the engine's own compile and sandbox against a sample message (pasted, or a generated fake ADT) and shows the outcome, output message, logger lines, map changes and destinations. Calls that would send, write or route are refused and listed. The sample stays in the page; the audit event records the run, not the sample.
 - Not done: a syntax error reports Monaco's cascade (one missing `)` can show as several errors); the editor offers every template enabled for the context while deploy uses only templates whose library includes the channel.
+
+## 2026-11-15 — Reinvention copy groups, batch 3 (branch `batch-2026-11-15-reinvention-3`)
+
+The last merge batch of the approved triage, mostly web and small server helpers:
+
+- **core-util (G0036, G0113):** `unescapeControlChars` replaces the Delimited settings form's `readEscapes` and the importer's `unescapeMirth`, and `isSecretSetting` replaces the server's and the Settings page's copies. The web now depends on `@galvaniflow/core-util`; the browser bundle changed only in SettingsPage (+0.06 kB). From the batch review: `docker/Dockerfile.web` now copies core-util (without it the web image could not build) and the cloud session hook builds it; the web image builds from a clean checkout. A local build from a checkout with installed dependencies still fails for an older reason (#137). Visible change: the Settings page treats a setting typed `secret`, or `Password` in any case, as secret, as the server already did.
+- **Server (G0131, G0180, G0239, G0228, G0167):** the collection service uses `containsPattern` and `requireById`; collections and data sources emit their audit events through one `emitSuccessEvent` (records unchanged); event export uses the event list's `buildEventWhereConditions` (its schema cannot carry the two extra filters, so output is unchanged); the seed scripts share one channel lookup.
+- **Web (G0071, G0076, G0079, G0166, G0229.R, G0257):** one `errorMessage` helper for mutation toasts, `ErrorState` and `ErrorBoundary`, each keeping its fallback text (an empty error message now shows the fallback instead of a blank, and `ErrorBoundary` now shows a thrown string's text instead of the fallback, as the other two already did); one Monaco registration per language; `propertyUpdaters` gains `updateTls` for the HTTP and queue TLS fields; message and event query strings share their filter clauses (`messageFilterParts`, `definedSearchParams`), pinned to the exact strings; the Delimited form uses the shared `update`.
+- Not done here: `use-certificates`, `use-logs` and `use-cross-channel-search` still build query strings by hand and could use `definedSearchParams` (not in the catalog).
+
+## 2026-11-15 — Open issues batch (branch `batch-2026-11-15-open-issues`)
+
+Michael asked for the open issues to be worked through. 16 of 18 were fixed as one batch, one branch and merge commit per issue; #115 (one property schema per connector) and #88 (CI job for the real-broker suites) were left for their own sessions.
+
+- **Fail loudly instead of later:** a TCP/MLLP or HTTPS source with an incomplete `tls` setting fails its deploy instead of listening in plaintext (#98). SFTP properties are validated and an unknown connector type fails validation (#102, D-269). The channel API and channel import reject a destination-only type as the source and a source-only type as a destination (#109).
+- **Kafka/AMQP:** a `charset` source setting (UTF-8, Latin-1, Windows-1252, base64), with invalid UTF-8 flagged as `charsetError` in the source map (#87, D-270). A message the store rejects `maxStoreAttempts` times in a row (default 5) stops the channel with an ERROR event and alert, and the message stays on the queue (#86, D-271). A report from a stopped or earlier deployment is ignored.
+- **Fixes:** cloning a channel keeps its filters and transformers (#91). Code template deletes check `code_templates:delete`, and the UI hides delete from roles without it; developers lose delete (#96). Session row, refresh cookie and refresh JWT all use `JWT_REFRESH_EXPIRES_IN` (#99; no absolute cap, by Michael's call). SFTP Test Connection works (#89). The Mirth import preview warns on SQL Server/Oracle and script-mode database channels and parses `;databaseName=` URLs (#103). Seven handler and service defects from the reinvention audit, including the global-map flush race; five handlers now map service errors to 404/400/409 (#92, approved). Two #92 items did not reproduce (collections URL encoding, empty `IN ()`).
+- **Dependencies:** 15 of 16 Dependabot alerts cleared by lockfile refresh, two bumps and three bounded overrides (#100). The esbuild alert remains: drizzle-kit pulls esbuild 0.18 and the fix is a breaking 0.25.
+- **Docs:** the connector reference covers SFTP and MySQL, README counts 13 types (#93); ROADMAP and design docs no longer claim channel-scoped permissions or MFA (#94); the TLS runbook matches the connectors (#95); README, SECURITY.md and the user docs say the script sandbox is best-effort, not a security boundary (#64).
+- Not done: engine sandbox timing tests fail under load (#125, unchanged by this batch). The channel-group integration test and the real-broker queue suite were not run (no Postgres or brokers here).
+
+## 2026-11-15 — Reinvention copy groups, batch 2 (branch `batch-2026-11-15-reinvention-2`)
+
+Second batch of the approved triage, built on batch 1:
+
+- **Queue (G0175, G0196):** `QueueManagerService.dequeue` and `release` are gone. Nothing outside their unit test called them, and `dequeue` only selected rows without claiming them, so two callers could get the same messages. `MessageService.dequeue`/`release` remain the only ones. `requeueFailed` and `getQueueDepth` stay; neither has a production caller.
+- **SFTP and IMAP clients (G0378, G0391):** `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`. Two behaviour changes, approved in the triage or found by a failing test: the IMAP logout now gives up after 30 s (a hung logout used to stall every later poll while the channel showed STARTED), and a failed IMAP start no longer leaves an unconnected client that stop then tried to log out (stop returned an error). From the batch review: an IMAP connect that fails or times out now closes its client, because imapflow can finish a login after our 30 s limit on a session nobody held (servers that cap sessions per user then lock the account out). The SFTP receiver passes its close too, but ssh2-sftp-client's `end()` does nothing before a connection exists, so for SFTP ssh2's own 20 s ready timeout is what bounds a slow connect. The IMAP receiver drops a client once it has logged it out, so stop, a failed restart and stop again log out only once. From the PR review: stopping or pausing while an email is being dispatched used to leave it unread and untracked after that change, so a resume dispatched it again; stop now waits for the dispatch and its post-action, and a post-action without a client fails so only the post-action is retried.
+- **File dispatcher (G0218):** write and append share one encoding step.
+- **Server mail (G0016):** the server builds its nodemailer transport with the SMTP connector's `createNodemailerTransport`, which now takes connection fields only (`SmtpTransportConfig`). Server mail sends the same options.
+- **Backup restore (G0110):** the ten section restores share one loop, one row helper and one map upsert. 56 new tests pinned every section's counts, error texts and rows before the refactor. The quirks they pin are unchanged: a failed config/global-map lookup counts as created, a null map value is stored as '', and an existing pair is skipped even in OVERWRITE.
+- **Mirth importer (G0074.R):** one `stringList` reader for `<string>` lists. An imported filter rule with no values now stores `[]` instead of null; the engine and the editor treat both the same. The brief's suspected bug (a single numeric value dropped) does not happen, because the parser keeps tag values as text; the test stays as a regression check.
+- `pnpm test:scenarios` 60/60 (26/26) on bfeb452, the same as the last recorded score, run by the PR review session. Not run: any real IMAP/SFTP server.
+
+## 2026-11-15 — One list per fact in core-models, docs slice 0 (branch `refactor/core-models-single-lists`)
+
+The first slice of the docs restructure (#116): before the docs can be checked against the code, each fact needs one home. A refactor with no behaviour change (D-268).
+
+- **Connector types:** `SOURCE_CONNECTOR_TYPES`, `DESTINATION_CONNECTOR_TYPES` and `CONNECTOR_TYPES` in core-models replace seven hand-written lists (three schemas, three web components, and a dead `CONNECTOR_TYPE` without SFTP). The registry's maps are keyed by those types, and `registry-types.test.ts` checks every listed type has a factory.
+- **Permissions and roles:** `PERMISSIONS` and `Permission` move to core-models. The server seed derives its rows from them, the web file re-exports them under its old names, and roles everywhere use `USER_ROLE`. The seed and role code share one `permissionRow()` split.
+- **Typed checks:** `requirePermission`, `requireAllPermissions` and the socket room map take `Permission`.
+- **`pnpm shots`** read permissions by scraping the web file, which broke when it became a re-export; it imports them from core-models now.
+- **Found on the way:** the engine sandbox tests and three server engine tests depend on wall-clock timing and fail on a slower Windows machine (#125). An E2E spec fails intermittently with ECONNRESET (#126). Neither touches this branch's code.
+
+## 2026-11-15 — Reinvention copy groups, batch 1 (branch `batch-2026-11-15-reinvention-1`)
+
+Michael approved a triage of the 186 copy groups the audit re-run found (#90): 33 to merge in three batches, 6 waiting on his decisions 1 to 4, 147 closed in `.claude/reinvention/accepted.jsonl` (D-267). This batch merged the riskiest:
+
+- **Script validation (G0081):** `POST /scripts/validate` ran its own esbuild transform on the bare script, which esbuild read as an ES module, so a script with a top-level `return` (with or without `await`) that deploy accepts was reported invalid. No web or CLI code calls the endpoint today. It now compiles through `compileScript`, the same function deploy uses, and reports errors on the script's own line numbers. Filter rules still differ: deploy runs them synchronously (ROADMAP, Known Issues).
+- **Send message (G0173):** `DeploymentService.sendMessage` repeated the engine's checks; it delegates now. The engine raises the same NOT_FOUND and CONFLICT errors, so the API's 404 and 409 answers are unchanged (pinned by a new controller test).
+- **Global map (G0379 and three more):** `GlobalMapProxy` keeps its entries in a `GlobalChannelMap` instead of copying its store, snapshot and diff code.
+- **Database connectors (G0013.R, G0204):** one `toPoolConfig` for receiver and dispatcher, one send path in the dispatcher.
+- **File and SFTP sources (G0268 and three more):** one `QuarantineLedger` and one dispatch-then-quarantine step. One behaviour change, approved in the triage: the File source used to ignore a quarantine ledger it could not read; now only a missing one is silent, and any other read error is logged as the SFTP source already did.
+- **Found on the way:** #91 (a cloned channel loses its filters and transformers) and #92 (nine defects in handler and service code the judge read).
+- Not done: batches 2 and 3, decisions 1 to 4, and teaching `/find-reinvention` to read `accepted.jsonl` (MichaelLeeHobbs/skills#31).
+- **From the batch review:** script validation and the save-time compile check for code templates and global scripts no longer fill deploy's compiled-script cache (`compileScript` takes `cache: false`), the server no longer declares `esbuild` (the engine does), and accepted groups match on path, name and hash, not line number.
+
+## 2026-11-15 — Dependabot for npm and Docker (branch `claude/dependabot-setup-14e08c`)
+
+`.github/dependabot.yml` covered GitHub Actions only. It now also proposes npm updates for the pnpm workspace (weekly; minor and patch grouped into one runtime and one dev PR, each major alone, 3-day cooldown so pnpm's minimum release age accepts the version) and base-image updates for `docker/Dockerfile.*` and `docker/docker-compose*.yml` (monthly; Node and Postgres majors ignored, since those are deliberate choices).
+
+- Dependabot alerts and security updates (repo settings, not in the file) were off; Michael had them turned on the same day. GitHub reads the pnpm 12 lockfile despite its documented two-document limitation: it raised 16 alerts on main straight away, all transitive npm packages.
+
+## 2026-11-14 — Kafka and AMQP connectors, V15 (branch `feat/kafka-amqp-connectors`)
+
+Michael decided to build Kafka and AMQP connectors rather than partner (D-261, doc 18 CON10). Done here:
+
+- **Connectors** (`packages/connectors/src/kafka`, `amqp`): source and destination for each, on `@platformatic/kafka` and `amqplib` (D-265). Sources acknowledge only after the pipeline stores a message and redeliver one it could not store; at least once, with the duplicate cases recorded in D-266. TLS by certificate id, SASL PLAIN/SCRAM for Kafka, credentials and vhost for AMQP. Message key, routing key and headers go into the source map; destination topic, key, routing key and header values take `${name}` (D-252).
+- **Schemas, server, UI**: property schemas in core-models drive deploy validation and the registry; Test Connection reads Kafka metadata or checks the AMQP queue/exchange; four editor forms with shared broker and TLS fields.
+- **Tests**: unit tests for both pairs, including a failed store, a dropped broker connection, stop versus halt and a halt followed by a restart. A real-broker suite (`connector-queue.itest.ts`, with `kafka-test` and `rabbitmq-test` in the compose test profile) passed 10/10 on three runs.
+- **Found by the real-broker suite**: Kafka records with headers failed to encode (string header names), and a failed AMQP connection test crashed the process on an unhandled channel `error` event. Both fixed; the suite covers them.
+- **Found in review**: the Kafka consumer had no `error` listener, so a failed group rejoin (a broker restart while idle) would have ended the process; it now ends the subscription and the receiver rejoins. The AMQP receiver left the connection open when only its channel ended (a cancelled consumer, a consumer timeout), one leak per reconnect; it closes it now. The Kafka destination's record key was the property `key`, which secret redaction masks and import drops, so an imported channel published unkeyed; it is `messageKey` now. The Kafka producer is idempotent, so a request the client retries is not written twice. Each has a test that failed first.
+- **Coverage**: the connectors coverage run counted the integration lane's own files (`*.itest.ts`, `gates.ts`) as uncovered source, so adding the real-broker suite pushed the package under its minimums. They are excluded now, and the minimums rose to 89/78/85/91 (AGENTS.md table).
+- Not done: TLS against a real broker (unit tests cover the option mapping only). The connectors integration lane (`*.itest.ts`) still does not run in CI. Locally the parallel `pnpm gate` fails seven of engine's sandbox timing tests (50 ms timeouts) under load; they pass when packages run one at a time, and engine is unchanged here.
+
+## 2026-11-14 — Reinvention audit findings (PRs #73 to #81, branch `chore/reinvention-prevention`)
+
+Michael asked for the rest of the `/find-reinvention` report (`.claude/reinvention/report.md`) to be worked through, one concern per PR. PR #70 had already taken the two security findings.
+
+- **Bugs fixed:** `formatBytes` printed `"512.0 undefined"` for 0.5 and `"NaN undefined"` for NaN. A null timestamp rendered as 31 Dec 1969 on the message, event and certificate screens, and now shows "—" ("Never" on Users). The File and SFTP writers re-expanded a substituted value that held another `${...}`. A fatal-handler log lost the message of a thrown plain object.
+- **Status codes (D-263):** the 24 controllers' local `mapErrorToStatus` copies are gone. Conflicts return 409 instead of 500 on 12 endpoints, and deleting the default channel group returns 403.
+- **One copy each:** `isPlainObject`, `escapeCsvField`, certificate expiry, the connector-form getters (18 forms) and `errorInfo` (D-264).
+- **Prevention:** AGENTS.md says to look in `lib/` and `core-util` before writing a helper and lists the shared ones. `eslint.config.js` fails a local copy of any of them.
+- Not done: delegating wrappers, the unjudged residual groups and controller handler boilerplate, all out of scope by Michael's call.
+
+## 2026-11-14 — Editor controls for Delimited settings and the database type (branch `claude/editor-delimited-db-vendor`)
+
+Michael asked for the editor controls the Delimited and MySQL work left out.
+
+- **Delimited settings** in the source transformer when its inbound type is Delimited: delimiters (typed as `\t`, `\r\n`), quote, quote escape, column names, CR handling. The form checks them with the schema the server checks at deploy and says when the channel would not deploy.
+- **Database type** on the Database Reader and Writer: PostgreSQL or MySQL/MariaDB; a port still at one database's default moves to the other's. A database imported from Mirth with no driver (sqlserver, oracle) shows as such and says the channel will not deploy.
+- **Test Connection** for a database now connects with the connector's own pool for its type. It always spoke PostgreSQL, so a MySQL test failed.
+- The source transformer's data type row wraps on a phone instead of running past the card.
+- `pnpm shots` gains `source-delimited` and `destination-database`, and a shot's `click` takes a list.
 
 ## 2026-11-14 — Test Connection reaches private networks (branch `fix/test-connection-private-addresses`)
 

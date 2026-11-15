@@ -3,32 +3,23 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
+import { kafkaDestinationPropertiesSchema, amqpDestinationPropertiesSchema } from '@galvaniflow/core-models';
 import {
   redactChannelDetail,
   REDACTED,
-  isSecretSettingType,
-  isSecretSetting,
   isSecretPropertyKey,
   redactSettingValue,
   redactConnectorProperties,
 } from '../secret-redaction.js';
 
 describe('secret-redaction — settings', () => {
-  it('detects secret types', () => {
-    expect(isSecretSettingType('password')).toBe(true);
-    expect(isSecretSettingType('secret')).toBe(true);
-    expect(isSecretSettingType('string')).toBe(false);
-    expect(isSecretSettingType(null)).toBe(false);
-  });
-
-  it('detects secret settings by key even when type is string (legacy)', () => {
-    expect(isSecretSetting('smtp.auth_pass', 'string')).toBe(true);
-    expect(isSecretSetting('some.api_token', 'string')).toBe(true);
-    expect(isSecretSetting('smtp.host', 'string')).toBe(false);
-  });
-
   it('masks a present secret value', () => {
     expect(redactSettingValue('smtp.auth_pass', 'password', 'hunter2')).toBe(REDACTED);
+  });
+
+  it('masks a value typed secret in any case, or with a secret key typed string', () => {
+    expect(redactSettingValue('custom.value', 'Secret', 'hunter2')).toBe(REDACTED);
+    expect(redactSettingValue('some.api_token', 'string', 'hunter2')).toBe(REDACTED);
   });
 
   it('passes through empty/null secret values (nothing to hide)', () => {
@@ -95,6 +86,23 @@ describe('secret-redaction — connector properties', () => {
     expect(isSecretPropertyKey('key')).toBe(true);
     expect(isSecretPropertyKey('keyColumn')).toBe(false);
     expect(isSecretPropertyKey('x-api-key')).toBe(true);
+  });
+
+  // A redacted property is shown masked and dropped on import. The Kafka record
+  // key was named `key`, so an imported channel published unkeyed, losing
+  // per-patient ordering without an error.
+  it('masks only the passwords of the Kafka and AMQP connectors', () => {
+    const tls = { caCertId: 'ca-1', clientCertId: 'client-1', rejectUnauthorized: true };
+    const kafka = kafkaDestinationPropertiesSchema.parse({
+      brokers: 'k1:9093', topic: 'results-${site}', messageKey: '${patientId}', headers: { site: '${site}' },
+      useTls: true, tls, saslMechanism: 'PLAIN', saslUsername: 'svc', saslPassword: 'hunter2',
+    });
+    const amqp = amqpDestinationPropertiesSchema.parse({
+      host: 'rabbit', exchange: 'hl7', routingKey: 'adt.${event}', username: 'svc', password: 'hunter2', useTls: true, tls,
+    });
+    expect(kafka.messageKey).toBe('${patientId}');
+    expect(redactConnectorProperties(kafka)).toEqual({ ...kafka, saslPassword: REDACTED });
+    expect(redactConnectorProperties(amqp)).toEqual({ ...amqp, password: REDACTED });
   });
 });
 

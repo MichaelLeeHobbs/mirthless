@@ -50,7 +50,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@galvaniflow/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema } from '@galvaniflow/core-models';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema } from '@galvaniflow/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
@@ -63,13 +63,15 @@ import { ResourceService } from './services/resource.service.js';
 import { DataSourceService } from './services/data-source.service.js';
 import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
-import { resolveHttpSourceTls, resolveHttpDestinationTls } from './services/connector-tls-resolver.js';
+import { resolveHttpSourceTls, resolveHttpDestinationTls, resolveQueueTls } from './services/connector-tls-resolver.js';
 import { db } from './lib/db.js';
 import { ServiceError } from './lib/service-error.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
+import { emitEvent } from './lib/event-emitter.js';
+import { emitToAll } from './lib/socket.js';
 import type { ChannelDetail } from './services/channel.service.js';
 
 // ----- Types -----
@@ -473,6 +475,19 @@ const SILENCE_CHECK_INTERVAL_MS = 30_000;
 const SEND_BACKSTOP_MS = 300_000;
 const NEVER_RAN_MESSAGE = 'Not delivered: the server stopped before this destination ran. Reprocess the message to deliver it.';
 
+type TlsResolver = (props: Readonly<Record<string, unknown>>) => Promise<Result<Record<string, unknown>>>;
+/** Connector types whose certificate-id references are resolved to PEM before the connector is built. */
+/** A source's report that it stopped itself, with the deployment it came from. */
+interface SourceFailureReport {
+  readonly channelId: string;
+  readonly runtime: ChannelRuntime;
+  readonly error: Error;
+  readonly raiseAlert: (event: Parameters<AlertManager['handleEvent']>[0]) => Promise<void>;
+}
+
+const SOURCE_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpSourceTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
+const DESTINATION_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpDestinationTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
+
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
   private readonly sandbox: SandboxExecutor;
@@ -599,12 +614,13 @@ export class EngineManager {
       encryptData: channel.encryptData,
     });
 
-    // Create source connector. For HTTP, resolve any HTTPS cert-ID references to
-    // PEM material server-side (connectors have no DB access). Fail loud so a
+    // Create source connector. For HTTP, Kafka and AMQP, resolve cert-ID references
+    // to PEM material server-side (connectors have no DB access). Fail loud so a
     // channel never deploys silently without the TLS it was configured for.
     let sourceProperties: Record<string, unknown> = channel.sourceConnectorProperties;
-    if (channel.sourceConnectorType === 'HTTP') {
-      const resolved = await resolveHttpSourceTls(sourceProperties);
+    const resolveSourceTls = SOURCE_TLS_RESOLVERS[channel.sourceConnectorType];
+    if (resolveSourceTls) {
+      const resolved = await resolveSourceTls(sourceProperties);
       if (!resolved.ok) {
         throw new Error(`Channel ${channel.id} source TLS resolution failed: ${resolved.error.message}`);
       }
@@ -615,12 +631,13 @@ export class EngineManager {
       sourceProperties,
     ) as SourceConnectorRuntime;
 
-    // Create destination connectors (HTTP destinations resolve HTTPS cert-IDs too).
+    // Create destination connectors (HTTP, Kafka and AMQP resolve cert-IDs too).
     const destinations = new Map<number, DestinationConnectorRuntime>();
     for (const dest of channel.destinations) {
       let destProperties: Record<string, unknown> = dest.properties;
-      if (dest.connectorType === 'HTTP') {
-        const resolved = await resolveHttpDestinationTls(destProperties);
+      const resolveDestTls = DESTINATION_TLS_RESOLVERS[dest.connectorType];
+      if (resolveDestTls) {
+        const resolved = await resolveDestTls(destProperties);
         if (!resolved.ok) {
           throw new Error(`Channel ${channel.id} destination ${dest.metaDataId} TLS resolution failed: ${resolved.error.message}`);
         }
@@ -696,6 +713,12 @@ export class EngineManager {
       });
       return Promise.resolve();
     };
+
+    // A Kafka or AMQP source stops itself when a message keeps failing to store;
+    // the channel must not then look STARTED while nothing is read.
+    // The runtime identifies this deployment (and its source): a report that
+    // arrives after an undeploy and redeploy must not stop the new one.
+    source.setFatalHandler?.((error) => { void this.stopAfterSourceFailure({ channelId: channel.id, runtime, error, raiseAlert }); });
 
     // Build configMap record (key format: "category.name")
     const configMapRecord: Record<string, unknown> = {};
@@ -874,6 +897,38 @@ export class EngineManager {
   }
 
   /**
+   * Fail loudly after the source stopped itself on an error it cannot get past:
+   * record an ERROR event, raise a SOURCE_CONNECTOR alert and stop the channel
+   * (queue consumers too, as a stop from the UI does), so the dashboard shows
+   * it stopped. The message that failed is still on its queue or topic; an
+   * operator fixes the cause and starts the channel again.
+   */
+  private async stopAfterSourceFailure(report: SourceFailureReport): Promise<void> {
+    const { channelId, runtime, error, raiseAlert } = report;
+    const deployed = this.runtimes.get(channelId);
+    const state = runtime.getState();
+    // Only the running deployment that registered the handler may stop the
+    // channel; a late report from a stopped or replaced one is logged and dropped.
+    if (!deployed || deployed.runtime !== runtime || (state !== 'STARTED' && state !== 'PAUSED')) {
+      logger.warn({ channelId, state, errMsg: error.message }, 'Ignoring a fatal source report from a source that is no longer running');
+      return;
+    }
+    logger.error({ channelId, errMsg: error.message }, 'Source connector stopped after a fatal error; stopping the channel');
+    emitEvent({
+      level: 'ERROR', name: 'CHANNEL_STOPPED', outcome: 'FAILURE', userId: null, channelId,
+      serverId: null, ipAddress: null, attributes: { reason: 'SOURCE_FAILED', error: error.message },
+    });
+    await raiseAlert({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage: error.message, timestamp: Date.now() });
+
+    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
+    const stopped = await deployed.runtime.stop();
+    if (!stopped.ok) {
+      logger.error({ channelId, errMsg: stopped.error.message }, 'Could not stop the channel after its source failed');
+    }
+    emitToAll(SOCKET_EVENT.CHANNEL_STATE, { channelId, state: deployed.runtime.getState() });
+  }
+
+  /**
    * Fire NO_MESSAGES alerts for started channels that have gone quiet. A channel
    * that is not STARTED restarts its silence clock, so stopping it never alerts
    * and a restart gets a full window before the first alert.
@@ -902,20 +957,25 @@ export class EngineManager {
     return this.runtimes;
   }
 
-  /** Send a raw message to a deployed, started channel. */
+  /**
+   * Send a raw message to a deployed, started channel. Fails with a ServiceError:
+   * NOT_FOUND when the channel is not deployed, CONFLICT when it is not STARTED
+   * or could not process the message. The send-message API maps these codes to
+   * HTTP statuses.
+   */
   async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
     return tryCatch(async () => {
       const deployed = this.runtimes.get(channelId);
       if (!deployed) {
-        throw new Error(`Channel ${channelId} is not deployed`);
+        throw new ServiceError('NOT_FOUND', `Channel ${channelId} is not deployed`);
       }
       const state = deployed.runtime.getState();
       if (state !== 'STARTED') {
-        throw new Error(`Channel is ${state}, must be STARTED to receive messages`);
+        throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to receive messages`);
       }
       const result = await deployed.processMessage(content);
       if (!result.ok) {
-        throw new Error(result.error.message);
+        throw new ServiceError('CONFLICT', result.error.message);
       }
       return result.value;
     });

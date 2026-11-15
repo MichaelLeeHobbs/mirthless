@@ -15,6 +15,7 @@ import { DATABASE_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
+import { DatabaseVendorField, databaseVendor, defaultDatabasePort } from '../common/DatabaseVendorField.js';
 
 const UPDATE_MODES = ['NEVER', 'ALWAYS', 'ON_SUCCESS'] as const;
 const ROW_FORMATS = ['JSON'] as const;
@@ -50,6 +51,8 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
           Connection
         </Typography>
 
+        <DatabaseVendorField properties={properties} onChange={onChange} />
+
         <TextField
           label="Host"
           value={getStr(properties, 'host', 'localhost')}
@@ -61,7 +64,7 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
         <TextField
           label="Port"
           type="number"
-          value={getNum(properties, 'port', 5432)}
+          value={getNum(properties, 'port', defaultDatabasePort(databaseVendor(properties)))}
           onChange={handleNumber('port')}
           fullWidth
           sx={{ mb: 2 }}

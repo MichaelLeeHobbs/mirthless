@@ -2,14 +2,15 @@
 // Event Export Service
 // ===========================================
 // Exports audit events as CSV or JSON for HIPAA compliance downloads.
-// Reuses filtering logic from EventService but returns full result sets.
+// Uses the event list's filters but returns full result sets.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { desc, and, inArray, gte, lte, eq } from 'drizzle-orm';
+import { desc } from 'drizzle-orm';
 import type { EventExportQuery } from '@galvaniflow/core-models';
 import { db } from '../lib/db.js';
 import { escapeCsvField } from '../lib/csv.js';
 import { events } from '../db/schema/index.js';
+import { buildEventWhereConditions } from './event.service.js';
 
 // ----- Types -----
 
@@ -28,36 +29,8 @@ interface EventRow {
 
 const CSV_COLUMNS = ['id', 'name', 'level', 'outcome', 'userId', 'ipAddress', 'attributes', 'createdAt'] as const;
 
-function buildExportWhereConditions(query: EventExportQuery): ReturnType<typeof and> {
-  const conditions = [];
-
-  if (query.level !== undefined) {
-    const levels = query.level.split(',').map((s) => s.trim());
-    conditions.push(inArray(events.level, levels));
-  }
-
-  if (query.name !== undefined) {
-    const names = query.name.split(',').map((s) => s.trim());
-    conditions.push(inArray(events.name, names));
-  }
-
-  if (query.outcome !== undefined) {
-    conditions.push(eq(events.outcome, query.outcome));
-  }
-
-  if (query.startDate !== undefined) {
-    conditions.push(gte(events.createdAt, new Date(query.startDate)));
-  }
-
-  if (query.endDate !== undefined) {
-    conditions.push(lte(events.createdAt, new Date(query.endDate)));
-  }
-
-  return conditions.length > 0 ? and(...conditions) : undefined;
-}
-
 async function fetchRows(query: EventExportQuery): Promise<readonly EventRow[]> {
-  const where = buildExportWhereConditions(query);
+  const where = buildEventWhereConditions(query);
 
   const dataQuery = db
     .select({

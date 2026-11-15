@@ -4,7 +4,7 @@
 // The one in-memory copy of the global map, shared by every deployed channel.
 // Tracks which keys scripts changed and saves them to the database on a timer.
 
-import { diffMap } from './map-diff.js';
+import { GlobalChannelMap } from './global-channel-map.js';
 
 // ----- Types -----
 
@@ -40,8 +40,10 @@ function fromRow(row: GlobalMapRow): unknown {
 
 /** In-memory global map with change tracking and periodic flush. */
 export class GlobalMapProxy {
-  private readonly store = new Map<string, unknown>();
+  private readonly map = new GlobalChannelMap();
   private readonly dirty = new Set<string>();
+  /** The latest write of each key that has not settled yet. */
+  private readonly inFlight = new Map<string, Promise<void>>();
   private readonly persistence: GlobalMapStore;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private readonly flushIntervalMs: number;
@@ -54,7 +56,7 @@ export class GlobalMapProxy {
   /** Initialize from persisted entries. Plain text stays text; JSON entries get their type back. */
   load(entries: ReadonlyArray<GlobalMapRow>): void {
     for (const entry of entries) {
-      this.store.set(entry.key, fromRow(entry));
+      this.map.put(entry.key, fromRow(entry));
     }
   }
 
@@ -68,11 +70,7 @@ export class GlobalMapProxy {
 
   /** Get a snapshot as a plain record for sandbox injection. */
   toRecord(): Record<string, unknown> {
-    const record: Record<string, unknown> = {};
-    for (const [key, value] of this.store) {
-      record[key] = value;
-    }
-    return record;
+    return this.map.toRecord();
   }
 
   /**
@@ -80,33 +78,33 @@ export class GlobalMapProxy {
    * and `after` is the map it left; only keys that differ are written.
    */
   applyChanges(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): void {
-    const changes = diffMap(before, after);
-    for (const [key, value] of changes.set) {
-      this.store.set(key, value);
-      this.dirty.add(key);
-    }
-    for (const key of changes.removed) {
-      this.store.delete(key);
+    for (const key of this.map.applyChanges(before, after)) {
       this.dirty.add(key);
     }
   }
 
-  /** Take an entry that is already persisted (an edit made through the API). */
+  // An edit made through the API is already in the database, but a script save
+  // of the same key on another connection can commit after it, even one whose
+  // promise resolved before the API told the proxy. So an API edit always marks
+  // the key dirty: the next flush writes the API's value last. The extra write
+  // is idempotent.
+
+  /** Take an entry that the API already persisted. */
   set(row: GlobalMapRow): void {
-    this.store.set(row.key, fromRow(row));
-    this.dirty.delete(row.key);
+    this.map.put(row.key, fromRow(row));
+    this.dirty.add(row.key);
   }
 
-  /** Drop an entry that is already removed from the database. */
+  /** Drop an entry the API already removed from the database. */
   delete(key: string): void {
-    this.store.delete(key);
-    this.dirty.delete(key);
+    this.map.remove(key);
+    this.dirty.add(key);
   }
 
-  /** Drop every entry; the database is already cleared. */
+  /** Drop every entry; the API already cleared the database. */
   clear(): void {
-    this.store.clear();
-    this.dirty.clear();
+    for (const key of Object.keys(this.map.toRecord())) this.dirty.add(key);
+    this.map.clear();
   }
 
   /** Save every changed key. Never rejects: failures are reported and retried next time. */
@@ -116,7 +114,7 @@ export class GlobalMapProxy {
     const keys = [...this.dirty];
     this.dirty.clear();
 
-    const results = await Promise.allSettled(keys.map((key) => this.persistKey(key)));
+    const results = await Promise.allSettled(keys.map((key) => this.persistInOrder(key)));
     results.forEach((result, i) => {
       const key = keys[i];
       if (result.status === 'rejected' && key !== undefined) {
@@ -135,12 +133,30 @@ export class GlobalMapProxy {
     await this.flush();
   }
 
+  /**
+   * Persist a key after any earlier write of the same key has settled, so two
+   * flushes can never land one key's values out of order. The value is read
+   * when the write starts, not when it is queued.
+   */
+  private persistInOrder(key: string): Promise<void> {
+    const previous = this.inFlight.get(key);
+    const write = previous === undefined
+      ? this.persistKey(key)
+      : previous.then(() => this.persistKey(key), () => this.persistKey(key));
+    this.inFlight.set(key, write);
+    const settle = (): void => {
+      if (this.inFlight.get(key) === write) this.inFlight.delete(key);
+    };
+    void write.then(settle, settle);
+    return write;
+  }
+
   private async persistKey(key: string): Promise<void> {
-    if (!this.store.has(key)) {
+    if (!this.map.containsKey(key)) {
       await this.persistence.remove(key);
       return;
     }
-    const value = this.store.get(key);
+    const value = this.map.get(key);
     if (typeof value === 'string') {
       await this.persistence.save(key, value, false);
     } else {

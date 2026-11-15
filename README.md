@@ -24,6 +24,12 @@ GalvaniFlow keeps what works (channels, transformers, filters, the pipeline mode
 - **13ms message processing** — batched CTE queries on native Postgres. Mirth does ~70ms for comparable workloads
 - **Real-time dashboard** — WebSocket-driven updates, not polling
 
+## Security model
+
+Channel scripts are isolated on a best-effort basis. The sandbox blocks accidental and casual access to the host, but it is not a security boundary. Treat anyone who can create or edit a channel, code template or global script as able to run code on the GalvaniFlow server.
+
+In practice that means the admin, deployer and developer roles: limit them to people you would trust with a shell on the server. Scripts run in `node:vm` with no `require`, `process` or file system, and reach the network and databases only through the bridges the engine provides. This is an improvement on Mirth Connect and OIE, where Rhino scripts have full Java access by design, but it is not the isolation of a separate process. Process isolation per channel, opt-in and with a performance cost, could be added later for deployments whose script authors are not trusted; it is not built. Details: [SECURITY.md](SECURITY.md) and [`packages/engine/src/sandbox/README.md`](packages/engine/src/sandbox/README.md).
+
 ## Quick Start
 
 ```bash
@@ -65,7 +71,7 @@ front of it, or set `WEB_BIND=0.0.0.0` in `.env` to try it from another machine.
 ### Documentation
 
 - [Quickstart: create your first channel](docs/user/quickstart-first-channel.md)
-- [Connector reference](docs/user/connector-reference.md) — all 10 connector types and their settings
+- [Connector reference](docs/user/connector-reference.md) — all 13 connector types and their settings
 - [Transformer scripting API](docs/user/scripting-api.md) — the sandbox surface for filters/transformers
 
 ### Operations
@@ -90,7 +96,7 @@ packages/
 ├── core-models/     — TypeScript types, Zod schemas, branded types
 ├── core-util/       — HL7v2 parser, utilities
 ├── engine/          — Message pipeline, sandbox, channel runtime
-├── connectors/      — TCP/MLLP, HTTP, File, Database, JS, SMTP, FHIR, DICOM, Email
+├── connectors/      — TCP/MLLP, HTTP, File, SFTP, Database, JS, Channel, SMTP, FHIR, DICOM, Email, Kafka, AMQP
 ├── server/          — Express API (131 endpoints), auth, deployment
 ├── web/             — React + MUI admin UI
 └── cli/             — Command-line interface
@@ -102,7 +108,7 @@ packages/
 
 This is a working system with about 2,500 unit tests plus real-Postgres integration and Playwright end-to-end suites. You can create channels, write transformers in TypeScript, deploy them, send messages, and watch them flow through the pipeline. The 10 seeded example channels demonstrate HL7v2, JSON, XML, channel-to-channel routing, filtering, error handling, and more.
 
-What works: channels, pipeline, sandbox, 10 connector types, RBAC, audit logging, message browser, code templates, alerts, groups, tags, dark mode, CLI.
+What works: channels, pipeline, sandbox, 13 connector types, RBAC, audit logging, message browser, code templates, alerts, groups, tags, dark mode, CLI.
 
 What's next: visual flow builder (think Node-RED for healthcare), plugin system, clustering. See [ROADMAP](docs/progress/ROADMAP.md).
 

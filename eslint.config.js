@@ -4,6 +4,37 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 
+// Helpers that have one home (.claude/reinvention/report.md). A non-exported
+// function, or const holding a function, with one of these names is a local
+// copy: import the shared one. The exported definition in its home file doesn't
+// match, and neither does a plain value such as `const errorMessage = '...'`.
+const SHARED_HELPERS = [
+  { names: 'mapErrorToStatus|errorResponse', home: 'packages/server/src/lib/controller-helpers.ts' },
+  { names: 'errorMessage|errorCode', home: 'packages/server/src/lib/controller-helpers.ts (errorResponse(error).message or .code) on the server, packages/web/src/lib/error-message.ts (errorMessage) in web' },
+  { names: 'escapeCsvField', home: 'packages/server/src/lib/csv.ts' },
+  { names: 'isBlockedIp|isBlockedHost|isBlockedHostname|isBlockedAddress|isReservedHostname|isReservedAddress', home: 'packages/engine/src/sandbox/ssrf.ts' },
+  { names: 'isPlainObject|isRecord', home: '@galvaniflow/core-util (validation.ts)' },
+  { names: 'errorInfo', home: '@galvaniflow/core-util (error-info.ts)' },
+  { names: 'formatBytes', home: 'packages/web/src/lib/system-health.ts' },
+  { names: 'expiryDays|expiryColor|expiryLabel', home: 'packages/web/src/lib/certificate-expiry.ts' },
+  { names: 'getStr|getNum|getBool|getTls|getTlsStr|getTlsBool|propertyUpdaters', home: 'packages/web/src/components/channels/common/connector-properties.ts' },
+  { names: 'compileScript|compileErrorMessages|extractEsbuildErrors', home: 'packages/engine/src/sandbox/script-compiler.ts' },
+  { names: 'toPoolConfig', home: 'packages/connectors/src/database/connection-pool.ts' },
+  { names: 'dispatchQuarantined', home: 'packages/connectors/src/quarantine-ledger.ts' },
+  { names: 'connectFresh|closeQuietly', home: 'packages/connectors/src/client-lifecycle.ts' },
+  { names: 'unescapeControlChars|readEscapes|unescapeMirth', home: '@galvaniflow/core-util (delimited.ts)' },
+  { names: 'isSecretSetting|isSecretSettingType|isSecret', home: '@galvaniflow/core-util (secret-setting.ts)' },
+  { names: 'containsPattern|likePattern', home: 'packages/server/src/lib/like.ts' },
+  { names: 'emitSuccessEvent|emitCollectionEvent|emitDataSourceEvent', home: 'packages/server/src/lib/event-emitter.ts' },
+  { names: 'buildEventWhereConditions|buildExportWhereConditions', home: 'packages/server/src/services/event.service.ts' },
+  { names: 'definedSearchParams|messageFilterParts', home: 'packages/web/src/lib/search-params.ts and message-filter-query.ts' },
+  { names: 'createNodemailerTransport|buildNodemailerOptions', home: '@galvaniflow/connectors (smtp/smtp-dispatcher.ts)' },
+];
+const sharedHelperSelectors = SHARED_HELPERS.flatMap(({ names, home }) => [
+  { selector: `:not(ExportNamedDeclaration) > FunctionDeclaration[id.name=/^(${names})$/]`, message: `Import this from ${home} instead of copying it.` },
+  { selector: `:not(ExportNamedDeclaration) > VariableDeclaration > VariableDeclarator[id.name=/^(${names})$/][init.type=/^(ArrowFunctionExpression|FunctionExpression)$/]`, message: `Import this from ${home} instead of copying it.` },
+]);
+
 export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
@@ -22,6 +53,7 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-namespace': 'off',
       'no-console': 'warn',
+      'no-restricted-syntax': ['error', ...sharedHelperSelectors],
     },
   },
   // React Hooks rules (only for web package)
@@ -35,7 +67,9 @@ export default tseslint.config(
   },
   // Visual language guards (docs/design/15-visual-language.md). Colours and fonts
   // come from styles/tokens.ts through the theme; the browser's own popups can't be
-  // styled or tested, so confirmations use ConfirmDialog.
+  // styled or tested, so confirmations use ConfirmDialog. A later block's
+  // no-restricted-syntax replaces an earlier one's, so this one repeats the
+  // shared-helper selectors.
   {
     files: ['packages/web/src/**/*.{ts,tsx}'],
     ignores: ['packages/web/src/styles/**', '**/__tests__/**', '**/*.test.{ts,tsx}'],
@@ -54,6 +88,7 @@ export default tseslint.config(
           selector: 'Property[key.name="fontFamily"] > Literal',
           message: 'No inline font stacks. Use FONT_FAMILY_MONO from styles/tokens.ts, or the theme typography.',
         },
+        ...sharedHelperSelectors,
       ],
       'no-restricted-globals': [
         'error',

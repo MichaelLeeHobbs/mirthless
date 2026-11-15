@@ -109,5 +109,64 @@ export function requireMail(): TestMailConfig {
   return mailConfig;
 }
 
+// ----- Kafka (KAFKA_TEST_BROKERS) -----
+
+export interface TestKafkaConfig {
+  /** Plaintext listener, `host:port`. */
+  readonly brokers: string;
+  /** SASL/PLAIN listener, `host:port`. */
+  readonly saslBrokers: string;
+  readonly username: string;
+  readonly password: string;
+}
+
+function readKafkaConfig(): TestKafkaConfig | null {
+  const brokers = process.env.KAFKA_TEST_BROKERS;
+  if (!brokers) return null;
+  return {
+    brokers,
+    saslBrokers: process.env.KAFKA_TEST_SASL_BROKERS ?? 'localhost:19093',
+    username: process.env.KAFKA_TEST_USER ?? 'mirth',
+    password: process.env.KAFKA_TEST_PASSWORD ?? 'mirthpw',
+  };
+}
+
+export const kafkaConfig = readKafkaConfig();
+export const describeKafka = kafkaConfig ? describe : describe.skip;
+export function requireKafka(): TestKafkaConfig {
+  if (!kafkaConfig) throw new Error('KAFKA_TEST_BROKERS is not set');
+  return kafkaConfig;
+}
+
+// ----- AMQP / RabbitMQ (AMQP_TEST_HOST) -----
+
+export interface TestAmqpConfig {
+  readonly host: string;
+  readonly port: number;
+  /** RabbitMQ management API port, used to drop client connections. */
+  readonly managementPort: number;
+  readonly username: string;
+  readonly password: string;
+}
+
+function readAmqpConfig(): TestAmqpConfig | null {
+  const host = process.env.AMQP_TEST_HOST;
+  if (!host) return null;
+  return {
+    host,
+    port: process.env.AMQP_TEST_PORT ? Number(process.env.AMQP_TEST_PORT) : 5673,
+    managementPort: process.env.AMQP_TEST_MANAGEMENT_PORT ? Number(process.env.AMQP_TEST_MANAGEMENT_PORT) : 15673,
+    username: process.env.AMQP_TEST_USER ?? 'mirth',
+    password: process.env.AMQP_TEST_PASSWORD ?? 'mirthpw',
+  };
+}
+
+export const amqpConfig = readAmqpConfig();
+export const describeAmqp = amqpConfig ? describe : describe.skip;
+export function requireAmqp(): TestAmqpConfig {
+  if (!amqpConfig) throw new Error('AMQP_TEST_HOST is not set');
+  return amqpConfig;
+}
+
 // (DICOM needs no gate: the dcmjs-dimse connector runs in-process, so its cascade
 // test lives in the default lane — packages/connectors/src/__tests__/e2e/connector-dicom.e2e.test.ts.)

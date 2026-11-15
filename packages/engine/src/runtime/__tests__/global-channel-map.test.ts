@@ -78,6 +78,19 @@ describe('GlobalChannelMap', () => {
     expect(gcm.containsKey('toRemove')).toBe(false);
   });
 
+  it('applyChanges returns the keys it set and removed, and none it left alone', () => {
+    gcm.put('same', 1);
+    gcm.put('changed', 'old');
+    gcm.put('removed', true);
+    const changed = gcm.applyChanges(gcm.toRecord(), { same: 1, changed: 'new', added: 'x' });
+    expect([...changed].sort()).toEqual(['added', 'changed', 'removed']);
+  });
+
+  it('applyChanges returns an empty list when nothing changed', () => {
+    gcm.put('k', { a: 1 });
+    expect(gcm.applyChanges(gcm.toRecord(), { k: { a: 1 } })).toEqual([]);
+  });
+
   it('applyChanges keeps a key written by another message since the snapshot', () => {
     const stale = gcm.toRecord();
     gcm.put('other', 1);

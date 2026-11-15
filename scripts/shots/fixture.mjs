@@ -82,6 +82,45 @@ function revisionDetail(revision) {
   };
 }
 
+/** A Kafka source with SASL and TLS on, and an AMQP destination, for the queue connector forms. */
+const queueChannelDetail = {
+  ...channelDetail,
+  id: 'c8', name: 'Lab Results via Kafka', sourceConnectorType: 'KAFKA',
+  sourceConnectorProperties: {
+    brokers: 'kafka-1.example.test:9093,kafka-2.example.test:9093', clientId: 'galvaniflow', topic: 'lab.results.v1',
+    groupId: 'galvaniflow-lab-results', startFrom: 'EARLIEST', saslMechanism: 'SCRAM-SHA-512', saslUsername: 'svc-galvaniflow',
+    saslPassword: 'example', useTls: true, tls: { caCertId: '', clientCertId: '', rejectUnauthorized: true },
+  },
+  destinations: [{
+    ...channelDetail.destinations[0], name: 'To RabbitMQ', connectorType: 'AMQP',
+    properties: {
+      host: 'rabbit.example.test', port: 5671, vhost: '/clinical', username: 'galvaniflow', password: 'example',
+      useTls: true, tls: { caCertId: '', clientCertId: '', rejectUnauthorized: true },
+      exchange: 'hl7', routingKey: 'oru.${sendingFacility}', headers: { source: 'galvaniflow' }, contentType: 'application/hl7-v2',
+    },
+  }],
+};
+
+// A Delimited file drop written to a partner's MySQL: shows the Delimited
+// settings and the database type.
+const billingDetail = {
+  ...channelDetail,
+  id: 'c6', name: 'Nightly Billing Export (file drop with a long name)', description: 'Billing rows from the nightly CSV into the partner MySQL.',
+  inboundDataType: 'DELIMITED', outboundDataType: 'XML', sourceConnectorType: 'FILE',
+  sourceConnectorProperties: { directory: '/data/billing', fileFilter: '*.csv', pollingIntervalMs: 60000 },
+  destinations: [
+    { id: 'd6', metaDataId: 1, name: 'Partner billing DB', enabled: true, connectorType: 'DATABASE',
+      properties: { vendor: 'mysql', host: 'billing-db.example.test', port: 3306, database: 'billing', username: 'galvaniflow', password: '', tls: true,
+        query: 'INSERT INTO charges (mrn, code, amount) VALUES (${mrn}, ${code}, ${amount})', useTransaction: true, returnGeneratedKeys: false },
+      queueMode: 'ON_FAILURE', retryCount: 3, retryIntervalMs: 10000, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false },
+  ],
+  transformers: [{
+    id: 'x6', connectorId: null, inboundDataType: 'DELIMITED', outboundDataType: 'XML', inboundTemplate: null, outboundTemplate: null,
+    inboundProperties: { delimited: { columnDelimiter: '|', recordDelimiter: '\r\n', columnNames: ['mrn', 'code', 'amount', 'posted'] } },
+    outboundProperties: {}, steps: [],
+  }],
+};
+
 const messages = Array.from({ length: 14 }, (_, i) => ({
   messageId: 48211 - i, correlationId: `corr-${String(48211 - i)}`, receivedAt: ago(i * 3 + 1), processed: true,
   processedAt: ago(i * 3), connectors: [
@@ -197,6 +236,9 @@ export function route(pathname, search) {
   if (p === '/channels/c1/revisions') return revisions;
   const rev = /^\/channels\/c1\/revisions\/(\d)$/.exec(p);
   if (rev) return revisionDetail(Number(rev[1]));
+
+  if (p === '/channels/c8') return queueChannelDetail;
+  if (p === '/channels/c6') return billingDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
   if (p === '/messages') {
     const items = search.includes('status=ERROR') ? traffic.filter((t) => t.status === 'ERROR') : traffic;

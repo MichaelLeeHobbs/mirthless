@@ -11,7 +11,7 @@ Instructions for AI coding agents (Claude Code, Codex and others) working in thi
 GalvaniFlow is a message routing and transformation engine for healthcare systems. Core concepts:
 
 - **Channels** — message processing pipelines with a source connector (inbound) and destination connectors (outbound)
-- **Connectors** — protocol adapters: TCP/MLLP (HL7), HTTP/REST, File, Database, DICOM, FHIR, SMTP, JavaScript
+- **Connectors** — protocol adapters: TCP/MLLP (HL7), HTTP/REST, File, SFTP, Database, DICOM, FHIR, SMTP, Email, JavaScript, Kafka, AMQP (RabbitMQ)
 - **Transformers** — JavaScript/TypeScript steps that convert messages between formats (HL7v2, XML, JSON, FHIR, DICOM, delimited)
 - **Filters** — JavaScript conditions controlling message flow through the pipeline
 - **Code Templates** — reusable JavaScript functions shared across channels
@@ -35,7 +35,22 @@ Every line of code you write may be part of a system that routes patient lab res
 Do NOT build features, abstractions, or flexibility that aren't explicitly required by the current task.
 
 - No "just in case" parameters, config options, or extension points
-- No premature abstractions: don't build a helper for one caller. Before writing a helper, search `lib/` and `packages/core-util` for one that already does the job. A second copy of an existing helper is a defect.
+- No premature abstractions: don't build a helper for one caller. Before writing a helper, search `lib/` and `packages/core-util` for one that already does the job. A second copy of an existing helper is a defect. The helpers below each had copies before. Lint (`eslint.config.js`, `SHARED_HELPERS`) fails a non-exported function, or a const holding a function, named like one of them. `formatTimestamp` is the exception, because `LogViewer` and the HL7 formatter use the name for different formats.
+  - `mapErrorToStatus` and `errorResponse` in `server/src/lib/controller-helpers.ts`: ServiceError code to HTTP status (500 otherwise), and the `{ code, message }` body (`INTERNAL` otherwise). A controller with a different status for one code wraps `mapErrorToStatus`, as `user.controller.ts` does.
+  - `escapeCsvField` in `server/src/lib/csv.ts`.
+  - `isBlockedHostname`/`isBlockedAddress` (script `httpFetch`) and `isReservedHostname`/`isReservedAddress` (Test Connection) in `engine/src/sandbox/ssrf.ts`: both SSRF policies, built from one set of ranges.
+  - `isPlainObject` and `errorInfo` in `core-util`. `errorInfo` builds the `{ errMsg, name, stack }` log record for any thrown value.
+  - `formatBytes` in `web/src/lib/system-health.ts`, `formatTimestamp` in `web/src/lib/format.ts` (the caller passes the label for a missing time), and the certificate `expiry*` helpers in `web/src/lib/certificate-expiry.ts`.
+  - `getStr`, `getNum`, `getBool`, `getTls*` and `propertyUpdaters` in `web/src/components/channels/common/connector-properties.ts` for connector forms.
+  - `compileScript` and `compileErrorMessages` in `engine/src/sandbox/script-compiler.ts`: compile a user script the way deploy does, and turn its errors into `Line N: <text>` on the script's own lines. Script validation uses both.
+  - `toPoolConfig` in `connectors/src/database/connection-pool.ts`: a database connector's pool config from its connection fields.
+  - `QuarantineLedger` and `dispatchQuarantined` in `connectors/src/quarantine-ledger.ts`: the quarantine set, its sidecar ledger and the dispatch-then-quarantine step, for any polling file source. The source supplies only the storage.
+  - `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`: connect a polling receiver's remote client, or close it, under a timeout.
+  - `createNodemailerTransport` in `connectors/src/smtp/smtp-dispatcher.ts` (exported from `@galvaniflow/connectors`): builds a nodemailer transport for the SMTP connector and the server's own mail. SMTP Test Connection (`connection-test.service.ts`) still builds its own; see #92.
+  - `unescapeControlChars` (typed `\n`, `\r`, `\t`, `\\` to the characters) and `isSecretSetting` (which settings hold secrets) in `core-util`. The web depends on core-util.
+  - `containsPattern` in `server/src/lib/like.ts` (a LIKE pattern from user text), `emitSuccessEvent` in `server/src/lib/event-emitter.ts` (an INFO/SUCCESS audit event), and `buildEventWhereConditions` in `server/src/services/event.service.ts` (the event list and export filters).
+  - `errorMessage` in `web/src/lib/error-message.ts` (text for an unknown thrown value, with the caller's fallback), `definedSearchParams` in `web/src/lib/search-params.ts` (query params without the unset ones), `messageFilterParts` in `web/src/lib/message-filter-query.ts` (the message search and export filters), and `updateTls` on `propertyUpdaters` for a connector form's TLS fields.
+  - `GlobalChannelMap` in `engine/src/runtime/global-channel-map.ts` is the in-memory script map; `GlobalMapProxy` keeps its entries in one rather than its own `Map`.
 - No speculative generalization — design for today's requirements, not hypothetical futures
 - If you find yourself saying "this might be useful later" — stop and don't build it
 
@@ -115,7 +130,7 @@ Tests are mandatory, not optional. This is healthcare software.
 |---|---|---|---|---|
 | engine | 93 | 89 | 96 | 96 |
 | core-util | 93 | 83 | 92 | 96 |
-| connectors | 83 | 71 | 80 | 85 |
+| connectors | 89 | 78 | 85 | 91 |
 | server | 57 | 58 | 71 | 57 |
 | core-models | 40 | 49 | 54 | 39 |
 | cli | 34 | 31 | 52 | 34 |
@@ -300,7 +315,7 @@ Lives in `.claude/` and is checked in, so every agent and teammate gets the same
 | `verify-and-finish` skill | `.claude/skills/verify-and-finish/` | Runs the matrix above and reports DONE / NEEDS YOU / NOT DONE |
 | `write-tests` skill | `.claude/skills/write-tests/` | Which test layer to use and how to write it |
 | `create-ui` skill | `.claude/skills/create-ui/` | Builds and screenshots UI in the visual language |
-| Session start hook | `.claude/hooks/session-start.mjs` | In cloud sessions only, installs dependencies and builds core-models |
+| Session start hook | `.claude/hooks/session-start.mjs` | In cloud sessions only, installs dependencies and builds core-models and core-util |
 | Schema hook | `.claude/hooks/schema-changed.mjs` | After a schema edit, reminds the agent to generate and commit a migration |
 | Permissions | `.claude/settings.json` | Allows the routine checks without prompts; denies force pushes, `rm -rf` and real `.env` files |
 
@@ -351,7 +366,7 @@ galvaniflow/             — repository root (the GitHub repository is still nam
 │   ├── core-models/     — Shared TS types, Zod schemas, branded types
 │   ├── core-util/       — Shared utilities (HL7 parsing, serialization, date helpers)
 │   ├── engine/          — Message processing: channel runtime, routing, queuing, sandbox
-│   ├── connectors/      — Protocol adapters (tcp-mllp, http, file, sftp, database, dicom, fhir, smtp, js)
+│   ├── connectors/      — Protocol adapters (tcp-mllp, http, file, sftp, database, dicom, fhir, smtp, email, js, kafka, amqp)
 │   ├── server/          — Express API, auth, channel deployment, config management
 │   ├── web/             — React + MUI admin: channel editor, message browser, dashboard
 │   └── cli/             — CLI for server management

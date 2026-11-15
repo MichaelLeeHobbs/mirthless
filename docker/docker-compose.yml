@@ -32,7 +32,7 @@ services:
 
   mail-test:
     # GreenMail: SMTP (3025) + IMAP (3143) in one container for mail connectors.
-    image: greenmail/standalone:2.1.0
+    image: greenmail/standalone:2.1.15
     container_name: galvaniflow-mail-test
     profiles: ["test"]
     environment:
@@ -56,6 +56,48 @@ services:
       MYSQL_PASSWORD: mirthpw
     ports:
       - "3307:3306"
+
+  kafka-test:
+    # Single-node KRaft Kafka for the Kafka connectors. 19092 is plaintext,
+    # 19093 is SASL/PLAIN (user mirth / mirthpw). Topics are not auto-created.
+    image: apache/kafka:4.3.1
+    container_name: galvaniflow-kafka-test
+    profiles: ["test"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,PLAINTEXT://:9092,SASL_PLAINTEXT://:9093,CONTROLLER://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-test:29092,PLAINTEXT://localhost:19092,SASL_PLAINTEXT://localhost:19093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT,SASL_PLAINTEXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9094
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      # The image refuses to start a SASL listener without KAFKA_OPTS; the JAAS
+      # config is the per-listener property below, so this only has to be set.
+      KAFKA_OPTS: -Dgalvaniflow.test=true
+      KAFKA_LISTENER_NAME_SASL__PLAINTEXT_PLAIN_SASL_JAAS_CONFIG: org.apache.kafka.common.security.plain.PlainLoginModule required username="mirth" password="mirthpw" user_mirth="mirthpw";
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "19092:9092"
+      - "19093:9093"
+
+  rabbitmq-test:
+    # RabbitMQ for the AMQP connectors; the management API (15673) lets the
+    # suite drop client connections to test reconnects.
+    image: rabbitmq:4.4-management-alpine
+    container_name: galvaniflow-rabbitmq-test
+    profiles: ["test"]
+    environment:
+      RABBITMQ_DEFAULT_USER: mirth
+      RABBITMQ_DEFAULT_PASS: mirthpw
+    ports:
+      - "5673:5672"
+      - "15673:15672"
 
 volumes:
   postgres_data:

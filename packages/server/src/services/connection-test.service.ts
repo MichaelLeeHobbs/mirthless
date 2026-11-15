@@ -14,27 +14,48 @@ import * as fs from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
 import { stderr, type Result } from 'stderr-lib';
-import type { ConnectionTestResult } from '@galvaniflow/core-models';
+import type { z } from 'zod/v4';
+import {
+  kafkaSourcePropertiesSchema,
+  kafkaDestinationPropertiesSchema,
+  amqpSourcePropertiesSchema,
+  amqpDestinationPropertiesSchema,
+  type ConnectionTestResult,
+} from '@galvaniflow/core-models';
 import { isReservedAddress, isReservedHostname } from '@galvaniflow/engine';
+import {
+  testKafkaConnection,
+  testAmqpConnection,
+  readQueueTls,
+  withTimeout,
+  DATABASE_VENDOR,
+  createPool,
+  createSsh2SftpClient,
+  validateAuth,
+  type DatabasePool,
+  type DatabaseVendor,
+  type SftpClient,
+  type SftpClientFactory,
+  type SftpConnectionOptions,
+} from '@galvaniflow/connectors';
 import { ServiceError } from '../lib/service-error.js';
-import { resolveHttpDestinationTls, resolveHttpSourceTls } from './connector-tls-resolver.js';
+import { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } from './connector-tls-resolver.js';
 
 const nodeRequire = createRequire(import.meta.url);
 
 // ----- Constants -----
 
 const TEST_TIMEOUT_MS = 10_000;
+/** How long to wait for an SFTP session to close after a test before giving up on it. */
+const SFTP_CLOSE_TIMEOUT_MS = 2_000;
 
 // ----- Injectable Factories (for testing) -----
 
-/** pg Pool interface. */
-interface PgPool {
-  query(sql: string): Promise<unknown>;
-  end(): Promise<void>;
-}
+/** What the database test needs from a connector pool: connect (create checks the connection) and close. */
+type TestPool = Pick<DatabasePool, 'create' | 'destroy'>;
 
-/** pg Pool factory. */
-type PoolFactory = (config: Record<string, unknown>) => PgPool;
+/** The database connectors' pool for a vendor, so the test speaks the same protocol as the connector. */
+type PoolFactory = (vendor: DatabaseVendor) => TestPool;
 
 /** nodemailer transport interface for verify. */
 interface SmtpVerifyTransport {
@@ -45,11 +66,7 @@ interface SmtpVerifyTransport {
 /** nodemailer transport factory. */
 type SmtpTransportFactory = (config: Record<string, unknown>) => SmtpVerifyTransport;
 
-/** Default pg Pool factory. */
-function defaultPoolFactory(config: Record<string, unknown>): PgPool {
-  const pg = nodeRequire('pg') as { Pool: new (c: Record<string, unknown>) => PgPool };
-  return new pg.Pool(config);
-}
+const defaultPoolFactory: PoolFactory = createPool;
 
 /** Default nodemailer transport factory. */
 function defaultSmtpTransportFactory(config: Record<string, unknown>): SmtpVerifyTransport {
@@ -62,6 +79,7 @@ function defaultSmtpTransportFactory(config: Record<string, unknown>): SmtpVerif
 /** Module-level factories. Overridable for tests. */
 let poolFactory: PoolFactory = defaultPoolFactory;
 let smtpTransportFactory: SmtpTransportFactory = defaultSmtpTransportFactory;
+let sftpClientFactory: SftpClientFactory = createSsh2SftpClient;
 
 /** Override pool factory (for testing). */
 export function setPoolFactory(factory: PoolFactory): void {
@@ -73,10 +91,16 @@ export function setSmtpTransportFactory(factory: SmtpTransportFactory): void {
   smtpTransportFactory = factory;
 }
 
+/** Override the SFTP client factory (for testing). */
+export function setSftpClientFactory(factory: SftpClientFactory): void {
+  sftpClientFactory = factory;
+}
+
 /** Reset factories to defaults (for testing). */
 export function resetFactories(): void {
   poolFactory = defaultPoolFactory;
   smtpTransportFactory = defaultSmtpTransportFactory;
+  sftpClientFactory = createSsh2SftpClient;
 }
 
 // ----- SSRF Protection -----
@@ -351,37 +375,37 @@ const testFile: Tester = async (mode, props) => {
   }
 };
 
-/** Database tester — connects via pg and runs SELECT 1. */
+/** Database tester — connects with the connector's own pool for the vendor (PostgreSQL by default). */
 const testDatabase: Tester = async (_mode, props) => {
   const host = requireString(props, 'host');
   const port = requireNumber(props, 'port');
   const database = requireString(props, 'database');
+  const vendor = props['vendor'] ?? DATABASE_VENDOR.POSTGRESQL;
+  if (vendor !== DATABASE_VENDOR.POSTGRESQL && vendor !== DATABASE_VENDOR.MYSQL) {
+    return failureResult(`Database "${String(vendor)}" is not supported (PostgreSQL and MySQL are)`, 0);
+  }
   await assertHostAllowed(host);
 
   const start = performance.now();
-
-  const pool = poolFactory({
+  const pool = poolFactory(vendor);
+  const created = await pool.create({
     host,
     port,
     database,
     // The connector forms save the account as `username`.
-    user: typeof props['username'] === 'string' ? props['username'] : undefined,
-    password: typeof props['password'] === 'string' ? props['password'] : undefined,
-    ssl: props['tls'] === true ? { rejectUnauthorized: true } : false,
-    connectionTimeoutMillis: TEST_TIMEOUT_MS,
+    user: typeof props['username'] === 'string' ? props['username'] : '',
+    password: typeof props['password'] === 'string' ? props['password'] : '',
+    tls: props['tls'] === true,
+    maxConnections: 1,
+    idleTimeoutMs: TEST_TIMEOUT_MS,
+    connectionTimeoutMs: TEST_TIMEOUT_MS,
+    statementTimeoutMs: TEST_TIMEOUT_MS,
   });
-
-  try {
-    await pool.query('SELECT 1');
-    const latency = performance.now() - start;
-    return successResult(`Database connected: ${host}:${port}/${database}`, latency);
-  } catch (err: unknown) {
-    const latency = performance.now() - start;
-    const msg = err instanceof Error ? err.message : 'Unknown error';
-    return failureResult(`Database connection failed: ${msg}`, latency);
-  } finally {
-    await pool.end();
-  }
+  await pool.destroy();
+  const latency = performance.now() - start;
+  return created.ok
+    ? successResult(`Database connected: ${host}:${port}/${database}`, latency)
+    : failureResult(`Database connection failed: ${created.error.message}`, latency);
 };
 
 /** SMTP tester — verifies transport connectivity. */
@@ -471,6 +495,177 @@ const testEmail: Tester = async (_mode, props) => {
   return testTcpConnect(host, port);
 };
 
+/** An optional string property; undefined unless it is a non-empty string. */
+function optionalString(props: Readonly<Record<string, unknown>>, key: string): string | undefined {
+  const val = props[key];
+  return typeof val === 'string' && val.length > 0 ? val : undefined;
+}
+
+/**
+ * SFTP connection options read as the registry's SFTP factories read them
+ * (port 22 and host key checking on by default). Refuses settings the
+ * connector could never connect with, before any network I/O.
+ */
+function readSftpOptions(props: Readonly<Record<string, unknown>>): SftpConnectionOptions {
+  const options: SftpConnectionOptions = {
+    host: requireString(props, 'host'),
+    port: props['port'] === undefined || props['port'] === '' ? 22 : requireNumber(props, 'port'),
+    username: requireString(props, 'username'),
+    password: optionalString(props, 'password'),
+    privateKey: optionalString(props, 'privateKey'),
+    passphrase: optionalString(props, 'passphrase'),
+    strictHostKey: props['strictHostKey'] !== false,
+    hostKey: optionalString(props, 'hostKey'),
+    // ssh2 waits 20 s for the handshake by default; give up when the test does.
+    readyTimeoutMs: TEST_TIMEOUT_MS,
+  };
+  const authError = validateAuth(options);
+  if (authError) throw new ServiceError('INVALID_INPUT', authError);
+  if (options.strictHostKey && !options.hostKey?.trim()) {
+    throw new ServiceError('INVALID_INPUT', 'Host key checking is on but no host key is set');
+  }
+  return options;
+}
+
+/** Close an SFTP session after a test. The result is already decided, so a failed or slow close does not change it. */
+async function closeSftp(client: SftpClient): Promise<void> {
+  try {
+    await withTimeout(client.end(), SFTP_CLOSE_TIMEOUT_MS, 'SFTP close');
+  } catch {
+    // Nothing to report: the session either never opened or the server dropped it.
+  }
+}
+
+/**
+ * Start an SFTP connect and return it with a close that also covers a connect
+ * still pending when the test gives up. ssh2-sftp-client's end() does nothing
+ * while connect is pending, so a session that opens late is closed once it settles.
+ */
+function startSftpConnect(client: SftpClient): { readonly connecting: Promise<void>; close(): Promise<void> } {
+  const connecting = client.connect();
+  let settled = false;
+  const whenSettled = connecting.then(() => { settled = true; }, () => { settled = true; });
+  return {
+    connecting,
+    async close(): Promise<void> {
+      if (settled) {
+        await closeSftp(client);
+        return;
+      }
+      void whenSettled.then(() => closeSftp(client));
+    },
+  };
+}
+
+/**
+ * The result of an SFTP session that logged in. The client's exists() is true
+ * for a file as well as a directory, so the message says "path". A missing
+ * path fails a source; a destination creates its directory on first send.
+ */
+function sftpPathResult(
+  mode: string,
+  found: boolean,
+  latency: number,
+  where: { readonly target: string; readonly path: string },
+): ConnectionTestResult {
+  const { target, path } = where;
+  if (found) return successResult(`SFTP connected: ${target}, remote path ${path} found`, latency);
+  if (mode === 'DESTINATION') {
+    return successResult(`SFTP connected: ${target}, remote directory ${path} does not exist yet and will be created on first send`, latency);
+  }
+  return failureResult(`SFTP connected to ${target} but remote path ${path} was not found`, latency);
+}
+
+/**
+ * SFTP tester: connect and log in with the configured credentials and host
+ * key, check the remote path, then close. The connect and the check together
+ * are bounded by the test timeout.
+ */
+const testSftp: Tester = async (mode, props) => {
+  const options = readSftpOptions(props);
+  const remoteDirectory = requireString(props, 'remoteDirectory');
+  await assertHostAllowed(options.host);
+
+  const start = performance.now();
+  const target = `${options.host}:${String(options.port)}`;
+  const client = sftpClientFactory(options);
+  const session = startSftpConnect(client);
+  try {
+    const found = await withTimeout(
+      session.connecting.then(() => client.exists(remoteDirectory)),
+      TEST_TIMEOUT_MS,
+      'SFTP connection test',
+    );
+    return sftpPathResult(mode, found, performance.now() - start, { target, path: remoteDirectory });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return failureResult(`SFTP connection failed: ${msg}`, performance.now() - start);
+  } finally {
+    await session.close();
+  }
+};
+
+/** Parse props with a connector schema, failing as invalid input with the schema's reasons. */
+function parseProps<S extends z.ZodType>(schema: S, props: unknown): z.output<S> {
+  const parsed = schema.safeParse(props);
+  if (!parsed.success) {
+    throw new ServiceError('INVALID_INPUT', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+  }
+  return parsed.data;
+}
+
+/** Certificate ids swapped for PEM, as at deploy, then read the way the connector reads them. */
+async function queueTls(props: Readonly<Record<string, unknown>>): Promise<ReturnType<typeof readQueueTls>> {
+  const resolved = await resolveQueueTls(props);
+  if (!resolved.ok) {
+    throw new ServiceError('INVALID_INPUT', `TLS certificate resolution failed: ${resolved.error.message}`);
+  }
+  return readQueueTls(resolved.value);
+}
+
+/** Run a broker check under the test timeout and report it as a result. */
+async function brokerCheck(label: string, check: () => Promise<string>): Promise<ConnectionTestResult> {
+  const start = performance.now();
+  try {
+    const message = await withTimeout(check(), TEST_TIMEOUT_MS, `${label} connection test`);
+    return successResult(message, performance.now() - start);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return failureResult(`${label} connection failed: ${msg}`, performance.now() - start);
+  }
+}
+
+/**
+ * Kafka tester: connect to the bootstrap brokers with the configured TLS and
+ * SASL and read cluster metadata. A source, or a destination whose topic does
+ * not vary per message, also checks that the topic exists.
+ */
+const testKafka: Tester = async (mode, props) => {
+  const config = parseProps(mode === 'SOURCE' ? kafkaSourcePropertiesSchema : kafkaDestinationPropertiesSchema, props);
+  for (const broker of config.brokers.split(',')) {
+    await assertHostAllowed(broker.trim().replace(/:\d+$/, ''));
+  }
+  const tls = await queueTls(props);
+  const topic = config.topic.includes('${') ? undefined : config.topic;
+  return brokerCheck('Kafka', () => testKafkaConnection({ ...config, tls }, topic));
+};
+
+/**
+ * AMQP tester: connect and log in with the configured TLS and credentials, then
+ * check that the source's queue, or the destination's exchange, exists.
+ */
+const testAmqp: Tester = async (mode, props) => {
+  const tls = await queueTls(props);
+  if (mode === 'SOURCE') {
+    const config = parseProps(amqpSourcePropertiesSchema, props);
+    await assertHostAllowed(config.host);
+    return brokerCheck('AMQP', () => testAmqpConnection({ ...config, tls }, { queue: config.queue }));
+  }
+  const config = parseProps(amqpDestinationPropertiesSchema, props);
+  await assertHostAllowed(config.host);
+  return brokerCheck('AMQP', () => testAmqpConnection({ ...config, tls }, { exchange: config.exchange }));
+};
+
 // ----- Tester Registry -----
 
 const TESTERS: Readonly<Record<string, Tester>> = {
@@ -484,6 +679,9 @@ const TESTERS: Readonly<Record<string, Tester>> = {
   CHANNEL: testChannel,
   JAVASCRIPT: testJavascript,
   EMAIL: testEmail,
+  SFTP: testSftp,
+  KAFKA: testKafka,
+  AMQP: testAmqp,
 };
 
 // ----- Public API -----

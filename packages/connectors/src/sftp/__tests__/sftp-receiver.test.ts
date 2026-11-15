@@ -331,6 +331,39 @@ describe('durable quarantine', () => {
     expect(dispatchCount).toBe(0);
   });
 
+  it('logs a ledger that exists but cannot be downloaded, and still starts', async () => {
+    const state = new RemoteState();
+    state.ledger = '["a.hl7:1"]';
+    const { logger, errors } = makeMockLogger();
+
+    receiver = new SftpReceiver(makeConfig(), factoryFor(state, { get: true }), logger);
+    receiver.setDispatcher(makeDispatcher());
+    const started = await receiver.onStart();
+
+    expect(started.ok).toBe(true);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.msg).toBe('Failed to read quarantine ledger; ignoring it (files may be re-dispatched)');
+    expect(errors[0]!.obj['file']).toBe('/inbound/.galvaniflow-quarantine.json');
+  });
+
+  it('logs a ledger that cannot be written and still skips the file this session', async () => {
+    const state = new RemoteState();
+    state.addFile('a.hl7', 'X', Date.now() - 10_000);
+    const { logger, errors } = makeMockLogger();
+
+    let dispatchCount = 0;
+    receiver = new SftpReceiver(makeConfig(), factoryFor(state, { delete: true, put: true }), logger);
+    receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: 1 }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(dispatchCount).toBe(1);
+    expect(state.ledger).toBeNull();
+    const persistErrors = errors.filter((e) => e.msg === 'Failed to persist quarantine ledger; quarantine will not survive a restart');
+    expect(persistErrors).toHaveLength(1);
+    expect(persistErrors[0]!.obj['file']).toBe('/inbound/.galvaniflow-quarantine.json');
+  });
+
   it('treats a corrupt ledger as empty (does not crash) and logs it', async () => {
     const state = new RemoteState();
     state.ledger = '[not valid json';

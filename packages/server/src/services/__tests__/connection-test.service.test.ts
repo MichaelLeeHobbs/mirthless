@@ -17,9 +17,11 @@ import {
   ConnectionTestService,
   setPoolFactory,
   setSmtpTransportFactory,
+  setSftpClientFactory,
   resetFactories,
   _testing,
 } from '../connection-test.service.js';
+import type { SftpClient, SftpConnectionOptions } from '@galvaniflow/connectors';
 
 // ----- TLS fixtures (self-signed CN=localhost pair; test-only) -----
 
@@ -111,8 +113,9 @@ vi.stubGlobal('fetch', mockFetch);
 
 // ----- DB/SMTP factory mocks -----
 
-const mockPoolQuery = vi.fn();
-const mockPoolEnd = vi.fn();
+const mockPoolVendor = vi.fn();
+const mockPoolCreate = vi.fn();
+const mockPoolDestroy = vi.fn();
 
 const mockTransportVerify = vi.fn();
 const mockTransportClose = vi.fn();
@@ -150,10 +153,12 @@ describe('ConnectionTestService', () => {
     vi.clearAllMocks();
 
     // Inject mock factories for DATABASE and SMTP
-    setPoolFactory(() => ({
-      query: mockPoolQuery,
-      end: mockPoolEnd,
-    }));
+    mockPoolCreate.mockResolvedValue({ ok: true, value: undefined, error: null });
+    mockPoolDestroy.mockResolvedValue({ ok: true, value: undefined, error: null });
+    setPoolFactory((vendor) => {
+      mockPoolVendor(vendor);
+      return { create: mockPoolCreate, destroy: mockPoolDestroy };
+    });
 
     setSmtpTransportFactory(() => ({
       verify: mockTransportVerify,
@@ -367,10 +372,7 @@ describe('ConnectionTestService', () => {
   // ----- DATABASE -----
 
   describe('DATABASE', () => {
-    it('returns success when SELECT 1 succeeds', async () => {
-      mockPoolQuery.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
-      mockPoolEnd.mockResolvedValueOnce(undefined);
-
+    it('returns success when the connector pool connects', async () => {
       const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
         host: 'db.example.com',
         port: 5432,
@@ -381,31 +383,36 @@ describe('ConnectionTestService', () => {
       if (!result.ok) return;
       expect(result.value.success).toBe(true);
       expect(result.value.message).toContain('db.example.com');
+      expect(mockPoolVendor).toHaveBeenCalledWith('postgresql');
     });
 
     it('signs in with the account and TLS setting the connector form saves', async () => {
-      const seen: Array<Record<string, unknown>> = [];
-      setPoolFactory((config) => {
-        seen.push(config as unknown as Record<string, unknown>);
-        return { query: mockPoolQuery, end: mockPoolEnd };
-      });
-      mockPoolQuery.mockResolvedValue({ rows: [] });
-      mockPoolEnd.mockResolvedValue(undefined);
-
       await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
         host: 'db.example.com', port: 5432, database: 'testdb', username: 'reader', password: 'pw', tls: true,
       });
       await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
-        host: 'db.example.com', port: 5432, database: 'testdb', username: 'reader', password: 'pw',
+        host: 'db.example.com', port: 5432, database: 'testdb',
       });
 
-      expect(seen[0]).toMatchObject({ user: 'reader', password: 'pw', ssl: { rejectUnauthorized: true } });
-      expect(seen[1]).toMatchObject({ user: 'reader', ssl: false });
+      expect(mockPoolCreate.mock.calls[0]![0]).toMatchObject({ user: 'reader', password: 'pw', tls: true });
+      expect(mockPoolCreate.mock.calls[1]![0]).toMatchObject({ user: '', password: '', tls: false });
+    });
+
+    it('connects to MySQL with the MySQL pool, and refuses a database with no driver', async () => {
+      await ConnectionTestService.testConnection('DATABASE', 'DESTINATION', {
+        vendor: 'mysql', host: 'db.example.com', port: 3306, database: 'partner',
+      });
+      expect(mockPoolVendor).toHaveBeenCalledWith('mysql');
+
+      const refused = await ConnectionTestService.testConnection('DATABASE', 'DESTINATION', {
+        vendor: 'sqlserver', host: 'db.example.com', port: 1433, database: 'partner',
+      });
+      expect(refused.ok && refused.value).toMatchObject({ success: false, message: 'Database "sqlserver" is not supported (PostgreSQL and MySQL are)' });
+      expect(mockPoolVendor).toHaveBeenCalledTimes(1);
     });
 
     it('returns failure when database connection fails', async () => {
-      mockPoolQuery.mockRejectedValueOnce(new Error('connection refused'));
-      mockPoolEnd.mockResolvedValueOnce(undefined);
+      mockPoolCreate.mockResolvedValueOnce({ ok: false, value: null, error: new Error('connection refused') });
 
       const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
         host: 'db.example.com',
@@ -430,17 +437,20 @@ describe('ConnectionTestService', () => {
       expect(result.error.message).toContain('host');
     });
 
-    it('always calls pool.end in finally block', async () => {
-      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
-      mockPoolEnd.mockResolvedValueOnce(undefined);
+    it.each(['/var/run/postgresql', '127.0.0.1'])('refuses %s before opening a pool', async (host) => {
+      const result = await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host, port: 5432, database: 'testdb' });
 
-      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', {
-        host: 'db.example.com',
-        port: 5432,
-        database: 'testdb',
-      });
+      expect(result.ok).toBe(false);
+      expect(mockPoolVendor).not.toHaveBeenCalled();
+      expect(mockPoolCreate).not.toHaveBeenCalled();
+    });
 
-      expect(mockPoolEnd).toHaveBeenCalled();
+    it('closes the pool whether or not it connected', async () => {
+      mockPoolCreate.mockResolvedValueOnce({ ok: false, value: null, error: new Error('refused') });
+      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host: 'db.example.com', port: 5432, database: 'testdb' });
+      await ConnectionTestService.testConnection('DATABASE', 'SOURCE', { host: 'db.example.com', port: 5432, database: 'testdb' });
+
+      expect(mockPoolDestroy).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -662,6 +672,178 @@ describe('ConnectionTestService', () => {
       if (!result.ok) return;
       expect(result.value.success).toBe(false);
       expect(result.value.message).toContain('ECONNREFUSED');
+    });
+  });
+
+  // ----- SFTP -----
+
+  describe('SFTP', () => {
+    const SFTP_PROPS = {
+      host: 'sftp.lab.example', port: 2222, username: 'lab', password: 'pw', privateKey: '', passphrase: '',
+      remoteDirectory: '/inbound', strictHostKey: true, hostKey: 'AAAAkey',
+    };
+    const mockSftpConnect = vi.fn<() => Promise<void>>();
+    const mockSftpExists = vi.fn<(path: string) => Promise<boolean>>();
+    const mockSftpEnd = vi.fn<() => Promise<void>>();
+    const sftpFactory = vi.fn<(options: SftpConnectionOptions) => SftpClient>();
+
+    beforeEach(() => {
+      mockSftpConnect.mockResolvedValue(undefined);
+      mockSftpExists.mockResolvedValue(true);
+      mockSftpEnd.mockResolvedValue(undefined);
+      sftpFactory.mockImplementation(() => ({
+        connect: mockSftpConnect, exists: mockSftpExists, end: mockSftpEnd,
+      }) as unknown as SftpClient);
+      setSftpClientFactory(sftpFactory);
+    });
+
+    afterEach(() => { vi.useRealTimers(); });
+
+    it.each(['SOURCE', 'DESTINATION'])('connects, finds the remote directory and closes (%s)', async (mode) => {
+      const result = await ConnectionTestService.testConnection('SFTP', mode, SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(true);
+      expect(result.value.message).toContain('sftp.lab.example:2222');
+      expect(result.value.message).toContain('/inbound');
+      expect(sftpFactory).toHaveBeenCalledWith(expect.objectContaining({
+        host: 'sftp.lab.example', port: 2222, username: 'lab', password: 'pw', strictHostKey: true, hostKey: 'AAAAkey',
+      }));
+      expect(mockSftpExists).toHaveBeenCalledWith('/inbound');
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('uses port 22 when none is set, as the connector does', async () => {
+      const { port: _port, ...noPort } = SFTP_PROPS;
+      await ConnectionTestService.testConnection('SFTP', 'SOURCE', noPort);
+      expect(sftpFactory).toHaveBeenCalledWith(expect.objectContaining({ port: 22 }));
+    });
+
+    it('says it found a remote path, not a directory, since exists() is true for a file too', async () => {
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.message).toContain('remote path /inbound found');
+      expect(result.value.message).not.toContain('directory');
+    });
+
+    it('fails a source whose remote path does not exist', async () => {
+      mockSftpExists.mockResolvedValue(false);
+
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toContain('/inbound');
+      expect(result.value.message).toContain('not found');
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('passes a destination whose remote directory does not exist yet, since the dispatcher creates it', async () => {
+      mockSftpExists.mockResolvedValue(false);
+
+      const result = await ConnectionTestService.testConnection('SFTP', 'DESTINATION', { ...SFTP_PROPS, remoteDirectory: '/outbound' });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(true);
+      expect(result.value.message).toContain('/outbound');
+      expect(result.value.message).toContain('will be created on first send');
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('fails with the server reason when login or host key verification is refused', async () => {
+      mockSftpConnect.mockRejectedValue(new Error('All configured authentication methods failed'));
+
+      const result = await ConnectionTestService.testConnection('SFTP', 'DESTINATION', SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toContain('All configured authentication methods failed');
+      expect(mockSftpExists).not.toHaveBeenCalled();
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('fails when the server does not answer within the test timeout', async () => {
+      vi.useFakeTimers();
+      mockSftpConnect.mockReturnValue(new Promise<void>(() => undefined));
+
+      const pending = ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+      await vi.advanceTimersByTimeAsync(_testing.TEST_TIMEOUT_MS);
+      const result = await pending;
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toContain('timed out');
+    });
+
+    it('closes a session whose connect completes after the test gave up', async () => {
+      vi.useFakeTimers();
+      let finishConnect: () => void = () => undefined;
+      mockSftpConnect.mockReturnValue(new Promise<void>((resolve) => { finishConnect = resolve; }));
+
+      const pending = ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+      await vi.advanceTimersByTimeAsync(_testing.TEST_TIMEOUT_MS);
+      const result = await pending;
+      expect(result.ok && result.value.success).toBe(false);
+      // ssh2-sftp-client's end() does nothing while connect is pending, so it must wait for the connect.
+      expect(mockSftpEnd).not.toHaveBeenCalled();
+
+      finishConnect();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
+    });
+
+    it('bounds the SSH handshake by the test timeout, not ssh2 default of 20 s', async () => {
+      await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+      const options = sftpFactory.mock.calls[0]?.[0];
+      expect(options?.readyTimeoutMs).toBeDefined();
+      expect(options?.readyTimeoutMs).toBeLessThanOrEqual(_testing.TEST_TIMEOUT_MS);
+    });
+
+    it('still reports the result when closing the session fails', async () => {
+      mockSftpEnd.mockRejectedValue(new Error('not connected'));
+
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(true);
+    });
+
+    it.each([
+      ['no host', { host: '' }, 'host'],
+      ['no remote directory', { remoteDirectory: '' }, 'remoteDirectory'],
+      ['neither password nor private key', { password: '', privateKey: '' }, 'password or a privateKey'],
+      ['host key checking on but no host key', { hostKey: '' }, 'host key'],
+    ])('refuses %s without connecting', async (_label, override, expected) => {
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', { ...SFTP_PROPS, ...override });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+      expect(result.error.message).toContain(expected);
+      expect(sftpFactory).not.toHaveBeenCalled();
+    });
+
+    it('connects without a host key when host key checking is off', async () => {
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', { ...SFTP_PROPS, strictHostKey: false, hostKey: '' });
+      expect(result.ok).toBe(true);
+      expect(sftpFactory).toHaveBeenCalledWith(expect.objectContaining({ strictHostKey: false }));
+    });
+
+    it('blocks a loopback SFTP host', async () => {
+      const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', { ...SFTP_PROPS, host: '127.0.0.1' });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('blocked');
+      expect(sftpFactory).not.toHaveBeenCalled();
     });
   });
 

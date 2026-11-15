@@ -1,8 +1,10 @@
 // ===========================================
 // Connector Registry
 // ===========================================
-// Maps connector types to factory functions.
+// Maps connector types to factory functions. The keys are typed by the
+// core-models connector lists, so a type the lists don't name is a compile error.
 
+import type { SourceConnectorType, DestinationConnectorType } from '@galvaniflow/core-models';
 import type { SourceConnectorRuntime, DestinationConnectorRuntime } from './base.js';
 import { TcpMllpReceiver, MLLP_RESPONSE_MODE, type MllpResponseMode } from './tcp-mllp/tcp-mllp-receiver.js';
 import { TcpMllpDispatcher } from './tcp-mllp/tcp-mllp-dispatcher.js';
@@ -26,6 +28,17 @@ import { DicomDispatcher } from './dicom/dicom-dispatcher.js';
 import { EmailReceiver, EMAIL_POST_ACTION, type EmailPostAction, type EmailProtocol } from './email/email-receiver.js';
 import { SftpReceiver, SFTP_POST_ACTION, type SftpPostAction } from './sftp/sftp-receiver.js';
 import { SftpDispatcher } from './sftp/sftp-dispatcher.js';
+import { KafkaReceiver } from './kafka/kafka-receiver.js';
+import { KafkaDispatcher } from './kafka/kafka-dispatcher.js';
+import { AmqpReceiver } from './amqp/amqp-receiver.js';
+import { AmqpDispatcher } from './amqp/amqp-dispatcher.js';
+import type { TlsClientOptions, TlsServerOptions } from './tls.js';
+import {
+  kafkaSourcePropertiesSchema,
+  kafkaDestinationPropertiesSchema,
+  amqpSourcePropertiesSchema,
+  amqpDestinationPropertiesSchema,
+} from '@galvaniflow/core-models';
 
 /**
  * Coerce a config property to a finite number, tolerating string values (a UI/JSON
@@ -93,11 +106,43 @@ export function readBasicAuth(value: unknown): { username: string; password: str
   return rec?.['username'] && typeof rec['password'] === 'string' ? { username: rec['username'], password: rec['password'] } : undefined;
 }
 
+/**
+ * Client TLS for the Kafka and AMQP connectors: PEM material when `useTls` is
+ * on (the server has already swapped certificate ids for PEM), else none.
+ */
+export function readQueueTls(props: Record<string, unknown>): TlsClientOptions | undefined {
+  return props['useTls'] === true ? readTlsClientOptions(props) ?? {} : undefined;
+}
+
+/**
+ * Server TLS for the HTTP source. On scheme HTTPS the server has swapped the
+ * certificate ids for PEM, which must be complete. On any other scheme the
+ * stored `tls` bag holds only certificate ids (the form keeps it when HTTPS is
+ * off), so the listener is plaintext; a bag carrying cert or key PEM there
+ * throws rather than being ignored.
+ */
+export function readHttpSourceTls(props: Record<string, unknown>): TlsServerOptions | undefined {
+  if (props['scheme'] !== 'HTTPS') {
+    const bag = readStringRecord(props['tls']);
+    if (bag?.['cert'] || bag?.['key']) throw new Error('TLS configuration is invalid: tls has a certificate but scheme is not HTTPS');
+    return undefined;
+  }
+  const tls = readTlsServerOptions(props);
+  if (!tls) throw new Error('TLS configuration is incomplete: scheme is HTTPS but no tls cert and key are set');
+  return tls;
+}
+
+/** Parse props with a schema, leaving `tls` (PEM by now, not the stored ids) to {@link readQueueTls}. */
+function parseQueueProps<T>(schema: { parse(value: unknown): T }, props: Record<string, unknown>): T & { tls: TlsClientOptions | undefined } {
+  const { tls: _tls, ...rest } = props;
+  return { ...schema.parse(rest), tls: readQueueTls(props) };
+}
+
 // ----- Source Factories -----
 
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
 
-const sourceFactories = new Map<string, SourceFactory>([
+const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnectorType, SourceFactory>([
   ['TCP_MLLP', (props): SourceConnectorRuntime => new TcpMllpReceiver({
     host: (props['host'] as string | undefined) ?? '0.0.0.0',
     port: num(props, 'port', 0),
@@ -119,7 +164,7 @@ const sourceFactories = new Map<string, SourceFactory>([
     errorStatusCode: num(props, 'errorStatusCode', 500),
     maxBodyBytes: num(props, 'maxBodyBytes', DEFAULT_MAX_BODY_BYTES),
     auth: props['auth'] as HttpAuthConfig | undefined,
-    tls: readTlsServerOptions(props),
+    tls: readHttpSourceTls(props),
   })],
   ['FILE', (props): SourceConnectorRuntime => new FileReceiver({
     directory: props['directory'] as string,
@@ -195,13 +240,15 @@ const sourceFactories = new Map<string, SourceFactory>([
     hostKey: props['hostKey'] as string | undefined,
     charset: (props['charset'] as string | undefined) ?? 'utf-8',
   })],
+  ['KAFKA', (props): SourceConnectorRuntime => new KafkaReceiver(parseQueueProps(kafkaSourcePropertiesSchema, props))],
+  ['AMQP', (props): SourceConnectorRuntime => new AmqpReceiver(parseQueueProps(amqpSourcePropertiesSchema, props))],
 ]);
 
 // ----- Destination Factories -----
 
 type DestinationFactory = (properties: Record<string, unknown>) => DestinationConnectorRuntime;
 
-const destinationFactories = new Map<string, DestinationFactory>([
+const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<DestinationConnectorType, DestinationFactory>([
   ['TCP_MLLP', (props): DestinationConnectorRuntime => new TcpMllpDispatcher({
     host: props['host'] as string,
     port: num(props, 'port', 0),
@@ -308,6 +355,8 @@ const destinationFactories = new Map<string, DestinationFactory>([
     strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
     hostKey: props['hostKey'] as string | undefined,
   })],
+  ['KAFKA', (props): DestinationConnectorRuntime => new KafkaDispatcher(parseQueueProps(kafkaDestinationPropertiesSchema, props))],
+  ['AMQP', (props): DestinationConnectorRuntime => new AmqpDispatcher(parseQueueProps(amqpDestinationPropertiesSchema, props))],
 ]);
 
 // ----- Public API -----

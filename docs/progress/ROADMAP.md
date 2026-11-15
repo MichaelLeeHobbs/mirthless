@@ -54,13 +54,14 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] FHIR (destination) — R4 REST client
 - [x] DICOM (source + destination) — C-STORE via dcmtk.js
 - [x] Email/IMAP (source) — folder polling with filters
+- [x] Kafka and AMQP/RabbitMQ (source + destination) — acknowledged after store, at least once (D-265, D-266)
 
 ### Mirth migration suite
 
 > `pnpm test:scenarios` (D-237, `docs/testing/migration-scenarios.md`) scores 55/60 on 2026-11-13. The three that fail each need a decision first: [`docs/design/17-remaining-migration-gaps.md`](../design/17-remaining-migration-gaps.md).
 
 - [x] **S15** Database Reader and Writer talk to MySQL as well as PostgreSQL (D-259). SQL Server and Oracle are still open under [1] below.
-- [x] **S19** Delimited data is an array of row objects keyed by column name (D-257). Not yet: fixed-width columns, Process Batch per row, editor controls for the settings.
+- [x] **S19** Delimited data is an array of row objects keyed by column name (D-257). Not yet: fixed-width columns, Process Batch per row. The source transformer edits the settings (2026-11-14).
 - [x] **S20** X12 data type on the HL7 path API (D-258). Not yet: envelope validation, 999/TA1 acknowledgements, X12 batch splitting.
 - [x] S08, S09, S11, S12, S14, S16, S17, S18, S21, S26 pass since 2026-11-13 (D-250 to D-255).
 - [ ] Editor controls for what the engine now supports: custom metadata columns (N5), code template library scope (N12), the HTTP listener's `matchSubpaths`, a destination `template`, HTTP Sender parameters and Basic credentials, TCP frame bytes.
@@ -70,7 +71,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 > Full analysis + fix specs + migration matrix: [`docs/design/12-connector-parity-gap-analysis.md`](../design/12-connector-parity-gap-analysis.md).
 > The connectors above exist but several are **partial** — these gaps block whole classes of channel migration. Ranked by channels unblocked, not effort.
 
-- [ ] **[1] Multi-vendor Database connector** — SQL Server (`tedious`) and Oracle (`oracledb`) behind the pool interface, + JS mode. 🔴 Oracle/SQL Server DB channels **cannot migrate** (they refuse to deploy and say so). PostgreSQL and MySQL/MariaDB done 2026-11-13 (D-259); the editor has no vendor control yet.
+- [ ] **[1] Multi-vendor Database connector** — SQL Server (`tedious`) and Oracle (`oracledb`) behind the pool interface, + JS mode. 🔴 Oracle/SQL Server DB channels **cannot migrate** (they refuse to deploy and say so). PostgreSQL and MySQL/MariaDB done 2026-11-13 (D-259); the Database Reader and Writer forms pick the database type, and Test Connection uses the connector's own driver (2026-11-14).
 - [ ] **[2] File scheme abstraction** — FTP/FTPS, SMB, S3; fold standalone SFTP in as a scheme. 🔴 Local-disk-only today.
 - [x] **[3] Configurable TCP framing + Basic mode** — `frameStart`/`frameEnd` hex bytes on TCP listeners and senders, imported from Mirth (2026-11-13, D-253). No form field yet.
 - [x] **[4] Surface hidden runtime options in forms** — surfaced TCP responseMode/charset/maxFrameBytes/acquireTimeoutMs, HTTP-source errorStatusCode/maxBodyBytes, SMTP requireTLS (2026-07-15). TCP TLS deferred to the rank-8 cert-resolver work (not surfacing-only); HTTP inbound auth folded into rank 5. 🟡 cheapest wins.
@@ -101,6 +102,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[N11] Iterator transformer step** (+ XSLT / External Script) — 🟡 repeating-segment mapping UX.
 - [ ] **[N12] Code-template per-channel library scoping: editor control** — the engine, API, backup and Mirth import scope libraries to channels (2026-11-12, D-249); the Code Templates page cannot set the scope yet.
 - [ ] **[N13] Custom RBAC roles** (roles as permission sets vs 4 fixed) — 🟡 "dev who can't deploy to prod".
+- [ ] **Channel-scoped permissions** (not built): the `user_permissions` table has a `scope` column, but the seed writes `'all'` and nothing reads it; `requirePermission` checks only the permission string. Every grant covers every channel, so any user with `messages:read` can read, export and download attachments from every channel's messages. Whether to build it is a separate product decision. 🟡
 - [ ] **[N14] Export completeness** (templates/deps/groups/tags + set export) — 🟡
 - [ ] **[N15] Alert per-connector scope + error-stage granularity** — 🟡
 - [ ] **[DECIDE] Extension/plugin platform** — 🔴 strategic: Mirth's third-party plugin loader has no equivalent. Decide curated-built-in vs a modern manifest-based SPI. Not a scheduled task until decided.
@@ -142,14 +144,20 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[V12]** FHIR source, bundles and validation; maintained v2-to-FHIR maps (FHIR1, FHIR2, = B7)
 - [ ] **[V13]** Docs site, recipe gallery, generated channel docs, guided first channel (DOC1, DOC3, UI13, UI3)
 - [ ] **[V14]** Generated API clients, MCP server, AI-assisted mapping (API1, AI2, AI1)
-- [ ] **[V15]** Kafka and AMQP (RabbitMQ) source and destination connectors on maintained Node clients; no broker of our own (CON10, D-261)
+- [x] **[V15]** Kafka and AMQP (RabbitMQ) source and destination connectors on maintained Node clients; no broker of our own (CON10, D-261) — shipped 2026-11-14 (D-265, D-266)
+  - [x] A message the store always rejects (e.g. a NUL byte in a text column) blocks its queue or topic for good: no alert, retry cap or dead-letter — after `maxStoreAttempts` the channel stops and alerts, message kept (D-271, #86)
+  - [x] Both sources decode the payload with `toString('utf8')`, which corrupts a non-UTF-8 payload — `charset` setting, invalid UTF-8 flagged (D-270, #87)
+  - [ ] No timeout of ours on joining the Kafka group (`kafka-receiver.ts` `onStart` and the rejoin in `run`)
+  - [ ] A Kafka halt during a rejoin, then a restart, can orphan the consumer that rejoin opens
+  - [ ] An empty AMQP username connects as guest/guest (amqplib's default) instead of failing validation
+  - [ ] The broker list pattern rejects bracketed IPv6 (`[::1]:9092`)
+  - [ ] The real-broker suite (`connector-queue.itest.ts`) is skipped in CI, and TLS has not been run against a real broker
 - [ ] **[DECIDE]** npm packages in the sandbox? (doc 18, open decisions)
 
 ### API & Auth (done)
 - [x] 131 REST endpoints across 37 route files
 - [x] JWT + refresh tokens + session management
 - [x] RBAC with 4 roles (admin, deployer, developer, viewer)
-- [x] Channel-scoped permissions
 - [x] Audit logging (fire-and-forget events)
 - [x] Channel export/import (JSON format)
 - [x] Mirth Connect XML import
@@ -194,7 +202,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] `${originalFilename}` for file and SFTP destinations: needs the source map passed to destinations (D-219)
 - [ ] Apply a channel's outbound data type. Destination content is serialized as the inbound type
 - [ ] Persist alert throttle state, so a restart cannot send an extra alert (D-217)
-- [x] Bundle the Monaco editor with the web app (2026-11-15, D-263)
+- [x] Bundle the Monaco editor with the web app (2026-11-15, D-273)
 - [ ] Raise unit coverage of the server (controllers, `engine.ts`) and the web pages toward the 95% aim (D-222)
 - [ ] Security review — HIPAA checklist written (`docs/ops/hipaa-security-checklist.md`, 2026-10-09, lists the open gaps); penetration testing not done
 
@@ -207,10 +215,10 @@ Make writing transformers and debugging channels a joy, not a chore.
 - [ ] **Visual pipeline builder** — React Flow drag-drop editor as alternative to tree-table
 - [ ] **In-browser script debugging** — V8 Inspector Protocol + Monaco breakpoints
 - [ ] **Hot reload for scripts** — edit transformer, see result on next message without redeploy
-- [ ] **Test harness in editor** — send test message and see pipeline trace inline. One script at a time is done (D-266); a whole-pipeline trace, saved test messages with expected output, and the other tools ranked in `docs/design/19-script-editor-tools.md` are not
+- [ ] **Test harness in editor** — send test message and see pipeline trace inline. One script at a time is done (D-276); a whole-pipeline trace, saved test messages with expected output, and the other tools ranked in `docs/design/19-script-editor-tools.md` are not
 - [ ] **Message generator** — create realistic HL7v2/FHIR/JSON test data from templates
 - [ ] **Channel diff viewer** — side-by-side revision comparison with Monaco diff editor
-- [x] **Script autocomplete improvements** — `msg` typed by inbound data type, templates per context (2026-11-15, D-265)
+- [x] **Script autocomplete improvements** — `msg` typed by inbound data type, templates per context (2026-11-15, D-275)
 
 ---
 
@@ -314,6 +322,7 @@ Ideas that may become relevant. Not committed to any timeline.
 - A message interrupted by a server stop and run again is counted as received twice, once per row in the message browser (D-233)
 - A queued delivery that finishes before the pipeline finalizes its message keeps its content until the pruner, even with "remove content on completion" on (safe side of a race)
 - Database connectors are PostgreSQL only
+- `POST /scripts/validate` compiles every script as an async function body, but deploy embeds filter rules in a synchronous function, so a filter rule using `await` validates and then fails to deploy ("await can only be used inside an async function"). No web or CLI caller uses the endpoint today; fix it (validate takes the script's kind and compiles a filter rule the way deploy does) before anything does. Found in the PR #101 review.
 
 ---
 

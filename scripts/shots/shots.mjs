@@ -15,11 +15,13 @@
 // Prints each file it wrote, plus any page exceptions or console errors, and
 // exits 1 if any page threw, so a broken render is not mistaken for a picture.
 
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from '@playwright/test';
+// The built package, which `pnpm dev:web` already needs.
+import { PERMISSIONS } from '../../packages/core-models/dist/index.js';
 import { route } from './fixture.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -39,6 +41,10 @@ const PAGES = {
   'channel-editor': '/channels/c1',
   'channel-destinations': { url: '/channels/c1', click: 'Destinations' },
   'destination-queue': { url: '/channels/c1', click: 'Destinations', scrollTo: 'Queue Settings' },
+  'source-kafka': { url: '/channels/c8', click: 'Source' },
+  'destination-amqp': { url: '/channels/c8', click: 'Destinations' },
+  'source-delimited': { url: '/channels/c6', click: ['Source', 'Source Transformer'], scrollTo: 'Source Transformer' },
+  'destination-database': { url: '/channels/c6', click: 'Destinations', scrollTo: 'Connector Settings' },
   'message-browser': '/channels/c1/messages',
   traffic: '/messages',
   alerts: '/alerts',
@@ -84,8 +90,7 @@ const { values: opts } = parseArgs({
 
 /** Every permission string the UI knows, so the fake user sees every page. */
 function allPermissions() {
-  const src = readFileSync(path.join(ROOT, 'packages/web/src/lib/permissions.ts'), 'utf8');
-  return [...src.matchAll(/:\s*'([a-z_]+:[a-z_]+)'/g)].map((m) => m[1]);
+  return Object.values(PERMISSIONS);
 }
 
 const AUTH = {
@@ -132,7 +137,11 @@ async function shoot(browser, name, target, variantName) {
   await page.waitForTimeout(800);
   if (keys) await page.keyboard.press(keys);
   if (type) await page.keyboard.type(type);
-  if (click) await page.getByText(click, { exact: true }).first().click();
+  // `click` is one label or several, clicked in order (a tab, then a section in it).
+  for (const label of [click ?? []].flat()) {
+    await page.getByText(label, { exact: true }).first().click();
+    await page.waitForTimeout(200);
+  }
   for (const [label, value] of Object.entries(fill ?? {})) await page.getByLabel(label, { exact: true }).fill(value);
   if (scrollTo) await page.getByText(scrollTo, { exact: true }).first().evaluate((el) => { el.scrollIntoView({ block: 'start' }); });
   if (keys || type || click || fill || scrollTo) await page.waitForTimeout(300);

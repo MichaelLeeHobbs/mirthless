@@ -27,24 +27,10 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { ChannelFormData } from '../../pages/ChannelEditorPage.js';
 import type { AdvancedFormValues } from './AdvancedTab.js';
 import { useChannelGroups, useGroupMemberships, useAddGroupMember, useRemoveGroupMember } from '../../hooks/use-channel-groups.js';
+import { SOURCE_CONNECTOR_TYPES } from '@galvaniflow/core-models';
 import { useNotification } from '../../stores/notification.store.js';
 
 const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR', 'X12'] as const;
-
-// Must match the source factories in packages/connectors/src/registry.ts.
-// FHIR is a destination-only connector (no receiver/factory) and EMAIL (IMAP)
-// is a valid source, so it belongs here.
-const SOURCE_CONNECTOR_TYPES = [
-  'TCP_MLLP',
-  'HTTP',
-  'FILE',
-  'DATABASE',
-  'JAVASCRIPT',
-  'CHANNEL',
-  'DICOM',
-  'EMAIL',
-  'SFTP',
-] as const;
 
 const INITIAL_STATES = ['STARTED', 'STOPPED', 'PAUSED'] as const;
 

@@ -15,7 +15,7 @@ import { validateConnectorProperties } from './connector-validation.service.js';
 import { ConfigMapService } from './config-map.service.js';
 import { configLookup, resolveConfigReferences } from '../lib/config-references.js';
 import { getEngine } from '../engine.js';
-import type { DeployedChannel } from '../engine.js';
+import type { DeployedChannel, SourceDispatchOutcome } from '../engine.js';
 import logger from '../lib/logger.js';
 import { GlobalScriptService } from './global-script.service.js';
 import { CodeTemplateService } from './code-template.service.js';
@@ -125,7 +125,10 @@ export class DeploymentService {
           dest.connectorType, 'destination', dest.properties,
         );
         if (!destValidation.ok) {
-          throw new ServiceError('INVALID_INPUT', destValidation.error.message);
+          throw new ServiceError(
+            'INVALID_INPUT',
+            `Destination "${dest.name}" (metaDataId ${String(dest.metaDataId)}): ${destValidation.error.message}`,
+          );
         }
       }
 
@@ -441,20 +444,13 @@ export class DeploymentService {
     }
   }
 
-  /** Send a raw message to a deployed, started channel. */
-  static async sendMessage(channelId: string, content: string): Promise<Result<{ messageId: number }>> {
-    return tryCatch(async () => {
-      const deployed = getDeployed(channelId);
-      const state = deployed.runtime.getState();
-      if (state !== 'STARTED') {
-        throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to receive messages`);
-      }
-      const result = await deployed.processMessage(content);
-      if (!result.ok) {
-        throw new ServiceError('CONFLICT', result.error.message);
-      }
-      return result.value;
-    });
+  /**
+   * Send a raw message to a deployed, started channel. Fails with NOT_FOUND when
+   * the channel is not deployed and CONFLICT when it is not STARTED or could not
+   * process the message (see EngineManager.sendMessage).
+   */
+  static async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
+    return getEngine().sendMessage(channelId, content);
   }
 }
 

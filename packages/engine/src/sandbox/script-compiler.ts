@@ -14,6 +14,11 @@ import type { CompiledScript } from './sandbox-executor.js';
 export interface CompileOptions {
   readonly sourcefile?: string;
   readonly sourcemap?: boolean;
+  /**
+   * Use the compiled-script cache (default true). A one-off syntax check passes
+   * false so it does not evict scripts deploy compiled.
+   */
+  readonly cache?: boolean;
 }
 
 const DEFAULT_COMPILE_OPTIONS: CompileOptions = {
@@ -71,7 +76,8 @@ export async function compileScript(
     const opts = { ...DEFAULT_COMPILE_OPTIONS, ...options };
     // The options change the output (source map, file name), so they are part of the key.
     const key = `${opts.sourcemap ? '1' : '0'}\u0000${opts.sourcefile ?? ''}\u0000${code}`;
-    const cached = scriptCache.get(key);
+    const useCache = opts.cache !== false;
+    const cached = useCache ? scriptCache.get(key) : undefined;
     if (cached) return cached;
 
     const transformOptions: Parameters<typeof transform>[1] = {
@@ -93,8 +99,37 @@ export async function compileScript(
       ? { code: body, sourceMap: result.map }
       : { code: body };
 
-    remember(key, compiled);
+    if (useCache) remember(key, compiled);
     return compiled;
+  });
+}
+
+interface CompileMessage {
+  readonly text: string;
+  readonly location?: { readonly line: number } | null;
+}
+
+function compileMessages(error: unknown): ReadonlyArray<CompileMessage> | null {
+  if (error === null || typeof error !== 'object' || !('errors' in error)) return null;
+  const { errors } = error as { readonly errors: unknown };
+  return Array.isArray(errors) && errors.length > 0 ? (errors as ReadonlyArray<CompileMessage>) : null;
+}
+
+/**
+ * The syntax errors from a failed {@link compileScript}, as `Line N: <text>`
+ * with N counted in the user's script, not in the function the compiler wraps
+ * it in. An error esbuild places on the wrapper's closing brace (an unclosed
+ * block, say) is reported on the script's last line.
+ */
+export function compileErrorMessages(error: unknown, code: string): readonly string[] {
+  const messages = compileMessages(error);
+  if (messages === null) return [error instanceof Error ? error.message : 'Unknown syntax error'];
+  const lastLine = code.split('\n').length;
+  return messages.map((m) => {
+    if (!m.location) return m.text;
+    // The wrapper's opening line comes before line 1 of the script.
+    const line = Math.min(Math.max(m.location.line - 1, 1), lastLine);
+    return `Line ${String(line)}: ${m.text}`;
   });
 }
 

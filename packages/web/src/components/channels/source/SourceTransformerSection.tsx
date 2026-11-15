@@ -17,6 +17,13 @@ import AddIcon from '@mui/icons-material/Add';
 import type { TransformerFormValues, TransformerStepFormValues } from './types.js';
 import { createDefaultTransformerStep } from './types.js';
 import { TransformerStepEditor } from './TransformerStepEditor.js';
+import { DelimitedSettings } from './DelimitedSettings.js';
+
+/** The source transformer's saved Delimited settings, or none. */
+function delimitedSettings(inboundProperties: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const saved = inboundProperties['delimited'];
+  return saved !== null && typeof saved === 'object' && !Array.isArray(saved) ? saved as Record<string, unknown> : {};
+}
 
 const DATA_TYPES = [
   { value: 'RAW', label: 'Raw' },
@@ -139,6 +146,15 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
             ))}
           </TextField>
         </Box>
+        {/* Delimited needs column settings to parse the message; they belong under the data type that asks for them. */}
+        {transformer.inboundDataType === 'DELIMITED' && (
+          <Box sx={{ mt: 2 }}>
+            <DelimitedSettings
+              settings={delimitedSettings(transformer.inboundProperties)}
+              onChange={(delimited) => { onChange({ ...transformer, inboundProperties: { ...transformer.inboundProperties, delimited } }); }}
+            />
+          </Box>
+        )}
       </AccordionDetails>
     </Accordion>
   );

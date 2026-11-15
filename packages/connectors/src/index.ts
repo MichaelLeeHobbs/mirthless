@@ -1,7 +1,7 @@
 // ===========================================
 // @galvaniflow/connectors
 // ===========================================
-// Protocol adapters: TCP/MLLP, HTTP, File, Database, DICOM, FHIR, SMTP, JavaScript.
+// Protocol adapters: TCP/MLLP, HTTP, File, Database, DICOM, FHIR, SMTP, JavaScript, SFTP, Kafka, AMQP.
 
 export type {
   ConnectorLifecycle,
@@ -66,6 +66,8 @@ export {
   UPDATE_MODE,
   ROW_FORMAT,
   DATABASE_VENDOR,
+  createPool,
+  type DatabasePool,
   type DatabaseVendor,
   type PreparedQuery,
   type PoolConfig,
@@ -87,8 +89,10 @@ export {
 export {
   SmtpDispatcher,
   substituteTemplate,
+  createNodemailerTransport,
   type SmtpDispatcherConfig,
   type SmtpAuth,
+  type SmtpTransportConfig,
   type SmtpTransport,
   type SmtpMailOptions,
   type SmtpSendResult,
@@ -150,6 +154,7 @@ export {
   SftpReceiver,
   SftpDispatcher,
   joinRemote,
+  createSsh2SftpClient,
   validateAuth,
   makeHostVerifier,
   buildConnectOptions,
@@ -162,4 +167,24 @@ export {
   type SftpConnectionOptions,
   type SftpFileInfo,
 } from './sftp/index.js';
+export {
+  KafkaReceiver,
+  KafkaDispatcher,
+  KAFKA_SASL_MECHANISM,
+  testKafkaConnection,
+  type KafkaReceiverConfig,
+  type KafkaDispatcherConfig,
+  type KafkaConnectionConfig,
+  type KafkaSaslMechanism,
+} from './kafka/index.js';
+export {
+  AmqpReceiver,
+  AmqpDispatcher,
+  testAmqpConnection,
+  type AmqpReceiverConfig,
+  type AmqpDispatcherConfig,
+  type AmqpConnectionConfig,
+} from './amqp/index.js';
+export { readQueueTls } from './registry.js';
+export { withTimeout, TimeoutError } from './timeout.js';
 export { createSourceConnector, createDestinationConnector } from './registry.js';

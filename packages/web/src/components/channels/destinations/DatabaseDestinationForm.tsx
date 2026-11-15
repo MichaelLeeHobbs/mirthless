@@ -14,6 +14,7 @@ import { DATABASE_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 import { getStr, getNum, getBool, propertyUpdaters } from '../common/connector-properties.js';
+import { DatabaseVendorField, databaseVendor, defaultDatabasePort } from '../common/DatabaseVendorField.js';
 
 export function DatabaseDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -46,6 +47,8 @@ export function DatabaseDestinationForm({ properties, onChange }: DestConnectorF
           Connection
         </Typography>
 
+        <DatabaseVendorField properties={properties} onChange={onChange} />
+
         <TextField
           label="Host"
           value={getStr(properties, 'host', 'localhost')}
@@ -57,7 +60,7 @@ export function DatabaseDestinationForm({ properties, onChange }: DestConnectorF
         <TextField
           label="Port"
           type="number"
-          value={getNum(properties, 'port', 5432)}
+          value={getNum(properties, 'port', defaultDatabasePort(databaseVendor(properties)))}
           onChange={handleNumber('port')}
           fullWidth
           sx={{ mb: 2 }}

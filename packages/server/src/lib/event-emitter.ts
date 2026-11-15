@@ -27,3 +27,20 @@ export function emitEvent(input: CreateEventInput): void {
     logger.warn({ errMsg: err instanceof Error ? err.message : String(err), event: input.name }, 'Failed to emit event');
   });
 }
+
+/**
+ * Emit an INFO / SUCCESS audit event for a change made by the caller in
+ * `context`, with no channel or server. `attributes` says what changed.
+ */
+export function emitSuccessEvent(
+  name: string,
+  context: AuditContext | undefined,
+  attributes: Record<string, unknown>,
+): void {
+  emitEvent({
+    level: 'INFO', name, outcome: 'SUCCESS',
+    userId: context?.userId ?? null, channelId: null,
+    serverId: null, ipAddress: context?.ipAddress ?? null,
+    attributes,
+  });
+}
