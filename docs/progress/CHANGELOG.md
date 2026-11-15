@@ -2,6 +2,18 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Reinvention copy groups, batch 1 (branch `batch-2026-11-15-reinvention-1`)
+
+Michael approved a triage of the 186 copy groups the audit re-run found (#90): 33 to merge in three batches, 6 waiting on his decisions 1 to 4, 147 closed in `.claude/reinvention/accepted.jsonl` (D-267). This batch merged the riskiest:
+
+- **Script validation (G0081):** the editor's check ran its own esbuild transform and rejected scripts that deploy accepts (top-level `await` with `return`). It now compiles through `compileScript`, the same function deploy uses, and reports errors on the script's own line numbers.
+- **Send message (G0173):** `DeploymentService.sendMessage` repeated the engine's checks; it delegates now. The engine raises the same NOT_FOUND and CONFLICT errors, so the API's 404 and 409 answers are unchanged (pinned by a new controller test).
+- **Global map (G0379 and three more):** `GlobalMapProxy` keeps its entries in a `GlobalChannelMap` instead of copying its store, snapshot and diff code.
+- **Database connectors (G0013.R, G0204):** one `toPoolConfig` for receiver and dispatcher, one send path in the dispatcher.
+- **File and SFTP sources (G0268 and three more):** one `QuarantineLedger` and one dispatch-then-quarantine step. One behaviour change, approved in the triage: the File source used to ignore a quarantine ledger it could not read; now only a missing one is silent, and any other read error is logged as the SFTP source already did.
+- **Found on the way:** #91 (a cloned channel loses its filters and transformers) and #92 (nine defects in handler and service code the judge read).
+- Not done: batches 2 and 3, decisions 1 to 4, and teaching `/find-reinvention` to read `accepted.jsonl` (MichaelLeeHobbs/skills#31). `packages/server/package.json` still lists `esbuild`, which no server code imports now.
+
 ## 2026-11-14 — Kafka and AMQP connectors, V15 (branch `feat/kafka-amqp-connectors`)
 
 Michael decided to build Kafka and AMQP connectors rather than partner (D-261, doc 18 CON10). Done here:
