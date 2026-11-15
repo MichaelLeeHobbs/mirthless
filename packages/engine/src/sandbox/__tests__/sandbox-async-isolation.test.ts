@@ -18,8 +18,10 @@ function makeScript(code: string): CompiledScript {
 const OPTIONS = { timeout: 10_000 };
 // For scripts that are meant to be stopped by the limit.
 const SHORT = { timeout: 100 };
-// Long enough that the 20ms bridge resolves well before the limit, so the loop after it is what gets stopped.
-const AFTER_BRIDGE = { timeout: 1_000 };
+// Long enough that setup and the 20ms bridge finish well before the limit on a loaded
+// machine, so the loop after the bridge is what gets stopped. At 100ms, setup alone could
+// use up the limit before the bridge was called.
+const AFTER_BRIDGE = { timeout: 2_000 };
 
 /**
  * Runs the work and reports whether the host event loop got a turn while it was pending.
