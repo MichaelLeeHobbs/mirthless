@@ -13,10 +13,10 @@ describe('readTlsServerOptions()', () => {
     expect(readTlsServerOptions({ tls: false })).toBeUndefined();
   });
 
-  it('is undefined (plaintext) for a tls object with no PEM material, such as an HTTP source left on scheme HTTP', () => {
-    expect(readTlsServerOptions({ tls: {} })).toBeUndefined();
-    expect(readTlsServerOptions({ tls: { serverCertId: '', caCertId: '', requireClientCert: false } })).toBeUndefined();
-    expect(readTlsServerOptions({ tls: { cert: '', key: '' } })).toBeUndefined();
+  it('throws for a tls object present without cert and key, instead of listening in plaintext', () => {
+    expect(() => readTlsServerOptions({ tls: {} })).toThrow(/incomplete/);
+    expect(() => readTlsServerOptions({ tls: { requireClientCert: true } })).toThrow(/incomplete/);
+    expect(() => readTlsServerOptions({ tls: { cert: '', key: '' } })).toThrow(/incomplete/);
   });
 
   it('returns the options when both cert and key are set', () => {
@@ -82,13 +82,26 @@ describe('registry factories with half-configured TLS', () => {
     expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls: { cert: CERT } })).toThrow(/tls\.key/);
   });
 
-  it('refuses to build an HTTP source whose tls has a key but no cert', () => {
-    expect(() => createSourceConnector('HTTP', { port: 8080, tls: { key: KEY } })).toThrow(/tls\.cert/);
+  it('refuses to build a TCP/MLLP source whose tls object is empty or has settings but no cert and key', () => {
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls: {} })).toThrow(/incomplete/);
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls: { requireClientCert: true } })).toThrow(/incomplete/);
   });
 
-  it('still builds a plaintext TCP/MLLP source and an HTTP source on scheme HTTP', () => {
+  it('refuses to build an HTTPS source whose tls has a key but no cert, or no tls at all', () => {
+    expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTPS', tls: { key: KEY } })).toThrow(/tls\.cert/);
+    expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTPS' })).toThrow(/HTTPS/);
+  });
+
+  it('builds an HTTPS source from resolved PEM material', () => {
+    expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTPS', tls: { cert: CERT, key: KEY, requireClientCert: false } })).not.toThrow();
+  });
+
+  it('still builds a plaintext TCP/MLLP source and an HTTP source on scheme HTTP with its id-based tls bag', () => {
     expect(() => createSourceConnector('TCP_MLLP', { port: 6661 })).not.toThrow();
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls: null })).not.toThrow();
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, tls: false })).not.toThrow();
     expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTP', tls: { serverCertId: '', caCertId: '', requireClientCert: false } })).not.toThrow();
+    expect(() => createSourceConnector('HTTP', { port: 8080, tls: { serverCertId: 'abc', caCertId: '', requireClientCert: true } })).not.toThrow();
   });
 
   it('refuses to build a TCP/MLLP destination with a client certificate but no key', () => {
