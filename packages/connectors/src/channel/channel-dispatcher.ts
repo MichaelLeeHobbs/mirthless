@@ -5,7 +5,7 @@
 // Looks up the target channel in the static channel registry.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvaniflow/core-util';
 import { DISPATCH_STATUS, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { getChannelDispatcher, hasChannel } from './channel-registry.js';
 
@@ -25,12 +25,13 @@ export interface ChannelDispatcherConfig {
 const MAX_CHANNEL_HOPS = 10;
 const hopDepth = new AsyncLocalStorage<number>();
 
-/** The target with each `${name}` filled from the message's variables; an unknown name is left as written. */
+/**
+ * The target with each `${name}` filled from the message's variables by the
+ * shared placeholder rule (D-275); an unknown name is left as written, so the
+ * send fails with a channel name that shows the mistake.
+ */
 export function resolveTarget(target: string, variables: Readonly<Record<string, unknown>> | undefined): string {
-  return target.replace(/\$\{([^}]+)\}/g, (whole, key: string) => {
-    const value = variables?.[key.trim()];
-    return typeof value === 'string' && value !== '' ? value : whole;
-  });
+  return fillPlaceholders(target, recordLookup(variables ?? {}));
 }
 
 // ----- Dispatcher -----

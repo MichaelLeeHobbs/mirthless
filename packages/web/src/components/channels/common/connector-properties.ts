@@ -14,10 +14,10 @@ export function getStr(props: Props, key: string, fallback: string): string {
   return typeof val === 'string' ? val : fallback;
 }
 
-/** The number at `key`, or `fallback` when it is missing or not a number. */
+/** The number at `key`, or `fallback` when it is missing, not a number, NaN or infinite. */
 export function getNum(props: Props, key: string, fallback: number): number {
   const val = props[key];
-  return typeof val === 'number' ? val : fallback;
+  return typeof val === 'number' && Number.isFinite(val) ? val : fallback;
 }
 
 /** The boolean at `key`, or `fallback` when it is missing or not a boolean. */
