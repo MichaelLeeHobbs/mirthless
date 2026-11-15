@@ -11,7 +11,9 @@ Michael asked for a scored climb of the code editor to 9+, with the TypeScript s
 - **Languages stored (D-264).** Migration 0015 adds a language to every script; export/import and backups carry it. Export also dropped each destination's response transformer; it is exported and imported now.
 - **Less wasted space** (Michael's review): step and rule actions share the settings row, transformer data types share the Add Step row, and script editors fit their code.
 - **Doc 19** records research on embeddable TypeScript editors (stay on Monaco) and a ranked list of the editor tools script authors need next, led by running a script against a sample message.
-- Not done: completion still opens above the line on a scrolled page, over the editor's toolbar (a Monaco limit, D-263); a syntax error reports Monaco's cascade (one missing `)` can show as several errors); the editor offers every template enabled for the context while deploy uses only templates whose library includes the channel.
+- **Popups placed right (D-267).** A patch to Monaco 0.55.1 makes completion open below the line on a scrolled page, and the popup host is fixed to the viewport so the documentation panel stays on screen.
+- **Test runs (D-266).** Filter rules, transformer steps, response transformers and channel scripts have a Test run button (Ctrl+Enter). It runs the script through the engine's own compile and sandbox against a sample message (pasted, or a generated fake ADT) and shows the outcome, output message, logger lines, map changes and destinations. Calls that would send, write or route are refused and listed. The sample stays in the page; the audit event records the run, not the sample.
+- Not done: a syntax error reports Monaco's cascade (one missing `)` can show as several errors); the editor offers every template enabled for the context while deploy uses only templates whose library includes the channel.
 
 ## 2026-11-14 — Test Connection reaches private networks (branch `fix/test-connection-private-addresses`)
 

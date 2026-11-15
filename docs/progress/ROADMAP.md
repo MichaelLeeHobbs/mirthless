@@ -194,7 +194,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] `${originalFilename}` for file and SFTP destinations: needs the source map passed to destinations (D-219)
 - [ ] Apply a channel's outbound data type. Destination content is serialized as the inbound type
 - [ ] Persist alert throttle state, so a restart cannot send an extra alert (D-217)
-- [ ] Bundle the Monaco editor with the web app. It is fetched from a public CDN at runtime, so script editors do not load on a network without internet access
+- [x] Bundle the Monaco editor with the web app (2026-11-15, D-263)
 - [ ] Raise unit coverage of the server (controllers, `engine.ts`) and the web pages toward the 95% aim (D-222)
 - [ ] Security review — HIPAA checklist written (`docs/ops/hipaa-security-checklist.md`, 2026-10-09, lists the open gaps); penetration testing not done
 
@@ -207,10 +207,10 @@ Make writing transformers and debugging channels a joy, not a chore.
 - [ ] **Visual pipeline builder** — React Flow drag-drop editor as alternative to tree-table
 - [ ] **In-browser script debugging** — V8 Inspector Protocol + Monaco breakpoints
 - [ ] **Hot reload for scripts** — edit transformer, see result on next message without redeploy
-- [ ] **Test harness in editor** — send test message and see pipeline trace inline
+- [ ] **Test harness in editor** — send test message and see pipeline trace inline. One script at a time is done (D-266); a whole-pipeline trace, saved test messages with expected output, and the other tools ranked in `docs/design/19-script-editor-tools.md` are not
 - [ ] **Message generator** — create realistic HL7v2/FHIR/JSON test data from templates
 - [ ] **Channel diff viewer** — side-by-side revision comparison with Monaco diff editor
-- [ ] **Script autocomplete improvements** — context-aware suggestions based on inbound data type
+- [x] **Script autocomplete improvements** — `msg` typed by inbound data type, templates per context (2026-11-15, D-265)
 
 ---
 
