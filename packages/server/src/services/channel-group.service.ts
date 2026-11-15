@@ -190,11 +190,17 @@ export class ChannelGroupService {
       if (input.name !== undefined) updates['name'] = input.name;
       if (input.description !== undefined) updates['description'] = input.description;
 
+      // The revision check above gives a clear early error; the lock itself is the
+      // revision in this WHERE. No row matched means a concurrent writer won.
       const [row] = await db
         .update(channelGroups)
         .set(updates)
-        .where(eq(channelGroups.id, id))
+        .where(and(eq(channelGroups.id, id), eq(channelGroups.revision, input.revision)))
         .returning();
+
+      if (!row) {
+        throw new ServiceError('CONFLICT', 'Channel group has been modified by another user');
+      }
 
       const [countRow] = await db
         .select({ value: count() })
