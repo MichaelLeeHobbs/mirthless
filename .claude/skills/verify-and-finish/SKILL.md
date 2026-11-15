@@ -16,6 +16,7 @@ Michael tests this project by hand and it is too big for that. A task is finishe
    - `packages/server/src/db/schema`: `pnpm db:generate`, commit the migration, `pnpm test:integration`.
    - SQL, queues, pruning, partitions: `pnpm test:integration`.
    - Engine pipeline or a connector: that package's tests, plus a real-message E2E suite for protocol changes.
+   - A connector's type, direction or properties: `pnpm --filter @galvaniflow/server test` for the docs guards, and update `docs/user/connector-reference.md`.
    - Throughput or memory: `pnpm soak`.
    - Docs only: check that every command and path you mention exists.
 3. **Run them.** Read the output. A passing typecheck is not a test. If a check fails, fix the cause and run it again; never skip, weaken or delete a test to get green.
