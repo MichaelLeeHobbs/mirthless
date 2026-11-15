@@ -192,6 +192,42 @@ describe('a message the pipeline never stores', () => {
     expect(queue.acked).toEqual(['ok-1', 'ok-2', 'ok-3']);
   });
 
+  it('does not report a fatal error once the channel was restarted while the stop was closing the connection', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|poison');
+    let releaseClose: (() => void) | undefined;
+    let closing = false;
+    let connections = 0;
+    const slowFirstClose: typeof queue.consume = async (c, onDelivery) => {
+      const consumer = await queue.consume(c, onDelivery);
+      connections += 1;
+      if (connections > 1) return consumer;
+      return {
+        closed: consumer.closed,
+        close: async () => {
+          closing = true;
+          await new Promise<void>((resolve) => { releaseClose = resolve; });
+          await consumer.close();
+        },
+      };
+    };
+    let calls = 0;
+    const p = pipeline(() => { calls += 1; return calls === 1 ? notStored('rejected') : stored(calls); });
+    const fatal: Error[] = [];
+    receiver = new AmqpReceiver({ ...config, maxStoreAttempts: 1 }, slowFirstClose, makeMockLogger().logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(closing).toBe(true); });
+
+    // The operator halts and starts the channel while the cap's close is still going.
+    await receiver.onHalt();
+    await receiver.onStart();
+    releaseClose?.();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(fatal).toEqual([]);
+  });
+
   it('does not report a fatal error for a failure that comes back during a stop', async () => {
     const queue = new FakeAmqpQueue();
     queue.publish('MSH|1');

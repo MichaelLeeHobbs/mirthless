@@ -260,7 +260,7 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     const attempts = (this.failures.get(key) ?? 0) + 1;
     this.failures.set(key, attempts);
     if (attempts >= (this.config.maxStoreAttempts ?? DEFAULT_MAX_STORE_ATTEMPTS)) {
-      await this.giveUp(cause, where, attempts);
+      await this.giveUp(generation, cause, where, attempts);
       return;
     }
     this.logger.error({ ...errorInfo(cause), ...where, attempts }, 'Pipeline did not store the AMQP message; returning it to the queue');
@@ -273,11 +273,13 @@ export class AmqpReceiver implements SourceConnectorRuntime {
    * acknowledged nor rejected: closing the connection returns it to the queue,
    * so a restart delivers it again.
    */
-  private async giveUp(cause: Error, where: Readonly<Record<string, unknown>>, attempts: number): Promise<void> {
+  private async giveUp(generation: number, cause: Error, where: Readonly<Record<string, unknown>>, attempts: number): Promise<void> {
     this.running = false;
     this.wakeAll();
     this.logger.error({ ...errorInfo(cause), ...where, attempts }, 'AMQP source stopped: the message failed too many times in a row; it stays on the queue');
     await this.closeConsumer();
+    // Closing can take up to 30 s; a start in that time is a new run this report must not stop.
+    if (generation !== this.generation) return;
     this.onFatal?.(new Error(
       `AMQP source stopped: the channel could not store a message from queue ${this.config.queue} after ${String(attempts)} attempts ` +
       `(${cause.message}). The message is still on the queue; fix the cause and start the channel again.`,
