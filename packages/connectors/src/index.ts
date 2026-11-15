@@ -20,6 +20,7 @@ export { createConnectorLogger, errorInfo, type ConnectorLogger } from './logger
 export {
   readTlsServerOptions,
   readTlsClientOptions,
+  TLS_NOT_AN_OBJECT,
   type TlsServerOptions,
   type TlsClientOptions,
 } from './tls.js';

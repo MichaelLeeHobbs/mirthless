@@ -208,3 +208,63 @@ describe('resolveQueueTls', () => {
     expect(result.error.message).toContain(CA_ID);
   });
 });
+
+// ----- Stored tls bag shapes -----
+
+describe('reading the stored tls bag', () => {
+  const unusable: ReadonlyArray<readonly [string, unknown]> = [
+    ['absent', undefined],
+    ['null', null],
+    ['false', false],
+    ['an empty object', {}],
+    ['a bag of PEM fields instead of ids', { cert: 'C', key: 'K' }],
+  ];
+  const junk: ReadonlyArray<readonly [string, unknown]> = [
+    ['a string', 'abc'],
+    ['an array', []],
+    ['a number', 1],
+  ];
+
+  it.each(junk)('fails an HTTPS destination when tls is %s', async (_label, tls) => {
+    const result = await resolveHttpDestinationTls({ scheme: 'HTTPS', url: 'https://x', tls });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('Connector tls settings must be an object');
+  });
+
+  it.each(junk)('fails an HTTPS source when tls is %s', async (_label, tls) => {
+    const result = await resolveHttpSourceTls({ scheme: 'HTTPS', port: 8443, tls });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('Connector tls settings must be an object');
+  });
+
+  it('fails a queue connector with useTls on when tls is a string', async () => {
+    const result = await resolveQueueTls({ useTls: true, tls: 'abc' });
+    expect(result.ok).toBe(false);
+  });
+
+  it.each(unusable)('resolves a client with no certificates and verification on when tls is %s', async (_label, tls) => {
+    const result = await resolveHttpDestinationTls({ scheme: 'HTTPS', url: 'https://x', tls });
+    expect(result.ok && result.value['tls']).toEqual({ rejectUnauthorized: true });
+    expect(mockGetMaterialById).not.toHaveBeenCalled();
+  });
+
+  it.each(unusable)('fails an HTTPS source for a missing serverCertId when tls is %s', async (_label, tls) => {
+    const result = await resolveHttpSourceTls({ scheme: 'HTTPS', port: 8443, tls });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('serverCertId');
+  });
+
+  it('keeps rejectUnauthorized: false from the bag', async () => {
+    const result = await resolveQueueTls({ useTls: true, tls: { rejectUnauthorized: false } });
+    expect(result.ok && result.value['tls']).toEqual({ rejectUnauthorized: false });
+  });
+
+  it('ignores extra keys in the bag', async () => {
+    mockGetMaterialById.mockResolvedValueOnce(okMaterial('CA-PEM', null));
+    const result = await resolveHttpDestinationTls({ scheme: 'HTTPS', url: 'https://x', tls: { caCertId: CA_ID, cert: 'C', note: 'x' } });
+    expect(result.ok && result.value['tls']).toEqual({ rejectUnauthorized: true, ca: 'CA-PEM' });
+  });
+});
