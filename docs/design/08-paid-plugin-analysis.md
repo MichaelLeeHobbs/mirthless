@@ -28,13 +28,13 @@ As of v4.6 (2025), Connect transitioned from open-source to fully commercial/pro
 
 **What Connect charges for:** Granular role-based permissions. Open-source Connect has no authorization — every user is admin. Supports LDAP integration.
 
-**GalvaniFlow: Built-in (P1).** Already designed in `05-server-api.md` with 4 default roles (admin, deployer, developer, viewer) and channel-scoped permissions. LDAP/AD integration via pluggable auth providers. This is the #1 community complaint about Connect.
+**GalvaniFlow: Built-in (P1).** Already designed in `05-server-api.md` with 4 fixed roles (admin, deployer, developer, viewer). Permissions apply to every channel; channel-scoped permissions and LDAP/AD integration are not built. This is the #1 community complaint about Connect.
 
 ### Multi-Factor Authentication
 
 **What Connect charges for:** TOTP or Duo second factor. Has significant limitations — doesn't work with web dashboard or REST API basic auth.
 
-**GalvaniFlow: Built-in (P1).** TOTP via `otpauth` library. No limitations since our auth is JWT-based from the start — MFA is part of the login flow, tokens work everywhere after that.
+**GalvaniFlow: Not built.** MFA is planned (ROADMAP V4). The plan was TOTP in the login flow, so that the JWTs issued after it work everywhere.
 
 ### Cures Extension
 
@@ -126,7 +126,7 @@ Connect's "basic" alerting is so limited that "advanced" is really just "compete
 |---|---|---|---|
 | TLS/Certificate Management | Paid (SSL Manager) | **Built-in** | P1 |
 | RBAC | Paid | **Built-in** | P1 |
-| MFA | Paid | **Built-in** | P1 |
+| MFA | Paid | Not built (planned, ROADMAP V4) | P1 |
 | Channel History + Diff | Paid | **Built-in** | P1 |
 | Cross-Channel Message Search | Paid (Enhancement Bundle) | **Built-in** (free from data model) | P1 |
 | Alerting (threshold + escalation) | Paid (Advanced Alerting) | **Built-in** | P1/P2 |

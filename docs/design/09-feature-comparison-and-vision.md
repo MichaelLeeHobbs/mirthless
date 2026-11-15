@@ -145,7 +145,7 @@ Beyond the Java-specific items in 1.4, there are design patterns in Mirth that a
 
 **Mirth pattern:** `DefaultAuthorizationController.isUserAuthorized()` returns `true` for everything. RBAC is a paid plugin.
 
-**Our approach:** RBAC built-in from day one. Default deny. Channel-scoped permissions.
+**Our approach:** RBAC built-in from day one. Default deny. Permissions are per role and apply to every channel; channel-scoped permissions are not built.
 
 ### 2.4 Thread-Per-Connection Model
 
@@ -398,7 +398,7 @@ GalvaniFlow occupies a unique position: **the only open-source, modern, healthca
 | **Message generator** | Built-in test data generation for HL7v2, FHIR, XML, JSON |
 | **Channel templates gallery** | Pre-built channels for common use cases (ADT routing, lab results, radiology) |
 | **Webhook alert actions** | Slack/Teams/PagerDuty integration for alerting |
-| **MFA (TOTP)** | Built-in second factor authentication |
+| **MFA (TOTP)** | Second factor authentication; not built yet (ROADMAP V4) |
 | **LDAP/AD auth provider** | Enterprise directory integration |
 | **Channel environment variables** | Deploy same channel across envs with different config |
 
