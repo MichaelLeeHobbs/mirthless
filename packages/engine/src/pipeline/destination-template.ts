@@ -6,7 +6,7 @@
 // `${message.encodedData}` the message itself. The template is filled once,
 // before the outbound content is stored, so a queued retry sends the same text.
 
-import { fillPlaceholders, recordLookup } from '@galvaniflow/core-util';
+import { fillPlaceholders, hasPlaceholderText, recordLookup } from '@galvaniflow/core-util';
 
 /** Values a template can name besides the maps. */
 export interface TemplateMessage {
@@ -48,7 +48,8 @@ export function renderDestinationTemplate(
   return fillPlaceholders(template, (name) => {
     for (const lookup of [builtIns, ...variables]) {
       const value = lookup(name);
-      if (value !== undefined && value !== null) return value;
+      // A function or symbol cannot be written, so a later map's value is used instead.
+      if (hasPlaceholderText(value)) return value;
     }
     return undefined;
   });
