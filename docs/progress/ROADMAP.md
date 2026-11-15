@@ -322,6 +322,7 @@ Ideas that may become relevant. Not committed to any timeline.
 - A message interrupted by a server stop and run again is counted as received twice, once per row in the message browser (D-233)
 - A queued delivery that finishes before the pipeline finalizes its message keeps its content until the pruner, even with "remove content on completion" on (safe side of a race)
 - Database connectors are PostgreSQL only
+- `POST /scripts/validate` compiles every script as an async function body, but deploy embeds filter rules in a synchronous function, so a filter rule using `await` validates and then fails to deploy ("await can only be used inside an async function"). No web or CLI caller uses the endpoint today; fix it (validate takes the script's kind and compiles a filter rule the way deploy does) before anything does. Found in the PR #101 review.
 
 ---
 
