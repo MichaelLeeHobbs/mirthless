@@ -665,6 +665,7 @@ const RUNNABLE_DB_VENDORS: ReadonlySet<string> = new Set(Object.values(DATABASE_
 
 /** Host, port and database from a JDBC URL, in the standard form or SQL Server's `;databaseName=` form. */
 function jdbcLocation(url: string): Record<string, unknown> {
+  if (unreadableUrl(url)) return {};
   const standard = JDBC_URL.exec(url);
   if (standard) return { host: standard[2], ...(standard[3] ? { port: Number(standard[3]) } : {}), database: standard[4] };
   const sqlServer = SQLSERVER_URL.exec(url);
@@ -673,13 +674,37 @@ function jdbcLocation(url: string): Record<string, unknown> {
   return { host: sqlServer[1], ...(sqlServer[2] ? { port: Number(sqlServer[2]) } : {}), ...(database ? { database } : {}) };
 }
 
+/** MySQL Connector/J's `jdbc:mysql:loadbalance://` and `jdbc:mysql:replication://` URLs. */
+const MYSQL_MULTI_HOST_MODE = /^jdbc:mysql:(loadbalance|replication):\/\//i;
+
+/** A JDBC URL whose host part lists several hosts (`//h1,h2/db`). */
+const MULTI_HOST_URL = /^jdbc:[\w:]+\/\/[^/?;]*,/i;
+
+/**
+ * Why the importer cannot read one host, port and database from a Database
+ * URL, or null when it can. The importer then guesses no location. The text
+ * never quotes the URL, which can carry credentials, except a bare `${...}`.
+ */
+function unreadableUrl(url: string): string | null {
+  if (!/^jdbc:/i.test(url) && url.includes('${')) return `URL is the reference ${url}, whose database type, host, port and database the import cannot read`;
+  const mode = MYSQL_MULTI_HOST_MODE.exec(url)?.[1]?.toLowerCase();
+  if (mode) return `URL uses MySQL's ${mode} mode over several hosts, which GalvaniFlow does not have`;
+  if (MULTI_HOST_URL.test(url)) return 'URL lists several hosts, and GalvaniFlow connects to one';
+  return null;
+}
+
 /**
  * Preview warnings for a Database Reader or Writer that will not run as
- * imported: a vendor with no driver here, or Mirth's JavaScript mode
- * (`useScript`), whose script lands in the SQL query fields.
+ * imported: a URL the import cannot read a location from, a vendor with no
+ * driver here, or Mirth's JavaScript mode (`useScript`), whose script lands
+ * in the SQL query fields.
  */
 function databaseWarnings(propsNode: Record<string, unknown>, vendor: unknown, connector: string, channelName: string): string[] {
   const warnings: string[] = [];
+  const unreadable = unreadableUrl(getString(propsNode, 'url') ?? '');
+  if (unreadable) {
+    warnings.push(`Channel "${channelName}": the ${connector}'s ${unreadable}; fill in the database type, host, port and database by hand before deploying`);
+  }
   if (typeof vendor === 'string' && !RUNNABLE_DB_VENDORS.has(vendor)) {
     warnings.push(`Channel "${channelName}": the ${connector} uses ${vendor}, which GalvaniFlow cannot connect to (PostgreSQL and MySQL/MariaDB only); it will not deploy`);
   }
