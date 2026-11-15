@@ -1,0 +1,16 @@
+diff --git a/esm/vs/editor/contrib/suggest/browser/suggestWidget.js b/esm/vs/editor/contrib/suggest/browser/suggestWidget.js
+index 7ff8f73..036d1f9 100644
+--- a/esm/vs/editor/contrib/suggest/browser/suggestWidget.js
++++ b/esm/vs/editor/contrib/suggest/browser/suggestWidget.js
+@@ -720,7 +720,10 @@ let SuggestWidget = class SuggestWidget {
+             // height math
+             const fullHeight = info.statusBarHeight + this._list.contentHeight + info.borderHeight;
+             const minHeight = info.itemHeight + info.statusBarHeight;
+-            const editorBox = getDomNodePagePosition(this.editor.getDomNode());
++            // GalvaniFlow patch: viewport coordinates, to match bodyBox (the viewport).
++            // Page coordinates add the page's scroll, so on a scrolled page the list
++            // thought there was no room below and opened upward over the editor.
++            const editorBox = this.editor.getDomNode().getBoundingClientRect();
+             const cursorBox = this.editor.getScrolledVisiblePosition(this.editor.getPosition());
+             const cursorBottom = editorBox.top + cursorBox.top + cursorBox.height;
+             const maxHeightBelow = Math.min(bodyBox.height - cursorBottom - info.verticalPadding, fullHeight);

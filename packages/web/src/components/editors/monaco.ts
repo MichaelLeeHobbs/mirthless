@@ -86,12 +86,16 @@ applyScriptSurface({}, []);
  * Where every editor renders its popups (completion, hover, parameter hints).
  * It sits at the end of <body>, so no card, accordion or dialog around an
  * editor can clip them. The class picks up Monaco's theme variables.
+ *
+ * Fixed at the viewport origin: Monaco places these popups in viewport
+ * coordinates, so an absolute host at the document origin put the suggestion
+ * details panel off by the page's scroll.
  */
 export const overflowWidgetsHost: HTMLElement = (() => {
   const el = document.createElement('div');
   el.className = 'monaco-editor';
   el.setAttribute('data-editor-popups', '');
-  el.style.position = 'absolute';
+  el.style.position = 'fixed';
   el.style.top = '0';
   el.style.left = '0';
   el.style.zIndex = '1500';

@@ -26,6 +26,12 @@ minimumReleaseAgeExclude:
   - '@typescript-eslint/visitor-keys@8.72.1'
   - typescript-eslint@8.72.1
 
+# Monaco's suggest widget compares page coordinates with the viewport height,
+# so on a scrolled page completion opened upward over the editor. Drop this
+# patch when an upgrade fixes suggestWidget.js _layout (see D-263).
+patchedDependencies:
+  monaco-editor@0.55.1: patches/monaco-editor@0.55.1.patch
+
 overrides:
   express-rate-limit@8: '>=8.2.2 <9'
   socket.io-parser@4: '>=4.2.7 <5'

@@ -176,6 +176,9 @@ overrides:
   ip-address@10: '>=10.7.4 <11'
   adm-zip@0.5: 0.6.1
 
+patchedDependencies:
+  monaco-editor@0.55.1: 55933cc567a830a2a4d13eeaba4ed2f88031bb396122c3948e81077631803059
+
 importers:
 
   .:
@@ -554,7 +557,7 @@ importers:
         version: link:../core-models
       '@monaco-editor/react':
         specifier: ^4.7.0
-        version: 4.7.0(monaco-editor@0.55.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 4.7.0(monaco-editor@0.55.1(patch_hash=55933cc567a830a2a4d13eeaba4ed2f88031bb396122c3948e81077631803059))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@mui/icons-material':
         specifier: ^9.5.0
         version: 9.5.0(@mui/material@9.5.0(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1)(supports-color@7.2.0))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1)(supports-color@7.2.0))(@types/react@19.3.0)(react@19.3.1)(supports-color@7.2.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@types/react@19.3.0)(react@19.3.1)
@@ -566,7 +569,7 @@ importers:
         version: 5.105.0(@types/react@19.3.0)(react@19.3.1)
       monaco-editor:
         specifier: 0.55.1
-        version: 0.55.1
+        version: 0.55.1(patch_hash=55933cc567a830a2a4d13eeaba4ed2f88031bb396122c3948e81077631803059)
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -4777,10 +4780,10 @@ snapshots:
     dependencies:
       state-local: 1.0.7
 
-  '@monaco-editor/react@4.7.0(monaco-editor@0.55.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@monaco-editor/react@4.7.0(monaco-editor@0.55.1(patch_hash=55933cc567a830a2a4d13eeaba4ed2f88031bb396122c3948e81077631803059))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@monaco-editor/loader': 1.7.0
-      monaco-editor: 0.55.1
+      monaco-editor: 0.55.1(patch_hash=55933cc567a830a2a4d13eeaba4ed2f88031bb396122c3948e81077631803059)
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
 
@@ -6641,7 +6644,7 @@ snapshots:
 
   minipass@7.1.3: {}
 
-  monaco-editor@0.55.1:
+  monaco-editor@0.55.1(patch_hash=55933cc567a830a2a4d13eeaba4ed2f88031bb396122c3948e81077631803059):
     dependencies:
       dompurify: 3.4.17
       marked: 14.0.0
