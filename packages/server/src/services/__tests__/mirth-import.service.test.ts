@@ -224,6 +224,42 @@ describe('MirthImportService.convertXml', () => {
     expect(result.value.channels[0]?.sourceConnectorType).toBe('JAVASCRIPT');
   });
 
+  it('imports a send-only connector used as a source as JAVASCRIPT, with a warning (#109)', () => {
+    const xml = `<channel>
+      <id>test-wrong-direction</id>
+      <name>Wrong Direction</name>
+      <enabled>true</enabled>
+      <sourceConnector>
+        <properties class="com.mirth.connect.connectors.smtp.SmtpDispatcherProperties">
+        </properties>
+        <transformer>
+          <inboundDataType>HL7V2</inboundDataType>
+          <outboundDataType>HL7V2</outboundDataType>
+        </transformer>
+      </sourceConnector>
+      <destinationConnectors>
+        <connector>
+          <name>Dest 1</name>
+          <enabled>true</enabled>
+          <properties class="com.mirth.connect.connectors.smtp.SmtpDispatcherProperties">
+          </properties>
+          <transformer>
+            <inboundDataType>HL7V2</inboundDataType>
+            <outboundDataType>HL7V2</outboundDataType>
+          </transformer>
+        </connector>
+      </destinationConnectors>
+    </channel>`;
+
+    const result = MirthImportService.convertXml(xml);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.channels[0]?.sourceConnectorType).toBe('JAVASCRIPT');
+    expect(result.value.warnings.some((w) => w.includes('SMTP cannot be a source'))).toBe(true);
+    expect(result.value.channels[0]?.destinations[0]?.connectorType).toBe('SMTP');
+  });
+
   it('converts filter rules from source connector', () => {
     const xml = loadFixture('mirth-channel-complex.xml');
     const result = MirthImportService.convertXml(xml);

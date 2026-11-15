@@ -7,7 +7,14 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { XMLParser } from 'fast-xml-parser';
 import { randomUUID } from 'node:crypto';
-import type { ChannelExportEntry, ImportResult } from '@galvaniflow/core-models';
+import {
+  isSourceConnectorType,
+  isDestinationConnectorType,
+  type ChannelExportEntry,
+  type ImportResult,
+  type SourceConnectorType,
+  type DestinationConnectorType,
+} from '@galvaniflow/core-models';
 import { ChannelImportService } from './channel-import.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
@@ -382,9 +389,23 @@ function withSourceResponseMode(source: ConnectorResult, responseMode: string): 
 
 // ----- Connector Conversion -----
 
-interface ConnectorResult {
-  readonly type: string;
+interface ConnectorResult<T extends string = string> {
+  readonly type: T;
   readonly properties: Record<string, unknown>;
+}
+
+/** The type as a source, or JAVASCRIPT with a warning when it only sends (e.g. SMTP). */
+function sourceTypeFor(type: string, channelName: string, warnings: string[]): SourceConnectorType {
+  if (isSourceConnectorType(type)) return type;
+  warnings.push(`Channel "${channelName}": ${type} cannot be a source; imported as JAVASCRIPT`);
+  return 'JAVASCRIPT';
+}
+
+/** The type as a destination, or JAVASCRIPT with a warning when it only receives (e.g. EMAIL). */
+function destinationTypeFor(type: string, channelName: string, warnings: string[]): DestinationConnectorType {
+  if (isDestinationConnectorType(type)) return type;
+  warnings.push(`Channel "${channelName}": ${type} cannot be a destination; imported as JAVASCRIPT`);
+  return 'JAVASCRIPT';
 }
 
 function resolveConnectorType(
@@ -403,7 +424,7 @@ function convertSourceConnector(
   sourceConnector: Record<string, unknown> | null,
   channelName: string,
   warnings: string[],
-): ConnectorResult {
+): ConnectorResult<SourceConnectorType> {
   if (!sourceConnector) {
     return { type: 'JAVASCRIPT', properties: {} };
   }
@@ -418,9 +439,11 @@ function convertSourceConnector(
   const connectorType = resolveConnectorType(className, channelName, warnings);
 
   // Also try transportName-based resolution as fallback
-  const finalType = connectorType !== 'JAVASCRIPT' || !transportName
-    ? connectorType
-    : mapTransportName(transportName, channelName, warnings);
+  const finalType = sourceTypeFor(
+    connectorType !== 'JAVASCRIPT' || !transportName ? connectorType : mapTransportName(transportName, channelName, warnings),
+    channelName,
+    warnings,
+  );
 
   const remote = remoteFileConnector(finalType, propsNode, 'source', channelName, warnings);
   const properties = {
@@ -446,7 +469,7 @@ function remoteFileConnector(
   direction: 'source' | 'destination',
   channelName: string,
   warnings: string[],
-): ConnectorResult | null {
+): ConnectorResult<'SFTP'> | null {
   const scheme = (getString(propsNode, 'scheme') ?? 'FILE').toUpperCase();
   if (type !== 'FILE' || scheme === 'FILE') return null;
   if (scheme !== 'SFTP') {
@@ -765,10 +788,12 @@ function convertDestinations(
       : {};
     const className = typeof propsNode['@_class'] === 'string' ? propsNode['@_class'] : null;
     const transportName = getString(dest, 'transportName');
-    let connectorType = resolveConnectorType(className, channelName, warnings);
-    if (connectorType === 'JAVASCRIPT' && transportName) {
-      connectorType = mapTransportName(transportName, channelName, warnings);
-    }
+    const resolved = resolveConnectorType(className, channelName, warnings);
+    const connectorType = destinationTypeFor(
+      resolved === 'JAVASCRIPT' && transportName ? mapTransportName(transportName, channelName, warnings) : resolved,
+      channelName,
+      warnings,
+    );
 
     const remote = remoteFileConnector(connectorType, propsNode, 'destination', channelName, warnings);
 
