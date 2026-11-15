@@ -132,3 +132,13 @@ export function serializeDelimited(rows: unknown, options: DelimitedOptions): st
   }
   return out;
 }
+
+/**
+ * Turn control characters typed as escapes back into the characters: `\n`,
+ * `\r` and `\t` become LF, CR and tab, and `\\` becomes one backslash. Any
+ * other backslash is left as it is. Delimited settings are written this way
+ * both in the channel editor and in Mirth's exported serializationProperties.
+ */
+export function unescapeControlChars(text: string): string {
+  return text.replace(/\\([nrt\\])/g, (_m, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? '\\');
+}
