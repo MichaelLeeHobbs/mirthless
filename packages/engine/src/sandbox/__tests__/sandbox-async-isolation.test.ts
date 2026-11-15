@@ -14,7 +14,12 @@ function makeScript(code: string): CompiledScript {
   return { code };
 }
 
-const OPTIONS = { timeout: 100 };
+// For scripts that are meant to finish: generous, so a loaded machine cannot turn a pass into a timeout (#125).
+const OPTIONS = { timeout: 10_000 };
+// For scripts that are meant to be stopped by the limit.
+const SHORT = { timeout: 100 };
+// Long enough that the 20ms bridge resolves well before the limit, so the loop after it is what gets stopped.
+const AFTER_BRIDGE = { timeout: 1_000 };
 
 /**
  * Runs the work and reports whether the host event loop got a turn while it was pending.
@@ -32,7 +37,7 @@ async function runWatchingHost<T>(start: () => Promise<T>): Promise<{ readonly t
 describe('VmSandboxExecutor async isolation', () => {
   it('times out an infinite loop after a bare await instead of hanging the host', async () => {
     const executor = new VmSandboxExecutor({ getResource: vi.fn().mockResolvedValue('x') });
-    const result = await executor.execute(makeScript('await 0; while (true) {}'), createSandboxContext('m', 'r'), OPTIONS);
+    const result = await executor.execute(makeScript('await 0; while (true) {}'), createSandboxContext('m', 'r'), SHORT);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -43,8 +48,10 @@ describe('VmSandboxExecutor async isolation', () => {
     const getResource = vi.fn().mockImplementation(() => new Promise((r) => setTimeout(() => r('x'), 20)));
     const executor = new VmSandboxExecutor({ getResource });
     const { ticked, result } = await runWatchingHost(() =>
-      executor.execute(makeScript('await getResource("a"); while (true) {}'), createSandboxContext('m', 'r'), OPTIONS));
+      executor.execute(makeScript('await getResource("a"); getResource("after"); while (true) {}'), createSandboxContext('m', 'r'), AFTER_BRIDGE));
 
+    // The script got past the await, so the loop after the bridge is what the limit stopped.
+    expect(getResource).toHaveBeenCalledWith('after');
     expect(ticked).toBe(true);
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -56,7 +63,7 @@ describe('VmSandboxExecutor async isolation', () => {
     const result = await executor.execute(
       makeScript('Promise.resolve().then(function () { while (true) {} }); return 1;'),
       createSandboxContext('m', 'r'),
-      OPTIONS,
+      SHORT,
     );
 
     expect(result.ok).toBe(false);

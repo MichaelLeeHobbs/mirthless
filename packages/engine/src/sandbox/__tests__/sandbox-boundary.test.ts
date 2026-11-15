@@ -18,7 +18,7 @@ const PRELUDE =
   "var got = 'safe';" +
   "function grab(x) { try { var p = x.constructor.constructor('return process')(); if (p && p.pid) { got = 'ESCAPED'; } } catch (e) {} }";
 
-async function run(code: string, deps?: BridgeDependencies, timeout = 2_000): Promise<ExecutionResult> {
+async function run(code: string, deps?: BridgeDependencies, timeout = 10_000): Promise<ExecutionResult> {
   const executor = new VmSandboxExecutor(deps);
   const msg = createHl7Proxy(Hl7Message.parse(HL7));
   const result = await executor.execute({ code: PRELUDE + code }, createSandboxContext(msg, HL7), { timeout });
@@ -26,7 +26,11 @@ async function run(code: string, deps?: BridgeDependencies, timeout = 2_000): Pr
   return result.value;
 }
 
-async function runError(code: string, deps?: BridgeDependencies, timeout = 300): Promise<string> {
+/** Budget for the scripts that loop forever and must be stopped by the limit. */
+const LOOP_TIMEOUT = 300;
+
+/** The default budget is generous, so a loaded machine cannot turn an expected error into a timeout (#125). */
+async function runError(code: string, deps?: BridgeDependencies, timeout = 10_000): Promise<string> {
   const executor = new VmSandboxExecutor(deps);
   const result = await executor.execute({ code }, createSandboxContext({}, ''), { timeout });
   return result.ok ? 'no error' : result.error.message;
@@ -126,19 +130,19 @@ describe('bridge arguments (script to host)', () => {
 
 describe('results (host from script)', () => {
   it('a looping toJSON in the return value is stopped by the timeout', async () => {
-    const message = await runError('return { toJSON: function () { for (;;) {} } };');
+    const message = await runError('return { toJSON: function () { for (;;) {} } };', undefined, LOOP_TIMEOUT);
 
     expect(message).toContain('timed out');
   });
 
   it('a looping getter in a map value is stopped by the timeout', async () => {
-    const message = await runError("channelMap.x = { get y() { for (;;) {} } }; return 1;");
+    const message = await runError("channelMap.x = { get y() { for (;;) {} } }; return 1;", undefined, LOOP_TIMEOUT);
 
     expect(message).toContain('timed out');
   });
 
   it('a thrown value with a looping message getter is stopped by the timeout', async () => {
-    const message = await runError('throw { get message() { for (;;) {} } };');
+    const message = await runError('throw { get message() { for (;;) {} } };', undefined, LOOP_TIMEOUT);
 
     expect(message).toContain('timed out');
   });
@@ -152,7 +156,7 @@ describe('results (host from script)', () => {
   it('a rejected value with a looping toString is stopped by the timeout', async () => {
     const deps: BridgeDependencies = { getResource: async () => 'r' };
 
-    const message = await runError("await getResource('a'); throw { toString: function () { for (;;) {} } };", deps);
+    const message = await runError("await getResource('a'); throw { toString: function () { for (;;) {} } };", deps, LOOP_TIMEOUT);
 
     expect(message).toContain('timed out');
   });
