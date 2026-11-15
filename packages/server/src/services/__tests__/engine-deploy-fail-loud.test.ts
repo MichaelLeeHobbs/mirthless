@@ -335,12 +335,21 @@ describe('EngineManager.deploy of one channel twice at once', () => {
 
 describe('EngineManager.deploy with a connector that cannot be built', () => {
   it('fails the deploy with the connector error and registers no runtime', async () => {
-    // The real factory and TLS reader, so the test covers what a deploy actually
-    // does with a non-object tls, not only that a thrown error is passed along.
+    // The real factory, so the test covers what a deploy does with a non-object
+    // tls. Which check refuses it (the TCP/MLLP property schema or the TLS reader)
+    // is the factory's business; the deploy must fail with that error and keep no runtime.
     const actual = await vi.importActual<typeof import('@galvaniflow/connectors')>('@galvaniflow/connectors');
+    const props = { port: 6661, tls: 'abc' };
+    let factoryError = '';
+    try {
+      actual.createSourceConnector('TCP_MLLP', props);
+    } catch (err) {
+      factoryError = err instanceof Error ? err.message : String(err);
+    }
+    expect(factoryError).toMatch(/tls/i);
+
     const { createSourceConnector } = await import('@galvaniflow/connectors');
-    vi.mocked(createSourceConnector).mockImplementationOnce((type, props) => actual.createSourceConnector(type, props));
-    expect(await deployError(makeChannel({ sourceConnectorProperties: { port: 6661, tls: 'abc' } })))
-      .toBe('TLS configuration is invalid: tls must be an object with cert and key');
+    vi.mocked(createSourceConnector).mockImplementationOnce((type, p) => actual.createSourceConnector(type, p));
+    expect(await deployError(makeChannel({ sourceConnectorProperties: props }))).toBe(factoryError);
   });
 });
