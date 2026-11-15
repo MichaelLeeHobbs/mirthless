@@ -75,10 +75,7 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
       });
     }
 
-    if (this.config.useTransaction) {
-      return this.sendWithTransaction(message);
-    }
-    return this.sendDirect(message);
+    return this.execute(message, this.config.useTransaction);
   }
 
   async onStop(): Promise<Result<void>> {
@@ -111,23 +108,13 @@ export class DatabaseDispatcher implements DestinationConnectorRuntime {
     return { status: 'SENT' as const, content };
   }
 
-  /** Execute query directly (no transaction). */
-  private async sendDirect(message: ConnectorMessage): Promise<Result<ConnectorResponse>> {
+  /** Execute the query, inside a transaction (rolled back if it fails) when `useTransaction` is set. */
+  private async execute(message: ConnectorMessage, useTransaction: boolean): Promise<Result<ConnectorResponse>> {
     return tryCatch(async () => {
-      const prepared = this.prepared(message);
-      const result = await this.pool.query(prepared.sql, prepared.params);
-      if (!result.ok) {
-        throw result.error;
-      }
-      return this.response(result.value.rows, result.value.rowCount);
-    });
-  }
-
-  /** Execute query inside a transaction, rolled back if it fails. */
-  private async sendWithTransaction(message: ConnectorMessage): Promise<Result<ConnectorResponse>> {
-    return tryCatch(async () => {
-      const prepared = this.prepared(message);
-      const result = await this.pool.transaction((tx) => tx.query(prepared.sql, prepared.params));
+      const { sql, params } = this.prepared(message);
+      const result = useTransaction
+        ? await this.pool.transaction((tx) => tx.query(sql, params))
+        : await this.pool.query(sql, params);
       if (!result.ok) {
         throw result.error;
       }
