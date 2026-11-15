@@ -516,7 +516,10 @@ describe('FileReceiver', () => {
 
       mockReaddir.mockResolvedValue([makeDirent('image.dcm')] as never);
       mockStat.mockResolvedValue(makeStatResult(now - 5_000, 4) as never);
-      mockReadFile.mockResolvedValue(binaryBuffer as never);
+      // No ledger; the data file comes back as a Buffer (read without an encoding).
+      mockReadFile.mockImplementation((p: unknown) =>
+        (String(p).endsWith('.json') ? Promise.reject(enoent()) : Promise.resolve(binaryBuffer)) as never,
+      );
       mockUnlink.mockResolvedValue(undefined);
 
       receiver = new FileReceiver(makeConfig({
@@ -816,6 +819,28 @@ describe('FileReceiver', () => {
 
       expect(dispatchCount).toBe(1);
       expect(errors.map((e) => e.msg)).toEqual(['Quarantine ledger is corrupt; ignoring it (files may be re-dispatched)']);
+    });
+
+    it('logs a ledger that cannot be written and still skips the file this session', async () => {
+      const { logger, errors } = makeMockLogger();
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7')] as never);
+      mockStat.mockResolvedValue(makeStatResult(Date.now() - 5_000, 100) as never);
+      mockUnlink.mockRejectedValue(new Error('EPERM: unlink failed'));
+      mockWriteFile.mockRejectedValue(new Error('ENOSPC: no space left on device'));
+      mockReadFile.mockImplementation((p: unknown) =>
+        (String(p).endsWith('.json') ? Promise.reject(enoent()) : Promise.resolve('MSH|^~\\&|X')) as never,
+      );
+
+      let dispatchCount = 0;
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: 1 }; }));
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(dispatchCount).toBe(1);
+      const persistErrors = errors.filter((e) => e.msg === 'Failed to persist quarantine ledger; quarantine will not survive a restart');
+      expect(persistErrors).toHaveLength(1);
+      expect(String(persistErrors[0]!.obj['file'])).toContain(QUARANTINE_LEDGER);
     });
 
     it('never dispatches the legacy ledger file even when the filter matches it', async () => {
