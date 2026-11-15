@@ -5,7 +5,7 @@
 // All methods return Result<T> using tryCatch from stderr-lib.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, isNull, and, count, asc } from 'drizzle-orm';
+import { eq, isNull, and, count, asc, sql } from 'drizzle-orm';
 import {
   DEFAULT_GROUP_NAME,
   type CreateChannelInput,
@@ -32,6 +32,7 @@ import {
   transformerSteps,
   channelGroups,
   channelGroupMembers,
+  codeTemplateLibraries,
 } from '../db/schema/index.js';
 
 // ----- Response Types -----
@@ -607,6 +608,24 @@ async function syncTransformers(
   }
 }
 
+/**
+ * Add a clone to every code template library whose channel list names the
+ * channel it was cloned from (D-249), so the clone's scripts get the same
+ * template functions. A library with a null list already reaches every channel
+ * and does not match `@>`, so it is left alone. The revision goes up so an
+ * editor holding the old list gets a conflict instead of dropping the clone.
+ */
+async function addCloneToLibraries(tx: ChannelTx, sourceId: string, cloneId: string): Promise<void> {
+  await tx
+    .update(codeTemplateLibraries)
+    .set({
+      channelIds: sql`${codeTemplateLibraries.channelIds} || ${JSON.stringify([cloneId])}::jsonb`,
+      revision: sql`${codeTemplateLibraries.revision} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(sql`${codeTemplateLibraries.channelIds} @> ${JSON.stringify([sourceId])}::jsonb`);
+}
+
 // ----- Service -----
 
 export class ChannelService {
@@ -663,8 +682,12 @@ export class ChannelService {
     });
   }
 
-  /** Create a new channel with default scripts. */
-  static async create(input: CreateChannelInput, context?: AuditContext): Promise<Result<ChannelDetail>> {
+  /**
+   * Create a new channel with default scripts. `cloneOf` names the channel this
+   * one copies: the new channel joins every code template library that lists
+   * that channel, in the same transaction (see `addCloneToLibraries`).
+   */
+  static async create(input: CreateChannelInput, context?: AuditContext, cloneOf?: string): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       // Check name uniqueness among non-deleted channels
       const [existing] = await db
@@ -771,6 +794,7 @@ export class ChannelService {
         if (input.transformers && input.transformers.length > 0) {
           await syncTransformers(tx, channelId, input.transformers, destIdByMetaDataId);
         }
+        if (cloneOf !== undefined) await addCloneToLibraries(tx, cloneOf, channelId);
 
         return inserted;
       });
@@ -1008,7 +1032,7 @@ export class ChannelService {
       const source = sourceResult.value;
 
       const input = buildCloneInput(source, newName);
-      const createResult = await ChannelService.create(input, context);
+      const createResult = await ChannelService.create(input, context, id);
       if (!createResult.ok) throw createResult.error;
 
       emitEvent({
