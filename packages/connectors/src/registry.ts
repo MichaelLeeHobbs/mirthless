@@ -43,17 +43,20 @@ import {
   formatPropertyIssues,
 } from '@galvaniflow/core-models';
 
+/** A plain decimal number as text: optional sign, digits with an optional dot and fraction, or a dot and fraction. */
+const DECIMAL_TEXT = /^[+-]?(?:\d+\.?\d*|\.\d+)$/;
+
 /**
- * Coerce a config property to a finite number, tolerating string values (a UI/JSON
- * config can deliver `"6661"` for a port). Returns the fallback for missing/empty/
- * non-numeric values so a bad type never masquerades as a number and later breaks
- * arithmetic/comparisons or throws deep inside a connector.
+ * A config property as a finite number, or `fallback`. A plain decimal string
+ * (trimmed) is read too, because a `${name}` configuration map reference
+ * resolves to text at deploy (`"6661"` for a port). Anything else falls back:
+ * blank text, booleans, hex or exponent text, NaN and Infinity.
  */
 export function num(props: Record<string, unknown>, key: string, fallback: number): number {
   const v = props[key];
-  if (v === undefined || v === null || v === '') return fallback;
-  const n = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(n) ? n : fallback;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : fallback;
+  if (typeof v === 'string' && DECIMAL_TEXT.test(v.trim())) return Number(v);
+  return fallback;
 }
 
 /** A database connector's vendor and port, the port defaulting to the vendor's own. */

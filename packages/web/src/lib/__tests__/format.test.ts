@@ -1,7 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import { formatTimestamp, humanize } from '../format.js';
+import { formatTimestamp, formatTimestampWith, humanize } from '../format.js';
 
 const ISO = '2026-03-08T07:30:00Z';
+
+describe('formatTimestampWith', () => {
+  const iso = (d: Date): string => d.toISOString();
+
+  it('hands a valid time to the caller\'s view', () => {
+    expect(formatTimestampWith(ISO, iso)).toBe('2026-03-08T07:30:00.000Z');
+  });
+
+  it('shows a dash, or the caller\'s label, for a missing value without calling the view', () => {
+    const never = (): string => { throw new Error('view called for a missing value'); };
+    for (const value of [null, undefined, '']) {
+      expect(formatTimestampWith(value, never)).toBe('—');
+      expect(formatTimestampWith(value, never, 'Never')).toBe('Never');
+    }
+  });
+
+  it('shows an unparseable value as it came without calling the view', () => {
+    const never = (): string => { throw new Error('view called for an invalid date'); };
+    expect(formatTimestampWith('not-a-date', never)).toBe('not-a-date');
+  });
+});
 
 describe('formatTimestamp', () => {
   it('shows a date and time in the browser locale', () => {
