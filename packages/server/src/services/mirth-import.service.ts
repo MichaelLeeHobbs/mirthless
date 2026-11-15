@@ -608,10 +608,7 @@ function linkedMap(node: unknown): Record<string, string> {
   if (!isPlainObject(node)) return result;
   for (const entry of toRecordList(node['entry'])) {
     const name = getString(entry, 'string');
-    const list = entry['list'];
-    const raw = isPlainObject(list) ? list['string'] : undefined;
-    const values = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).map(String);
-    if (name) result[name] = values.join(', ');
+    if (name) result[name] = stringList(entry['list']).join(', ');
   }
   return result;
 }
