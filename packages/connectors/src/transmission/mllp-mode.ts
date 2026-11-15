@@ -5,6 +5,8 @@
 // (0x0B + payload + 0x1C 0x0D). Some partners frame with other bytes (STX/ETX,
 // Mirth's "Basic" mode), so the start and end bytes can be set.
 
+import { DEFAULT_MAX_FRAME_BYTES } from '@galvaniflow/core-models';
+
 // ----- Constants -----
 
 /** The bytes around each message on the wire. */
@@ -35,13 +37,8 @@ export function framingFromHex(startHex: string | undefined, endHex: string | un
   return { start, end };
 }
 
-/**
- * Default maximum frame size (bytes). Unauthenticated network input must be
- * bounded to prevent memory-exhaustion (DoS). 50 MiB comfortably exceeds any
- * realistic HL7v2 message while capping an attacker's ability to grow the
- * in-frame buffer without end.
- */
-export const DEFAULT_MAX_FRAME_BYTES = 50 * 1024 * 1024;
+/** Default maximum frame size (bytes); defined with the TCP/MLLP property schema. */
+export { DEFAULT_MAX_FRAME_BYTES };
 
 // ----- Framing -----
 

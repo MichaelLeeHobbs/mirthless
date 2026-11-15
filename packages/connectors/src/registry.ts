@@ -6,10 +6,10 @@
 
 import type { SourceConnectorType, DestinationConnectorType } from '@galvaniflow/core-models';
 import type { SourceConnectorRuntime, DestinationConnectorRuntime } from './base.js';
-import { TcpMllpReceiver, MLLP_RESPONSE_MODE, type MllpResponseMode } from './tcp-mllp/tcp-mllp-receiver.js';
+import { TcpMllpReceiver } from './tcp-mllp/tcp-mllp-receiver.js';
 import { TcpMllpDispatcher } from './tcp-mllp/tcp-mllp-dispatcher.js';
 import { HttpReceiver, DEFAULT_MAX_BODY_BYTES, type HttpAuthConfig } from './http/http-receiver.js';
-import { DEFAULT_MAX_FRAME_BYTES, framingFromHex, type Framing } from './transmission/mllp-mode.js';
+import { framingFromHex, type Framing } from './transmission/mllp-mode.js';
 import { readTlsServerOptions, readTlsClientOptions } from './tls.js';
 import { HttpDispatcher } from './http/http-dispatcher.js';
 import { FileReceiver, FILE_SORT_BY, FILE_POST_ACTION, type FileSortBy, type FilePostAction } from './file/file-receiver.js';
@@ -38,6 +38,9 @@ import {
   kafkaDestinationPropertiesSchema,
   amqpSourcePropertiesSchema,
   amqpDestinationPropertiesSchema,
+  tcpMllpSourcePropertiesSchema,
+  tcpMllpDestinationPropertiesSchema,
+  formatPropertyIssues,
 } from '@galvaniflow/core-models';
 
 /**
@@ -132,10 +135,37 @@ export function readHttpSourceTls(props: Record<string, unknown>): TlsServerOpti
   return tls;
 }
 
-/** Parse props with a schema, leaving `tls` (PEM by now, not the stored ids) to {@link readQueueTls}. */
-function parseQueueProps<T>(schema: { parse(value: unknown): T }, props: Record<string, unknown>): T & { tls: TlsClientOptions | undefined } {
+/**
+ * Parse props with a connector's core-models schema, throwing one readable
+ * error (`TCP_MLLP properties are invalid: charset: ...`) so the channel fails
+ * to deploy instead of building from a value the schema refuses.
+ */
+function parseProps<T>(
+  type: string,
+  schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: { issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; message: string }> } } },
+  props: Record<string, unknown>,
+): T {
+  const parsed = schema.safeParse(props);
+  if (!parsed.success) throw new Error(`${type} properties are invalid: ${formatPropertyIssues(parsed.error.issues)}`);
+  return parsed.data;
+}
+
+/** A TCP/MLLP source: schema-checked props, TLS read from its PEM bag. */
+function tcpMllpReceiver(props: Record<string, unknown>): TcpMllpReceiver {
+  const { frameStart, frameEnd, tls, processBatch: _processBatch, ...config } = parseProps('TCP_MLLP', tcpMllpSourcePropertiesSchema, props);
+  return new TcpMllpReceiver({ ...config, tls: readTlsServerOptions({ tls }), framing: readFraming({ frameStart, frameEnd }) });
+}
+
+/** A TCP/MLLP destination: schema-checked props, TLS read from its PEM bag. */
+function tcpMllpDispatcher(props: Record<string, unknown>): TcpMllpDispatcher {
+  const { frameStart, frameEnd, tls, template: _template, ...config } = parseProps('TCP_MLLP', tcpMllpDestinationPropertiesSchema, props);
+  return new TcpMllpDispatcher({ ...config, tls: readTlsClientOptions({ tls }), framing: readFraming({ frameStart, frameEnd }) });
+}
+
+/** Parse queue props with {@link parseProps}, leaving `tls` (PEM by now, not the stored ids) to {@link readQueueTls}. */
+function parseQueueProps<T>(type: string, schema: Parameters<typeof parseProps<T>>[1], props: Record<string, unknown>): T & { tls: TlsClientOptions | undefined } {
   const { tls: _tls, ...rest } = props;
-  return { ...schema.parse(rest), tls: readQueueTls(props) };
+  return { ...parseProps(type, schema, rest), tls: readQueueTls(props) };
 }
 
 // ----- Source Factories -----
@@ -143,16 +173,7 @@ function parseQueueProps<T>(schema: { parse(value: unknown): T }, props: Record<
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
 
 const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnectorType, SourceFactory>([
-  ['TCP_MLLP', (props): SourceConnectorRuntime => new TcpMllpReceiver({
-    host: (props['host'] as string | undefined) ?? '0.0.0.0',
-    port: num(props, 'port', 0),
-    maxConnections: num(props, 'maxConnections', 10),
-    responseMode: (props['responseMode'] as MllpResponseMode | undefined) ?? MLLP_RESPONSE_MODE.AUTO_ACK,
-    charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
-    maxFrameBytes: num(props, 'maxFrameBytes', DEFAULT_MAX_FRAME_BYTES),
-    tls: readTlsServerOptions(props),
-    framing: readFraming(props),
-  })],
+  ['TCP_MLLP', tcpMllpReceiver],
   ['HTTP', (props): SourceConnectorRuntime => new HttpReceiver({
     host: (props['host'] as string | undefined) ?? '0.0.0.0',
     port: num(props, 'port', 0),
@@ -240,8 +261,8 @@ const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnec
     hostKey: props['hostKey'] as string | undefined,
     charset: (props['charset'] as string | undefined) ?? 'utf-8',
   })],
-  ['KAFKA', (props): SourceConnectorRuntime => new KafkaReceiver(parseQueueProps(kafkaSourcePropertiesSchema, props))],
-  ['AMQP', (props): SourceConnectorRuntime => new AmqpReceiver(parseQueueProps(amqpSourcePropertiesSchema, props))],
+  ['KAFKA', (props): SourceConnectorRuntime => new KafkaReceiver(parseQueueProps('KAFKA', kafkaSourcePropertiesSchema, props))],
+  ['AMQP', (props): SourceConnectorRuntime => new AmqpReceiver(parseQueueProps('AMQP', amqpSourcePropertiesSchema, props))],
 ]);
 
 // ----- Destination Factories -----
@@ -249,16 +270,7 @@ const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnec
 type DestinationFactory = (properties: Record<string, unknown>) => DestinationConnectorRuntime;
 
 const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<DestinationConnectorType, DestinationFactory>([
-  ['TCP_MLLP', (props): DestinationConnectorRuntime => new TcpMllpDispatcher({
-    host: props['host'] as string,
-    port: num(props, 'port', 0),
-    maxConnections: num(props, 'maxConnections', 5),
-    responseTimeout: num(props, 'responseTimeout', 30_000),
-    acquireTimeoutMs: num(props, 'acquireTimeoutMs', 30_000),
-    charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
-    tls: readTlsClientOptions(props),
-    framing: readFraming(props),
-  })],
+  ['TCP_MLLP', tcpMllpDispatcher],
   ['HTTP', (props): DestinationConnectorRuntime => new HttpDispatcher({
     url: props['url'] as string,
     method: (props['method'] as string | undefined) ?? 'POST',
@@ -355,8 +367,8 @@ const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<De
     strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
     hostKey: props['hostKey'] as string | undefined,
   })],
-  ['KAFKA', (props): DestinationConnectorRuntime => new KafkaDispatcher(parseQueueProps(kafkaDestinationPropertiesSchema, props))],
-  ['AMQP', (props): DestinationConnectorRuntime => new AmqpDispatcher(parseQueueProps(amqpDestinationPropertiesSchema, props))],
+  ['KAFKA', (props): DestinationConnectorRuntime => new KafkaDispatcher(parseQueueProps('KAFKA', kafkaDestinationPropertiesSchema, props))],
+  ['AMQP', (props): DestinationConnectorRuntime => new AmqpDispatcher(parseQueueProps('AMQP', amqpDestinationPropertiesSchema, props))],
 ]);
 
 // ----- Public API -----

@@ -18,6 +18,13 @@ import {
   getDestDefaultProperties,
   createDefaultDestination,
 } from '../destinations/connector-defaults.js';
+import { MLLP_CHARSETS, MLLP_RESPONSE_MODES } from '../source/tcp-mllp-options.js';
+import {
+  tcpMllpSourcePropertiesSchema,
+  tcpMllpDestinationPropertiesSchema,
+  TCP_MLLP_CHARSETS,
+  TCP_MLLP_RESPONSE_MODES,
+} from '@galvaniflow/core-models';
 
 // Exact keys the SFTP connectors read — must not drift.
 const SFTP_SOURCE_KEYS = [
@@ -89,21 +96,19 @@ describe('HTTP TLS defaults (id-based, no raw PEM)', () => {
   });
 });
 
-describe('TCP/MLLP runtime option defaults (rank-4 surfacing)', () => {
-  it('source surfaces responseMode/charset/maxFrameBytes with safe defaults', () => {
-    expect(TCP_MLLP_SOURCE_DEFAULTS['responseMode']).toBe('AUTO_ACK');
-    expect(TCP_MLLP_SOURCE_DEFAULTS['charset']).toBe('utf-8');
-    expect(TCP_MLLP_SOURCE_DEFAULTS['maxFrameBytes']).toBe(52428800);
+describe('TCP/MLLP defaults match the core-models schema', () => {
+  // The schema returns the defaults unchanged: it rejects unknown keys, and
+  // it would add any defaulted key the form left out.
+  it.each([
+    ['source', tcpMllpSourcePropertiesSchema, TCP_MLLP_SOURCE_DEFAULTS],
+    ['destination', tcpMllpDestinationPropertiesSchema, TCP_MLLP_DEST_DEFAULTS],
+  ] as const)('%s', (_name, schema, defaults) => {
+    expect(schema.parse(defaults)).toEqual(defaults);
   });
 
-  it('source charset is a valid Node BufferEncoding token (registry casts verbatim)', () => {
-    // The registry does not normalize — a human label like "ISO-8859-1" would throw.
-    expect(Buffer.from('x', TCP_MLLP_SOURCE_DEFAULTS['charset'] as BufferEncoding)).toBeInstanceOf(Buffer);
-  });
-
-  it('dest surfaces acquireTimeoutMs/charset with safe defaults', () => {
-    expect(TCP_MLLP_DEST_DEFAULTS['acquireTimeoutMs']).toBe(30000);
-    expect(TCP_MLLP_DEST_DEFAULTS['charset']).toBe('utf-8');
+  it('the form offers exactly the schema charsets and response modes', () => {
+    expect(MLLP_CHARSETS.map((o) => o.value)).toEqual([...TCP_MLLP_CHARSETS]);
+    expect(MLLP_RESPONSE_MODES.map((o) => o.value)).toEqual([...TCP_MLLP_RESPONSE_MODES]);
   });
 });
 

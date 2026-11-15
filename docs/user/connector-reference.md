@@ -12,7 +12,21 @@ Destination types (12): `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `S
 
 That is 13 connector types in all: `EMAIL` is source only, and `SMTP` and `FHIR` are destination only.
 
-The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`; their delivery guarantees are in D-266.
+The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`; their delivery guarantees are in D-266. The TCP_MLLP property schemas are in `packages/core-models/src/schemas/tcp-mllp-connector.schema.ts`.
+
+A connector's properties are checked when the channel deploys. TCP_MLLP rejects a key its table below does not list, so a misspelled key fails the deploy instead of being ignored. The exceptions are five keys the editor saved before 2026-07, which are dropped (see `docs/ops/upgrade.md`). A test (`packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`) fails when a TCP_MLLP table and its schema list different keys.
+
+## Keys on every connector
+
+### Every source
+| Property | Default | Notes |
+|---|---|---|
+| `processBatch` | `false` | Split an inbound HL7 batch into one message per `MSH` segment. The Mirth importer sets it; the editor has no field for it. |
+
+### Every destination
+| Property | Default | Notes |
+|---|---|---|
+| `template` | — | What to send instead of the encoded message; `${...}` values are filled per message. The Mirth importer sets it from a sender's template; the editor has no field for it. |
 
 ---
 
@@ -26,6 +40,11 @@ HL7 lower-layer protocol over TCP.
 | `host` | `0.0.0.0` | Interface to bind. |
 | `port` | — (required) | TCP listen port. |
 | `maxConnections` | `10` | Concurrent inbound connections. |
+| `responseMode` | `AUTO_ACK` | `AUTO_ACK` builds an HL7 ACK/NAK from the inbound message; `PASSTHROUGH` relays the channel's response. |
+| `charset` | `utf-8` | `utf-8`, `latin1` (ISO-8859-1), `ascii` or `utf16le`. Case is ignored, and `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. |
+| `maxFrameBytes` | `52428800` | Largest message a connection may buffer (50 MiB); a larger one closes the connection. |
+| `frameStart`, `frameEnd` | MLLP (`0B`, `1C0D`) | Frame bytes as hex pairs, for a partner that does not use MLLP framing (e.g. `02` and `03`). |
+| `tls` | — | Inline PEM: `cert` and `key` (both required), `ca`, `requireClientCert`. Absent, `false` or `null` is plaintext. See `docs/ops/tls-and-phi.md`. |
 
 ### HTTP (source)
 HTTP listener.
@@ -189,6 +208,10 @@ Sends HL7 over MLLP and waits for the ACK.
 | `port` | — (required) | Target port. |
 | `maxConnections` | `5` | Connection pool size. |
 | `responseTimeout` | `30000` | ACK wait timeout (ms). |
+| `acquireTimeoutMs` | `30000` | Wait for a free pooled connection (ms). |
+| `charset` | `utf-8` | As for the source. |
+| `frameStart`, `frameEnd` | MLLP (`0B`, `1C0D`) | As for the source. |
+| `tls` | — | Inline PEM: `ca`, `rejectUnauthorized` (default `true`), and optionally `cert` with `key` for mutual TLS. Absent, `false` or `null` is plaintext. |
 
 ### HTTP (destination)
 POSTs (or other method) the message to a URL.
