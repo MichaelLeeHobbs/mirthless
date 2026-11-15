@@ -39,8 +39,10 @@ vi.mock('drizzle-orm', () => ({
   or: vi.fn((...args: unknown[]) => ({ or: args })),
   sql: vi.fn(() => ({})),
 }));
-const emitEvent = vi.fn();
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent }));
+// The real event emitter runs; the event store underneath it is the boundary,
+// so the tests see the exact audit record that would be written.
+const emitEvent = vi.fn().mockResolvedValue({ ok: true, value: undefined });
+vi.mock('../event.service.js', () => ({ EventService: { create: emitEvent } }));
 const { sql } = await import('drizzle-orm');
 
 const { CollectionService } = await import('../collection.service.js');
@@ -183,6 +185,39 @@ describe('CollectionService.listRecords search', () => {
     const patterns = boundPatterns();
     expect(patterns.length).toBeGreaterThan(0);
     for (const p of patterns) expect(p).toBe('%50\\%\\_a\\\\b%');
+  });
+});
+
+describe('CollectionService audit events', () => {
+  it('records a COLLECTION_UPDATED success event with the caller and attributes on create', async () => {
+    selectWhere.mockResolvedValueOnce([]); // no duplicate name
+    insertReturning.mockResolvedValue([makeRow()]);
+
+    const result = await CollectionService.create(
+      { name: 'patients', description: '', indexedFields: ['mrn'], defaultTtlSeconds: null },
+      { userId: 'user-1', ipAddress: '192.0.2.1' },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(emitEvent).toHaveBeenCalledTimes(1);
+    expect(emitEvent.mock.calls[0]?.[0]).toStrictEqual({
+      level: 'INFO', name: 'COLLECTION_UPDATED', outcome: 'SUCCESS',
+      userId: 'user-1', channelId: null, serverId: null, ipAddress: '192.0.2.1',
+      attributes: { action: 'create', collectionName: 'patients' },
+    });
+  });
+
+  it('records null user and address when there is no audit context', async () => {
+    selectWhere.mockResolvedValueOnce([{ id: 'col-1' }]);
+
+    const result = await CollectionService.delete('col-1');
+
+    expect(result.ok).toBe(true);
+    expect(emitEvent.mock.calls[0]?.[0]).toStrictEqual({
+      level: 'INFO', name: 'COLLECTION_UPDATED', outcome: 'SUCCESS',
+      userId: null, channelId: null, serverId: null, ipAddress: null,
+      attributes: { action: 'delete', collectionId: 'col-1' },
+    });
   });
 });
 

@@ -17,7 +17,7 @@ import type {
   UpdateRecordInput,
 } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
-import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import { emitSuccessEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { containsPattern } from '../lib/like.js';
 import { collections, collectionRecords } from '../db/schema/index.js';
@@ -119,7 +119,7 @@ export class CollectionService {
         })
         .returning();
 
-      emitCollectionEvent(context, { action: 'create', collectionName: input.name });
+      emitSuccessEvent('COLLECTION_UPDATED', context, { action: 'create', collectionName: input.name });
       return toSummary(row!);
     });
   }
@@ -149,7 +149,7 @@ export class CollectionService {
       if (input.defaultTtlSeconds !== undefined) updates['defaultTtlSeconds'] = input.defaultTtlSeconds;
 
       const [row] = await db.update(collections).set(updates).where(eq(collections.id, id)).returning();
-      emitCollectionEvent(context, { action: 'update', collectionId: id });
+      emitSuccessEvent('COLLECTION_UPDATED', context, { action: 'update', collectionId: id });
       return toSummary(row!);
     });
   }
@@ -160,7 +160,7 @@ export class CollectionService {
       const [existing] = await db.select({ id: collections.id }).from(collections).where(eq(collections.id, id));
       if (!existing) throw new ServiceError('NOT_FOUND', `Collection ${id} not found`);
       await db.delete(collections).where(eq(collections.id, id));
-      emitCollectionEvent(context, { action: 'delete', collectionId: id });
+      emitSuccessEvent('COLLECTION_UPDATED', context, { action: 'delete', collectionId: id });
     });
   }
 
@@ -234,7 +234,7 @@ export class CollectionService {
   ): Promise<Result<CollectionRecordResult>> {
     return tryCatch(async () => {
       const record = await insertRecord(await requireById(collectionId), input);
-      emitCollectionEvent(context, { action: 'record.create', collectionId, recordId: record.id });
+      emitSuccessEvent('COLLECTION_UPDATED', context, { action: 'record.create', collectionId, recordId: record.id });
       return record;
     });
   }
@@ -249,7 +249,7 @@ export class CollectionService {
     return tryCatch(async () => {
       const record = await patchRecord(await requireById(collectionId), recordId, input);
       if (!record) throw new ServiceError('NOT_FOUND', `Record ${recordId} not found`);
-      emitCollectionEvent(context, { action: 'record.update', collectionId, recordId });
+      emitSuccessEvent('COLLECTION_UPDATED', context, { action: 'record.update', collectionId, recordId });
       return record;
     });
   }
@@ -260,7 +260,7 @@ export class CollectionService {
       if (!(await removeRecord(collectionId, recordId))) {
         throw new ServiceError('NOT_FOUND', `Record ${recordId} not found`);
       }
-      emitCollectionEvent(context, { action: 'record.delete', collectionId, recordId });
+      emitSuccessEvent('COLLECTION_UPDATED', context, { action: 'record.delete', collectionId, recordId });
     });
   }
 
@@ -401,13 +401,4 @@ function toRecord(row: typeof collectionRecords.$inferSelect): CollectionRecordR
     expireAt: row.expireAt,
     createdAt: row.createdAt,
   };
-}
-
-function emitCollectionEvent(context: AuditContext | undefined, attributes: Record<string, unknown>): void {
-  emitEvent({
-    level: 'INFO', name: 'COLLECTION_UPDATED', outcome: 'SUCCESS',
-    userId: context?.userId ?? null, channelId: null,
-    serverId: null, ipAddress: context?.ipAddress ?? null,
-    attributes,
-  });
 }
