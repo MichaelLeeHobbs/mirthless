@@ -58,7 +58,7 @@ Either way: set `FRONTEND_URL=https://your-domain.com` so CORS matches the TLS o
 
 ## 2. Connector-level TLS
 
-Individual connectors carry their own optional TLS configuration, independent of the edge. This is what protects the actual HL7, HTTP, database, mail and broker feeds to and from partner systems. How TLS is switched on differs by connector:
+Individual connectors carry their own optional TLS configuration, independent of the edge. This is what protects the actual HL7, HTTP, database, mail and broker feeds to and from partner systems. The [connector matrix](../user/connector-reference.md#connectors-at-a-glance) lists every connector's transport security and sign-in. How TLS is switched on differs by connector:
 
 | Connector | Turns TLS on | Certificates |
 |---|---|---|
@@ -80,10 +80,10 @@ Applies to the **TCP/MLLP source** and, after the server has resolved its certif
 
 | Field | Type | Required | Default | Meaning |
 |-------|------|----------|---------|---------|
-| `cert` | string (PEM) | **yes** | — | Server certificate chain |
-| `key` | string (PEM) | **yes** | — | Server private key |
+| `cert` | string (PEM) | **yes** | none | Server certificate chain |
+| `key` | string (PEM) | **yes** | none | Server private key |
 | `ca` | string (PEM) | no | omitted | CA bundle to verify client certs |
-| `requireClientCert` | boolean | no | `false` | Require + verify a client cert (mutual TLS) |
+| `requireClientCert` | boolean | no | `false` | Require and verify a client cert (mutual TLS) |
 
 Both `cert` and `key` are mandatory. A TCP/MLLP source whose `tls` object lacks the certificate, the private key or both (an empty `tls: {}` included), and an HTTP source on `scheme: 'HTTPS'` without both, fail to deploy with an error that starts `TLS configuration is incomplete:` and names what is missing. On a TCP/MLLP connector, a `tls` value that is not an object, `false` or `null`, a PEM field that is not a string, or a key inside `tls` that is not listed here fails deploy validation with `Invalid source connector properties for TCP_MLLP: tls...`. On an HTTP source the same mistakes fail the deploy with `TLS configuration is invalid:`. The listener never falls back to plaintext. To run a TCP/MLLP source without TLS, remove `tls` or set it to `false`; an HTTP source runs without TLS on any scheme other than `HTTPS` when its `tls` holds only certificate store ids (as the form leaves it). An HTTP source whose `tls` holds a `cert` or `key` PEM on a scheme other than `HTTPS` fails to deploy with `TLS configuration is invalid: tls has a certificate but scheme is not HTTPS`, rather than ignoring the certificate.
 
@@ -93,14 +93,12 @@ Applies to the **TCP/MLLP destination**, and to the HTTP, Kafka and AMQP connect
 
 | Field | Type | Required | Default | Meaning |
 |-------|------|----------|---------|---------|
-| `cert` | string (PEM) | no | — | Client cert for mutual TLS |
-| `key` | string (PEM) | no | — | Client private key for mutual TLS |
-| `ca` | string (PEM) | no | — | CA bundle to verify the server cert |
+| `cert` | string (PEM) | no | none | Client cert for mutual TLS |
+| `key` | string (PEM) | no | none | Client private key for mutual TLS |
+| `ca` | string (PEM) | no | Node trust store | CA bundle to verify the server cert |
 | `rejectUnauthorized` | boolean | no | **`true`** | Verify the server cert against trusted CAs |
 
-> `rejectUnauthorized` defaults to **true** (certificate verification ON). Set it to
-> `false` only for an explicit, audited exception (e.g. a self-signed test peer) — doing
-> so in production defeats TLS's authentication guarantee.
+> `rejectUnauthorized` defaults to **true** (certificate verification on), for TCP_MLLP and for the certificate-store connectors alike. Set it to `false` only for an explicit, audited exception, such as a self-signed test peer. Doing so in production defeats TLS's authentication guarantee.
 
 ### HTTP destination
 
@@ -114,6 +112,28 @@ DATABASE (`tls: true`) verifies the server certificate against the system's trus
 
 FILE, JAVASCRIPT, CHANNEL and DICOM have no TLS option. SFTP has none either because SSH encrypts it; leave its `strictHostKey` check on so the server is authenticated. Where a DICOM feed carries PHI across a network, secure it at the network layer (VPN or private networking).
 
+### Check TLS is on
+
+After deploying a TCP/MLLP or HTTPS listener with TLS, check from another machine that it speaks TLS. Replace `host` and `port` with the listener's.
+
+1. A TLS handshake succeeds and shows your certificate:
+
+   ```bash
+   timeout 10 openssl s_client -connect host:port -servername host < /dev/null
+   ```
+
+   The output should show the certificate chain and `Verify return code: 0 (ok)`, or the code you expect for a private CA. If the command hangs until `timeout` ends it, the port is not speaking TLS: a plaintext MLLP listener waits for the end of a frame and never answers the handshake. `wrong version number` also means the listener is not speaking TLS.
+
+   A listener with `requireClientCert` on ends the handshake with a certificate-required alert (a handshake failure alert on TLS 1.2) when you give no client certificate. That is expected and still proves TLS is on. To see the full handshake, add `-cert client.pem -key client-key.pem` with a certificate the listener's `ca` trusts.
+
+2. For a TCP/MLLP listener, a plaintext MLLP frame gets no HL7 acknowledgement. This step sends a test HL7 message, so run it before any destination is enabled or against a test copy of the channel, never against a live channel:
+
+   ```bash
+   printf '\013MSH|^~\\&|TEST|TEST|GF|GF|20260101000000||ADT^A01|TLSCHECK|P|2.5\015\034\015' | timeout 10 nc -w 5 host port
+   ```
+
+   The frame is MLLP: a VT byte (`\013`, 0x0B) before the message and FS CR (`\034\015`, 0x1C 0x0D) after it. A TLS listener closes the connection or prints nothing readable. If an acknowledgement containing `MSA|` comes back, the listener is plaintext: undeploy it and set a `tls` object with both `cert` and `key`. A plaintext listener also takes the test message into the channel, so find message control ID `TLSCHECK` and remove it.
+
 ---
 
 ## PHI-in-Transit Checklist
@@ -122,6 +142,6 @@ FILE, JAVASCRIPT, CHANNEL and DICOM have no TLS option. SFTP has none either bec
 - [ ] `FRONTEND_URL` set to the `https://` origin; `TRUST_PROXY` matches your proxy setup.
 - [ ] Every network interface that carries PHI has TLS on, using the switch the table in section 2 names for its connector (`tls` for TCP/MLLP, `scheme: 'HTTPS'` for HTTP, `useTls` for Kafka and AMQP, `tls: true` for DATABASE, `secure` or `requireTLS` for SMTP).
 - [ ] Dispatcher `rejectUnauthorized` left at its `true` default (verify server certs).
-- [ ] Non-TLS-aware connectors carrying PHI are secured at the network layer.
+- [ ] Connectors without TLS (DICOM) and file mounts carrying PHI are secured at the network layer.
 - [ ] Certificates are rotated before expiry and stored outside the repo / image.
 - [ ] TLS 1.2+ only (the shipped nginx snippet pins `TLSv1.2 TLSv1.3`).
