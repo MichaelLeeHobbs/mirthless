@@ -362,8 +362,13 @@ export class FileReceiver implements SourceConnectorRuntime {
     let raw: unknown;
     try {
       raw = await fs.readFile(ledgerPath, { encoding: 'utf8' });
-    } catch {
-      return; // no ledger yet — nothing quarantined
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return; // no ledger yet — nothing quarantined
+      this.logger.error(
+        { ...errorInfo(err), file: ledgerPath },
+        'Failed to read quarantine ledger; ignoring it (files may be re-dispatched)',
+      );
+      return;
     }
     if (typeof raw !== 'string') return;
     const trimmed = raw.trim();

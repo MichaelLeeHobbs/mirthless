@@ -35,6 +35,11 @@ const LEGACY_LEDGER = '.mirthless-quarantine.json';
 
 // ----- Helpers -----
 
+/** The error fs raises for a missing file: a missing ledger must stay silent. */
+function enoent(): NodeJS.ErrnoException {
+  return Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
+}
+
 function makeConfig(overrides?: Partial<FileReceiverConfig>): FileReceiverConfig {
   return {
     directory: '/data/inbound',
@@ -79,7 +84,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
   // Default: no ledger on disk (readFile rejects), writes succeed.
-  mockReadFile.mockRejectedValue(new Error('ENOENT'));
+  mockReadFile.mockRejectedValue(enoent());
   mockWriteFile.mockResolvedValue(undefined as never);
 });
 
@@ -648,7 +653,7 @@ describe('FileReceiver', () => {
       mockStat.mockResolvedValue(makeStatResult(Date.now() - 5_000, 100) as never);
       mockReadFile.mockImplementation((async (path: unknown) => {
         const name = String(path);
-        if (name.endsWith('.json')) throw new Error('ENOENT');
+        if (name.endsWith('.json')) throw enoent();
         if (name.endsWith('b.hl7')) throw new Error('EACCES: permission denied');
         return name.endsWith('a.hl7') ? 'A' : 'C';
       }) as never);
@@ -719,7 +724,7 @@ describe('FileReceiver', () => {
       mockStat.mockResolvedValue(makeStatResult(mtime, 100) as never);
       mockReadFile.mockImplementation((p: unknown) => {
         if (typeof p === 'string' && p.endsWith(LEGACY_LEDGER)) return Promise.resolve(JSON.stringify([`a.hl7:${String(mtime)}`])) as never;
-        if (typeof p === 'string' && p.endsWith(QUARANTINE_LEDGER)) return Promise.reject(new Error('ENOENT')) as never;
+        if (typeof p === 'string' && p.endsWith(QUARANTINE_LEDGER)) return Promise.reject(enoent()) as never;
         return Promise.resolve('MSH|^~\\&|X') as never;
       });
 
@@ -759,6 +764,58 @@ describe('FileReceiver', () => {
         `a.hl7:${String(mtime)}`, `b.hl7:${String(mtime)}`, `c.hl7:${String(mtime)}`,
       ]));
       expect(mockWriteFile.mock.calls.some((c) => String(c[0]).endsWith(LEGACY_LEDGER))).toBe(false);
+    });
+
+    it('logs an error when a ledger exists but cannot be read, and still starts', async () => {
+      const { logger, errors } = makeMockLogger();
+      mockReaddir.mockResolvedValue([] as never);
+      mockReadFile.mockImplementation((p: unknown) =>
+        (String(p).endsWith(QUARANTINE_LEDGER)
+          ? Promise.reject(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }))
+          : Promise.reject(enoent())) as never,
+      );
+
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher());
+      const started = await receiver.onStart();
+
+      expect(started.ok).toBe(true);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.msg).toBe('Failed to read quarantine ledger; ignoring it (files may be re-dispatched)');
+      expect(String(errors[0]!.obj['file'])).toContain(QUARANTINE_LEDGER);
+      expect(errors[0]!.obj['errMsg']).toContain('EACCES');
+    });
+
+    it('stays silent when neither ledger exists', async () => {
+      const { logger, errors } = makeMockLogger();
+      mockReaddir.mockResolvedValue([] as never);
+
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+
+      expect(errors).toEqual([]);
+    });
+
+    it('logs a corrupt ledger and still dispatches the file', async () => {
+      const { logger, errors } = makeMockLogger();
+      mockReaddir.mockResolvedValue([makeDirent('a.hl7')] as never);
+      mockStat.mockResolvedValue(makeStatResult(Date.now() - 5_000, 100) as never);
+      mockUnlink.mockResolvedValue(undefined as never);
+      mockReadFile.mockImplementation((p: unknown) => {
+        if (String(p).endsWith(QUARANTINE_LEDGER)) return Promise.resolve('[not valid json') as never;
+        if (String(p).endsWith(LEGACY_LEDGER)) return Promise.reject(enoent()) as never;
+        return Promise.resolve('MSH|^~\\&|X') as never;
+      });
+
+      let dispatchCount = 0;
+      receiver = new FileReceiver(makeConfig(), logger);
+      receiver.setDispatcher(makeDispatcher(() => { dispatchCount++; return { messageId: 1 }; }));
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(dispatchCount).toBe(1);
+      expect(errors.map((e) => e.msg)).toEqual(['Quarantine ledger is corrupt; ignoring it (files may be re-dispatched)']);
     });
 
     it('never dispatches the legacy ledger file even when the filter matches it', async () => {
@@ -845,7 +902,7 @@ describe('FileReceiver faults', () => {
     listFiles('a.hl7', 'b.hl7', 'c.hl7');
     mockReadFile.mockImplementation((async (file: unknown) => {
       if (String(file).endsWith('a.hl7')) throw new Error('EACCES: permission denied');
-      if (String(file).endsWith('.json')) throw new Error('ENOENT');
+      if (String(file).endsWith('.json')) throw enoent();
       return `content of ${String(file)}`;
     }) as never);
     const log = makeMockLogger();
@@ -865,11 +922,11 @@ describe('FileReceiver faults', () => {
   it('skips a file that vanishes between the listing and the stat', async () => {
     listFiles('gone.hl7', 'here.hl7');
     mockStat.mockImplementation((async (file: unknown) => {
-      if (String(file).endsWith('gone.hl7')) throw new Error('ENOENT');
+      if (String(file).endsWith('gone.hl7')) throw enoent();
       return makeStatResult(Date.now() - 60_000, 10);
     }) as never);
     mockReadFile.mockImplementation((async (file: unknown) => {
-      if (String(file).endsWith('.json')) throw new Error('ENOENT');
+      if (String(file).endsWith('.json')) throw enoent();
       return 'content';
     }) as never);
     const seen: unknown[] = [];
@@ -885,7 +942,7 @@ describe('FileReceiver faults', () => {
   it('dispatches no further files once the channel is stopped mid-cycle', async () => {
     listFiles('a.hl7', 'b.hl7', 'c.hl7');
     mockReadFile.mockImplementation((async (file: unknown) => {
-      if (String(file).endsWith('.json')) throw new Error('ENOENT');
+      if (String(file).endsWith('.json')) throw enoent();
       return 'content';
     }) as never);
     const seen: unknown[] = [];
@@ -908,7 +965,7 @@ describe('FileReceiver faults', () => {
   it('waits for the file in flight before stop resolves', async () => {
     listFiles('a.hl7');
     mockReadFile.mockImplementation((async (file: unknown) => {
-      if (String(file).endsWith('.json')) throw new Error('ENOENT');
+      if (String(file).endsWith('.json')) throw enoent();
       return 'content';
     }) as never);
     let release: () => void = () => undefined;
