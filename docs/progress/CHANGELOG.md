@@ -2,6 +2,17 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Code editor hill climb (branch `claude/code-editor-climb`)
+
+Michael asked for a scored climb of the code editor to 9+, with the TypeScript side covered and the editor as one reusable component. A blind judge scored 24 to 27 editor screenshots on six criteria (TypeScript counts double). Baseline 3.2; rounds A 5.6, B 7.15, C 7.25 (kept as a requirement), D 7.9; E (phone toolbar, popups positioned relative to the editor, documentation beside completions) scored 7.8 and was reverted to a patch. The climb stopped short of 9 at a plateau. The climb log and evidence are in `tmp/editor-climb/`.
+
+- **One editor family (D-263).** ScriptEditor, TextEditor and CodeDiffEditor in a shared frame with toolbar, status line (problem count by kind, first problem as a jump link, cursor, language) and full screen. The message generator, send-message dialog and revision diff used raw Monaco. Monaco is bundled (no CDN), themed from the app tokens, and HL7 text is highlighted. Ctrl+K inside an editor no longer opens Jump to.
+- **TypeScript (D-265).** Type errors in the editor and at deploy from shared declarations: `msg` typed by data type, code templates offered and checked per context, `destinationSet` only where it exists. A reference panel lists everything a script can use and inserts it; a shortcuts list.
+- **Languages stored (D-264).** Migration 0015 adds a language to every script; export/import and backups carry it. Export also dropped each destination's response transformer; it is exported and imported now.
+- **Less wasted space** (Michael's review): step and rule actions share the settings row, transformer data types share the Add Step row, and script editors fit their code.
+- **Doc 19** records research on embeddable TypeScript editors (stay on Monaco) and a ranked list of the editor tools script authors need next, led by running a script against a sample message.
+- Not done: completion still opens above the line on a scrolled page, over the editor's toolbar (a Monaco limit, D-263); a syntax error reports Monaco's cascade (one missing `)` can show as several errors); the editor offers every template enabled for the context while deploy uses only templates whose library includes the channel.
+
 ## 2026-11-14 — Test Connection reaches private networks (branch `fix/test-connection-private-addresses`)
 
 - **Test Connection allows private addresses (D-262).** It refused every 10.x, 172.16-31.x, 192.168.x and (since D-256) 100.64/10 address, so on a hospital network it failed for nearly every real endpoint. It now refuses only loopback, link-local (cloud metadata) and other reserved ranges. Script `httpFetch` is unchanged.

@@ -64,6 +64,7 @@ This doc is the rulebook. The values live in code; the rules below say how to us
 - **Header**: logo and breadcrumbs on the left, "Jump to" centred, theme and account on the right. On phones the trail collapses to the current page (tap the ellipsis for the rest) and "Jump to" is an icon on the right.
 - **Phones (under 900px, MUI `md`)**: the sidebar is an overlay that starts closed, and pages scroll vertically with no horizontal page scroll. Wide tables scroll inside their own container.
 - **Phone lists (under 600px, MUI `sm`)** keep name, status and row actions on screen: put `HIDE_ON_PHONE` from `lib/responsive.ts` on secondary columns (header and body cell), and use icon buttons with tooltips for row actions. Long filter bars show their main search and put the rest behind a "Filters" button. The theme already halves table cell padding, sizes tabs to their labels and hides the pager's rows-per-page picker on phones.
+- **Code and message text** use the editors in `components/editors`, never Monaco directly (lint enforces it): `ScriptEditor` for scripts (give it a `label`, the script's `language` and `onLanguageChange`, and a `surface` naming its code template context), `TextEditor` for HL7, JSON or plain text, `CodeDiffEditor` for comparisons. They share one frame, so a host only sizes them. Inside the channel editor, `ScriptDataTypeContext` gives every script editor the channel's data type.
 
 ### Interaction
 
