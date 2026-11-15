@@ -92,6 +92,11 @@ describe('registry factories with half-configured TLS', () => {
     expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTPS' })).toThrow(/HTTPS/);
   });
 
+  it('refuses to build an HTTP source whose tls holds PEM while the scheme is not HTTPS', () => {
+    expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTP', tls: { cert: CERT, key: KEY } })).toThrow(/scheme is not HTTPS/);
+    expect(() => createSourceConnector('HTTP', { port: 8080, tls: { key: KEY } })).toThrow(/scheme is not HTTPS/);
+  });
+
   it('builds an HTTPS source from resolved PEM material', () => {
     expect(() => createSourceConnector('HTTP', { port: 8080, scheme: 'HTTPS', tls: { cert: CERT, key: KEY, requireClientCert: false } })).not.toThrow();
   });

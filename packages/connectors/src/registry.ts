@@ -116,10 +116,15 @@ export function readQueueTls(props: Record<string, unknown>): TlsClientOptions |
  * Server TLS for the HTTP source. On scheme HTTPS the server has swapped the
  * certificate ids for PEM, which must be complete. On any other scheme the
  * stored `tls` bag holds only certificate ids (the form keeps it when HTTPS is
- * off), so the listener is plaintext and the bag is not read.
+ * off), so the listener is plaintext; a bag carrying cert or key PEM there
+ * throws rather than being ignored.
  */
 export function readHttpSourceTls(props: Record<string, unknown>): TlsServerOptions | undefined {
-  if (props['scheme'] !== 'HTTPS') return undefined;
+  if (props['scheme'] !== 'HTTPS') {
+    const bag = readStringRecord(props['tls']);
+    if (bag?.['cert'] || bag?.['key']) throw new Error('TLS configuration is invalid: tls has a certificate but scheme is not HTTPS');
+    return undefined;
+  }
   const tls = readTlsServerOptions(props);
   if (!tls) throw new Error('TLS configuration is incomplete: scheme is HTTPS but no tls cert and key are set');
   return tls;
