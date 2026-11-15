@@ -399,7 +399,7 @@ function toBridgeRecord(v: CollectionRecordResult): {
  * from user scripts are Zod-validated at this boundary (fail loud on bad input);
  * service errors surface as thrown errors inside the script.
  */
-function createCollectionBridge(): NonNullable<BridgeDependencies['collections']> {
+export function createCollectionBridge(): NonNullable<BridgeDependencies['collections']> {
   return {
     store: async (name, fields, payload, options) => {
       const input = storeRecordSchema.parse({
@@ -433,7 +433,7 @@ function createCollectionBridge(): NonNullable<BridgeDependencies['collections']
 }
 
 /** getResource() script bridge: read a resource's content by name (null if absent). */
-function createResourceBridge(): NonNullable<BridgeDependencies['getResource']> {
+export function createResourceBridge(): NonNullable<BridgeDependencies['getResource']> {
   return async (name) => {
     const result = await ResourceService.getByName(name);
     if (!result.ok) throw new Error(result.error.message);

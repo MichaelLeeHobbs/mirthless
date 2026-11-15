@@ -11,6 +11,8 @@ export { compileScript, clearScriptCache, compileFilterRulesToScript, compileTra
 export type { BridgeFunctions, Hl7MessageProxy, BridgeDependencies, HttpFetchOptions, HttpFetchResult, RouteMessageResult } from './bridge-functions.js';
 export { createBridgeFunctions } from './bridge-functions.js';
 export { isAllowedHost, isBlockedAddress, isBlockedHostname, isReservedAddress, isReservedHostname } from './ssrf.js';
+export type { ScriptTestInput, ScriptTestKind, ScriptTestReaders, ScriptTestResult } from './script-test-run.js';
+export { runScriptTest } from './script-test-run.js';
 export type { ScriptTypeError } from './script-type-check.js';
 export { checkScriptTypes } from './script-type-check.js';
 export type { CodeTemplateData } from './template-injector.js';

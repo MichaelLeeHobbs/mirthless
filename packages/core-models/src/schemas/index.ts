@@ -6,6 +6,7 @@ export * from './code-template.schema.js';
 export * from './connector.schema.js';
 export * from './filter.schema.js';
 export * from './script-language.schema.js';
+export * from './script-test-run.schema.js';
 export * from './global-script.schema.js';
 export * from './message.schema.js';
 export * from './setting.schema.js';
