@@ -12,6 +12,10 @@ Michael asked for the editor controls the Delimited and MySQL work left out.
 - The source transformer's data type row wraps on a phone instead of running past the card.
 - `pnpm shots` gains `source-delimited` and `destination-database`, and a shot's `click` takes a list.
 
+## 2026-11-14 — Test Connection reaches private networks (branch `fix/test-connection-private-addresses`)
+
+- **Test Connection allows private addresses (D-262).** It refused every 10.x, 172.16-31.x, 192.168.x and (since D-256) 100.64/10 address, so on a hospital network it failed for nearly every real endpoint. It now refuses only loopback, link-local (cloud metadata) and other reserved ranges. Script `httpFetch` is unchanged.
+
 ## 2026-11-13 — Delimited, X12 and MySQL (branch `claude/doc17-delimited-x12-mysql`)
 
 Michael approved the recommended options in `docs/design/17-remaining-migration-gaps.md`. The migration scenario suite now scores 60/60.

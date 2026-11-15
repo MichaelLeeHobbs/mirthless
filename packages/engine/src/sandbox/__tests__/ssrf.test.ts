@@ -3,7 +3,41 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { isBlockedAddress, isBlockedHostname, isAllowedHost } from '../ssrf.js';
+import { isBlockedAddress, isBlockedHostname, isAllowedHost, isReservedAddress, isReservedHostname } from '../ssrf.js';
+
+// The administrator's connection test may reach private networks (that is where
+// integration endpoints live) but not loopback or cloud metadata.
+describe('isReservedAddress', () => {
+  it.each([
+    '127.0.0.1', '0.0.0.0', '169.254.169.254', '224.0.0.1', '240.0.0.1', '192.0.0.1', '::1', '::', 'fe80::1', 'ff02::1',
+    '::ffff:169.254.169.254', '::ffff:127.0.0.1', '64:ff9b::a9fe:a9fe',
+    // Cloud metadata endpoints that sit inside private ranges (AWS IPv6 IMDS, EKS pod identity, Alibaba).
+    'fd00:ec2::254', 'fd00:ec2::23', '100.100.100.200',
+  ])('blocks %s', (addr) => {
+    expect(isReservedAddress(addr)).toBe(true);
+  });
+
+  it.each([
+    '10.1.2.3', '172.16.0.1', '192.168.1.1', '100.64.0.1', '198.18.0.1', 'fd00::1', 'fc00::1', '::ffff:10.0.0.1',
+    '8.8.8.8', '2606:4700:4700::1111',
+  ])('allows the private or public address %s', (addr) => {
+    expect(isReservedAddress(addr)).toBe(false);
+  });
+
+  it('returns false for non-IP input', () => {
+    expect(isReservedAddress('example.com')).toBe(false);
+  });
+});
+
+describe('isReservedHostname', () => {
+  it.each(['localhost', 'LOCALHOST', 'localhost.', 'db.localhost', '[::1]', '127.0.0.1', '[::ffff:a9fe:a9fe]'])('blocks %s', (host) => {
+    expect(isReservedHostname(host)).toBe(true);
+  });
+
+  it.each(['10.0.0.5', '[fd00::1]', 'mirth-db.hospital.local', 'example.com'])('allows %s', (host) => {
+    expect(isReservedHostname(host)).toBe(false);
+  });
+});
 
 describe('isBlockedAddress', () => {
   it.each([
