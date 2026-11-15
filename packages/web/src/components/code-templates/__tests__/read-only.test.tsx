@@ -1,8 +1,9 @@
 // ===========================================
 // Code Template read-only mode Tests
 // ===========================================
-// Users without code_templates:write must not see add/edit/delete/save controls:
-// the server rejects those calls, so showing them only produces errors.
+// Users without code_templates:write must not see add/edit/save controls, and
+// users without code_templates:delete must not see delete controls: the server
+// rejects those calls, so showing them only produces errors.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -35,21 +36,21 @@ function themed(node: ReactElement): void {
   render(<ThemeProvider theme={darkTheme}>{node}</ThemeProvider>);
 }
 
-function renderTree(readOnly: boolean): void {
+function renderTree(readOnly: boolean, canDelete = !readOnly): void {
   themed(
     <LibraryTree
       libraries={[LIBRARY]} templates={[TEMPLATE]} selectedTemplateId={null}
       onSelectTemplate={vi.fn()} onCreateTemplate={vi.fn()} onEditLibrary={vi.fn()} onDeleteLibrary={vi.fn()}
-      readOnly={readOnly}
+      readOnly={readOnly} canDelete={canDelete}
     />,
   );
 }
 
-function renderEditor(readOnly: boolean): void {
+function renderEditor(readOnly: boolean, canDelete = !readOnly): void {
   themed(
     <TemplateEditor
       template={TEMPLATE} onSave={vi.fn()} onDelete={vi.fn()} onClose={vi.fn()} saving={false}
-      readOnly={readOnly}
+      readOnly={readOnly} canDelete={canDelete}
     />,
   );
 }
@@ -71,6 +72,20 @@ describe('LibraryTree', () => {
     expect(screen.queryByTestId('EditIcon')).toBeNull();
     expect(screen.getByText('Lib')).toBeTruthy();
   });
+
+  it('hides the delete library button for a writer without code_templates:delete', () => {
+    renderTree(false, false);
+    expect(screen.getByLabelText('Add template')).toBeTruthy();
+    expect(screen.getByTestId('EditIcon')).toBeTruthy();
+    expect(screen.queryByTestId('DeleteIcon')).toBeNull();
+  });
+
+  it('shows only the delete library button for a deleter without code_templates:write', () => {
+    renderTree(true, true);
+    expect(screen.getByTestId('DeleteIcon')).toBeTruthy();
+    expect(screen.queryByLabelText('Add template')).toBeNull();
+    expect(screen.queryByTestId('EditIcon')).toBeNull();
+  });
 });
 
 describe('TemplateEditor', () => {
@@ -83,6 +98,18 @@ describe('TemplateEditor', () => {
   it('hides Delete and Save when read-only', () => {
     renderEditor(true);
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+  });
+
+  it('hides Delete but keeps Save for a writer without code_templates:delete', () => {
+    renderEditor(false, false);
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy();
+  });
+
+  it('shows only Delete for a deleter without code_templates:write', () => {
+    renderEditor(true, true);
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
   });
 
