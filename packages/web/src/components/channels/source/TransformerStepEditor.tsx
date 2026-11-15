@@ -13,14 +13,11 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
-import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import DeleteIcon from '@mui/icons-material/Delete';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { ScriptEditor } from '../../editors/ScriptEditor.js';
+import { ItemOrderActions } from './ItemOrderActions.js';
 import { FILTER_TRANSFORMER_SURFACE, type ScriptStage } from '../../editors/script-context.js';
 import type { TransformerStepFormValues } from './types.js';
 
@@ -112,6 +109,7 @@ export function TransformerStepEditor({
             }
             label="Enabled"
           />
+          <ItemOrderActions noun="step" index={index} total={total} onMoveUp={onMoveUp} onMoveDown={onMoveDown} onRemove={onRemove} />
         </Box>
 
         {step.type === 'MAPPER' && step.enabled ? (
@@ -122,7 +120,8 @@ export function TransformerStepEditor({
         ) : null}
         {step.type === 'JAVASCRIPT' || step.type === 'MESSAGE_BUILDER' ? (
           <ScriptEditor
-            height="220px"
+            height="auto"
+            showLabel={false}
             label={`${step.name || 'Step'} script`}
             surface={FILTER_TRANSFORMER_SURFACE[stage]}
             language={step.language}
@@ -170,18 +169,6 @@ export function TransformerStepEditor({
             </TextField>
           </Box>
         )}
-
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 0.5 }}>
-          <IconButton size="small" onClick={onMoveUp} disabled={index === 0} title="Move up">
-            <ArrowUpwardIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={onMoveDown} disabled={index === total - 1} title="Move down">
-            <ArrowDownwardIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={onRemove} title="Remove step">
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Box>
       </AccordionDetails>
     </Accordion>
   );

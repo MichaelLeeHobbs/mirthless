@@ -58,7 +58,7 @@ export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
           </AccordionSummary>
           <AccordionDetails sx={{ px: { xs: 1, sm: 2 }, pt: 0, pb: 2 }}>
             <ScriptEditor
-              height="250px"
+              height="auto"
               label={section.label}
               showLabel={false}
               surface={section.surface}

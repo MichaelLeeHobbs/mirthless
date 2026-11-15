@@ -7,7 +7,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lightTheme } from '../../../styles/theme.js';
 import { ProblemStatus } from '../ProblemStatus.js';
-import { ScriptEditor } from '../ScriptEditor.js';
+import { ScriptEditor, AUTO_HEIGHT, autoHeight } from '../ScriptEditor.js';
 import { TextEditor } from '../TextEditor.js';
 import { problemKind, type Problem } from '../editor-hooks.js';
 
@@ -54,6 +54,14 @@ describe('ProblemStatus', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Go to first problem, line 4' }));
     expect(editor.setPosition).toHaveBeenCalledWith({ lineNumber: 4, column: 2 });
     expect(editor.focus).toHaveBeenCalled();
+  });
+});
+
+describe('autoHeight', () => {
+  it('fits the script between about five lines and the cap, where it starts to scroll', () => {
+    expect(autoHeight(60)).toBe(AUTO_HEIGHT.min);
+    expect(autoHeight(200.4)).toBe(201);
+    expect(autoHeight(5000)).toBe(AUTO_HEIGHT.max);
   });
 });
 

@@ -30,6 +30,14 @@ const LANGUAGE_NAME: Readonly<Record<ScriptLanguageCode, string>> = {
   TYPESCRIPT: 'TypeScript',
 };
 
+/** Bounds for `height="auto"`: about five lines at least, then it scrolls. */
+export const AUTO_HEIGHT = { min: 116, max: 480 } as const;
+
+/** The editor area height for `height="auto"` given Monaco's content height. */
+export function autoHeight(contentHeight: number): number {
+  return Math.min(AUTO_HEIGHT.max, Math.max(AUTO_HEIGHT.min, Math.ceil(contentHeight)));
+}
+
 const MONACO_LANGUAGE: Readonly<Record<ScriptLanguageCode, string>> = {
   JAVASCRIPT: 'javascript',
   TYPESCRIPT: 'typescript',
@@ -38,7 +46,11 @@ const MONACO_LANGUAGE: Readonly<Record<ScriptLanguageCode, string>> = {
 export interface ScriptEditorProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
-  /** Editor area height (CSS length or px). Defaults to 300px. */
+  /**
+   * Editor area height: a CSS length, px, "100%" to fill the host, or "auto"
+   * to fit the script (between AUTO_HEIGHT.min and AUTO_HEIGHT.max, then it
+   * scrolls). Defaults to 300px.
+   */
   readonly height?: string | number;
   /** Names the editor for screen readers and the toolbar, e.g. "Deploy script". */
   readonly label?: string;
@@ -85,6 +97,14 @@ export function ScriptEditor({
   const [expanded, setExpanded] = useState(false);
   const problems = useProblems(editor);
   const cursor = useCursor(editor);
+  const [contentHeight, setContentHeight] = useState<number>(AUTO_HEIGHT.min);
+
+  useEffect(() => {
+    if (!editor || height !== 'auto') return undefined;
+    setContentHeight(editor.getContentHeight());
+    const sub = editor.onDidContentSizeChange((e) => { setContentHeight(e.contentHeight); });
+    return () => { sub.dispose(); };
+  }, [editor, height]);
 
   // The type service holds one set of globals; this editor's surface applies on
   // mount and whenever it takes focus.
@@ -146,7 +166,7 @@ export function ScriptEditor({
       showLabel={showLabel}
       start={start}
       end={end}
-      height={height}
+      height={height === 'auto' ? `${String(autoHeight(contentHeight))}px` : height}
       expanded={expanded}
       onExpandedChange={setExpanded}
       status={

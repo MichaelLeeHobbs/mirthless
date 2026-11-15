@@ -52,7 +52,7 @@ export function ResponseTransformerSection({ value, onChange, language, onLangua
         </Typography>
         <Box id="response-transformer-content">
           <ScriptEditor
-            height="240px"
+            height="auto"
             label="Response transformer script"
             surface={{ templateContext: 'DESTINATION_RESPONSE_TRANSFORMER' }}
             value={value}

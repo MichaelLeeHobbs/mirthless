@@ -80,7 +80,36 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
         </Typography>
       </AccordionSummary>
       <AccordionDetails>
-        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+        {transformer.steps.length === 0 ? (
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'text.secondary',
+              mb: 2
+            }}>
+            No transformer steps.
+          </Typography>
+        ) : (
+          <Box sx={{ mb: 2 }}>
+            {transformer.steps.map((step, index) => (
+              <TransformerStepEditor
+                key={index}
+                step={step}
+                index={index}
+                total={transformer.steps.length}
+                onChange={(updates) => { handleStepChange(index, updates); }}
+                onRemove={() => { handleRemove(index); }}
+                onMoveUp={() => { handleMoveUp(index); }}
+                onMoveDown={() => { handleMoveDown(index); }}
+              />
+            ))}
+          </Box>
+        )}
+        {/* Add Step and the data types share one row instead of each taking a row. */}
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Button startIcon={<AddIcon />} onClick={handleAdd} size="small" sx={{ mr: 'auto' }}>
+            Add Step
+          </Button>
           <TextField
             label="Inbound Data Type"
             value={transformer.inboundDataType}
@@ -110,35 +139,6 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
             ))}
           </TextField>
         </Box>
-
-        {transformer.steps.length === 0 ? (
-          <Typography
-            variant="body2"
-            sx={{
-              color: 'text.secondary',
-              mb: 2
-            }}>
-            No transformer steps.
-          </Typography>
-        ) : (
-          <Box sx={{ mb: 2 }}>
-            {transformer.steps.map((step, index) => (
-              <TransformerStepEditor
-                key={index}
-                step={step}
-                index={index}
-                total={transformer.steps.length}
-                onChange={(updates) => { handleStepChange(index, updates); }}
-                onRemove={() => { handleRemove(index); }}
-                onMoveUp={() => { handleMoveUp(index); }}
-                onMoveDown={() => { handleMoveDown(index); }}
-              />
-            ))}
-          </Box>
-        )}
-        <Button startIcon={<AddIcon />} onClick={handleAdd} size="small">
-          Add Step
-        </Button>
       </AccordionDetails>
     </Accordion>
   );
