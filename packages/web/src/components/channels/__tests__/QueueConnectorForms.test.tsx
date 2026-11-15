@@ -146,7 +146,7 @@ describe('KafkaDestinationForm', () => {
     expect(lastProps).toEqual(KAFKA_DEST_DEFAULTS);
     fireEvent.change(screen.getByLabelText('Topic'), { target: { value: 'results-${site}' } });
     fireEvent.change(screen.getByLabelText('Key'), { target: { value: '${patientId}' } });
-    expect(lastProps).toMatchObject({ topic: 'results-${site}', key: '${patientId}' });
+    expect(lastProps).toMatchObject({ topic: 'results-${site}', messageKey: '${patientId}' });
     expect(screen.getByText('test KAFKA DESTINATION')).toBeTruthy();
   });
 });

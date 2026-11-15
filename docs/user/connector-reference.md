@@ -268,7 +268,7 @@ Publishes to a topic; SENT once every in-sync replica has the record (acks=all).
 | Property | Default | Notes |
 |---|---|---|
 | `topic` | — (required) | An existing topic; `${name}` is filled per message, and a name the message lacks is an error. |
-| `key` | `''` | Record key, `${name}` allowed; empty sends no key. |
+| `messageKey` | `''` | Record key, `${name}` allowed; empty sends no key. |
 | `headers` | `{}` | Record headers; values may use `${name}`. |
 
 ### AMQP (destination)

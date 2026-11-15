@@ -47,8 +47,8 @@ export function KafkaDestinationForm({ properties, onChange }: DestConnectorForm
         />
         <TextField
           label="Key"
-          value={getStr(properties, 'key', '')}
-          onChange={handleText('key')}
+          value={getStr(properties, 'messageKey', '')}
+          onChange={handleText('messageKey')}
           helperText="Records with the same key go to the same partition, in order (e.g. ${patientId}); empty sends no key"
           fullWidth
           sx={{ mb: 2 }}

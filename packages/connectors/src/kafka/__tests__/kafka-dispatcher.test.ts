@@ -14,7 +14,7 @@ const config: KafkaDispatcherConfig = {
   saslUsername: '',
   saslPassword: '',
   topic: 'results',
-  key: '',
+  messageKey: '',
   headers: {},
 };
 
@@ -50,7 +50,7 @@ describe('send', () => {
   it('fills topic, key and header values from the message variables', async () => {
     const { dispatcher, producer } = await started({
       topic: 'results-${site}',
-      key: '${patientId}',
+      messageKey: '${patientId}',
       headers: { source: 'galvaniflow', trace: '${traceId}' },
     });
     await dispatcher.send(message({ site: 'north', patientId: 'P42', traceId: 't-1' }), new AbortController().signal);

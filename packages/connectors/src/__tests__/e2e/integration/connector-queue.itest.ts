@@ -120,7 +120,7 @@ describeKafka('Kafka connectors (real broker)', () => {
         connector: new KafkaDispatcher({
           ...connection(),
           topic: `e2e-\${site}-${RUN}`,
-          key: '${patientId}',
+          messageKey: '${patientId}',
           headers: { source: 'galvaniflow', patient: '${patientId}' },
         }),
       }],
@@ -190,7 +190,7 @@ describeKafka('Kafka connectors (real broker)', () => {
       source: new KafkaReceiver({ ...sasl, topic: topics.sasl, groupId: `g-sasl-${RUN}`, startFrom: 'EARLIEST' }, undefined, undefined, RETRY_MS),
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
     }));
-    const dispatcher = new KafkaDispatcher({ ...sasl, topic: topics.sasl, key: '', headers: {} });
+    const dispatcher = new KafkaDispatcher({ ...sasl, topic: topics.sasl, messageKey: '', headers: {} });
     await dispatcher.onStart();
     try {
       const sent = await dispatcher.send(

@@ -22,8 +22,8 @@ const SEND_TIMEOUT_MS = 30_000;
 
 export interface KafkaDispatcherConfig extends KafkaConnectionConfig {
   readonly topic: string;
-  /** Empty sends no key. */
-  readonly key: string;
+  /** The record key; empty sends no key. */
+  readonly messageKey: string;
   readonly headers: Readonly<Record<string, string>>;
 }
 
@@ -61,7 +61,7 @@ export class KafkaDispatcher implements DestinationConnectorRuntime {
       if (topic.includes('${')) {
         return { status: 'ERROR' as const, content: '', errorMessage: `Topic ${this.config.topic} names a variable this message does not have` };
       }
-      const key = this.config.key ? fillVariables(this.config.key, message) : '';
+      const key = this.config.messageKey ? fillVariables(this.config.messageKey, message) : '';
       const headers: Record<string, Buffer> = {};
       for (const [name, value] of Object.entries(this.config.headers)) {
         headers[name] = Buffer.from(fillVariables(value, message), 'utf8');

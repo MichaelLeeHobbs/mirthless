@@ -53,7 +53,7 @@ describe('kafkaSourcePropertiesSchema', () => {
 describe('kafkaDestinationPropertiesSchema', () => {
   it('defaults to no key and no headers', () => {
     const parsed = kafkaDestinationPropertiesSchema.parse({ brokers: 'k:9092', topic: 'out-${site}' });
-    expect(parsed.key).toBe('');
+    expect(parsed.messageKey).toBe('');
     expect(parsed.headers).toEqual({});
     expect(parsed.topic).toBe('out-${site}');
   });

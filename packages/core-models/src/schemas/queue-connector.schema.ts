@@ -69,8 +69,11 @@ export const kafkaDestinationPropertiesSchema = z.object({
   ...kafkaConnection,
   /** Topic per message; may use `${name}`. */
   topic: required,
-  /** Message key per message; may use `${name}`. Empty sends no key. */
-  key: z.string().default(''),
+  /**
+   * Record key per message; may use `${name}`. Empty sends no key. Not named
+   * `key`: secret redaction masks a property of that name (the TLS key PEM).
+   */
+  messageKey: z.string().default(''),
   headers,
 }).refine(saslHasUsername, saslUsernameIssue);
 export type KafkaDestinationProperties = z.infer<typeof kafkaDestinationPropertiesSchema>;

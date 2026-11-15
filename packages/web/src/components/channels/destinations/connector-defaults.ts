@@ -128,7 +128,7 @@ export const SFTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
 export const KAFKA_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   ...KAFKA_CONNECTION_DEFAULTS,
   topic: '',
-  key: '',
+  messageKey: '',
   headers: {},
 };
 
