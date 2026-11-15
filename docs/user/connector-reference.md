@@ -14,7 +14,7 @@ That is 13 connector types in all: `EMAIL` is source only, and `SMTP` and `FHIR`
 
 The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`; their delivery guarantees are in D-266. The TCP_MLLP property schemas are in `packages/core-models/src/schemas/tcp-mllp-connector.schema.ts`.
 
-A connector's properties are checked when the channel deploys. TCP_MLLP rejects a key its table below does not list, so a misspelled key fails the deploy instead of being ignored. A test (`packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`) fails when a TCP_MLLP table and its schema list different keys.
+A connector's properties are checked when the channel deploys. TCP_MLLP rejects a key its table below does not list, so a misspelled key fails the deploy instead of being ignored. The exceptions are five keys the editor saved before 2026-07, which are dropped (see `docs/ops/upgrade.md`). A test (`packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`) fails when a TCP_MLLP table and its schema list different keys.
 
 ## Keys on every connector
 
@@ -41,7 +41,7 @@ HL7 lower-layer protocol over TCP.
 | `port` | — (required) | TCP listen port. |
 | `maxConnections` | `10` | Concurrent inbound connections. |
 | `responseMode` | `AUTO_ACK` | `AUTO_ACK` builds an HL7 ACK/NAK from the inbound message; `PASSTHROUGH` relays the channel's response. |
-| `charset` | `utf-8` | `utf-8`, `latin1` (ISO-8859-1), `ascii` or `utf16le`. |
+| `charset` | `utf-8` | `utf-8`, `latin1` (ISO-8859-1), `ascii` or `utf16le`. Case is ignored, and `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. |
 | `maxFrameBytes` | `52428800` | Largest message a connection may buffer (50 MiB); a larger one closes the connection. |
 | `frameStart`, `frameEnd` | MLLP (`0B`, `1C0D`) | Frame bytes as hex pairs, for a partner that does not use MLLP framing (e.g. `02` and `03`). |
 | `tls` | — | Inline PEM: `cert` and `key` (both required), `ca`, `requireClientCert`. Absent, `false` or `null` is plaintext. See `docs/ops/tls-and-phi.md`. |

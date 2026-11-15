@@ -162,10 +162,10 @@ function tcpMllpDispatcher(props: Record<string, unknown>): TcpMllpDispatcher {
   return new TcpMllpDispatcher({ ...config, tls: readTlsClientOptions({ tls }), framing: readFraming({ frameStart, frameEnd }) });
 }
 
-/** Parse props with a schema, leaving `tls` (PEM by now, not the stored ids) to {@link readQueueTls}. */
-function parseQueueProps<T>(schema: { parse(value: unknown): T }, props: Record<string, unknown>): T & { tls: TlsClientOptions | undefined } {
+/** Parse queue props with {@link parseProps}, leaving `tls` (PEM by now, not the stored ids) to {@link readQueueTls}. */
+function parseQueueProps<T>(type: string, schema: Parameters<typeof parseProps<T>>[1], props: Record<string, unknown>): T & { tls: TlsClientOptions | undefined } {
   const { tls: _tls, ...rest } = props;
-  return { ...schema.parse(rest), tls: readQueueTls(props) };
+  return { ...parseProps(type, schema, rest), tls: readQueueTls(props) };
 }
 
 // ----- Source Factories -----
@@ -261,8 +261,8 @@ const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnec
     hostKey: props['hostKey'] as string | undefined,
     charset: (props['charset'] as string | undefined) ?? 'utf-8',
   })],
-  ['KAFKA', (props): SourceConnectorRuntime => new KafkaReceiver(parseQueueProps(kafkaSourcePropertiesSchema, props))],
-  ['AMQP', (props): SourceConnectorRuntime => new AmqpReceiver(parseQueueProps(amqpSourcePropertiesSchema, props))],
+  ['KAFKA', (props): SourceConnectorRuntime => new KafkaReceiver(parseQueueProps('KAFKA', kafkaSourcePropertiesSchema, props))],
+  ['AMQP', (props): SourceConnectorRuntime => new AmqpReceiver(parseQueueProps('AMQP', amqpSourcePropertiesSchema, props))],
 ]);
 
 // ----- Destination Factories -----
@@ -367,8 +367,8 @@ const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<De
     strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
     hostKey: props['hostKey'] as string | undefined,
   })],
-  ['KAFKA', (props): DestinationConnectorRuntime => new KafkaDispatcher(parseQueueProps(kafkaDestinationPropertiesSchema, props))],
-  ['AMQP', (props): DestinationConnectorRuntime => new AmqpDispatcher(parseQueueProps(amqpDestinationPropertiesSchema, props))],
+  ['KAFKA', (props): DestinationConnectorRuntime => new KafkaDispatcher(parseQueueProps('KAFKA', kafkaDestinationPropertiesSchema, props))],
+  ['AMQP', (props): DestinationConnectorRuntime => new AmqpDispatcher(parseQueueProps('AMQP', amqpDestinationPropertiesSchema, props))],
 ]);
 
 // ----- Public API -----

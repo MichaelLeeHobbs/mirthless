@@ -16,8 +16,15 @@ describe('registry TCP_MLLP factories', () => {
     expect(() => createDestinationConnector('TCP_MLLP', { host: 'lis', port: 6661, responseTimout: 5 })).toThrow(/responseTimout/);
   });
 
-  it('refuse a charset Node cannot encode with, rather than failing on the first message', () => {
-    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, charset: 'ISO-8859-1' })).toThrow(/charset/);
+  it('refuse a charset the connector does not support', () => {
+    expect(() => createSourceConnector('TCP_MLLP', { port: 6661, charset: 'windows-1252' })).toThrow(/charset/);
+  });
+
+  it('build a channel the 2026-02 to 2026-07 editor saved, old keys and charset spelling included', () => {
+    expect(() => createSourceConnector('TCP_MLLP', {
+      host: '0.0.0.0', port: 6661, maxConnections: 10, receiveTimeout: 0, bufferSize: 65536,
+      keepConnectionOpen: true, charset: 'ISO-8859-1', transmissionMode: 'MLLP',
+    })).not.toThrow();
   });
 
   it('refuse a destination with no host', () => {

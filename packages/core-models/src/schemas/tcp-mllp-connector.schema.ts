@@ -3,7 +3,9 @@
 // ===========================================
 // Properties of the TCP/MLLP source and destination, as a channel stores
 // them. The server validates them at deploy and the connector registry parses
-// them, so defaults live here only. A key not listed here fails validation.
+// them, so defaults live here only. A key not listed here fails validation,
+// except the keys this app's own editor used to save (LEGACY_KEYS), which
+// are dropped.
 //
 // TLS is inline PEM in a `tls` object: TCP/MLLP has no certificate-store
 // lookup yet. Here `tls` is only typed; the connectors package decides
@@ -32,8 +34,42 @@ export type TcpMllpResponseMode = (typeof TCP_MLLP_RESPONSE_MODES)[number];
  */
 export const DEFAULT_MAX_FRAME_BYTES = 50 * 1024 * 1024;
 
-/** Optional PEM text. */
-const pem = z.string().optional();
+/**
+ * Keys the TCP/MLLP forms saved from 2026-02 (58ab3ae) to 2026-07 (349a666).
+ * No connector ever read them, and an edit keeps them, so saved channels still
+ * carry them. They are dropped rather than rejected.
+ */
+const LEGACY_KEYS: ReadonlySet<string> = new Set(['receiveTimeout', 'bufferSize', 'keepConnectionOpen', 'transmissionMode', 'sendTimeout']);
+
+/**
+ * Other names for the charsets, matched case-insensitively. The same editor
+ * saved `UTF-8`, `ISO-8859-1` and `US-ASCII`.
+ */
+const CHARSET_ALIASES: Readonly<Record<string, TcpMllpCharset>> = {
+  'utf-8': 'utf-8', utf8: 'utf-8',
+  latin1: 'latin1', 'iso-8859-1': 'latin1',
+  ascii: 'ascii', 'us-ascii': 'ascii',
+  utf16le: 'utf16le', 'utf-16le': 'utf16le',
+};
+
+/** Props without the legacy keys; anything that is not a plain object passes through to fail the schema. */
+function dropLegacyKeys(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !LEGACY_KEYS.has(key)));
+}
+
+const charset = z.preprocess(
+  (value) => (typeof value === 'string' ? CHARSET_ALIASES[value.trim().toLowerCase()] ?? value : value),
+  z.enum(TCP_MLLP_CHARSETS),
+).default('utf-8');
+
+/** Optional PEM text; null is unset, as the connector reads it. */
+const pem = z.string().nullable().optional();
+
+/** A TLS object, or none: absent, null or false (read as null). */
+function tlsSchema<T extends z.ZodRawShape>(fields: T): z.ZodType {
+  return z.preprocess((value) => (value === false ? null : value), z.strictObject(fields).nullable()).optional();
+}
 
 /**
  * Frame bytes as hex pairs (`0B`, `1C0D`); MLLP's when both are absent.
@@ -44,9 +80,8 @@ const framing = {
   frameEnd: z.string().optional(),
 };
 
-const charset = z.enum(TCP_MLLP_CHARSETS).default('utf-8');
-
-export const tcpMllpSourcePropertiesSchema = z.strictObject({
+/** The source's keys; the docs guard compares them with the connector reference. */
+export const tcpMllpSourceObjectSchema = z.strictObject({
   host: z.string().default('0.0.0.0'),
   port: connectorPortSchema,
   maxConnections: wholeNumberSchema(1).default(10),
@@ -54,17 +89,13 @@ export const tcpMllpSourcePropertiesSchema = z.strictObject({
   charset,
   maxFrameBytes: wholeNumberSchema(1).default(DEFAULT_MAX_FRAME_BYTES),
   ...framing,
-  /** Listener TLS: needs `cert` and `key`; false, null or absent is plaintext. */
-  tls: z.union([
-    z.literal(false),
-    z.null(),
-    z.strictObject({ cert: pem, key: pem, ca: pem, requireClientCert: z.boolean().optional() }),
-  ]).optional(),
+  /** Listener TLS: needs `cert` and `key`. */
+  tls: tlsSchema({ cert: pem, key: pem, ca: pem, requireClientCert: z.boolean().nullable().optional() }),
   ...sourceCommonProperties,
 });
-export type TcpMllpSourceProperties = z.infer<typeof tcpMllpSourcePropertiesSchema>;
 
-export const tcpMllpDestinationPropertiesSchema = z.strictObject({
+/** The destination's keys; the docs guard compares them with the connector reference. */
+export const tcpMllpDestinationObjectSchema = z.strictObject({
   host: z.string().trim().min(1),
   port: connectorPortSchema,
   maxConnections: wholeNumberSchema(1).default(5),
@@ -74,12 +105,13 @@ export const tcpMllpDestinationPropertiesSchema = z.strictObject({
   acquireTimeoutMs: wholeNumberSchema(1).default(30_000),
   charset,
   ...framing,
-  /** Client TLS; the certificate is optional, but `cert` and `key` come as a pair. False, null or absent is plaintext. */
-  tls: z.union([
-    z.literal(false),
-    z.null(),
-    z.strictObject({ cert: pem, key: pem, ca: pem, rejectUnauthorized: z.boolean().optional() }),
-  ]).optional(),
+  /** Client TLS; the certificate is optional, but `cert` and `key` come as a pair. */
+  tls: tlsSchema({ cert: pem, key: pem, ca: pem, rejectUnauthorized: z.boolean().nullable().optional() }),
   ...destinationCommonProperties,
 });
-export type TcpMllpDestinationProperties = z.infer<typeof tcpMllpDestinationPropertiesSchema>;
+
+export const tcpMllpSourcePropertiesSchema = z.preprocess(dropLegacyKeys, tcpMllpSourceObjectSchema);
+export type TcpMllpSourceProperties = z.infer<typeof tcpMllpSourceObjectSchema>;
+
+export const tcpMllpDestinationPropertiesSchema = z.preprocess(dropLegacyKeys, tcpMllpDestinationObjectSchema);
+export type TcpMllpDestinationProperties = z.infer<typeof tcpMllpDestinationObjectSchema>;

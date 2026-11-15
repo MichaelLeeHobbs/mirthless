@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { sourceCommonProperties, destinationCommonProperties } from '../connector-property-fields.js';
-import { tcpMllpSourcePropertiesSchema, tcpMllpDestinationPropertiesSchema } from '../tcp-mllp-connector.schema.js';
+import { tcpMllpSourceObjectSchema, tcpMllpDestinationObjectSchema } from '../tcp-mllp-connector.schema.js';
 
 const DOC = readFileSync(new URL('../../../../../docs/user/connector-reference.md', import.meta.url), 'utf-8');
 
@@ -34,8 +34,8 @@ const COMMON = {
 
 /** Connectors whose properties have a core-models schema, by doc heading. */
 const SCHEMAS = [
-  ['TCP_MLLP (source)', 'source', tcpMllpSourcePropertiesSchema.shape],
-  ['TCP_MLLP (destination)', 'destination', tcpMllpDestinationPropertiesSchema.shape],
+  ['TCP_MLLP (source)', 'source', tcpMllpSourceObjectSchema.shape],
+  ['TCP_MLLP (destination)', 'destination', tcpMllpDestinationObjectSchema.shape],
 ] as const;
 
 describe('docs/user/connector-reference.md property tables', () => {

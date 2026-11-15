@@ -100,10 +100,10 @@ export function TcpMllpDestinationForm({ properties, onChange }: DestConnectorFo
           type="number"
           value={getNum(properties, 'responseTimeout', 30000)}
           onChange={handleNumber('responseTimeout')}
-          helperText="Timeout waiting for the ACK response (0 = no timeout)"
+          helperText="Timeout waiting for the ACK response"
           fullWidth
           sx={{ mb: 2 }}
-          slotProps={{ htmlInput: { min: 0 } }}
+          slotProps={{ htmlInput: { min: 1 } }}
         />
 
         <TextField
@@ -114,7 +114,7 @@ export function TcpMllpDestinationForm({ properties, onChange }: DestConnectorFo
           helperText="Max wait for a pooled socket before the send fails"
           fullWidth
           sx={{ mb: 2 }}
-          slotProps={{ htmlInput: { min: 0 } }}
+          slotProps={{ htmlInput: { min: 1 } }}
         />
 
         <TextField

@@ -40,22 +40,26 @@ migration will not migrate it for you. From 1.0 onward, migrations will be data-
 
 Connector properties are moving, one connector type at a time, to a schema in `packages/core-models` that refuses keys it does not list and values of the wrong type. A channel that deployed before can then fail its deploy, including the auto-deploy at server start, with `Invalid source connector properties for <TYPE>: ...` or `Invalid destination connector properties for <TYPE>: ...`. The message names the key. Nothing in the database is changed; edit the channel's properties and deploy again. `docs/user/connector-reference.md` lists the keys each type accepts.
 
-**TCP_MLLP** is the first. A TCP_MLLP channel now fails to deploy when it has:
+**TCP_MLLP** is the first. Channels saved by this app's own editor keep deploying. From 2026-02 to 2026-07 the TCP/MLLP forms saved `receiveTimeout`, `bufferSize`, `keepConnectionOpen`, `transmissionMode` and `sendTimeout`, which no connector reads; the schema drops those five keys. It also reads a charset name in any case and maps the names that editor saved: `UTF-8` and `utf8` become `utf-8`, `ISO-8859-1` becomes `latin1`, `US-ASCII` becomes `ascii`, and `UTF-16LE` becomes `utf16le`. Nothing in the database is rewritten. A channel saved with `ISO-8859-1` or `US-ASCII` used to deploy and then fail on its first message, because Node has no encoding by those names; it now works.
 
-- a key not in its table, e.g. a misspelling such as `maxConnection` or a key left from another connector type. Before, such a key was ignored.
-- a `charset` other than `utf-8`, `latin1`, `ascii` or `utf16le`. `ISO-8859-1` used to deploy and then fail on the first message; `utf8` used to work and must now be written `utf-8`.
-- a number that is not a whole number given as a number or as digits (`maxConnections: "ten"`), or a timeout or size below 1. Before, the default was used silently.
-- a `tls` that is not an object, `false` or `null`, or a key inside `tls` other than those in `docs/ops/tls-and-phi.md`.
+A TCP_MLLP channel now fails to deploy when it has:
 
-To find TCP_MLLP connectors with a key the schema does not list before upgrading, run in `psql`:
+- any other key its table doesn't list, e.g. a misspelling such as `maxConnection` or a key left over from another connector type. Before, such a key was ignored.
+- a `charset` that is none of the above, e.g. `windows-1252`.
+- a number that is not a whole number, written as a number or as digits (e.g. `maxConnections: "ten"`), or a timeout or size below 1. Before, a value that wasn't a number was replaced by the default without a word, and a `responseTimeout` of 0 made every send time out at once.
+- a `tls` that is not an object, `false` or `null`, a PEM field that is not text, or a key inside `tls` that `docs/ops/tls-and-phi.md` doesn't list.
+
+Before upgrading, you can list the keys the schema would refuse with this `psql` query. It checks key names only, not values:
 
 ```sql
 SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
 WHERE source_connector_type = 'TCP_MLLP'
-  AND k NOT IN ('host','port','maxConnections','responseMode','charset','maxFrameBytes','frameStart','frameEnd','tls','processBatch');
+  AND k NOT IN ('host','port','maxConnections','responseMode','charset','maxFrameBytes','frameStart','frameEnd','tls','processBatch',
+                'receiveTimeout','bufferSize','keepConnectionOpen','transmissionMode','sendTimeout');
 SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
 WHERE connector_type = 'TCP_MLLP'
-  AND k NOT IN ('host','port','maxConnections','responseTimeout','acquireTimeoutMs','charset','frameStart','frameEnd','tls','template');
+  AND k NOT IN ('host','port','maxConnections','responseTimeout','acquireTimeoutMs','charset','frameStart','frameEnd','tls','template',
+                'receiveTimeout','bufferSize','keepConnectionOpen','transmissionMode','sendTimeout');
 ```
 
 ## Standard upgrade (Docker)

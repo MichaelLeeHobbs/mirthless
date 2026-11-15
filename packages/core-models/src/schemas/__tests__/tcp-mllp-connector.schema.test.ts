@@ -39,7 +39,7 @@ describe('tcpMllpSourcePropertiesSchema', () => {
   it.each([
     ['maxConnections', 'ten'],
     ['responseMode', 'ACK'],
-    ['charset', 'ISO-8859-1'],
+    ['charset', 'windows-1252'],
     ['maxFrameBytes', 0],
     ['frameStart', 2],
     ['tls', 'yes'],
@@ -60,8 +60,35 @@ describe('tcpMllpSourcePropertiesSchema', () => {
   });
 
   it('accepts tls switched off as false or null', () => {
-    expect(tcpMllpSourcePropertiesSchema.parse({ port: 6661, tls: false }).tls).toBe(false);
+    expect(tcpMllpSourcePropertiesSchema.parse({ port: 6661, tls: false }).tls).toBeNull();
     expect(tcpMllpSourcePropertiesSchema.parse({ port: 6661, tls: null }).tls).toBeNull();
+  });
+
+  it('treats a null field inside tls as unset, as the connector does', () => {
+    const tls = { cert: CERT, key: KEY, ca: null, requireClientCert: null };
+    expect(tcpMllpSourcePropertiesSchema.parse({ port: 6661, tls }).tls).toEqual(tls);
+  });
+
+  it('names the tls field that is wrong', () => {
+    const result = tcpMllpSourcePropertiesSchema.safeParse({ port: 6661, tls: { cert: CERT, key: KEY, requireClientCert: 'yes' } });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path).toEqual(['tls', 'requireClientCert']);
+  });
+
+  // What the TCP/MLLP source form saved from 58ab3ae to 349a666; edits keep these keys.
+  it('deploys a channel the 2026-02 to 2026-07 editor saved, dropping its unread keys', () => {
+    const saved = {
+      host: '0.0.0.0', port: 6661, maxConnections: 10, receiveTimeout: 0, bufferSize: 65536,
+      keepConnectionOpen: true, charset: 'UTF-8', transmissionMode: 'MLLP',
+    };
+    expect(tcpMllpSourcePropertiesSchema.parse(saved)).toEqual(tcpMllpSourcePropertiesSchema.parse({ port: 6661 }));
+  });
+
+  it.each([
+    ['UTF-8', 'utf-8'], ['utf8', 'utf-8'], ['ISO-8859-1', 'latin1'], ['US-ASCII', 'ascii'], ['UTF-16LE', 'utf16le'], ['Latin1', 'latin1'],
+  ])('reads charset %j as %j', (given, expected) => {
+    expect(tcpMllpSourcePropertiesSchema.parse({ port: 6661, charset: given }).charset).toBe(expected);
   });
 });
 
@@ -95,5 +122,14 @@ describe('tcpMllpDestinationPropertiesSchema', () => {
     [{ host: 'lis', port: 6661, remotePort: 6661 }],
   ])('rejects %j', (props) => {
     expect(tcpMllpDestinationPropertiesSchema.safeParse(props).success).toBe(false);
+  });
+
+  // What the TCP/MLLP destination form saved from 58ab3ae to 349a666.
+  it('deploys a destination the 2026-02 to 2026-07 editor saved, dropping its unread keys', () => {
+    const saved = {
+      host: 'localhost', port: 6661, sendTimeout: 10000, keepConnectionOpen: true,
+      charset: 'UTF-8', transmissionMode: 'MLLP', bufferSize: 65536,
+    };
+    expect(tcpMllpDestinationPropertiesSchema.parse(saved)).toEqual(tcpMllpDestinationPropertiesSchema.parse({ host: 'localhost', port: 6661 }));
   });
 });
