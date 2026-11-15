@@ -592,6 +592,36 @@ describe('EmailReceiver', () => {
 
       expect(errors.some((e) => e.msg.includes('poll cycle failed'))).toBe(true);
     });
+
+    it('times out a hung disconnect after a poll failure and reconnects on a fresh client', async () => {
+      const client1 = makeMockClient();
+      vi.mocked(client1.fetchUnread).mockRejectedValue(new Error('IMAP connection dropped'));
+      vi.mocked(client1.disconnect).mockReturnValue(new Promise(() => { /* never */ }));
+      // One unread email, marked read by the first poll that sees it.
+      const client2 = makeMockClient();
+      vi.mocked(client2.fetchUnread).mockResolvedValueOnce([makeMessage()]);
+
+      const clients = [client1, client2];
+      let idx = 0;
+      const factory: ImapClientFactory = (): ImapClient => clients[idx++]!;
+
+      const dispatched: RawMessage[] = [];
+      const { logger, warnings } = makeMockLogger();
+      receiver = new EmailReceiver(makeConfig({ pollingIntervalMs: 1_000 }), factory, logger);
+      receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw); return { messageId: 1 }; }));
+      await receiver.onStart();
+
+      // Poll fails, then the hung disconnect must give up after the 30s op timeout.
+      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(30_000);
+      const warning = warnings.find((w) => w.msg === 'Error disconnecting IMAP client during reconnect');
+      expect(warning?.obj['errMsg']).toBe('IMAP disconnect timed out after 30000ms');
+
+      // The next cycle reconnects on a fresh client and dispatches.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(vi.mocked(client2.connect)).toHaveBeenCalledOnce();
+      expect(dispatched).toHaveLength(1);
+    });
   });
 
   describe('dispatched keyword', () => {
