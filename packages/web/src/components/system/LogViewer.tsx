@@ -38,7 +38,8 @@ function getLevelColor(level: number): string {
   return 'text.primary';
 }
 
-function formatTimestamp(iso: string): string {
+/** Time of day of a log entry, `HH:MM:SS.mmm` in the browser's zone. */
+export function formatTimestamp(iso: string): string {
   try {
     const d = new Date(iso);
     const hh = String(d.getHours()).padStart(2, '0');

@@ -38,7 +38,7 @@ export interface GroupTotals {
 }
 
 /** Compact relative-time label, e.g. "just now", "3m", "2h", "5d", or a date. */
-function formatUpdated(iso: string): string {
+export function formatUpdated(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return '';
   const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
