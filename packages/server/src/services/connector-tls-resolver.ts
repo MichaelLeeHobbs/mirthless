@@ -16,7 +16,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { isPlainObject } from '@galvaniflow/core-util';
 import { ServiceError } from '../lib/service-error.js';
 
-/** Error text for a stored `tls` value that is present but not a plain object (D-275). */
+/** Error text for a stored `tls` value that is present but not a plain object (D-277). */
 const TLS_NOT_AN_OBJECT = 'Connector tls settings must be an object';
 import { CertificateService } from './certificate.service.js';
 
