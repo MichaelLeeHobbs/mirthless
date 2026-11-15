@@ -5,23 +5,21 @@
 import { describe, it, expect } from 'vitest';
 import { resolveOutputFilename, unknownPlaceholders } from '../file-dispatcher.js';
 
-// Non-string values reach the context only through a cast; the rows pin what
-// the substitution does with them.
-const context = {
+const context: Readonly<Record<string, unknown>> = {
   x: 'v',
   none: null,
   obj: { a: 1 },
   big: 10n,
   ref: '${x}',
-} as unknown as Readonly<Record<string, string>>;
+};
 
 describe('resolveOutputFilename', () => {
   it.each([
     ['a plain name', '${x}.txt', 'v.txt'],
-    ['a padded name', '${ x }.txt', '${ x }.txt'],
+    ['a padded name', '${ x }.txt', 'v.txt'],
     ['a missing name', '${y}.txt', '${y}.txt'],
     ['a null value', '${none}.txt', '${none}.txt'],
-    ['an object value', '${obj}.txt', '[object Object].txt'],
+    ['an object value', '${obj}.txt', '{"a":1}.txt'],
     ['a bigint value', '${big}.txt', '10.txt'],
     ['an inherited key', '${toString}.txt', '${toString}.txt'],
     ['a value containing ${x}', '${ref}.txt', '${x}.txt'],
@@ -36,7 +34,8 @@ describe('unknownPlaceholders', () => {
     ['an unknown name, once', '${a}_${a}.txt', ['a']],
     ['a dotted name', '${a.b}.txt', ['a.b']],
     ['an empty placeholder', '${}.txt', ['']],
-    ['a padded known name', '${ messageId }.txt', [' messageId ']],
+    ['a padded known name as known', '${ messageId }.txt', []],
+    ['a padded unknown name, trimmed', '${ a }.txt', ['a']],
   ])('reports %s', (_label, pattern, expected) => {
     expect(unknownPlaceholders(pattern)).toEqual(expected);
   });
