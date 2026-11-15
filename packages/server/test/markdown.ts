@@ -79,11 +79,13 @@ function cells(row: string): string[] {
   return parts;
 }
 
-const DIVIDER = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
+const DIVIDER = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
 /**
- * Pipe tables outside code fences. Throws when a row has a different number of
- * cells from its header, so a shifted column fails loudly instead of passing.
+ * Pipe tables outside code fences, written with a leading `|` on every row (the
+ * house style). Throws when a row has a different number of cells from its
+ * header, so a shifted or missing column fails loudly instead of passing; GFM
+ * would render a short row, but these docs never need one.
  */
 export function tables(markdown: string): readonly Table[] {
   const lines = proseLines(markdown);
@@ -117,17 +119,46 @@ export function tables(markdown: string): readonly Table[] {
   return out;
 }
 
-/** Relative link targets (no scheme, no pure anchors) that don't exist on disk, resolved from the doc's folder. */
+/**
+ * The anchors GitHub generates for a document's headings: lowercased, punctuation
+ * other than `-` and `_` dropped, spaces as `-`, and `-1`, `-2` ... on repeats.
+ */
+export function headingAnchors(markdown: string): ReadonlySet<string> {
+  const seen = new Map<string, number>();
+  const anchors = new Set<string>();
+  for (const h of headings(markdown)) {
+    const base = h.text
+      .toLowerCase()
+      .replace(/`/g, '')
+      .replace(/[^\p{L}\p{N} _-]/gu, '')
+      .replace(/ /g, '-');
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    anchors.add(n === 0 ? base : `${base}-${String(n)}`);
+  }
+  return anchors;
+}
+
+/**
+ * Relative links that lead nowhere: a file that doesn't exist, or a `#fragment`
+ * that matches no heading in the target (or in this doc, for `#fragment` alone).
+ * Links with a scheme (https:, mailto:) are not checked.
+ */
 export function brokenRelativeLinks(relativeDocPath: string): readonly string[] {
   const markdown = readRepoFile(relativeDocPath);
   const docDir = dirname(resolve(REPO_ROOT, relativeDocPath));
   const broken: string[] = [];
   for (const { text } of proseLines(markdown)) {
-    for (const m of text.matchAll(/\]\(([^)\s]+)\)/g)) {
+    for (const m of text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
       const target = m[1] ?? '';
-      if (/^[a-z]+:/i.test(target) || target.startsWith('#')) continue;
-      const file = target.split('#')[0] ?? '';
-      if (file && !existsSync(resolve(docDir, file))) broken.push(target);
+      if (/^[a-z]+:/i.test(target)) continue;
+      const [file = '', fragment] = target.split('#');
+      const path = file ? resolve(docDir, file) : resolve(REPO_ROOT, relativeDocPath);
+      if (!existsSync(path)) {
+        broken.push(target);
+        continue;
+      }
+      if (fragment && path.endsWith('.md') && !headingAnchors(readFileSync(path, 'utf8')).has(fragment)) broken.push(target);
     }
   }
   return broken;

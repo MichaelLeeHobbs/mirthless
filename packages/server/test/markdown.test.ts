@@ -5,9 +5,22 @@
 // fine would make every guard pass. These cases pin the edges.
 
 import { describe, it, expect } from 'vitest';
-import { headings, tables } from './markdown.js';
+import { headings, tables, headingAnchors } from './markdown.js';
+
+describe('docs markdown heading anchors', () => {
+  it('makes the anchors GitHub makes, numbering repeats', () => {
+    const md = ['## Connectors at a glance', '### SFTP: what it does', '### Check TLS is on', '## `TCP_MLLP` security', '## Notes', '## Notes'].join('\n');
+    expect([...headingAnchors(md)]).toEqual([
+      'connectors-at-a-glance', 'sftp-what-it-does', 'check-tls-is-on', 'tcp_mllp-security', 'notes', 'notes-1',
+    ]);
+  });
+});
 
 describe('docs markdown helper', () => {
+  it('recognises a delimiter row with single dashes', () => {
+    expect(tables(['| A | B |', '|-|-|', '| 1 | 2 |'].join('\n'))[0]?.rows).toEqual([['1', '2']]);
+  });
+
   it('reads headings and skips ones inside code fences', () => {
     const md = ['# Title', '## A', '```', '## not a heading', '```', '### A: detail'].join('\n');
     expect(headings(md).map((h) => `${String(h.level)} ${h.text}`)).toEqual(['1 Title', '2 A', '3 A: detail']);

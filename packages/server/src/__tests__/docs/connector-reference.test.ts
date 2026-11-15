@@ -84,9 +84,14 @@ describe('connector reference: one section per connector', () => {
     expect(subheadings(type)).toEqual(expected);
   });
 
+  it.each([...CONNECTOR_TYPES])('gives %s a property table for each direction it supports', (type) => {
+    const under = new Set(tables(markdown).map((t) => t.under?.text));
+    if (isSource(type)) expect(under.has(`${type} as a source`), `${type} source table`).toBe(true);
+    if (isDestination(type)) expect(under.has(`${type} as a destination`), `${type} destination table`).toBe(true);
+  });
+
   it('uses the Property | Required | Notes header for every property table', () => {
     const propertyTables = tables(markdown).filter((t) => / as a (source|destination)$/.test(t.under?.text ?? ''));
-    expect(propertyTables.length).toBeGreaterThanOrEqual(SOURCE_CONNECTOR_TYPES.length + DESTINATION_CONNECTOR_TYPES.length);
     for (const t of propertyTables) {
       expect(t.header, `table under "${t.under?.text ?? ''}"`).toEqual(PROPERTY_HEADER);
       for (const row of t.rows) {
@@ -98,7 +103,7 @@ describe('connector reference: one section per connector', () => {
 });
 
 describe('connector reference: links', () => {
-  it('links only to files that exist', () => {
+  it('links only to files and headings that exist', () => {
     expect(brokenRelativeLinks(DOC)).toEqual([]);
   });
 });
