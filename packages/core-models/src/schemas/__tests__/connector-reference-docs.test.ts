@@ -13,7 +13,7 @@ import { tcpMllpSourceObjectSchema, tcpMllpDestinationObjectSchema } from '../tc
 
 const DOC = readFileSync(new URL('../../../../../docs/user/connector-reference.md', import.meta.url), 'utf-8');
 
-/** The `### <heading>` section's table: every backticked key in its first column. */
+/** The `### <heading>` section's table: every backticked key in its first column, `tls.cert`-style rows read as their top-level key. */
 function documentedKeys(heading: string): string[] {
   const lines = DOC.split(/\r?\n/);
   const start = lines.findIndex((line) => line.trim() === `### ${heading}`);
@@ -22,9 +22,9 @@ function documentedKeys(heading: string): string[] {
   for (const line of lines.slice(start + 1)) {
     if (line.startsWith('#')) break;
     const firstCell = line.startsWith('|') ? line.split('|')[1] ?? '' : '';
-    for (const match of firstCell.matchAll(/`([^`]+)`/g)) keys.push(match[1] ?? '');
+    for (const match of firstCell.matchAll(/`([^`]+)`/g)) keys.push((match[1] ?? '').split('.')[0] ?? '');
   }
-  return keys.sort();
+  return [...new Set(keys)].sort();
 }
 
 const COMMON = {
@@ -34,8 +34,8 @@ const COMMON = {
 
 /** Connectors whose properties have a core-models schema, by doc heading. */
 const SCHEMAS = [
-  ['TCP_MLLP (source)', 'source', tcpMllpSourceObjectSchema.shape],
-  ['TCP_MLLP (destination)', 'destination', tcpMllpDestinationObjectSchema.shape],
+  ['TCP_MLLP as a source', 'source', tcpMllpSourceObjectSchema.shape],
+  ['TCP_MLLP as a destination', 'destination', tcpMllpDestinationObjectSchema.shape],
 ] as const;
 
 describe('docs/user/connector-reference.md property tables', () => {

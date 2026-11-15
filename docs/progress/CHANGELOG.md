@@ -2,6 +2,18 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Connector reference, docs slice 1 (branch `docs/connector-reference`)
+
+Slice 1 of the docs restructure (#116): a user can now find out, from one page, which connectors can receive, which can send, and what each can do.
+
+- **`docs/user/connector-reference.md` rewritten.** An at-a-glance matrix (source, destination, what it covers, transport security, auth, Mirth equivalent) and one section per connector: what it does, security, a property table per direction, limits. SFTP was missing (#93). The property tables list every key the registry reads, including keys read by helpers (`vendor`, `frameStart`, `tls.*`).
+- **Docs guard.** `packages/server/src/__tests__/docs/connector-reference.test.ts` fails `pnpm gate` when the matrix, the directions or the section headings disagree with the core-models connector lists. Its Markdown parser (`packages/server/test/markdown.ts`) has its own tests. Property keys are not checked yet (#115).
+- **`docs/ops/tls-and-phi.md` corrected** (#95): the per-connector TLS list is now a link to the matrix, the HTTP destination, Database, SMTP, Kafka and AMQP TLS options are described as the code has them, and a "Check TLS is on" step covers the TCP/MLLP plaintext fallback (#98).
+- **Quickstart:** the FHIR suggestion now says a transformer must produce a FHIR resource first.
+- **AGENTS.md:** the docs guards in "Keep the docs true", a disclosure rule (security defects go to a draft advisory, decision 8 of #116), a verification row for connector changes, an "Adding a connector" checklist of the places nothing checks, and the hook rename. The reminder hook now also fires on registry edits.
+- **README:** the Documentation link is a question, and "10 connector types" is 13.
+- **Found on the way:** five connector settings that do nothing (#154); a DICOM destination file-path exposure, reported as a draft security advisory.
+
 ## 2026-11-15 — TCP/MLLP property schema (branch `feat/115-tcp-mllp-props-schema`)
 
 First slice of #115 (D-274). TCP/MLLP source and destination properties have a strict schema in `core-models/src/schemas/tcp-mllp-connector.schema.ts`. Deploy validation and the registry both use it, so a misspelled key, an unsupported charset or a non-numeric setting fails the deploy instead of being ignored or failing on the first message. A test checks the web defaults and the form's charset and response-mode lists against it, and another checks the connector reference tables, which gained the six TCP/MLLP keys they were missing. Upgrade note with a query to find affected channels: `docs/ops/upgrade.md`. HTTP and DATABASE follow in their own PRs.
