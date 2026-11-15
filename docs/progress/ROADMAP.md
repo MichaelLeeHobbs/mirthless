@@ -151,7 +151,8 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
   - [ ] A Kafka halt during a rejoin, then a restart, can orphan the consumer that rejoin opens
   - [ ] An empty AMQP username connects as guest/guest (amqplib's default) instead of failing validation
   - [ ] The broker list pattern rejects bracketed IPv6 (`[::1]:9092`)
-  - [ ] The real-broker suite (`connector-queue.itest.ts`) is skipped in CI, and TLS has not been run against a real broker
+  - [x] The real-broker suite (`connector-queue.itest.ts`) is skipped in CI, and TLS has not been run against a real broker — CI job `connector-integration` runs every connector `*.itest.ts` and fails on a missing service; AMQPS runs against RabbitMQ (D-274, gh-88)
+  - [ ] Kafka over TLS has not been run against a real broker (only AMQPS has)
 - [ ] **[DECIDE]** npm packages in the sandbox? (doc 18, open decisions)
 
 ### API & Auth (done)
@@ -177,7 +178,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] Send Message dialog (fire-and-forget)
 
 ### CLI (removed)
-- [x] ~~Commander-based CLI~~ removed 2026-11-15 (D-273). Scripts use the REST API (`docs/ops/api-automation.md`); break-glass admin recovery is #141.
+- [x] ~~Commander-based CLI~~ removed 2026-11-15 (D-274). Scripts use the REST API (`docs/ops/api-automation.md`); break-glass admin recovery is #141.
 
 ### Remaining for v1.0
 - [x] ~~Data type serialization — XML/JSON/HL7v2 parsed `msg` object in sandbox~~

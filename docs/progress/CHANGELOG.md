@@ -4,9 +4,19 @@
 
 ## 2026-11-15 — Removed the CLI (branch `remove-cli`, #145)
 
-- **`packages/cli` deleted** (D-273). It had no users and wrapped one REST endpoint per command. Its coverage row is gone from `AGENTS.md`, along with the "CLI session refresh" roadmap item (L25).
+- **`packages/cli` deleted** (D-274). It had no users and wrapped one REST endpoint per command. Its coverage row is gone from `AGENTS.md`, along with the "CLI session refresh" roadmap item (L25).
 - **`docs/ops/api-automation.md`:** `curl` recipes for log in, export, import and redeploy. Redeploy returns once the channel is in its final state and fails when it can't start, so a CI job doesn't need to poll.
 - Not done here: API tokens (#144) and the break-glass admin reset (#141). Until #144, the recipes log in with a password, which won't work for an account with MFA.
+
+## 2026-11-15 — Connector integration lane in CI (gh-88, branch `ci/connector-itests`)
+
+- **CI:** a new `connector-integration` job starts `sftp-test`, `mail-test`, `kafka-test` and `rabbitmq-test` from the compose `test` profile, plus a Postgres service, and runs `pnpm --filter @galvaniflow/connectors test:integration`. Until now no connector `*.itest.ts` ran in CI.
+- **Required mode:** with `CONNECTOR_ITEST_REQUIRED=1` (set by that job) `gates.ts` throws at import when any service is unconfigured, so every suite fails instead of skipping, and the lane fails if it finds no suite (D-273).
+- **AMQPS:** `rabbitmq-test` has a TLS listener on 5674. Its entrypoint writes a throwaway CA and server certificate to `docker/test-certs` (git-ignored) on first start, so `compose up` needs no setup step. Two new tests send and receive over AMQPS with the certificate verified, and check that a connection without the CA is refused.
+- **Quorum queue:** a new test fails the store twice for a message on a quorum queue and checks that it is redelivered and stored once. The real-broker case for the `maxStoreAttempts` cap from gh-86 (D-271) is not here; #151 tracks it.
+- **Compose:** healthchecks on `kafka-test` and `rabbitmq-test`, so `up --wait` returns once they serve. The RabbitMQ check runs as the `rabbitmq` user: run as root, the CLI wrote the Erlang cookie first and the broker could not start.
+- **Verified:** locally the lane passed 17/17 in required mode with nothing skipped, and unsetting `KAFKA_TEST_BROKERS` failed it.
+- Not done: Kafka over TLS (ROADMAP V15).
 
 ## 2026-11-15 — Reinvention copy groups, batch 3 (branch `batch-2026-11-15-reinvention-3`)
 
@@ -49,6 +59,7 @@ The first slice of the docs restructure (#116): before the docs can be checked a
 - **Typed checks:** `requirePermission`, `requireAllPermissions` and the socket room map take `Permission`.
 - **`pnpm shots`** read permissions by scraping the web file, which broke when it became a re-export; it imports them from core-models now.
 - **Found on the way:** the engine sandbox tests and three server engine tests depend on wall-clock timing and fail on a slower Windows machine (#125). An E2E spec fails intermittently with ECONNRESET (#126). Neither touches this branch's code.
+
 
 ## 2026-11-15 — Reinvention copy groups, batch 1 (branch `batch-2026-11-15-reinvention-1`)
 

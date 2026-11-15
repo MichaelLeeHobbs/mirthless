@@ -8,8 +8,10 @@
 //   Channel B: Kafka/AMQP source → transform → sink.
 // Plus: redelivery after the pipeline fails to store a message, SASL login,
 // a message no queue would receive, dead-lettering of an ERROR message, the
-// broker dropping the consumer's connection, and the connection tests.
-// Runs only when KAFKA_TEST_BROKERS / AMQP_TEST_HOST are set.
+// broker dropping the consumer's connection, requeue on a quorum queue, AMQPS
+// with certificate checks, and the connection tests.
+// Runs only when KAFKA_TEST_BROKERS / AMQP_TEST_HOST are set (AMQPS also needs
+// the test CA that rabbitmq-test writes to docker/test-certs).
 
 import { it, expect, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -36,7 +38,7 @@ import {
   type InMemoryStore,
 } from '../support/e2e-harness.js';
 import { sendMllp } from '../support/tcp-helpers.js';
-import { describeKafka, requireKafka, describeAmqp, requireAmqp } from './gates.js';
+import { describeKafka, requireKafka, describeAmqp, requireAmqp, describeAmqpTls, requireAmqpTls } from './gates.js';
 
 const RUN = randomUUID().slice(0, 8);
 const WAIT = { timeout: 30_000, interval: 100 };
@@ -222,6 +224,7 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     queue: `e2e-adt-${RUN}`,
     deadExchange: `e2e-dlx-${RUN}`,
     deadQueue: `e2e-dead-${RUN}`,
+    quorum: `e2e-quorum-${RUN}`,
   };
   let admin: ChannelModel;
 
@@ -245,12 +248,13 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     await ch.bindQueue(names.deadQueue, names.deadExchange, '');
     await ch.assertQueue(names.queue, { durable: true, deadLetterExchange: names.deadExchange });
     await ch.bindQueue(names.queue, names.exchange, 'adt.#');
+    await ch.assertQueue(names.quorum, { durable: true, arguments: { 'x-queue-type': 'quorum' } });
     await ch.close();
   });
 
   afterAll(async () => {
     const ch = await admin.createChannel();
-    for (const q of [names.queue, names.deadQueue]) await ch.deleteQueue(q);
+    for (const q of [names.queue, names.deadQueue, names.quorum]) await ch.deleteQueue(q);
     for (const e of [names.exchange, names.deadExchange]) await ch.deleteExchange(e);
     await admin.close();
   });
@@ -334,6 +338,35 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     expect(store.messageCount()).toBe(1);
   }, TEST_TIMEOUT);
 
+  it('returns a message the pipeline could not store to a quorum queue, and it is delivered again', async () => {
+    const sink = new CaptureDestination();
+    const store = storeFailingFirst(2);
+    deployed.push(await deployChannel({
+      channelId: '00000000-0000-0000-0000-amqpe2e0000f',
+      dataType: 'RAW',
+      store,
+      source: new AmqpReceiver({ ...connection(), queue: names.quorum }, undefined, undefined, RETRY_MS),
+      transformer: ECHO_SOURCE_MAP,
+      destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
+    }));
+
+    const ch = await admin.createConfirmChannel();
+    ch.sendToQueue(names.quorum, Buffer.from('quorum retry'), { messageId: `q-${RUN}`, persistent: true });
+    await ch.waitForConfirms();
+    await ch.close();
+
+    // Two failed stores, two requeues, then the third delivery is stored once.
+    await vi.waitFor(() => { expect(sink.received).toHaveLength(1); }, WAIT);
+    expect(parsed(sink)).toMatchObject({ body: 'quorum retry', redelivered: true });
+    expect(store.messageCount()).toBe(1);
+    const left = await admin.createChannel();
+    try {
+      await vi.waitFor(async () => { expect((await left.checkQueue(names.quorum)).messageCount).toBe(0); }, WAIT);
+    } finally {
+      await left.close();
+    }
+  }, TEST_TIMEOUT);
+
   it('sends a message stored with an ERROR status to the dead-letter exchange', async () => {
     deployed.push(await deployChannel({
       channelId: '00000000-0000-0000-0000-amqpe2e0000d',
@@ -391,5 +424,63 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     await expect(testAmqpConnection(connection(), { exchange: names.exchange })).resolves.toContain('exists');
     await expect(testAmqpConnection(connection(), { queue: `e2e-missing-${RUN}` })).rejects.toThrow();
     await expect(testAmqpConnection({ ...connection(), password: 'wrong' }, { queue: names.queue })).rejects.toThrow();
+  }, TEST_TIMEOUT);
+});
+
+// ===========================================
+// AMQP over TLS (RabbitMQ's AMQPS listener)
+// ===========================================
+
+describeAmqpTls('AMQP connectors over TLS (real RabbitMQ)', () => {
+  const queue = `e2e-tls-${RUN}`;
+  let admin: ChannelModel;
+
+  const tlsConnection = (): AmqpConnectionConfig => {
+    const cfg = requireAmqp();
+    const tls = requireAmqpTls();
+    return { host: cfg.host, port: tls.port, vhost: '/', username: cfg.username, password: cfg.password, tls: { ca: tls.ca } };
+  };
+
+  beforeAll(async () => {
+    const cfg = requireAmqp();
+    admin = await amqpConnect({ hostname: cfg.host, port: cfg.port, username: cfg.username, password: cfg.password });
+    const ch = await admin.createChannel();
+    await ch.assertQueue(queue, { durable: true });
+    await ch.close();
+  });
+
+  afterAll(async () => {
+    const ch = await admin.createChannel();
+    await ch.deleteQueue(queue);
+    await admin.close();
+  });
+
+  it('publishes and consumes over AMQPS with the server certificate verified', async () => {
+    const sink = new CaptureDestination();
+    deployed.push(await deployChannel({
+      channelId: '00000000-0000-0000-0000-amqpe2e00010',
+      dataType: 'RAW',
+      source: new AmqpReceiver({ ...tlsConnection(), queue }, undefined, undefined, RETRY_MS),
+      destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
+    }));
+    // The default exchange routes to the queue the routing key names.
+    const dispatcher = new AmqpDispatcher({ ...tlsConnection(), exchange: '', routingKey: queue, headers: {}, contentType: 'text/plain' });
+    await dispatcher.onStart();
+    try {
+      const sent = await dispatcher.send(
+        { channelId: 'c', messageId: 1, metaDataId: 1, content: 'over tls', dataType: 'RAW' },
+        AbortSignal.timeout(30_000),
+      );
+      expect(sent.ok && sent.value.status).toBe('SENT');
+    } finally {
+      await dispatcher.onStop();
+    }
+    await vi.waitFor(() => { expect(sink.lastContent()).toBe('over tls'); }, WAIT);
+  }, TEST_TIMEOUT);
+
+  it('refuses a broker certificate no trusted CA signed, and connects once the CA is given', async () => {
+    // TLS on, no CA: the test CA is not in Node's trust store, so verification fails.
+    await expect(testAmqpConnection({ ...tlsConnection(), tls: {} }, { queue })).rejects.toThrow(/self[- ]signed|certificate/i);
+    await expect(testAmqpConnection(tlsConnection(), { queue })).resolves.toContain(`queue ${queue}`);
   }, TEST_TIMEOUT);
 });
