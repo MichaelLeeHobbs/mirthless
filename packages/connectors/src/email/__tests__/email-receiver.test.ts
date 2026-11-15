@@ -540,6 +540,68 @@ describe('EmailReceiver', () => {
     });
   });
 
+  // Pause is onStop then onStart on the same instance. An email whose dispatch
+  // was in flight when the channel stopped must not be dispatched again.
+  describe('stopping during a dispatch', () => {
+    function pendingDispatcher(): {
+      readonly dispatcher: (raw: RawMessage) => Promise<Result<DispatchResult>>;
+      readonly calls: () => number;
+      readonly release: () => void;
+    } {
+      let calls = 0;
+      let release = (): void => undefined;
+      const dispatcher = (): Promise<Result<DispatchResult>> => {
+        calls++;
+        if (calls > 1) return Promise.resolve({ ok: true as const, value: { messageId: calls }, error: null });
+        return new Promise((resolve) => {
+          release = (): void => { resolve({ ok: true as const, value: { messageId: 1 }, error: null }); };
+        });
+      };
+      return { dispatcher, calls: () => calls, release: () => { release(); } };
+    }
+
+    it('stop waits for the dispatch in flight, so the email is post-processed and not dispatched again', async () => {
+      const client = makeMockClient([makeMessage({ uid: 7 })]);
+      const pending = pendingDispatcher();
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
+      receiver.setDispatcher(pending.dispatcher);
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(pending.calls()).toBe(1);
+
+      const stopping = receiver.onStop();
+      pending.release();
+      expect((await stopping).ok).toBe(true);
+      expect(client.markRead).toHaveBeenCalledWith(7);
+
+      // Resume: the server would no longer list it as unread.
+      vi.mocked(client.fetchUnread).mockResolvedValue([]);
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(pending.calls()).toBe(1);
+    });
+
+    it('halt during a dispatch keeps the email awaiting its post-action, so resume retries only the post-action', async () => {
+      const client = makeMockClient([makeMessage({ uid: 8 })]);
+      const pending = pendingDispatcher();
+      receiver = new EmailReceiver(makeConfig(), makeClientFactory(client));
+      receiver.setDispatcher(pending.dispatcher);
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect((await receiver.onHalt()).ok).toBe(true);
+      pending.release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.markRead).not.toHaveBeenCalled();
+
+      // Still unread on the server (no post-action ran), so resume sees it again.
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(pending.calls()).toBe(1);
+      expect(client.markRead).toHaveBeenCalledWith(8);
+    });
+  });
+
   describe('lifecycle', () => {
     it('stops and disconnects client', async () => {
       const client = makeMockClient();

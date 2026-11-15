@@ -109,6 +109,8 @@ export class EmailReceiver implements SourceConnectorRuntime {
   private dispatcher: MessageDispatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
+  /** The email being dispatched and post-processed, which stop waits for so it gets its post-action. */
+  private dispatchInFlight: Promise<void> | null = null;
   private client: ImapClient | null = null;
   /**
    * UIDs already dispatched whose post-action (mark read / move / delete) has
@@ -172,6 +174,10 @@ export class EmailReceiver implements SourceConnectorRuntime {
   async onStop(): Promise<Result<void>> {
     return tryCatch(async () => {
       this.clearPollTimer();
+      // Let an email being dispatched finish its post-action on the open session;
+      // logging out first would leave it unread and dispatch it again after a
+      // resume. A fetch in progress is not waited for: it dispatches nothing.
+      if (this.dispatchInFlight !== null) await this.dispatchInFlight;
       await this.disconnectClient();
     });
   }
@@ -202,7 +208,13 @@ export class EmailReceiver implements SourceConnectorRuntime {
       );
       for (const msg of messages) {
         if (this.matchesSubjectFilter(msg)) {
-          await this.processMessage(msg);
+          const processing = this.processMessage(msg);
+          this.dispatchInFlight = processing.catch(() => undefined);
+          try {
+            await processing;
+          } finally {
+            this.dispatchInFlight = null;
+          }
         }
       }
     } catch (err) {
@@ -296,9 +308,10 @@ export class EmailReceiver implements SourceConnectorRuntime {
    * is logged, not fatal: the in-memory set still prevents a duplicate until restart.
    */
   private async recordDispatched(uid: number): Promise<void> {
-    if (!this.client) return;
+    const client = this.client;
     try {
-      const stored = await withTimeout(this.client.markDispatched(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markDispatched');
+      if (!client) throw new Error('IMAP client is not connected (channel stopped or halted)');
+      const stored = await withTimeout(client.markDispatched(uid), IMAP_OP_TIMEOUT_MS, 'IMAP markDispatched');
       if (!stored && !this.warnedNoKeywords) {
         this.warnedNoKeywords = true;
         this.logger.warn(
@@ -316,7 +329,9 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   /** Apply post-processing action to a processed email. */
   private async postProcess(uid: number): Promise<void> {
-    if (!this.client) return;
+    // Throw rather than return: the caller would take a silent return as done and
+    // stop tracking an email that is still unread, which a later poll then dispatches again.
+    if (!this.client) throw new Error('IMAP client is not connected (channel stopped or halted)');
 
     switch (this.config.postAction) {
       case EMAIL_POST_ACTION.DELETE:
