@@ -5,12 +5,32 @@
 ## 2026-11-15 — Connector integration lane in CI (gh-88, branch `ci/connector-itests`)
 
 - **CI:** a new `connector-integration` job starts `sftp-test`, `mail-test`, `kafka-test` and `rabbitmq-test` from the compose `test` profile, plus a Postgres service, and runs `pnpm --filter @galvaniflow/connectors test:integration`. Until now no connector `*.itest.ts` ran in CI.
-- **Required mode:** with `CONNECTOR_ITEST_REQUIRED=1` (set by that job) `gates.ts` throws at import when any service is unconfigured, so every suite fails instead of skipping, and the lane fails if it finds no suite (D-270).
+- **Required mode:** with `CONNECTOR_ITEST_REQUIRED=1` (set by that job) `gates.ts` throws at import when any service is unconfigured, so every suite fails instead of skipping, and the lane fails if it finds no suite (D-273).
 - **AMQPS:** `rabbitmq-test` has a TLS listener on 5674. Its entrypoint writes a throwaway CA and server certificate to `docker/test-certs` (git-ignored) on first start, so `compose up` needs no setup step. Two new tests send and receive over AMQPS with the certificate verified, and check that a connection without the CA is refused.
-- **Quorum queue:** a new test fails the store twice for a message on a quorum queue and checks that it is redelivered and stored once. The `maxStoreAttempts` cap from gh-86 (D-269) is not in `main` yet, so its real-broker case is not here.
+- **Quorum queue:** a new test fails the store twice for a message on a quorum queue and checks that it is redelivered and stored once. The real-broker case for the `maxStoreAttempts` cap from gh-86 (D-271) is not here; #151 tracks it.
 - **Compose:** healthchecks on `kafka-test` and `rabbitmq-test`, so `up --wait` returns once they serve. The RabbitMQ check runs as the `rabbitmq` user: run as root, the CLI wrote the Erlang cookie first and the broker could not start.
 - **Verified:** locally the lane passed 17/17 in required mode with nothing skipped, and unsetting `KAFKA_TEST_BROKERS` failed it.
 - Not done: Kafka over TLS (ROADMAP V15).
+
+## 2026-11-15 — Reinvention copy groups, batch 3 (branch `batch-2026-11-15-reinvention-3`)
+
+The last merge batch of the approved triage, mostly web and small server helpers:
+
+- **core-util (G0036, G0113):** `unescapeControlChars` replaces the Delimited settings form's `readEscapes` and the importer's `unescapeMirth`, and `isSecretSetting` replaces the server's and the Settings page's copies. The web now depends on `@galvaniflow/core-util`; the browser bundle changed only in SettingsPage (+0.06 kB). From the batch review: `docker/Dockerfile.web` now copies core-util (without it the web image could not build) and the cloud session hook builds it; the web image builds from a clean checkout. A local build from a checkout with installed dependencies still fails for an older reason (#137). Visible change: the Settings page treats a setting typed `secret`, or `Password` in any case, as secret, as the server already did.
+- **Server (G0131, G0180, G0239, G0228, G0167):** the collection service uses `containsPattern` and `requireById`; collections and data sources emit their audit events through one `emitSuccessEvent` (records unchanged); event export uses the event list's `buildEventWhereConditions` (its schema cannot carry the two extra filters, so output is unchanged); the seed scripts share one channel lookup.
+- **Web (G0071, G0076, G0079, G0166, G0229.R, G0257):** one `errorMessage` helper for mutation toasts, `ErrorState` and `ErrorBoundary`, each keeping its fallback text (an empty error message now shows the fallback instead of a blank, and `ErrorBoundary` now shows a thrown string's text instead of the fallback, as the other two already did); one Monaco registration per language; `propertyUpdaters` gains `updateTls` for the HTTP and queue TLS fields; message and event query strings share their filter clauses (`messageFilterParts`, `definedSearchParams`), pinned to the exact strings; the Delimited form uses the shared `update`.
+- Not done here: `use-certificates`, `use-logs` and `use-cross-channel-search` still build query strings by hand and could use `definedSearchParams` (not in the catalog).
+
+## 2026-11-15 — Open issues batch (branch `batch-2026-11-15-open-issues`)
+
+Michael asked for the open issues to be worked through. 16 of 18 were fixed as one batch, one branch and merge commit per issue; #115 (one property schema per connector) and #88 (CI job for the real-broker suites) were left for their own sessions.
+
+- **Fail loudly instead of later:** a TCP/MLLP or HTTPS source with an incomplete `tls` setting fails its deploy instead of listening in plaintext (#98). SFTP properties are validated and an unknown connector type fails validation (#102, D-269). The channel API and channel import reject a destination-only type as the source and a source-only type as a destination (#109).
+- **Kafka/AMQP:** a `charset` source setting (UTF-8, Latin-1, Windows-1252, base64), with invalid UTF-8 flagged as `charsetError` in the source map (#87, D-270). A message the store rejects `maxStoreAttempts` times in a row (default 5) stops the channel with an ERROR event and alert, and the message stays on the queue (#86, D-271). A report from a stopped or earlier deployment is ignored.
+- **Fixes:** cloning a channel keeps its filters and transformers (#91). Code template deletes check `code_templates:delete`, and the UI hides delete from roles without it; developers lose delete (#96). Session row, refresh cookie and refresh JWT all use `JWT_REFRESH_EXPIRES_IN` (#99; no absolute cap, by Michael's call). SFTP Test Connection works (#89). The Mirth import preview warns on SQL Server/Oracle and script-mode database channels and parses `;databaseName=` URLs (#103). Seven handler and service defects from the reinvention audit, including the global-map flush race; five handlers now map service errors to 404/400/409 (#92, approved). Two #92 items did not reproduce (collections URL encoding, empty `IN ()`).
+- **Dependencies:** 15 of 16 Dependabot alerts cleared by lockfile refresh, two bumps and three bounded overrides (#100). The esbuild alert remains: drizzle-kit pulls esbuild 0.18 and the fix is a breaking 0.25.
+- **Docs:** the connector reference covers SFTP and MySQL, README counts 13 types (#93); ROADMAP and design docs no longer claim channel-scoped permissions or MFA (#94); the TLS runbook matches the connectors (#95); README, SECURITY.md and the user docs say the script sandbox is best-effort, not a security boundary (#64).
+- Not done: engine sandbox timing tests fail under load (#125, unchanged by this batch). The channel-group integration test and the real-broker queue suite were not run (no Postgres or brokers here).
 
 ## 2026-11-15 — Reinvention copy groups, batch 2 (branch `batch-2026-11-15-reinvention-2`)
 

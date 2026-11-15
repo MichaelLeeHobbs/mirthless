@@ -16,7 +16,7 @@ import { HTTP_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { HeadersEditor, coerceHeaders } from '../../common/HeadersEditor.js';
 import { CertificateSelect } from '../common/CertificateSelect.js';
-import { getStr, getNum, getTls, getTlsStr, getTlsBool, propertyUpdaters } from '../common/connector-properties.js';
+import { getStr, getNum, getTlsStr, getTlsBool, propertyUpdaters } from '../common/connector-properties.js';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 const SCHEMES = ['HTTP', 'HTTPS'] as const;
@@ -33,11 +33,7 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
     }
   }, [properties, onChange]);
 
-  const { update, handleText, handleNumber } = propertyUpdaters(properties, onChange);
-
-  const updateTls = (key: string, value: unknown): void => {
-    update('tls', { ...getTls(properties), [key]: value });
-  };
+  const { update, updateTls, handleText, handleNumber } = propertyUpdaters(properties, onChange);
 
   const scheme = getStr(properties, 'scheme', 'HTTP');
   const isHttps = scheme === 'HTTPS';

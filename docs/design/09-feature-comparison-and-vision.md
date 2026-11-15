@@ -145,7 +145,7 @@ Beyond the Java-specific items in 1.4, there are design patterns in Mirth that a
 
 **Mirth pattern:** `DefaultAuthorizationController.isUserAuthorized()` returns `true` for everything. RBAC is a paid plugin.
 
-**Our approach:** RBAC built-in from day one. Default deny. Channel-scoped permissions.
+**Our approach:** RBAC built-in from day one. Default deny. Permissions are per role and apply to every channel; channel-scoped permissions are not built.
 
 ### 2.4 Thread-Per-Connection Model
 
@@ -329,7 +329,7 @@ Based on analysis of the Mirth Connect source code, community forums, GitHub iss
 
 **The complaint:** RBAC, MFA, channel history, cross-channel search, FHIR connector, advanced alerting, and clustering are all paid add-ons. The open-source version is deliberately crippled. As of v4.6 (2025), even the open-source version became proprietary.
 
-**Our advantage:** Everything in Mirth's Gold tier ships as built-in open-source. RBAC, MFA, channel history, cross-channel search, FHIR, alerting -- all included. This is our single biggest competitive argument. The community frustration around Mirth's licensing changes is our adoption opportunity.
+**Our advantage:** Most of Mirth's Gold tier ships as built-in open-source: RBAC, channel history, cross-channel search, FHIR and alerting are all included. MFA is the exception: it is planned (ROADMAP V4) but not built. This is our single biggest competitive argument. The community frustration around Mirth's licensing changes is our adoption opportunity.
 
 ### 4.5 Operational Complexity
 
@@ -398,7 +398,7 @@ GalvaniFlow occupies a unique position: **the only open-source, modern, healthca
 | **Message generator** | Built-in test data generation for HL7v2, FHIR, XML, JSON |
 | **Channel templates gallery** | Pre-built channels for common use cases (ADT routing, lab results, radiology) |
 | **Webhook alert actions** | Slack/Teams/PagerDuty integration for alerting |
-| **MFA (TOTP)** | Built-in second factor authentication |
+| **MFA (TOTP)** | Second factor authentication; not built yet (ROADMAP V4) |
 | **LDAP/AD auth provider** | Enterprise directory integration |
 | **Channel environment variables** | Deploy same channel across envs with different config |
 

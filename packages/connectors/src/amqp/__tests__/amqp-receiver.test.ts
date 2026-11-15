@@ -118,6 +118,212 @@ describe('consuming', () => {
   });
 });
 
+describe('a message the pipeline never stores', () => {
+  function startCapped(queue: FakeAmqpQueue, dispatch: Dispatch, maxStoreAttempts?: number) {
+    const log = makeMockLogger();
+    const fatal: Error[] = [];
+    receiver = new AmqpReceiver(maxStoreAttempts === undefined ? config : { ...config, maxStoreAttempts }, queue.consume, log.logger, 5);
+    receiver.setDispatcher(dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    return { log, fatal, started: receiver.onStart() };
+  }
+
+  it('stops retrying after the cap, reports a fatal error, and neither acks nor dead-letters it', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|poison');
+    queue.publish('MSH|next');
+    const p = pipeline(() => notStored('invalid byte sequence for encoding "UTF8": 0x00'));
+    const { log, fatal } = startCapped(queue, p.dispatch, 3);
+
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    await vi.waitFor(() => { expect(queue.connected).toBe(false); });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(p.offered.map((r) => r.content)).toEqual(['MSH|poison', 'MSH|poison', 'MSH|poison']);
+    expect(queue.acked).toEqual([]);
+    expect(queue.deadLettered).toEqual([]);
+    // Still on the queue, first, for when the channel is started again.
+    expect(queue.messages.map((m) => m.body)).toEqual(['MSH|poison', 'MSH|next']);
+    expect(fatal[0]?.message).toContain('3 attempts');
+    expect(log.errors.some((e) => e.msg.includes('AMQP source stopped'))).toBe(true);
+  });
+
+  it('defaults the cap to 5 attempts', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|poison');
+    const p = pipeline(() => notStored('rejected'));
+    const { fatal } = startCapped(queue, p.dispatch);
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    expect(p.offered).toHaveLength(5);
+  });
+
+  it('resets the count when a message is stored, so transient failures never add up to the cap', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    queue.publish('MSH|2');
+    const failuresLeft = new Map([['MSH|1', 2], ['MSH|2', 2]]);
+    const p = pipeline((raw, n) => {
+      const left = failuresLeft.get(raw.content) ?? 0;
+      failuresLeft.set(raw.content, left - 1);
+      return left > 0 ? notStored('database unavailable') : stored(n);
+    });
+    const { fatal } = startCapped(queue, p.dispatch, 3);
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+    expect(fatal).toEqual([]);
+  });
+
+  it('counts per message id, so a queue that requeues at the tail still stops on the failing message', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.requeueAtTail = true; // as a quorum queue may
+    for (const body of ['bad', 'ok-1', 'ok-2', 'ok-3']) queue.publish(body);
+    const p = pipeline((raw, n) => (raw.content === 'bad' ? notStored('rejected') : stored(n)));
+    const withIds: typeof queue.consume = (c, onDelivery) =>
+      queue.consume(c, (d) => { onDelivery({ ...d, messageId: d.content.toString() }); });
+    const log = makeMockLogger();
+    const fatal: Error[] = [];
+    receiver = new AmqpReceiver({ ...config, maxStoreAttempts: 3 }, withIds, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    await receiver.onStart();
+
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    // Three attempts on 'bad' in all. Counting failures in a row, the stored messages
+    // between its first and second attempt would have reset the count and let it try a fourth time.
+    expect(p.offered.map((r) => r.content)).toEqual(['bad', 'ok-1', 'ok-2', 'ok-3', 'bad', 'bad']);
+    expect(queue.acked).toEqual(['ok-1', 'ok-2', 'ok-3']);
+  });
+
+  it('does not report a fatal error once the channel was restarted while the stop was closing the connection', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|poison');
+    let releaseClose: (() => void) | undefined;
+    let closing = false;
+    let connections = 0;
+    const slowFirstClose: typeof queue.consume = async (c, onDelivery) => {
+      const consumer = await queue.consume(c, onDelivery);
+      connections += 1;
+      if (connections > 1) return consumer;
+      return {
+        closed: consumer.closed,
+        close: async () => {
+          closing = true;
+          await new Promise<void>((resolve) => { releaseClose = resolve; });
+          await consumer.close();
+        },
+      };
+    };
+    let calls = 0;
+    const p = pipeline(() => { calls += 1; return calls === 1 ? notStored('rejected') : stored(calls); });
+    const fatal: Error[] = [];
+    receiver = new AmqpReceiver({ ...config, maxStoreAttempts: 1 }, slowFirstClose, makeMockLogger().logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(closing).toBe(true); });
+
+    // The operator halts and starts the channel while the cap's close is still going.
+    await receiver.onHalt();
+    await receiver.onStart();
+    releaseClose?.();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(fatal).toEqual([]);
+  });
+
+  it('does not report a fatal error for a failure that comes back during a stop', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let entered = false;
+    const { fatal } = startCapped(queue, async () => { entered = true; await held; return notStored('database closed during shutdown'); }, 1);
+    await vi.waitFor(() => { expect(entered).toBe(true); });
+
+    const stopping = receiver?.onStop();
+    release?.();
+    await stopping;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fatal).toEqual([]);
+    expect(queue.messages.map((m) => m.body)).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
+  it('ignores a failed dispatch left over from before a halt and restart', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let releaseFirst: (() => void) | undefined;
+    let calls = 0;
+    const { fatal } = startCapped(queue, async () => {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => { releaseFirst = resolve; });
+        return notStored('cancelled by the halt');
+      }
+      return stored(calls);
+    }, 1);
+    await vi.waitFor(() => { expect(calls).toBe(1); });
+    await receiver?.onHalt();
+    await receiver?.onStart();
+    releaseFirst?.();
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fatal).toEqual([]);
+    queue.publish('MSH|2');
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+  });
+});
+
+describe('a delivery that throws', () => {
+  it('returns a message whose dispatch throws to the queue and keeps consuming', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let calls = 0;
+    const offered: string[] = [];
+    const { log } = await start(queue, async (raw) => {
+      offered.push(raw.content);
+      calls += 1;
+      if (calls === 1) throw new Error('dispatcher bug');
+      return stored(calls);
+    });
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+    queue.publish('MSH|2');
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+    expect(offered).toEqual(['MSH|1', 'MSH|1', 'MSH|2']);
+    expect(JSON.stringify(log.errors)).not.toContain('MSH|1');
+  });
+
+  it('keeps consuming after converting a delivery throws', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let first = true;
+    const throwingOnce: typeof queue.consume = (c, onDelivery) => queue.consume(c, (d) => {
+      if (!first) { onDelivery(d); return; }
+      first = false;
+      onDelivery(Object.defineProperty({ ...d }, 'content', { get: () => { throw new RangeError('decoder unavailable'); } }));
+    });
+    const p = pipeline();
+    receiver = new AmqpReceiver(config, throwingOnce, makeMockLogger().logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+    queue.publish('MSH|2');
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+  });
+
+  it('a start does not wait behind a dispatch that hung before a halt', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let calls = 0;
+    await start(queue, async () => {
+      calls += 1;
+      if (calls === 1) return new Promise<Result<DispatchResult>>(() => undefined); // never answers
+      return stored(calls);
+    });
+    await vi.waitFor(() => { expect(calls).toBe(1); });
+    await receiver?.onHalt();
+    await receiver?.onStart();
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+  });
+});
+
 describe('broker disconnect', () => {
   it('reconnects after the connection drops, and the message that was in flight is delivered again', async () => {
     const queue = new FakeAmqpQueue();
@@ -222,6 +428,56 @@ describe('toRawMessage', () => {
       content: 'MSH|1',
       sourceMap: { queue: 'adt', exchange: 'hl7', routingKey: 'adt.a01', redelivered: false, headers: { site: 'north' }, messageId: 'm-1', contentType: 'text/plain' },
     });
+  });
+
+  const delivery = (content: Buffer) => ({
+    content, exchange: '', routingKey: 'adt', redelivered: false, headers: {}, messageId: undefined, contentType: undefined,
+    ack: () => undefined, nack: () => undefined,
+  });
+
+  it('decodes a Latin-1 payload when the charset is latin1', () => {
+    const raw = toRawMessage(delivery(Buffer.from([...Buffer.from('PID|Jos'), 0xe9])), 'adt', 'latin1');
+    expect(raw.content).toBe('PID|José');
+    expect(raw.sourceMap['charsetError']).toBeUndefined();
+  });
+
+  it('decodes Windows-1252 punctuation when the charset is windows-1252', () => {
+    expect(toRawMessage(delivery(Buffer.from([0x93, 0x41, 0x94])), 'adt', 'windows-1252').content).toBe('“A”');
+  });
+
+  it('keeps a binary payload intact as base64 when the charset is base64', () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x80, 0x0d, 0x0a]);
+    const raw = toRawMessage(delivery(bytes), 'adt', 'base64');
+    expect(Buffer.from(raw.content, 'base64').equals(bytes)).toBe(true);
+  });
+
+  it('flags a payload that is not valid UTF-8', () => {
+    const raw = toRawMessage(delivery(Buffer.from([0x41, 0xc3])), 'adt');
+    expect(raw.content).toBe('A�');
+    expect(raw.sourceMap['charsetError']).toContain('not valid UTF-8');
+  });
+
+  it('keeps a UTF-8 byte order mark as it did before', () => {
+    expect(toRawMessage(delivery(Buffer.from([0xef, 0xbb, 0xbf, 0x41])), 'adt').content).toBe('﻿A');
+  });
+});
+
+describe('charset', () => {
+  it('logs a warning, without the payload, for a message that is not valid UTF-8, and still stores it', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('x');
+    const p = pipeline();
+    const log = makeMockLogger();
+    const consume: typeof queue.consume = (c, onDelivery) =>
+      queue.consume(c, (d) => { onDelivery({ ...d, content: Buffer.from([0x50, 0xe9]) }); });
+    receiver = new AmqpReceiver(config, consume, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['x']); });
+    expect(p.offered[0]?.sourceMap['charsetError']).toContain('not valid UTF-8');
+    const warning = log.warnings.find((w) => w.msg.includes('not valid UTF-8'));
+    expect(warning).toBeDefined();
+    expect(JSON.stringify(warning)).not.toContain('P�');
   });
 });
 

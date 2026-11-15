@@ -18,7 +18,7 @@ import type { SourceConnectorFormProps } from './types.js';
 import { HTTP_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { CertificateSelect } from '../common/CertificateSelect.js';
-import { getStr, getNum, getTls, getTlsStr, getTlsBool, propertyUpdaters } from '../common/connector-properties.js';
+import { getStr, getNum, getTlsStr, getTlsBool, propertyUpdaters } from '../common/connector-properties.js';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 const SCHEMES = ['HTTP', 'HTTPS'] as const;
@@ -36,11 +36,7 @@ export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProp
     }
   }, [properties, onChange]);
 
-  const { update, handleText, handleNumber } = propertyUpdaters(properties, onChange);
-
-  const updateTls = (key: string, value: unknown): void => {
-    update('tls', { ...getTls(properties), [key]: value });
-  };
+  const { updateTls, handleText, handleNumber } = propertyUpdaters(properties, onChange);
 
   const scheme = getStr(properties, 'scheme', 'HTTP');
   const isHttps = scheme === 'HTTPS';

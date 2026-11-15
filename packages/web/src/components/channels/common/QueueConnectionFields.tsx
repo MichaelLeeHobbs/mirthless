@@ -5,13 +5,14 @@
 // destination forms.
 
 import type { ReactNode } from 'react';
+import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvaniflow/core-models';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import { CertificateSelect } from './CertificateSelect.js';
-import { getStr, getNum, getBool, getTls, getTlsStr, getTlsBool, propertyUpdaters } from './connector-properties.js';
+import { getStr, getNum, getBool, getTlsStr, getTlsBool, propertyUpdaters } from './connector-properties.js';
 
 interface FieldsProps {
   readonly properties: Record<string, unknown>;
@@ -24,6 +25,49 @@ const SASL_MECHANISMS = [
   { value: 'SCRAM-SHA-256', label: 'SCRAM-SHA-256' },
   { value: 'SCRAM-SHA-512', label: 'SCRAM-SHA-512' },
 ] as const;
+
+/** Values must match QUEUE_CHARSETS in the core-models queue connector schema. */
+const QUEUE_CHARSETS = [
+  { value: 'utf-8', label: 'UTF-8' },
+  { value: 'latin1', label: 'ISO-8859-1 (Latin-1)' },
+  { value: 'windows-1252', label: 'Windows-1252' },
+  { value: 'base64', label: 'Binary (keep bytes as base64)' },
+] as const satisfies ReadonlyArray<{ value: QueueCharset; label: string }>;
+
+/** How a Kafka or AMQP source decodes a payload's bytes into message text. */
+export function QueueCharsetField({ properties, onChange }: FieldsProps): ReactNode {
+  const { handleText } = propertyUpdaters(properties, onChange);
+  return (
+    <TextField
+      label="Charset"
+      value={getStr(properties, 'charset', 'utf-8')}
+      onChange={handleText('charset')}
+      helperText="Encoding of the payload. A UTF-8 payload with invalid bytes is stored flagged (charsetError in the source map)."
+      select
+      fullWidth
+      sx={{ mb: 2 }}
+    >
+      {QUEUE_CHARSETS.map((c) => <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>)}
+    </TextField>
+  );
+}
+
+/** How many failures in a row to store one message a Kafka or AMQP source allows before it stops the channel. */
+export function QueueStoreAttemptsField({ properties, onChange }: FieldsProps): ReactNode {
+  const { handleNumber } = propertyUpdaters(properties, onChange);
+  return (
+    <TextField
+      label="Store Attempts Before Stopping"
+      type="number"
+      value={getNum(properties, 'maxStoreAttempts', DEFAULT_MAX_STORE_ATTEMPTS)}
+      onChange={handleNumber('maxStoreAttempts')}
+      helperText="After this many failures in a row to store the same message, the channel stops and alerts. The message stays on the queue."
+      fullWidth
+      sx={{ mb: 2 }}
+      slotProps={{ htmlInput: { min: 1, max: 1000 } }}
+    />
+  );
+}
 
 /** Bootstrap brokers, client id and SASL login. */
 export function KafkaConnectionFields({ properties, onChange }: FieldsProps): ReactNode {
@@ -135,10 +179,7 @@ export function AmqpConnectionFields({ properties, onChange }: FieldsProps): Rea
 
 /** TLS on/off, with the CA and client certificate chosen from the certificate store. */
 export function QueueTlsFields({ properties, onChange }: FieldsProps): ReactNode {
-  const { update, handleBool } = propertyUpdaters(properties, onChange);
-  const updateTls = (key: string, value: unknown): void => {
-    update('tls', { ...getTls(properties), [key]: value });
-  };
+  const { updateTls, handleBool } = propertyUpdaters(properties, onChange);
   const useTls = getBool(properties, 'useTls', false);
   return (
     <>

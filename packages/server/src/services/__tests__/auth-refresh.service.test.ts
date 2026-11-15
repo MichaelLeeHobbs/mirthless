@@ -28,6 +28,7 @@ vi.mock('../../lib/jwt.js', () => ({
   verifyRefreshToken: vi.fn(() => ({ userId: 'user-1' })),
   signRefreshToken: vi.fn(() => 'signed-refresh'),
   signAccessToken: vi.fn(() => 'signed-access'),
+  tokenExpiresAt: vi.fn(() => new Date(Date.now() + 60_000)),
 }));
 
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));

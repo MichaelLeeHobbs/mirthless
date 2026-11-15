@@ -13,22 +13,22 @@ import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import { delimitedOptionsSchema } from '@galvaniflow/core-models';
+import { unescapeControlChars } from '@galvaniflow/core-util';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
+import { propertyUpdaters } from '../common/connector-properties.js';
 
 type Settings = Readonly<Record<string, unknown>>;
 
 const ESCAPES: ReadonlyArray<readonly [string, string]> = [['\\', '\\\\'], ['\n', '\\n'], ['\r', '\\r'], ['\t', '\\t']];
 
-/** Control characters written as \n, \r, \t (and a backslash as \\), so a delimiter can be typed and seen. */
+/**
+ * Control characters written as \n, \r, \t (and a backslash as \\), so a delimiter can be typed and seen.
+ * unescapeControlChars (core-util) reads them back.
+ */
 export function showEscapes(text: string): string {
   let out = text;
   for (const [raw, shown] of ESCAPES) out = out.replaceAll(raw, shown);
   return out;
-}
-
-/** The reverse of showEscapes. */
-export function readEscapes(text: string): string {
-  return text.replace(/\\([nrt\\])/g, (_m, c: string) => ({ n: '\n', r: '\r', t: '\t' })[c] ?? '\\');
 }
 
 /** The settings with every default filled in, for display. Invalid saved values fall back to the defaults. */
@@ -87,7 +87,7 @@ interface DelimitedSettingsProps {
 
 export function DelimitedSettings({ settings, onChange }: DelimitedSettingsProps): ReactNode {
   const s = shown(settings);
-  const set = (key: string, value: unknown): void => { onChange({ ...settings, [key]: value }); };
+  const { update: set } = propertyUpdaters(settings, onChange);
   const problem = delimitedProblem(settings);
   return (
     <>
@@ -95,11 +95,11 @@ export function DelimitedSettings({ settings, onChange }: DelimitedSettingsProps
       {problem !== undefined && <Alert severity="error" sx={{ mb: 2 }}>The channel will not deploy: {problem}</Alert>}
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid size={{ xs: 6, sm: 3 }}>
-          <DraftField label="Column delimiter" value={s.columnDelimiter} format={showEscapes} parse={readEscapes}
+          <DraftField label="Column delimiter" value={s.columnDelimiter} format={showEscapes} parse={unescapeControlChars}
             onCommit={(v) => { set('columnDelimiter', v); }} helperText="\t for tab" mono />
         </Grid>
         <Grid size={{ xs: 6, sm: 3 }}>
-          <DraftField label="Record delimiter" value={s.recordDelimiter} format={showEscapes} parse={readEscapes}
+          <DraftField label="Record delimiter" value={s.recordDelimiter} format={showEscapes} parse={unescapeControlChars}
             onCommit={(v) => { set('recordDelimiter', v); }} helperText="\n or \r\n" mono />
         </Grid>
         <Grid size={{ xs: 6, sm: 3 }}>

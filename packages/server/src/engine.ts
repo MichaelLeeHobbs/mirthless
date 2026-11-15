@@ -50,7 +50,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@galvaniflow/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema } from '@galvaniflow/core-models';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema } from '@galvaniflow/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
@@ -70,6 +70,8 @@ import { safeHttpFetch } from './lib/safe-http-fetch.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
+import { emitEvent } from './lib/event-emitter.js';
+import { emitToAll } from './lib/socket.js';
 import type { ChannelDetail } from './services/channel.service.js';
 
 // ----- Types -----
@@ -475,6 +477,14 @@ const NEVER_RAN_MESSAGE = 'Not delivered: the server stopped before this destina
 
 type TlsResolver = (props: Readonly<Record<string, unknown>>) => Promise<Result<Record<string, unknown>>>;
 /** Connector types whose certificate-id references are resolved to PEM before the connector is built. */
+/** A source's report that it stopped itself, with the deployment it came from. */
+interface SourceFailureReport {
+  readonly channelId: string;
+  readonly runtime: ChannelRuntime;
+  readonly error: Error;
+  readonly raiseAlert: (event: Parameters<AlertManager['handleEvent']>[0]) => Promise<void>;
+}
+
 const SOURCE_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpSourceTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
 const DESTINATION_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpDestinationTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
 
@@ -704,6 +714,12 @@ export class EngineManager {
       return Promise.resolve();
     };
 
+    // A Kafka or AMQP source stops itself when a message keeps failing to store;
+    // the channel must not then look STARTED while nothing is read.
+    // The runtime identifies this deployment (and its source): a report that
+    // arrives after an undeploy and redeploy must not stop the new one.
+    source.setFatalHandler?.((error) => { void this.stopAfterSourceFailure({ channelId: channel.id, runtime, error, raiseAlert }); });
+
     // Build configMap record (key format: "category.name")
     const configMapRecord: Record<string, unknown> = {};
     for (const entry of configMapResult.value) {
@@ -878,6 +894,38 @@ export class EngineManager {
 
     this.runtimes.set(channel.id, { channelId: channel.id, runtime, config: channel, globalChannelMap: gcm, globalMapProxy: globalMapProxyInstance, configMap: maps.configMap, alertManager, queueConsumers, scripts, processMessage, recoverOnce, resetClaimsOnce, activity });
     this.silenceTimer ??= setInterval(() => { void this.checkSilentChannels(); }, SILENCE_CHECK_INTERVAL_MS).unref();
+  }
+
+  /**
+   * Fail loudly after the source stopped itself on an error it cannot get past:
+   * record an ERROR event, raise a SOURCE_CONNECTOR alert and stop the channel
+   * (queue consumers too, as a stop from the UI does), so the dashboard shows
+   * it stopped. The message that failed is still on its queue or topic; an
+   * operator fixes the cause and starts the channel again.
+   */
+  private async stopAfterSourceFailure(report: SourceFailureReport): Promise<void> {
+    const { channelId, runtime, error, raiseAlert } = report;
+    const deployed = this.runtimes.get(channelId);
+    const state = runtime.getState();
+    // Only the running deployment that registered the handler may stop the
+    // channel; a late report from a stopped or replaced one is logged and dropped.
+    if (!deployed || deployed.runtime !== runtime || (state !== 'STARTED' && state !== 'PAUSED')) {
+      logger.warn({ channelId, state, errMsg: error.message }, 'Ignoring a fatal source report from a source that is no longer running');
+      return;
+    }
+    logger.error({ channelId, errMsg: error.message }, 'Source connector stopped after a fatal error; stopping the channel');
+    emitEvent({
+      level: 'ERROR', name: 'CHANNEL_STOPPED', outcome: 'FAILURE', userId: null, channelId,
+      serverId: null, ipAddress: null, attributes: { reason: 'SOURCE_FAILED', error: error.message },
+    });
+    await raiseAlert({ channelId, errorType: 'SOURCE_CONNECTOR', errorMessage: error.message, timestamp: Date.now() });
+
+    await Promise.all(deployed.queueConsumers.map((c) => c.stop()));
+    const stopped = await deployed.runtime.stop();
+    if (!stopped.ok) {
+      logger.error({ channelId, errMsg: stopped.error.message }, 'Could not stop the channel after its source failed');
+    }
+    emitToAll(SOCKET_EVENT.CHANNEL_STATE, { channelId, state: deployed.runtime.getState() });
   }
 
   /**

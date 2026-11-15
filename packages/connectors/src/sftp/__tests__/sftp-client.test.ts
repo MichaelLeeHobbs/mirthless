@@ -95,4 +95,9 @@ describe('buildConnectOptions', () => {
     const opts = buildConnectOptions(makeOptions({ strictHostKey: true, hostKey: 'abc' }));
     expect(typeof opts['hostVerifier']).toBe('function');
   });
+
+  it('forwards a handshake timeout as ssh2 readyTimeout only when set', () => {
+    expect(buildConnectOptions(makeOptions({ readyTimeoutMs: 10_000 }))['readyTimeout']).toBe(10_000);
+    expect('readyTimeout' in buildConnectOptions(makeOptions({}))).toBe(false);
+  });
 });
