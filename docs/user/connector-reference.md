@@ -6,8 +6,11 @@ property keys each connector actually reads, sourced from
 `packages/connectors/src/registry.ts` (the registry is the source of truth). Defaults
 shown are the values the registry applies when a property is omitted.
 
-Source types: `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `CHANNEL`, `DICOM`, `EMAIL`, `KAFKA`, `AMQP`
-Destination types: `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `SMTP`, `CHANNEL`, `FHIR`, `DICOM`, `KAFKA`, `AMQP`
+Source types (11): `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `CHANNEL`, `DICOM`, `EMAIL`, `SFTP`, `KAFKA`, `AMQP`
+
+Destination types (12): `TCP_MLLP`, `HTTP`, `FILE`, `DATABASE`, `JAVASCRIPT`, `SMTP`, `CHANNEL`, `FHIR`, `DICOM`, `SFTP`, `KAFKA`, `AMQP`
+
+That is 13 connector types in all: `EMAIL` is source only, and `SMTP` and `FHIR` are destination only.
 
 The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`; their delivery guarantees are in D-266.
 
@@ -53,12 +56,13 @@ Polls a directory and ingests files.
 | `moveToDirectory` | `''` | Target when `postAction=MOVE`. |
 
 ### DATABASE (source)
-Polls a PostgreSQL database with a select query.
+Polls a PostgreSQL or MySQL database with a select query.
 
 | Property | Default | Notes |
 |---|---|---|
+| `vendor` | `postgresql` | `postgresql` or `mysql`. |
 | `host` | — (required) | DB host. |
-| `port` | `5432` | DB port. |
+| `port` | `5432` (`3306` for `mysql`) | DB port. |
 | `database` | — (required) | Database name. |
 | `username` | — (required) | DB user. |
 | `password` | — (required) | DB password. |
@@ -67,6 +71,7 @@ Polls a PostgreSQL database with a select query.
 | `updateMode` | `NEVER` | When to run `updateQuery`. |
 | `pollingIntervalMs` | `5000` | Poll interval. |
 | `rowFormat` | `JSON` | Row serialization format. |
+| `tls` | `false` | `true` connects with TLS and verifies the server certificate against the system's trusted CAs. |
 
 ### JAVASCRIPT (source)
 Runs a user script on a timer to generate messages.
@@ -116,6 +121,29 @@ Polls a mailbox (IMAP/POP3).
 | `moveToFolder` | `''` | Target folder when moving. |
 | `subjectFilter` | `''` | Only ingest matching subjects. |
 | `includeAttachments` | `false` | Attach message attachments. |
+
+### SFTP (source)
+Polls a directory on an SFTP server, sends each matching file through the channel, then deletes, moves or leaves it. Files are read in name order. Source map: `originalFilename`, `remoteDirectory`, `fileSize`, `lastModified`.
+
+| Property | Default | Notes |
+|---|---|---|
+| `host` | — (required) | SFTP server host. |
+| `port` | `22` | 1 to 65535. |
+| `username` | — (required) | Login user. |
+| `password` | — | Password login. Set `password`, `privateKey` or both; deploy fails with neither. |
+| `privateKey` | — | Private key (PEM or OpenSSH text) for key login. |
+| `passphrase` | — | Passphrase for an encrypted `privateKey`. |
+| `strictHostKey` | `true` | Verify the server's host key against `hostKey`. With no `hostKey` set, every connection is refused. |
+| `hostKey` | — | The server's public host key, base64 (the key field of a `known_hosts` line, without the key type). |
+| `remoteDirectory` | — (required) | Directory to poll. |
+| `filePattern` | `*` | Glob (`*` / `?` wildcards). |
+| `pollingIntervalMs` | `5000` | Poll interval; at least 100. |
+| `minFileAgeMs` | `1000` | Skip files modified more recently than this (still being written). |
+| `afterProcessing` | `DELETE` | After read: `DELETE` / `MOVE` / `NONE`. |
+| `moveToDirectory` | `''` | Target when `afterProcessing=MOVE`; required then, and created if missing. |
+| `charset` | `utf-8` | Read encoding; an encoding the runtime cannot decode fails the deploy. |
+
+A file the channel recorded with an error, or whose delete or move failed after it was sent, is left in place and not read again. The list of those files is kept in `.galvaniflow-quarantine.json` in the remote directory, so it survives a restart; that file is never read as a message.
 
 ### KAFKA (source)
 Reads a topic as a member of a consumer group and commits a record only after the channel has stored it. Source map: `topic`, `partition`, `offset`, `key`, `headers`, `timestamp`.
@@ -182,18 +210,20 @@ Writes the message to a file.
 | `appendMode` | `false` | Append instead of overwrite. |
 
 ### DATABASE (destination)
-Runs an insert/update query against PostgreSQL.
+Runs an insert/update query against PostgreSQL or MySQL.
 
 | Property | Default | Notes |
 |---|---|---|
+| `vendor` | `postgresql` | `postgresql` or `mysql`. |
 | `host` | — (required) | DB host. |
-| `port` | `5432` | DB port. |
+| `port` | `5432` (`3306` for `mysql`) | DB port. |
 | `database` | — (required) | Database name. |
 | `username` | — (required) | DB user. |
 | `password` | — (required) | DB password. |
 | `query` | — (required) | Parameterized write query. |
 | `useTransaction` | `false` | Wrap in a transaction. |
 | `returnGeneratedKeys` | `false` | Return generated keys. |
+| `tls` | `false` | As for the source. |
 
 ### JAVASCRIPT (destination)
 Runs a user script to dispatch the message however you like.
@@ -261,6 +291,15 @@ DICOM C-STORE SCU — sends objects to a PACS.
 | `maxRetries` | `3` | Retry attempts. |
 | `retryDelayMs` | `1000` | Delay between retries. |
 | `timeoutMs` | `30000` | Association timeout. |
+
+### SFTP (destination)
+Writes the message to a file on an SFTP server, as UTF-8. Each send opens its own connection, creates `remoteDirectory` if it is missing, writes the file and disconnects; a send that takes over 30 seconds is an error. The response content is the remote path written. Connection properties (`host`, `port`, `username`, `password`, `privateKey`, `passphrase`, `strictHostKey`, `hostKey`) as for the source.
+
+| Property | Default | Notes |
+|---|---|---|
+| `remoteDirectory` | — (required) | Output directory. |
+| `fileNameTemplate` | `${messageId}.dat` | File name; `${messageId}` and `${timestamp}` are filled per message, and any other `${name}` fails the deploy. |
+| `appendMode` | `false` | Append to an existing file instead of overwriting it. |
 
 ### KAFKA (destination)
 Publishes to a topic; SENT once every in-sync replica has the record (acks=all). Connection properties (`brokers`, `clientId`, SASL, TLS) as for the source.
