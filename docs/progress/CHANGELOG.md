@@ -2,6 +2,18 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Reinvention copy groups, batch 2 (branch `batch-2026-11-15-reinvention-2`)
+
+Second batch of the approved triage, built on batch 1:
+
+- **Queue (G0175, G0196):** `QueueManagerService.dequeue` and `release` are gone. Nothing outside their unit test called them, and `dequeue` only selected rows without claiming them, so two callers could get the same messages. `MessageService.dequeue`/`release` remain the only ones. `requeueFailed` and `getQueueDepth` stay; neither has a production caller.
+- **SFTP and IMAP clients (G0378, G0391):** `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`. Two behaviour changes, approved in the triage or found by a failing test: the IMAP logout now gives up after 30 s (a hung logout used to stall every later poll while the channel showed STARTED), and a failed IMAP start no longer leaves an unconnected client that stop then tried to log out (stop returned an error).
+- **File dispatcher (G0218):** write and append share one encoding step.
+- **Server mail (G0016):** the server builds its nodemailer transport with the SMTP connector's `createNodemailerTransport`, which now takes connection fields only (`SmtpTransportConfig`). Server mail sends the same options.
+- **Backup restore (G0110):** the ten section restores share one loop, one row helper and one map upsert. 56 new tests pinned every section's counts, error texts and rows before the refactor. The quirks they pin are unchanged: a failed config/global-map lookup counts as created, a null map value is stored as '', and an existing pair is skipped even in OVERWRITE.
+- **Mirth importer (G0074.R):** one `stringList` reader for `<string>` lists. An imported filter rule with no values now stores `[]` instead of null; the engine and the editor treat both the same. The brief's suspected bug (a single numeric value dropped) does not happen, because the parser keeps tag values as text; the test stays as a regression check.
+- Not run: `pnpm test:scenarios` (needs Postgres and the test containers) and any real IMAP/SFTP server.
+
 ## 2026-11-15 — Reinvention copy groups, batch 1 (branch `batch-2026-11-15-reinvention-1`)
 
 Michael approved a triage of the 186 copy groups the audit re-run found (#90): 33 to merge in three batches, 6 waiting on his decisions 1 to 4, 147 closed in `.claude/reinvention/accepted.jsonl` (D-267). This batch merged the riskiest:

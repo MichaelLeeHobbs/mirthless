@@ -45,6 +45,8 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `compileScript` and `compileErrorMessages` in `engine/src/sandbox/script-compiler.ts`: compile a user script the way deploy does, and turn its errors into `Line N: <text>` on the script's own lines. Script validation uses both.
   - `toPoolConfig` in `connectors/src/database/connection-pool.ts`: a database connector's pool config from its connection fields.
   - `QuarantineLedger` and `dispatchQuarantined` in `connectors/src/quarantine-ledger.ts`: the quarantine set, its sidecar ledger and the dispatch-then-quarantine step, for any polling file source. The source supplies only the storage.
+  - `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`: connect a polling receiver's remote client, or close it, under a timeout.
+  - `createNodemailerTransport` in `connectors/src/smtp/smtp-dispatcher.ts` (exported from `@galvaniflow/connectors`): every nodemailer transport, the server's own mail included.
   - `GlobalChannelMap` in `engine/src/runtime/global-channel-map.ts` is the in-memory script map; `GlobalMapProxy` keeps its entries in one rather than its own `Map`.
 - No speculative generalization — design for today's requirements, not hypothetical futures
 - If you find yourself saying "this might be useful later" — stop and don't build it
