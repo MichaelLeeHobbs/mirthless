@@ -6,10 +6,8 @@
 import { KAFKA_CONNECTION_DEFAULTS, AMQP_CONNECTION_DEFAULTS } from '../common/queue-connection-defaults.js';
 
 // Keys must match what packages/connectors/src/registry.ts reads for each type.
-// The TcpMllpReceiver consumes host/port/maxConnections/responseMode/charset/
-// maxFrameBytes (TLS is resolved server-side and not surfaced here yet — see the
-// form comment). charset must be a valid Node BufferEncoding token: the registry
-// casts it straight to BufferEncoding with no normalization.
+// TCP_MLLP, KAFKA and AMQP defaults must equal their core-models schema
+// defaults (connector-defaults.test.ts and QueueConnectorForms.test.tsx check).
 export const TCP_MLLP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: '0.0.0.0',
   port: 6661,
