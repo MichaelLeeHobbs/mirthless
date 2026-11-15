@@ -6,14 +6,20 @@
 
 Michael approved a triage of the 186 copy groups the audit re-run found (#90): 33 to merge in three batches, 6 waiting on his decisions 1 to 4, 147 closed in `.claude/reinvention/accepted.jsonl` (D-267). This batch merged the riskiest:
 
-- **Script validation (G0081):** the editor's check ran its own esbuild transform and rejected scripts that deploy accepts (top-level `await` with `return`). It now compiles through `compileScript`, the same function deploy uses, and reports errors on the script's own line numbers.
+- **Script validation (G0081):** `POST /scripts/validate` ran its own esbuild transform on the bare script, which esbuild read as an ES module, so a script with a top-level `return` (with or without `await`) that deploy accepts was reported invalid. No web or CLI code calls the endpoint today. It now compiles through `compileScript`, the same function deploy uses, and reports errors on the script's own line numbers. Filter rules still differ: deploy runs them synchronously (ROADMAP, Known Issues).
 - **Send message (G0173):** `DeploymentService.sendMessage` repeated the engine's checks; it delegates now. The engine raises the same NOT_FOUND and CONFLICT errors, so the API's 404 and 409 answers are unchanged (pinned by a new controller test).
 - **Global map (G0379 and three more):** `GlobalMapProxy` keeps its entries in a `GlobalChannelMap` instead of copying its store, snapshot and diff code.
 - **Database connectors (G0013.R, G0204):** one `toPoolConfig` for receiver and dispatcher, one send path in the dispatcher.
 - **File and SFTP sources (G0268 and three more):** one `QuarantineLedger` and one dispatch-then-quarantine step. One behaviour change, approved in the triage: the File source used to ignore a quarantine ledger it could not read; now only a missing one is silent, and any other read error is logged as the SFTP source already did.
 - **Found on the way:** #91 (a cloned channel loses its filters and transformers) and #92 (nine defects in handler and service code the judge read).
 - Not done: batches 2 and 3, decisions 1 to 4, and teaching `/find-reinvention` to read `accepted.jsonl` (MichaelLeeHobbs/skills#31).
-- **From the batch review:** script validation no longer fills deploy's compiled-script cache (`compileScript` takes `cache: false`), the server no longer declares `esbuild` (the engine does), and accepted groups match on path, name and hash, not line number.
+- **From the batch review:** script validation and the save-time compile check for code templates and global scripts no longer fill deploy's compiled-script cache (`compileScript` takes `cache: false`), the server no longer declares `esbuild` (the engine does), and accepted groups match on path, name and hash, not line number.
+
+## 2026-11-15 — Dependabot for npm and Docker (branch `claude/dependabot-setup-14e08c`)
+
+`.github/dependabot.yml` covered GitHub Actions only. It now also proposes npm updates for the pnpm workspace (weekly; minor and patch grouped into one runtime and one dev PR, each major alone, 3-day cooldown so pnpm's minimum release age accepts the version) and base-image updates for `docker/Dockerfile.*` and `docker/docker-compose*.yml` (monthly; Node and Postgres majors ignored, since those are deliberate choices).
+
+- Dependabot alerts and security updates (repo settings, not in the file) were off; Michael had them turned on the same day. GitHub reads the pnpm 12 lockfile despite its documented two-document limitation: it raised 16 alerts on main straight away, all transitive npm packages.
 
 ## 2026-11-14 — Kafka and AMQP connectors, V15 (branch `feat/kafka-amqp-connectors`)
 

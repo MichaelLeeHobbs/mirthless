@@ -1,9 +1,51 @@
-# Actions are pinned to a commit, so a moved tag cannot change what runs in CI.
-# Dependabot proposes the new commit (and updates the version comment) when an
-# action releases.
+# Dependabot version updates. Security alerts and security updates are repo
+# settings, not part of this file.
 version: 2
 updates:
+  # Actions are pinned to a commit, so a moved tag cannot change what runs in CI.
+  # Dependabot proposes the new commit (and updates the version comment) when an
+  # action releases.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+
+  # The pnpm workspace: one lockfile at the root covers every package. Minor and
+  # patch bumps arrive as two grouped PRs (runtime, dev); each major gets its own
+  # PR so a breaking change is reviewed alone. The cooldown keeps proposals older
+  # than pnpm's minimum release age, so `pnpm install` accepts them.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    groups:
+      runtime-minor-patch:
+        dependency-type: production
+        update-types: [minor, patch]
+      dev-minor-patch:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  # Base images in docker/Dockerfile.*. Node and Postgres majors are deliberate
+  # choices (package.json engines, PostgreSQL 17), so only minor and patch tags.
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: node
+        update-types: [version-update:semver-major]
+
+  # Service images in docker/docker-compose*.yml.
+  - package-ecosystem: docker-compose
+    directory: /docker
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]

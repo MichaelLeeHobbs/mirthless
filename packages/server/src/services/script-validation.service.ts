@@ -53,7 +53,8 @@ export class ScriptValidationService {
  */
 export async function assertScriptCompiles(script: string, what: string): Promise<void> {
   if (script.trim().length === 0) return;
-  const compiled = await compileScript(script, { sourcefile: what });
+  // A one-off check under a label deploy never compiles with: keep it out of the cache.
+  const compiled = await compileScript(script, { sourcefile: what, sourcemap: false, cache: false });
   if (!compiled.ok) {
     throw new ServiceError('INVALID_INPUT', `${what} does not compile and was not saved: ${compiled.error.message}`);
   }
