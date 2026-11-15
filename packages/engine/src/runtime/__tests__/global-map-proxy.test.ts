@@ -134,12 +134,12 @@ describe('GlobalMapProxy', () => {
   });
 
   describe('edits made outside scripts', () => {
-    it('set replaces the value without saving it again', async () => {
+    it('set replaces the value, and the next flush writes the API value, not the script one', async () => {
       proxy.applyChanges({}, { k: 'fromScript' });
       proxy.set({ key: 'k', value: 'fromApi', isJson: false });
       expect(proxy.toRecord()['k']).toBe('fromApi');
       await proxy.flush();
-      expect(s.save).not.toHaveBeenCalled();
+      expect(s.save.mock.calls).toEqual([['k', 'fromApi', false]]);
     });
 
     it('delete and clear drop entries', () => {
@@ -171,6 +171,35 @@ describe('GlobalMapProxy', () => {
 
       expect(s.save.mock.calls.map((c) => c[1])).toEqual(['V1', 'V2']);
       expect(proxy.toRecord()['k']).toBe('V2');
+    });
+
+    it('saves the API value again when the script save settled just before set() ran', async () => {
+      // The API commits V2, the script's V1 commits after it on another connection
+      // and its save resolves, and only then does the API path call set(V2).
+      proxy.applyChanges({}, { k: 'V1' });
+      await proxy.flush();
+      proxy.set({ key: 'k', value: 'V2', isJson: false });
+      await proxy.flush();
+
+      expect(s.save.mock.calls.map((c) => c[1])).toEqual(['V1', 'V2']);
+    });
+
+    it('removes the key again when the script save settled just before delete() ran', async () => {
+      proxy.applyChanges({}, { k: 'V1' });
+      await proxy.flush();
+      proxy.delete('k');
+      await proxy.flush();
+
+      expect(s.remove).toHaveBeenCalledWith('k');
+    });
+
+    it('removes every key again when the script save settled just before clear() ran', async () => {
+      proxy.applyChanges({}, { k: 'V1' });
+      await proxy.flush();
+      proxy.clear();
+      await proxy.flush();
+
+      expect(s.remove).toHaveBeenCalledWith('k');
     });
 
     it('removes the key again after the in-flight save when the API deleted it', async () => {

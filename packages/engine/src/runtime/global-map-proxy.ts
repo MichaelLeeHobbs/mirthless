@@ -93,23 +93,28 @@ export class GlobalMapProxy {
     }
   }
 
-  /** Take an entry that is already persisted (an edit made through the API). */
+  // An edit made through the API is already in the database, but a script save
+  // of the same key on another connection can commit after it, even one whose
+  // promise resolved before the API told the proxy. So an API edit always marks
+  // the key dirty: the next flush writes the API's value last. The extra write
+  // is idempotent.
+
+  /** Take an entry that the API already persisted. */
   set(row: GlobalMapRow): void {
     this.store.set(row.key, fromRow(row));
-    this.settleApiWrite(row.key);
+    this.dirty.add(row.key);
   }
 
-  /** Drop an entry that is already removed from the database. */
+  /** Drop an entry the API already removed from the database. */
   delete(key: string): void {
     this.store.delete(key);
-    this.settleApiWrite(key);
+    this.dirty.add(key);
   }
 
-  /** Drop every entry; the database is already cleared. */
+  /** Drop every entry; the API already cleared the database. */
   clear(): void {
+    for (const key of this.store.keys()) this.dirty.add(key);
     this.store.clear();
-    this.dirty.clear();
-    for (const key of this.inFlight.keys()) this.dirty.add(key);
   }
 
   /** Save every changed key. Never rejects: failures are reported and retried next time. */
@@ -136,17 +141,6 @@ export class GlobalMapProxy {
       this.flushTimer = null;
     }
     await this.flush();
-  }
-
-  /**
-   * The API has already written this key to the database. A save of a script
-   * value still in flight for it can land after that write, so save the key
-   * again (from the API's value now in memory) on the next flush. Otherwise the
-   * database already holds it and nothing is pending.
-   */
-  private settleApiWrite(key: string): void {
-    if (this.inFlight.has(key)) this.dirty.add(key);
-    else this.dirty.delete(key);
   }
 
   /**
