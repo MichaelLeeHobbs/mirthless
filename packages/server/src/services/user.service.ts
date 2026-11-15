@@ -126,8 +126,8 @@ export class UserService {
       const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
       const role = input.role ?? 'viewer';
 
-      // Insert the user AND grant their role's permission set atomically, so a
-      // created user can immediately use the routes their role allows.
+      // Insert the user. Permissions are not stored per user: each request
+      // derives them from the role (lib/role-permissions.ts).
       const created = await db.transaction(async (tx) => {
         const [row] = await tx
           .insert(users)
