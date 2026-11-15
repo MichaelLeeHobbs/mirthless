@@ -131,21 +131,35 @@ export { COLLISION_MODE };
 export type { CollisionMode };
 
 /**
- * An exported channel as import accepts it. Import writes channels straight to
- * the database, so it checks connector types against what the registry can
- * build in each position, as the channel API does. The export and backup
- * schemas keep plain strings, so a channel saved before this check still
- * exports and a backup holding one still restores.
+ * Refuse connector types the registry cannot build in their position, naming
+ * the channel (and destination) so the client can find it in a large file.
+ * Import writes channels straight to the database, so it checks what the
+ * channel API checks. The export and backup schemas keep plain strings, so a
+ * channel saved before this check still exports and a backup holding one
+ * still restores.
  */
-const channelImportEntrySchema = channelExportEntrySchema.extend({
-  sourceConnectorType: sourceConnectorTypeSchema,
-  destinations: z.array(channelExportDestinationSchema.extend({ connectorType: destinationConnectorTypeSchema })),
-});
+function checkImportConnectorTypes(channel: z.infer<typeof channelExportEntrySchema>, ctx: z.RefinementCtx): void {
+  if (!sourceConnectorTypeSchema.safeParse(channel.sourceConnectorType).success) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['sourceConnectorType'],
+      message: `Channel "${channel.name}": ${channel.sourceConnectorType} cannot be a source connector`,
+    });
+  }
+  channel.destinations.forEach((dest, i) => {
+    if (destinationConnectorTypeSchema.safeParse(dest.connectorType).success) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: ['destinations', i, 'connectorType'],
+      message: `Channel "${channel.name}", destination "${dest.name}": ${dest.connectorType} cannot be a destination connector`,
+    });
+  });
+}
 
 export const channelImportSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  channels: z.array(channelImportEntrySchema),
+  channels: z.array(channelExportEntrySchema.superRefine(checkImportConnectorTypes)),
   collisionMode: z.enum(['SKIP', 'OVERWRITE', 'CREATE_NEW']),
 });
 

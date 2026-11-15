@@ -5,6 +5,7 @@
 // connector type the registry cannot build in that position (#109).
 
 import { describe, it, expect } from 'vitest';
+import { z } from 'zod/v4';
 import { channelImportSchema } from '../channel-export.schema.js';
 import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '../../constants.js';
 
@@ -48,5 +49,27 @@ describe('channelImportSchema connector types', () => {
 
   it('refuses a destination of the source-only type EMAIL', () => {
     expect(channelImportSchema.safeParse(importFile([entry('TCP_MLLP', [destination('EMAIL')])])).success).toBe(false);
+  });
+
+  it('names the channel and the type in the message the client gets, not only the array index', () => {
+    const good = entry('TCP_MLLP', []);
+    const bad = { ...entry('SMTP', []), name: 'Lab Results Out' };
+    const result = channelImportSchema.safeParse(importFile([good, bad]));
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const message = z.prettifyError(result.error);
+    expect(message).toContain('Channel "Lab Results Out"');
+    expect(message).toContain('SMTP');
+  });
+
+  it('names the channel and destination for a bad destination type', () => {
+    const bad = { ...entry('TCP_MLLP', [{ ...destination('EMAIL'), name: 'To Mailbox' }]), name: 'Orders' };
+    const result = channelImportSchema.safeParse(importFile([bad]));
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const message = z.prettifyError(result.error);
+    expect(message).toContain('Channel "Orders"');
+    expect(message).toContain('destination "To Mailbox"');
+    expect(message).toContain('EMAIL');
   });
 });
