@@ -11,11 +11,12 @@ import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { ScriptEditor } from '../editors/ScriptEditor.js';
 
+// Deploy and undeploy run without a message, so msg is not typed there.
 const SCRIPT_SECTIONS = [
-  { key: 'deploy', label: 'Deploy Script', description: 'Runs when the channel is deployed' },
-  { key: 'undeploy', label: 'Undeploy Script', description: 'Runs when the channel is undeployed' },
-  { key: 'preprocessor', label: 'Preprocessor', description: 'Runs before each message enters the channel' },
-  { key: 'postprocessor', label: 'Postprocessor', description: 'Runs after all destinations have processed' },
+  { key: 'deploy', label: 'Deploy Script', description: 'Runs when the channel is deployed', surface: { message: false, templateContext: 'CHANNEL_DEPLOY' } },
+  { key: 'undeploy', label: 'Undeploy Script', description: 'Runs when the channel is undeployed', surface: { message: false, templateContext: 'CHANNEL_UNDEPLOY' } },
+  { key: 'preprocessor', label: 'Preprocessor', description: 'Runs before each message enters the channel', surface: { templateContext: 'CHANNEL_PREPROCESSOR' } },
+  { key: 'postprocessor', label: 'Postprocessor', description: 'Runs after all destinations have processed', surface: { templateContext: 'CHANNEL_POSTPROCESSOR' } },
 ] as const;
 
 interface ScriptsFormValues {
@@ -52,6 +53,7 @@ export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
               height="250px"
               label={section.label}
               showLabel={false}
+              surface={section.surface}
               value={scripts[section.key]}
               onChange={(value) => { handleScriptChange(section.key, value); }}
               showLanguageToggle

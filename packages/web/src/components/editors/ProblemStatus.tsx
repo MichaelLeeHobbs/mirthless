@@ -22,9 +22,19 @@ function plural(n: number, word: string): string {
   return `${String(n)} ${word}${n === 1 ? '' : 's'}`;
 }
 
+/** "1 syntax error, 2 type errors, 1 warning". */
+export function problemSummary(problems: readonly Problem[]): string {
+  const syntax = problems.filter((p) => p.severity === 'error' && p.kind === 'syntax').length;
+  const type = problems.filter((p) => p.severity === 'error' && p.kind === 'type').length;
+  const warnings = problems.filter((p) => p.severity === 'warning').length;
+  return [
+    syntax ? plural(syntax, 'syntax error') : null,
+    type ? plural(type, 'type error') : null,
+    warnings ? plural(warnings, 'warning') : null,
+  ].filter(Boolean).join(', ');
+}
+
 export function ProblemStatus({ editor, problems }: ProblemStatusProps): ReactNode {
-  const errors = problems.filter((p) => p.severity === 'error').length;
-  const warnings = problems.length - errors;
   const first = problems[0];
 
   if (!first) {
@@ -47,9 +57,7 @@ export function ProblemStatus({ editor, problems }: ProblemStatusProps): ReactNo
       }}
     >
       <Icon sx={{ fontSize: 14, color: first.severity === 'error' ? 'status.critical' : 'status.warning' }} />
-      <Box component="span" sx={{ fontWeight: 600, flexShrink: 0 }}>
-        {[errors ? plural(errors, 'error') : null, warnings ? plural(warnings, 'warning') : null].filter(Boolean).join(', ')}
-      </Box>
+      <Box component="span" sx={{ fontWeight: 600, flexShrink: 0 }}>{problemSummary(problems)}</Box>
       <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', color: 'text.secondary' }}>
         Line {first.line}: {first.message.split('\n')[0]}
       </Box>

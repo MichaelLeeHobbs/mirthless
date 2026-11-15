@@ -1,15 +1,17 @@
 // ===========================================
-// Sandbox TypeScript Definitions
+// Sandbox declarations for type-checking scripts
 // ===========================================
-// Type definitions for Monaco IntelliSense in sandbox script editors.
+// What a user script can see in the engine sandbox, as TypeScript declarations.
+// The web editor (completion, hover, type errors) and the server's deploy check
+// both use scriptDeclarations(), so they report the same errors.
 //
-// CANONICAL SOURCE: packages/engine/sandbox-globals.d.ts. This string mirrors
-// that .d.ts for the Monaco editor (web cannot import the engine package). The
-// two are kept in sync by a drift-guard test (sandbox-types-consistency.test.ts
-// in the engine package) that asserts they declare the same global surface —
-// update BOTH when the sandbox API changes.
+// packages/engine/sandbox-globals.d.ts is the same surface as a file, for people
+// authoring scripts in their own editor. A drift-guard test in the engine
+// (sandbox-types-consistency.test.ts) fails if the two declare different globals,
+// so update both when the sandbox API changes.
 
-export const SANDBOX_TYPE_DEFS = `
+/** Globals every script sees, except msg and tmp, whose type depends on the data type. */
+const SANDBOX_BASE = `
 /**
  * HL7 message proxy returned by parseHL7().
  * Provides path-based access to HL7 fields.
@@ -61,13 +63,21 @@ interface DbQueryResult {
   readonly rowCount: number;
 }
 
+/** X12 message proxy (msg and tmp in an X12 channel). Path-based access, e.g. "NM1[3].9". */
+interface X12MessageProxy {
+  /** Get the value at an X12 path. */
+  get(path: string): string | undefined;
+  /** Set the value at an X12 path. */
+  set(path: string, value: string): void;
+  /** Delete the element at an X12 path. */
+  delete(path: string): void;
+  /** Count of segments with this id (e.g. "NM1"). */
+  getSegmentCount(id: string): number;
+  /** Serialize back to X12 text. */
+  toString(): string;
+}
+
 // ----- Global Variables -----
-
-/** Current message being processed. Type depends on inbound data type. */
-declare var msg: unknown;
-
-/** Temporary working map. Persists across pipeline stages within a single message. */
-declare var tmp: Record<string, unknown>;
 
 /** Original inbound raw data (string or Buffer). */
 declare var rawData: string;
@@ -245,3 +255,99 @@ declare function dbQuery(
   params?: readonly unknown[],
 ): Promise<readonly Record<string, unknown>[]>;
 `;
+
+/** How msg and tmp look to a script, by the channel's data type. */
+const MESSAGE_TYPES: Readonly<Record<string, { readonly type: string; readonly doc: string }>> = {
+  HL7V2: { type: 'Hl7MessageProxy', doc: 'The HL7 v2 message as a path proxy: msg.get("PID.3.1").' },
+  X12: { type: 'X12MessageProxy', doc: 'The X12 message as a path proxy: msg.get("NM1[3].9").' },
+  // Parsed JSON and parsed XML can be any shape the sender chose.
+  JSON: { type: 'any', doc: 'The message parsed from JSON.' },
+  XML: { type: 'any', doc: 'The message parsed from XML into objects (attributes prefixed with @_).' },
+  DELIMITED: { type: 'Array<Record<string, string>>', doc: 'The message as rows, one object per row keyed by column.' },
+};
+
+/** Data types the engine passes to scripts as plain text (RAW, HL7V3, DICOM, FHIR). */
+const TEXT_MESSAGE = { type: 'string', doc: 'The message text.' } as const;
+
+/** Available to source filters and transformers only. */
+const DESTINATION_SET = `
+/** Choose which destinations receive this message. Names or metadata ids (numbers). */
+interface DestinationSet {
+  /** Send to no destination. */
+  removeAll(): void;
+  /** Stop sending to these destinations. */
+  remove(destinations: string | number | ReadonlyArray<string | number>): void;
+  /** Send only to these destinations. */
+  removeAllExcept(destinations: string | number | ReadonlyArray<string | number>): void;
+  /** Send to these destinations again after removing them. */
+  add(destinations: string | number | ReadonlyArray<string | number>): void;
+  /** Whether the message is still going to this destination. */
+  contains(destination: string | number): boolean;
+  /** The destinations the message is still going to. */
+  getConnectorNames(): string[];
+}
+/** The destinations this message will go to. Source filter and transformer only. */
+declare var destinationSet: DestinationSet;
+`;
+
+/** Where a script runs, which decides the globals it sees. */
+export interface ScriptSurface {
+  /**
+   * The channel data type the script receives (HL7V2, JSON, ...), which decides
+   * the type of msg and tmp. Omit for scripts with no message (deploy, undeploy).
+   */
+  readonly dataType?: string | undefined;
+  /** True for source filters and transformers, which can choose destinations. */
+  readonly destinationSet?: boolean | undefined;
+  /**
+   * The code template context (CODE_TEMPLATE_CONTEXT) the script runs in. The
+   * engine prepends FUNCTION templates enabled for that context, so the script
+   * can call them. Omit for a script that sees no templates.
+   */
+  readonly templateContext?: string | undefined;
+}
+
+/** A stable key for a surface, so callers can skip re-registering the same one. */
+export function scriptSurfaceKey(surface: ScriptSurface): string {
+  return `${surface.dataType ?? '-'}|${surface.destinationSet === true ? 'ds' : '-'}|${surface.templateContext ?? '-'}`;
+}
+
+/** The parts of a code template that decide whether and how a script sees it. */
+export interface TemplateSource {
+  readonly code: string;
+  readonly type: string;
+  readonly contexts: readonly string[];
+}
+
+/**
+ * The code templates a script on this surface can call, as one library for the
+ * type checker. Matches the engine's template-injector: FUNCTION templates
+ * enabled for the script's context.
+ *
+ * Load it as a `.d.ts` file. TypeScript still reads each function's signature,
+ * JSDoc and inferred return type, scripts see the functions as globals (a
+ * declaration file is never a module), and errors inside the templates stay
+ * out of the script's report: a template is checked when it is saved.
+ */
+export function templateDeclarations(templates: readonly TemplateSource[], surface: ScriptSurface): string {
+  if (surface.templateContext === undefined) return '';
+  const context = surface.templateContext;
+  return templates
+    .filter((t) => t.type === 'FUNCTION' && t.contexts.includes(context))
+    .map((t) => t.code)
+    .join('\n');
+}
+
+/** The TypeScript declarations a script sees on this surface. */
+export function scriptDeclarations(surface: ScriptSurface): string {
+  const message = surface.dataType === undefined
+    ? { type: 'unknown', doc: 'Its type depends on the channel the script runs for, so check it before use.' }
+    : MESSAGE_TYPES[surface.dataType] ?? TEXT_MESSAGE;
+  const messageVars = `
+/** ${message.doc} */
+declare var msg: ${message.type};
+/** The outbound message being built. ${message.doc} */
+declare var tmp: ${message.type};
+`;
+  return SANDBOX_BASE + messageVars + (surface.destinationSet === true ? DESTINATION_SET : '');
+}

@@ -4,16 +4,23 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lightTheme } from '../../../styles/theme.js';
 import { ProblemStatus } from '../ProblemStatus.js';
 import { ScriptEditor } from '../ScriptEditor.js';
 import { TextEditor } from '../TextEditor.js';
-import type { Problem } from '../editor-hooks.js';
+import { problemKind, type Problem } from '../editor-hooks.js';
 
 afterEach(() => { cleanup(); });
 
 function wrap(node: React.ReactNode): void {
-  render(<ThemeProvider theme={lightTheme}>{node}</ThemeProvider>);
+  // ScriptEditor reads code templates for completion; no request is made here.
+  const client = new QueryClient({ defaultOptions: { queries: { enabled: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <ThemeProvider theme={lightTheme}>{node}</ThemeProvider>
+    </QueryClientProvider>,
+  );
 }
 
 describe('ProblemStatus', () => {
@@ -24,23 +31,33 @@ describe('ProblemStatus', () => {
 
   it('counts errors and warnings and names the first problem with its line', () => {
     const problems: Problem[] = [
-      { severity: 'error', message: "Type 'string' is not assignable to type 'number'.", line: 1, column: 7 },
-      { severity: 'error', message: "Property 'inf' does not exist on type 'SandboxLogger'.", line: 2, column: 8 },
-      { severity: 'warning', message: 'Unreachable code detected.', line: 5, column: 1 },
+      { severity: 'error', kind: 'type', message: "Type 'string' is not assignable to type 'number'.", line: 1, column: 7 },
+      { severity: 'error', kind: 'type', message: "Property 'inf' does not exist on type 'SandboxLogger'.", line: 2, column: 8 },
+      { severity: 'error', kind: 'syntax', message: "')' expected.", line: 3, column: 1 },
+      { severity: 'warning', kind: 'type', message: 'Unreachable code detected.', line: 5, column: 1 },
     ];
     wrap(<ProblemStatus editor={null} problems={problems} />);
-    expect(screen.getByText('2 errors, 1 warning')).toBeTruthy();
+    expect(screen.getByText('1 syntax error, 2 type errors, 1 warning')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Go to first problem, line 1' }).textContent)
       .toContain("Line 1: Type 'string' is not assignable to type 'number'.");
   });
 
   it('jumps the editor to the first problem when clicked', () => {
     const editor = { setPosition: vi.fn(), revealLineInCenter: vi.fn(), focus: vi.fn() };
-    const problems: Problem[] = [{ severity: 'error', message: 'x', line: 4, column: 2 }];
+    const problems: Problem[] = [{ severity: 'error', kind: 'syntax', message: 'x', line: 4, column: 2 }];
     wrap(<ProblemStatus editor={editor as never} problems={problems} />);
     fireEvent.click(screen.getByRole('button', { name: 'Go to first problem, line 4' }));
     expect(editor.setPosition).toHaveBeenCalledWith({ lineNumber: 4, column: 2 });
     expect(editor.focus).toHaveBeenCalled();
+  });
+});
+
+describe('problemKind', () => {
+  it('reads TypeScript 1xxx codes as syntax errors and 2xxx and up as type errors', () => {
+    expect(problemKind('1005')).toBe('syntax');
+    expect(problemKind({ value: '2322' })).toBe('type');
+    expect(problemKind('7006')).toBe('type');
+    expect(problemKind(undefined)).toBe('syntax');
   });
 });
 

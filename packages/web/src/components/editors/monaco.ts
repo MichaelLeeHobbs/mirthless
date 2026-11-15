@@ -11,7 +11,10 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
 import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker.js?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker.js?worker';
 import { editorTheme, editorThemeName } from '../../styles/editor-theme.js';
-import { SANDBOX_TYPE_DEFS } from '../../lib/sandbox-types.js';
+import {
+  IGNORED_SCRIPT_DIAGNOSTICS, SCRIPT_COMPILER_OPTIONS, scriptDeclarations, templateDeclarations,
+  type ScriptSurface, type TemplateSource,
+} from '@galvaniflow/core-models';
 
 self.MonacoEnvironment = {
   getWorker(_workerId: string, label: string): Worker {
@@ -38,13 +41,46 @@ monaco.languages.setMonarchTokensProvider('hl7', {
   },
 });
 
+// TypeScript scripts get full type checking with the same settings as the
+// server's deploy check. JavaScript scripts get syntax errors only, plus the
+// same completion and hover.
 const ts = monaco.typescript;
-ts.javascriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false });
-ts.javascriptDefaults.setCompilerOptions({ target: ts.ScriptTarget.ES2020, allowNonTsExtensions: true, allowJs: true, checkJs: false });
-ts.javascriptDefaults.addExtraLib(SANDBOX_TYPE_DEFS, 'file:///sandbox-globals.d.ts');
-ts.typescriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false });
-ts.typescriptDefaults.setCompilerOptions({ target: ts.ScriptTarget.ES2020, allowNonTsExtensions: true, strict: true });
-ts.typescriptDefaults.addExtraLib(SANDBOX_TYPE_DEFS, 'file:///sandbox-globals.d.ts');
+// The shared options hold TypeScript's numeric enum values; Monaco types them as
+// its own enums, which have the same numbers.
+const compilerOptions = {
+  ...SCRIPT_COMPILER_OPTIONS, lib: [...SCRIPT_COMPILER_OPTIONS.lib],
+} as unknown as monaco.typescript.CompilerOptions;
+ts.typescriptDefaults.setCompilerOptions(compilerOptions);
+ts.typescriptDefaults.setDiagnosticsOptions({
+  noSemanticValidation: false, noSyntaxValidation: false, diagnosticCodesToIgnore: [...IGNORED_SCRIPT_DIAGNOSTICS],
+});
+ts.javascriptDefaults.setCompilerOptions({ ...compilerOptions, allowJs: true, checkJs: false });
+ts.javascriptDefaults.setDiagnosticsOptions({
+  noSemanticValidation: true, noSyntaxValidation: false, diagnosticCodesToIgnore: [...IGNORED_SCRIPT_DIAGNOSTICS],
+});
+
+let appliedLibs = '';
+
+/**
+ * Give the TypeScript service the globals for one script surface: the sandbox
+ * (msg typed by data type, destinationSet where it exists) and the code
+ * templates the script can call. Monaco keeps one set for every editor, so the
+ * focused editor's surface wins; the deploy check repeats the check per script.
+ */
+export function applyScriptSurface(surface: ScriptSurface, templates: readonly TemplateSource[]): void {
+  const sandbox = scriptDeclarations(surface);
+  const library = templateDeclarations(templates, surface);
+  const key = `${sandbox}\u0000${library}`;
+  if (key === appliedLibs) return;
+  appliedLibs = key;
+  const libs = [
+    { content: sandbox, filePath: 'file:///sandbox.d.ts' },
+    { content: library, filePath: 'file:///code-templates.d.ts' },
+  ];
+  ts.typescriptDefaults.setExtraLibs(libs);
+  ts.javascriptDefaults.setExtraLibs(libs);
+}
+applyScriptSurface({}, []);
 
 /**
  * Where every editor renders its popups (completion, hover, parameter hints).

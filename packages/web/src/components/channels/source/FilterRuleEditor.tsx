@@ -20,6 +20,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { ScriptEditor } from '../../editors/ScriptEditor.js';
+import { FILTER_TRANSFORMER_SURFACE, type ScriptStage } from '../../editors/script-context.js';
 import type { FilterRuleFormValues } from './types.js';
 
 interface FilterRuleEditorProps {
@@ -30,9 +31,12 @@ interface FilterRuleEditorProps {
   readonly onRemove: () => void;
   readonly onMoveUp: () => void;
   readonly onMoveDown: () => void;
+  /** Source rules can choose destinations; the stage also picks the code templates offered. */
+  readonly stage?: ScriptStage;
 }
 
 export function FilterRuleEditor({
+  stage = 'source',
   rule,
   index,
   total,
@@ -56,7 +60,7 @@ export function FilterRuleEditor({
             color: 'text.secondary',
             mr: 1
           }}>
-          {rule.type === 'JAVASCRIPT' ? 'JavaScript' : 'Rule Builder'}
+          {rule.type === 'JAVASCRIPT' ? 'Script' : 'Rule Builder'}
         </Typography>
         {!rule.enabled ? (
           <Typography
@@ -88,7 +92,8 @@ export function FilterRuleEditor({
             size="small"
             sx={{ minWidth: 150 }}
           >
-            <MenuItem value="JAVASCRIPT">JavaScript</MenuItem>
+            {/* JAVASCRIPT is the stored name for any script rule, JavaScript or TypeScript. */}
+            <MenuItem value="JAVASCRIPT">Script</MenuItem>
             <MenuItem value="RULE_BUILDER">Rule Builder</MenuItem>
           </TextField>
           <TextField
@@ -120,6 +125,7 @@ export function FilterRuleEditor({
           <ScriptEditor
             height="220px"
             label={`${rule.name || 'Rule'} script`}
+            surface={FILTER_TRANSFORMER_SURFACE[stage]}
             value={rule.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
             showLanguageToggle

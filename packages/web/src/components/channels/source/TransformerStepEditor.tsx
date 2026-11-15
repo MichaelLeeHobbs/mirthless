@@ -21,6 +21,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { ScriptEditor } from '../../editors/ScriptEditor.js';
+import { FILTER_TRANSFORMER_SURFACE, type ScriptStage } from '../../editors/script-context.js';
 import type { TransformerStepFormValues } from './types.js';
 
 interface TransformerStepEditorProps {
@@ -31,9 +32,12 @@ interface TransformerStepEditorProps {
   readonly onRemove: () => void;
   readonly onMoveUp: () => void;
   readonly onMoveDown: () => void;
+  /** Source steps can choose destinations; the stage also picks the code templates offered. */
+  readonly stage?: ScriptStage;
 }
 
 export function TransformerStepEditor({
+  stage = 'source',
   step,
   index,
   total,
@@ -44,7 +48,7 @@ export function TransformerStepEditor({
 }: TransformerStepEditorProps): ReactNode {
   const title = step.name || `Step ${String(index + 1)}`;
   const typeLabel =
-    step.type === 'JAVASCRIPT' ? 'JavaScript' :
+    step.type === 'JAVASCRIPT' ? 'Script' :
     step.type === 'MAPPER' ? 'Mapper' : 'Message Builder';
 
   return (
@@ -92,7 +96,8 @@ export function TransformerStepEditor({
             size="small"
             sx={{ minWidth: 170 }}
           >
-            <MenuItem value="JAVASCRIPT">JavaScript</MenuItem>
+            {/* JAVASCRIPT is the stored name for any script step, JavaScript or TypeScript. */}
+            <MenuItem value="JAVASCRIPT">Script</MenuItem>
             {/* The engine cannot run Mapper steps, so it is only listed for a step that already is one. */}
             {step.type === 'MAPPER' ? <MenuItem value="MAPPER">Mapper (not supported)</MenuItem> : null}
             <MenuItem value="MESSAGE_BUILDER">Message Builder</MenuItem>
@@ -112,13 +117,14 @@ export function TransformerStepEditor({
         {step.type === 'MAPPER' && step.enabled ? (
           <Alert severity="error" sx={{ mb: 2 }}>
             The engine cannot run Mapper steps, and the channel will not deploy while this step is enabled.
-            Change the type to JavaScript and write the mapping as a script, or disable the step.
+            Change the type to Script and write the mapping as code, or disable the step.
           </Alert>
         ) : null}
         {step.type === 'JAVASCRIPT' || step.type === 'MESSAGE_BUILDER' ? (
           <ScriptEditor
             height="220px"
             label={`${step.name || 'Step'} script`}
+            surface={FILTER_TRANSFORMER_SURFACE[stage]}
             value={step.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
             showLanguageToggle

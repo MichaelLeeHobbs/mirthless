@@ -17,17 +17,27 @@ export function useEditorTheme(): string {
 /** One problem in the editor, as shown in the status line. */
 export interface Problem {
   readonly severity: 'error' | 'warning';
+  /** Syntax (the code does not parse) or type (it parses but is wrong). */
+  readonly kind: 'syntax' | 'type';
   readonly message: string;
   readonly line: number;
   readonly column: number;
 }
 
+/** TypeScript numbers its syntax diagnostics 1000-1999 and type diagnostics from 2000. */
+export function problemKind(code: string | { readonly value: string } | undefined): Problem['kind'] {
+  const value = typeof code === 'object' ? code.value : code;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 2000 ? 'type' : 'syntax';
+}
+
 /** Errors first, then by position. */
-function toProblems(markers: readonly monaco.editor.IMarker[]): Problem[] {
+export function toProblems(markers: readonly monaco.editor.IMarker[]): Problem[] {
   return markers
     .filter((m) => m.severity >= monaco.MarkerSeverity.Warning)
     .map((m): Problem => ({
       severity: m.severity === monaco.MarkerSeverity.Error ? 'error' : 'warning',
+      kind: problemKind(m.code),
       message: m.message,
       line: m.startLineNumber,
       column: m.startColumn,

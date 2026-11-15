@@ -125,6 +125,7 @@ export function DestinationTransformerSection({ transformer, onChange }: Destina
             {transformer.steps.map((step, index) => (
               <TransformerStepEditor
                 key={index}
+                stage="destination"
                 step={step}
                 index={index}
                 total={transformer.steps.length}

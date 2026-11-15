@@ -12,6 +12,7 @@ vi.mock('../src/components/editors/monaco.ts', () => ({
     editor: {},
   },
   overflowWidgetsHost: document.createElement('div'),
+  applyScriptSurface: (): void => undefined,
 }));
 vi.mock('@monaco-editor/react', () => ({
   default: (): null => null,

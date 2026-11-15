@@ -5,7 +5,8 @@
 // scripts, code templates): a language switch, format, full screen, and a status
 // line with the cursor position and the script's problems.
 
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import type { ScriptSurface } from '@galvaniflow/core-models';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
@@ -14,7 +15,9 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import FormatAlignLeftIcon from '@mui/icons-material/FormatAlignLeft';
 import Editor from '@monaco-editor/react';
-import { monaco } from './monaco.js';
+import { applyScriptSurface, monaco } from './monaco.js';
+import { useScriptDataType } from './script-context.js';
+import { useCodeTemplates } from '../../hooks/use-code-templates.js';
 import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
 import { useCursor, useEditorTheme, useProblems } from './editor-hooks.js';
@@ -42,6 +45,12 @@ export interface ScriptEditorProps {
   readonly onLanguageChange?: (language: ScriptLanguage) => void;
   /** View-only: the code and the language cannot be changed. */
   readonly readOnly?: boolean;
+  /**
+   * Where the script runs: its code template context and whether it can use
+   * destinationSet. Set `message: false` for scripts that run without a message
+   * (deploy, undeploy); otherwise msg is typed from the channel's data type.
+   */
+  readonly surface?: Omit<ScriptSurface, 'dataType'> & { readonly message?: boolean };
 }
 
 export function ScriptEditor({
@@ -54,14 +63,32 @@ export function ScriptEditor({
   showLanguageToggle = false,
   onLanguageChange,
   readOnly = false,
+  surface: surfaceProp,
 }: ScriptEditorProps): ReactNode {
   const theme = useEditorTheme();
+  const channelDataType = useScriptDataType();
+  const { data: templates } = useCodeTemplates();
+  const surface = useMemo((): ScriptSurface => ({
+    dataType: surfaceProp?.message === false ? undefined : channelDataType,
+    destinationSet: surfaceProp?.destinationSet,
+    templateContext: surfaceProp?.templateContext,
+  }), [channelDataType, surfaceProp?.message, surfaceProp?.destinationSet, surfaceProp?.templateContext]);
   const [internalLang, setInternalLang] = useState<ScriptLanguage>('javascript');
   const language = languageProp ?? internalLang;
   const [editor, setEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null);
   const [expanded, setExpanded] = useState(false);
   const problems = useProblems(editor);
   const cursor = useCursor(editor);
+
+  // The type service holds one set of globals; this editor's surface applies on
+  // mount and whenever it takes focus.
+  useEffect(() => {
+    if (!editor) return undefined;
+    const apply = (): void => { applyScriptSurface(surface, templates ?? []); };
+    apply();
+    const focus = editor.onDidFocusEditorText(apply);
+    return () => { focus.dispose(); };
+  }, [editor, surface, templates]);
 
   const start = showLanguageToggle ? (
     <ToggleButtonGroup
@@ -73,7 +100,12 @@ export function ScriptEditor({
       onChange={(_e, val: ScriptLanguage | null) => {
         if (val) { setInternalLang(val); onLanguageChange?.(val); }
       }}
-      sx={{ '& .MuiToggleButton-root': { px: 1.25, py: 0.25, fontSize: '0.75rem', textTransform: 'none' } }}
+      sx={{
+        '& .MuiToggleButton-root': {
+          px: 1.25, py: 0.25, fontSize: '0.75rem', textTransform: 'none', fontWeight: 500, color: 'text.secondary',
+        },
+        '& .MuiToggleButton-root.Mui-selected': { color: 'primary.main', bgcolor: 'action.selected', fontWeight: 700 },
+      }}
     >
       <ToggleButton value="javascript" aria-label="JavaScript">JavaScript</ToggleButton>
       <ToggleButton value="typescript" aria-label="TypeScript">TypeScript</ToggleButton>

@@ -51,7 +51,7 @@ const channelDetail = {
   scriptTimeoutSeconds: 30, sourceConnectorProperties: { host: '0.0.0.0', port: 6661 },
   scripts: [
     { scriptType: 'DEPLOY', script: "// Warm the facility lookup before the first message\nconst facilities = getCollection('facilities');\nlogger.info('ADT channel deployed');\n" },
-    { scriptType: 'PREPROCESSOR', script: '// Strip a trailing segment terminator some senders add\nreturn message.replace(/\\r+$/, "");\n' },
+    { scriptType: 'PREPROCESSOR', script: '// Strip a trailing segment terminator some senders add\nreturn rawData.replace(/\\r+$/, "");\n' },
   ],
   destinations: [
     { id: 'd1', metaDataId: 1, name: 'To EHR', enabled: true, connectorType: 'TCP_MLLP', properties: { host: 'ehr.example.test', port: 7001 },

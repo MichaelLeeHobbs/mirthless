@@ -37,6 +37,7 @@ import type { DestinationFormValues } from '../components/channels/destinations/
 import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, TransformerStepFormValues } from '../components/channels/source/types.js';
 import { createDefaultFilter, createDefaultTransformer, transformerHasContent } from '../components/channels/source/types.js';
 import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
+import { ScriptDataTypeContext } from '../components/editors/script-context.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { ChannelHealth } from '../components/channels/ChannelHealth.js';
 import Chip from '@mui/material/Chip';
@@ -146,6 +147,7 @@ export function ChannelEditorPage(): ReactNode {
   const enabledValue = watch('enabled');
   const nameValue = watch('name');
   const sourceConnectorType = watch('sourceConnectorType');
+  const inboundDataType = watch('inboundDataType');
   const sourceConnectorProperties = watch('sourceConnectorProperties');
 
   // Track previous connector type to detect user-initiated changes
@@ -664,7 +666,8 @@ export function ChannelEditorPage(): ReactNode {
         <Tab label="Scripts" />
       </Tabs>
 
-      {/* Tab content */}
+      {/* Tab content. Script editors type msg from the channel's inbound data type. */}
+      <ScriptDataTypeContext.Provider value={inboundDataType}>
       <Paper sx={{ p: 3 }}>
         <TabPanel value={activeTab} index={0}>
           <SummaryTab
@@ -700,6 +703,7 @@ export function ChannelEditorPage(): ReactNode {
           <ScriptsTab scripts={scripts} onChange={handleScriptsChange} />
         </TabPanel>
       </Paper>
+      </ScriptDataTypeContext.Provider>
 
       {/* Unsaved changes dialog */}
       <Dialog open={blocker.state === 'blocked'}>

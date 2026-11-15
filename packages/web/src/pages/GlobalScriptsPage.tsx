@@ -19,11 +19,12 @@ import { PageHeader } from '../components/common/PageHeader.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
 import { LoadingBlock } from '../components/common/states/LoadingState.js';
 
+// Global scripts run for every channel, so msg has no single data type.
 const TABS = [
-  { key: 'deploy' as const, label: 'Deploy' },
-  { key: 'undeploy' as const, label: 'Undeploy' },
-  { key: 'preprocessor' as const, label: 'Preprocessor' },
-  { key: 'postprocessor' as const, label: 'Postprocessor' },
+  { key: 'deploy' as const, label: 'Deploy', surface: { message: false, templateContext: 'GLOBAL_DEPLOY' } },
+  { key: 'undeploy' as const, label: 'Undeploy', surface: { message: false, templateContext: 'GLOBAL_UNDEPLOY' } },
+  { key: 'preprocessor' as const, label: 'Preprocessor', surface: { templateContext: 'GLOBAL_PREPROCESSOR' } },
+  { key: 'postprocessor' as const, label: 'Postprocessor', surface: { templateContext: 'GLOBAL_POSTPROCESSOR' } },
 ] as const;
 
 type ScriptKey = typeof TABS[number]['key'];
@@ -146,6 +147,7 @@ export function GlobalScriptsPage(): ReactNode {
             <ScriptEditor
               height="100%"
               label={`Global ${TABS[activeTab]!.label.toLowerCase()} script`}
+              surface={TABS[activeTab]!.surface}
               value={scripts[activeKey]}
               onChange={(value) => { handleScriptChange(activeKey, value); }}
               showLanguageToggle

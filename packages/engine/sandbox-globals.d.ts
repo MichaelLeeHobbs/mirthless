@@ -8,10 +8,11 @@
 //
 // This file lives at the package root (NOT under src/) on purpose: including it
 // in the engine's own tsconfig would leak `msg`, `logger`, etc. into the engine
-// source as globals. It is consumed only by script-authoring tooling — a
-// tsconfig that lists it, or the Monaco editor. The web admin ships an identical
-// surface as a string (packages/web/src/lib/sandbox-types.ts) for Monaco; keep
-// the two in sync when the sandbox API changes.
+// source as globals. It is consumed only by script-authoring tooling: a
+// tsconfig that lists it. The web editor and the deploy check use the same
+// surface built as a string in core-models (scripting/sandbox-declarations.ts),
+// which also types msg and tmp by data type; keep the two in sync when the
+// sandbox API changes (sandbox-types-consistency.test.ts checks the names).
 
 /** HL7 message proxy returned by parseHL7(). Path-based access to HL7 fields. */
 interface Hl7MessageProxy {
@@ -45,8 +46,17 @@ interface SandboxLogger {
 
 /** Current message being processed. Type depends on inbound data type. */
 declare var msg: unknown;
-/** Temporary working map. Persists across pipeline stages within a single message. */
-declare var tmp: Record<string, unknown>;
+/** The outbound message being built. Type depends on the data type. */
+declare var tmp: unknown;
+/** Destinations this message goes to. Source filter and transformer only. */
+declare var destinationSet: {
+  removeAll(): void;
+  remove(destinations: string | number | ReadonlyArray<string | number>): void;
+  removeAllExcept(destinations: string | number | ReadonlyArray<string | number>): void;
+  add(destinations: string | number | ReadonlyArray<string | number>): void;
+  contains(destination: string | number): boolean;
+  getConnectorNames(): string[];
+};
 /** Original inbound raw data string. */
 declare var rawData: string;
 /** Source system metadata. Propagates through the pipeline. */
