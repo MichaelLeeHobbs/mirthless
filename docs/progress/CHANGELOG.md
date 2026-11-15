@@ -2,6 +2,18 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-14 — Kafka and AMQP connectors, V15 (branch `feat/kafka-amqp-connectors`)
+
+Michael decided to build Kafka and AMQP connectors rather than partner (D-261, doc 18 CON10). Done here:
+
+- **Connectors** (`packages/connectors/src/kafka`, `amqp`): source and destination for each, on `@platformatic/kafka` and `amqplib` (D-265). Sources acknowledge only after the pipeline stores a message and redeliver one it could not store; at least once, with the duplicate cases recorded in D-266. TLS by certificate id, SASL PLAIN/SCRAM for Kafka, credentials and vhost for AMQP. Message key, routing key and headers go into the source map; destination topic, key, routing key and header values take `${name}` (D-252).
+- **Schemas, server, UI**: property schemas in core-models drive deploy validation and the registry; Test Connection reads Kafka metadata or checks the AMQP queue/exchange; four editor forms with shared broker and TLS fields.
+- **Tests**: unit tests for both pairs, including a failed store, a dropped broker connection, stop versus halt and a halt followed by a restart. A real-broker suite (`connector-queue.itest.ts`, with `kafka-test` and `rabbitmq-test` in the compose test profile) passed 10/10 on three runs.
+- **Found by the real-broker suite**: Kafka records with headers failed to encode (string header names), and a failed AMQP connection test crashed the process on an unhandled channel `error` event. Both fixed; the suite covers them.
+- **Found in review**: the Kafka consumer had no `error` listener, so a failed group rejoin (a broker restart while idle) would have ended the process; it now ends the subscription and the receiver rejoins. The AMQP receiver left the connection open when only its channel ended (a cancelled consumer, a consumer timeout), one leak per reconnect; it closes it now. The Kafka destination's record key was the property `key`, which secret redaction masks and import drops, so an imported channel published unkeyed; it is `messageKey` now. The Kafka producer is idempotent, so a request the client retries is not written twice. Each has a test that failed first.
+- **Coverage**: the connectors coverage run counted the integration lane's own files (`*.itest.ts`, `gates.ts`) as uncovered source, so adding the real-broker suite pushed the package under its minimums. They are excluded now, and the minimums rose to 89/78/85/91 (AGENTS.md table).
+- Not done: TLS against a real broker (unit tests cover the option mapping only). The connectors integration lane (`*.itest.ts`) still does not run in CI. Locally the parallel `pnpm gate` fails seven of engine's sandbox timing tests (50 ms timeouts) under load; they pass when packages run one at a time, and engine is unchanged here.
+
 ## 2026-11-14 — Reinvention audit findings (PRs #73 to #81, branch `chore/reinvention-prevention`)
 
 Michael asked for the rest of the `/find-reinvention` report (`.claude/reinvention/report.md`) to be worked through, one concern per PR. PR #70 had already taken the two security findings.

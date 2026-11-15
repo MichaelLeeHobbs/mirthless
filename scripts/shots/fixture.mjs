@@ -56,6 +56,25 @@ const channelDetail = {
   metadataColumns: [], tags: [tags[0]], filters: [], transformers: [],
 };
 
+/** A Kafka source with SASL and TLS on, and an AMQP destination, for the queue connector forms. */
+const queueChannelDetail = {
+  ...channelDetail,
+  id: 'c8', name: 'Lab Results via Kafka', sourceConnectorType: 'KAFKA',
+  sourceConnectorProperties: {
+    brokers: 'kafka-1.example.test:9093,kafka-2.example.test:9093', clientId: 'galvaniflow', topic: 'lab.results.v1',
+    groupId: 'galvaniflow-lab-results', startFrom: 'EARLIEST', saslMechanism: 'SCRAM-SHA-512', saslUsername: 'svc-galvaniflow',
+    saslPassword: 'example', useTls: true, tls: { caCertId: '', clientCertId: '', rejectUnauthorized: true },
+  },
+  destinations: [{
+    ...channelDetail.destinations[0], name: 'To RabbitMQ', connectorType: 'AMQP',
+    properties: {
+      host: 'rabbit.example.test', port: 5671, vhost: '/clinical', username: 'galvaniflow', password: 'example',
+      useTls: true, tls: { caCertId: '', clientCertId: '', rejectUnauthorized: true },
+      exchange: 'hl7', routingKey: 'oru.${sendingFacility}', headers: { source: 'galvaniflow' }, contentType: 'application/hl7-v2',
+    },
+  }],
+};
+
 // A Delimited file drop written to a partner's MySQL: shows the Delimited
 // settings and the database type.
 const billingDetail = {
@@ -185,6 +204,7 @@ export function route(pathname, search) {
   if (p === '/channels/statistics') return stats;
   if (p === '/channels/status') return status;
   if (p === '/channels/c1') return channelDetail;
+  if (p === '/channels/c8') return queueChannelDetail;
   if (p === '/channels/c6') return billingDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
   if (p === '/messages') {

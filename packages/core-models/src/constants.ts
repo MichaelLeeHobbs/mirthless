@@ -42,6 +42,8 @@ export const CONNECTOR_TYPE = {
   SMTP: 'SMTP',
   FHIR: 'FHIR',
   EMAIL: 'EMAIL',
+  KAFKA: 'KAFKA',
+  AMQP: 'AMQP',
 } as const;
 export type ConnectorType = (typeof CONNECTOR_TYPE)[keyof typeof CONNECTOR_TYPE];
 

@@ -90,7 +90,7 @@ packages/
 ├── core-models/     — TypeScript types, Zod schemas, branded types
 ├── core-util/       — HL7v2 parser, utilities
 ├── engine/          — Message pipeline, sandbox, channel runtime
-├── connectors/      — TCP/MLLP, HTTP, File, Database, JS, SMTP, FHIR, DICOM, Email
+├── connectors/      — TCP/MLLP, HTTP, File, SFTP, Database, JS, SMTP, FHIR, DICOM, Email, Kafka, AMQP
 ├── server/          — Express API (131 endpoints), auth, deployment
 ├── web/             — React + MUI admin UI
 └── cli/             — Command-line interface

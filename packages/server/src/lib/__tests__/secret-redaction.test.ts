@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
+import { kafkaDestinationPropertiesSchema, amqpDestinationPropertiesSchema } from '@galvaniflow/core-models';
 import {
   redactChannelDetail,
   REDACTED,
@@ -95,6 +96,23 @@ describe('secret-redaction — connector properties', () => {
     expect(isSecretPropertyKey('key')).toBe(true);
     expect(isSecretPropertyKey('keyColumn')).toBe(false);
     expect(isSecretPropertyKey('x-api-key')).toBe(true);
+  });
+
+  // A redacted property is shown masked and dropped on import. The Kafka record
+  // key was named `key`, so an imported channel published unkeyed, losing
+  // per-patient ordering without an error.
+  it('masks only the passwords of the Kafka and AMQP connectors', () => {
+    const tls = { caCertId: 'ca-1', clientCertId: 'client-1', rejectUnauthorized: true };
+    const kafka = kafkaDestinationPropertiesSchema.parse({
+      brokers: 'k1:9093', topic: 'results-${site}', messageKey: '${patientId}', headers: { site: '${site}' },
+      useTls: true, tls, saslMechanism: 'PLAIN', saslUsername: 'svc', saslPassword: 'hunter2',
+    });
+    const amqp = amqpDestinationPropertiesSchema.parse({
+      host: 'rabbit', exchange: 'hl7', routingKey: 'adt.${event}', username: 'svc', password: 'hunter2', useTls: true, tls,
+    });
+    expect(kafka.messageKey).toBe('${patientId}');
+    expect(redactConnectorProperties(kafka)).toEqual({ ...kafka, saslPassword: REDACTED });
+    expect(redactConnectorProperties(amqp)).toEqual({ ...amqp, password: REDACTED });
   });
 });
 

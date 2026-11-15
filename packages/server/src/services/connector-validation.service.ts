@@ -7,6 +7,12 @@
 
 import { z } from 'zod/v4';
 import { stderr, type Result } from 'stderr-lib';
+import {
+  kafkaSourcePropertiesSchema,
+  kafkaDestinationPropertiesSchema,
+  amqpSourcePropertiesSchema,
+  amqpDestinationPropertiesSchema,
+} from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 
 // ----- Reusable Schemas -----
@@ -74,6 +80,8 @@ const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   CHANNEL: channelSourceSchema,
   DICOM: dicomSourceSchema,
   EMAIL: emailSourceSchema,
+  KAFKA: kafkaSourcePropertiesSchema,
+  AMQP: amqpSourcePropertiesSchema,
 };
 
 const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
@@ -86,6 +94,8 @@ const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   CHANNEL: channelDestSchema,
   FHIR: fhirDestSchema,
   DICOM: dicomDestSchema,
+  KAFKA: kafkaDestinationPropertiesSchema,
+  AMQP: amqpDestinationPropertiesSchema,
 };
 
 // ----- Helpers -----

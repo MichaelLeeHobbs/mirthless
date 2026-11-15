@@ -50,28 +50,39 @@ function optionalId(bag: Record<string, unknown>, key: string): string | undefin
 export async function resolveHttpDestinationTls(
   props: Readonly<Record<string, unknown>>,
 ): Promise<Result<Record<string, unknown>>> {
-  return tryCatch(async () => {
-    if (props['scheme'] !== 'HTTPS') {
-      return { ...props };
-    }
-    const bag = readTlsBag(props);
-    const caCertId = optionalId(bag, 'caCertId');
-    const clientCertId = optionalId(bag, 'clientCertId');
-    const pemTls: Record<string, unknown> = { rejectUnauthorized: bag['rejectUnauthorized'] !== false };
+  return tryCatch(async () => (props['scheme'] === 'HTTPS' ? resolveClientTls(props) : { ...props }));
+}
 
-    if (caCertId) {
-      pemTls['ca'] = (await loadMaterial(caCertId)).certificatePem;
+/**
+ * Resolve a Kafka or AMQP connector's id-based TLS references to PEM material.
+ * Both source and destination are TLS clients of the broker. Passes props
+ * through unchanged unless `useTls` is on.
+ */
+export async function resolveQueueTls(
+  props: Readonly<Record<string, unknown>>,
+): Promise<Result<Record<string, unknown>>> {
+  return tryCatch(async () => (props['useTls'] === true ? resolveClientTls(props) : { ...props }));
+}
+
+/** Replace a client's id-based `tls` bag (CA, client certificate) with PEM. */
+async function resolveClientTls(props: Readonly<Record<string, unknown>>): Promise<Record<string, unknown>> {
+  const bag = readTlsBag(props);
+  const caCertId = optionalId(bag, 'caCertId');
+  const clientCertId = optionalId(bag, 'clientCertId');
+  const pemTls: Record<string, unknown> = { rejectUnauthorized: bag['rejectUnauthorized'] !== false };
+
+  if (caCertId) {
+    pemTls['ca'] = (await loadMaterial(caCertId)).certificatePem;
+  }
+  if (clientCertId) {
+    const client = await loadMaterial(clientCertId);
+    if (!client.privateKeyPem) {
+      throw new ServiceError('INVALID_INPUT', `Client certificate ${clientCertId} has no private key; cannot use for mutual TLS`);
     }
-    if (clientCertId) {
-      const client = await loadMaterial(clientCertId);
-      if (!client.privateKeyPem) {
-        throw new ServiceError('INVALID_INPUT', `Client certificate ${clientCertId} has no private key; cannot use for mutual TLS`);
-      }
-      pemTls['cert'] = client.certificatePem;
-      pemTls['key'] = client.privateKeyPem;
-    }
-    return { ...props, tls: pemTls };
-  });
+    pemTls['cert'] = client.certificatePem;
+    pemTls['key'] = client.privateKeyPem;
+  }
+  return { ...props, tls: pemTls };
 }
 
 /**

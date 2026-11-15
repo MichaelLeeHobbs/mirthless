@@ -5,6 +5,27 @@
 import { describe, it, expect } from 'vitest';
 import { validateConnectorProperties } from '../connector-validation.service.js';
 
+describe('validateConnectorProperties: Kafka and AMQP', () => {
+  it('accepts valid Kafka and AMQP properties as saved, with certificate ids in tls', () => {
+    const tls = { caCertId: 'ca-1', clientCertId: '', rejectUnauthorized: true };
+    expect(validateConnectorProperties('KAFKA', 'source', { brokers: 'k:9093', topic: 't', groupId: 'g', useTls: true, tls }).ok).toBe(true);
+    expect(validateConnectorProperties('KAFKA', 'destination', { brokers: 'k:9093', topic: 'out-${site}' }).ok).toBe(true);
+    expect(validateConnectorProperties('AMQP', 'source', { host: 'rabbit', queue: 'q', useTls: true, tls }).ok).toBe(true);
+    expect(validateConnectorProperties('AMQP', 'destination', { host: 'rabbit', routingKey: 'q' }).ok).toBe(true);
+  });
+
+  it('rejects a Kafka source with no consumer group, naming the field', () => {
+    const result = validateConnectorProperties('KAFKA', 'source', { brokers: 'k:9092', topic: 't' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain('groupId');
+  });
+
+  it('rejects an AMQP source with no queue', () => {
+    expect(validateConnectorProperties('AMQP', 'source', { host: 'rabbit' }).ok).toBe(false);
+  });
+});
+
 // ----- Source Connectors -----
 
 describe('validateConnectorProperties', () => {

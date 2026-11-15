@@ -4,6 +4,7 @@
 
 import type { DestinationFormValues } from './types.js';
 import { createDefaultFilter, createDefaultTransformer } from '../source/types.js';
+import { KAFKA_CONNECTION_DEFAULTS, AMQP_CONNECTION_DEFAULTS } from '../common/queue-connection-defaults.js';
 
 // Keys must match what packages/connectors/src/registry.ts reads for each type.
 // The TcpMllpDispatcher consumes host/port/maxConnections/responseTimeout/
@@ -124,6 +125,21 @@ export const SFTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   hostKey: '',
 };
 
+export const KAFKA_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  ...KAFKA_CONNECTION_DEFAULTS,
+  topic: '',
+  messageKey: '',
+  headers: {},
+};
+
+export const AMQP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
+  ...AMQP_CONNECTION_DEFAULTS,
+  exchange: '',
+  routingKey: '',
+  headers: {},
+  contentType: 'text/plain',
+};
+
 const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   TCP_MLLP: TCP_MLLP_DEST_DEFAULTS,
   HTTP: HTTP_DEST_DEFAULTS,
@@ -135,6 +151,8 @@ const DEFAULTS_MAP: Readonly<Record<string, Readonly<Record<string, unknown>>>> 
   FHIR: FHIR_DEST_DEFAULTS,
   DICOM: DICOM_DEST_DEFAULTS,
   SFTP: SFTP_DEST_DEFAULTS,
+  KAFKA: KAFKA_DEST_DEFAULTS,
+  AMQP: AMQP_DEST_DEFAULTS,
 };
 
 /** Get default properties for a destination connector type. */

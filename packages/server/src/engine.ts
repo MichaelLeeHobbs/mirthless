@@ -63,7 +63,7 @@ import { ResourceService } from './services/resource.service.js';
 import { DataSourceService } from './services/data-source.service.js';
 import { AlertService } from './services/alert.service.js';
 import { EmailService } from './services/email.service.js';
-import { resolveHttpSourceTls, resolveHttpDestinationTls } from './services/connector-tls-resolver.js';
+import { resolveHttpSourceTls, resolveHttpDestinationTls, resolveQueueTls } from './services/connector-tls-resolver.js';
 import { db } from './lib/db.js';
 import { ServiceError } from './lib/service-error.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
@@ -473,6 +473,11 @@ const SILENCE_CHECK_INTERVAL_MS = 30_000;
 const SEND_BACKSTOP_MS = 300_000;
 const NEVER_RAN_MESSAGE = 'Not delivered: the server stopped before this destination ran. Reprocess the message to deliver it.';
 
+type TlsResolver = (props: Readonly<Record<string, unknown>>) => Promise<Result<Record<string, unknown>>>;
+/** Connector types whose certificate-id references are resolved to PEM before the connector is built. */
+const SOURCE_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpSourceTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
+const DESTINATION_TLS_RESOLVERS: Readonly<Record<string, TlsResolver>> = { HTTP: resolveHttpDestinationTls, KAFKA: resolveQueueTls, AMQP: resolveQueueTls };
+
 export class EngineManager {
   private readonly runtimes = new Map<string, DeployedChannel>();
   private readonly sandbox: SandboxExecutor;
@@ -599,12 +604,13 @@ export class EngineManager {
       encryptData: channel.encryptData,
     });
 
-    // Create source connector. For HTTP, resolve any HTTPS cert-ID references to
-    // PEM material server-side (connectors have no DB access). Fail loud so a
+    // Create source connector. For HTTP, Kafka and AMQP, resolve cert-ID references
+    // to PEM material server-side (connectors have no DB access). Fail loud so a
     // channel never deploys silently without the TLS it was configured for.
     let sourceProperties: Record<string, unknown> = channel.sourceConnectorProperties;
-    if (channel.sourceConnectorType === 'HTTP') {
-      const resolved = await resolveHttpSourceTls(sourceProperties);
+    const resolveSourceTls = SOURCE_TLS_RESOLVERS[channel.sourceConnectorType];
+    if (resolveSourceTls) {
+      const resolved = await resolveSourceTls(sourceProperties);
       if (!resolved.ok) {
         throw new Error(`Channel ${channel.id} source TLS resolution failed: ${resolved.error.message}`);
       }
@@ -615,12 +621,13 @@ export class EngineManager {
       sourceProperties,
     ) as SourceConnectorRuntime;
 
-    // Create destination connectors (HTTP destinations resolve HTTPS cert-IDs too).
+    // Create destination connectors (HTTP, Kafka and AMQP resolve cert-IDs too).
     const destinations = new Map<number, DestinationConnectorRuntime>();
     for (const dest of channel.destinations) {
       let destProperties: Record<string, unknown> = dest.properties;
-      if (dest.connectorType === 'HTTP') {
-        const resolved = await resolveHttpDestinationTls(destProperties);
+      const resolveDestTls = DESTINATION_TLS_RESOLVERS[dest.connectorType];
+      if (resolveDestTls) {
+        const resolved = await resolveDestTls(destProperties);
         if (!resolved.ok) {
           throw new Error(`Channel ${channel.id} destination ${dest.metaDataId} TLS resolution failed: ${resolved.error.message}`);
         }

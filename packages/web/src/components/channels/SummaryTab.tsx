@@ -44,6 +44,8 @@ const SOURCE_CONNECTOR_TYPES = [
   'DICOM',
   'EMAIL',
   'SFTP',
+  'KAFKA',
+  'AMQP',
 ] as const;
 
 const INITIAL_STATES = ['STARTED', 'STOPPED', 'PAUSED'] as const;

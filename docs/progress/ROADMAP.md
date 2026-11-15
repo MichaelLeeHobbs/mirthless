@@ -54,6 +54,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] FHIR (destination) — R4 REST client
 - [x] DICOM (source + destination) — C-STORE via dcmtk.js
 - [x] Email/IMAP (source) — folder polling with filters
+- [x] Kafka and AMQP/RabbitMQ (source + destination) — acknowledged after store, at least once (D-265, D-266)
 
 ### Mirth migration suite
 
@@ -142,7 +143,14 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] **[V12]** FHIR source, bundles and validation; maintained v2-to-FHIR maps (FHIR1, FHIR2, = B7)
 - [ ] **[V13]** Docs site, recipe gallery, generated channel docs, guided first channel (DOC1, DOC3, UI13, UI3)
 - [ ] **[V14]** Generated API clients, MCP server, AI-assisted mapping (API1, AI2, AI1)
-- [ ] **[V15]** Kafka and AMQP (RabbitMQ) source and destination connectors on maintained Node clients; no broker of our own (CON10, D-261)
+- [x] **[V15]** Kafka and AMQP (RabbitMQ) source and destination connectors on maintained Node clients; no broker of our own (CON10, D-261) — shipped 2026-11-14 (D-265, D-266)
+  - [ ] A message the store always rejects (e.g. a NUL byte in a text column) blocks its queue or topic for good: no alert, retry cap or dead-letter
+  - [ ] Both sources decode the payload with `toString('utf8')`, which corrupts a non-UTF-8 payload
+  - [ ] No timeout of ours on joining the Kafka group (`kafka-receiver.ts` `onStart` and the rejoin in `run`)
+  - [ ] A Kafka halt during a rejoin, then a restart, can orphan the consumer that rejoin opens
+  - [ ] An empty AMQP username connects as guest/guest (amqplib's default) instead of failing validation
+  - [ ] The broker list pattern rejects bracketed IPv6 (`[::1]:9092`)
+  - [ ] The real-broker suite (`connector-queue.itest.ts`) is skipped in CI, and TLS has not been run against a real broker
 - [ ] **[DECIDE]** npm packages in the sandbox? (doc 18, open decisions)
 
 ### API & Auth (done)

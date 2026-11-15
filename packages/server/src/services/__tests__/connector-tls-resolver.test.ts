@@ -13,7 +13,7 @@ vi.mock('../certificate.service.js', () => ({
   CertificateService: { getMaterialById: (...args: unknown[]) => mockGetMaterialById(...args) },
 }));
 
-const { resolveHttpDestinationTls, resolveHttpSourceTls } = await import('../connector-tls-resolver.js');
+const { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } = await import('../connector-tls-resolver.js');
 
 // ----- Helpers -----
 
@@ -172,5 +172,39 @@ describe('resolveHttpSourceTls', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.message).toContain(SERVER_ID);
+  });
+});
+
+// ----- Kafka / AMQP -----
+
+describe('resolveQueueTls', () => {
+  it('passes props through unchanged when useTls is off, even with ids in the bag', async () => {
+    const props = { host: 'rabbit', useTls: false, tls: { caCertId: CA_ID } };
+    const result = await resolveQueueTls(props);
+    expect(result.ok && result.value).toEqual(props);
+    expect(mockGetMaterialById).not.toHaveBeenCalled();
+  });
+
+  it('resolves CA and client certificate ids to PEM when useTls is on', async () => {
+    mockGetMaterialById
+      .mockResolvedValueOnce(okMaterial('CA-PEM', null))
+      .mockResolvedValueOnce(okMaterial('CLIENT-PEM', 'CLIENT-KEY'));
+    const result = await resolveQueueTls({ brokers: 'k:9093', useTls: true, tls: { caCertId: CA_ID, clientCertId: CLIENT_ID, rejectUnauthorized: true } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value['tls']).toEqual({ rejectUnauthorized: true, ca: 'CA-PEM', cert: 'CLIENT-PEM', key: 'CLIENT-KEY' });
+  });
+
+  it('verifies the broker with the system CAs when no CA is chosen', async () => {
+    const result = await resolveQueueTls({ useTls: true });
+    expect(result.ok && result.value['tls']).toEqual({ rejectUnauthorized: true });
+  });
+
+  it('fails loud when a referenced certificate is missing', async () => {
+    mockGetMaterialById.mockResolvedValueOnce(notFound(CA_ID));
+    const result = await resolveQueueTls({ useTls: true, tls: { caCertId: CA_ID } });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain(CA_ID);
   });
 });
