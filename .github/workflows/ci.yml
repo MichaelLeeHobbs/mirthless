@@ -79,6 +79,73 @@ jobs:
           path: packages/*/coverage/
           retention-days: 14
 
+  # Real-protocol connector suites (packages/connectors *.itest.ts) against the
+  # docker-compose `test` profile brokers and servers, plus Postgres.
+  # CONNECTOR_ITEST_REQUIRED makes a missing service fail the run instead of
+  # skipping its suite (see src/__tests__/e2e/integration/gates.ts).
+  connector-integration:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: galvaniflow_test
+          POSTGRES_USER: galvaniflow
+          POSTGRES_PASSWORD: galvaniflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U galvaniflow -d galvaniflow_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      CONNECTOR_ITEST_REQUIRED: '1'
+      DATABASE_URL: postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test
+      SFTP_TEST_HOST: localhost
+      SMTP_TEST_HOST: localhost
+      KAFKA_TEST_BROKERS: localhost:19092
+      AMQP_TEST_HOST: localhost
+      LOG_LEVEL: error
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # pnpm version comes from package.json "packageManager".
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Kafka and RabbitMQ have healthchecks, so --wait holds until they serve.
+      # rabbitmq-test writes its test TLS certificate to docker/test-certs.
+      - name: Start connector test services
+        run: docker compose -f docker/docker-compose.yml --profile test up -d --wait sftp-test mail-test kafka-test rabbitmq-test
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build connectors and their dependencies
+        run: pnpm --filter "@galvaniflow/connectors..." build
+
+      # SFTP and GreenMail have no healthcheck; their ports open once they serve.
+      - name: Wait for SFTP and mail
+        run: |
+          for port in 2222 3025 3143; do
+            timeout 60 bash -c "until (exec 3<>/dev/tcp/127.0.0.1/$port) 2>/dev/null; do sleep 1; done"
+          done
+
+      - name: Connector integration tests (real services)
+        run: pnpm --filter @galvaniflow/connectors test:integration
+
+      - name: Test service logs
+        if: failure()
+        run: docker compose -f docker/docker-compose.yml --profile test logs --no-color sftp-test mail-test kafka-test rabbitmq-test
+
   e2e:
     runs-on: ubuntu-latest
 

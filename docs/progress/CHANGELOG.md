@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Connector integration lane in CI (gh-88, branch `ci/connector-itests`)
+
+- **CI:** a new `connector-integration` job starts `sftp-test`, `mail-test`, `kafka-test` and `rabbitmq-test` from the compose `test` profile, plus a Postgres service, and runs `pnpm --filter @galvaniflow/connectors test:integration`. Until now no connector `*.itest.ts` ran in CI.
+- **Required mode:** with `CONNECTOR_ITEST_REQUIRED=1` (set by that job) `gates.ts` throws at import when any service is unconfigured, so every suite fails instead of skipping, and the lane fails if it finds no suite (D-270).
+- **AMQPS:** `rabbitmq-test` has a TLS listener on 5674. Its entrypoint writes a throwaway CA and server certificate to `docker/test-certs` (git-ignored) on first start, so `compose up` needs no setup step. Two new tests send and receive over AMQPS with the certificate verified, and check that a connection without the CA is refused.
+- **Quorum queue:** a new test fails the store twice for a message on a quorum queue and checks that it is redelivered and stored once. The `maxStoreAttempts` cap from gh-86 (D-269) is not in `main` yet, so its real-broker case is not here.
+- **Compose:** healthchecks on `kafka-test` and `rabbitmq-test`, so `up --wait` returns once they serve. The RabbitMQ check runs as the `rabbitmq` user: run as root, the CLI wrote the Erlang cookie first and the broker could not start.
+- **Verified:** locally the lane passed 17/17 in required mode with nothing skipped, and unsetting `KAFKA_TEST_BROKERS` failed it.
+- Not done: Kafka over TLS (ROADMAP V15).
+
 ## 2026-11-15 — Reinvention copy groups, batch 2 (branch `batch-2026-11-15-reinvention-2`)
 
 Second batch of the approved triage, built on batch 1:
@@ -23,6 +33,7 @@ The first slice of the docs restructure (#116): before the docs can be checked a
 - **Typed checks:** `requirePermission`, `requireAllPermissions` and the socket room map take `Permission`.
 - **`pnpm shots`** read permissions by scraping the web file, which broke when it became a re-export; it imports them from core-models now.
 - **Found on the way:** the engine sandbox tests and three server engine tests depend on wall-clock timing and fail on a slower Windows machine (#125). An E2E spec fails intermittently with ECONNRESET (#126). Neither touches this branch's code.
+
 
 ## 2026-11-15 — Reinvention copy groups, batch 1 (branch `batch-2026-11-15-reinvention-1`)
 
