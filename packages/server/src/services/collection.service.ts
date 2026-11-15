@@ -97,11 +97,7 @@ export class CollectionService {
 
   /** Get a collection definition by ID. */
   static async getById(id: string): Promise<Result<CollectionSummary>> {
-    return tryCatch(async () => {
-      const [row] = await db.select().from(collections).where(eq(collections.id, id));
-      if (!row) throw new ServiceError('NOT_FOUND', `Collection ${id} not found`);
-      return toSummary(row);
-    });
+    return tryCatch(async () => toSummary(await requireById(id)));
   }
 
   /** Create a collection definition. */

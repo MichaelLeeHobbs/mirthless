@@ -136,6 +136,25 @@ describe('CollectionService.getById', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+    expect(result.error).toHaveProperty('message', 'Collection missing not found');
+  });
+
+  it('returns the summary of the matching collection', async () => {
+    selectWhere.mockResolvedValueOnce([makeRow({ extra: 'not part of the summary' })]);
+
+    const result = await CollectionService.getById('col-1');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toStrictEqual({
+      id: 'col-1',
+      name: 'patients',
+      description: 'demographics',
+      indexedFields: ['mrn'],
+      defaultTtlSeconds: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
   });
 });
 
