@@ -36,13 +36,21 @@ export function permissionRowsForRole(role: string): readonly PermissionRow[] {
 
   const rows: PermissionRow[] = [];
   for (const name of def.permissions) {
-    const sep = name.indexOf(':');
-    if (sep <= 0 || sep === name.length - 1) {
-      continue;
+    const row = permissionRow(name);
+    if (row) {
+      rows.push(row);
     }
-    rows.push({ resource: name.slice(0, sep), action: name.slice(sep + 1) });
   }
   return rows;
+}
+
+/** Split a `resource:action` permission name at its first colon; null when either side is empty. */
+export function permissionRow(name: string): PermissionRow | null {
+  const sep = name.indexOf(':');
+  if (sep <= 0 || sep === name.length - 1) {
+    return null;
+  }
+  return { resource: name.slice(0, sep), action: name.slice(sep + 1) };
 }
 
 /** Resolve the flat `resource:action` permission names for a role. */

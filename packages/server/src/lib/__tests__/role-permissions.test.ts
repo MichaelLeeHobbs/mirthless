@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { PERMISSIONS } from '@galvaniflow/core-models';
-import { permissionRowsForRole, permissionNamesForRole, isKnownRole } from '../role-permissions.js';
+import { permissionRowsForRole, permissionNamesForRole, isKnownRole, permissionRow } from '../role-permissions.js';
 import { defaultPermissions } from '../../db/seeds/permissions.js';
 
 describe('default permission seed rows', () => {
@@ -62,6 +62,14 @@ describe('role-permissions', () => {
     const rows = permissionRowsForRole('viewer');
     expect(rows).toContainEqual({ resource: 'channels', action: 'read' });
     expect(rows.every((r) => r.resource.length > 0 && r.action.length > 0)).toBe(true);
+  });
+
+  it('splits a permission name at its first colon and rejects an empty side', () => {
+    expect(permissionRow('code_templates:delete')).toEqual({ resource: 'code_templates', action: 'delete' });
+    expect(permissionRow('a:b:c')).toEqual({ resource: 'a', action: 'b:c' });
+    expect(permissionRow('nocolon')).toBeNull();
+    expect(permissionRow(':read')).toBeNull();
+    expect(permissionRow('channels:')).toBeNull();
   });
 
   it('resolves an unknown role to no permissions (least privilege)', () => {

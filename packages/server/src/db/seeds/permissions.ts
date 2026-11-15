@@ -4,6 +4,7 @@
 // Seed rows for the permission strings defined in core-models (PERMISSIONS).
 
 import { PERMISSIONS, type Permission } from '@galvaniflow/core-models';
+import { permissionRow } from '../../lib/role-permissions.js';
 
 export interface PermissionDefinition {
   readonly name: Permission;
@@ -12,7 +13,7 @@ export interface PermissionDefinition {
 }
 
 /** One seed row per permission, its name split into resource and action. */
-export const defaultPermissions: readonly PermissionDefinition[] = Object.values(PERMISSIONS).map((name) => {
-  const [resource = '', action = ''] = name.split(':');
-  return { name, resource, action };
+export const defaultPermissions: readonly PermissionDefinition[] = Object.values(PERMISSIONS).flatMap((name) => {
+  const row = permissionRow(name);
+  return row ? [{ name, ...row }] : [];
 });
