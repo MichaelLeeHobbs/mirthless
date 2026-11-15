@@ -14,6 +14,7 @@ import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../b
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { matchGlob } from '../file/file-receiver.js';
 import { withTimeout } from '../timeout.js';
+import { connectFresh, closeQuietly } from '../client-lifecycle.js';
 import { QuarantineLedger, dispatchQuarantined, type LedgerStorage } from '../quarantine-ledger.js';
 import {
   createSsh2SftpClient,
@@ -214,9 +215,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
 
   /** (Re)establish the SFTP connection. Throws on failure (caught by caller). */
   private async reconnect(): Promise<void> {
-    const client = this.createClient(this.config);
-    await withTimeout(client.connect(), SFTP_OP_TIMEOUT_MS, 'SFTP connect');
-    this.client = client;
+    this.client = await connectFresh(this.createClient(this.config), SFTP_OP_TIMEOUT_MS, 'SFTP connect');
   }
 
   /** List remote entries matching the glob, sorted by name, respecting file age. */
@@ -314,14 +313,17 @@ export class SftpReceiver implements SourceConnectorRuntime {
     };
   }
 
-  /** Disconnect the current client, ignoring errors. */
+  /** Disconnect the current client under a timeout, logging and ignoring errors. */
   private async safeDisconnect(): Promise<void> {
-    if (!this.client) return;
-    try {
-      await withTimeout(this.client.end(), SFTP_OP_TIMEOUT_MS, 'SFTP end');
-    } catch (err) {
-      this.logger.warn(errorInfo(err), 'Error disconnecting SFTP client');
-    }
+    const client = this.client;
+    if (!client) return;
+    await closeQuietly({
+      close: () => client.end(),
+      timeoutMs: SFTP_OP_TIMEOUT_MS,
+      label: 'SFTP end',
+      logger: this.logger,
+      message: 'Error disconnecting SFTP client',
+    });
   }
 
   /** Clear the poll interval timer. */

@@ -10,6 +10,7 @@ import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../b
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
+import { connectFresh, closeQuietly } from '../client-lifecycle.js';
 import { createRequire } from 'node:module';
 
 // The package is ESM, so a bare `require` is undefined at runtime (vitest
@@ -159,8 +160,8 @@ export class EmailReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
-      this.client = this.createClient(this.config);
-      await withTimeout(this.client.connect(), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
+      // Stored only once connected: a failed start must not leave stop to log out a dead session.
+      await this.reconnect();
 
       this.pollTimer = setInterval(() => {
         void this.pollCycle();
@@ -218,19 +219,20 @@ export class EmailReceiver implements SourceConnectorRuntime {
 
   /** (Re)establish the IMAP connection. Throws on failure (caught by caller). */
   private async reconnect(): Promise<void> {
-    const client = this.createClient(this.config);
-    await withTimeout(client.connect(), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
-    this.client = client;
+    this.client = await connectFresh(this.createClient(this.config), IMAP_OP_TIMEOUT_MS, 'IMAP connect');
   }
 
-  /** Disconnect the current client, ignoring errors. */
+  /** Disconnect the current client under a timeout, logging and ignoring errors. */
   private async safeDisconnect(): Promise<void> {
-    if (!this.client) return;
-    try {
-      await this.client.disconnect();
-    } catch (err) {
-      this.logger.warn(errorInfo(err), 'Error disconnecting IMAP client during reconnect');
-    }
+    const client = this.client;
+    if (!client) return;
+    await closeQuietly({
+      close: () => client.disconnect(),
+      timeoutMs: IMAP_OP_TIMEOUT_MS,
+      label: 'IMAP disconnect',
+      logger: this.logger,
+      message: 'Error disconnecting IMAP client during reconnect',
+    });
   }
 
   /** Check if a message matches the subject filter (if configured). */
