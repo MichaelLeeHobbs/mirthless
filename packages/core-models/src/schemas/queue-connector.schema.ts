@@ -26,6 +26,16 @@ export const clientTlsRefSchema = z.object({
 /** Name/value pairs sent with each message; values may use `${name}`. */
 const headers = z.record(z.string(), z.string()).default({});
 
+/**
+ * How a queue source turns a payload's bytes into message text. `latin1` is
+ * ISO-8859-1. `base64` keeps a binary payload (a PDF, an image, Avro) intact
+ * as base64 text.
+ */
+export const QUEUE_CHARSETS = ['utf-8', 'latin1', 'windows-1252', 'base64'] as const;
+export type QueueCharset = (typeof QUEUE_CHARSETS)[number];
+
+const charset = z.enum(QUEUE_CHARSETS).default('utf-8');
+
 // ----- Kafka -----
 
 export const KAFKA_SASL_MECHANISMS = ['NONE', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512'] as const;
@@ -62,6 +72,7 @@ export const kafkaSourcePropertiesSchema = z.object({
   topic: required,
   groupId: required,
   startFrom: z.enum(KAFKA_START_FROM).default('EARLIEST'),
+  charset,
 }).refine(saslHasUsername, saslUsernameIssue);
 export type KafkaSourceProperties = z.infer<typeof kafkaSourcePropertiesSchema>;
 
@@ -94,6 +105,7 @@ export const amqpSourcePropertiesSchema = z.object({
   ...amqpConnection,
   /** An existing queue; the connector never declares one. */
   queue: required,
+  charset,
 });
 export type AmqpSourceProperties = z.infer<typeof amqpSourcePropertiesSchema>;
 
