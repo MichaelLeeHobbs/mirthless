@@ -56,6 +56,26 @@ const channelDetail = {
   metadataColumns: [], tags: [tags[0]], filters: [], transformers: [],
 };
 
+// A Delimited file drop written to a partner's MySQL: shows the Delimited
+// settings and the database type.
+const billingDetail = {
+  ...channelDetail,
+  id: 'c6', name: 'Nightly Billing Export (file drop with a long name)', description: 'Billing rows from the nightly CSV into the partner MySQL.',
+  inboundDataType: 'DELIMITED', outboundDataType: 'XML', sourceConnectorType: 'FILE',
+  sourceConnectorProperties: { directory: '/data/billing', fileFilter: '*.csv', pollingIntervalMs: 60000 },
+  destinations: [
+    { id: 'd6', metaDataId: 1, name: 'Partner billing DB', enabled: true, connectorType: 'DATABASE',
+      properties: { vendor: 'mysql', host: 'billing-db.example.test', port: 3306, database: 'billing', username: 'galvaniflow', password: '', tls: true,
+        query: 'INSERT INTO charges (mrn, code, amount) VALUES (${mrn}, ${code}, ${amount})', useTransaction: true, returnGeneratedKeys: false },
+      queueMode: 'ON_FAILURE', retryCount: 3, retryIntervalMs: 10000, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false },
+  ],
+  transformers: [{
+    id: 'x6', connectorId: null, inboundDataType: 'DELIMITED', outboundDataType: 'XML', inboundTemplate: null, outboundTemplate: null,
+    inboundProperties: { delimited: { columnDelimiter: '|', recordDelimiter: '\r\n', columnNames: ['mrn', 'code', 'amount', 'posted'] } },
+    outboundProperties: {}, steps: [],
+  }],
+};
+
 const messages = Array.from({ length: 14 }, (_, i) => ({
   messageId: 48211 - i, correlationId: `corr-${String(48211 - i)}`, receivedAt: ago(i * 3 + 1), processed: true,
   processedAt: ago(i * 3), connectors: [
@@ -165,6 +185,7 @@ export function route(pathname, search) {
   if (p === '/channels/statistics') return stats;
   if (p === '/channels/status') return status;
   if (p === '/channels/c1') return channelDetail;
+  if (p === '/channels/c6') return billingDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
   if (p === '/messages') {
     const items = search.includes('status=ERROR') ? traffic.filter((t) => t.status === 'ERROR') : traffic;
