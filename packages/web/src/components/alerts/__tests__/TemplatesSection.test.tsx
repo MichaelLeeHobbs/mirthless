@@ -30,10 +30,10 @@ describe('findUnknownVariables', () => {
   });
 
   it.each([
-    ['a dotted name', '${alert.name}', []],
-    ['a name with a space', '${error message}', []],
-    ['a name with a dash', '${error-type}', []],
-    ['a padded unknown name', '${ error }', []],
+    ['a dotted name', '${alert.name}', ['alert.name']],
+    ['a name with a space', '${error message}', ['error message']],
+    ['a name with a dash', '${error-type}', ['error-type']],
+    ['a padded unknown name, trimmed', '${ error }', ['error']],
     ['a padded known name', '${ alertName }', []],
   ])('reports %s by the shared rule', (_label, template, expected) => {
     expect(findUnknownVariables(template)).toEqual(expected);
