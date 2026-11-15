@@ -18,7 +18,7 @@ NextGen Connect is a ~1,900 Java file monolith organized into 16 modules. The co
 | `client` | 337 | Swing admin GUI | `packages/web` (React) |
 | `core-ui` | 148 | Shared Swing UI components | `packages/web` (React) |
 | `core-client-*` | 142 | Client-side connector panels, API client | `packages/web` (React) |
-| `command` | 10 | CLI tool | `packages/cli` |
+| `command` | 10 | CLI tool | None. Scripts call the REST API (D-273) |
 | `webadmin` | 10 | JSP web admin (minimal) | `packages/web` (React) |
 
 ---
@@ -151,8 +151,6 @@ core-models  ←── core-util  ←── engine  ←── connectors/*
                                 server ───────────┘
                                    ↑
                                   web
-                                   ↑
-                                  cli
 ```
 
 - `core-models` depends on nothing (pure types + Zod schemas)
@@ -161,8 +159,6 @@ core-models  ←── core-util  ←── engine  ←── connectors/*
 - `connectors/*` depend on `engine`, `core-models`
 - `server` depends on `engine`, `connectors`, `core-models`, `core-util`
 - `web` depends on `core-models` and `core-util` (core-util must stay browser-safe, D-272)
-- `cli` depends on `server` (API client)
-
 ---
 
 ## Message Pipeline (Redesigned)

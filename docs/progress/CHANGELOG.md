@@ -2,6 +2,12 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Removed the CLI (branch `remove-cli`, #145)
+
+- **`packages/cli` deleted** (D-273). It had no users and wrapped one REST endpoint per command. Its coverage row is gone from `AGENTS.md`, along with the "CLI session refresh" roadmap item (L25).
+- **`docs/ops/api-automation.md`:** `curl` recipes for log in, export, import and redeploy. Redeploy returns once the channel is in its final state and fails when it can't start, so a CI job doesn't need to poll.
+- Not done here: API tokens (#144) and the break-glass admin reset (#141). Until #144, the recipes log in with a password, which won't work for an account with MFA.
+
 ## 2026-11-15 — Reinvention copy groups, batch 3 (branch `batch-2026-11-15-reinvention-3`)
 
 The last merge batch of the approved triage, mostly web and small server helpers:

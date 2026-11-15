@@ -176,11 +176,8 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [x] Group CRUD (create, rename, delete, assign via dashboard + editor)
 - [x] Send Message dialog (fire-and-forget)
 
-### CLI (done)
-- [x] Commander-based with 16 commands
-- [x] Channel lifecycle (deploy, undeploy, start, stop, pause, resume)
-- [x] Export/import, user management, login
-- [x] Config persistence (~/.mirthless/)
+### CLI (removed)
+- [x] ~~Commander-based CLI~~ removed 2026-11-15 (D-273). Scripts use the REST API (`docs/ops/api-automation.md`); break-glass admin recovery is #141.
 
 ### Remaining for v1.0
 - [x] ~~Data type serialization — XML/JSON/HL7v2 parsed `msg` object in sandbox~~
@@ -195,7 +192,6 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 - [ ] Apply row limits in the database, not after the fetch: the Database Writer and `dbQuery` read a whole result before cutting it to the limit, so a huge SELECT can still use a lot of memory (needs a cursor; review item L21)
 - [ ] Stop copying the global and configuration maps into every script run: the cost of a script grows with the size of those maps (needs lazy map access across the sandbox boundary; review item L22)
 - [ ] An overall deadline for one message across all its stages. Each script and each send has its own limit, and a halt now cancels them, but nothing bounds their sum (review item L23)
-- [ ] CLI session refresh. A session lasts 15 minutes; the CLI now says to log in again but cannot renew it (review item L25)
 - [ ] Run scripts off the main thread (worker threads). A tight loop in a script blocks every channel until its timeout fires (D-212)
 - [ ] Mapper transformer steps. A channel with one does not deploy (D-207)
 - [ ] Attachment extraction and batch splitting: library code exists, no channel setting reaches it

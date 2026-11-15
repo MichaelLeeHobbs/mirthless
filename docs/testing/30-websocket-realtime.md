@@ -27,7 +27,7 @@
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 8 | Dashboard updates on channel state change | On Dashboard, deploy/start/stop/undeploy a channel via API or CLI | Channel status updates instantly without manual refresh | |
+| 8 | Dashboard updates on channel state change | On Dashboard, deploy/start/stop/undeploy a channel via the API | Channel status updates instantly without manual refresh | |
 | 9 | Dashboard statistics update in real-time | Send messages through a running channel while on Dashboard | Statistics (received/sent/filtered/errored counts) update instantly | |
 
 ## Real-Time Message Browser Updates

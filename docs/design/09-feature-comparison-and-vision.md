@@ -163,7 +163,7 @@ Beyond the Java-specific items in 1.4, there are design patterns in Mirth that a
 
 **Mirth pattern:** Windows service + Server Manager GUI + separate Administrator Launcher + JNLP Web Start. Multiple moving parts for basic server management.
 
-**Our approach:** Single Node.js process. Docker-first deployment. CLI for headless management. Web UI accessible from any browser.
+**Our approach:** Single Node.js process. Docker-first deployment. REST API for headless management. Web UI accessible from any browser.
 
 ---
 
@@ -235,7 +235,7 @@ These are capabilities that modern integration engines, developer tools, and clo
 
 **Why it matters:** Mirth channels live exclusively inside the Mirth database. Moving channels between environments requires manual export/import through the GUI. There is no version control, no diff, no approval workflow. Modern DevOps teams expect infrastructure-as-code patterns.
 
-**Implementation path:** The CLI already exists (16 commands). Channel export/import API exists. This is about building the workflow on top: a `deploy` CLI command that reads a directory of channel JSON files, diffs against the running server, and deploys changes. A GitHub Actions action that calls the CLI.
+**Implementation path:** Channel export/import and redeploy APIs exist, and `docs/ops/api-automation.md` scripts them with `curl`. The first CLI was removed because it only wrapped single endpoints (D-273); a CLI built for this workflow would be new. This is about building the workflow on top: a `deploy` CLI command that reads a directory of channel JSON files, diffs against the running server, and deploys changes. A GitHub Actions action that calls the CLI.
 
 ### 3.6 Cloud-Native Deployment (P2-P3)
 
@@ -323,7 +323,7 @@ Based on analysis of the Mirth Connect source code, community forums, GitHub iss
 
 **The complaint:** Channels stored as XML blobs in the database. No version control. Moving channels between environments is manual export/import. No diff, no rollback (without paid Channel History plugin). No infrastructure-as-code support.
 
-**Our advantage:** Relational config storage with revision tracking built-in. JSON export format. CLI for scripted deployment. API-first design enables CI/CD. Monaco diff editor for revision comparison.
+**Our advantage:** Relational config storage with revision tracking built-in. JSON export format. API-first design enables CI/CD. Monaco diff editor for revision comparison.
 
 ### 4.4 Essential Features Paywalled
 
