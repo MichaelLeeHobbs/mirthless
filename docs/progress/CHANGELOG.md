@@ -2,6 +2,13 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — CI runs only what a change needs (branch `ci/177-change-classifier`)
+
+#177 (D-279). A `changes` job classifies the diff with `scripts/ci/classify-changes.mjs` and the other jobs run only when it selects them. A docs-only change runs a `docs` job with just the unit tests that read the changed file; a web change skips both integration lanes; a server change skips connector integration. Unit tests in the gate narrow to the changed packages and their dependents; build, lint and audit stay whole-repo. Root config, workflows, `docker/`, `scripts/`, tags and anything unknown run everything. `ci-ok` is the single check for branch protection. Table tests (`pnpm test:ci`, now part of `pnpm gate`) also fail when `ci.yml` gains a job the classifier and `ci-ok` don't know, or when `pnpm gate` gains a step CI doesn't run. What runs when: `docs/ops/ci.md`.
+
+- Differs from the issue's table on purpose: a connectors change also runs the Postgres lane and e2e, because the server depends on connectors.
+- Measured on main before this change: e2e is 7m20s of the 7m20s wall clock (Playwright alone 5m34s, one worker), the gate job 3m35s, connector integration 1m. So server and web PRs still wait on e2e.
+
 ## 2026-11-15 — Access control page, docs slice 2 (branch `docs/access-control`)
 
 Slice 2 of the docs restructure (#116): one page that tells an admin who can do what, and what the product does not support.
