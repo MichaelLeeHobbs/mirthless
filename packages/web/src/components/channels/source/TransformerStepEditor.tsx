@@ -5,19 +5,15 @@
 // Used by both source and destination transformer sections.
 
 import { type ReactNode, type ChangeEvent } from 'react';
-import Accordion from '@mui/material/Accordion';
-import AccordionSummary from '@mui/material/AccordionSummary';
-import AccordionDetails from '@mui/material/AccordionDetails';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
-import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { ScriptEditor } from '../../editors/ScriptEditor.js';
 import { ItemOrderActions } from './ItemOrderActions.js';
+import { ItemCard } from './ItemCard.js';
 import { FILTER_TRANSFORMER_SURFACE, type ScriptStage } from '../../editors/script-context.js';
 import type { TransformerStepFormValues } from './types.js';
 
@@ -48,34 +44,14 @@ export function TransformerStepEditor({
     step.type === 'JAVASCRIPT' ? `Script · ${step.language === 'TYPESCRIPT' ? 'TypeScript' : 'JavaScript'}` :
     step.type === 'MAPPER' ? 'Mapper' : 'Message Builder';
 
-  return (
-    <Accordion disableGutters>
-      <AccordionSummary
-        expandIcon={<ExpandMoreIcon />}
-        sx={{ '& .MuiAccordionSummary-content': { alignItems: 'center', gap: 1 } }}
-      >
-        <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>{title}</Typography>
-        <Typography
-          variant="caption"
-          sx={{
-            color: 'text.secondary',
-            mr: 1
-          }}>
-          {typeLabel}
-        </Typography>
-        {!step.enabled ? (
-          <Typography
-            variant="caption"
-            sx={{
-              color: 'warning.main',
-              mr: 1
-            }}>
-            Disabled
-          </Typography>
-        ) : null}
-      </AccordionSummary>
-      <AccordionDetails>
-        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+  const summary = (
+    <>
+      {typeLabel}
+      {!step.enabled ? <Box component="span" sx={{ color: 'warning.main', ml: 1 }}>Disabled</Box> : null}
+    </>
+  );
+  const settings = (
+        <>
           <TextField
             label="Name"
             value={step.name}
@@ -110,7 +86,11 @@ export function TransformerStepEditor({
             label="Enabled"
           />
           <ItemOrderActions noun="step" index={index} total={total} onMoveUp={onMoveUp} onMoveDown={onMoveDown} onRemove={onRemove} />
-        </Box>
+        </>
+  );
+
+  return (
+    <ItemCard title={title} summary={summary} settings={settings}>
 
         {step.type === 'MAPPER' && step.enabled ? (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -170,7 +150,6 @@ export function TransformerStepEditor({
             </TextField>
           </Box>
         )}
-      </AccordionDetails>
-    </Accordion>
+    </ItemCard>
   );
 }

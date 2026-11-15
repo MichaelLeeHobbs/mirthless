@@ -5,18 +5,14 @@
 // Used by both source and destination filter sections.
 
 import { type ReactNode, type ChangeEvent } from 'react';
-import Accordion from '@mui/material/Accordion';
-import AccordionSummary from '@mui/material/AccordionSummary';
-import AccordionDetails from '@mui/material/AccordionDetails';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
-import Typography from '@mui/material/Typography';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { ScriptEditor } from '../../editors/ScriptEditor.js';
 import { ItemOrderActions } from './ItemOrderActions.js';
+import { ItemCard } from './ItemCard.js';
 import { FILTER_TRANSFORMER_SURFACE, type ScriptStage } from '../../editors/script-context.js';
 import type { FilterRuleFormValues } from './types.js';
 
@@ -44,34 +40,14 @@ export function FilterRuleEditor({
 }: FilterRuleEditorProps): ReactNode {
   const title = rule.name || `Rule ${String(index + 1)}`;
 
-  return (
-    <Accordion disableGutters>
-      <AccordionSummary
-        expandIcon={<ExpandMoreIcon />}
-        sx={{ '& .MuiAccordionSummary-content': { alignItems: 'center', gap: 1 } }}
-      >
-        <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>{title}</Typography>
-        <Typography
-          variant="caption"
-          sx={{
-            color: 'text.secondary',
-            mr: 1
-          }}>
-          {rule.type === 'JAVASCRIPT' ? `Script · ${rule.language === 'TYPESCRIPT' ? 'TypeScript' : 'JavaScript'}` : 'Rule Builder'}
-        </Typography>
-        {!rule.enabled ? (
-          <Typography
-            variant="caption"
-            sx={{
-              color: 'warning.main',
-              mr: 1
-            }}>
-            Disabled
-          </Typography>
-        ) : null}
-      </AccordionSummary>
-      <AccordionDetails>
-        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+  const summary = (
+    <>
+      {rule.type === 'JAVASCRIPT' ? `Script · ${rule.language === 'TYPESCRIPT' ? 'TypeScript' : 'JavaScript'}` : 'Rule Builder'}
+      {!rule.enabled ? <Box component="span" sx={{ color: 'warning.main', ml: 1 }}>Disabled</Box> : null}
+    </>
+  );
+  const settings = (
+        <>
           <TextField
             label="Name"
             value={rule.name}
@@ -117,7 +93,11 @@ export function FilterRuleEditor({
             label="Enabled"
           />
           <ItemOrderActions noun="rule" index={index} total={total} onMoveUp={onMoveUp} onMoveDown={onMoveDown} onRemove={onRemove} />
-        </Box>
+        </>
+  );
+
+  return (
+    <ItemCard title={title} summary={summary} settings={settings}>
 
         {rule.type === 'JAVASCRIPT' ? (
           <ScriptEditor
@@ -172,7 +152,6 @@ export function FilterRuleEditor({
             />
           </Box>
         )}
-      </AccordionDetails>
-    </Accordion>
+    </ItemCard>
   );
 }
