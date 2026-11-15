@@ -7,6 +7,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
 import { eq } from 'drizzle-orm';
+import { PERMISSIONS, type Permission } from '@galvaniflow/core-models';
 import { config } from '../config/index.js';
 import { db } from './db.js';
 import { users } from '../db/schema/index.js';
@@ -24,11 +25,11 @@ export interface SocketUserData {
 }
 
 /** Permission required to join each server-pushed room. */
-const ROOM_PERMISSIONS = {
-  channel: 'channels:read',
-  dashboard: 'channels:read',
-  logs: 'system:info',
-} as const;
+const ROOM_PERMISSIONS: Readonly<Record<'channel' | 'dashboard' | 'logs', Permission>> = {
+  channel: PERMISSIONS.CHANNELS_READ,
+  dashboard: PERMISSIONS.CHANNELS_READ,
+  logs: PERMISSIONS.SYSTEM_INFO,
+};
 
 /** How often connected sockets are re-validated against the database. */
 const REVALIDATE_INTERVAL_MS = 60_000;
@@ -37,7 +38,7 @@ let io: SocketIOServer | null = null;
 let revalidateTimer: ReturnType<typeof setInterval> | null = null;
 
 /** True when the authenticated socket holds the given `resource:action` permission. */
-function socketHasPermission(socket: { data: Record<string, unknown> }, permission: string): boolean {
+function socketHasPermission(socket: { data: Record<string, unknown> }, permission: Permission): boolean {
   const user = socket.data['user'] as SocketUserData | undefined;
   return user?.permissions.includes(permission) ?? false;
 }
@@ -90,7 +91,7 @@ export async function authMiddleware(
 }
 
 /** Permission a joined room requires, or null for rooms this server does not manage. */
-function roomPermission(room: string): string | null {
+function roomPermission(room: string): Permission | null {
   if (room === 'dashboard') return ROOM_PERMISSIONS.dashboard;
   if (room === 'logs') return ROOM_PERMISSIONS.logs;
   if (room.startsWith('channel:')) return ROOM_PERMISSIONS.channel;
