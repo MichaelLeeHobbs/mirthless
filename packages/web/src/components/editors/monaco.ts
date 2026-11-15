@@ -29,7 +29,7 @@ self.MonacoEnvironment = {
 loader.config({ monaco });
 
 // Show each suggestion's signature and documentation beside the list by default,
-// as the "Ctrl+Space twice" toggle would. Monaco keeps the toggle in its storage
+// as Monaco's details toggle would. Monaco keeps the toggle in its storage
 // service (scope PROFILE = 0, target USER = 0), which exists once an editor does.
 // The list opens 560px wide instead of Monaco's 430, so a code template's name
 // and signature fit on its row (Monaco restores this size each time it opens;
@@ -39,6 +39,10 @@ StandaloneServices.withServices(() => {
   storage.store('expandSuggestionDocs', true, 0, 0);
   storage.store('suggestWidget.size/vs.editor.ICodeEditor/false', JSON.stringify({ width: 560, height: 242 }), 0, 1);
 });
+
+// With the documentation open by default, Ctrl+Space while the list is open
+// would hide it (Monaco's toggle); a second Ctrl+Space is usually a habit, not a request.
+monaco.editor.addKeybindingRule({ keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.Space, command: '-toggleSuggestionDetails' });
 
 // Monaco breaks the signature in the documentation panel at any letter
 // ("message: s / tring"); break at spaces instead.

@@ -43,10 +43,10 @@ const CHANNEL_SCRIPTS: Readonly<Record<string, { readonly name: string; readonly
 };
 
 const GLOBAL_SCRIPTS = [
-  { key: 'deploy', name: 'Global deploy script', context: CODE_TEMPLATE_CONTEXT.GLOBAL_DEPLOY },
-  { key: 'undeploy', name: 'Global undeploy script', context: CODE_TEMPLATE_CONTEXT.GLOBAL_UNDEPLOY },
-  { key: 'preprocessor', name: 'Global preprocessor', context: CODE_TEMPLATE_CONTEXT.GLOBAL_PREPROCESSOR },
-  { key: 'postprocessor', name: 'Global postprocessor', context: CODE_TEMPLATE_CONTEXT.GLOBAL_POSTPROCESSOR },
+  { key: 'deploy', name: 'Global deploy script', context: CODE_TEMPLATE_CONTEXT.GLOBAL_DEPLOY, message: false },
+  { key: 'undeploy', name: 'Global undeploy script', context: CODE_TEMPLATE_CONTEXT.GLOBAL_UNDEPLOY, message: false },
+  { key: 'preprocessor', name: 'Global preprocessor', context: CODE_TEMPLATE_CONTEXT.GLOBAL_PREPROCESSOR, message: true },
+  { key: 'postprocessor', name: 'Global postprocessor', context: CODE_TEMPLATE_CONTEXT.GLOBAL_POSTPROCESSOR, message: true },
 ] as const;
 
 /** "the source" or `destination "To EHR"` for a filter or transformer's connector. */
@@ -89,14 +89,14 @@ export function typeScriptScripts(channel: ChannelDetail, globals: GlobalScripts
     if (!meta || !isTypeScript(s.language, s.script)) return [];
     const surface: ScriptSurface = meta.message
       ? { dataType: channel.inboundDataType, templateContext: meta.context }
-      : { templateContext: meta.context };
+      : { message: false, templateContext: meta.context };
     return [{ label: meta.name, code: s.script, surface }];
   });
   // Global scripts run for every channel, so the editor checks them with no
   // data type; deploy checks them the same way.
   const global = GLOBAL_SCRIPTS.flatMap((g): TypedScript[] =>
     (isTypeScript(globals.languages[g.key], globals[g.key])
-      ? [{ label: g.name, code: globals[g.key], surface: { templateContext: g.context } }]
+      ? [{ label: g.name, code: globals[g.key], surface: g.message ? { templateContext: g.context } : { message: false, templateContext: g.context } }]
       : []));
   return [...own, ...connectorScripts(channel), ...global];
 }

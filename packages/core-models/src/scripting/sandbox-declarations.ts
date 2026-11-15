@@ -79,9 +79,6 @@ interface X12MessageProxy {
 
 // ----- Global Variables -----
 
-/** Original inbound raw data (string or Buffer). */
-declare var rawData: string;
-
 /** Source system metadata. Propagates through the pipeline. */
 declare var sourceMap: Record<string, unknown>;
 
@@ -297,6 +294,11 @@ export interface ScriptSurface {
    * the type of msg and tmp. Omit for scripts with no message (deploy, undeploy).
    */
   readonly dataType?: string | undefined;
+  /**
+   * False for scripts that run without a message (deploy, undeploy): msg, tmp
+   * and rawData are not declared, since the engine passes them empty.
+   */
+  readonly message?: boolean | undefined;
   /** True for source filters and transformers, which can choose destinations. */
   readonly destinationSet?: boolean | undefined;
   /**
@@ -309,7 +311,7 @@ export interface ScriptSurface {
 
 /** A stable key for a surface, so callers can skip re-registering the same one. */
 export function scriptSurfaceKey(surface: ScriptSurface): string {
-  return `${surface.dataType ?? '-'}|${surface.destinationSet === true ? 'ds' : '-'}|${surface.templateContext ?? '-'}`;
+  return `${surface.message === false ? 'nomsg' : surface.dataType ?? '-'}|${surface.destinationSet === true ? 'ds' : '-'}|${surface.templateContext ?? '-'}`;
 }
 
 /** The parts of a code template that decide whether and how a script sees it. */
@@ -334,16 +336,20 @@ export function templateDeclarations(templates: readonly TemplateSource[], surfa
   const context = surface.templateContext;
   return templates
     .filter((t) => t.type === 'FUNCTION' && t.contexts.includes(context))
-    .map((t) => t.code)
+    // TSDoc's "@param name - text" shows in completion as "name — - text".
+    .map((t) => t.code.replace(/(@param [A-Za-z_$][\w$]*) - /g, '$1 '))
     .join('\n');
 }
 
 /** The TypeScript declarations a script sees on this surface. */
 export function scriptDeclarations(surface: ScriptSurface): string {
+  if (surface.message === false) return SANDBOX_BASE;
   const message = surface.dataType === undefined
     ? { type: 'unknown', doc: 'Its type depends on the channel the script runs for, so check it before use.' }
     : MESSAGE_TYPES[surface.dataType] ?? TEXT_MESSAGE;
   const messageVars = `
+/** Original inbound raw data. */
+declare var rawData: string;
 /** ${message.doc} */
 declare var msg: ${message.type};
 /** The outbound message being built. ${message.doc} */

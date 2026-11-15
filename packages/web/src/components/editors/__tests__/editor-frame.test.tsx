@@ -9,7 +9,7 @@ import { lightTheme } from '../../../styles/theme.js';
 import { ProblemStatus } from '../ProblemStatus.js';
 import { ScriptEditor, AUTO_HEIGHT, autoHeight } from '../ScriptEditor.js';
 import { TextEditor } from '../TextEditor.js';
-import { problemKind, suggestRoom, type Problem } from '../editor-hooks.js';
+import { problemKind, settledProblems, suggestRoom, type Problem } from '../editor-hooks.js';
 
 afterEach(() => { cleanup(); });
 
@@ -52,7 +52,13 @@ describe('ProblemStatus', () => {
       { severity: 'error', kind: 'syntax', message: "',' expected.", line: i + 1, column: 1 }
     ));
     wrap(<ProblemStatus editor={null} problems={problems} />);
-    expect(screen.getByText('1 syntax error (7 more after it)')).toBeTruthy();
+    expect(screen.getByText('1 syntax error (7 more after it), 0 warnings')).toBeTruthy();
+  });
+
+  it('always counts warnings beside errors, so none is taken for unchecked', () => {
+    const problems: Problem[] = [{ severity: 'error', kind: 'type', message: 'x', line: 1, column: 1 }];
+    wrap(<ProblemStatus editor={null} problems={problems} />);
+    expect(screen.getByText('1 type error, 0 warnings')).toBeTruthy();
   });
 
   it('jumps the editor to the first problem when clicked', () => {
@@ -79,6 +85,20 @@ describe('autoHeight', () => {
   });
 });
 
+describe('settledProblems', () => {
+  const typing: Problem = { severity: 'error', kind: 'syntax', message: 'Identifier expected.', line: 2, column: 8 };
+  const other: Problem = { severity: 'error', kind: 'type', message: 'x', line: 1, column: 3 };
+
+  it('leaves out the syntax error on the token being completed while the list is open', () => {
+    expect(settledProblems([other, typing], { line: 2, column: 8 }, true)).toEqual([other]);
+  });
+
+  it('keeps it once the list closes, and keeps problems elsewhere', () => {
+    expect(settledProblems([other, typing], { line: 2, column: 8 }, false)).toEqual([other, typing]);
+    expect(settledProblems([other, typing], { line: 3, column: 1 }, true)).toEqual([other, typing]);
+  });
+});
+
 describe('suggestRoom', () => {
   it('is the open completion list height plus a margin, and nothing when it is closed', () => {
     const host = document.createElement('div');
@@ -90,6 +110,18 @@ describe('suggestRoom', () => {
     expect(suggestRoom(host)).toBe(0);
     list.classList.add('visible');
     expect(suggestRoom(host)).toBe(188);
+  });
+
+  it('makes room for the documentation panel when it is taller than the list', () => {
+    const host = document.createElement('div');
+    const list = document.createElement('div');
+    list.className = 'suggest-widget visible';
+    Object.defineProperty(list, 'offsetHeight', { value: 30 });
+    const docs = document.createElement('div');
+    docs.className = 'suggest-details-container';
+    Object.defineProperty(docs, 'offsetHeight', { value: 120 });
+    host.append(list, docs);
+    expect(suggestRoom(host)).toBe(128);
   });
 });
 
@@ -151,6 +183,11 @@ describe('TextEditor chrome', () => {
     expect(screen.getByText('3 lines, 22 characters')).toBeTruthy();
     expect(screen.getByText('HL7 v2')).toBeTruthy();
     expect(screen.getByText('Read only')).toBeTruthy();
+  });
+
+  it('labels its copy action in visible text', () => {
+    wrap(<TextEditor label="Message" value="MSH|^~\\&|" language="hl7" />);
+    expect(screen.getByRole('button', { name: 'Copy to clipboard' }).textContent).toBe('Copy');
   });
 
   it('is editable, with no read-only badge, when the host passes onChange', () => {

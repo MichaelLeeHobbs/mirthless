@@ -76,10 +76,25 @@ export function useCursor(editor: CodeEditor | null): { readonly line: number; r
   return pos;
 }
 
-/** Height an editor needs to hold the open completion list below the cursor line, or 0 when none is open. */
+/**
+ * The problems to report while the user may be mid-word. With the completion
+ * list open, `logger.` is half typed, not wrong: the parser's syntax error at
+ * the cursor is left out until the list closes. Everything else is kept.
+ */
+export function settledProblems(
+  problems: readonly Problem[], cursor: { readonly line: number; readonly column: number }, completing: boolean,
+): readonly Problem[] {
+  if (!completing) return problems;
+  return problems.filter((p) => !(p.kind === 'syntax' && p.line === cursor.line && Math.abs(p.column - cursor.column) <= 1));
+}
+
+/** Height an editor needs to hold the open completion list and its docs below the cursor line, or 0 when none is open. */
 export function suggestRoom(host: HTMLElement): number {
   const list = host.querySelector<HTMLElement>('.suggest-widget.visible');
-  return list ? list.offsetHeight + 8 : 0;
+  if (!list) return 0;
+  // The documentation panel opens beside the list and can be the taller of the two.
+  const docs = host.querySelector<HTMLElement>('.suggest-details-container');
+  return Math.max(list.offsetHeight, docs?.offsetHeight ?? 0) + 8;
 }
 
 /**
@@ -88,16 +103,16 @@ export function suggestRoom(host: HTMLElement): number {
  * Completion renders in the shared popup host, so this watches the host and
  * answers only for the editor that has focus.
  */
-export function useSuggestRoom(editor: CodeEditor | null, enabled: boolean): number {
+export function useSuggestRoom(editor: CodeEditor | null): number {
   const [room, setRoom] = useState(0);
   useEffect(() => {
-    if (!editor || !enabled) return undefined;
+    if (!editor) return undefined;
     const update = (): void => { setRoom(editor.hasTextFocus() ? suggestRoom(overflowWidgetsHost) : 0); };
     const observer = new MutationObserver(update);
     observer.observe(overflowWidgetsHost, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
     const blur = editor.onDidBlurEditorText(() => { setRoom(0); });
     return () => { observer.disconnect(); blur.dispose(); };
-  }, [editor, enabled]);
+  }, [editor]);
   return room;
 }
 

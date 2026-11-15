@@ -48,12 +48,16 @@ describe('typeScriptScripts', () => {
         steps: [{ id: 's', sequenceNumber: 0, enabled: true, name: null, type: 'JAVASCRIPT', script: 'x', language: 'TYPESCRIPT', sourceField: null, targetField: null, defaultValue: null, mapping: null }],
       }],
     });
-    const globals = { ...JS_GLOBALS, languages: { ...JS_GLOBALS.languages, preprocessor: 'TYPESCRIPT' as const } };
+    const globals = {
+      ...JS_GLOBALS, deploy: "logger.info('up');",
+      languages: { ...JS_GLOBALS.languages, preprocessor: 'TYPESCRIPT' as const, deploy: 'TYPESCRIPT' as const },
+    };
     expect(typeScriptScripts(c, globals).map((s) => [s.label, s.surface])).toEqual([
-      ['Channel deploy script', { templateContext: 'CHANNEL_DEPLOY' }],
+      ['Channel deploy script', { message: false, templateContext: 'CHANNEL_DEPLOY' }],
       ['Channel preprocessor', { dataType: 'HL7V2', templateContext: 'CHANNEL_PREPROCESSOR' }],
       ['Destination "To EHR" transformer step "Step 1"', { dataType: 'HL7V2', templateContext: 'DESTINATION_FILTER_TRANSFORMER' }],
       ['Response transformer of destination "To EHR"', { dataType: 'HL7V2', templateContext: 'DESTINATION_RESPONSE_TRANSFORMER' }],
+      ['Global deploy script', { message: false, templateContext: 'GLOBAL_DEPLOY' }],
       ['Global preprocessor', { templateContext: 'GLOBAL_PREPROCESSOR' }],
     ]);
   });

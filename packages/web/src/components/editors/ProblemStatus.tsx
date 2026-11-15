@@ -35,7 +35,8 @@ export function problemSummary(problems: readonly Problem[]): string {
     syntax > 1 ? `1 syntax error (${String(syntax - 1)} more after it)` : null,
     syntax === 1 ? '1 syntax error' : null,
     type ? plural(type, 'type error') : null,
-    warnings ? plural(warnings, 'warning') : null,
+    // Always counted beside errors, so "no warnings" is said rather than implied.
+    plural(warnings, 'warning'),
   ].filter(Boolean).join(', ');
 }
 

@@ -20,7 +20,7 @@ import { useScriptDataType, useScriptTestSample } from './script-context.js';
 import { useCodeTemplates } from '../../hooks/use-code-templates.js';
 import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
-import { useCursor, useEditorTheme, useProblems, useSuggestRoom } from './editor-hooks.js';
+import { settledProblems, useCursor, useEditorTheme, useProblems, useSuggestRoom } from './editor-hooks.js';
 import { EditorToolbarButton } from './EditorToolbarButton.js';
 import { ProblemStatus } from './ProblemStatus.js';
 import { ScriptTestPanel } from './ScriptTestPanel.js';
@@ -71,7 +71,7 @@ export interface ScriptEditorProps {
    * destinationSet. Set `message: false` for scripts that run without a message
    * (deploy, undeploy); otherwise msg is typed from the channel's data type.
    */
-  readonly surface?: Omit<ScriptSurface, 'dataType'> & { readonly message?: boolean };
+  readonly surface?: Omit<ScriptSurface, 'dataType'>;
   /**
    * How the pipeline reads this script, which turns on the Run button inside a
    * channel: filter (accepted or filtered), transformer (the changed message) or
@@ -100,6 +100,7 @@ export function ScriptEditor({
   const { data: templates } = useCodeTemplates();
   const surface = useMemo((): ScriptSurface => ({
     dataType: surfaceProp?.message === false ? undefined : channelDataType,
+    message: surfaceProp?.message,
     destinationSet: surfaceProp?.destinationSet,
     templateContext: surfaceProp?.templateContext,
   }), [channelDataType, surfaceProp?.message, surfaceProp?.destinationSet, surfaceProp?.templateContext]);
@@ -110,7 +111,8 @@ export function ScriptEditor({
   const problems = useProblems(editor);
   const cursor = useCursor(editor);
   const [contentHeight, setContentHeight] = useState<number>(AUTO_HEIGHT.min);
-  const suggestRoomPx = useSuggestRoom(editor, height === 'auto');
+  // Room the open completion list needs; above zero also means the user is mid-word.
+  const suggestRoomPx = useSuggestRoom(editor);
 
   useEffect(() => {
     if (!editor || height !== 'auto') return undefined;
@@ -232,7 +234,7 @@ export function ScriptEditor({
       ) : undefined}
       status={
         <>
-          <ProblemStatus editor={editor} problems={problems} />
+          <ProblemStatus editor={editor} problems={settledProblems(problems, cursor, suggestRoomPx > 0)} />
           <Box sx={{ flexGrow: 1 }} />
           <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Ln {cursor.line}, Col {cursor.column}</Box>
           <Tooltip title={language === 'TYPESCRIPT'

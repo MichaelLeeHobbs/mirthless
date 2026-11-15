@@ -14,7 +14,6 @@ import { EditorToolbarButton } from './EditorToolbarButton.js';
 /** Shortcut, then what it does. Ctrl means Cmd on a Mac. */
 export const EDITOR_SHORTCUTS: ReadonlyArray<readonly [string, string]> = [
   ['Ctrl+Space', 'Suggest completions'],
-  ['Ctrl+Space twice', 'Show documentation beside suggestions'],
   ['F8 / Shift+F8', 'Go to the next / previous problem'],
   ['Shift+Alt+F', 'Format the script'],
   ['Ctrl+/', 'Comment or uncomment the line'],

@@ -66,6 +66,12 @@ describe('scriptDeclarations', () => {
     expect(check("msg.get('PID.3');", {})).toEqual(["/script.ts: 'msg' is of type 'unknown'."]);
   });
 
+  it('declares no msg, tmp or rawData for a script that runs without a message (deploy, undeploy)', () => {
+    expect(check('parseHL7(rawData);', { message: false })).toEqual(["/script.ts: Cannot find name 'rawData'."]);
+    expect(check("msg.get('PID.3');", { message: false })).toEqual(["/script.ts: Cannot find name 'msg'."]);
+    expect(check("logger.info('deployed'); channelMap['x'] = 1;", { message: false })).toEqual([]);
+  });
+
   it('declares destinationSet only for source filters and transformers', () => {
     expect(check("destinationSet.remove('To EHR');", { dataType: 'HL7V2', destinationSet: true })).toEqual([]);
     expect(check("destinationSet.remove('To EHR');", { dataType: 'HL7V2' })).toEqual(["/script.ts: Cannot find name 'destinationSet'."]);
@@ -101,6 +107,11 @@ describe('templateDeclarations', () => {
     ]);
   });
 
+  it('drops the hyphen after a template @param name, which completion shows as "— -"', () => {
+    const doc: TemplateSource = { ...getPatientName, code: '/**\n * @param raw - the raw message\n */\nfunction f(raw: string): string { return raw; }' };
+    expect(templateDeclarations([doc], filter)).toContain('@param raw the raw message');
+  });
+
   it('hides templates not enabled for the script context, as the engine does', () => {
     const deploy: ScriptSurface = { templateContext: 'CHANNEL_DEPLOY' };
     expect(check('getPatientName(rawData);', deploy, [getPatientName])).toEqual(["/script.ts: Cannot find name 'getPatientName'."]);
@@ -117,7 +128,8 @@ describe('scriptSurfaceKey', () => {
     const keys = new Set([
       scriptSurfaceKey({}), scriptSurfaceKey({ dataType: 'HL7V2' }),
       scriptSurfaceKey({ dataType: 'HL7V2', destinationSet: true }), scriptSurfaceKey({ dataType: 'JSON' }),
+      scriptSurfaceKey({ message: false }),
     ]);
-    expect(keys.size).toBe(4);
+    expect(keys.size).toBe(5);
   });
 });

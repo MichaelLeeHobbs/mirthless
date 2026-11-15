@@ -7,13 +7,12 @@
 import { type ReactNode, useState } from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
-import IconButton from '@mui/material/IconButton';
-import Tooltip from '@mui/material/Tooltip';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import Editor from '@monaco-editor/react';
 import type { monaco } from './monaco.js';
 import { EditorFrame } from './EditorFrame.js';
+import { EditorToolbarButton } from './EditorToolbarButton.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
 import { useCursor, useEditorTheme } from './editor-hooks.js';
 
@@ -64,11 +63,14 @@ export function TextEditor({
       end={
         <>
           {readOnly ? <Chip size="small" variant="outlined" label="Read only" /> : null}
-          <Tooltip title={copied ? 'Copied' : 'Copy to clipboard'}>
-            <IconButton size="small" aria-label="Copy to clipboard" onClick={copy} disabled={value === ''}>
-              {copied ? <CheckIcon fontSize="small" /> : <ContentCopyIcon fontSize="small" />}
-            </IconButton>
-          </Tooltip>
+          <EditorToolbarButton
+            icon={copied ? <CheckIcon fontSize="small" /> : <ContentCopyIcon fontSize="small" />}
+            label={copied ? 'Copied' : 'Copy'}
+            ariaLabel="Copy to clipboard"
+            tooltip={copied ? 'Copied' : 'Copy to clipboard'}
+            disabled={value === ''}
+            onClick={copy}
+          />
         </>
       }
       status={
