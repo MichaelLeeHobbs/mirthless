@@ -51,6 +51,9 @@ export interface SmtpAuth {
   readonly pass: string;
 }
 
+/** The connection fields a nodemailer transport needs; `SmtpDispatcherConfig` satisfies it. */
+export type SmtpTransportConfig = Pick<SmtpDispatcherConfig, 'host' | 'port' | 'secure' | 'requireTLS' | 'auth'>;
+
 // ----- Transport abstraction (for testability) -----
 
 /** Abstraction over nodemailer transporter for testability. */
@@ -237,12 +240,12 @@ export class SmtpDispatcher implements DestinationConnectorRuntime {
 // ----- Default transport factory (nodemailer) -----
 
 /**
- * Build nodemailer transport options from connector config.
+ * Build nodemailer transport options from SMTP connection settings.
  * Auth is included ONLY when credentials are present — never an empty auth
  * object — and requireTLS is always forwarded so credentials are not sent
  * over a plaintext connection.
  */
-export function buildNodemailerOptions(config: SmtpDispatcherConfig): Record<string, unknown> {
+export function buildNodemailerOptions(config: SmtpTransportConfig): Record<string, unknown> {
   const hasCreds = !!config.auth && !!config.auth.user;
   return {
     host: config.host,
@@ -254,7 +257,7 @@ export function buildNodemailerOptions(config: SmtpDispatcherConfig): Record<str
 }
 
 /** Create a nodemailer-based transport. Requires nodemailer to be installed. */
-export function createNodemailerTransport(config: SmtpDispatcherConfig): SmtpTransport {
+export function createNodemailerTransport(config: SmtpTransportConfig): SmtpTransport {
   const nodemailer = require('nodemailer') as { createTransport: (opts: Record<string, unknown>) => { sendMail: (opts: SmtpMailOptions) => Promise<SmtpSendResult>; close: () => void } };
   const transporter = nodemailer.createTransport(buildNodemailerOptions(config));
   return {
