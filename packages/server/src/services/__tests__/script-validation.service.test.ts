@@ -1,5 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import { ScriptValidationService } from '../script-validation.service.js';
+import { clearScriptCache, scriptCacheSize } from '@galvaniflow/engine';
+import { ScriptValidationService, assertScriptCompiles } from '../script-validation.service.js';
+
+// Deploy compiles every channel's scripts through one bounded cache. A syntax
+// check is a one-off, so it must not take a slot (and evict a deployed script).
+describe('syntax checks leave the compiled-script cache alone', () => {
+  it('validate() adds no cache entry', async () => {
+    clearScriptCache();
+    await ScriptValidationService.validate('return 1;', 'javascript');
+    expect(scriptCacheSize()).toBe(0);
+  });
+
+  it('assertScriptCompiles() adds no cache entry', async () => {
+    clearScriptCache();
+    await assertScriptCompiles('return 1;', 'Code template "X"');
+    expect(scriptCacheSize()).toBe(0);
+  });
+
+  it('assertScriptCompiles() still refuses a script that does not compile', async () => {
+    await expect(assertScriptCompiles('const = ;', 'Code template "X"')).rejects.toThrow(
+      'Code template "X" does not compile and was not saved',
+    );
+  });
+});
 
 describe('ScriptValidationService', () => {
   describe('validate', () => {
