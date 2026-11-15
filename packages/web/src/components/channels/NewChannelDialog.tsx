@@ -16,25 +16,10 @@ import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import Stack from '@mui/material/Stack';
 import CircularProgress from '@mui/material/CircularProgress';
+import { SOURCE_CONNECTOR_TYPES } from '@galvaniflow/core-models';
 import { useCreateChannel } from '../../hooks/use-channels.js';
 
 const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR', 'X12'] as const;
-
-// Must match the source factories in packages/connectors/src/registry.ts
-// (FHIR is destination-only; EMAIL/IMAP is a valid source).
-const SOURCE_CONNECTOR_TYPES = [
-  'TCP_MLLP',
-  'HTTP',
-  'FILE',
-  'DATABASE',
-  'JAVASCRIPT',
-  'CHANNEL',
-  'DICOM',
-  'EMAIL',
-  'SFTP',
-  'KAFKA',
-  'AMQP',
-] as const;
 
 interface NewChannelFormData {
   readonly name: string;

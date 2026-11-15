@@ -3,34 +3,14 @@
 // ===========================================
 
 import { z } from 'zod/v4';
+import { CONNECTOR_TYPES } from '../constants.js';
 import { filterInputSchema } from './filter.schema.js';
 import { transformerInputSchema } from './transformer.schema.js';
 
 // ----- Shared Enums -----
 
-// Union of all source and destination connector types. Source-valid:
-// TCP_MLLP, HTTP, FILE, DATABASE, JAVASCRIPT, CHANNEL, DICOM, EMAIL.
-// Destination-valid: TCP_MLLP, HTTP, FILE, DATABASE, JAVASCRIPT, SMTP, CHANNEL,
-// FHIR, DICOM. The UI dropdowns enforce the source/destination split; the
-// connector registry (packages/connectors) is the runtime source of truth.
-// SMTP and EMAIL were previously absent — an SMTP destination or EMAIL source
-// therefore failed channel validation despite the connectors existing.
-export const CONNECTOR_TYPES = [
-  'TCP_MLLP',
-  'HTTP',
-  'FILE',
-  'DATABASE',
-  'JAVASCRIPT',
-  'CHANNEL',
-  'DICOM',
-  'FHIR',
-  'SMTP',
-  'EMAIL',
-  'SFTP',
-  'KAFKA',
-  'AMQP',
-] as const;
-
+// Every connector type, in either direction (see SOURCE_CONNECTOR_TYPES and
+// DESTINATION_CONNECTOR_TYPES in constants.ts).
 export const connectorTypeSchema = z.enum(CONNECTOR_TYPES);
 
 // ----- Channel Properties -----

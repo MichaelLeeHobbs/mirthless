@@ -15,11 +15,13 @@
 // Prints each file it wrote, plus any page exceptions or console errors, and
 // exits 1 if any page threw, so a broken render is not mistaken for a picture.
 
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from '@playwright/test';
+// The built package, which `pnpm dev:web` already needs.
+import { PERMISSIONS } from '../../packages/core-models/dist/index.js';
 import { route } from './fixture.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -88,8 +90,7 @@ const { values: opts } = parseArgs({
 
 /** Every permission string the UI knows, so the fake user sees every page. */
 function allPermissions() {
-  const src = readFileSync(path.join(ROOT, 'packages/web/src/lib/permissions.ts'), 'utf8');
-  return [...src.matchAll(/:\s*'([a-z_]+:[a-z_]+)'/g)].map((m) => m[1]);
+  return Object.values(PERMISSIONS);
 }
 
 const AUTH = {

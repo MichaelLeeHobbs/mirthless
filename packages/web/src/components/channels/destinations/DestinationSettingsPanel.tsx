@@ -11,6 +11,7 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
+import { DESTINATION_CONNECTOR_TYPES, type DestinationConnectorType } from '@galvaniflow/core-models';
 import type { DestinationFormValues } from './types.js';
 import { getDestDefaultProperties } from './connector-defaults.js';
 import { DestinationConnectorSettings } from './DestinationConnectorSettings.js';
@@ -19,21 +20,21 @@ import { DestinationFilterSection } from './DestinationFilterSection.js';
 import { DestinationTransformerSection } from './DestinationTransformerSection.js';
 import { ResponseTransformerSection } from './ResponseTransformerSection.js';
 
-// Must match the destination factories in packages/connectors/src/registry.ts.
-const CONNECTOR_TYPES = [
-  { value: 'TCP_MLLP', label: 'TCP / MLLP' },
-  { value: 'HTTP', label: 'HTTP' },
-  { value: 'FILE', label: 'File' },
-  { value: 'DATABASE', label: 'Database' },
-  { value: 'JAVASCRIPT', label: 'JavaScript' },
-  { value: 'SMTP', label: 'SMTP (Email)' },
-  { value: 'CHANNEL', label: 'Channel' },
-  { value: 'FHIR', label: 'FHIR' },
-  { value: 'DICOM', label: 'DICOM' },
-  { value: 'SFTP', label: 'SFTP' },
-  { value: 'KAFKA', label: 'Kafka' },
-  { value: 'AMQP', label: 'AMQP (RabbitMQ)' },
-] as const;
+/** Dropdown label per destination type; the type list itself comes from core-models. */
+const DESTINATION_TYPE_LABELS: Readonly<Record<DestinationConnectorType, string>> = {
+  TCP_MLLP: 'TCP / MLLP',
+  HTTP: 'HTTP',
+  FILE: 'File',
+  DATABASE: 'Database',
+  JAVASCRIPT: 'JavaScript',
+  SMTP: 'SMTP (Email)',
+  CHANNEL: 'Channel',
+  FHIR: 'FHIR',
+  DICOM: 'DICOM',
+  SFTP: 'SFTP',
+  KAFKA: 'Kafka',
+  AMQP: 'AMQP (RabbitMQ)',
+};
 
 interface DestinationSettingsPanelProps {
   readonly destination: DestinationFormValues;
@@ -73,8 +74,8 @@ export function DestinationSettingsPanel({ destination, onChange }: DestinationS
           select
           sx={{ minWidth: 200 }}
         >
-          {CONNECTOR_TYPES.map((ct) => (
-            <MenuItem key={ct.value} value={ct.value}>{ct.label}</MenuItem>
+          {DESTINATION_CONNECTOR_TYPES.map((type) => (
+            <MenuItem key={type} value={type}>{DESTINATION_TYPE_LABELS[type]}</MenuItem>
           ))}
         </TextField>
       </Box>

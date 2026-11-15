@@ -32,6 +32,7 @@ import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
+import type { UserRole } from '@galvaniflow/core-models';
 import type { UserSummary } from '../api/client.js';
 
 export function UsersPage(): ReactNode {
@@ -106,7 +107,7 @@ export function UsersPage(): ReactNode {
         password: data.password,
         firstName: data.firstName || null,
         lastName: data.lastName || null,
-        role: data.role as 'admin' | 'deployer' | 'developer' | 'viewer',
+        role: data.role as UserRole,
       }, {
         onSuccess: () => { handleClose(); },
         onError: (err) => { setDialogError(err.message); },

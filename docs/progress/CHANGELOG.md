@@ -21,7 +21,17 @@ Second batch of the approved triage, built on batch 1:
 - **Server mail (G0016):** the server builds its nodemailer transport with the SMTP connector's `createNodemailerTransport`, which now takes connection fields only (`SmtpTransportConfig`). Server mail sends the same options.
 - **Backup restore (G0110):** the ten section restores share one loop, one row helper and one map upsert. 56 new tests pinned every section's counts, error texts and rows before the refactor. The quirks they pin are unchanged: a failed config/global-map lookup counts as created, a null map value is stored as '', and an existing pair is skipped even in OVERWRITE.
 - **Mirth importer (G0074.R):** one `stringList` reader for `<string>` lists. An imported filter rule with no values now stores `[]` instead of null; the engine and the editor treat both the same. The brief's suspected bug (a single numeric value dropped) does not happen, because the parser keeps tag values as text; the test stays as a regression check.
-- Not run: `pnpm test:scenarios` (needs Postgres and the test containers) and any real IMAP/SFTP server.
+- `pnpm test:scenarios` 60/60 (26/26) on bfeb452, the same as the last recorded score, run by the PR review session. Not run: any real IMAP/SFTP server.
+
+## 2026-11-15 — One list per fact in core-models, docs slice 0 (branch `refactor/core-models-single-lists`)
+
+The first slice of the docs restructure (#116): before the docs can be checked against the code, each fact needs one home. A refactor with no behaviour change (D-268).
+
+- **Connector types:** `SOURCE_CONNECTOR_TYPES`, `DESTINATION_CONNECTOR_TYPES` and `CONNECTOR_TYPES` in core-models replace seven hand-written lists (three schemas, three web components, and a dead `CONNECTOR_TYPE` without SFTP). The registry's maps are keyed by those types, and `registry-types.test.ts` checks every listed type has a factory.
+- **Permissions and roles:** `PERMISSIONS` and `Permission` move to core-models. The server seed derives its rows from them, the web file re-exports them under its old names, and roles everywhere use `USER_ROLE`. The seed and role code share one `permissionRow()` split.
+- **Typed checks:** `requirePermission`, `requireAllPermissions` and the socket room map take `Permission`.
+- **`pnpm shots`** read permissions by scraping the web file, which broke when it became a re-export; it imports them from core-models now.
+- **Found on the way:** the engine sandbox tests and three server engine tests depend on wall-clock timing and fail on a slower Windows machine (#125). An E2E spec fails intermittently with ECONNRESET (#126). Neither touches this branch's code.
 
 ## 2026-11-15 — Reinvention copy groups, batch 1 (branch `batch-2026-11-15-reinvention-1`)
 
