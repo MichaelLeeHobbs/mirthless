@@ -11,6 +11,7 @@ import {
   type CreateChannelInput,
   type UpdateChannelInput,
   type ChannelListQuery,
+  type DestinationConnectorType,
 } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -401,7 +402,7 @@ function buildCloneDestinations(source: ChannelDetail): CreateChannelInput['dest
   return source.destinations.map((d) => ({
     name: d.name,
     enabled: d.enabled,
-    connectorType: d.connectorType as CreateChannelInput['sourceConnectorType'],
+    connectorType: d.connectorType as DestinationConnectorType,
     properties: d.properties,
     queueMode: d.queueMode as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
     retryCount: d.retryCount,
