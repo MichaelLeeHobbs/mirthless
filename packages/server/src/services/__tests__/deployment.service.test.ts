@@ -60,6 +60,17 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
+// Deploy type-checks TypeScript scripts with the global scripts and code
+// templates; these read the database, so they are stubbed here.
+const NO_GLOBAL_SCRIPTS = {
+  deploy: '', undeploy: '', preprocessor: '', postprocessor: '',
+  languages: { deploy: 'JAVASCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' },
+};
+const mockGlobalScripts = vi.fn().mockResolvedValue({ ok: true, value: NO_GLOBAL_SCRIPTS, error: null });
+vi.mock('../global-script.service.js', () => ({ GlobalScriptService: { getAll: mockGlobalScripts } }));
+const mockTemplates = vi.fn().mockResolvedValue({ ok: true, value: [], error: null });
+vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplatesForChannel: mockTemplates } }));
+
 // Must import after mocks
 const { DeploymentService } = await import('../deployment.service.js');
 
@@ -76,7 +87,24 @@ const CHANNEL_DETAIL = {
   inboundDataType: 'HL7V2',
   destinations: [],
   scripts: [],
+  filters: [],
+  transformers: [],
 };
+
+/** The channel with one source transformer step written in TypeScript. */
+function withTypeScriptStep(script: string): typeof CHANNEL_DETAIL {
+  return {
+    ...CHANNEL_DETAIL,
+    transformers: [{
+      id: 't1', connectorId: null, inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
+      inboundProperties: {}, outboundProperties: {}, inboundTemplate: null, outboundTemplate: null,
+      steps: [{
+        id: 's1', sequenceNumber: 0, enabled: true, name: 'Normalize MRN', type: 'JAVASCRIPT', script,
+        language: 'TYPESCRIPT', sourceField: null, targetField: null, defaultValue: null, mapping: null,
+      }],
+    }],
+  } as unknown as typeof CHANNEL_DETAIL;
+}
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
@@ -437,6 +465,64 @@ describe('DeploymentService', () => {
       expect(result.ok).toBe(true);
       expect(mockEngine.undeploy).not.toHaveBeenCalled();
       expect(mockEngine.deploy).toHaveBeenCalledWith(CHANNEL_DETAIL);
+    });
+
+    it('leaves a running channel untouched when a saved TypeScript script has type errors', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(withTypeScriptStep("const n: number = '1';")));
+      mockRuntime.getState.mockReturnValue('STARTED');
+      deployedChannels.set(CHANNEL_ID, { channelId: CHANNEL_ID, runtime: mockRuntime, queueConsumers: [], recoverOnce: async () => {}, resetClaimsOnce: async () => {} });
+
+      const result = await DeploymentService.redeploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      expect(mockRuntime.stop).not.toHaveBeenCalled();
+      expect(mockEngine.undeploy).not.toHaveBeenCalled();
+      expect(deployedChannels.has(CHANNEL_ID)).toBe(true);
+    });
+  });
+
+  describe('TypeScript type check', () => {
+    it('refuses a deploy whose TypeScript step has a type error, naming the step and line', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(withTypeScriptStep("const mrn = msg.get('PID.3');\nconst n: number = mrn;")));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'INVALID_INPUT');
+      expect(result.error.message).toContain('"Test Channel" was not deployed: a TypeScript script has type errors.');
+      expect(result.error.message).toContain(
+        "- Source transformer step \"Normalize MRN\", line 2: Type 'string | undefined' is not assignable to type 'number'.",
+      );
+      expect(mockEngine.deploy).not.toHaveBeenCalled();
+    });
+
+    it('deploys a TypeScript step that type-checks', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(withTypeScriptStep("const mrn: string | undefined = msg.get('PID.3');")));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+      expect(mockEngine.deploy).toHaveBeenCalled();
+    });
+
+    it('never type-checks a JavaScript step', async () => {
+      const js = withTypeScriptStep("const n = 1; n.nope.deeper();");
+      (js as unknown as { transformers: Array<{ steps: Array<{ language: string }> }> }).transformers[0]!.steps[0]!.language = 'JAVASCRIPT';
+      mockChannelService.getById.mockResolvedValue(ok(js));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('still deploys at startup, so a channel that was running comes back after a restart', async () => {
+      mockChannelService.getById.mockResolvedValue(ok(withTypeScriptStep("const n: number = '1';")));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID, undefined, { typeCheck: false });
+
+      expect(result.ok).toBe(true);
+      expect(mockEngine.deploy).toHaveBeenCalled();
     });
   });
 
