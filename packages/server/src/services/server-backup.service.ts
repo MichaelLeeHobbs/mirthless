@@ -274,7 +274,7 @@ export class ServerBackupService {
       }
 
       sections.push(await restoreAlerts(backup.alerts, collisionMode));
-      sections.push(await restoreChannelDependencies(backup.channelDependencies, collisionMode));
+      sections.push(await restoreChannelDependencies(backup.channelDependencies));
       sections.push(await restoreConfigMap(backup.configMap, collisionMode));
       sections.push(await restoreGlobalMap(backup.globalMap, collisionMode));
       sections.push(await restoreGroupMemberships(backup.groupMemberships));
@@ -337,168 +337,157 @@ async function restoreSettings(
   return { section: 'settings', created, updated, skipped, errors };
 }
 
-async function restoreTags(
-  items: ServerBackup['tags'],
-  mode: BackupCollisionMode,
+/** What restoring one backup item did; each value is a count in the section result. */
+type RestoreOutcome = 'created' | 'updated' | 'skipped';
+
+/**
+ * Restore `items` one at a time with `restoreOne` and count the outcomes. A
+ * thrown error is recorded as `<label>: <message>` and the next item still runs.
+ */
+async function restoreEach<T>(
+  section: string,
+  items: readonly T[],
+  label: (item: T) => string,
+  restoreOne: (item: T) => Promise<RestoreOutcome>,
 ): Promise<RestoreSectionResult> {
-  let created = 0; let updated = 0; let skipped = 0;
+  const counts = { created: 0, updated: 0, skipped: 0 };
   const errors: string[] = [];
 
   for (const item of items) {
     try {
-      const [existing] = await db
-        .select({ id: channelTags.id })
-        .from(channelTags)
-        .where(eq(channelTags.id, item.id));
-
-      if (existing) {
-        if (mode === 'SKIP') { skipped++; continue; }
-        await db.update(channelTags).set({ name: item.name, color: item.color }).where(eq(channelTags.id, item.id));
-        updated++;
-      } else {
-        await db.insert(channelTags).values({ id: item.id, name: item.name, color: item.color });
-        created++;
-      }
+      counts[await restoreOne(item)]++;
     } catch (err) {
-      errors.push(`Tag "${item.name}": ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(`${label(item)}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  return { section: 'tags', created, updated, skipped, errors };
+  return { section, ...counts, errors };
+}
+
+/** The queries that restore one table row from a backup. */
+interface RowRestore {
+  /** Select the row by its key; any row returned means it exists. */
+  readonly find: () => PromiseLike<readonly unknown[]>;
+  /** Insert the row with the key the backup carries. */
+  readonly insert: () => PromiseLike<unknown>;
+  /** Overwrite an existing row unless the mode is SKIP. Absent for a key-only row (a pair), which is always skipped. */
+  readonly overwrite?: { readonly mode: BackupCollisionMode; readonly update: () => PromiseLike<unknown> };
+}
+
+/** Insert a missing row; skip or overwrite an existing one. */
+async function restoreRow(row: RowRestore): Promise<RestoreOutcome> {
+  const [existing] = await row.find();
+  if (!existing) {
+    await row.insert();
+    return 'created';
+  }
+  if (!row.overwrite || row.overwrite.mode === 'SKIP') return 'skipped';
+  await row.overwrite.update();
+  return 'updated';
+}
+
+/**
+ * Restore one config or global map entry through its service upsert. SKIP
+ * leaves an entry the lookup finds alone; any failed lookup counts as created.
+ */
+async function upsertMapEntry(
+  mode: BackupCollisionMode,
+  lookup: () => Promise<Result<unknown>>,
+  upsert: () => Promise<Result<unknown>>,
+): Promise<RestoreOutcome> {
+  const existing = await lookup();
+  if (existing.ok && mode === 'SKIP') return 'skipped';
+  const res = await upsert();
+  if (!res.ok) throw res.error;
+  return existing.ok ? 'updated' : 'created';
+}
+
+async function restoreTags(
+  items: ServerBackup['tags'],
+  mode: BackupCollisionMode,
+): Promise<RestoreSectionResult> {
+  return restoreEach('tags', items, (item) => `Tag "${item.name}"`, (item) => restoreRow({
+    find: () => db.select({ id: channelTags.id }).from(channelTags).where(eq(channelTags.id, item.id)),
+    insert: () => db.insert(channelTags).values({ id: item.id, name: item.name, color: item.color }),
+    overwrite: {
+      mode,
+      update: () => db.update(channelTags).set({ name: item.name, color: item.color }).where(eq(channelTags.id, item.id)),
+    },
+  }));
 }
 
 async function restoreChannelGroups(
   items: ServerBackup['channelGroups'],
   mode: BackupCollisionMode,
 ): Promise<RestoreSectionResult> {
-  let created = 0; let updated = 0; let skipped = 0;
-  const errors: string[] = [];
-
-  for (const item of items) {
-    try {
-      const [existing] = await db
-        .select({ id: channelGroups.id })
-        .from(channelGroups)
-        .where(eq(channelGroups.id, item.id));
-
-      if (existing) {
-        if (mode === 'SKIP') { skipped++; continue; }
-        await db.update(channelGroups).set({ name: item.name, description: item.description }).where(eq(channelGroups.id, item.id));
-        updated++;
-      } else {
-        await db.insert(channelGroups).values({ id: item.id, name: item.name, description: item.description });
-        created++;
-      }
-    } catch (err) {
-      errors.push(`Channel group "${item.name}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return { section: 'channelGroups', created, updated, skipped, errors };
+  return restoreEach('channelGroups', items, (item) => `Channel group "${item.name}"`, (item) => restoreRow({
+    find: () => db.select({ id: channelGroups.id }).from(channelGroups).where(eq(channelGroups.id, item.id)),
+    insert: () => db.insert(channelGroups).values({ id: item.id, name: item.name, description: item.description }),
+    overwrite: {
+      mode,
+      update: () => db.update(channelGroups).set({ name: item.name, description: item.description }).where(eq(channelGroups.id, item.id)),
+    },
+  }));
 }
 
 async function restoreResources(
   items: ServerBackup['resources'],
   mode: BackupCollisionMode,
 ): Promise<RestoreSectionResult> {
-  let created = 0; let updated = 0; let skipped = 0;
-  const errors: string[] = [];
-
-  for (const item of items) {
-    try {
-      const [existing] = await db
-        .select({ id: resources.id })
-        .from(resources)
-        .where(eq(resources.id, item.id));
-
-      if (existing) {
-        if (mode === 'SKIP') { skipped++; continue; }
-        const sizeBytes = item.content ? Buffer.byteLength(item.content, 'utf-8') : 0;
-        await db.update(resources).set({
-          name: item.name, description: item.description, mimeType: item.mimeType,
-          content: item.content, sizeBytes, updatedAt: new Date(),
-        }).where(eq(resources.id, item.id));
-        updated++;
-      } else {
-        const sizeBytes = item.content ? Buffer.byteLength(item.content, 'utf-8') : 0;
-        await db.insert(resources).values({
-          id: item.id, name: item.name, description: item.description,
-          mimeType: item.mimeType, content: item.content, sizeBytes,
-        });
-        created++;
-      }
-    } catch (err) {
-      errors.push(`Resource "${item.name}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return { section: 'resources', created, updated, skipped, errors };
+  return restoreEach('resources', items, (item) => `Resource "${item.name}"`, (item) => restoreRow({
+    find: () => db.select({ id: resources.id }).from(resources).where(eq(resources.id, item.id)),
+    insert: () => db.insert(resources).values({
+      id: item.id, name: item.name, description: item.description,
+      mimeType: item.mimeType, content: item.content,
+      sizeBytes: item.content ? Buffer.byteLength(item.content, 'utf-8') : 0,
+    }),
+    overwrite: {
+      mode,
+      update: () => db.update(resources).set({
+        name: item.name, description: item.description, mimeType: item.mimeType,
+        content: item.content, sizeBytes: item.content ? Buffer.byteLength(item.content, 'utf-8') : 0,
+        updatedAt: new Date(),
+      }).where(eq(resources.id, item.id)),
+    },
+  }));
 }
 
 async function restoreCodeTemplateLibraries(
   items: ServerBackup['codeTemplateLibraries'],
   mode: BackupCollisionMode,
 ): Promise<RestoreSectionResult> {
-  let created = 0; let updated = 0; let skipped = 0;
-  const errors: string[] = [];
-
-  for (const item of items) {
-    try {
-      const [existing] = await db
-        .select({ id: codeTemplateLibraries.id })
-        .from(codeTemplateLibraries)
-        .where(eq(codeTemplateLibraries.id, item.id));
-
-      if (existing) {
-        if (mode === 'SKIP') { skipped++; continue; }
-        await db.update(codeTemplateLibraries).set({ name: item.name, description: item.description, channelIds: item.channelIds ?? null }).where(eq(codeTemplateLibraries.id, item.id));
-        updated++;
-      } else {
-        await db.insert(codeTemplateLibraries).values({ id: item.id, name: item.name, description: item.description, channelIds: item.channelIds ?? null });
-        created++;
-      }
-    } catch (err) {
-      errors.push(`Code template library "${item.name}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return { section: 'codeTemplateLibraries', created, updated, skipped, errors };
+  return restoreEach('codeTemplateLibraries', items, (item) => `Code template library "${item.name}"`, (item) => restoreRow({
+    find: () => db.select({ id: codeTemplateLibraries.id }).from(codeTemplateLibraries).where(eq(codeTemplateLibraries.id, item.id)),
+    insert: () => db.insert(codeTemplateLibraries).values({
+      id: item.id, name: item.name, description: item.description, channelIds: item.channelIds ?? null,
+    }),
+    overwrite: {
+      mode,
+      update: () => db.update(codeTemplateLibraries).set({
+        name: item.name, description: item.description, channelIds: item.channelIds ?? null,
+      }).where(eq(codeTemplateLibraries.id, item.id)),
+    },
+  }));
 }
 
 async function restoreCodeTemplates(
   items: ServerBackup['codeTemplates'],
   mode: BackupCollisionMode,
 ): Promise<RestoreSectionResult> {
-  let created = 0; let updated = 0; let skipped = 0;
-  const errors: string[] = [];
-
-  for (const item of items) {
-    try {
-      const [existing] = await db
-        .select({ id: codeTemplates.id })
-        .from(codeTemplates)
-        .where(eq(codeTemplates.id, item.id));
-
-      if (existing) {
-        if (mode === 'SKIP') { skipped++; continue; }
-        await db.update(codeTemplates).set({
-          libraryId: item.libraryId, name: item.name, description: item.description,
-          type: item.type, code: item.code, contexts: item.contexts,
-        }).where(eq(codeTemplates.id, item.id));
-        updated++;
-      } else {
-        await db.insert(codeTemplates).values({
-          id: item.id, libraryId: item.libraryId, name: item.name,
-          description: item.description, type: item.type, code: item.code, contexts: item.contexts,
-        });
-        created++;
-      }
-    } catch (err) {
-      errors.push(`Code template "${item.name}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return { section: 'codeTemplates', created, updated, skipped, errors };
+  return restoreEach('codeTemplates', items, (item) => `Code template "${item.name}"`, (item) => restoreRow({
+    find: () => db.select({ id: codeTemplates.id }).from(codeTemplates).where(eq(codeTemplates.id, item.id)),
+    insert: () => db.insert(codeTemplates).values({
+      id: item.id, libraryId: item.libraryId, name: item.name,
+      description: item.description, type: item.type, code: item.code, contexts: item.contexts,
+    }),
+    overwrite: {
+      mode,
+      update: () => db.update(codeTemplates).set({
+        libraryId: item.libraryId, name: item.name, description: item.description,
+        type: item.type, code: item.code, contexts: item.contexts,
+      }).where(eq(codeTemplates.id, item.id)),
+    },
+  }));
 }
 
 async function restoreGlobalScripts(
@@ -569,159 +558,82 @@ async function restoreAlerts(
   return { section: 'alerts', created, updated, skipped, errors };
 }
 
+/** Dependencies are key-only pairs: an existing one has nothing to overwrite, so it is skipped in every mode. */
 async function restoreChannelDependencies(
   items: ServerBackup['channelDependencies'],
-  mode: BackupCollisionMode,
 ): Promise<RestoreSectionResult> {
-  let created = 0; let skipped = 0;
-  const errors: string[] = [];
-
-  for (const item of items) {
-    try {
-      const [existing] = await db
-        .select({ channelId: channelDependencies.channelId })
-        .from(channelDependencies)
-        .where(and(
-          eq(channelDependencies.channelId, item.channelId),
-          eq(channelDependencies.dependsOnChannelId, item.dependsOnChannelId),
-        ));
-
-      if (existing) {
-        if (mode === 'SKIP') { skipped++; continue; }
-        skipped++; // Dependencies are idempotent — nothing to overwrite
-      } else {
-        await db.insert(channelDependencies).values({
-          channelId: item.channelId,
-          dependsOnChannelId: item.dependsOnChannelId,
-        });
-        created++;
-      }
-    } catch (err) {
-      errors.push(`Dependency ${item.channelId} -> ${item.dependsOnChannelId}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return { section: 'channelDependencies', created, updated: 0, skipped, errors };
+  return restoreEach(
+    'channelDependencies', items,
+    (item) => `Dependency ${item.channelId} -> ${item.dependsOnChannelId}`,
+    (item) => restoreRow({
+      find: () => db.select({ channelId: channelDependencies.channelId }).from(channelDependencies).where(and(
+        eq(channelDependencies.channelId, item.channelId),
+        eq(channelDependencies.dependsOnChannelId, item.dependsOnChannelId),
+      )),
+      insert: () => db.insert(channelDependencies).values({
+        channelId: item.channelId,
+        dependsOnChannelId: item.dependsOnChannelId,
+      }),
+    }),
+  );
 }
 
 async function restoreConfigMap(
   items: ServerBackup['configMap'],
   mode: BackupCollisionMode,
 ): Promise<RestoreSectionResult> {
-  let created = 0; let updated = 0; let skipped = 0;
-  const errors: string[] = [];
-
-  for (const item of items) {
-    try {
-      const existing = await ConfigMapService.getByKey(item.category, item.name);
-      if (existing.ok) {
-        if (mode === 'SKIP') { skipped++; continue; }
-        const res = await ConfigMapService.upsert(item.category, item.name, item.value ?? '');
-        if (!res.ok) throw res.error;
-        updated++;
-      } else {
-        const res = await ConfigMapService.upsert(item.category, item.name, item.value ?? '');
-        if (!res.ok) throw res.error;
-        created++;
-      }
-    } catch (err) {
-      errors.push(`Config "${item.category}/${item.name}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return { section: 'configMap', created, updated, skipped, errors };
+  return restoreEach('configMap', items, (item) => `Config "${item.category}/${item.name}"`, (item) => upsertMapEntry(
+    mode,
+    () => ConfigMapService.getByKey(item.category, item.name),
+    () => ConfigMapService.upsert(item.category, item.name, item.value ?? ''),
+  ));
 }
 
 async function restoreGlobalMap(
   items: ServerBackup['globalMap'],
   mode: BackupCollisionMode,
 ): Promise<RestoreSectionResult> {
-  let created = 0; let updated = 0; let skipped = 0;
-  const errors: string[] = [];
-
-  for (const item of items) {
-    try {
-      const existing = await GlobalMapService.getByKey(item.key);
-      if (existing.ok) {
-        if (mode === 'SKIP') { skipped++; continue; }
-        const res = await GlobalMapService.upsert(item.key, item.value ?? '', undefined, item.isJson);
-        if (!res.ok) throw res.error;
-        updated++;
-      } else {
-        const res = await GlobalMapService.upsert(item.key, item.value ?? '', undefined, item.isJson);
-        if (!res.ok) throw res.error;
-        created++;
-      }
-    } catch (err) {
-      errors.push(`Global map "${item.key}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return { section: 'globalMap', created, updated, skipped, errors };
+  return restoreEach('globalMap', items, (item) => `Global map "${item.key}"`, (item) => upsertMapEntry(
+    mode,
+    () => GlobalMapService.getByKey(item.key),
+    () => GlobalMapService.upsert(item.key, item.value ?? '', undefined, item.isJson),
+  ));
 }
 
 async function restoreGroupMemberships(
   items: ServerBackup['groupMemberships'],
 ): Promise<RestoreSectionResult> {
-  let created = 0; let skipped = 0;
-  const errors: string[] = [];
-
-  for (const item of items) {
-    try {
-      const [existing] = await db
-        .select({ channelGroupId: channelGroupMembers.channelGroupId })
-        .from(channelGroupMembers)
-        .where(and(
-          eq(channelGroupMembers.channelGroupId, item.channelGroupId),
-          eq(channelGroupMembers.channelId, item.channelId),
-        ));
-
-      if (existing) {
-        skipped++;
-      } else {
-        await db.insert(channelGroupMembers).values({
-          channelGroupId: item.channelGroupId,
-          channelId: item.channelId,
-        });
-        created++;
-      }
-    } catch (err) {
-      errors.push(`Membership ${item.channelGroupId}/${item.channelId}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return { section: 'groupMemberships', created, updated: 0, skipped, errors };
+  return restoreEach(
+    'groupMemberships', items,
+    (item) => `Membership ${item.channelGroupId}/${item.channelId}`,
+    (item) => restoreRow({
+      find: () => db.select({ channelGroupId: channelGroupMembers.channelGroupId }).from(channelGroupMembers).where(and(
+        eq(channelGroupMembers.channelGroupId, item.channelGroupId),
+        eq(channelGroupMembers.channelId, item.channelId),
+      )),
+      insert: () => db.insert(channelGroupMembers).values({
+        channelGroupId: item.channelGroupId,
+        channelId: item.channelId,
+      }),
+    }),
+  );
 }
 
 async function restoreTagAssignments(
   items: ServerBackup['tagAssignments'],
 ): Promise<RestoreSectionResult> {
-  let created = 0; let skipped = 0;
-  const errors: string[] = [];
-
-  for (const item of items) {
-    try {
-      const [existing] = await db
-        .select({ tagId: channelTagAssignments.tagId })
-        .from(channelTagAssignments)
-        .where(and(
-          eq(channelTagAssignments.tagId, item.tagId),
-          eq(channelTagAssignments.channelId, item.channelId),
-        ));
-
-      if (existing) {
-        skipped++;
-      } else {
-        await db.insert(channelTagAssignments).values({
-          tagId: item.tagId,
-          channelId: item.channelId,
-        });
-        created++;
-      }
-    } catch (err) {
-      errors.push(`Tag assignment ${item.tagId}/${item.channelId}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return { section: 'tagAssignments', created, updated: 0, skipped, errors };
+  return restoreEach(
+    'tagAssignments', items,
+    (item) => `Tag assignment ${item.tagId}/${item.channelId}`,
+    (item) => restoreRow({
+      find: () => db.select({ tagId: channelTagAssignments.tagId }).from(channelTagAssignments).where(and(
+        eq(channelTagAssignments.tagId, item.tagId),
+        eq(channelTagAssignments.channelId, item.channelId),
+      )),
+      insert: () => db.insert(channelTagAssignments).values({
+        tagId: item.tagId,
+        channelId: item.channelId,
+      }),
+    }),
+  );
 }

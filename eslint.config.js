@@ -21,6 +21,8 @@ const SHARED_HELPERS = [
   { names: 'compileScript|compileErrorMessages|extractEsbuildErrors', home: 'packages/engine/src/sandbox/script-compiler.ts' },
   { names: 'toPoolConfig', home: 'packages/connectors/src/database/connection-pool.ts' },
   { names: 'dispatchQuarantined', home: 'packages/connectors/src/quarantine-ledger.ts' },
+  { names: 'connectFresh|closeQuietly', home: 'packages/connectors/src/client-lifecycle.ts' },
+  { names: 'createNodemailerTransport|buildNodemailerOptions', home: '@galvaniflow/connectors (smtp/smtp-dispatcher.ts)' },
 ];
 const sharedHelperSelectors = SHARED_HELPERS.flatMap(({ names, home }) => [
   { selector: `:not(ExportNamedDeclaration) > FunctionDeclaration[id.name=/^(${names})$/]`, message: `Import this from ${home} instead of copying it.` },

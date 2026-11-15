@@ -164,19 +164,29 @@ export class FileDispatcher implements DestinationConnectorRuntime {
     await fs.rename(tmpPath, outputPath);
   }
 
+  /**
+   * The bytes and fs options for writing content: binary mode decodes base64
+   * and passes no encoding, text mode writes in the normalized charset.
+   */
+  private encodeForWrite(content: string): {
+    readonly data: string | Buffer;
+    readonly options: { readonly encoding: BufferEncoding } | undefined;
+  } {
+    if (this.config.binary) {
+      return { data: Buffer.from(content, 'base64'), options: undefined };
+    }
+    return { data: content, options: { encoding: normalizeEncoding(this.config.charset) } };
+  }
+
   /** Append content to a file. */
   private async appendToFile(outputPath: string, content: string): Promise<void> {
-    const data = this.config.binary
-      ? Buffer.from(content, 'base64')
-      : content;
-    await fs.appendFile(outputPath, data, this.config.binary ? undefined : { encoding: normalizeEncoding(this.config.charset) });
+    const { data, options } = this.encodeForWrite(content);
+    await fs.appendFile(outputPath, data, options);
   }
 
   /** Write content directly to a file. */
   private async writeFile(outputPath: string, content: string): Promise<void> {
-    const data = this.config.binary
-      ? Buffer.from(content, 'base64')
-      : content;
-    await fs.writeFile(outputPath, data, this.config.binary ? undefined : { encoding: normalizeEncoding(this.config.charset) });
+    const { data, options } = this.encodeForWrite(content);
+    await fs.writeFile(outputPath, data, options);
   }
 }

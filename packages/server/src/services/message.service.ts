@@ -203,7 +203,6 @@ export class MessageService {
 
   /**
    * Enqueue a connector message for async delivery.
-   * @see QueueManagerService for advanced queue operations (requeueFailed, getQueueDepth).
    */
   static async enqueue(
     channelId: string,
@@ -233,7 +232,6 @@ export class MessageService {
    * disjoint batches without blocking each other. Columns are aliased to
    * camelCase so the returned rows match the QueuedMessage shape the consumer reads.
    * @param rotate - Order by fewest send attempts first (a rotating queue).
-   * @see QueueManagerService for advanced queue operations (requeueFailed, getQueueDepth).
    */
   static async dequeue(
     channelId: string,
@@ -301,7 +299,6 @@ export class MessageService {
 
   /**
    * Release a dequeued message with a new status (SENT or ERROR).
-   * @see QueueManagerService for advanced queue operations (requeueFailed, getQueueDepth).
    */
   static async release(
     channelId: string,
