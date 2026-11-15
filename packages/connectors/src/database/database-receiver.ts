@@ -8,7 +8,7 @@
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
-import type { DatabasePool, PoolConfig, TxQuery } from './connection-pool.js';
+import { toPoolConfig, type DatabasePool, type TxQuery } from './connection-pool.js';
 import { prepare } from './query-builder.js';
 import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
@@ -52,22 +52,8 @@ export interface DatabaseReceiverConfig {
 export { UPDATE_MODE, ROW_FORMAT };
 export type { UpdateMode, RowFormat };
 
-// ----- Default Pool Config -----
-
-function toPoolConfig(config: DatabaseReceiverConfig): PoolConfig {
-  return {
-    host: config.host,
-    port: config.port,
-    database: config.database,
-    user: config.username,
-    password: config.password,
-    maxConnections: 5,
-    idleTimeoutMs: 30_000,
-    connectionTimeoutMs: 10_000,
-    tls: config.tls === true,
-    statementTimeoutMs: 30_000,
-  };
-}
+/** Per-statement budget for the receiver's poll queries. */
+const STATEMENT_TIMEOUT_MS = 30_000;
 
 /**
  * Append `FOR UPDATE SKIP LOCKED` to a SELECT so the claiming transaction locks
@@ -132,7 +118,7 @@ export class DatabaseReceiver implements SourceConnectorRuntime {
         throw new Error('Dispatcher not set — call setDispatcher before start');
       }
 
-      const createResult = await this.pool.create(toPoolConfig(this.config));
+      const createResult = await this.pool.create(toPoolConfig(this.config, STATEMENT_TIMEOUT_MS));
       if (!createResult.ok) {
         throw createResult.error;
       }

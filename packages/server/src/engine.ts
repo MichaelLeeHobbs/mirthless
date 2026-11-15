@@ -909,20 +909,25 @@ export class EngineManager {
     return this.runtimes;
   }
 
-  /** Send a raw message to a deployed, started channel. */
+  /**
+   * Send a raw message to a deployed, started channel. Fails with a ServiceError:
+   * NOT_FOUND when the channel is not deployed, CONFLICT when it is not STARTED
+   * or could not process the message. The send-message API maps these codes to
+   * HTTP statuses.
+   */
   async sendMessage(channelId: string, content: string): Promise<Result<SourceDispatchOutcome>> {
     return tryCatch(async () => {
       const deployed = this.runtimes.get(channelId);
       if (!deployed) {
-        throw new Error(`Channel ${channelId} is not deployed`);
+        throw new ServiceError('NOT_FOUND', `Channel ${channelId} is not deployed`);
       }
       const state = deployed.runtime.getState();
       if (state !== 'STARTED') {
-        throw new Error(`Channel is ${state}, must be STARTED to receive messages`);
+        throw new ServiceError('CONFLICT', `Channel is ${state}, must be STARTED to receive messages`);
       }
       const result = await deployed.processMessage(content);
       if (!result.ok) {
-        throw new Error(result.error.message);
+        throw new ServiceError('CONFLICT', result.error.message);
       }
       return result.value;
     });

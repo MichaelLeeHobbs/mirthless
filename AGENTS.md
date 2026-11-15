@@ -42,6 +42,10 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `isPlainObject` and `errorInfo` in `core-util`. `errorInfo` builds the `{ errMsg, name, stack }` log record for any thrown value.
   - `formatBytes` in `web/src/lib/system-health.ts`, `formatTimestamp` in `web/src/lib/format.ts` (the caller passes the label for a missing time), and the certificate `expiry*` helpers in `web/src/lib/certificate-expiry.ts`.
   - `getStr`, `getNum`, `getBool`, `getTls*` and `propertyUpdaters` in `web/src/components/channels/common/connector-properties.ts` for connector forms.
+  - `compileScript` and `compileErrorMessages` in `engine/src/sandbox/script-compiler.ts`: compile a user script the way deploy does, and turn its errors into `Line N: <text>` on the script's own lines. Script validation uses both.
+  - `toPoolConfig` in `connectors/src/database/connection-pool.ts`: a database connector's pool config from its connection fields.
+  - `QuarantineLedger` and `dispatchQuarantined` in `connectors/src/quarantine-ledger.ts`: the quarantine set, its sidecar ledger and the dispatch-then-quarantine step, for any polling file source. The source supplies only the storage.
+  - `GlobalChannelMap` in `engine/src/runtime/global-channel-map.ts` is the in-memory script map; `GlobalMapProxy` keeps its entries in one rather than its own `Map`.
 - No speculative generalization — design for today's requirements, not hypothetical futures
 - If you find yourself saying "this might be useful later" — stop and don't build it
 

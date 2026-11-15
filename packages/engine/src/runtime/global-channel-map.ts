@@ -1,13 +1,13 @@
 // ===========================================
 // Global Channel Map
 // ===========================================
-// Per-channel in-memory key-value store that persists
-// across messages within a single deployment.
-// Cleared when the channel is undeployed.
+// In-memory key-value store for a script map that persists across messages.
+// Each deployed channel has one for its channel map, cleared when the channel
+// is undeployed. GlobalMapProxy keeps the server-wide global map in one too.
 
 import { diffMap } from './map-diff.js';
 
-/** Per-channel map persisting across messages within a deployment. */
+/** In-memory script map persisting across messages (a channel's map, or the global map's entries). */
 export class GlobalChannelMap {
   private readonly store = new Map<string, unknown>();
 
@@ -49,14 +49,20 @@ export class GlobalChannelMap {
    * Apply what a script changed. `before` is the snapshot the script was given
    * and `after` is the map it left; only keys that differ are written, so a
    * key another message changed in the meantime is kept.
+   *
+   * @returns The keys written or removed, so a caller can track what changed.
    */
-  applyChanges(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): void {
+  applyChanges(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): ReadonlyArray<string> {
     const changes = diffMap(before, after);
+    const changed: string[] = [];
     for (const [key, value] of changes.set) {
       this.store.set(key, value);
+      changed.push(key);
     }
     for (const key of changes.removed) {
       this.store.delete(key);
+      changed.push(key);
     }
+    return changed;
   }
 }

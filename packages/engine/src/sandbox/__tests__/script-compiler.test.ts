@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   compileScript,
+  compileErrorMessages,
   clearScriptCache,
   compileFilterRulesToScript,
   compileTransformerStepsToScript,
@@ -95,6 +96,36 @@ describe('compileScript', () => {
     const result = await compileScript('const x: = ;');
 
     expect(result.ok).toBe(false);
+  });
+
+  it('reports a syntax error on its line in the user script, not the wrapper', async () => {
+    const code = 'const a = 1;\nconst b = 2;\nconst c = ;';
+    const result = await compileScript(code);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(compileErrorMessages(result.error, code)).toEqual(['Line 3: Unexpected ";"']);
+  });
+
+  it('reports an unclosed block on the last line of the script', async () => {
+    const code = 'if (true) {\n  const a = 1;';
+    const result = await compileScript(code);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const messages = compileErrorMessages(result.error, code);
+    expect(messages.length).toBeGreaterThan(0);
+    expect(messages[0]).toMatch(/^Line 2: /);
+  });
+
+  it('falls back to the error message when the error carries no compiler messages', () => {
+    expect(compileErrorMessages(new Error('esbuild crashed'), 'x')).toEqual(['esbuild crashed']);
+    expect(compileErrorMessages('not an error', 'x')).toEqual(['Unknown syntax error']);
+  });
+
+  it('returns the text alone for a compiler message without a location', () => {
+    const error = { errors: [{ text: 'Something went wrong', location: null }] };
+    expect(compileErrorMessages(error, 'x')).toEqual(['Something went wrong']);
   });
 
   it('caches compiled results for identical source', async () => {
@@ -416,6 +447,18 @@ describe('script cache', () => {
     const second = await compileScript('return 2;');
     if (!first.ok || !second.ok) throw new Error('compile failed');
     expect(second.value).toBe(first.value);
+  });
+
+  it('neither reads nor fills the cache when cache is false', async () => {
+    clearScriptCache();
+    const cached = await compileScript('return 3;', { sourcemap: false });
+    const uncached = await compileScript('return 3;', { sourcemap: false, cache: false });
+    await compileScript('return 4;', { sourcemap: false, cache: false });
+    if (!cached.ok || !uncached.ok) throw new Error('compile failed');
+
+    expect(uncached.value).not.toBe(cached.value);
+    expect(uncached.value.code).toBe(cached.value.code);
+    expect(scriptCacheSize()).toBe(1);
   });
 
   it('stops growing at its limit, dropping the oldest entries', async () => {
