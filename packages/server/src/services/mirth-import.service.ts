@@ -7,7 +7,7 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { XMLParser } from 'fast-xml-parser';
 import { randomUUID } from 'node:crypto';
-import type { ChannelExportEntry, ImportResult } from '@galvaniflow/core-models';
+import { isSourceConnectorType, type ChannelExportEntry, type ImportResult } from '@galvaniflow/core-models';
 import { ChannelImportService } from './channel-import.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
@@ -400,6 +400,17 @@ function resolveConnectorType(
   return 'JAVASCRIPT';
 }
 
+/**
+ * The type as a source, or JAVASCRIPT with a warning when it only sends (e.g.
+ * SMTP). The importer stores channels without the import route's schema, so it
+ * checks direction itself rather than store a source that can never deploy.
+ */
+function sourceTypeFor(type: string, channelName: string, warnings: string[]): string {
+  if (isSourceConnectorType(type)) return type;
+  warnings.push(`Channel "${channelName}": ${type} cannot be a source; imported as JAVASCRIPT`);
+  return 'JAVASCRIPT';
+}
+
 function convertSourceConnector(
   sourceConnector: Record<string, unknown> | null,
   channelName: string,
@@ -419,9 +430,11 @@ function convertSourceConnector(
   const connectorType = resolveConnectorType(className, channelName, warnings);
 
   // Also try transportName-based resolution as fallback
-  const finalType = connectorType !== 'JAVASCRIPT' || !transportName
-    ? connectorType
-    : mapTransportName(transportName, channelName, warnings);
+  const finalType = sourceTypeFor(
+    connectorType !== 'JAVASCRIPT' || !transportName ? connectorType : mapTransportName(transportName, channelName, warnings),
+    channelName,
+    warnings,
+  );
 
   const remote = remoteFileConnector(finalType, propsNode, 'source', channelName, warnings);
   const properties: Record<string, unknown> = {
