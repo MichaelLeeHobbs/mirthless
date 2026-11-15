@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { channelImportSchema } from '../channel-export.schema.js';
-import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '../channel.schema.js';
+import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '../../constants.js';
 
 function destination(connectorType: string, metaDataId = 1): Record<string, unknown> {
   return {

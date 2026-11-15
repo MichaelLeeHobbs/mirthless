@@ -91,6 +91,10 @@ vi.mock('../config-map.service.js', () => ({
 }));
 
 const { ServerBackupService } = await import('../server-backup.service.js');
+const {
+  channelDependencies, channelGroupMembers, channelTagAssignments, resources,
+  codeTemplateLibraries, codeTemplates, channelGroups, channelTags,
+} = await import('../../db/schema/index.js');
 
 // ----- Fixtures -----
 
@@ -594,6 +598,244 @@ describe('ServerBackupService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.totalCreated).toBe(3); // 2 settings + 1 global map
+    });
+  });
+
+  // Every section the shared restore helpers serve, pinned row by row: counts,
+  // error text, and the exact values written for each collision mode.
+  describe('restore sections', () => {
+    async function restoreSection(
+      overrides: Partial<ServerBackup>,
+      mode: 'SKIP' | 'OVERWRITE',
+      section: string,
+    ): Promise<RestoreSectionResult> {
+      mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+      mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
+      const result = await ServerBackupService.restoreBackup(makeMinimalBackup(overrides), mode);
+      if (!result.ok) throw new Error('restore failed');
+      const found = result.value.sections.find((s) => s.section === section);
+      if (!found) throw new Error(`section ${section} missing`);
+      return found;
+    }
+
+    const counts = (created: number, updated: number, skipped: number, errors: string[] = []): Omit<RestoreSectionResult, 'section'> =>
+      ({ created, updated, skipped, errors });
+
+    describe('id-keyed sections', () => {
+      const resourceItem = { id: 'r-1', name: 'Lookup', description: null, mimeType: 'text/plain', content: 'héllo' };
+      const libraryItem = { id: 'l-1', name: 'Lib', description: 'd', channelIds: ['ch-1'] };
+      const templateItem = {
+        id: 'ct-1', libraryId: 'l-1', name: 'fmt', description: null,
+        type: 'FUNCTION', code: 'function f() {}', contexts: ['SOURCE_FILTER_TRANSFORMER'],
+      } as ServerBackup['codeTemplates'][number];
+
+      const cases = [
+        {
+          section: 'tags', table: channelTags, label: 'Tag "ER"',
+          backup: { tags: [{ id: 't-1', name: 'ER', color: '#FF0000' }] },
+          inserted: { id: 't-1', name: 'ER', color: '#FF0000' },
+          updatedTo: { name: 'ER', color: '#FF0000' },
+        },
+        {
+          section: 'channelGroups', table: channelGroups, label: 'Channel group "Lab"',
+          backup: { channelGroups: [{ id: 'g-1', name: 'Lab', description: null }] },
+          inserted: { id: 'g-1', name: 'Lab', description: null },
+          updatedTo: { name: 'Lab', description: null },
+        },
+        {
+          section: 'resources', table: resources, label: 'Resource "Lookup"',
+          backup: { resources: [resourceItem] },
+          inserted: { ...resourceItem, sizeBytes: 6 },
+          updatedTo: { name: 'Lookup', description: null, mimeType: 'text/plain', content: 'héllo', sizeBytes: 6, updatedAt: expect.any(Date) },
+        },
+        {
+          section: 'codeTemplateLibraries', table: codeTemplateLibraries, label: 'Code template library "Lib"',
+          backup: { codeTemplateLibraries: [libraryItem] },
+          inserted: libraryItem,
+          updatedTo: { name: 'Lib', description: 'd', channelIds: ['ch-1'] },
+        },
+        {
+          section: 'codeTemplates', table: codeTemplates, label: 'Code template "fmt"',
+          backup: { codeTemplates: [templateItem] },
+          inserted: templateItem,
+          updatedTo: {
+            libraryId: 'l-1', name: 'fmt', description: null,
+            type: 'FUNCTION', code: 'function f() {}', contexts: ['SOURCE_FILTER_TRANSFORMER'],
+          },
+        },
+      ] as const;
+
+      describe.each(cases)('$section', ({ section, table, label, backup, inserted, updatedTo }) => {
+        const id = inserted.id;
+
+        it.each(['SKIP', 'OVERWRITE'] as const)('creates a missing row with the backup id in %s mode', async (mode) => {
+          mockSelectWhere.mockResolvedValue([]);
+          expect(await restoreSection(backup, mode, section)).toEqual({ section, ...counts(1, 0, 0) });
+          expect(mockSelectWhere).toHaveBeenCalledWith({ type: 'eq', val: id });
+          expect(mockInsert).toHaveBeenCalledWith(table);
+          expect(mockInsertValues).toHaveBeenCalledWith(inserted);
+          expect(mockUpdate).not.toHaveBeenCalled();
+        });
+
+        it('skips an existing row in SKIP mode without writing', async () => {
+          mockSelectWhere.mockResolvedValue([{ id }]);
+          expect(await restoreSection(backup, 'SKIP', section)).toEqual({ section, ...counts(0, 0, 1) });
+          expect(mockInsert).not.toHaveBeenCalled();
+          expect(mockUpdate).not.toHaveBeenCalled();
+        });
+
+        it('updates an existing row by id in OVERWRITE mode', async () => {
+          mockSelectWhere.mockResolvedValue([{ id }]);
+          expect(await restoreSection(backup, 'OVERWRITE', section)).toEqual({ section, ...counts(0, 1, 0) });
+          expect(mockUpdate).toHaveBeenCalledWith(table);
+          expect(mockSet).toHaveBeenCalledWith(updatedTo);
+          expect(mockUpdateWhere).toHaveBeenCalledWith({ type: 'eq', val: id });
+          expect(mockInsert).not.toHaveBeenCalled();
+        });
+
+        it('reports a failed write as an error naming the row, not as created', async () => {
+          mockSelectWhere.mockResolvedValue([]);
+          mockInsertValues.mockRejectedValue(new Error('duplicate key'));
+          expect(await restoreSection(backup, 'SKIP', section)).toEqual({ section, ...counts(0, 0, 0, [`${label}: duplicate key`]) });
+        });
+      });
+
+      it('stores a missing library channel list as null', async () => {
+        mockSelectWhere.mockResolvedValue([]);
+        const lib = { id: 'l-2', name: 'Lib2', description: null } as ServerBackup['codeTemplateLibraries'][number];
+        await restoreSection({ codeTemplateLibraries: [lib] }, 'SKIP', 'codeTemplateLibraries');
+        expect(mockInsertValues).toHaveBeenCalledWith({ id: 'l-2', name: 'Lib2', description: null, channelIds: null });
+      });
+
+      it('records zero bytes for a resource with no content', async () => {
+        mockSelectWhere.mockResolvedValue([{ id: 'r-1' }]);
+        await restoreSection({ resources: [{ ...resourceItem, content: null }] }, 'OVERWRITE', 'resources');
+        expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ content: null, sizeBytes: 0 }));
+      });
+
+      it('keeps restoring later rows after one fails and counts each', async () => {
+        mockSelectWhere.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 't-2' }]).mockResolvedValueOnce([]);
+        mockInsertValues.mockRejectedValueOnce('boom').mockResolvedValue(undefined);
+        const tags = [
+          { id: 't-1', name: 'A', color: '#000000' },
+          { id: 't-2', name: 'B', color: '#000000' },
+          { id: 't-3', name: 'C', color: '#000000' },
+        ];
+        expect(await restoreSection({ tags }, 'OVERWRITE', 'tags')).toEqual({ section: 'tags', ...counts(1, 1, 0, ['Tag "A": boom']) });
+      });
+    });
+
+    describe('composite-key pair sections', () => {
+      const cases = [
+        {
+          section: 'channelDependencies', table: channelDependencies, label: 'Dependency ch-1 -> ch-2',
+          backup: { channelDependencies: [{ channelId: 'ch-1', dependsOnChannelId: 'ch-2' }] },
+          row: { channelId: 'ch-1', dependsOnChannelId: 'ch-2' },
+        },
+        {
+          section: 'groupMemberships', table: channelGroupMembers, label: 'Membership g-1/ch-1',
+          backup: { groupMemberships: [{ channelGroupId: 'g-1', channelId: 'ch-1' }] },
+          row: { channelGroupId: 'g-1', channelId: 'ch-1' },
+        },
+        {
+          section: 'tagAssignments', table: channelTagAssignments, label: 'Tag assignment t-1/ch-1',
+          backup: { tagAssignments: [{ tagId: 't-1', channelId: 'ch-1' }] },
+          row: { tagId: 't-1', channelId: 'ch-1' },
+        },
+      ] as const;
+
+      describe.each(cases)('$section', ({ section, table, label, backup, row }) => {
+        it.each(['SKIP', 'OVERWRITE'] as const)('inserts a missing pair in %s mode', async (mode) => {
+          mockSelectWhere.mockResolvedValue([]);
+          expect(await restoreSection(backup, mode, section)).toEqual({ section, ...counts(1, 0, 0) });
+          expect(mockSelectWhere).toHaveBeenCalledWith({
+            type: 'and', args: Object.values(row).map((val) => ({ type: 'eq', val })),
+          });
+          expect(mockInsert).toHaveBeenCalledWith(table);
+          expect(mockInsertValues).toHaveBeenCalledWith(row);
+        });
+
+        it.each(['SKIP', 'OVERWRITE'] as const)('skips an existing pair in %s mode without writing', async (mode) => {
+          mockSelectWhere.mockResolvedValue([row]);
+          expect(await restoreSection(backup, mode, section)).toEqual({ section, ...counts(0, 0, 1) });
+          expect(mockInsert).not.toHaveBeenCalled();
+          expect(mockUpdate).not.toHaveBeenCalled();
+        });
+
+        it('reports a failed insert as an error naming the pair', async () => {
+          mockSelectWhere.mockResolvedValue([]);
+          mockInsertValues.mockRejectedValue(new Error('fk violation'));
+          expect(await restoreSection(backup, 'SKIP', section)).toEqual({ section, ...counts(0, 0, 0, [`${label}: fk violation`]) });
+        });
+      });
+    });
+
+    describe('map sections', () => {
+      const cases = [
+        {
+          section: 'configMap', getByKey: mockConfigMapGetByKey, upsert: mockConfigMapUpsert, label: 'Config "app/version"',
+          backup: { configMap: [{ category: 'app', name: 'version', value: '1.0' }] },
+          nullBackup: { configMap: [{ category: 'app', name: 'version', value: null }] },
+          lookupArgs: ['app', 'version'], upsertArgs: ['app', 'version', '1.0'], nullUpsertArgs: ['app', 'version', ''],
+        },
+        {
+          section: 'globalMap', getByKey: mockGlobalMapGetByKey, upsert: mockGlobalMapUpsert, label: 'Global map "counter"',
+          backup: { globalMap: [{ key: 'counter', value: '42', isJson: true }] },
+          nullBackup: { globalMap: [{ key: 'counter', value: null, isJson: false }] },
+          lookupArgs: ['counter'], upsertArgs: ['counter', '42', undefined, true], nullUpsertArgs: ['counter', '', undefined, false],
+        },
+      ] as const;
+
+      describe.each(cases)('$section', (c) => {
+        it.each(['SKIP', 'OVERWRITE'] as const)('creates an entry the lookup does not find in %s mode', async (mode) => {
+          c.getByKey.mockResolvedValue(errResult('NOT_FOUND'));
+          c.upsert.mockResolvedValue(okResult({}));
+          expect(await restoreSection(c.backup, mode, c.section)).toEqual({ section: c.section, ...counts(1, 0, 0) });
+          expect(c.getByKey).toHaveBeenCalledWith(...c.lookupArgs);
+          expect(c.upsert).toHaveBeenCalledWith(...c.upsertArgs);
+        });
+
+        it('skips an existing entry in SKIP mode without writing', async () => {
+          c.getByKey.mockResolvedValue(okResult({}));
+          expect(await restoreSection(c.backup, 'SKIP', c.section)).toEqual({ section: c.section, ...counts(0, 0, 1) });
+          expect(c.upsert).not.toHaveBeenCalled();
+        });
+
+        it('updates an existing entry in OVERWRITE mode', async () => {
+          c.getByKey.mockResolvedValue(okResult({}));
+          c.upsert.mockResolvedValue(okResult({}));
+          expect(await restoreSection(c.backup, 'OVERWRITE', c.section)).toEqual({ section: c.section, ...counts(0, 1, 0) });
+          expect(c.upsert).toHaveBeenCalledWith(...c.upsertArgs);
+        });
+
+        it('writes a null value as an empty string', async () => {
+          c.getByKey.mockResolvedValue(okResult({}));
+          c.upsert.mockResolvedValue(okResult({}));
+          await restoreSection(c.nullBackup, 'OVERWRITE', c.section);
+          expect(c.upsert).toHaveBeenCalledWith(...c.nullUpsertArgs);
+        });
+
+        it('counts an entry as created when the lookup fails for any reason', async () => {
+          c.getByKey.mockResolvedValue(errResult('connection reset'));
+          c.upsert.mockResolvedValue(okResult({}));
+          expect(await restoreSection(c.backup, 'OVERWRITE', c.section)).toEqual({ section: c.section, ...counts(1, 0, 0) });
+        });
+
+        it.each([
+          ['existing', okResult({}), 'OVERWRITE'],
+          ['missing', errResult('NOT_FOUND'), 'SKIP'],
+        ] as const)('reports a failed upsert of a %s entry as an error, not a count', async (_kind, lookup, mode) => {
+          c.getByKey.mockResolvedValue(lookup);
+          c.upsert.mockResolvedValue({ ok: false, value: null, error: new Error('write failed') });
+          expect(await restoreSection(c.backup, mode, c.section)).toEqual({ section: c.section, ...counts(0, 0, 0, [`${c.label}: write failed`]) });
+        });
+
+        it('reports a lookup that throws as an error', async () => {
+          c.getByKey.mockRejectedValue(new Error('pool closed'));
+          expect(await restoreSection(c.backup, 'SKIP', c.section)).toEqual({ section: c.section, ...counts(0, 0, 0, [`${c.label}: pool closed`]) });
+          expect(c.upsert).not.toHaveBeenCalled();
+        });
+      });
     });
   });
 });

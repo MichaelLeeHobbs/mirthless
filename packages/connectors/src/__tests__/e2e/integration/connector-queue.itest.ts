@@ -230,16 +230,20 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     return { host: cfg.host, port: cfg.port, vhost: '/', username: cfg.username, password: cfg.password };
   };
 
-  /** The broker's topology is the administrator's job; the suite plays administrator here. */
+  /**
+   * The broker's topology is the administrator's job; the suite plays administrator here.
+   * The queues are durable because RabbitMQ 4.3+ refuses transient non-exclusive queues
+   * (`transient_nonexcl_queues`); afterAll deletes them.
+   */
   beforeAll(async () => {
     const cfg = requireAmqp();
     admin = await amqpConnect({ hostname: cfg.host, port: cfg.port, username: cfg.username, password: cfg.password });
     const ch = await admin.createChannel();
     await ch.assertExchange(names.exchange, 'topic', { durable: false, autoDelete: false });
     await ch.assertExchange(names.deadExchange, 'fanout', { durable: false });
-    await ch.assertQueue(names.deadQueue, { durable: false });
+    await ch.assertQueue(names.deadQueue, { durable: true });
     await ch.bindQueue(names.deadQueue, names.deadExchange, '');
-    await ch.assertQueue(names.queue, { durable: false, deadLetterExchange: names.deadExchange });
+    await ch.assertQueue(names.queue, { durable: true, deadLetterExchange: names.deadExchange });
     await ch.bindQueue(names.queue, names.exchange, 'adt.#');
     await ch.close();
   });

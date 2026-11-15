@@ -35,6 +35,36 @@ export interface PoolConfig {
 /** Default statement/query timeout when a PoolConfig does not specify one. */
 const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
 
+/** The connection fields a database connector's config carries. */
+export interface ConnectorConnection {
+  readonly host: string;
+  readonly port: number;
+  readonly database: string;
+  readonly username: string;
+  readonly password: string;
+  readonly tls?: boolean;
+}
+
+/**
+ * The pool config a database connector opens: its connection fields with the
+ * connectors' pool size and timeouts. TLS is on only when `tls` is exactly
+ * `true`. `statementTimeoutMs` is set only when given.
+ */
+export function toPoolConfig(connection: ConnectorConnection, statementTimeoutMs?: number): PoolConfig {
+  return {
+    host: connection.host,
+    port: connection.port,
+    database: connection.database,
+    user: connection.username,
+    password: connection.password,
+    maxConnections: 5,
+    idleTimeoutMs: 30_000,
+    connectionTimeoutMs: 10_000,
+    tls: connection.tls === true,
+    ...(statementTimeoutMs === undefined ? {} : { statementTimeoutMs }),
+  };
+}
+
 // ----- Query Result -----
 
 export interface QueryResult {

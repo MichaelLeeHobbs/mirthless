@@ -1,44 +1,42 @@
 // ===========================================
-// Registry: factory types match the core-models lists
+// Registry ↔ core-models connector lists
 // ===========================================
-// The channel API validates source and destination types against
-// SOURCE_CONNECTOR_TYPES / DESTINATION_CONNECTOR_TYPES. A type the registry
-// cannot build would save and then fail at deploy, so the lists and the
-// registry's factories must name exactly the same types.
+// The registry's map keys are typed by the core-models lists, so the compiler
+// rejects a factory for a type the lists don't name. These tests cover the other
+// direction: every type the lists name has a factory, so the UI and the API never
+// offer a connector the engine can't build.
 
 import { describe, it, expect } from 'vitest';
-import {
-  CONNECTOR_TYPES,
-  SOURCE_CONNECTOR_TYPES,
-  DESTINATION_CONNECTOR_TYPES,
-} from '@galvaniflow/core-models';
+import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '@galvaniflow/core-models';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
 
-/** True when the registry has a factory for the type; a factory that rejects empty properties still counts. */
-function hasFactory(create: (type: string, props: Record<string, unknown>) => unknown, type: string): boolean {
+/** The error a create call threw, or undefined. A factory may reject empty props; that still proves it exists. */
+function errorOf(create: () => unknown): string | undefined {
   try {
-    create(type, {});
-    return true;
+    create();
+    return undefined;
   } catch (err: unknown) {
-    return !(err instanceof Error && /^Unknown (source|destination) connector type/.test(err.message));
+    return err instanceof Error ? err.message : String(err);
   }
 }
 
-function typesWithFactory(create: (type: string, props: Record<string, unknown>) => unknown): string[] {
-  return CONNECTOR_TYPES.filter((t) => hasFactory(create, t)).sort();
-}
-
-describe('connector registry types', () => {
-  it('has a source factory for exactly SOURCE_CONNECTOR_TYPES', () => {
-    expect(typesWithFactory(createSourceConnector)).toEqual([...SOURCE_CONNECTOR_TYPES].sort());
+describe('connector registry matches the core-models connector lists', () => {
+  it.each(SOURCE_CONNECTOR_TYPES)('has a source factory for %s', (type) => {
+    expect(errorOf(() => createSourceConnector(type, {})) ?? '').not.toMatch(/Unknown source connector type/);
   });
 
-  it('has a destination factory for exactly DESTINATION_CONNECTOR_TYPES', () => {
-    expect(typesWithFactory(createDestinationConnector)).toEqual([...DESTINATION_CONNECTOR_TYPES].sort());
+  it.each(DESTINATION_CONNECTOR_TYPES)('has a destination factory for %s', (type) => {
+    expect(errorOf(() => createDestinationConnector(type, {})) ?? '').not.toMatch(/Unknown destination connector type/);
   });
 
-  it('reports a type it has no factory for as unknown', () => {
-    expect(hasFactory(createSourceConnector, 'SMTP')).toBe(false);
-    expect(hasFactory(createDestinationConnector, 'EMAIL')).toBe(false);
+  it('rejects a type in neither list', () => {
+    expect(errorOf(() => createSourceConnector('FTP', {}))).toMatch(/Unknown source connector type: FTP/);
+    expect(errorOf(() => createDestinationConnector('FTP', {}))).toMatch(/Unknown destination connector type: FTP/);
+  });
+
+  it('keeps the one-direction connectors one-directional', () => {
+    expect(errorOf(() => createSourceConnector('SMTP', {}))).toMatch(/Unknown source connector type/);
+    expect(errorOf(() => createSourceConnector('FHIR', {}))).toMatch(/Unknown source connector type/);
+    expect(errorOf(() => createDestinationConnector('EMAIL', {}))).toMatch(/Unknown destination connector type/);
   });
 });

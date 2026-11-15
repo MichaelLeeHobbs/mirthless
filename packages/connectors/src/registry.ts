@@ -1,8 +1,10 @@
 // ===========================================
 // Connector Registry
 // ===========================================
-// Maps connector types to factory functions.
+// Maps connector types to factory functions. The keys are typed by the
+// core-models connector lists, so a type the lists don't name is a compile error.
 
+import type { SourceConnectorType, DestinationConnectorType } from '@galvaniflow/core-models';
 import type { SourceConnectorRuntime, DestinationConnectorRuntime } from './base.js';
 import { TcpMllpReceiver, MLLP_RESPONSE_MODE, type MllpResponseMode } from './tcp-mllp/tcp-mllp-receiver.js';
 import { TcpMllpDispatcher } from './tcp-mllp/tcp-mllp-dispatcher.js';
@@ -140,7 +142,7 @@ function parseQueueProps<T>(schema: { parse(value: unknown): T }, props: Record<
 
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
 
-const sourceFactories = new Map<string, SourceFactory>([
+const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnectorType, SourceFactory>([
   ['TCP_MLLP', (props): SourceConnectorRuntime => new TcpMllpReceiver({
     host: (props['host'] as string | undefined) ?? '0.0.0.0',
     port: num(props, 'port', 0),
@@ -246,7 +248,7 @@ const sourceFactories = new Map<string, SourceFactory>([
 
 type DestinationFactory = (properties: Record<string, unknown>) => DestinationConnectorRuntime;
 
-const destinationFactories = new Map<string, DestinationFactory>([
+const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<DestinationConnectorType, DestinationFactory>([
   ['TCP_MLLP', (props): DestinationConnectorRuntime => new TcpMllpDispatcher({
     host: props['host'] as string,
     port: num(props, 'port', 0),

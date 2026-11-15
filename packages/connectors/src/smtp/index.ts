@@ -9,6 +9,7 @@ export {
   createNodemailerTransport,
   type SmtpDispatcherConfig,
   type SmtpAuth,
+  type SmtpTransportConfig,
   type SmtpTransport,
   type SmtpMailOptions,
   type SmtpSendResult,

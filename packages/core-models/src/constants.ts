@@ -31,22 +31,50 @@ export const CONNECTOR_MODE = {
 } as const;
 export type ConnectorMode = (typeof CONNECTOR_MODE)[keyof typeof CONNECTOR_MODE];
 
-export const CONNECTOR_TYPE = {
-  TCP_MLLP: 'TCP_MLLP',
-  HTTP: 'HTTP',
-  FILE: 'FILE',
-  DATABASE: 'DATABASE',
-  JAVASCRIPT: 'JAVASCRIPT',
-  CHANNEL: 'CHANNEL',
-  DICOM: 'DICOM',
-  SMTP: 'SMTP',
-  FHIR: 'FHIR',
-  EMAIL: 'EMAIL',
-  SFTP: 'SFTP',
-  KAFKA: 'KAFKA',
-  AMQP: 'AMQP',
-} as const;
-export type ConnectorType = (typeof CONNECTOR_TYPE)[keyof typeof CONNECTOR_TYPE];
+// --- Connector Types ---
+// The one list of connector types per direction. They must equal the factory
+// keys in packages/connectors/src/registry.ts; a connectors test asserts it.
+
+/** Connector types that can be a channel's source. */
+export const SOURCE_CONNECTOR_TYPES = [
+  'TCP_MLLP',
+  'HTTP',
+  'FILE',
+  'DATABASE',
+  'JAVASCRIPT',
+  'CHANNEL',
+  'DICOM',
+  'EMAIL',
+  'SFTP',
+  'KAFKA',
+  'AMQP',
+] as const;
+export type SourceConnectorType = (typeof SOURCE_CONNECTOR_TYPES)[number];
+
+/** Connector types that can be a channel's destination. */
+export const DESTINATION_CONNECTOR_TYPES = [
+  'TCP_MLLP',
+  'HTTP',
+  'FILE',
+  'DATABASE',
+  'JAVASCRIPT',
+  'SMTP',
+  'CHANNEL',
+  'FHIR',
+  'DICOM',
+  'SFTP',
+  'KAFKA',
+  'AMQP',
+] as const;
+export type DestinationConnectorType = (typeof DESTINATION_CONNECTOR_TYPES)[number];
+
+export type ConnectorType = SourceConnectorType | DestinationConnectorType;
+
+/** Every connector type, in either direction. */
+export const CONNECTOR_TYPES = [
+  ...SOURCE_CONNECTOR_TYPES,
+  ...DESTINATION_CONNECTOR_TYPES.filter((t) => !(SOURCE_CONNECTOR_TYPES as readonly string[]).includes(t)),
+] as unknown as readonly [ConnectorType, ...ConnectorType[]];
 
 export const RESPONSE_MODE = {
   NONE: 'NONE',
@@ -227,6 +255,64 @@ export const USER_ROLE = {
   VIEWER: 'viewer',
 } as const;
 export type UserRole = (typeof USER_ROLE)[keyof typeof USER_ROLE];
+
+// --- Permissions ---
+// The one list of permission strings (resource:action). The server checks them
+// on routes and socket rooms and seeds them per role; the web gates UI with them.
+
+export const PERMISSIONS = {
+  CHANNELS_READ: 'channels:read',
+  CHANNELS_WRITE: 'channels:write',
+  CHANNELS_DEPLOY: 'channels:deploy',
+  CHANNELS_DELETE: 'channels:delete',
+
+  MESSAGES_READ: 'messages:read',
+  MESSAGES_REPROCESS: 'messages:reprocess',
+  MESSAGES_DELETE: 'messages:delete',
+
+  CODE_TEMPLATES_READ: 'code_templates:read',
+  CODE_TEMPLATES_WRITE: 'code_templates:write',
+  CODE_TEMPLATES_DELETE: 'code_templates:delete',
+
+  ALERTS_READ: 'alerts:read',
+  ALERTS_WRITE: 'alerts:write',
+  ALERTS_DELETE: 'alerts:delete',
+
+  USERS_READ: 'users:read',
+  USERS_WRITE: 'users:write',
+  USERS_DELETE: 'users:delete',
+
+  SETTINGS_READ: 'settings:read',
+  SETTINGS_WRITE: 'settings:write',
+
+  EVENTS_READ: 'events:read',
+
+  RESOURCES_READ: 'resources:read',
+  RESOURCES_WRITE: 'resources:write',
+  RESOURCES_DELETE: 'resources:delete',
+
+  COLLECTIONS_READ: 'collections:read',
+  COLLECTIONS_WRITE: 'collections:write',
+  COLLECTIONS_DELETE: 'collections:delete',
+
+  DATASOURCES_READ: 'datasources:read',
+  DATASOURCES_WRITE: 'datasources:write',
+  DATASOURCES_DELETE: 'datasources:delete',
+
+  GLOBAL_SCRIPTS_READ: 'global_scripts:read',
+  GLOBAL_SCRIPTS_WRITE: 'global_scripts:write',
+
+  GLOBAL_MAP_READ: 'global_map:read',
+  GLOBAL_MAP_WRITE: 'global_map:write',
+
+  CONFIG_MAP_READ: 'config_map:read',
+  CONFIG_MAP_WRITE: 'config_map:write',
+
+  SYSTEM_INFO: 'system:info',
+  SYSTEM_BACKUP: 'system:backup',
+  SYSTEM_RESTORE: 'system:restore',
+} as const;
+export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
 // --- Event Levels ---
 
