@@ -182,6 +182,29 @@ describe('DatabaseReceiver', () => {
       expect(createFn).toHaveBeenCalledTimes(1);
     });
 
+    it('opens the pool with a 30s statement timeout and TLS off unless tls is true', async () => {
+      const { pool, createFn } = makeMockPool();
+      receiver = new DatabaseReceiver(makeConfig(), pool);
+      receiver.setDispatcher(makeDispatcher());
+
+      await receiver.onStart();
+
+      expect(createFn.mock.calls[0]![0]).toStrictEqual({
+        host: 'localhost', port: 5432, database: 'testdb', user: 'testuser', password: 'testpass',
+        maxConnections: 5, idleTimeoutMs: 30_000, connectionTimeoutMs: 10_000, tls: false, statementTimeoutMs: 30_000,
+      });
+    });
+
+    it('opens the pool with TLS when tls is true', async () => {
+      const { pool, createFn } = makeMockPool();
+      receiver = new DatabaseReceiver(makeConfig({ tls: true }), pool);
+      receiver.setDispatcher(makeDispatcher());
+
+      await receiver.onStart();
+
+      expect(createFn.mock.calls[0]![0]).toMatchObject({ tls: true, statementTimeoutMs: 30_000 });
+    });
+
     it('fails if pool creation fails', async () => {
       const { pool, createFn } = makeMockPool();
       createFn.mockResolvedValue({

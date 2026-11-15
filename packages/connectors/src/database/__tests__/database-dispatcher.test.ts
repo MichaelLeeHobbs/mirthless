@@ -130,6 +130,29 @@ describe('DatabaseDispatcher', () => {
       expect(createFn).toHaveBeenCalledTimes(1);
     });
 
+    it('opens the pool without a statement timeout and TLS off unless tls is true', async () => {
+      const { pool, createFn } = makeMockPool();
+      dispatcher = new DatabaseDispatcher(makeConfig(), pool);
+
+      await dispatcher.onStart();
+
+      expect(createFn.mock.calls[0]![0]).toStrictEqual({
+        host: 'localhost', port: 5432, database: 'testdb', user: 'testuser', password: 'testpass',
+        maxConnections: 5, idleTimeoutMs: 30_000, connectionTimeoutMs: 10_000, tls: false,
+      });
+    });
+
+    it('opens the pool with TLS when tls is true', async () => {
+      const { pool, createFn } = makeMockPool();
+      dispatcher = new DatabaseDispatcher(makeConfig({ tls: true }), pool);
+
+      await dispatcher.onStart();
+
+      const config = createFn.mock.calls[0]![0] as Record<string, unknown>;
+      expect(config['tls']).toBe(true);
+      expect('statementTimeoutMs' in config).toBe(false);
+    });
+
     it('fails if pool creation fails', async () => {
       const { pool, createFn } = makeMockPool();
       createFn.mockResolvedValue({

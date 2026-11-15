@@ -6,7 +6,7 @@
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
-import type { DatabasePool, PoolConfig } from './connection-pool.js';
+import { toPoolConfig, type DatabasePool } from './connection-pool.js';
 import { prepare, type PreparedQuery } from './query-builder.js';
 import { DATABASE_VENDOR, createPool, placeholderStyle, type DatabaseVendor } from './database-vendor.js';
 
@@ -25,22 +25,6 @@ export interface DatabaseDispatcherConfig {
   readonly tls?: boolean;
   /** The database it talks to (default PostgreSQL). */
   readonly vendor?: DatabaseVendor;
-}
-
-// ----- Default Pool Config -----
-
-function toPoolConfig(config: DatabaseDispatcherConfig): PoolConfig {
-  return {
-    host: config.host,
-    port: config.port,
-    database: config.database,
-    user: config.username,
-    password: config.password,
-    maxConnections: 5,
-    idleTimeoutMs: 30_000,
-    connectionTimeoutMs: 10_000,
-    tls: config.tls === true,
-  };
 }
 
 // ----- Dispatcher -----
