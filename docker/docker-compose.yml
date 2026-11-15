@@ -85,19 +85,39 @@ services:
     ports:
       - "19092:9092"
       - "19093:9093"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 20s
+      retries: 24
 
   rabbitmq-test:
     # RabbitMQ for the AMQP connectors; the management API (15673) lets the
-    # suite drop client connections to test reconnects.
+    # suite drop client connections to test reconnects. 5674 is AMQPS with a
+    # test certificate the entrypoint writes to docker/test-certs on first start.
     image: rabbitmq:4.4-management-alpine
     container_name: galvaniflow-rabbitmq-test
     profiles: ["test"]
+    entrypoint: ["/bin/sh", "/opt/galvaniflow/entrypoint.sh"]
+    command: ["rabbitmq-server"]
     environment:
       RABBITMQ_DEFAULT_USER: mirth
       RABBITMQ_DEFAULT_PASS: mirthpw
+    volumes:
+      - ./rabbitmq-test/entrypoint.sh:/opt/galvaniflow/entrypoint.sh:ro
+      - ./rabbitmq-test/20-tls.conf:/etc/rabbitmq/conf.d/20-tls.conf:ro
+      - ./test-certs:/certs
     ports:
       - "5673:5672"
+      - "5674:5671"
       - "15673:15672"
+    healthcheck:
+      # As the rabbitmq user: run as root, the CLI writes the Erlang cookie
+      # before the broker does, and the broker then cannot read it.
+      test: ["CMD", "su-exec", "rabbitmq", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
 
 volumes:
   postgres_data:
