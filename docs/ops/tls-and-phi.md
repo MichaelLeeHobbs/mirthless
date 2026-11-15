@@ -62,7 +62,8 @@ Individual connectors carry their own optional TLS configuration, independent of
 
 | Connector | Turns TLS on | Certificates |
 |---|---|---|
-| TCP/MLLP source and destination | A `tls` object in the properties | Inline PEM in the `tls` object (tables below) |
+| TCP/MLLP source | A `tls` object holding both `cert` and `key`; anything less fails the deploy | Inline PEM in the `tls` object (tables below) |
+| TCP/MLLP destination | A `tls` object, which may be empty; a client `cert` needs its `key` and the reverse | Inline PEM in the `tls` object (tables below) |
 | HTTP source | `scheme: 'HTTPS'` | Certificate store ids in `tls`: `serverCertId` (required, with a private key), optional `caCertId` and `requireClientCert` |
 | HTTP destination | `scheme: 'HTTPS'`, or an `https://` URL | Optional certificate store ids in `tls`, used only with `scheme: 'HTTPS'`: `caCertId`, `clientCertId` (mutual TLS, needs a private key), `rejectUnauthorized` (default `true`) |
 | Kafka and AMQP source and destination | `useTls: true` | Optional certificate store ids in `tls`: `caCertId`, `clientCertId`, `rejectUnauthorized` (default `true`) |
@@ -75,7 +76,7 @@ The PEM option shapes are defined in `packages/connectors/src/tls.ts`. For HTTP,
 
 ### Receivers (server side): `TlsServerOptions`
 
-Applies to the **TCP/MLLP source** and, after the server has resolved its certificate ids, the **HTTP source**. When a `tls` object is present, the receiver terminates TLS (`tls.createServer` / `https.createServer`).
+Applies to the **TCP/MLLP source** and, after the server has resolved its certificate ids, the **HTTP source**. When TLS is on (a `tls` object for TCP/MLLP, `scheme: 'HTTPS'` for HTTP), the receiver terminates TLS (`tls.createServer` / `https.createServer`).
 
 | Field | Type | Required | Default | Meaning |
 |-------|------|----------|---------|---------|
@@ -84,11 +85,11 @@ Applies to the **TCP/MLLP source** and, after the server has resolved its certif
 | `ca` | string (PEM) | no | omitted | CA bundle to verify client certs |
 | `requireClientCert` | boolean | no | `false` | Require + verify a client cert (mutual TLS) |
 
-Both `cert` and `key` are mandatory when `tls` is set. A `tls` object that has one without the other makes the connector fail to start with an error; it does not fall back to a plaintext listener.
+Both `cert` and `key` are mandatory. A TCP/MLLP source whose `tls` object lacks the certificate, the private key or both (an empty `tls: {}` included), and an HTTP source on `scheme: 'HTTPS'` without both, fail to deploy with an error that starts `TLS configuration is incomplete:` and names what is missing. A `tls` value that is not an object, or a PEM field that is not a string, fails the deploy with `TLS configuration is invalid:`. The listener never falls back to plaintext. To run a TCP/MLLP source without TLS, remove `tls` or set it to `false`; an HTTP source runs without TLS on any scheme other than `HTTPS` when its `tls` holds only certificate store ids (as the form leaves it). An HTTP source whose `tls` holds a `cert` or `key` PEM on a scheme other than `HTTPS` fails to deploy with `TLS configuration is invalid: tls has a certificate but scheme is not HTTPS`, rather than ignoring the certificate.
 
 ### Dispatchers (client side): `TlsClientOptions`
 
-Applies to the **TCP/MLLP destination**, and to the HTTP, Kafka and AMQP connectors after the server has resolved their certificate ids. When `tls` is present on a TCP/MLLP destination, the dispatcher connects over TLS (`tls.connect`).
+Applies to the **TCP/MLLP destination**, and to the HTTP, Kafka and AMQP connectors after the server has resolved their certificate ids. When `tls` is an object on a TCP/MLLP destination, the dispatcher connects over TLS (`tls.connect`); `tls: false` or no `tls` means plaintext. The client certificate is optional, but a `cert` without its `key`, or a `key` without its `cert`, fails the deploy with `TLS configuration is incomplete:` rather than connecting without it.
 
 | Field | Type | Required | Default | Meaning |
 |-------|------|----------|---------|---------|
