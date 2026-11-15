@@ -31,21 +31,50 @@ export const CONNECTOR_MODE = {
 } as const;
 export type ConnectorMode = (typeof CONNECTOR_MODE)[keyof typeof CONNECTOR_MODE];
 
-export const CONNECTOR_TYPE = {
-  TCP_MLLP: 'TCP_MLLP',
-  HTTP: 'HTTP',
-  FILE: 'FILE',
-  DATABASE: 'DATABASE',
-  JAVASCRIPT: 'JAVASCRIPT',
-  CHANNEL: 'CHANNEL',
-  DICOM: 'DICOM',
-  SMTP: 'SMTP',
-  FHIR: 'FHIR',
-  EMAIL: 'EMAIL',
-  KAFKA: 'KAFKA',
-  AMQP: 'AMQP',
-} as const;
-export type ConnectorType = (typeof CONNECTOR_TYPE)[keyof typeof CONNECTOR_TYPE];
+// --- Connector Types ---
+// The one list of connector types per direction. They must equal the factory
+// keys in packages/connectors/src/registry.ts; a connectors test asserts it.
+
+/** Connector types that can be a channel's source. */
+export const SOURCE_CONNECTOR_TYPES = [
+  'TCP_MLLP',
+  'HTTP',
+  'FILE',
+  'DATABASE',
+  'JAVASCRIPT',
+  'CHANNEL',
+  'DICOM',
+  'EMAIL',
+  'SFTP',
+  'KAFKA',
+  'AMQP',
+] as const;
+export type SourceConnectorType = (typeof SOURCE_CONNECTOR_TYPES)[number];
+
+/** Connector types that can be a channel's destination. */
+export const DESTINATION_CONNECTOR_TYPES = [
+  'TCP_MLLP',
+  'HTTP',
+  'FILE',
+  'DATABASE',
+  'JAVASCRIPT',
+  'SMTP',
+  'CHANNEL',
+  'FHIR',
+  'DICOM',
+  'SFTP',
+  'KAFKA',
+  'AMQP',
+] as const;
+export type DestinationConnectorType = (typeof DESTINATION_CONNECTOR_TYPES)[number];
+
+export type ConnectorType = SourceConnectorType | DestinationConnectorType;
+
+/** Every connector type, in either direction. */
+export const CONNECTOR_TYPES = [
+  ...SOURCE_CONNECTOR_TYPES,
+  ...DESTINATION_CONNECTOR_TYPES.filter((t) => !(SOURCE_CONNECTOR_TYPES as readonly string[]).includes(t)),
+] as unknown as readonly [ConnectorType, ...ConnectorType[]];
 
 export const RESPONSE_MODE = {
   NONE: 'NONE',
