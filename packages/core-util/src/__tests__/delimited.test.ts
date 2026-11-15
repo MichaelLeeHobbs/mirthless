@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { delimitedOptionsSchema } from '@galvaniflow/core-models';
-import { parseDelimited, serializeDelimited } from '../delimited.js';
+import { parseDelimited, serializeDelimited, unescapeControlChars } from '../delimited.js';
 
 const csv = delimitedOptionsSchema.parse({ columnNames: ['mrn', 'family', 'given'] });
 
@@ -119,5 +119,26 @@ describe('serializeDelimited', () => {
     const rows = VALUES.map((value, i) => ({ column1: String(i), column2: value, column3: 'end' }));
     const parsed = parseDelimited(serializeDelimited(rows, o), { ...o, ignoreCR: false });
     expect(parsed).toEqual(rows);
+  });
+});
+
+describe('unescapeControlChars', () => {
+  it('turns typed \\n, \\r and \\t into LF, CR and tab', () => {
+    expect(unescapeControlChars('\\r\\n')).toBe('\r\n');
+    expect(unescapeControlChars('a\\tb')).toBe('a\tb');
+  });
+
+  it('turns a doubled backslash into one backslash', () => {
+    expect(unescapeControlChars('a\\\\b')).toBe('a\\b');
+  });
+
+  it('reads \\\\n as a backslash followed by n, not a newline', () => {
+    expect(unescapeControlChars('\\\\n')).toBe('\\n');
+  });
+
+  it('leaves any other backslash and plain text unchanged', () => {
+    expect(unescapeControlChars('\\x|,')).toBe('\\x|,');
+    expect(unescapeControlChars('')).toBe('');
+    expect(unescapeControlChars('trailing\\')).toBe('trailing\\');
   });
 });
