@@ -170,6 +170,69 @@ describe('a message the pipeline never stores', () => {
     await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
     expect(fatal).toEqual([]);
   });
+
+  it('counts per message id, so a queue that requeues at the tail still stops on the failing message', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.requeueAtTail = true; // as a quorum queue may
+    for (const body of ['bad', 'ok-1', 'ok-2', 'ok-3']) queue.publish(body);
+    const p = pipeline((raw, n) => (raw.content === 'bad' ? notStored('rejected') : stored(n)));
+    const withIds: typeof queue.consume = (c, onDelivery) =>
+      queue.consume(c, (d) => { onDelivery({ ...d, messageId: d.content.toString() }); });
+    const log = makeMockLogger();
+    const fatal: Error[] = [];
+    receiver = new AmqpReceiver({ ...config, maxStoreAttempts: 3 }, withIds, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    receiver.setFatalHandler((error) => { fatal.push(error); });
+    await receiver.onStart();
+
+    await vi.waitFor(() => { expect(fatal).toHaveLength(1); });
+    // Three attempts on 'bad' in all. Counting failures in a row, the stored messages
+    // between its first and second attempt would have reset the count and let it try a fourth time.
+    expect(p.offered.map((r) => r.content)).toEqual(['bad', 'ok-1', 'ok-2', 'ok-3', 'bad', 'bad']);
+    expect(queue.acked).toEqual(['ok-1', 'ok-2', 'ok-3']);
+  });
+
+  it('does not report a fatal error for a failure that comes back during a stop', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let entered = false;
+    const { fatal } = startCapped(queue, async () => { entered = true; await held; return notStored('database closed during shutdown'); }, 1);
+    await vi.waitFor(() => { expect(entered).toBe(true); });
+
+    const stopping = receiver?.onStop();
+    release?.();
+    await stopping;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fatal).toEqual([]);
+    expect(queue.messages.map((m) => m.body)).toEqual(['MSH|1']);
+    receiver = null;
+  });
+
+  it('ignores a failed dispatch left over from before a halt and restart', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('MSH|1');
+    let releaseFirst: (() => void) | undefined;
+    let calls = 0;
+    const { fatal } = startCapped(queue, async () => {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => { releaseFirst = resolve; });
+        return notStored('cancelled by the halt');
+      }
+      return stored(calls);
+    }, 1);
+    await vi.waitFor(() => { expect(calls).toBe(1); });
+    await receiver?.onHalt();
+    await receiver?.onStart();
+    releaseFirst?.();
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fatal).toEqual([]);
+    queue.publish('MSH|2');
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
+  });
 });
 
 describe('broker disconnect', () => {
