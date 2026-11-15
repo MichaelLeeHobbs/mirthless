@@ -34,7 +34,7 @@ export interface MirthImportResult {
   readonly codeTemplates: CodeTemplateImportCounts;
 }
 
-const XML_READERS = { isRecord: isPlainObject, getString, toRecordList } as const;
+const XML_READERS = { isRecord: isPlainObject, getString, toRecordList, stringList } as const;
 
 // ----- Connector Type Mapping -----
 
@@ -925,7 +925,7 @@ function extractFilterFromConnector(
     script: getString(rule, 'script'),
     field: getString(rule, 'field'),
     condition: getString(rule, 'condition'),
-    values: extractStringArray(rule['values']),
+    values: stringList(rule['values']),
   }));
 
   if (rules.length === 0) return null;
@@ -940,15 +940,13 @@ function mapFilterRuleType(type: string | null): string {
   return upper;
 }
 
-function extractStringArray(node: unknown): string[] | null {
-  if (!node) return null;
+/** The `<string>` children of a Mirth string list (`<values><string>a</string></values>`), or a bare array; [] when there are none. */
+function stringList(node: unknown): string[] {
   if (Array.isArray(node)) return node.map(String);
-  if (isPlainObject(node)) {
-    const inner = node['string'];
-    if (Array.isArray(inner)) return inner.map(String);
-    if (typeof inner === 'string') return [inner];
-  }
-  return null;
+  if (!isPlainObject(node)) return [];
+  const raw = node['string'];
+  const list: readonly unknown[] = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+  return list.map(String);
 }
 
 // ----- Transformer Conversion -----
