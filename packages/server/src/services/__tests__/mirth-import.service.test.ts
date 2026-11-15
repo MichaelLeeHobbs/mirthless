@@ -640,13 +640,70 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
   it.each([
     ['jdbc:mysql://partner.example.org:3307/results', 'mysql', { host: 'partner.example.org', port: 3307, database: 'results' }],
     ['jdbc:mariadb://partner.example.org/results', 'mysql', { host: 'partner.example.org', database: 'results' }],
-    ['jdbc:sqlserver://partner.example.org:1433;databaseName=results', 'sqlserver', {}],
+    ['jdbc:sqlserver://partner.example.org:1433;databaseName=results', 'sqlserver', { host: 'partner.example.org', port: 1433, database: 'results' }],
+    ['jdbc:sqlserver://partner.example.org;encrypt=true;database=results', 'sqlserver', { host: 'partner.example.org', database: 'results' }],
+    ['jdbc:sqlserver://partner.example.org\\LAB:1433', 'sqlserver', { host: 'partner.example.org\\LAB', port: 1433 }],
   ])('takes the database vendor from the JDBC URL %s', (url, vendor, location) => {
     const writer = `<properties class="com.mirth.connect.connectors.jdbc.DatabaseDispatcherProperties" version="4.5.0"><url>${url}</url><query>INSERT INTO t (a) VALUES (\${mrn})</query></properties>`;
     const channel = convert4x((x) => x
-      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer));
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, () => writer));
 
     expect(channel.destinations[0]?.properties).toEqual({ vendor, ...location, query: 'INSERT INTO t (a) VALUES (${mrn})' });
+  });
+
+  describe('preview warnings for database connectors that will not run', () => {
+    const writer = (url: string, useScript = 'false'): string => `<properties class="com.mirth.connect.connectors.jdbc.DatabaseDispatcherProperties" version="4.5.0"><url>${url}</url><query>INSERT INTO t (a) VALUES (1)</query><useScript>${useScript}</useScript></properties>`;
+    const reader = (url: string, useScript = 'false'): string => `<properties class="com.mirth.connect.connectors.jdbc.DatabaseReceiverProperties" version="4.5.0"><url>${url}</url><select>SELECT id FROM o</select><useScript>${useScript}</useScript></properties><transformer`;
+    const convert = (edit: (xml: string) => string): readonly string[] => {
+      const result = MirthImportService.convertXml(edit(loadFixture('mirth-4x-channel.xml')));
+      if (!result.ok) throw result.error;
+      return result.value.warnings;
+    };
+    const withWriter = (xml: string) => (x: string): string =>
+      x.replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, () => xml);
+    const withReader = (xml: string) => (x: string): string =>
+      x.replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, () => xml);
+    const databaseWarnings = (warnings: readonly string[]): readonly string[] => warnings.filter((w) => /Database (Reader|Writer)/.test(w) && !w.includes('rows arrive as JSON'));
+
+    it.each([
+      ['jdbc:sqlserver://db:1433;databaseName=lab', 'sqlserver'],
+      ['jdbc:oracle:thin:@db:1521:LAB', 'oracle'],
+    ])('warns that a Database Writer on %s will not deploy', (url, vendor) => {
+      const warnings = databaseWarnings(convert(withWriter(writer(url))));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('Channel "4x Listener"');
+      expect(warnings[0]).toContain('Database Writer');
+      expect(warnings[0]).toContain(vendor);
+      expect(warnings[0]).toContain('will not deploy');
+    });
+
+    it('warns that a Database Reader on SQL Server will not deploy', () => {
+      const warnings = databaseWarnings(convert(withReader(reader('jdbc:sqlserver://db:1433;databaseName=lab'))));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('Database Reader');
+      expect(warnings[0]).toContain('sqlserver');
+    });
+
+    it('does not warn for PostgreSQL, MySQL or MariaDB', () => {
+      expect(databaseWarnings(convert(withWriter(writer('jdbc:postgresql://db/lab'))))).toEqual([]);
+      expect(databaseWarnings(convert(withWriter(writer('jdbc:mysql://db/lab'))))).toEqual([]);
+      expect(databaseWarnings(convert(withReader(reader('jdbc:mariadb://db/lab'))))).toEqual([]);
+    });
+
+    it('warns that a Database Writer or Reader in JavaScript mode will not run its script', () => {
+      const writerWarnings = databaseWarnings(convert(withWriter(writer('jdbc:postgresql://db/lab', 'true'))));
+      expect(writerWarnings).toHaveLength(1);
+      expect(writerWarnings[0]).toContain('Database Writer');
+      expect(writerWarnings[0]).toContain('JavaScript mode');
+      const readerWarnings = databaseWarnings(convert(withReader(reader('jdbc:postgresql://db/lab', 'true'))));
+      expect(readerWarnings).toHaveLength(1);
+      expect(readerWarnings[0]).toContain('Database Reader');
+      expect(readerWarnings[0]).toContain('JavaScript mode');
+    });
+
+    it('gives both warnings for a SQL Server connector in JavaScript mode', () => {
+      expect(databaseWarnings(convert(withWriter(writer('jdbc:sqlserver://db:1433;databaseName=lab', 'true'))))).toHaveLength(2);
+    });
   });
 
   it('keeps a polling source\'s interval and gives a JavaScript Reader only its script', () => {
