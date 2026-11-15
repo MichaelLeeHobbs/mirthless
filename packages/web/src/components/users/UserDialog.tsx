@@ -12,14 +12,16 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import Grid from '@mui/material/Grid';
+import { USER_ROLE, type UserRole } from '@galvaniflow/core-models';
 import type { UserSummary } from '../../api/client.js';
 
-const ROLES = [
-  { value: 'admin', label: 'Admin' },
-  { value: 'deployer', label: 'Deployer' },
-  { value: 'developer', label: 'Developer' },
-  { value: 'viewer', label: 'Viewer' },
-] as const;
+/** Menu label per role; the role list itself comes from core-models. */
+const ROLE_LABELS: Readonly<Record<UserRole, string>> = {
+  admin: 'Admin',
+  deployer: 'Deployer',
+  developer: 'Developer',
+  viewer: 'Viewer',
+};
 
 interface UserDialogProps {
   readonly open: boolean;
@@ -135,8 +137,8 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
               onChange={(e: ChangeEvent<HTMLInputElement>) => { setRole(e.target.value); }}
               fullWidth
             >
-              {ROLES.map((r) => (
-                <MenuItem key={r.value} value={r.value}>{r.label}</MenuItem>
+              {Object.values(USER_ROLE).map((r) => (
+                <MenuItem key={r} value={r}>{ROLE_LABELS[r]}</MenuItem>
               ))}
             </TextField>
           </Grid>

@@ -6,17 +6,18 @@
 // Derived from `defaultRoles` (db/seeds/roles.ts) so the seed and the runtime
 // user-management path can never drift apart.
 
-import { defaultRoles, ROLES, type Role } from '../db/seeds/roles.js';
+import { USER_ROLE, type UserRole } from '@galvaniflow/core-models';
+import { defaultRoles } from '../db/seeds/roles.js';
 
 export interface PermissionRow {
   readonly resource: string;
   readonly action: string;
 }
 
-const KNOWN_ROLES: ReadonlySet<string> = new Set(Object.values(ROLES));
+const KNOWN_ROLES: ReadonlySet<string> = new Set(Object.values(USER_ROLE));
 
 /** Type guard: is the given string one of the known roles. */
-export function isKnownRole(role: string): role is Role {
+export function isKnownRole(role: string): role is UserRole {
   return KNOWN_ROLES.has(role);
 }
 
