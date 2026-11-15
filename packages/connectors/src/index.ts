@@ -66,6 +66,8 @@ export {
   UPDATE_MODE,
   ROW_FORMAT,
   DATABASE_VENDOR,
+  createPool,
+  type DatabasePool,
   type DatabaseVendor,
   type PreparedQuery,
   type PoolConfig,

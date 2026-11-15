@@ -12,6 +12,16 @@ Michael asked for the rest of the `/find-reinvention` report (`.claude/reinventi
 - **Prevention:** AGENTS.md says to look in `lib/` and `core-util` before writing a helper and lists the shared ones. `eslint.config.js` fails a local copy of any of them.
 - Not done: delegating wrappers, the unjudged residual groups and controller handler boilerplate, all out of scope by Michael's call.
 
+## 2026-11-14 — Editor controls for Delimited settings and the database type (branch `claude/editor-delimited-db-vendor`)
+
+Michael asked for the editor controls the Delimited and MySQL work left out.
+
+- **Delimited settings** in the source transformer when its inbound type is Delimited: delimiters (typed as `\t`, `\r\n`), quote, quote escape, column names, CR handling. The form checks them with the schema the server checks at deploy and says when the channel would not deploy.
+- **Database type** on the Database Reader and Writer: PostgreSQL or MySQL/MariaDB; a port still at one database's default moves to the other's. A database imported from Mirth with no driver (sqlserver, oracle) shows as such and says the channel will not deploy.
+- **Test Connection** for a database now connects with the connector's own pool for its type. It always spoke PostgreSQL, so a MySQL test failed.
+- The source transformer's data type row wraps on a phone instead of running past the card.
+- `pnpm shots` gains `source-delimited` and `destination-database`, and a shot's `click` takes a list.
+
 ## 2026-11-14 — Test Connection reaches private networks (branch `fix/test-connection-private-addresses`)
 
 - **Test Connection allows private addresses (D-262).** It refused every 10.x, 172.16-31.x, 192.168.x and (since D-256) 100.64/10 address, so on a hospital network it failed for nearly every real endpoint. It now refuses only loopback, link-local (cloud metadata) and other reserved ranges. Script `httpFetch` is unchanged.
