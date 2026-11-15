@@ -4,22 +4,7 @@
 // Zod validation schemas for connector connection testing.
 
 import { z } from 'zod/v4';
-
-const CONNECTOR_TYPE_VALUES = [
-  'TCP_MLLP',
-  'HTTP',
-  'FILE',
-  'DATABASE',
-  'JAVASCRIPT',
-  'CHANNEL',
-  'DICOM',
-  'SMTP',
-  'FHIR',
-  'EMAIL',
-  'SFTP',
-  'KAFKA',
-  'AMQP',
-] as const;
+import { CONNECTOR_TYPES } from '../constants.js';
 
 const CONNECTOR_MODE_VALUES = [
   'SOURCE',
@@ -27,7 +12,7 @@ const CONNECTOR_MODE_VALUES = [
 ] as const;
 
 export const connectionTestSchema = z.object({
-  connectorType: z.enum(CONNECTOR_TYPE_VALUES),
+  connectorType: z.enum(CONNECTOR_TYPES),
   mode: z.enum(CONNECTOR_MODE_VALUES),
   properties: z.record(z.string(), z.unknown()),
 });

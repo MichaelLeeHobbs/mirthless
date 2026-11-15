@@ -3,31 +3,22 @@
 // ===========================================
 // Maps roles to permission sets.
 
-import { PERMISSIONS } from './permissions.js';
-
-export const ROLES = {
-  ADMIN: 'admin',
-  DEPLOYER: 'deployer',
-  DEVELOPER: 'developer',
-  VIEWER: 'viewer',
-} as const;
-
-export type Role = (typeof ROLES)[keyof typeof ROLES];
+import { PERMISSIONS, USER_ROLE, type Permission, type UserRole } from '@galvaniflow/core-models';
 
 export interface RoleDefinition {
-  readonly name: string;
-  readonly permissions: readonly string[];
+  readonly name: UserRole;
+  readonly permissions: readonly Permission[];
 }
 
 const ALL_PERMISSIONS = Object.values(PERMISSIONS);
 
 export const defaultRoles: readonly RoleDefinition[] = [
   {
-    name: ROLES.ADMIN,
+    name: USER_ROLE.ADMIN,
     permissions: ALL_PERMISSIONS,
   },
   {
-    name: ROLES.DEPLOYER,
+    name: USER_ROLE.DEPLOYER,
     permissions: [
       PERMISSIONS.CHANNELS_READ,
       PERMISSIONS.CHANNELS_WRITE,
@@ -57,7 +48,7 @@ export const defaultRoles: readonly RoleDefinition[] = [
     ],
   },
   {
-    name: ROLES.DEVELOPER,
+    name: USER_ROLE.DEVELOPER,
     permissions: [
       PERMISSIONS.CHANNELS_READ,
       PERMISSIONS.CHANNELS_WRITE,
@@ -77,7 +68,7 @@ export const defaultRoles: readonly RoleDefinition[] = [
     ],
   },
   {
-    name: ROLES.VIEWER,
+    name: USER_ROLE.VIEWER,
     permissions: [
       PERMISSIONS.CHANNELS_READ,
       PERMISSIONS.MESSAGES_READ,
