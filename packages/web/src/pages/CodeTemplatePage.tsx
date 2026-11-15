@@ -74,6 +74,7 @@ export function CodeTemplatePage(): ReactNode {
   const deleteTemplate = useDeleteTemplate();
   const { has } = usePermissions();
   const canWrite = has(PERMISSION.CODE_TEMPLATES_WRITE);
+  const canDelete = has(PERMISSION.CODE_TEMPLATES_DELETE);
 
   const { notify } = useNotification();
 
@@ -327,6 +328,7 @@ export function CodeTemplatePage(): ReactNode {
               onEditLibrary={openEditLibraryDialog}
               onDeleteLibrary={handleDeleteLibrary}
               readOnly={!canWrite}
+              canDelete={canDelete}
             />
           )}
         </Paper>
@@ -349,6 +351,7 @@ export function CodeTemplatePage(): ReactNode {
               onClose={handleDeselectTemplate}
               saving={updateTemplate.isPending}
               readOnly={!canWrite}
+              canDelete={canDelete}
               onDirtyChange={handleDirtyChange}
             />
           ) : (

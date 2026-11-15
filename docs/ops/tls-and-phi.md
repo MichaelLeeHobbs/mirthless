@@ -5,8 +5,7 @@ applies at two independent layers in GalvaniFlow, and a compliant deployment sec
 both:
 
 1. **The admin/API edge** — the web UI and REST/WebSocket API, fronted by nginx.
-2. **The connectors** — the healthcare interfaces themselves (MLLP/HL7, HTTP), which
-   talk to external systems.
+2. **The connectors**: the healthcare interfaces themselves (HL7 over MLLP, HTTP, databases, mail, Kafka and AMQP brokers), which talk to external systems.
 
 ---
 
@@ -59,16 +58,25 @@ Either way: set `FRONTEND_URL=https://your-domain.com` so CORS matches the TLS o
 
 ## 2. Connector-level TLS
 
-Individual connectors carry their own optional TLS configuration, independent of the
-edge. This is what protects the actual HL7/HTTP feeds to and from partner systems. The
-option shapes are defined in `packages/connectors/src/tls.ts` and set on a connector's
-properties under a `tls` object. **The presence of the `tls` object enables TLS** — there
-is no separate `enabled` flag.
+Individual connectors carry their own optional TLS configuration, independent of the edge. This is what protects the actual HL7, HTTP, database, mail and broker feeds to and from partner systems. How TLS is switched on differs by connector:
 
-### Receivers (server side) — `TlsServerOptions`
+| Connector | Turns TLS on | Certificates |
+|---|---|---|
+| TCP/MLLP source | A `tls` object holding both `cert` and `key`; anything less fails the deploy | Inline PEM in the `tls` object (tables below) |
+| TCP/MLLP destination | A `tls` object, which may be empty; a client `cert` needs its `key` and the reverse | Inline PEM in the `tls` object (tables below) |
+| HTTP source | `scheme: 'HTTPS'` | Certificate store ids in `tls`: `serverCertId` (required, with a private key), optional `caCertId` and `requireClientCert` |
+| HTTP destination | `scheme: 'HTTPS'`, or an `https://` URL | Optional certificate store ids in `tls`, used only with `scheme: 'HTTPS'`: `caCertId`, `clientCertId` (mutual TLS, needs a private key), `rejectUnauthorized` (default `true`) |
+| Kafka and AMQP source and destination | `useTls: true` | Optional certificate store ids in `tls`: `caCertId`, `clientCertId`, `rejectUnauthorized` (default `true`) |
+| DATABASE source and destination | `tls: true` | None to set: the server certificate is always verified against the system's trusted CAs |
+| SMTP destination | `secure: true` (TLS from connect, usually port 465) or `requireTLS: true` (STARTTLS required before sending, usually port 587) | The Node runtime's trust store |
+| EMAIL source | `secure` (default `true`) | The Node runtime's trust store |
+| FHIR destination | An `https://` base URL | The Node runtime's trust store |
 
-Applies to the **TCP/MLLP source** and the **HTTP source**. When a `tls` object is
-present, the receiver terminates TLS (`tls.createServer` / `https.createServer`).
+The PEM option shapes are defined in `packages/connectors/src/tls.ts`. For HTTP, Kafka and AMQP connectors the channel stores certificate store ids, and the server swaps them for PEM when it deploys the channel (`packages/server/src/services/connector-tls-resolver.ts`); a missing certificate, or one without the private key its role needs, stops the deploy. The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`. The web forms set TLS for HTTP, Kafka, AMQP and DATABASE; TCP/MLLP TLS is set through the API, a channel import or an export file.
+
+### Receivers (server side): `TlsServerOptions`
+
+Applies to the **TCP/MLLP source** and, after the server has resolved its certificate ids, the **HTTP source**. When TLS is on (a `tls` object for TCP/MLLP, `scheme: 'HTTPS'` for HTTP), the receiver terminates TLS (`tls.createServer` / `https.createServer`).
 
 | Field | Type | Required | Default | Meaning |
 |-------|------|----------|---------|---------|
@@ -77,13 +85,11 @@ present, the receiver terminates TLS (`tls.createServer` / `https.createServer`)
 | `ca` | string (PEM) | no | omitted | CA bundle to verify client certs |
 | `requireClientCert` | boolean | no | `false` | Require + verify a client cert (mutual TLS) |
 
-Both `cert` and `key` are mandatory when `tls` is set — omitting either fails connector
-startup with `TLS requires both cert and key`.
+Both `cert` and `key` are mandatory. A TCP/MLLP source whose `tls` object lacks the certificate, the private key or both (an empty `tls: {}` included), and an HTTP source on `scheme: 'HTTPS'` without both, fail to deploy with an error that starts `TLS configuration is incomplete:` and names what is missing. A `tls` value that is not an object, or a PEM field that is not a string, fails the deploy with `TLS configuration is invalid:`. The listener never falls back to plaintext. To run a TCP/MLLP source without TLS, remove `tls` or set it to `false`; an HTTP source runs without TLS on any scheme other than `HTTPS` when its `tls` holds only certificate store ids (as the form leaves it). An HTTP source whose `tls` holds a `cert` or `key` PEM on a scheme other than `HTTPS` fails to deploy with `TLS configuration is invalid: tls has a certificate but scheme is not HTTPS`, rather than ignoring the certificate.
 
-### Dispatchers (client side) — `TlsClientOptions`
+### Dispatchers (client side): `TlsClientOptions`
 
-Applies to the **TCP/MLLP destination**. When `tls` is present, the dispatcher connects
-over TLS (`tls.connect`).
+Applies to the **TCP/MLLP destination**, and to the HTTP, Kafka and AMQP connectors after the server has resolved their certificate ids. When `tls` is an object on a TCP/MLLP destination, the dispatcher connects over TLS (`tls.connect`); `tls: false` or no `tls` means plaintext. The client certificate is optional, but a `cert` without its `key`, or a `key` without its `cert`, fails the deploy with `TLS configuration is incomplete:` rather than connecting without it.
 
 | Field | Type | Required | Default | Meaning |
 |-------|------|----------|---------|---------|
@@ -98,17 +104,15 @@ over TLS (`tls.connect`).
 
 ### HTTP destination
 
-The **HTTP destination** has **no `tls` config object**. It uses `fetch`, so transport
-security is governed entirely by the URL scheme: use an `https://` URL and TLS is applied
-using the Node runtime's trust store. To trust a private CA, provide it to the runtime
-(e.g. `NODE_EXTRA_CA_CERTS`).
+With `scheme: 'HTTPS'` the HTTP destination sends over `node:https` and applies its resolved `tls` options: a private CA to trust, a client certificate for mutual TLS, and `rejectUnauthorized`. Without a scheme, an `https://` URL with no custom TLS options goes through `fetch` and the Node runtime's trust store.
+
+### Connectors with a TLS switch but no certificate options
+
+DATABASE (`tls: true`) verifies the server certificate against the system's trusted CAs and has no option to add a CA or a client certificate. SMTP, EMAIL and FHIR use the Node runtime's trust store. To trust a private CA for these, give it to the runtime (for example `NODE_EXTRA_CA_CERTS`).
 
 ### Connectors without TLS options today
 
-FILE, DATABASE, JAVASCRIPT, CHANNEL, DICOM, FHIR, SMTP, and EMAIL connectors do not expose
-a structured `tls` block. Where those protocols carry PHI (e.g. a DATABASE connector to a
-remote Postgres, or an EMAIL/SMTP feed), secure them at the protocol/driver or network
-layer (DB SSL parameters, SMTPS/STARTTLS, VPN/private networking).
+FILE, JAVASCRIPT, CHANNEL and DICOM have no TLS option. SFTP has none either because SSH encrypts it; leave its `strictHostKey` check on so the server is authenticated. Where a DICOM feed carries PHI across a network, secure it at the network layer (VPN or private networking).
 
 ---
 
@@ -116,8 +120,7 @@ layer (DB SSL parameters, SMTPS/STARTTLS, VPN/private networking).
 
 - [ ] Edge TLS terminated (nginx 443 or upstream LB); port 80 redirects to 443.
 - [ ] `FRONTEND_URL` set to the `https://` origin; `TRUST_PROXY` matches your proxy setup.
-- [ ] Every MLLP/HTTP interface that carries PHI has a `tls` config (or an `https://` URL
-      for HTTP destinations).
+- [ ] Every network interface that carries PHI has TLS on, using the switch the table in section 2 names for its connector (`tls` for TCP/MLLP, `scheme: 'HTTPS'` for HTTP, `useTls` for Kafka and AMQP, `tls: true` for DATABASE, `secure` or `requireTLS` for SMTP).
 - [ ] Dispatcher `rejectUnauthorized` left at its `true` default (verify server certs).
 - [ ] Non-TLS-aware connectors carrying PHI are secured at the network layer.
 - [ ] Certificates are rotated before expiry and stored outside the repo / image.

@@ -165,7 +165,7 @@ settings:
 overrides:
   express-rate-limit@8: '>=8.2.2 <9'
   socket.io-parser@4: '>=4.2.7 <5'
-  fast-xml-parser@5: '>=5.10.1 <6'
+  fast-xml-parser@5: '>=5.12.0 <6'
   ws@8: '>=8.20.1 <9'
   yaml@1: '>=1.10.3 <2'
   dompurify@3: '>=3.4.17 <4'
@@ -175,6 +175,8 @@ overrides:
   compression@1: '>=1.8.2 <2'
   ip-address@10: '>=10.7.4 <11'
   adm-zip@0.5: 0.6.1
+  dcmjs@0.50: '>=0.52.0 <0.53'
+  minimatch@10: '>=11.0.1 <12'
 
 importers:
 
@@ -367,7 +369,7 @@ importers:
         specifier: ^0.28.2
         version: 0.28.2
       fast-xml-parser:
-        specifier: '>=5.10.1 <6'
+        specifier: '>=5.12.0 <6'
         version: 5.12.0
     devDependencies:
       '@types/node':
@@ -428,7 +430,7 @@ importers:
         specifier: '>=8.2.2 <9'
         version: 8.7.4(express@5.3.0(supports-color@7.2.0))(supports-color@7.2.0)
       fast-xml-parser:
-        specifier: '>=5.10.1 <6'
+        specifier: '>=5.12.0 <6'
         version: 5.12.0
       helmet:
         specifier: 8.3.0
@@ -699,8 +701,8 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
-  '@babel/runtime-corejs3@7.29.7':
-    resolution: {integrity: sha512-ppj9ouYku+RX0ljtgZd+KMO5mkM2bCqg8H2PYAFWnLsHEIKIdRojqbJ2i3eVHrisuxy7nOFCmngTDdWtUCdXUQ==}
+  '@babel/runtime-corejs3@7.29.2':
+    resolution: {integrity: sha512-Lc94FOD5+0aXhdb0Tdg3RUtqT6yWbI/BbFWvlaSJ3gAb9Ks+99nHRDKADVqC37er4eCB0fHyWT+y+K3QOvJKbw==}
     engines: {node: '>=6.9.0'}
 
   '@babel/runtime@7.28.6':
@@ -2300,8 +2302,9 @@ packages:
   dcmjs-dimse@0.3.4:
     resolution: {integrity: sha512-KtaRuygKt3swTfFLw8TNJ8yuWc9MaOYZIj7C/oV0siZrjoQDf5c/Rtyl1W1C1MM4VPsQAXrdMwkP0PyRU3IVHQ==}
 
-  dcmjs@0.50.3:
-    resolution: {integrity: sha512-h1bqE8K+JSDHEJTnVw0I/lqVO26zZ4uEwQ/lQ/mrntnCVYCbY+6XnGTgFYQw39PJ4DEDVTBzXfO9kNizYxsnqA==}
+  dcmjs@0.52.3:
+    resolution: {integrity: sha512-KfOPlet9eMziDIJ/+rUbqwyVay/tEY6ufT5GXswmjDH1fOtBSFQR0QWlsIYdu/qUGobbHRdg9r1fRlSFzqvsHA==}
+    engines: {node: '>=22.13'}
 
   debug@2.6.9:
     resolution: {integrity: sha512-bC7ElrdJaJnPbAP+1EotYvqZsb3ecl5wi6Bfi6BJTUcNowp6cvspg0jXznRTKDjm/E7AdgFBVeAPVMNcKGsHMA==}
@@ -3275,10 +3278,6 @@ packages:
     resolution: {integrity: sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A==}
     engines: {node: '>=18'}
 
-  minimatch@10.2.6:
-    resolution: {integrity: sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==}
-    engines: {node: 18 || 20 || >=22}
-
   minimatch@11.0.8:
     resolution: {integrity: sha512-nFQuYSTVrGvysVBps5Ih+0BdnYFN/Cj3C816r6+p7yK+FHrVLGE4O4N9AFwykrlNlvM2HYt+Rad1Uiro6h88Ig==}
     engines: {node: 20 || >=22}
@@ -3417,8 +3416,8 @@ packages:
   package-json-from-dist@1.0.1:
     resolution: {integrity: sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw==}
 
-  pako@2.2.0:
-    resolution: {integrity: sha512-zJq6RP/5q+TO2OpFV3FHzlPnFjmkb7Nc99a5SNjJE+uu/PkpChs+NIZSSzbBoD+6kjiISXjfYdwj1ZRQ81dz/w==}
+  pako@2.1.0:
+    resolution: {integrity: sha512-w+eufiZ1WuJYgPXbV/PO3NCMEc3xqylkKHzp8bxp1uW4qaSNQUkwmLLEc3kKsfz8lpV1F8Ht3U1Cm+9Srog2ug==}
 
   parent-module@1.0.1:
     resolution: {integrity: sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==}
@@ -4426,7 +4425,7 @@ snapshots:
     dependencies:
       '@babel/types': 7.29.14
 
-  '@babel/runtime-corejs3@7.29.7':
+  '@babel/runtime-corejs3@7.29.2':
     dependencies:
       core-js-pure: 3.49.0
 
@@ -4861,7 +4860,7 @@ snapshots:
     dependencies:
       '@eslint/object-schema': 3.0.5
       debug: 4.4.3(supports-color@7.2.0)
-      minimatch: 10.2.6
+      minimatch: 11.0.8
     transitivePeerDependencies:
       - supports-color
 
@@ -5209,7 +5208,7 @@ snapshots:
 
   '@testing-library/dom@10.4.1':
     dependencies:
-      '@babel/code-frame': 7.29.0
+      '@babel/code-frame': 7.29.7
       '@babel/runtime': 7.28.6
       '@types/aria-query': 5.0.4
       aria-query: 5.3.0
@@ -5426,7 +5425,7 @@ snapshots:
       '@typescript-eslint/types': 8.72.2
       '@typescript-eslint/visitor-keys': 8.72.2
       debug: 4.4.3(supports-color@7.2.0)
-      minimatch: 10.2.6
+      minimatch: 11.0.8
       semver: 7.7.4
       tinyglobby: 0.2.17
       ts-api-utils: 2.5.0(typescript@6.0.3)
@@ -5830,14 +5829,14 @@ snapshots:
 
   dcmjs-codecs@0.0.8:
     dependencies:
-      dcmjs: 0.50.3
+      dcmjs: 0.52.3
       loglevel: 1.9.2
       loglevel-plugin-prefix: 0.8.4
 
   dcmjs-dimse@0.3.4:
     dependencies:
       async-event-emitter2: 0.0.2
-      dcmjs: 0.50.3
+      dcmjs: 0.52.3
       dcmjs-codecs: 0.0.8
       loglevel: 1.9.2
       loglevel-plugin-prefix: 0.8.4
@@ -5845,15 +5844,15 @@ snapshots:
       smart-buffer: 4.2.0
       ts-mixer: 6.0.4
 
-  dcmjs@0.50.3:
+  dcmjs@0.52.3:
     dependencies:
-      '@babel/runtime-corejs3': 7.29.7
+      '@babel/runtime-corejs3': 7.29.2
       adm-zip: 0.6.1
       gl-matrix: 3.4.4
       lodash.clonedeep: 4.5.0
       loglevel: 1.9.2
       ndarray: 1.0.19
-      pako: 2.2.0
+      pako: 2.1.0
 
   debug@2.6.9(supports-color@7.2.0):
     dependencies:
@@ -6221,7 +6220,7 @@ snapshots:
       imurmurhash: 0.1.4
       is-glob: 4.0.3
       json-stable-stringify-without-jsonify: 1.0.1
-      minimatch: 10.2.6
+      minimatch: 11.0.8
       natural-compare: 1.4.0
       optionator: 0.9.4
     transitivePeerDependencies:
@@ -6902,10 +6901,6 @@ snapshots:
     dependencies:
       mime-db: 1.54.0
 
-  minimatch@10.2.6:
-    dependencies:
-      brace-expansion: 5.0.12
-
   minimatch@11.0.8:
     dependencies:
       '@isaacs/nonrecursive-glob-match': 1.1.0
@@ -7043,7 +7038,7 @@ snapshots:
 
   package-json-from-dist@1.0.1: {}
 
-  pako@2.2.0: {}
+  pako@2.1.0: {}
 
   parent-module@1.0.1:
     dependencies:

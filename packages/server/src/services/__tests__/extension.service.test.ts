@@ -169,6 +169,17 @@ describe('ExtensionService.setEnabled', () => {
 
     expect(result.ok).toBe(false);
   });
+
+  it('returns the error when the settings upsert returns a failed Result', async () => {
+    mockUpsert.mockResolvedValue({ ok: false, value: null, error: new Error('DB error') } as never);
+
+    const result = await ExtensionService.setEnabled('http', false);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toBe('DB error');
+    }
+  });
 });
 
 // ----- Extension capabilities -----

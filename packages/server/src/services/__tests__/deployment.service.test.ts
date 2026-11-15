@@ -177,6 +177,29 @@ describe('DeploymentService', () => {
       expect(mockEngine.deploy).not.toHaveBeenCalled();
     });
 
+    it('names the destination (and its metaDataId) whose properties are invalid', async () => {
+      const dest = {
+        id: 'dest-x', enabled: true, properties: {}, queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 10000,
+        rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+      };
+      const badChannel = {
+        ...CHANNEL_DETAIL,
+        destinations: [
+          { ...dest, id: 'dest-1', metaDataId: 1, name: 'To LIS', connectorType: 'TCP_MLLP', properties: { host: 'lis', port: 6661 } },
+          { ...dest, id: 'dest-2', metaDataId: 2, name: 'To Archive', connectorType: 'FILE' },  // missing directory
+        ],
+      };
+      mockChannelService.getById.mockResolvedValue(ok(badChannel));
+
+      const result = await DeploymentService.deploy(CHANNEL_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('Destination "To Archive" (metaDataId 2)');
+      expect(result.error.message).toContain('directory');
+      expect(mockEngine.deploy).not.toHaveBeenCalled();
+    });
+
     it('deploys successfully with valid destination properties', async () => {
       const goodChannel = {
         ...CHANNEL_DETAIL,
