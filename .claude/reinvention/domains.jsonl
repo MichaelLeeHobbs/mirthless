@@ -199,3 +199,17 @@
 {"id":"D0199","name":"timeout wrapper","def":"a timeout with the callback it guards"}
 {"id":"D0200","name":"revision number","def":"a version or revision counter, optionally with a channel id"}
 {"id":"D0201","name":"dispatch function","def":"the function that dispatches a message into a channel"}
+{"id":"D0202","name":"IP subnet list","def":"lists of IPv4 or IPv6 subnets (CIDR ranges) used to build a block or allow list"}
+{"id":"D0203","name":"data type name","def":"the name of a message data type (HL7V2, X12, DELIMITED, XML, JSON and the like)"}
+{"id":"D0204","name":"X12 message text","def":"a raw X12 interchange or message as text"}
+{"id":"D0205","name":"X12 path","def":"an X12 segment and element path, as text or parsed"}
+{"id":"D0206","name":"X12 path and value","def":"an X12 path together with the value to write there"}
+{"id":"D0207","name":"data type properties","def":"the serialization or parsing options of a message data type, or one of their names (for example the Delimited options)"}
+{"id":"D0208","name":"database vendor","def":"the name of a database vendor or driver (postgres, mysql, mssql and the like)"}
+{"id":"D0209","name":"delimited text","def":"delimited (CSV-like) message text to parse, optionally with an offset into it"}
+{"id":"D0210","name":"message variable map","def":"the variable maps carried with a message (channel, connector, response, source), singly or as a list, in any representation"}
+{"id":"D0211","name":"X12 element text","def":"the text of an X12 element or component"}
+{"id":"D0212","name":"markdown table cell text","def":"text destined for one cell of a Markdown table"}
+{"id":"D0213","name":"parsed X12 message","def":"an X12 message as a parsed object or proxy"}
+{"id":"D0214","name":"response source setting","def":"the setting that picks whose response goes back to the sender: a response mode, optionally with a connector name"}
+{"id":"D0215","name":"research theme record","def":"a voice-of-user research theme or cluster with its scores, evidence and fields"}
