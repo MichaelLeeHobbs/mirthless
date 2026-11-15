@@ -6,7 +6,7 @@ Status: research, 2026-11-15. Asked by Michael during the code editor climb: whi
 
 **Stay on Monaco, upgrade to the current release (0.57.0 on npm at 2026-11-15), and slim the bundle.** The heaviest part of any in-browser TypeScript editor is the TypeScript compiler worker: our `ts.worker` is 6.9 MB minified (1.48 MB gzipped), and any editor that type-checks against our `.d.ts` in the browser ships the same compiler. Switching would not shrink that, and would cost a rewrite of completion, hover, diagnostics and theming.
 
-Then build the tools in the ranked list below, starting with running a script against a sample message. The upgrade must carry or retire the suggest-widget patch (D-279).
+Then build the tools in the ranked list below, starting with running a script against a sample message. The upgrade must carry or retire the suggest-widget patch (D-283).
 
 ## Engines considered
 
@@ -39,7 +39,7 @@ No product read offered a breakpoint debugger; Iguana's per-line values fill tha
 
 ## Ranked shortlist for GalvaniFlow
 
-1. **Run the script against a sample message**: show the result, `logger` output and errors as editor problems. Medium (a dry-run endpoint on the sandbox, no message stored, audited because the sample can be PHI). **Built 2026-11-15 (D-278)**, except showing a script error as an editor problem: it shows in the result panel.
+1. **Run the script against a sample message**: show the result, `logger` output and errors as editor problems. Medium (a dry-run endpoint on the sandbox, no message stored, audited because the sample can be PHI). **Built 2026-11-15 (D-282)**, except showing a script error as an editor problem: it shows in the result panel.
 2. **Saved test messages per channel or script, with expected output**: regression checks instead of clicking. Medium.
 3. **HL7 message tree from the sample**: click to insert a path, typed against `msg`. Medium.
 4. **Diff the editor against the deployed revision** (CodeDiffEditor already exists), then revision history per script. Small for the diff, medium for history.

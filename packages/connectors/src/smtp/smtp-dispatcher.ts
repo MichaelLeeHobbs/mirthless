@@ -4,7 +4,7 @@
 // Sends messages as emails via SMTP using nodemailer.
 // Supports template variable substitution in subject/body.
 
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvaniflow/core-util';
 import { fillVariables, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { createRequire } from 'node:module';
 import { withTimeoutSignal } from '../timeout.js';
@@ -100,23 +100,24 @@ export type TransportFactory = (config: SmtpDispatcherConfig) => SmtpTransport;
 
 /**
  * Substitute `${msg}`, `${messageId}`, `${channelId}` and `${metaDataId}`, and
- * any other `${name}` from the message's variables. No eval, no expressions.
- * One pass over the template: a substituted value (the message content or a
- * variable) is never scanned for placeholders.
+ * any other `${name}` from the message's variables, by the shared rule in
+ * {@link fillPlaceholders}. A built-in wins over a variable of the same name.
+ * No eval, no expressions. One pass over the template: a substituted value
+ * (the message content or a variable) is never scanned for placeholders.
  */
 export function substituteTemplate(
   template: string,
   content: string,
   message: ConnectorMessage,
 ): string {
-  const builtIns: Readonly<Record<string, string>> = {
+  const builtIns = recordLookup({
     msg: content,
     messageId: String(message.messageId),
     channelId: message.channelId,
     metaDataId: String(message.metaDataId),
-  };
-  return template.replace(/\$\{([^}]+)\}/g, (placeholder, name: string) =>
-    Object.hasOwn(builtIns, name) ? (builtIns[name] ?? placeholder) : fillVariables(placeholder, message));
+  });
+  const variables = recordLookup(message.variables ?? {});
+  return fillPlaceholders(template, (name) => builtIns(name) ?? variables(name));
 }
 
 // ----- Dispatcher -----

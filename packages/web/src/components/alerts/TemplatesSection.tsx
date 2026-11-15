@@ -11,6 +11,7 @@ import Grid from '@mui/material/Grid';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
 import { ALERT_TEMPLATE_VARIABLES } from '@galvaniflow/core-models';
+import { placeholderNames } from '@galvaniflow/core-util';
 
 export interface TemplateFormValues {
   readonly subjectTemplate: string;
@@ -30,8 +31,7 @@ const KNOWN_VARIABLES: ReadonlySet<string> = new Set(ALERT_TEMPLATE_VARIABLES.ma
 
 /** Placeholders in a template that the engine will not substitute, e.g. `${error}`. */
 export function findUnknownVariables(template: string): readonly string[] {
-  const names = Array.from(template.matchAll(/\$\{(\w*)\}/g), (m) => m[1] ?? '');
-  return [...new Set(names.filter((n) => !KNOWN_VARIABLES.has(n)))];
+  return placeholderNames(template).filter((n) => !KNOWN_VARIABLES.has(n));
 }
 
 function helperFor(template: string, hint: string): { readonly text: string; readonly warn: boolean } {
