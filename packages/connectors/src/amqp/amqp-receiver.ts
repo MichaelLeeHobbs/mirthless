@@ -146,6 +146,9 @@ export class AmqpReceiver implements SourceConnectorRuntime {
         }
       }
       if (this.consumer === consumer) this.consumer = null;
+      // `closed` also settles when only the channel ends (a cancelled consumer,
+      // a consumer_timeout); the connection is still open and must be closed.
+      if (consumer) await withTimeout(consumer.close(), AMQP_OP_TIMEOUT_MS, 'AMQP close').catch(() => undefined);
       consumer = null;
       if (this.isCurrent(generation)) await this.pause();
     }

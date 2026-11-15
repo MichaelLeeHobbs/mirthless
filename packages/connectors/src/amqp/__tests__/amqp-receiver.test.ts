@@ -144,6 +144,21 @@ describe('broker disconnect', () => {
     queue.publish('MSH|2');
     await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1', 'MSH|2']); });
   });
+
+  // A cancelled consumer (queue deleted) or a closed channel (consumer_timeout)
+  // leaves its connection open; each reconnect used to leak one.
+  it('closes the old connection when the broker cancels the consumer, then reconnects', async () => {
+    const queue = new FakeAmqpQueue();
+    await start(queue, pipeline().dispatch);
+    queue.cancel();
+    await vi.waitFor(() => { expect(queue.connectCount).toBe(2); });
+    queue.cancel();
+    await vi.waitFor(() => { expect(queue.connectCount).toBe(3); });
+    expect(queue.openConnections).toBe(1);
+
+    queue.publish('MSH|1');
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['MSH|1']); });
+  });
 });
 
 describe('stop and halt', () => {

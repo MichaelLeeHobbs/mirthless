@@ -23,6 +23,7 @@ export class FakeAmqpQueue {
   failConnects = 0;
   private outstanding: QueuedMessage | null = null;
   private connection: FakeConsumer | null = null;
+  private readonly consumers: FakeConsumer[] = [];
 
   publish(body: string, headers: Record<string, unknown> = {}): void {
     this.messages.push({ body, headers, redelivered: false });
@@ -36,6 +37,7 @@ export class FakeAmqpQueue {
       throw new Error('ECONNREFUSED broker down');
     }
     this.connection = new FakeConsumer(this, onDelivery);
+    this.consumers.push(this.connection);
     queueMicrotask(() => { this.deliverNext(); });
     return this.connection;
   };
@@ -49,8 +51,26 @@ export class FakeAmqpQueue {
     connection.lose(new Error('ECONNRESET connection to broker lost'));
   }
 
+  /**
+   * The broker cancels the consumer (the queue was deleted) or closes only its
+   * channel (a consumer_timeout): `closed` settles, but the connection stays
+   * open until the client closes it.
+   */
+  cancel(): void {
+    const connection = this.connection;
+    if (!connection) return;
+    this.connection = null;
+    this.returnOutstanding();
+    connection.lose(new Error('Consumer cancelled by the broker'), { connectionOpen: true });
+  }
+
   get connected(): boolean {
     return this.connection !== null;
+  }
+
+  /** Connections opened and not yet closed by the client, or lost. */
+  get openConnections(): number {
+    return this.consumers.filter((c) => c.connectionOpen).length;
   }
 
   /** Called by a consumer closing its connection. */
@@ -105,6 +125,7 @@ export class FakeAmqpQueue {
 
 class FakeConsumer implements AmqpConsumer {
   readonly closed: Promise<Error>;
+  connectionOpen = true;
   private settle: (err: Error) => void = () => undefined;
 
   constructor(private readonly queue: FakeAmqpQueue, private readonly onDelivery: (d: AmqpDelivery) => void) {
@@ -115,11 +136,13 @@ class FakeConsumer implements AmqpConsumer {
     this.onDelivery(delivery);
   }
 
-  lose(error: Error): void {
+  lose(error: Error, { connectionOpen = false } = {}): void {
+    this.connectionOpen = connectionOpen;
     this.settle(error);
   }
 
   async close(): Promise<void> {
+    this.connectionOpen = false;
     this.queue.closed(this);
     this.settle(new Error('closed by client'));
   }
