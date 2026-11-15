@@ -44,6 +44,12 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('An unexpected error occurred')).toBeTruthy();
   });
 
+  // A thrown string is the message, as for the mutation toast and ErrorState (G0071).
+  it('shows the text of a thrown string', () => {
+    renderBoundary('Chart data missing');
+    expect(screen.getByText('Chart data missing')).toBeTruthy();
+  });
+
   it('shows the fallback for a thrown non-Error value', () => {
     renderBoundary({ code: 42 });
     expect(screen.getByText('An unexpected error occurred')).toBeTruthy();
