@@ -2,6 +2,12 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Dependabot for npm and Docker (branch `claude/dependabot-setup-14e08c`)
+
+`.github/dependabot.yml` covered GitHub Actions only. It now also proposes npm updates for the pnpm workspace (weekly; minor and patch grouped into one runtime and one dev PR, each major alone, 3-day cooldown so pnpm's minimum release age accepts the version) and base-image updates for `docker/Dockerfile.*` and `docker/docker-compose*.yml` (monthly; Node and Postgres majors ignored, since those are deliberate choices).
+
+- Not done: Dependabot alerts and security updates are repo settings and were off. Even when on, Dependabot's dependency graph does not yet read pnpm 12's two-document `pnpm-lock.yaml`, so npm alerts may not appear until GitHub fixes that; version updates are unaffected.
+
 ## 2026-11-14 — Kafka and AMQP connectors, V15 (branch `feat/kafka-amqp-connectors`)
 
 Michael decided to build Kafka and AMQP connectors rather than partner (D-261, doc 18 CON10). Done here:
