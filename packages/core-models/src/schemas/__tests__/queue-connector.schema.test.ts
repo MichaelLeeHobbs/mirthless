@@ -48,6 +48,15 @@ describe('kafkaSourcePropertiesSchema', () => {
     const parsed = kafkaSourcePropertiesSchema.parse({ ...base, useTls: true, tls: {} });
     expect(parsed.tls).toEqual({ caCertId: '', clientCertId: '', rejectUnauthorized: true });
   });
+
+  it('decodes payloads as UTF-8 unless a charset is chosen', () => {
+    expect(kafkaSourcePropertiesSchema.parse(base).charset).toBe('utf-8');
+    expect(kafkaSourcePropertiesSchema.parse({ ...base, charset: 'latin1' }).charset).toBe('latin1');
+  });
+
+  it('rejects a charset the source cannot decode', () => {
+    expect(kafkaSourcePropertiesSchema.safeParse({ ...base, charset: 'ebcdic' }).success).toBe(false);
+  });
 });
 
 describe('kafkaDestinationPropertiesSchema', () => {
@@ -80,6 +89,12 @@ describe('amqpSourcePropertiesSchema', () => {
 
   it('requires a queue', () => {
     expect(amqpSourcePropertiesSchema.safeParse({ host: 'rabbit' }).success).toBe(false);
+  });
+
+  it('decodes payloads as UTF-8 unless a charset is chosen, and accepts base64 for binary', () => {
+    expect(amqpSourcePropertiesSchema.parse({ host: 'rabbit', queue: 'adt' }).charset).toBe('utf-8');
+    expect(amqpSourcePropertiesSchema.parse({ host: 'rabbit', queue: 'adt', charset: 'base64' }).charset).toBe('base64');
+    expect(amqpSourcePropertiesSchema.safeParse({ host: 'rabbit', queue: 'adt', charset: 'utf-16' }).success).toBe(false);
   });
 });
 

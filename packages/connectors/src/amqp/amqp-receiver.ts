@@ -15,6 +15,8 @@ import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../b
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
+import { decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
+import type { QueueCharset } from '@galvaniflow/core-models';
 import { consumeAmqp, type AmqpConnectionConfig, type AmqpConsume, type AmqpConsumer, type AmqpDelivery } from './amqp-client.js';
 
 /** Wait before reconnecting, and before returning a message the pipeline could not take. */
@@ -24,13 +26,21 @@ const AMQP_OP_TIMEOUT_MS = 30_000;
 
 export interface AmqpReceiverConfig extends AmqpConnectionConfig {
   readonly queue: string;
+  /** How a message body becomes message text; UTF-8 when absent. */
+  readonly charset?: QueueCharset;
 }
 
-/** The message the pipeline receives for a delivery. */
-export function toRawMessage(delivery: AmqpDelivery, queue: string): RawMessage {
+/**
+ * The message the pipeline receives for a delivery, its body decoded with the
+ * source's charset. A body that is not valid UTF-8 (in UTF-8 mode) gets a
+ * `charsetError` in the source map, so the stored message shows it.
+ */
+export function toRawMessage(delivery: AmqpDelivery, queue: string, charset: QueueCharset = 'utf-8'): RawMessage {
+  const decoded = decodePayload(delivery.content, charset);
   return {
-    content: delivery.content.toString('utf8'),
+    content: decoded.text,
     sourceMap: {
+      ...(decoded.replaced ? { charsetError: INVALID_UTF8_MESSAGE } : {}),
       queue,
       exchange: delivery.exchange,
       routingKey: delivery.routingKey,
@@ -164,7 +174,11 @@ export class AmqpReceiver implements SourceConnectorRuntime {
     // Not acknowledged: the channel closes on stop and the broker requeues it.
     if (!dispatcher || !this.isCurrent(generation)) return;
     const where = { queue: this.config.queue, routingKey: delivery.routingKey, redelivered: delivery.redelivered };
-    const result = await dispatcher(toRawMessage(delivery, this.config.queue));
+    const raw = toRawMessage(delivery, this.config.queue, this.config.charset);
+    if (raw.sourceMap['charsetError']) {
+      this.logger.warn(where, 'AMQP message body is not valid UTF-8; invalid bytes were replaced and the message is flagged (charsetError in the source map)');
+    }
+    const result = await dispatcher(raw);
     if (!result.ok) {
       this.logger.error({ ...errorInfo(result.error), ...where }, 'Pipeline did not store the AMQP message; returning it to the queue');
       if (this.isCurrent(generation)) await this.pause();

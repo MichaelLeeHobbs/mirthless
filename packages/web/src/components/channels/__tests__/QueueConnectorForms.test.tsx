@@ -113,6 +113,13 @@ describe('KafkaSourceForm', () => {
     selectOption('Start From', 'Latest (only new records)');
     expect(lastProps).toMatchObject({ topic: 'adt', groupId: 'galvaniflow-adt', startFrom: 'LATEST' });
   });
+
+  it('decodes as UTF-8 by default and writes the chosen charset', () => {
+    renderForm(KafkaSourceForm, { ...KAFKA_SOURCE_DEFAULTS });
+    expect(lastProps['charset']).toBe('utf-8');
+    selectOption('Charset', 'ISO-8859-1 (Latin-1)');
+    expect(lastProps['charset']).toBe('latin1');
+  });
 });
 
 describe('TLS fields', () => {
@@ -137,6 +144,12 @@ describe('AmqpSourceForm', () => {
     fireEvent.change(screen.getByLabelText('Queue'), { target: { value: 'adt-in' } });
     expect(lastProps).toMatchObject({ host: 'rabbit.internal', port: 5671, queue: 'adt-in', vhost: '/' });
     expect(screen.getByText('test AMQP SOURCE')).toBeTruthy();
+  });
+
+  it('writes base64 for a binary payload', () => {
+    renderForm(AmqpSourceForm, { ...AMQP_SOURCE_DEFAULTS });
+    selectOption('Charset', 'Binary (keep bytes as base64)');
+    expect(lastProps['charset']).toBe('base64');
   });
 });
 

@@ -14,6 +14,8 @@ import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../b
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
+import { decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
+import type { QueueCharset } from '@galvaniflow/core-models';
 import {
   subscribeKafka,
   parseBrokers,
@@ -32,6 +34,8 @@ export interface KafkaReceiverConfig extends KafkaConnectionConfig {
   readonly topic: string;
   readonly groupId: string;
   readonly startFrom: 'EARLIEST' | 'LATEST';
+  /** How a record value becomes message text; UTF-8 when absent. */
+  readonly charset?: QueueCharset;
 }
 
 /** Header names and values as UTF-8 text. */
@@ -41,10 +45,15 @@ function headersToRecord(headers: ReadonlyMap<Buffer, Buffer>): Record<string, s
   return result;
 }
 
-/** The message the pipeline receives for a record. */
-export function toRawMessage(record: KafkaInboundRecord): RawMessage {
+/**
+ * The message the pipeline receives for a record, its value decoded with the
+ * source's charset. A value that is not valid UTF-8 (in UTF-8 mode) gets a
+ * `charsetError` in the source map, so the stored message shows it.
+ */
+export function toRawMessage(record: KafkaInboundRecord, charset: QueueCharset = 'utf-8'): RawMessage {
+  const decoded = record.value ? decodePayload(record.value, charset) : { text: '', replaced: false };
   return {
-    content: record.value?.toString('utf8') ?? '',
+    content: decoded.text,
     sourceMap: {
       topic: record.topic,
       partition: record.partition,
@@ -52,6 +61,7 @@ export function toRawMessage(record: KafkaInboundRecord): RawMessage {
       key: record.key?.toString('utf8') ?? null,
       headers: headersToRecord(record.headers),
       timestamp: Number(record.timestamp),
+      ...(decoded.replaced ? { charsetError: INVALID_UTF8_MESSAGE } : {}),
     },
   };
 }
@@ -175,7 +185,11 @@ export class KafkaReceiver implements SourceConnectorRuntime {
     const dispatcher = this.dispatcher;
     if (!dispatcher) return false;
     const where = { topic: record.topic, partition: record.partition, offset: record.offset.toString() };
-    const result = await dispatcher(toRawMessage(record));
+    const raw = toRawMessage(record, this.config.charset);
+    if (raw.sourceMap['charsetError']) {
+      this.logger.warn(where, 'Kafka record value is not valid UTF-8; invalid bytes were replaced and the message is flagged (charsetError in the source map)');
+    }
+    const result = await dispatcher(raw);
     if (!result.ok) {
       this.logger.error({ ...errorInfo(result.error), ...where }, 'Pipeline did not store the Kafka record; it is not committed and will be read again');
       return false;

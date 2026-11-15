@@ -272,4 +272,56 @@ describe('toRawMessage', () => {
     topic.produce('ignored', 'k');
     expect(toRawMessage({ ...topic.record(0), value: undefined }).content).toBe('');
   });
+
+  it('decodes a Latin-1 payload when the charset is latin1', () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('x');
+    // "PID|José" in ISO-8859-1: é is the single byte 0xE9, which is not valid UTF-8.
+    const value = Buffer.from([...Buffer.from('PID|Jos'), 0xe9]);
+    const raw = toRawMessage({ ...topic.record(0), value }, 'latin1');
+    expect(raw.content).toBe('PID|José');
+    expect(raw.sourceMap['charsetError']).toBeUndefined();
+  });
+
+  it('keeps a binary payload intact as base64 when the charset is base64', () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('x');
+    const value = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff, 0xfe, 0x80, 0x0a]);
+    const raw = toRawMessage({ ...topic.record(0), value }, 'base64');
+    expect(Buffer.from(raw.content, 'base64').equals(value)).toBe(true);
+  });
+
+  it('flags a payload that is not valid UTF-8 instead of storing it as if nothing happened', () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('x');
+    const raw = toRawMessage({ ...topic.record(0), value: Buffer.from([0x41, 0xe9, 0x42]) });
+    expect(raw.content).toBe('A�B');
+    expect(raw.sourceMap['charsetError']).toContain('not valid UTF-8');
+  });
+});
+
+describe('charset', () => {
+  it('logs a warning, without the payload, for a record that is not valid UTF-8, and still stores it', async () => {
+    const topic = new FakeKafkaTopic();
+    topic.produce('x');
+    const p = pipeline();
+    const log = makeMockLogger();
+    // The fake produces text, so swap in bytes that are not valid UTF-8.
+    const subscribe: typeof topic.subscribe = async (c) => {
+      const sub = await topic.subscribe(c);
+      return {
+        close: (force: boolean) => sub.close(force),
+        async *[Symbol.asyncIterator]() {
+          for await (const record of sub) yield { ...record, value: Buffer.from([0x50, 0xe9]) };
+        },
+      };
+    };
+    receiver = new KafkaReceiver(config, subscribe, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(topic.committed).toBe(1); });
+    const warning = log.warnings.find((w) => w.msg.includes('not valid UTF-8'));
+    expect(warning).toBeDefined();
+    expect(JSON.stringify(warning)).not.toContain('P�');
+  });
 });

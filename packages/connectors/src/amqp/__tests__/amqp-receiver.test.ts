@@ -223,6 +223,56 @@ describe('toRawMessage', () => {
       sourceMap: { queue: 'adt', exchange: 'hl7', routingKey: 'adt.a01', redelivered: false, headers: { site: 'north' }, messageId: 'm-1', contentType: 'text/plain' },
     });
   });
+
+  const delivery = (content: Buffer) => ({
+    content, exchange: '', routingKey: 'adt', redelivered: false, headers: {}, messageId: undefined, contentType: undefined,
+    ack: () => undefined, nack: () => undefined,
+  });
+
+  it('decodes a Latin-1 payload when the charset is latin1', () => {
+    const raw = toRawMessage(delivery(Buffer.from([...Buffer.from('PID|Jos'), 0xe9])), 'adt', 'latin1');
+    expect(raw.content).toBe('PID|José');
+    expect(raw.sourceMap['charsetError']).toBeUndefined();
+  });
+
+  it('decodes Windows-1252 punctuation when the charset is windows-1252', () => {
+    expect(toRawMessage(delivery(Buffer.from([0x93, 0x41, 0x94])), 'adt', 'windows-1252').content).toBe('“A”');
+  });
+
+  it('keeps a binary payload intact as base64 when the charset is base64', () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x80, 0x0d, 0x0a]);
+    const raw = toRawMessage(delivery(bytes), 'adt', 'base64');
+    expect(Buffer.from(raw.content, 'base64').equals(bytes)).toBe(true);
+  });
+
+  it('flags a payload that is not valid UTF-8', () => {
+    const raw = toRawMessage(delivery(Buffer.from([0x41, 0xc3])), 'adt');
+    expect(raw.content).toBe('A�');
+    expect(raw.sourceMap['charsetError']).toContain('not valid UTF-8');
+  });
+
+  it('keeps a UTF-8 byte order mark as it did before', () => {
+    expect(toRawMessage(delivery(Buffer.from([0xef, 0xbb, 0xbf, 0x41])), 'adt').content).toBe('﻿A');
+  });
+});
+
+describe('charset', () => {
+  it('logs a warning, without the payload, for a message that is not valid UTF-8, and still stores it', async () => {
+    const queue = new FakeAmqpQueue();
+    queue.publish('x');
+    const p = pipeline();
+    const log = makeMockLogger();
+    const consume: typeof queue.consume = (c, onDelivery) =>
+      queue.consume(c, (d) => { onDelivery({ ...d, content: Buffer.from([0x50, 0xe9]) }); });
+    receiver = new AmqpReceiver(config, consume, log.logger, 5);
+    receiver.setDispatcher(p.dispatch);
+    await receiver.onStart();
+    await vi.waitFor(() => { expect(queue.acked).toEqual(['x']); });
+    expect(p.offered[0]?.sourceMap['charsetError']).toContain('not valid UTF-8');
+    const warning = log.warnings.find((w) => w.msg.includes('not valid UTF-8'));
+    expect(warning).toBeDefined();
+    expect(JSON.stringify(warning)).not.toContain('P�');
+  });
 });
 
 describe('headersToRecord', () => {

@@ -146,7 +146,7 @@ Polls a directory on an SFTP server, sends each matching file through the channe
 A file the channel recorded with an error, or whose delete or move failed after it was sent, is left in place and not read again. The list of those files is kept in `.galvaniflow-quarantine.json` in the remote directory, so it survives a restart; that file is never read as a message.
 
 ### KAFKA (source)
-Reads a topic as a member of a consumer group and commits a record only after the channel has stored it. Source map: `topic`, `partition`, `offset`, `key`, `headers`, `timestamp`.
+Reads a topic as a member of a consumer group and commits a record only after the channel has stored it. Source map: `topic`, `partition`, `offset`, `key`, `headers`, `timestamp`, and `charsetError` when a UTF-8 payload had invalid bytes. The key and headers are always read as UTF-8.
 
 | Property | Default | Notes |
 |---|---|---|
@@ -155,13 +155,14 @@ Reads a topic as a member of a consumer group and commits a record only after th
 | `topic` | — (required) | An existing topic. |
 | `groupId` | — (required) | Consumer group; one per channel. |
 | `startFrom` | `EARLIEST` | `EARLIEST` or `LATEST`, for a group with no committed offset. |
+| `charset` | `utf-8` | How the record value becomes message text: `utf-8`, `latin1` (ISO-8859-1), `windows-1252`, or `base64` to keep a binary payload intact. In `utf-8` mode a value with invalid bytes is stored with them replaced by U+FFFD, flagged with `charsetError` in the source map, and logged as a warning. |
 | `saslMechanism` | `NONE` | `NONE`, `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`. |
 | `saslUsername`, `saslPassword` | `''` | Required with a mechanism. |
 | `useTls` | `false` | TLS to the brokers. |
 | `tls` | — | `caCertId`, `clientCertId` (certificate store ids), `rejectUnauthorized` (default `true`). |
 
 ### AMQP (source)
-Consumes an existing RabbitMQ (AMQP 0-9-1) queue and acks a message only after the channel has stored it. Source map: `queue`, `exchange`, `routingKey`, `redelivered`, `headers`, and `messageId`/`contentType` when set.
+Consumes an existing RabbitMQ (AMQP 0-9-1) queue and acks a message only after the channel has stored it. Source map: `queue`, `exchange`, `routingKey`, `redelivered`, `headers`, `messageId`/`contentType` when set, and `charsetError` when a UTF-8 payload had invalid bytes.
 
 | Property | Default | Notes |
 |---|---|---|
@@ -170,6 +171,7 @@ Consumes an existing RabbitMQ (AMQP 0-9-1) queue and acks a message only after t
 | `vhost` | `/` | Virtual host. |
 | `username`, `password` | `''` | Login; the broker's default when empty. |
 | `queue` | — (required) | An existing queue; never declared. |
+| `charset` | `utf-8` | As for Kafka, for the message body. |
 | `useTls`, `tls` | `false` | As for Kafka. |
 
 ---
