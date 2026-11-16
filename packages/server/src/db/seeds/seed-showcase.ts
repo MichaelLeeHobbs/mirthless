@@ -69,7 +69,7 @@ async function seedResources(db: Db): Promise<void> {
     name: 'example-facility-codes',
     description: 'Example facility code lookup table (CSV).',
     mimeType: 'text/csv',
-    content: 'code,name\nHUB,Hub North Site\nMHH,Memorial Hermann Hospital\n',
+    content: 'code,name\nHUB,Hub North Site\nRVH,Riverside Valley Hospital\n',
   });
   await upsertResource(db, {
     name: 'example-order-priority-map',
@@ -110,7 +110,7 @@ async function seedCollection(db: Db): Promise<void> {
   const inThirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   const records: ReadonlyArray<RecordSeed> = [
     { fields: { accessionNumber: 'ACC1001', institutionName: 'HUB', orderControl: 'NW' }, payload: JSON.stringify({ test: 'CBC', priority: 'Routine' }), expireAt: null },
-    { fields: { accessionNumber: 'ACC1002', institutionName: 'MHH', orderControl: 'NW' }, payload: JSON.stringify({ test: 'BMP', priority: 'STAT' }), expireAt: inThirtyDays },
+    { fields: { accessionNumber: 'ACC1002', institutionName: 'RVH', orderControl: 'NW' }, payload: JSON.stringify({ test: 'BMP', priority: 'STAT' }), expireAt: inThirtyDays },
     { fields: { accessionNumber: 'ACC1003', institutionName: 'HUB', orderControl: 'CA' }, payload: JSON.stringify({ test: 'CBC', priority: 'ASAP' }), expireAt: null },
   ];
   for (const rec of records) {
