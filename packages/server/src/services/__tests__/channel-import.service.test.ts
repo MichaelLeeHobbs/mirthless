@@ -50,6 +50,8 @@ vi.mock('../../db/schema/index.js', () => ({
 }));
 
 import { ChannelImportService, stripRedactedProperties, connectorDirectionError } from '../channel-import.service.js';
+import { PartitionManagerService } from '../partition-manager.service.js';
+import { db } from '../../lib/db.js';
 
 describe('stripRedactedProperties', () => {
   it('drops redacted credential values but keeps everything else', () => {
@@ -175,6 +177,24 @@ describe('ChannelImportService.importChannels', () => {
     const entry = makeEntry({ name: 'My Channel' });
     const result = await ChannelImportService.importChannels([entry], 'SKIP');
     expect(result.ok).toBe(true);
+  });
+
+  it('does not write a channel whose partitions cannot be created, and reports it (#260)', async () => {
+    vi.mocked(PartitionManagerService.createPartitions)
+      .mockResolvedValueOnce({ ok: false, value: null, error: new Error('permission denied for table messages') });
+    const entries = [makeEntry({ id: 'ch-1', name: 'No Partitions' }), makeEntry({ id: 'ch-2', name: 'Fine' })];
+
+    const result = await ChannelImportService.importChannels(entries, 'SKIP');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.created).toBe(1);
+    expect(result.value.errors).toEqual([
+      'Error importing "No Partitions": its message partitions could not be created, so it was not imported: permission denied for table messages',
+    ]);
+    // Only the channel whose partitions exist was written.
+    expect(vi.mocked(db.transaction)).toHaveBeenCalledOnce();
+    expect(vi.mocked(PartitionManagerService.createPartitions).mock.calls.map((c) => c[0])).toEqual(['ch-1', 'ch-2']);
   });
 });
 
