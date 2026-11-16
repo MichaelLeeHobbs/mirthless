@@ -1,43 +1,62 @@
 // ===========================================
 // Code Templates E2E Tests
 // ===========================================
+// Creates a library of this spec's own, adds a template to it, edits the
+// template's name, contexts and code, then deletes the template and the
+// library. Each step is checked in the tree and through the API.
 
-import { test, expect, request } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
-import { ADMIN_USER, TEST_LIBRARY, TEST_TEMPLATE } from './fixtures/test-data.js';
+import { adminApi, deleteOk, getData } from './fixtures/api.js';
+import { TEST_LIBRARY, TEST_TEMPLATE } from './fixtures/test-data.js';
 
-const API_BASE = 'http://localhost:3000/api/v1';
+const NEW_TEMPLATE_NAME = 'New Template';
+
+interface Library { readonly id: string; readonly name: string; readonly description: string | null }
+interface Template { readonly name: string; readonly code: string; readonly contexts: readonly string[] }
+
+let api: APIRequestContext;
+
+async function testLibraries(): Promise<Library[]> {
+  const libs = await getData<Library[]>(api, '/code-templates/libraries');
+  return libs.filter((l) => l.name === TEST_LIBRARY.name);
+}
+
+/** The templates in this spec's library, read from the API. */
+async function libraryTemplates(): Promise<Template[]> {
+  const [lib] = await testLibraries();
+  expect(lib, `Library "${TEST_LIBRARY.name}" not found`).toBeDefined();
+  return getData<Template[]>(api, `/code-templates?libraryId=${lib?.id ?? ''}`);
+}
+
+/** The library's row in the tree (its add, edit and delete buttons sit inside it). */
+function libraryRow(page: Page): Locator {
+  return page.getByRole('button').filter({ hasText: TEST_LIBRARY.name });
+}
+
+/** A template's row in the tree, scoped to this spec's library. */
+function templateItem(page: Page, name: string): Locator {
+  return libraryRow(page).locator('..').getByRole('button', { name, exact: true });
+}
+
+async function openCodeTemplates(page: Page): Promise<void> {
+  await page.goto('/code-templates');
+  await expect(page.getByRole('heading', { name: 'Code Templates' })).toBeVisible();
+}
 
 test.describe('Code Templates', () => {
-  // Clean up stale test data from previous runs (best-effort — skip if rate-limited)
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeAll(async () => {
-    const ctx = await request.newContext({ baseURL: API_BASE });
-    try {
-      const loginRes = await ctx.post('/auth/login', {
-        data: { username: ADMIN_USER.username, password: ADMIN_USER.password },
-      });
-      if (!loginRes.ok()) return; // rate-limited or server error — skip cleanup
-
-      const loginBody = await loginRes.json() as { success: boolean; data: { accessToken: string } };
-      if (!loginBody.data?.accessToken) return;
-      const token = loginBody.data.accessToken;
-
-      const libRes = await ctx.get('/code-templates/libraries', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (libRes.ok()) {
-        const libBody = await libRes.json() as { success: boolean; data: Array<{ id: string; name: string }> };
-        for (const lib of libBody.data) {
-          if (lib.name === TEST_LIBRARY.name) {
-            await ctx.delete(`/code-templates/libraries/${lib.id}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-          }
-        }
-      }
-    } finally {
-      await ctx.dispose();
+    api = await adminApi();
+    // Deleting a library deletes its templates too.
+    for (const lib of await testLibraries()) {
+      await deleteOk(api, `/code-templates/libraries/${lib.id}`);
     }
+  });
+
+  test.afterAll(async () => {
+    await api?.dispose();
   });
 
   test.beforeEach(async ({ page }) => {
@@ -45,119 +64,87 @@ test.describe('Code Templates', () => {
   });
 
   test('navigate to Code Templates page', async ({ page }) => {
-    await page.goto('/code-templates');
-    await expect(page.getByRole('heading', { name: 'Code Templates' })).toBeVisible();
+    await openCodeTemplates(page);
+    await expect(page.getByRole('button', { name: 'Library', exact: true })).toBeEnabled();
+    await expect(page.getByText('Select a template from the library tree to edit it.')).toBeVisible();
   });
 
   test('create library', async ({ page }) => {
-    await page.goto('/code-templates');
-    await expect(page.getByRole('heading', { name: 'Code Templates' })).toBeVisible();
-
-    // Click Library button to open the create dialog
+    await openCodeTemplates(page);
     await page.getByRole('button', { name: 'Library', exact: true }).click();
 
-    // Wait for dialog to open and scope all interactions to the dialog
     const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible();
-
-    // Fill in library details within the dialog
+    await expect(dialog.getByRole('heading', { name: 'Create Library' })).toBeVisible();
     await dialog.getByLabel('Name').fill(TEST_LIBRARY.name);
-    const descField = dialog.getByLabel('Description');
-    if (await descField.isVisible()) {
-      await descField.fill(TEST_LIBRARY.description);
-    }
+    await dialog.getByLabel('Description').fill(TEST_LIBRARY.description);
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
-    // Click the Create button within the dialog
-    await dialog.getByRole('button', { name: /create/i }).click();
-
-    // Wait for dialog to close (indicates API call completed)
     await expect(dialog).toBeHidden({ timeout: 10_000 });
-
-    // Library should appear in tree
-    await expect(page.getByText(TEST_LIBRARY.name)).toBeVisible({ timeout: 10_000 });
+    await expect(libraryRow(page)).toHaveCount(1);
+    await expect.poll(async () => (await testLibraries()).map((l) => l.description))
+      .toEqual([TEST_LIBRARY.description]);
   });
 
   test('create template in library', async ({ page }) => {
-    await page.goto('/code-templates');
+    await openCodeTemplates(page);
+    await libraryRow(page).getByRole('button', { name: 'Add template', exact: true }).click();
 
-    // Wait for library to load
-    const libRow = page.getByText(TEST_LIBRARY.name);
-    await expect(libRow).toBeVisible({ timeout: 10_000 });
-
-    // Click the per-library "Add template" button on the TEST_LIBRARY row
-    const libItem = page.locator('li, div').filter({ hasText: TEST_LIBRARY.name });
-    await libItem.getByRole('button', { name: 'Add template', exact: true }).first().click();
-
-    // New template should appear (use .first() to handle duplicates from prior runs)
-    await expect(page.getByText('New Template').first()).toBeVisible({ timeout: 10_000 });
+    // The new template opens in the editor and shows under the library.
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue(NEW_TEMPLATE_NAME);
+    await expect(templateItem(page, NEW_TEMPLATE_NAME)).toBeVisible();
+    await expect.poll(async () => (await libraryTemplates()).map((t) => t.name)).toEqual([NEW_TEMPLATE_NAME]);
   });
 
   test('edit template code and contexts', async ({ page }) => {
-    await page.goto('/code-templates');
+    await openCodeTemplates(page);
+    await templateItem(page, NEW_TEMPLATE_NAME).click();
 
-    // Wait for templates to load
-    await page.waitForTimeout(2_000);
+    const nameField = page.getByLabel('Name', { exact: true });
+    await expect(nameField).toHaveValue(NEW_TEMPLATE_NAME);
+    await nameField.fill(TEST_TEMPLATE.name);
+    await page.getByRole('checkbox', { name: 'Source Filter/Transformer', exact: true }).check();
 
-    // Click on a template in the tree (use .first() to handle duplicates)
-    const templateItem = page.getByText('New Template').first();
-    if (await templateItem.isVisible()) {
-      await templateItem.click();
+    // Replace the code in one edit: typing key by key races the editor.
+    const editor = page.locator('.monaco-editor').first();
+    await expect(editor.locator('.view-line').first()).toBeVisible();
+    await editor.click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText(TEST_TEMPLATE.code);
 
-      // Edit name
-      const nameField = page.getByLabel('Name');
-      if (await nameField.isVisible()) {
-        await nameField.clear();
-        await nameField.fill(TEST_TEMPLATE.name);
-      }
-
-      // Toggle a context checkbox
-      const checkbox = page.getByLabel(/Source Filter/i);
-      if (await checkbox.isVisible()) {
-        await checkbox.check();
-      }
-
-      // Click save
-      await page.getByRole('button', { name: /save/i }).click();
-      await page.waitForTimeout(1_000);
-    }
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Template saved')).toBeVisible();
+    await expect(templateItem(page, TEST_TEMPLATE.name)).toBeVisible();
+    await expect.poll(libraryTemplates).toEqual([
+      expect.objectContaining({ name: TEST_TEMPLATE.name, code: TEST_TEMPLATE.code, contexts: ['SOURCE_FILTER_TRANSFORMER'] }),
+    ]);
   });
 
   test('delete template', async ({ page }) => {
-    await page.goto('/code-templates');
-    await page.waitForTimeout(2_000);
+    await openCodeTemplates(page);
+    await templateItem(page, TEST_TEMPLATE.name).click();
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue(TEST_TEMPLATE.name);
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
 
-    const templateItem = page.getByText(TEST_TEMPLATE.name);
-    if (await templateItem.isVisible()) {
-      await templateItem.click();
+    const confirm = page.getByRole('dialog');
+    await expect(confirm.getByRole('heading', { name: 'Delete Template' })).toBeVisible();
+    await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
 
-      // Handle confirm dialog
-      page.on('dialog', async (dialog) => {
-        await dialog.accept();
-      });
-
-      await page.getByRole('button', { name: /delete/i }).last().click();
-      await page.waitForTimeout(1_000);
-    }
+    await expect(confirm).toBeHidden();
+    await expect(templateItem(page, TEST_TEMPLATE.name)).toHaveCount(0);
+    await expect(libraryRow(page).locator('..').getByText('No templates')).toBeVisible();
+    await expect.poll(async () => (await libraryTemplates()).length).toBe(0);
   });
 
   test('delete library', async ({ page }) => {
-    await page.goto('/code-templates');
-    await page.waitForTimeout(2_000);
+    await openCodeTemplates(page);
+    await libraryRow(page).getByRole('button', { name: 'Delete library', exact: true }).click();
 
-    // Handle confirm dialog
-    page.on('dialog', async (dialog) => {
-      await dialog.accept();
-    });
+    const confirm = page.getByRole('dialog');
+    await expect(confirm).toContainText(`Delete library "${TEST_LIBRARY.name}" and all its templates?`);
+    await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
 
-    // Find the delete button on the library row
-    const libRow = page.getByText(TEST_LIBRARY.name);
-    if (await libRow.isVisible()) {
-      // The delete icon is in the same list item
-      const deleteBtn = page.locator('button', { has: page.locator('[data-testid="DeleteIcon"]') }).first();
-      if (await deleteBtn.isVisible()) {
-        await deleteBtn.click();
-        await page.waitForTimeout(1_000);
-      }
-    }
+    await expect(confirm).toBeHidden();
+    await expect(libraryRow(page)).toHaveCount(0);
+    await expect.poll(async () => (await testLibraries()).length).toBe(0);
   });
 });
