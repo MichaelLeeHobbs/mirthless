@@ -94,13 +94,13 @@ Michael tests this project by hand, and it is too big for that. Every change you
 
 ## Verification Matrix
 
-Run what matches the files you touched. `pnpm gate` runs build, lint and every package's tests with coverage minimums; CI runs the same command.
+Run what matches the files you touched. `pnpm gate` runs build, lint and every package's tests with coverage minimums. On a pull request, CI runs the same steps but only the jobs and package tests the diff needs: a docs-only change runs just the tests that read the changed docs. A push to `main` runs everything. [`docs/ops/ci.md`](docs/ops/ci.md) lists what runs when; `node scripts/ci/classify-changes.mjs origin/main` shows it for your branch. A pull request is green when the `ci-ok` check passes; branch protection on `main` requires it.
 
 | You changed | Run | Also |
 |---|---|---|
 | Anything | `pnpm gate` | |
 | `packages/web` UI | `pnpm shots --only <pages>` with `pnpm dev:web` running | Look at the light, dark and phone images (`create-ui` skill) |
-| A multi-step UI flow | `pnpm test:e2e` (needs Postgres, migrated and seeded) | Add or extend a spec in `e2e/` |
+| A multi-step UI flow | `pnpm test:e2e` (needs Postgres, migrated and seeded) | Add or extend a spec in `e2e/`. Spec files run in parallel against one database, so a spec uses rows with names of its own and puts back any server-wide setting it changes (D-289) |
 | `packages/server/src/db/schema` | `pnpm db:generate`, commit the migration | `pnpm test:integration` against Postgres |
 | SQL, queues, pruning, partitions | `pnpm test:integration` | |
 | Engine pipeline or a connector | The package's tests (`pnpm --filter @galvaniflow/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes. For a connector, `pnpm --filter @galvaniflow/connectors test:integration` with the compose `test` profile up (CI job `connector-integration` runs it, D-273) |
@@ -108,6 +108,7 @@ Run what matches the files you touched. `pnpm gate` runs build, lint and every p
 | A role, a permission, or the permission a route checks | `pnpm --filter @galvaniflow/server test` (the access guard and `role-access.test.ts`) | Update `docs/user/access-control.md`; add a PHI or destructive endpoint to `ENDPOINTS` in `role-access.test.ts` |
 | Throughput or memory | `pnpm soak` (see `docs/ops/soak-test.md`) | Compare with the recorded baseline |
 | The Mirth importer, or behaviour a migrated channel relies on | `pnpm test:scenarios` (needs Postgres and the test containers, see `docs/testing/migration-scenarios.md`) | Compare the score with the last recorded one; nothing that passed may fail |
+| `.github/workflows/ci.yml` or `scripts/ci/` | `pnpm test:ci` | Update `docs/ops/ci.md` when what runs changes |
 | Docs only | Check the commands and paths you mention exist | |
 
 If a check can't run in your environment (no Postgres, no browser), say so in your verdict. Don't mark it passed.
@@ -423,7 +424,7 @@ The original NextGen Connect source is at `reference/connect/` for architecture 
 | [`docs/progress/ROADMAP.md`](docs/progress/ROADMAP.md) | What's planned, not started | Check off items as they ship, add new items as they emerge |
 | [`docs/progress/DECISIONS.md`](docs/progress/DECISIONS.md) | Why we chose X over Y | Add whenever a non-obvious architectural or design choice is made |
 
-**Do NOT duplicate what git tracks.** These docs capture what git cannot: plans and rationale. What was built, what was checked and what was left out go in the pull request description, not a log file (D-281).
+**Do NOT duplicate what git tracks.** These docs capture what git cannot: plans and rationale. What was built, what was checked and what was left out go in the pull request description, not a log file (D-290).
 
 Add a decision at the end of `DECISIONS.md` with the next `D-NNN` number. Git merges the file with `merge=union`, so two branches that add a decision both keep theirs, and a test in `pnpm gate` (`packages/server/src/__tests__/docs/decisions.test.ts`) fails when two decisions share a number. The branch that merges second renumbers its decision and every place that cites it.
 

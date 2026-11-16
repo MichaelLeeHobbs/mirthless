@@ -5,7 +5,7 @@
 // one decision. Git merges the file with merge=union (.gitattributes), which
 // keeps both sides when two branches each add a decision. If both picked the
 // same next number, the union keeps both copies without a conflict, and this
-// test is what catches it. The branch that merges second renumbers (D-281).
+// test is what catches it. The branch that merges second renumbers (D-290).
 
 import { describe, it, expect } from 'vitest';
 import { readRepoFile } from '../../../test/markdown.js';
