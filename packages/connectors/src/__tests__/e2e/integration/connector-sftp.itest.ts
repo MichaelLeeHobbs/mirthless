@@ -60,6 +60,7 @@ describeSftp('SFTP connector cascade (real SFTP server)', () => {
         afterProcessing: SFTP_POST_ACTION.DELETE,
         moveToDirectory: '',
         minFileAgeMs: 0,
+        ignoreDot: true,
       }),
       transformer: "return String(msg) + '::sftp';",
       destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],

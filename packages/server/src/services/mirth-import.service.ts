@@ -451,9 +451,19 @@ function convertSourceConnector(
     ...(remote?.properties ?? extractConnectorProperties(propsNode, finalType)),
     ...pollingInterval(propsNode),
     ...(getBoolean(getNestedRecord(propsNode, 'sourceConnectorProperties') ?? {}, 'processBatch', false) ? { processBatch: true } : {}),
+    ...(finalType === 'FILE' ? fileReaderIgnoreDot(propsNode) : {}),
   };
   if (finalType === 'DATABASE') warnings.push(...databaseWarnings(propsNode, properties['vendor'], 'Database Reader', channelName));
   return { type: remote?.type ?? finalType, properties };
+}
+
+/**
+ * A Mirth File Reader (local or SFTP) that reads dotfiles keeps doing so. Mirth's
+ * default, skipping them, is the FILE and SFTP sources' default too, so only
+ * `ignoreDot` off needs carrying (#244).
+ */
+function fileReaderIgnoreDot(propsNode: Record<string, unknown>): Record<string, unknown> {
+  return getBoolean(propsNode, 'ignoreDot', true) ? {} : { ignoreDot: false };
 }
 
 /** `host[:port][/path]`, as a Mirth remote File connector writes its host field. */

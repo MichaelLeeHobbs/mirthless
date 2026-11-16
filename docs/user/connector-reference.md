@@ -165,6 +165,8 @@ The source polls a local directory for files that match a glob, reads each one a
 
 Only paths the server process can open are reachable: the local disk and anything the operating system has mounted. There is no FTP, SMB, S3 or WebDAV. For SFTP use the [SFTP](#sftp) connector.
 
+The source leaves alone the files a Mirth File Reader leaves alone. It never reads a name ending in `.ignore`, and it holds back a file while a file named after it plus `.ignore` sits next to it: `a.hl7` is not read while `a.hl7.ignore` exists, and is read on the next poll after that file is removed. With `ignoreDot` on (the default) it skips names starting with `.`, and its filter is case-sensitive.
+
 ### FILE security
 
 The connector adds no transport security. A network share must be protected where it is mounted, and the server process's file permissions decide what it can read and write. A destination writes through a temporary file and renames it by default, so a partner never reads half a file.
@@ -174,7 +176,8 @@ The connector adds no transport security. A network share must be protected wher
 | Property | Required | Notes |
 |---|---|---|
 | `directory` | Yes | Directory to poll. |
-| `fileFilter` | No | Glob (`*`, `?`) for the files to read, `*` by default. Not empty. |
+| `fileFilter` | No | Glob (`*`, `?`) for the files to read, `*` by default. Not empty. Case-sensitive on every platform, Windows included, as a Mirth File Reader's filter is: `*.hl7` does not match `A.HL7` (D-304 in [DECISIONS.md](../progress/DECISIONS.md)). |
+| `ignoreDot` | No | On by default: names starting with `.` (editor swap files, partner lock files) are never read or deleted, as in Mirth. `false` reads them. |
 | `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 100 to 2147483647 (about 24.8 days), 5000 by default. |
 | `sortBy` | No | `NAME` (default), `DATE` or `SIZE`: the order files are read in. |
 | `charset` | No | `utf-8` (default), `latin1` (ISO-8859-1), `ascii` or `utf16le`, used to decode the file. Case is ignored, and `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. Any other refuses to deploy, in binary mode too. |
@@ -231,7 +234,8 @@ Setting `strictHostKey` to false turns the check off and lets anyone who can int
 | `privateKey` | No | Private key, PEM or OpenSSH text. |
 | `passphrase` | No | Passphrase for an encrypted `privateKey`. |
 | `remoteDirectory` | Yes | Remote directory to poll. |
-| `filePattern` | No | Glob for the files to read, `*` by default. |
+| `filePattern` | No | Glob for the files to read, `*` by default. Case-sensitive, as for FILE: `*.hl7` does not match `A.HL7`. |
+| `ignoreDot` | No | On by default: names starting with `.` are never read or deleted, as in Mirth. `false` reads them. |
 | `pollingIntervalMs` | No | Milliseconds between polls, at least 100. |
 | `afterProcessing` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes the remote file after the pipeline accepts it. |
 | `moveToDirectory` | No | Remote directory for `MOVE`, created if missing. Required when `afterProcessing` is `MOVE`. |

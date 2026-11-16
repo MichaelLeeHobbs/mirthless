@@ -47,7 +47,7 @@ import { DATABASE_VENDOR_OPTIONS } from '../common/DatabaseVendorField.js';
 const SFTP_SOURCE_KEYS = [
   'host', 'port', 'username', 'password', 'privateKey', 'passphrase',
   'remoteDirectory', 'filePattern', 'pollingIntervalMs', 'afterProcessing',
-  'moveToDirectory', 'minFileAgeMs', 'strictHostKey', 'hostKey', 'charset',
+  'moveToDirectory', 'minFileAgeMs', 'ignoreDot', 'strictHostKey', 'hostKey', 'charset',
 ];
 
 const SFTP_DEST_KEYS = [
@@ -66,6 +66,7 @@ describe('SFTP source defaults', () => {
     expect(SFTP_SOURCE_DEFAULTS['pollingIntervalMs']).toBe(5000);
     expect(SFTP_SOURCE_DEFAULTS['afterProcessing']).toBe('DELETE');
     expect(SFTP_SOURCE_DEFAULTS['minFileAgeMs']).toBe(1000);
+    expect(SFTP_SOURCE_DEFAULTS['ignoreDot']).toBe(true);
     expect(SFTP_SOURCE_DEFAULTS['strictHostKey']).toBe(true);
   });
 

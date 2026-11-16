@@ -28,8 +28,10 @@ export const FILE_POST_ACTIONS = ['DELETE', 'MOVE', 'NONE'] as const;
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const fileSourceObjectSchema = z.strictObject({
   directory: requiredTextSchema,
-  /** Glob (`*`, `?`) for the files to read. */
+  /** Glob (`*`, `?`) for the files to read, case-sensitive as Mirth's (D-304). */
   fileFilter: requiredTextSchema.default('*'),
+  /** Leave names starting with `.` alone, as a Mirth File Reader does by default. */
+  ignoreDot: z.boolean().default(true),
   /** The receiver refuses to poll more often than every 100 ms. */
   pollingIntervalMs: pollingIntervalSchema(100, 5_000),
   sortBy: z.enum(FILE_SORT_ORDERS).default('NAME'),

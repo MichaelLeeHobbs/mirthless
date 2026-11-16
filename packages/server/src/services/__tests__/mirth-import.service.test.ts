@@ -916,6 +916,19 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       });
     });
 
+    it('keeps a File Reader reading dotfiles when Mirth had ignoreDot off, local and SFTP alike (#244)', () => {
+      const withDots = (scheme: string, host: string): string => `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>${scheme}</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>no</hostKeyChecking></schemeProperties><host>${host}</host><fileFilter>*</fileFilter><ignoreDot>false</ignoreDot><username>svc</username><password>pw</password></properties><transformer`;
+      const source = (scheme: string, host: string): ChannelExportEntry => convert4x((x) => x
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, withDots(scheme, host)));
+
+      const local = source('FILE', '/data/in');
+      expect(local.sourceConnectorProperties['ignoreDot']).toBe(false);
+      expect(validateConnectorProperties('FILE', 'source', local.sourceConnectorProperties)).toMatchObject({ ok: true });
+      const sftp = source('SFTP', 'sftp.partner.org/out');
+      expect(sftp.sourceConnectorType).toBe('SFTP');
+      expect(sftp.sourceConnectorProperties['ignoreDot']).toBe(false);
+    });
+
     it('keeps host key checking on, and says the key must be entered', () => {
       const result = convert('SFTP', 'yes');
       expect(result.channels[0]?.sourceConnectorProperties['strictHostKey']).toBe(true);
