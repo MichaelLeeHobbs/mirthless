@@ -164,6 +164,63 @@ WHERE connector_type = 'JAVASCRIPT'
   AND k NOT IN ('script','scriptLanguage','template','pluginProperties','destinationConnectorProperties','queueConnectorProperties');
 ```
 
+**CHANNEL** is the sixth. Channels saved by this app's own editor keep deploying: the Channel Reader and Writer forms have saved the same keys since 2026-03. From 2026-03-03 to 2026-11-12 the Mirth importer copied all of a Channel Reader's or Writer's Mirth properties: `pluginProperties` and `sourceConnectorProperties` on a reader; `pluginProperties`, `destinationConnectorProperties`, `channelId`, `channelTemplate` and `mapVariables` on a writer (`responseConnectorProperties` and `queueConnectorProperties` from a Mirth 3.0 export). Nothing read them, and the schema drops them. The reader's `channelId` is still set at deploy to the channel's own id. Nothing in the database is rewritten.
+
+A CHANNEL channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. `waitForReply`. Before, such a key was ignored.
+- a `waitForResponse` that is not `true` or `false`. Before, any text, `"false"` included, made the writer wait for the target's response.
+- a `targetChannelId` of only spaces. An empty one failed before as well.
+
+```sql
+SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE source_connector_type = 'CHANNEL'
+  AND k NOT IN ('channelId','processBatch','pluginProperties','sourceConnectorProperties','responseConnectorProperties');
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'CHANNEL'
+  AND k NOT IN ('targetChannelId','waitForResponse','template','pluginProperties','destinationConnectorProperties',
+                'queueConnectorProperties','channelId','channelTemplate','mapVariables');
+```
+
+**FHIR** is the seventh. Channels saved by this app's own editor keep deploying: the FHIR form has saved the same keys since 2026-03. The importer never creates a FHIR destination. Nothing in the database is rewritten.
+
+One behaviour changes without a deploy error. From 2026-03-01 to 2026-07-12 the form saved `headers` as text, one `Name: value` per line. The connector sent one junk header per character (`0`, `1`, ...) instead of those headers. The text is now read the way the editor shows it, so those headers are sent as written, as HTTP's have been since its slice.
+
+A FHIR channel now fails to deploy when it has:
+
+- any other key its table doesn't list. Before, such a key was ignored.
+- an `authType` other than `NONE`, `BASIC`, `BEARER` or `API_KEY`. Before, an unknown type sent every request with no credentials.
+- an auth type without its credentials (`BASIC` without `authUsername` and `authPassword`, `BEARER` without `authToken`, `API_KEY` without `authHeaderName` and `authApiKey`), or a `baseUrl` that is not an absolute URL. These failed before as well, when the connector deployed, without naming the key.
+- a `method` other than `POST` or `PUT`, or a `format` other than `json` or `xml`. Before, any other format was sent as XML.
+- a `timeout` that is not a whole number from 1 to 2147483647. Before, 0 failed every send at once, and a value that wasn't a number became 30000 without a word.
+- `headers` whose values are not text, or a credential that is not text.
+
+```sql
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'FHIR'
+  AND k NOT IN ('baseUrl','resourceType','method','authType','authUsername','authPassword','authToken','authHeaderName',
+                'authApiKey','format','timeout','headers','template');
+```
+
+**SMTP** is the eighth. Channels saved by this app's own editor keep deploying: the SMTP form has saved the same keys since 2026-03, plus `requireTLS` and `attachments` since 2026-07-15, and the importer writes only keys the connector reads. Nothing in the database is rewritten.
+
+One thing now deploys that didn't: `port` written as digits, e.g. a `${smtpPort}` configuration reference, which resolves to text. Before, deploy refused it with `port: expected number`.
+
+An SMTP channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. `user` or `password` (the names are `authUser` and `authPass`). Before, such a key was ignored; with `user`, the mail went out with no login.
+- an attachment that is not an object with text `filename` and `content` and optional text `mimeType`, or one with another key. Before, such an entry was skipped without a word.
+- a `secure`, `requireTLS` or `attachContent` that is not `true` or `false`. Before, any text, `"false"` included, turned the setting on.
+- a `contentType` other than `text/plain` or `text/html`, or a `port` outside 1 to 65535.
+- an empty or blank `host`, `from` or `to`. These failed before as well, when the connector deployed, without naming the key; `from` is now marked required in the reference.
+
+```sql
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'SMTP'
+  AND k NOT IN ('host','port','secure','requireTLS','authUser','authPass','from','to','cc','bcc','subject','bodyTemplate',
+                'contentType','attachContent','attachments','template');
+```
+
 ## Standard upgrade (Docker)
 
 ```bash

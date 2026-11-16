@@ -472,20 +472,20 @@ It sends one email per message. The subject, body and attachment fields may use 
 | Property | Required | Notes |
 |---|---|---|
 | `host` | Yes | SMTP server. |
-| `port` | Yes | SMTP port. |
+| `port` | No | SMTP port, 1 to 65535. Defaults to 587. |
 | `secure` | No | `true` for implicit TLS. Off by default. |
 | `requireTLS` | No | `true` to require STARTTLS. Off by default. |
 | `authUser` | No | Username; with none set, the server is used as an anonymous relay. |
 | `authPass` | No | Password for `authUser`. |
-| `from` | No | Sender address. |
+| `from` | Yes | Sender address. |
 | `to` | Yes | Recipients. |
 | `cc` | No | Copy recipients. |
 | `bcc` | No | Blind copy recipients. |
 | `subject` | No | Subject; may use `${name}` variables. |
 | `bodyTemplate` | No | Body, `${msg}` by default. |
-| `contentType` | No | `text/plain` or `text/html`. |
+| `contentType` | No | `text/plain` (default) or `text/html`. |
 | `attachContent` | No | `true` also attaches the message content as a file. |
-| `attachments` | No | List of `filename`, `content` and optional `mimeType`; filename and content may use variables. Entries without a filename or content are skipped. |
+| `attachments` | No | List of `filename`, `content` and optional `mimeType`, all text; filename and content may use variables. An entry with a missing or non-text field, or another key, refuses to deploy. |
 
 ### SMTP limits
 
@@ -510,18 +510,18 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 
 | Property | Required | Notes |
 |---|---|---|
-| `baseUrl` | Yes | FHIR server base URL. Use the final address: redirects are followed (see what it does). |
+| `baseUrl` | Yes | FHIR server base URL, an absolute URL. Use the final address: redirects are followed (see what it does). |
 | `resourceType` | No | Resource type in the URL. Defaults to `Patient`, so set it for any other resource. |
 | `method` | No | `POST` (create) or `PUT` (update). `PUT` needs an `id` in the resource, and an id outside the FHIR id rules is refused. |
-| `authType` | No | `NONE`, `BASIC`, `BEARER` or `API_KEY`. |
-| `authUsername` | No | Basic username. |
-| `authPassword` | No | Basic password. |
-| `authToken` | No | Bearer token. |
-| `authHeaderName` | No | Header that carries the API key. |
-| `authApiKey` | No | API key value. |
-| `format` | No | `json` or `xml`. |
-| `timeout` | No | Milliseconds before the send is an ERROR. |
-| `headers` | No | Extra request headers. |
+| `authType` | No | `NONE` (default), `BASIC`, `BEARER` or `API_KEY`. Each type other than `NONE` refuses to deploy without its credentials below. |
+| `authUsername` | For `BASIC` | Basic username. |
+| `authPassword` | For `BASIC` | Basic password. |
+| `authToken` | For `BEARER` | Bearer token. |
+| `authHeaderName` | For `API_KEY` | Header that carries the API key. |
+| `authApiKey` | For `API_KEY` | API key value. |
+| `format` | No | `json` (default) or `xml`. |
+| `timeout` | No | Milliseconds before the send is an ERROR, a whole number from 1 to 2147483647. Defaults to 30000. |
+| `headers` | No | Extra request headers, as a name-to-value map. Text saved by the old editor is read as `Name: value` lines. |
 
 ### FHIR limits
 

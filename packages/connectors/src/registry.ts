@@ -19,10 +19,10 @@ import { DatabaseDispatcher } from './database/database-dispatcher.js';
 import { DATABASE_VENDOR, type DatabaseVendor } from './database/database-vendor.js';
 import { JavaScriptReceiver } from './javascript/javascript-receiver.js';
 import { JavaScriptDispatcher } from './javascript/javascript-dispatcher.js';
-import { SmtpDispatcher, type SmtpAttachment } from './smtp/smtp-dispatcher.js';
+import { SmtpDispatcher } from './smtp/smtp-dispatcher.js';
 import { ChannelReceiver } from './channel/channel-receiver.js';
 import { ChannelDispatcher } from './channel/channel-dispatcher.js';
-import { FhirDispatcher, FHIR_AUTH_TYPE } from './fhir/fhir-dispatcher.js';
+import { FhirDispatcher } from './fhir/fhir-dispatcher.js';
 import { DicomReceiver } from './dicom/dicom-receiver.js';
 import { DicomDispatcher } from './dicom/dicom-dispatcher.js';
 import { EmailReceiver, EMAIL_POST_ACTION, type EmailPostAction, type EmailProtocol } from './email/email-receiver.js';
@@ -49,6 +49,10 @@ import {
   fileDestinationPropertiesSchema,
   javascriptSourcePropertiesSchema,
   javascriptDestinationPropertiesSchema,
+  channelSourcePropertiesSchema,
+  channelDestinationPropertiesSchema,
+  fhirDestinationPropertiesSchema,
+  smtpDestinationPropertiesSchema,
   formatPropertyIssues,
 } from '@galvaniflow/core-models';
 
@@ -72,27 +76,6 @@ export function num(props: Record<string, unknown>, key: string, fallback: numbe
 export function databaseTarget(props: { readonly vendor?: DatabaseVendor | undefined; readonly port?: number | undefined }): { vendor: DatabaseVendor; port: number } {
   const vendor = props.vendor ?? DATABASE_VENDOR.POSTGRESQL;
   return { vendor, port: props.port ?? defaultDatabasePort(vendor) };
-}
-
-/**
- * Read config-driven SMTP attachments from a raw prop bag. Tolerates malformed
- * input from a UI/JSON config: non-array values yield `[]`, and any entry missing
- * a string `filename`/`content` is skipped rather than propagating a bad shape
- * into the dispatcher. `mimeType` is optional and only carried when a string.
- */
-export function readSmtpAttachments(value: unknown): readonly SmtpAttachment[] {
-  if (!Array.isArray(value)) return [];
-  const result: SmtpAttachment[] = [];
-  for (const item of value) {
-    if (typeof item !== 'object' || item === null) continue;
-    const rec = item as Record<string, unknown>;
-    const filename = rec['filename'];
-    const content = rec['content'];
-    if (typeof filename !== 'string' || typeof content !== 'string') continue;
-    const mimeType = rec['mimeType'];
-    result.push({ filename, content, ...(typeof mimeType === 'string' ? { mimeType } : {}) });
-  }
-  return result;
 }
 
 /**
@@ -237,6 +220,34 @@ function javascriptDispatcher(props: Record<string, unknown>): JavaScriptDispatc
   return new JavaScriptDispatcher({ script });
 }
 
+/** A Channel Reader: schema-checked props; deploy sets channelId to the channel's own id. */
+function channelReceiver(props: Record<string, unknown>): ChannelReceiver {
+  const { channelId } = parseProps('CHANNEL', channelSourcePropertiesSchema, props);
+  return new ChannelReceiver({ channelId });
+}
+
+/** A Channel Writer: schema-checked props. */
+function channelDispatcher(props: Record<string, unknown>): ChannelDispatcher {
+  const { targetChannelId, waitForResponse } = parseProps('CHANNEL', channelDestinationPropertiesSchema, props);
+  return new ChannelDispatcher({ targetChannelId, waitForResponse });
+}
+
+/** A FHIR destination: schema-checked props, the credentials grouped as the dispatcher reads them. */
+function fhirDispatcher(props: Record<string, unknown>): FhirDispatcher {
+  const { authUsername, authPassword, authToken, authHeaderName, authApiKey, template: _template, ...config } =
+    parseProps('FHIR', fhirDestinationPropertiesSchema, props);
+  return new FhirDispatcher({
+    ...config,
+    authConfig: { username: authUsername, password: authPassword, token: authToken, headerName: authHeaderName, apiKey: authApiKey },
+  });
+}
+
+/** An SMTP destination: schema-checked props; auth only when a user is set (anonymous relay otherwise). */
+function smtpDispatcher(props: Record<string, unknown>): SmtpDispatcher {
+  const { authUser, authPass, template: _template, ...config } = parseProps('SMTP', smtpDestinationPropertiesSchema, props);
+  return new SmtpDispatcher({ ...config, ...(authUser ? { auth: { user: authUser, pass: authPass ?? '' } } : {}) });
+}
+
 // ----- Source Factories -----
 
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
@@ -247,9 +258,7 @@ const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnec
   ['FILE', fileReceiver],
   ['DATABASE', databaseReceiver],
   ['JAVASCRIPT', javascriptReceiver],
-  ['CHANNEL', (props): SourceConnectorRuntime => new ChannelReceiver({
-    channelId: props['channelId'] as string,
-  })],
+  ['CHANNEL', channelReceiver],
   ['DICOM', (props): SourceConnectorRuntime => new DicomReceiver({
     port: num(props, 'port', 0),
     storageDir: props['storageDir'] as string,
@@ -306,45 +315,9 @@ const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<De
   ['FILE', fileDispatcher],
   ['DATABASE', databaseDispatcher],
   ['JAVASCRIPT', javascriptDispatcher],
-  ['SMTP', (props): DestinationConnectorRuntime => new SmtpDispatcher({
-    host: (props['host'] as string | undefined) ?? '',
-    port: num(props, 'port', 587),
-    secure: (props['secure'] as boolean | undefined) ?? false,
-    requireTLS: (props['requireTLS'] as boolean | undefined) ?? false,
-    // Only attach auth when a username is configured (anonymous relay otherwise).
-    ...(props['authUser']
-      ? { auth: { user: props['authUser'] as string, pass: (props['authPass'] as string | undefined) ?? '' } }
-      : {}),
-    from: (props['from'] as string | undefined) ?? '',
-    to: (props['to'] as string | undefined) ?? '',
-    cc: (props['cc'] as string | undefined) ?? '',
-    bcc: (props['bcc'] as string | undefined) ?? '',
-    subject: (props['subject'] as string | undefined) ?? '',
-    bodyTemplate: (props['bodyTemplate'] as string | undefined) ?? '${msg}',
-    contentType: (props['contentType'] as 'text/plain' | 'text/html' | undefined) ?? 'text/plain',
-    attachContent: (props['attachContent'] as boolean | undefined) ?? false,
-    attachments: readSmtpAttachments(props['attachments']),
-  })],
-  ['CHANNEL', (props): DestinationConnectorRuntime => new ChannelDispatcher({
-    targetChannelId: (props['targetChannelId'] as string | undefined) ?? '',
-    waitForResponse: (props['waitForResponse'] as boolean | undefined) ?? false,
-  })],
-  ['FHIR', (props): DestinationConnectorRuntime => new FhirDispatcher({
-    baseUrl: (props['baseUrl'] as string | undefined) ?? '',
-    resourceType: (props['resourceType'] as string | undefined) ?? 'Patient',
-    method: (props['method'] as 'POST' | 'PUT' | undefined) ?? 'POST',
-    authType: (props['authType'] as 'NONE' | 'BASIC' | 'BEARER' | 'API_KEY' | undefined) ?? FHIR_AUTH_TYPE.NONE,
-    authConfig: {
-      username: (props['authUsername'] as string | undefined),
-      password: (props['authPassword'] as string | undefined),
-      token: (props['authToken'] as string | undefined),
-      headerName: (props['authHeaderName'] as string | undefined),
-      apiKey: (props['authApiKey'] as string | undefined),
-    },
-    format: (props['format'] as 'json' | 'xml' | undefined) ?? 'json',
-    timeout: num(props, 'timeout', 30_000),
-    headers: (props['headers'] as Record<string, string> | undefined) ?? {},
-  })],
+  ['SMTP', smtpDispatcher],
+  ['CHANNEL', channelDispatcher],
+  ['FHIR', fhirDispatcher],
   ['DICOM', (props): DestinationConnectorRuntime => new DicomDispatcher({
     host: props['host'] as string,
     port: num(props, 'port', 0),

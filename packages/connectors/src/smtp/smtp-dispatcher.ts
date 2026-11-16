@@ -77,7 +77,7 @@ export interface SmtpMailOptions {
 export interface SmtpAttachment {
   readonly filename: string;
   readonly content: string;
-  readonly mimeType?: string;
+  readonly mimeType?: string | undefined;
 }
 
 /** Nodemailer-facing attachment: substituted values + nodemailer's `contentType`. */

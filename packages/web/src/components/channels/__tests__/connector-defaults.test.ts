@@ -11,6 +11,7 @@ import {
   DATABASE_SOURCE_DEFAULTS,
   FILE_SOURCE_DEFAULTS,
   JAVASCRIPT_SOURCE_DEFAULTS,
+  CHANNEL_SOURCE_DEFAULTS,
   getDefaultProperties,
 } from '../source/connector-defaults.js';
 import {
@@ -20,6 +21,8 @@ import {
   DATABASE_DEST_DEFAULTS,
   FILE_DEST_DEFAULTS,
   JAVASCRIPT_DEST_DEFAULTS,
+  CHANNEL_DEST_DEFAULTS,
+  FHIR_DEST_DEFAULTS,
   SMTP_DEST_DEFAULTS,
   getDestDefaultProperties,
   createDefaultDestination,
@@ -35,6 +38,10 @@ import {
   fileDestinationPropertiesSchema,
   javascriptSourcePropertiesSchema,
   javascriptDestinationPropertiesSchema,
+  channelSourcePropertiesSchema,
+  channelDestinationPropertiesSchema,
+  fhirDestinationPropertiesSchema,
+  smtpDestinationPropertiesSchema,
   httpSourcePropertiesSchema,
   httpDestinationPropertiesSchema,
   databaseSourcePropertiesSchema,
@@ -153,6 +160,20 @@ describe('JAVASCRIPT defaults match the core-models schema', () => {
   it.each([
     ['source', javascriptSourcePropertiesSchema, { ...JAVASCRIPT_SOURCE_DEFAULTS, script: 'return "x";' }],
     ['destination', javascriptDestinationPropertiesSchema, { ...JAVASCRIPT_DEST_DEFAULTS, script: 'return msg;' }],
+  ] as const)('%s', (_name, schema, filled) => {
+    expect(schema.parse(filled)).toEqual(filled);
+  });
+});
+
+describe('CHANNEL, FHIR and SMTP defaults match the core-models schemas', () => {
+  // The schema returns the defaults unchanged once the fields a user must fill
+  // in are set (deploy sets the CHANNEL source's id): it rejects unknown keys,
+  // and it would add any defaulted key the form left out.
+  it.each([
+    ['CHANNEL source', channelSourcePropertiesSchema, { ...CHANNEL_SOURCE_DEFAULTS, channelId: 'c1' }],
+    ['CHANNEL destination', channelDestinationPropertiesSchema, { ...CHANNEL_DEST_DEFAULTS, targetChannelId: 'c2' }],
+    ['FHIR destination', fhirDestinationPropertiesSchema, { ...FHIR_DEST_DEFAULTS, baseUrl: 'https://fhir.example/r4' }],
+    ['SMTP destination', smtpDestinationPropertiesSchema, { ...SMTP_DEST_DEFAULTS, host: 'mail', from: 'a@x', to: 'b@x' }],
   ] as const)('%s', (_name, schema, filled) => {
     expect(schema.parse(filled)).toEqual(filled);
   });
