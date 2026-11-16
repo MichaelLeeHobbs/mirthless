@@ -18,6 +18,8 @@ import {
   httpDestinationPropertiesSchema,
   databaseSourcePropertiesSchema,
   databaseDestinationPropertiesSchema,
+  fileSourcePropertiesSchema,
+  fileDestinationPropertiesSchema,
   connectorPortSchema as portSchema,
   formatPropertyIssues,
 } from '@galvaniflow/core-models';
@@ -28,10 +30,9 @@ import { ServiceError } from '../lib/service-error.js';
 const nonEmptyString = z.string().min(1);
 
 // ----- Source Connector Schemas -----
-// TCP_MLLP, HTTP, DATABASE, KAFKA and AMQP use their core-models schemas (#115); the
-// others still check only their required keys here.
+// TCP_MLLP, HTTP, DATABASE, FILE, KAFKA and AMQP use their core-models schemas (#115);
+// the others still check only their required keys here.
 
-const fileSourceSchema = z.object({ directory: nonEmptyString }).passthrough();
 const javascriptSourceSchema = z.object({ script: nonEmptyString }).passthrough();
 const channelSourceSchema = z.object({ channelId: nonEmptyString }).passthrough();
 const dicomSourceSchema = z.object({ port: portSchema, storageDir: nonEmptyString }).passthrough();
@@ -78,7 +79,6 @@ const sftpSourceSchema = sftpConnectionSchema.extend({
 
 // ----- Destination Connector Schemas -----
 
-const fileDestSchema = z.object({ directory: nonEmptyString }).passthrough();
 const javascriptDestSchema = z.object({ script: nonEmptyString }).passthrough();
 const smtpDestSchema = z.object({ host: nonEmptyString, port: z.number(), to: nonEmptyString }).passthrough();
 const channelDestSchema = z.object({ targetChannelId: nonEmptyString }).passthrough();
@@ -91,7 +91,7 @@ const sftpDestSchema = sftpConnectionSchema.superRefine(checkSftpCredentials);
 const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   TCP_MLLP: tcpMllpSourcePropertiesSchema,
   HTTP: httpSourcePropertiesSchema,
-  FILE: fileSourceSchema,
+  FILE: fileSourcePropertiesSchema,
   DATABASE: databaseSourcePropertiesSchema,
   JAVASCRIPT: javascriptSourceSchema,
   CHANNEL: channelSourceSchema,
@@ -105,7 +105,7 @@ const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
 const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   TCP_MLLP: tcpMllpDestinationPropertiesSchema,
   HTTP: httpDestinationPropertiesSchema,
-  FILE: fileDestSchema,
+  FILE: fileDestinationPropertiesSchema,
   DATABASE: databaseDestinationPropertiesSchema,
   JAVASCRIPT: javascriptDestSchema,
   SMTP: smtpDestSchema,

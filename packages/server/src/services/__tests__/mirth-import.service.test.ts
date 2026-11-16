@@ -860,6 +860,23 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     });
   });
 
+  it('maps a local File Reader and Writer to keys the FILE schemas accept', () => {
+    const reader = '<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><pluginProperties/><pollConnectorProperties version="4.5.0"><pollingType>INTERVAL</pollingType><pollOnStart>false</pollOnStart><pollingFrequency>2000</pollingFrequency></pollConnectorProperties><sourceConnectorProperties version="4.5.0"><responseVariable>None</responseVariable><processBatch>true</processBatch></sourceConnectorProperties><scheme>FILE</scheme><host>/data/in</host><fileFilter>*.hl7</fileFilter><regex>false</regex><directoryRecursion>false</directoryRecursion><ignoreDot>true</ignoreDot><anonymous>true</anonymous><afterProcessingAction>MOVE</afterProcessingAction><moveToDirectory>/data/done</moveToDirectory><checkFileAge>true</checkFileAge><fileAge>1000</fileAge><sortBy>date</sortBy><binary>false</binary><charsetEncoding>DEFAULT_ENCODING</charsetEncoding></properties><transformer';
+    const writer = '<properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0"><scheme>FILE</scheme><host>/data/out</host><outputPattern>${message.messageId}.hl7</outputPattern><anonymous>true</anonymous><outputAppend>false</outputAppend><errorOnExists>false</errorOnExists><temporary>false</temporary><binary>false</binary><charsetEncoding>DEFAULT_ENCODING</charsetEncoding><template>${message.encodedData}</template></properties>';
+    const channel = convert4x((x) => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer)
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader));
+
+    expect(channel.sourceConnectorType).toBe('FILE');
+    expect(channel.sourceConnectorProperties).toEqual({
+      directory: '/data/in', fileFilter: '*.hl7', moveToDirectory: '/data/done', pollingIntervalMs: 2000, processBatch: true,
+    });
+    expect(channel.destinations[0]).toMatchObject({ connectorType: 'FILE', properties: { directory: '/data/out' } });
+    // Every key the importer writes is one the FILE schemas accept, so the channel deploys as imported.
+    expect(validateConnectorProperties('FILE', 'source', channel.sourceConnectorProperties)).toMatchObject({ ok: true });
+    expect(validateConnectorProperties('FILE', 'destination', channel.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
+  });
+
   describe('a File connector with a remote scheme', () => {
     const reader = (scheme: string, hostKeyChecking: string): string => `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>${scheme}</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>${hostKeyChecking}</hostKeyChecking></schemeProperties><host>sftp.partner.org:2222/out/orders</host><fileFilter>*.hl7</fileFilter><username>svc</username><password>pw</password><afterProcessingAction>DELETE</afterProcessingAction><moveToDirectory></moveToDirectory></properties><transformer`;
     const writer = '<properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0"><scheme>SFTP</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>no</hostKeyChecking></schemeProperties><host>sftp.partner.org/in</host><outputPattern>${messageId}.hl7</outputPattern><outputAppend>false</outputAppend><username>svc</username><password>pw</password></properties>';

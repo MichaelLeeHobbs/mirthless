@@ -116,6 +116,30 @@ WHERE connector_type = 'DATABASE'
                 'query','useTransaction','returnGeneratedKeys','template');
 ```
 
+**FILE** is the fourth. Channels saved by this app's own editor keep deploying: the File Reader and Writer forms have saved the same keys since 2026-03, so nothing is dropped. The charset is read as for TCP_MLLP: any case, and `UTF-8`, `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` become `utf-8`, `latin1`, `ascii` and `utf16le`. The FILE defaults saved `UTF-8` until this release, and the 2026-03 to 2026-07 forms offered `ISO-8859-1` and `US-ASCII`. Nothing in the database is rewritten.
+
+A FILE channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. `filePattern` or `fileNameTemplate` (the SFTP connector's names). Before, such a key was ignored.
+- a `charset` that is none of the above, even with `binary` on. Before, a binary channel ignored its charset. The other names the connector used to read (`iso8859-1`, `latin-1`, `ucs2`, `ucs-2`, `binary`, `base64`, `hex`) now refuse too; the editor never offered them.
+- a `sortBy` other than `NAME`, `DATE` or `SIZE`, or a `postAction` other than `DELETE`, `MOVE` or `NONE`. Before, an unknown sort read files by name, and an unknown post action left each file in place, so the next poll read it again.
+- a `pollingIntervalMs` that is not a whole number of at least 100, or a `fileAgeMs` that is not a whole number of at least 0. Before, a value that wasn't a number was replaced by the default without a word.
+- a `binary`, `checkFileAge`, `tempFileEnabled` or `appendMode` that is not `true` or `false`. Before, any text, `"false"` included, turned the setting on.
+- an empty `directory`, `fileFilter` or `outputPattern`. These failed before as well, when the connector deployed, without naming the key. A `directory`, `fileFilter` or `outputPattern` of only spaces now fails too.
+- `postAction` `MOVE` with an empty `moveToDirectory`. This failed before as well, without naming the key.
+
+Before upgrading, list the keys the schema would refuse:
+
+```sql
+SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE source_connector_type = 'FILE'
+  AND k NOT IN ('directory','fileFilter','pollingIntervalMs','sortBy','charset','binary','checkFileAge','fileAgeMs',
+                'postAction','moveToDirectory','processBatch');
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'FILE'
+  AND k NOT IN ('directory','outputPattern','charset','binary','tempFileEnabled','appendMode','template');
+```
+
 ## Standard upgrade (Docker)
 
 ```bash

@@ -174,23 +174,23 @@ The connector adds no transport security. A network share must be protected wher
 | Property | Required | Notes |
 |---|---|---|
 | `directory` | Yes | Directory to poll. |
-| `fileFilter` | No | Glob for the files to read, `*` by default. |
-| `pollingIntervalMs` | No | Milliseconds between polls. |
-| `sortBy` | No | `NAME`, `DATE` or `SIZE`: the order files are read in. |
-| `charset` | No | Character set to decode the file. One Node cannot decode refuses to deploy. |
+| `fileFilter` | No | Glob (`*`, `?`) for the files to read, `*` by default. Not empty. |
+| `pollingIntervalMs` | No | Milliseconds between polls, at least 100, 5000 by default. |
+| `sortBy` | No | `NAME` (default), `DATE` or `SIZE`: the order files are read in. |
+| `charset` | No | `utf-8` (default), `latin1` (ISO-8859-1), `ascii` or `utf16le`, used to decode the file. Case is ignored, and `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. Any other refuses to deploy, in binary mode too. |
 | `binary` | No | `true` reads the file as base64 instead of text. |
 | `checkFileAge` | No | On by default: skip files younger than `fileAgeMs`, so a file still being written is not read. |
-| `fileAgeMs` | No | Minimum file age in milliseconds. |
-| `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes each file after the pipeline accepts it. |
-| `moveToDirectory` | No | Where `MOVE` puts processed files. |
+| `fileAgeMs` | No | Minimum file age in milliseconds, a whole number from 0, 1000 by default. |
+| `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes each file after the pipeline accepts it. `NONE` leaves the file in place, so the next poll reads it again. |
+| `moveToDirectory` | No | Where `MOVE` puts processed files. Required when `postAction` is `MOVE`. |
 
 ### FILE as a destination
 
 | Property | Required | Notes |
 |---|---|---|
 | `directory` | Yes | Directory to write to; created if missing. |
-| `outputPattern` | No | File name. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. Without `${messageId}` and with append off, each message overwrites the last file of that name (a warning is logged). |
-| `charset` | No | Character set to encode the file. |
+| `outputPattern` | No | File name, `${messageId}.txt` by default. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. Without `${messageId}` and with append off, each message overwrites the last file of that name (a warning is logged). |
+| `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to encode the file. |
 | `binary` | No | `true` decodes the content from base64 and writes the bytes. |
 | `tempFileEnabled` | No | On by default: write a temporary file, then rename it. |
 | `appendMode` | No | `true` appends to the file instead of replacing it. |

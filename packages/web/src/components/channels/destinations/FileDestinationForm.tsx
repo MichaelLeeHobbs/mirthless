@@ -14,15 +14,7 @@ import type { DestConnectorFormProps } from './types.js';
 import { FILE_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { getStr, getBool, propertyUpdaters } from '../common/connector-properties.js';
-
-// Values must be valid Node Buffer encodings (passed straight to fs.writeFile) —
-// 'ISO-8859-1'/'US-ASCII' are NOT and throw ERR_UNKNOWN_ENCODING at runtime.
-const CHARSETS: readonly { value: string; label: string }[] = [
-  { value: 'utf-8', label: 'UTF-8' },
-  { value: 'latin1', label: 'ISO-8859-1 (Latin-1)' },
-  { value: 'ascii', label: 'US-ASCII' },
-  { value: 'utf16le', label: 'UTF-16 LE' },
-];
+import { CHARSET_OPTIONS } from '../common/charset-options.js';
 
 export function FileDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -81,7 +73,7 @@ export function FileDestinationForm({ properties, onChange }: DestConnectorFormP
           fullWidth
           sx={{ mb: 2 }}
         >
-          {CHARSETS.map((c) => (
+          {CHARSET_OPTIONS.map((c) => (
             <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>
           ))}
         </TextField>

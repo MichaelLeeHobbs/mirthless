@@ -37,7 +37,7 @@ export const HTTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
 export const FILE_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   directory: '',
   outputPattern: '${messageId}.txt',
-  charset: 'UTF-8',
+  charset: 'utf-8',
   binary: false,
   tempFileEnabled: true,
   appendMode: false,

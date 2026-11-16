@@ -40,7 +40,7 @@ export const FILE_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   fileFilter: '*',
   pollingIntervalMs: 5000,
   sortBy: 'NAME',
-  charset: 'UTF-8',
+  charset: 'utf-8',
   binary: false,
   checkFileAge: true,
   fileAgeMs: 1000,

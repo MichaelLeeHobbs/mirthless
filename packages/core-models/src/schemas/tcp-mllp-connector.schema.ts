@@ -19,11 +19,8 @@ import {
   destinationCommonProperties,
   optionalTlsSchema,
   withoutKeys,
+  charsetSchema as charset,
 } from './connector-property-fields.js';
-
-/** Payload encodings, as Node names them. */
-export const TCP_MLLP_CHARSETS = ['utf-8', 'latin1', 'ascii', 'utf16le'] as const;
-export type TcpMllpCharset = (typeof TCP_MLLP_CHARSETS)[number];
 
 /** AUTO_ACK builds an HL7 ACK/NAK from the inbound message; PASSTHROUGH relays the channel's response. */
 export const TCP_MLLP_RESPONSE_MODES = ['AUTO_ACK', 'PASSTHROUGH'] as const;
@@ -43,26 +40,10 @@ export const DEFAULT_MAX_FRAME_BYTES = 50 * 1024 * 1024;
  */
 const LEGACY_KEYS: ReadonlySet<string> = new Set(['receiveTimeout', 'bufferSize', 'keepConnectionOpen', 'transmissionMode', 'sendTimeout']);
 
-/**
- * Other names for the charsets, matched case-insensitively. The same editor
- * saved `UTF-8`, `ISO-8859-1` and `US-ASCII`.
- */
-const CHARSET_ALIASES: Readonly<Record<string, TcpMllpCharset>> = {
-  'utf-8': 'utf-8', utf8: 'utf-8',
-  latin1: 'latin1', 'iso-8859-1': 'latin1',
-  ascii: 'ascii', 'us-ascii': 'ascii',
-  utf16le: 'utf16le', 'utf-16le': 'utf16le',
-};
-
 /** Props without the legacy keys. */
 function dropLegacyKeys(value: unknown): unknown {
   return withoutKeys(value, LEGACY_KEYS);
 }
-
-const charset = z.preprocess(
-  (value) => (typeof value === 'string' ? CHARSET_ALIASES[value.trim().toLowerCase()] ?? value : value),
-  z.enum(TCP_MLLP_CHARSETS),
-).default('utf-8');
 
 /** Optional PEM text; null is unset, as the connector reads it. */
 const pem = z.string().nullable().optional();

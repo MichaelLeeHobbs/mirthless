@@ -12,7 +12,7 @@ import { HttpReceiver } from './http/http-receiver.js';
 import { framingFromHex, type Framing } from './transmission/mllp-mode.js';
 import { readTlsServerOptions, readTlsClientOptions } from './tls.js';
 import { HttpDispatcher } from './http/http-dispatcher.js';
-import { FileReceiver, FILE_SORT_BY, FILE_POST_ACTION, type FileSortBy, type FilePostAction } from './file/file-receiver.js';
+import { FileReceiver } from './file/file-receiver.js';
 import { FileDispatcher } from './file/file-dispatcher.js';
 import { DatabaseReceiver } from './database/database-receiver.js';
 import { DatabaseDispatcher } from './database/database-dispatcher.js';
@@ -45,6 +45,8 @@ import {
   databaseSourcePropertiesSchema,
   databaseDestinationPropertiesSchema,
   defaultDatabasePort,
+  fileSourcePropertiesSchema,
+  fileDestinationPropertiesSchema,
   formatPropertyIssues,
 } from '@galvaniflow/core-models';
 
@@ -209,6 +211,18 @@ function databaseDispatcher(props: Record<string, unknown>): DatabaseDispatcher 
   return new DatabaseDispatcher({ ...config, ...databaseTarget({ vendor, port }) });
 }
 
+/** A File Reader: schema-checked props. */
+function fileReceiver(props: Record<string, unknown>): FileReceiver {
+  const { processBatch: _processBatch, ...config } = parseProps('FILE', fileSourcePropertiesSchema, props);
+  return new FileReceiver(config);
+}
+
+/** A File Writer: schema-checked props. */
+function fileDispatcher(props: Record<string, unknown>): FileDispatcher {
+  const { template: _template, ...config } = parseProps('FILE', fileDestinationPropertiesSchema, props);
+  return new FileDispatcher(config);
+}
+
 // ----- Source Factories -----
 
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
@@ -216,18 +230,7 @@ type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRun
 const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnectorType, SourceFactory>([
   ['TCP_MLLP', tcpMllpReceiver],
   ['HTTP', httpReceiver],
-  ['FILE', (props): SourceConnectorRuntime => new FileReceiver({
-    directory: props['directory'] as string,
-    fileFilter: (props['fileFilter'] as string | undefined) ?? '*',
-    pollingIntervalMs: num(props, 'pollingIntervalMs', 5_000),
-    sortBy: (props['sortBy'] as FileSortBy | undefined) ?? FILE_SORT_BY.NAME,
-    charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
-    binary: (props['binary'] as boolean | undefined) ?? false,
-    checkFileAge: (props['checkFileAge'] as boolean | undefined) ?? true,
-    fileAgeMs: num(props, 'fileAgeMs', 1_000),
-    postAction: (props['postAction'] as FilePostAction | undefined) ?? FILE_POST_ACTION.DELETE,
-    moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
-  })],
+  ['FILE', fileReceiver],
   ['DATABASE', databaseReceiver],
   ['JAVASCRIPT', (props): SourceConnectorRuntime => new JavaScriptReceiver({
     script: (props['script'] as string | undefined) ?? '',
@@ -289,14 +292,7 @@ type DestinationFactory = (properties: Record<string, unknown>) => DestinationCo
 const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<DestinationConnectorType, DestinationFactory>([
   ['TCP_MLLP', tcpMllpDispatcher],
   ['HTTP', httpDispatcher],
-  ['FILE', (props): DestinationConnectorRuntime => new FileDispatcher({
-    directory: props['directory'] as string,
-    outputPattern: (props['outputPattern'] as string | undefined) ?? '${messageId}.txt',
-    charset: (props['charset'] as BufferEncoding | undefined) ?? 'utf-8',
-    binary: (props['binary'] as boolean | undefined) ?? false,
-    tempFileEnabled: (props['tempFileEnabled'] as boolean | undefined) ?? true,
-    appendMode: (props['appendMode'] as boolean | undefined) ?? false,
-  })],
+  ['FILE', fileDispatcher],
   ['DATABASE', databaseDispatcher],
   ['JAVASCRIPT', (props): DestinationConnectorRuntime => new JavaScriptDispatcher({
     script: (props['script'] as string | undefined) ?? '',
