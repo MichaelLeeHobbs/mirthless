@@ -25,12 +25,28 @@ export const SCRIPT_COMPILER_OPTIONS = {
   allowNonTsExtensions: true,
 } as const;
 
+/** The first line of the function the engine runs every script in. */
+export const SCRIPT_BODY_OPEN = 'async function __galvaniflowScript() {';
+
 /**
- * Diagnostics that are not errors in a script. The engine runs every script as
- * the body of an async function, so a top-level `return` and `await` are allowed.
+ * A script as the body of the function the engine runs it in, which is how the
+ * compiler builds it and how the type checks check it: TypeScript does not
+ * check the expression of a `return` outside a function (#206). Line N of the
+ * script is line N + 1 of the result, at the same column.
  */
-export const IGNORED_SCRIPT_DIAGNOSTICS: readonly number[] = [
-  1108, // A 'return' statement can only be used within a function body.
-  1375, // 'await' expressions are only allowed at the top level of a file when that file is a module.
-  1378, // Top-level 'await' expressions are only allowed when the 'module' option is set to ...
-];
+export function wrapScriptBody(code: string): string {
+  return `${SCRIPT_BODY_OPEN}\n${code}\n}`;
+}
+
+/**
+ * A 1-based line and column in {@link wrapScriptBody}'s output, on the
+ * script's own lines. A position on the wrapper's first line goes to the
+ * script's start, one on its closing brace (an unclosed block, say) to the
+ * script's end.
+ */
+export function scriptBodyPosition(code: string, line: number, column: number): { readonly line: number; readonly column: number } {
+  const lines = code.split('\n');
+  if (line < 2) return { line: 1, column: 1 };
+  if (line > lines.length + 1) return { line: lines.length, column: (lines.at(-1) ?? '').length + 1 };
+  return { line: line - 1, column };
+}

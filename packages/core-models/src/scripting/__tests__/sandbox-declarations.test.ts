@@ -7,7 +7,7 @@ import ts from 'typescript';
 import {
   scriptDeclarations, scriptSurfaceKey, templateDeclarations, type ScriptSurface, type TemplateSource,
 } from '../sandbox-declarations.js';
-import { SCRIPT_COMPILER_OPTIONS, IGNORED_SCRIPT_DIAGNOSTICS } from '../script-check.js';
+import { SCRIPT_COMPILER_OPTIONS, wrapScriptBody } from '../script-check.js';
 
 // Each check builds a real TypeScript program: about a second alone, several under
 // the gate's coverage and parallel workers, so the 5 s default is too short.
@@ -23,14 +23,14 @@ function cachedLib(
   return libCache.get(name);
 }
 
-/** Type-check one script against a surface; returns the messages TypeScript reports. */
+/** Type-check one script against a surface, as the body the engine runs it in; returns the messages TypeScript reports. */
 function check(script: string | readonly string[], surface: ScriptSurface, templates: readonly TemplateSource[] = []): string[] {
   const scripts = typeof script === 'string' ? [script] : script;
   const files: Record<string, string> = {
     '/sandbox.d.ts': scriptDeclarations(surface),
     '/templates.d.ts': templateDeclarations(templates, surface),
   };
-  scripts.forEach((s, i) => { files[i === 0 ? '/script.ts' : `/script${String(i)}.ts`] = s; });
+  scripts.forEach((s, i) => { files[i === 0 ? '/script.ts' : `/script${String(i)}.ts`] = wrapScriptBody(s); });
   const options: ts.CompilerOptions = { ...SCRIPT_COMPILER_OPTIONS, lib: ['lib.es2022.d.ts'] } as ts.CompilerOptions;
   const host = ts.createCompilerHost(options);
   const readLib = host.getSourceFile.bind(host);
@@ -39,14 +39,14 @@ function check(script: string | readonly string[], surface: ScriptSurface, templ
   host.fileExists = (name): boolean => files[name] !== undefined || ts.sys.fileExists(name);
   const program = ts.createProgram(Object.keys(files), options, host);
   return ts.getPreEmitDiagnostics(program)
-    .filter((d) => !IGNORED_SCRIPT_DIAGNOSTICS.includes(d.code) && !d.file?.fileName.endsWith('.d.ts'))
+    .filter((d) => !d.file?.fileName.endsWith('.d.ts'))
     .map((d) => `${d.file?.fileName ?? ''}: ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
 }
 
 describe('scriptDeclarations', () => {
   it('compiles cleanly for every data type', () => {
     for (const dataType of ['HL7V2', 'X12', 'JSON', 'XML', 'DELIMITED', 'RAW', undefined]) {
-      expect(check('export {};', { dataType, destinationSet: true }), String(dataType)).toEqual([]);
+      expect(check('', { dataType, destinationSet: true }), String(dataType)).toEqual([]);
     }
   });
 
@@ -70,6 +70,8 @@ describe('scriptDeclarations', () => {
   it('declares no msg, tmp or rawData for a script that runs without a message (deploy, undeploy)', () => {
     expect(check('parseHL7(rawData);', { message: false })).toEqual(["/script.ts: Cannot find name 'rawData'."]);
     expect(check("msg.get('PID.3');", { message: false })).toEqual(["/script.ts: Cannot find name 'msg'."]);
+    // #206: also in a returned expression.
+    expect(check("return [msg.get('PID.3')];", { message: false })).toEqual(["/script.ts: Cannot find name 'msg'."]);
     expect(check("logger.info('deployed'); channelMap['x'] = 1;", { message: false })).toEqual([]);
   });
 
