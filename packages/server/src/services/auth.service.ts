@@ -43,6 +43,29 @@ function auditLoginFailure(
   });
 }
 
+/**
+ * Count a wrong password and lock the account when the count reaches
+ * MAX_FAILED_ATTEMPTS. Called only when the account is not locked, so a
+ * `lockedUntil` still set here has expired: that lock's attempts no longer
+ * count, and the new count starts at one. Returns true when this attempt locks.
+ */
+async function recordFailedAttempt(
+  user: { readonly id: string; readonly failedLoginAttempts: number; readonly lockedUntil: Date | null },
+): Promise<boolean> {
+  const priorAttempts = user.lockedUntil === null ? user.failedLoginAttempts : 0;
+  const attempts = priorAttempts + 1;
+  const locked = attempts >= MAX_FAILED_ATTEMPTS;
+  await db
+    .update(users)
+    .set({
+      failedLoginAttempts: attempts,
+      lockedUntil: locked ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, user.id));
+  return locked;
+}
+
 export interface SessionMetadata {
   userAgent?: string;
   ipAddress?: string;
@@ -109,21 +132,9 @@ export class AuthService {
       // Verify password
       const valid = await bcrypt.compare(password, user.passwordHash);
       if (!valid) {
-        // Record failed attempt
-        const newAttempts = user.failedLoginAttempts + 1;
-        const shouldLock = newAttempts >= MAX_FAILED_ATTEMPTS;
-
-        await db
-          .update(users)
-          .set({
-            failedLoginAttempts: newAttempts,
-            ...(shouldLock ? { lockedUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(users.id, user.id));
-
-        auditLoginFailure(username, user.id, shouldLock ? 'invalid_password_locked' : 'invalid_password', metadata);
-        if (shouldLock) {
+        const locked = await recordFailedAttempt(user);
+        auditLoginFailure(username, user.id, locked ? 'invalid_password_locked' : 'invalid_password', metadata);
+        if (locked) {
           throw new ServiceError(
             'ACCOUNT_LOCKED',
             'Too many failed attempts. Account has been temporarily locked.',
@@ -172,7 +183,11 @@ export class AuthService {
     });
   }
 
-  static async refreshSession(refreshToken: string): Promise<Result<AuthTokens>> {
+  /**
+   * Rotate a session: check the refresh token, drop its session and open a new
+   * one that records the client details of the request doing the rotation.
+   */
+  static async refreshSession(refreshToken: string, metadata?: SessionMetadata): Promise<Result<AuthTokens>> {
     return tryCatch(async () => {
       // Verify token signature (throws on tamper/expiry). We rely on the DB
       // session + a fresh user check below rather than the token's own claims.
@@ -205,7 +220,7 @@ export class AuthService {
       await db.delete(sessions).where(eq(sessions.id, session.id));
 
       // Create new tokens
-      return await this.createTokens(session.userId);
+      return await this.createTokens(session.userId, metadata);
     });
   }
 
