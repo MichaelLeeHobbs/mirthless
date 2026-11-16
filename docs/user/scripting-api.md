@@ -118,6 +118,8 @@ The returned object exposes:
 | `getSegmentCount(name)` | Number of segments with the given name. |
 | `getSegmentString(name, index?)` | Raw string of the Nth segment (default first). |
 
+Every number in a path counts from 1, as in the HL7 spec: `PID.3[2]` is the 2nd repetition and `OBX[2]` the 2nd OBX segment. Mirth's E4X indexes count from 0, so when porting a script, Mirth's `[n]` becomes `[n+1]`: `msg['PID']['PID.3'][1]` is `msg.getRaw('PID.3[2]')`, and `msg['OBX'][1]['OBX.5']` is `msg.get('OBX[2].5')`.
+
 ### `createACK(originalRaw, ackCode, textMessage?)`
 Builds an HL7 ACK for the original message. `ackCode` is the acknowledgment code
 (e.g. `AA`, `AE`, `AR`); `textMessage` is optional and goes in MSA-3. The ACK swaps the
