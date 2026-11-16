@@ -48,7 +48,9 @@ async function seed(): Promise<void> {
     process.exit(1);
   }
 
-  const pool = new pg.Pool({ connectionString: databaseUrl, ssl: seedSslConfig() });
+  // The server pool's idle timeout (lib/db.ts), not pg's 10s default, so a pool
+  // left open holds the process long enough for seed-exit.itest.ts to notice.
+  const pool = new pg.Pool({ connectionString: databaseUrl, ssl: seedSslConfig(), idleTimeoutMillis: 30_000 });
   const db = drizzle(pool, { schema });
 
   try {
