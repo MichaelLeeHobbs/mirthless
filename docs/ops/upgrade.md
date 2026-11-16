@@ -64,6 +64,8 @@ An install created before this change runs the server as the superuser. After `g
 
 The application tables, and the partitions the old server created, stay owned by the owner; only the `pgboss` schema changes owner, and nothing is moved or rewritten. To go back to the previous version, check out its compose file: it connects as the owner again, and the unused role does no harm.
 
+**The empty `galvaniflow_test` database.** The production compose used to mount `docker/init-db`, so every production volume also got an empty `galvaniflow_test` database, meant only for the dev stack's tests. It no longer does. Nothing uses that database in production; once you have checked it is empty, you may drop it yourself (`DROP DATABASE galvaniflow_test;` as the owner). The upgrade leaves it alone.
+
 **Running the image another way** (your own compose file, Kubernetes): set `MIGRATION_DATABASE_URL` to the owner's connection string and `DATABASE_URL` to the server role's. The container refuses to start without `MIGRATION_DATABASE_URL`, or when `DATABASE_URL` connects as a superuser or the owner.
 
 **Local / non-Docker:** `pnpm dev` and `pnpm db:migrate` still use one `DATABASE_URL`, the dev superuser. A non-Docker production install should create a separate login role and grant it the table above as the table owner; `runtime-role.ts` holds the exact statements.
