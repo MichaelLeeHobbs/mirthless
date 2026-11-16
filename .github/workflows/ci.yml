@@ -11,8 +11,8 @@ on:
 # Which jobs a pull request runs is decided by the `changes` job
 # (scripts/ci/classify-changes.mjs, rules at the top of that file). A push to
 # main, a tag, a path with no rule and any error run everything. `ci-ok` is the
-# one check branch protection should require (main has none configured yet),
-# since a skipped job never reports.
+# one check branch protection on main requires, since a skipped job never
+# reports.
 jobs:
   changes:
     runs-on: ubuntu-latest

@@ -94,7 +94,7 @@ Michael tests this project by hand, and it is too big for that. Every change you
 
 ## Verification Matrix
 
-Run what matches the files you touched. `pnpm gate` runs build, lint and every package's tests with coverage minimums. On a pull request, CI runs the same steps but only the jobs and package tests the diff needs: a docs-only change runs just the tests that read the changed docs. A push to `main` runs everything. [`docs/ops/ci.md`](docs/ops/ci.md) lists what runs when; `node scripts/ci/classify-changes.mjs origin/main` shows it for your branch. A pull request is green when the `ci-ok` check passes. Branch protection on `main` should require it but isn't configured yet, so check it yourself before merging.
+Run what matches the files you touched. `pnpm gate` runs build, lint and every package's tests with coverage minimums. On a pull request, CI runs the same steps but only the jobs and package tests the diff needs: a docs-only change runs just the tests that read the changed docs. A push to `main` runs everything. [`docs/ops/ci.md`](docs/ops/ci.md) lists what runs when; `node scripts/ci/classify-changes.mjs origin/main` shows it for your branch. A pull request is green when the `ci-ok` check passes; branch protection on `main` requires it.
 
 | You changed | Run | Also |
 |---|---|---|

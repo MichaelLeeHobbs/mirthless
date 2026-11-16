@@ -31,7 +31,7 @@ Dependency changes move `pnpm-lock.yaml`, so they run everything, `pnpm audit` i
 
 ## The required check
 
-`ci-ok` needs every other job and runs even when they fail. It passes when each job passed or was skipped and fails when any failed or was cancelled. A skipped job never reports a status, so branch protection on `main` should require `ci-ok` alone, not the individual jobs. `main` has no branch protection configured yet; until it does, nothing stops a merge with a red `ci-ok`.
+`ci-ok` needs every other job and runs even when they fail. It passes when each job passed or was skipped and fails when any failed or was cancelled. A skipped job never reports a status, so branch protection on `main` requires `ci-ok` alone, not the individual jobs. The check must come from the GitHub Actions app. A branch need not be up to date with `main` to merge; the full run on every push to `main` catches what two green pull requests break together. Force pushes to `main` and deleting it are blocked. Admins can still merge past a red `ci-ok`, for an emergency.
 
 ## Checking a diff locally
 
