@@ -25,7 +25,8 @@ const fakeSocket = vi.hoisted(() => {
 const io = vi.hoisted(() => vi.fn(() => fakeSocket));
 vi.mock('socket.io-client', () => ({ io }));
 
-const { useSocketConnection } = await import('../use-socket.js');
+const { useSocketConnection, useThrottledSocketEvent, LIVE_REFRESH_INTERVAL_MS } = await import('../use-socket.js');
+const { connectSocket, disconnectSocket } = await import('../../lib/socket.js');
 const { useAuthStore } = await import('../../stores/auth.store.js');
 
 const USER = { id: 'u1', username: 'admin', email: 'a@example.com', role: 'admin', permissions: [] };
@@ -65,5 +66,93 @@ describe('useSocketConnection', () => {
     act(() => { fakeSocket.listeners.get('connect_error')?.(new Error('Authentication required')); });
 
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+});
+
+// A busy channel must not make every open page refetch once per event (#231, D-306).
+describe('useThrottledSocketEvent', () => {
+  const fire = (event: string, times: number): void => {
+    const listener = fakeSocket.listeners.get(event);
+    if (!listener) throw new Error(`no listener for ${event}`);
+    act(() => { for (let i = 0; i < times; i++) listener(new Error('payload is ignored')); });
+  };
+
+  beforeEach(() => {
+    fakeSocket.listeners.clear();
+    vi.useFakeTimers();
+    connectSocket('token');
+  });
+
+  afterEach(() => {
+    disconnectSocket();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('runs the handler once at once and once more at the end of the window for a burst', () => {
+    const handler = vi.fn();
+    renderHook(() => { useThrottledSocketEvent('stats:update', handler); });
+
+    fire('stats:update', 100);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    act(() => { vi.advanceTimersByTime(LIVE_REFRESH_INTERVAL_MS); });
+    expect(handler).toHaveBeenCalledTimes(2);
+
+    act(() => { vi.advanceTimersByTime(LIVE_REFRESH_INTERVAL_MS * 5); });
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs at most once per window under steady events, and the last event is always followed by a run', () => {
+    const handler = vi.fn();
+    renderHook(() => { useThrottledSocketEvent('message:new', handler); });
+
+    // One event every 100 ms for just under three windows.
+    for (let t = 0; t < LIVE_REFRESH_INTERVAL_MS * 3 - 500; t += 100) {
+      fire('message:new', 1);
+      act(() => { vi.advanceTimersByTime(100); });
+    }
+    expect(handler).toHaveBeenCalledTimes(3);
+
+    act(() => { vi.advanceTimersByTime(LIVE_REFRESH_INTERVAL_MS); });
+    expect(handler).toHaveBeenCalledTimes(4);
+  });
+
+  it('calls the latest handler, not the one from the first render', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = renderHook(({ h }) => { useThrottledSocketEvent('stats:update', h); }, { initialProps: { h: first } });
+    rerender({ h: second });
+
+    fire('stats:update', 1);
+
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a run pending for the previous scope when the scope changes', () => {
+    const handler = vi.fn();
+    const { rerender } = renderHook(({ scope }) => { useThrottledSocketEvent('message:new', handler, scope); }, { initialProps: { scope: 'channel-a' } });
+
+    fire('message:new', 3);
+    rerender({ scope: 'channel-b' });
+    act(() => { vi.advanceTimersByTime(LIVE_REFRESH_INTERVAL_MS * 2); });
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    // The new scope starts with no open window.
+    fire('message:new', 1);
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops the pending run and stops listening on unmount', () => {
+    const handler = vi.fn();
+    const { unmount } = renderHook(() => { useThrottledSocketEvent('stats:update', handler); });
+
+    fire('stats:update', 5);
+    unmount();
+    act(() => { vi.advanceTimersByTime(LIVE_REFRESH_INTERVAL_MS * 2); });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(fakeSocket.off).toHaveBeenCalledWith('stats:update', expect.any(Function));
   });
 });

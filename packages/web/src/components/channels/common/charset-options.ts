@@ -1,7 +1,7 @@
 // ===========================================
 // Charset Options
 // ===========================================
-// The charset choices of the TCP/MLLP and FILE forms. Values must be the
+// The charset choices of the TCP/MLLP, FILE and SFTP forms. Values must be the
 // core-models CONNECTOR_CHARSETS, which the schemas accept at deploy
 // (connector-defaults.test.ts checks they match).
 

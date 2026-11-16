@@ -25,4 +25,56 @@ describe('errorInfo', () => {
     const hostile = { toString(): string { throw new Error('no'); } };
     expect(errorInfo(hostile)).toEqual({ errMsg: 'Unprintable error value' });
   });
+
+  it('never throws for an Error subclass whose message getter throws', () => {
+    class LazyError extends Error {
+      override get message(): string { throw new Error('getter'); }
+    }
+    expect(errorInfo(new LazyError())).toEqual({ errMsg: 'Unprintable error value' });
+  });
+
+  it('never throws for a Proxy whose get trap throws', () => {
+    const hostile = new Proxy({}, { get(): never { throw new Error('trap'); } });
+    expect(errorInfo(hostile)).toEqual({ errMsg: 'Unprintable error value' });
+  });
+
+  it('falls back to the string form when only a field read throws', () => {
+    const odd = {
+      get message(): string { throw new Error('getter'); },
+      toString(): string { return 'odd value'; },
+    };
+    expect(errorInfo(odd)).toEqual({ errMsg: 'odd value' });
+  });
+
+  it('never throws for a Proxy whose getPrototypeOf trap throws', () => {
+    const hostile = new Proxy({}, { getPrototypeOf(): never { throw new Error('proto'); } });
+    expect(errorInfo(hostile)).toEqual({ errMsg: '[object Object]' });
+  });
+
+  it('returns only strings for an Error whose message is not a string', () => {
+    const poison = { toJSON(): never { throw new Error('toJSON'); } };
+    const err = Object.assign(new Error('x'), { message: poison });
+    const info = errorInfo(err);
+    expect(info).toEqual({ errMsg: 'Error: [object Object]' });
+    expect(() => JSON.stringify(info)).not.toThrow();
+  });
+
+  it('leaves out an Error name or stack that is not a string', () => {
+    const poison = { toJSON(): never { throw new Error('toJSON'); } };
+    const err = Object.assign(new Error('kept'), { name: poison, stack: poison });
+    const info = errorInfo(err);
+    expect(info).toEqual({ errMsg: 'kept' });
+    expect(() => JSON.stringify(info)).not.toThrow();
+  });
+
+  it('never throws for a revoked Proxy', () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    expect(errorInfo(proxy)).toEqual({ errMsg: 'Unprintable error value' });
+  });
+
+  it('never throws for a value whose Symbol.toPrimitive throws', () => {
+    const hostile = { [Symbol.toPrimitive](): never { throw new Error('prim'); } };
+    expect(errorInfo(hostile)).toEqual({ errMsg: 'Unprintable error value' });
+  });
 });

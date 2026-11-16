@@ -32,6 +32,11 @@ describe('createSourceConnector / createDestinationConnector', () => {
     expect(() => createSourceConnector('AMQP', { host: 'rabbit', queue: 'q', useTls: true, tls: { caCertId: 'abc' } })).not.toThrow();
   });
 
+  it('refuses a key the schema does not list, naming it', () => {
+    expect(() => createSourceConnector('KAFKA', { brokers: 'k:9092', topic: 't', groupId: 'g', group: 'x' })).toThrow(/KAFKA properties are invalid: .*group/);
+    expect(() => createDestinationConnector('AMQP', { host: 'rabbit', routingKey: 'q', persistent: true })).toThrow(/persistent/);
+  });
+
   it('throws on properties the schema rejects, so the channel fails to deploy', () => {
     expect(() => createSourceConnector('KAFKA', { brokers: 'no-port', topic: 't', groupId: 'g' })).toThrow(/host:port/);
     expect(() => createSourceConnector('AMQP', { host: 'rabbit' })).toThrow();

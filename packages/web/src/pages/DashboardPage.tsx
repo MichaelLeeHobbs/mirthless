@@ -3,7 +3,7 @@
 // ===========================================
 // Live overview: summary cards, channel status table, quick actions.
 // Auto-refreshes via TanStack Query polling (60s interval) with
-// WebSocket events for instant cache invalidation.
+// WebSocket events for throttled cache invalidation (D-306).
 // Supports tag filtering and grouped view toggle.
 
 import { lazy, Suspense, useState, useMemo, useCallback, type ReactNode } from 'react';
@@ -30,7 +30,8 @@ import { useAllChannelStatistics, STATS_KEYS, type ChannelStatisticsSummary } fr
 import { useAllDeploymentStatuses, DEPLOYMENT_KEYS, type ChannelStatus } from '../hooks/use-deployment.js';
 import { useTags, useTagAssignments, type TagSummary, type TagAssignment } from '../hooks/use-tags.js';
 import { useChannelGroups, useGroupMemberships, type ChannelGroupSummary, type GroupMembership } from '../hooks/use-channel-groups.js';
-import { useSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
+import { SOCKET_EVENT } from '@galvaniflow/core-models';
+import { useSocketEvent, useSocketRoom, useThrottledSocketEvent } from '../hooks/use-socket.js';
 import { SummaryCards } from '../components/dashboard/SummaryCards.js';
 import { NeedsAttention } from '../components/dashboard/NeedsAttention.js';
 import { ChannelStatusTable } from '../components/dashboard/ChannelStatusTable.js';
@@ -93,12 +94,12 @@ export function DashboardPage(): ReactNode {
 
   useSocketEvent('channel:state', handleChannelState);
 
-  // --- WebSocket: invalidate stats cache on stats updates ---
+  // --- WebSocket: invalidate stats cache on stats updates (throttled, D-306) ---
   const handleStatsUpdate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: STATS_KEYS.all });
   }, [queryClient]);
 
-  useSocketEvent('stats:update', handleStatsUpdate);
+  useThrottledSocketEvent(SOCKET_EVENT.STATS_UPDATE, handleStatsUpdate);
 
   // --- Tags per channel (for inline chips) ---
   const tagsByChannel = useMemo(() => {

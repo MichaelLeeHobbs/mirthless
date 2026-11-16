@@ -35,8 +35,8 @@ describe('registry DATABASE factories', () => {
   it('refuse a misspelled key instead of ignoring it', () => {
     expect(() => createSourceConnector('DATABASE', { host: 'db', database: 'lab', selectQuery: 'SELECT 1', pollingInterval: 1000 }))
       .toThrow(/DATABASE properties are invalid: .*pollingInterval/);
-    expect(() => createDestinationConnector('DATABASE', { host: 'db', database: 'lab', query: 'SELECT 1', driver: 'org.postgresql.Driver' }))
-      .toThrow(/driver/);
+    expect(() => createDestinationConnector('DATABASE', { host: 'db', database: 'lab', query: 'SELECT 1', connectionString: 'jdbc:postgresql://db/lab' }))
+      .toThrow(/connectionString/);
   });
 
   it('refuse a database with no driver, naming it', () => {

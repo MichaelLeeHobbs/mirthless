@@ -49,7 +49,10 @@ vi.mock('drizzle-orm', () => ({ eq: vi.fn() }));
 
 // ----- Import after mocks -----
 
-import { authMiddleware, revalidateSocket, emitToRoom, emitToAll, _resetIO } from '../socket.js';
+import {
+  authMiddleware, revalidateSocket, emitToRoom, emitToRoomCoalesced, emitToAll, shutdownSocketIO,
+  LIVE_EVENT_COALESCE_MS, _resetIO,
+} from '../socket.js';
 import { permissionNamesForRole } from '../role-permissions.js';
 import type { Server as SocketIOServer } from 'socket.io';
 
@@ -324,6 +327,127 @@ describe('Socket.IO Auth & Room Management', () => {
 
       expect(mockTo).toHaveBeenCalledWith('dashboard');
       expect(mockEmit).toHaveBeenCalledWith('stats:update', { channels: 5 });
+    });
+  });
+
+  // ----- emitToRoomCoalesced (#231, D-306) -----
+
+  describe('emitToRoomCoalesced', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(async () => {
+      await shutdownSocketIO();
+      vi.useRealTimers();
+    });
+
+    function mockRoomIO(): { emits: { room: string; event: string; data: unknown }[] } {
+      const emits: { room: string; event: string; data: unknown }[] = [];
+      const mockIO = {
+        to: (room: string) => ({ emit: (event: string, data: unknown) => { emits.push({ room, event, data }); } }),
+        disconnectSockets: vi.fn(),
+        close: (cb: () => void) => { cb(); },
+      } as unknown as SocketIOServer;
+      _resetIO(mockIO);
+      return { emits };
+    }
+
+    it('no-ops when io is null', () => {
+      expect(() => { emitToRoomCoalesced('dashboard', 'stats:update', {}); }).not.toThrow();
+      vi.advanceTimersByTime(LIVE_EVENT_COALESCE_MS * 2);
+    });
+
+    it('emits a burst of events as one emit per window, the last one carrying the latest data', () => {
+      const { emits } = mockRoomIO();
+
+      for (let i = 1; i <= 200; i++) emitToRoomCoalesced('channel:c1', 'message:new', { n: i });
+      expect(emits).toEqual([{ room: 'channel:c1', event: 'message:new', data: { n: 1 } }]);
+
+      vi.advanceTimersByTime(LIVE_EVENT_COALESCE_MS);
+      expect(emits).toHaveLength(2);
+      expect(emits[1]).toEqual({ room: 'channel:c1', event: 'message:new', data: { n: 200 } });
+
+      vi.advanceTimersByTime(LIVE_EVENT_COALESCE_MS * 5);
+      expect(emits).toHaveLength(2);
+    });
+
+    it('emits at most once per window under steady load and once more after the last event', () => {
+      const { emits } = mockRoomIO();
+
+      // An event every 10 ms for just under three windows.
+      for (let t = 0; t < LIVE_EVENT_COALESCE_MS * 3 - 50; t += 10) {
+        emitToRoomCoalesced('dashboard', 'stats:update', { t });
+        vi.advanceTimersByTime(10);
+      }
+      expect(emits).toHaveLength(3);
+
+      vi.advanceTimersByTime(LIVE_EVENT_COALESCE_MS);
+      expect(emits).toHaveLength(4);
+      expect(emits[3]!.data).toEqual({ t: LIVE_EVENT_COALESCE_MS * 3 - 60 });
+    });
+
+    it('coalesces each room and event on its own', () => {
+      const { emits } = mockRoomIO();
+
+      emitToRoomCoalesced('channel:c1', 'message:new', {});
+      emitToRoomCoalesced('channel:c2', 'message:new', {});
+      emitToRoomCoalesced('dashboard', 'stats:update', {});
+
+      expect(emits.map((e) => `${e.room} ${e.event}`)).toEqual([
+        'channel:c1 message:new',
+        'channel:c2 message:new',
+        'dashboard stats:update',
+      ]);
+    });
+
+    it('logs a trailing emit that throws instead of letting it reach the timer', async () => {
+      const { default: logger } = await import('../logger.js');
+      let calls = 0;
+      _resetIO({
+        to: () => ({ emit: () => { calls += 1; if (calls === 2) throw new Error('emit failed'); } }),
+        disconnectSockets: vi.fn(),
+        close: (cb: () => void) => { cb(); },
+      } as unknown as SocketIOServer);
+
+      emitToRoomCoalesced('dashboard', 'stats:update', {});
+      emitToRoomCoalesced('dashboard', 'stats:update', {});
+
+      expect(() => { vi.advanceTimersByTime(LIVE_EVENT_COALESCE_MS); }).not.toThrow();
+      expect(calls).toBe(2);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ errMsg: 'emit failed' }),
+        expect.stringContaining('stats:update'),
+      );
+    });
+
+    it('drops an emit armed while shutdown waits for the server to close', async () => {
+      const emits: unknown[] = [];
+      let finishClose: () => void = () => undefined;
+      _resetIO({
+        to: () => ({ emit: (_event: string, data: unknown) => { emits.push(data); } }),
+        disconnectSockets: vi.fn(),
+        close: (cb: () => void) => { finishClose = cb; },
+      } as unknown as SocketIOServer);
+
+      const shutdown = shutdownSocketIO();
+      emitToRoomCoalesced('dashboard', 'stats:update', { n: 1 });
+      emitToRoomCoalesced('dashboard', 'stats:update', { n: 2 });
+      finishClose();
+      await shutdown;
+
+      // No window timer outlives shutdown to hold the process or a stale entry.
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(LIVE_EVENT_COALESCE_MS * 2);
+      expect(emits).toEqual([{ n: 1 }]);
+    });
+
+    it('drops pending emits on shutdown', async () => {
+      const { emits } = mockRoomIO();
+
+      emitToRoomCoalesced('dashboard', 'stats:update', {});
+      emitToRoomCoalesced('dashboard', 'stats:update', {});
+      await shutdownSocketIO();
+      vi.advanceTimersByTime(LIVE_EVENT_COALESCE_MS * 2);
+
+      expect(emits).toHaveLength(1);
     });
   });
 
