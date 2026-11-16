@@ -23,7 +23,7 @@ import {
   type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
 } from './mirth-code-templates.js';
 import { isPlainObject, unescapeControlChars } from '@galvaniflow/core-util';
-import { DATABASE_VENDOR } from '@galvaniflow/connectors';
+import { DATABASE_VENDOR, unknownPlaceholders } from '@galvaniflow/connectors';
 
 // ----- Types -----
 
@@ -448,11 +448,12 @@ function convertSourceConnector(
 
   const remote = remoteFileConnector(finalType, propsNode, 'source', channelName, warnings);
   const properties: Record<string, unknown> = {
-    ...(remote?.properties ?? extractConnectorProperties(propsNode, finalType)),
+    ...(remote?.properties ?? extractConnectorProperties(propsNode, finalType, 'source')),
     ...pollingInterval(propsNode),
     ...(getBoolean(getNestedRecord(propsNode, 'sourceConnectorProperties') ?? {}, 'processBatch', false) ? { processBatch: true } : {}),
   };
   if (finalType === 'DATABASE') warnings.push(...databaseWarnings(propsNode, properties['vendor'], 'Database Reader', channelName));
+  if (finalType === 'FILE') warnings.push(...fileConnectorWarnings(propsNode, properties, 'File Reader', channelName));
   return { type: remote?.type ?? finalType, properties };
 }
 
@@ -495,20 +496,101 @@ function remoteFileConnector(
 }
 
 function sftpReaderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
-  const action = (getString(propsNode, 'afterProcessingAction') ?? 'NONE').toUpperCase();
   return {
     filePattern: getString(propsNode, 'fileFilter') ?? '*',
-    afterProcessing: action === 'DELETE' || action === 'MOVE' ? action : 'NONE',
+    afterProcessing: afterProcessingAction(propsNode),
     moveToDirectory: getString(propsNode, 'moveToDirectory') ?? '',
   };
 }
 
 function sftpWriterProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
-  const pattern = getString(propsNode, 'outputPattern');
+  const pattern = outputFileName(propsNode);
   return {
     ...(pattern ? { fileNameTemplate: pattern } : {}),
-    appendMode: getBoolean(propsNode, 'outputAppend', false),
+    appendMode: getBoolean(propsNode, 'outputAppend', true),
   };
+}
+
+/**
+ * What a Mirth File Reader does with a file it has read: NONE (Mirth's default,
+ * the file stays), MOVE or DELETE. The FILE and SFTP sources delete by default,
+ * so the action is always written out.
+ */
+function afterProcessingAction(propsNode: Record<string, unknown>): 'NONE' | 'MOVE' | 'DELETE' {
+  const action = (getString(propsNode, 'afterProcessingAction') ?? 'NONE').toUpperCase();
+  return action === 'DELETE' || action === 'MOVE' ? action : 'NONE';
+}
+
+/** Mirth's names for the two values a GalvaniFlow output file name can use. */
+const MIRTH_FILENAME_VALUES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\$\{message\.messageId\}/g, '${messageId}'],
+  [/\$\{SYSTIME\}/g, '${timestamp}'],
+];
+
+/**
+ * A Mirth File Writer's output pattern with Mirth's message id and system time
+ * renamed to `${messageId}` and `${timestamp}`, or null when blank. Any other
+ * `${...}` stays, so the deploy refuses it and the preview warns (see
+ * {@link fileConnectorWarnings}).
+ */
+function outputFileName(propsNode: Record<string, unknown>): string | null {
+  const pattern = getString(propsNode, 'outputPattern');
+  if (pattern === null || pattern.trim() === '') return null;
+  return MIRTH_FILENAME_VALUES.reduce((name, [from, to]) => name.replace(from, to), pattern);
+}
+
+/** Mirth's File Reader sort orders, as the FILE source names them. */
+const FILE_SORT_ORDER: Readonly<Record<string, string>> = { name: 'NAME', date: 'DATE', size: 'SIZE' };
+
+/** A local Mirth File Reader: directory, filter, after-processing action, order and file age. */
+function fileReaderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = { postAction: afterProcessingAction(propsNode) };
+  for (const [from, to] of [['host', 'directory'], ['fileFilter', 'fileFilter'], ['moveToDirectory', 'moveToDirectory']] as const) {
+    const value = getString(propsNode, from);
+    if (value) result[to] = value;
+  }
+  const sortBy = FILE_SORT_ORDER[getString(propsNode, 'sortBy') ?? ''];
+  if (sortBy) result['sortBy'] = sortBy;
+  if (getString(propsNode, 'checkFileAge') !== null) result['checkFileAge'] = getBoolean(propsNode, 'checkFileAge', true);
+  const fileAge = getNumber(propsNode, 'fileAge', -1);
+  if (Number.isInteger(fileAge) && fileAge >= 0) result['fileAgeMs'] = fileAge;
+  if (getString(propsNode, 'binary') !== null) result['binary'] = getBoolean(propsNode, 'binary', false);
+  return result;
+}
+
+/** A local Mirth File Writer: directory, file name, append setting, binary flag and template. */
+function fileWriterProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    appendMode: getBoolean(propsNode, 'outputAppend', true),
+    binary: getBoolean(propsNode, 'binary', false),
+  };
+  const dir = getString(propsNode, 'host');
+  if (dir) result['directory'] = dir;
+  const pattern = outputFileName(propsNode);
+  if (pattern) result['outputPattern'] = pattern;
+  return { ...result, ...sendTemplate(propsNode, 'template') };
+}
+
+/**
+ * Preview warnings for File (and SFTP) settings that do not carry: a Reader's
+ * regular-expression filter or move-to file name, and a Writer's file name
+ * placeholders that cannot be filled.
+ */
+function fileConnectorWarnings(propsNode: Record<string, unknown>, properties: Record<string, unknown>, connector: string, channelName: string): string[] {
+  const warnings: string[] = [];
+  if (getBoolean(propsNode, 'regex', false)) {
+    warnings.push(`Channel "${channelName}": the ${connector}'s file filter is a regular expression, and GalvaniFlow reads it as a glob (* and ?); rewrite it before deploying`);
+  }
+  const rename = getString(propsNode, 'moveToFileName');
+  if (rename) {
+    warnings.push(`Channel "${channelName}": the ${connector} renames moved files to "${rename}" in Mirth; GalvaniFlow moves them under their own name`);
+  }
+  const pattern = properties['outputPattern'] ?? properties['fileNameTemplate'];
+  const unknown = typeof pattern === 'string' ? unknownPlaceholders(pattern) : [];
+  if (unknown.length > 0) {
+    warnings.push(`Channel "${channelName}": the ${connector}'s file name uses ${unknown.map((n) => '${' + n + '}').join(', ')}, which GalvaniFlow cannot fill (only \${messageId} and \${timestamp}); it will not deploy until the file name is changed`);
+  }
+  return warnings;
 }
 
 /**
@@ -547,7 +629,7 @@ function mapTransportName(transportName: string, channelName: string, warnings: 
   return 'JAVASCRIPT';
 }
 
-function extractConnectorProperties(propsNode: Record<string, unknown>, connectorType: string): Record<string, unknown> {
+function extractConnectorProperties(propsNode: Record<string, unknown>, connectorType: string, direction: 'source' | 'destination'): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   // Extract properties based on connector type
@@ -583,15 +665,9 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       if (!listener) Object.assign(result, sendTemplate(propsNode, 'content'), httpSenderProperties(propsNode));
       break;
     }
-    case 'FILE': {
-      const dir = getString(propsNode, 'host');
-      if (dir) result['directory'] = dir;
-      const fileFilter = getString(propsNode, 'fileFilter');
-      if (fileFilter) result['fileFilter'] = fileFilter;
-      const moveToDir = getString(propsNode, 'moveToDirectory');
-      if (moveToDir) result['moveToDirectory'] = moveToDir;
+    case 'FILE':
+      Object.assign(result, direction === 'source' ? fileReaderProperties(propsNode) : fileWriterProperties(propsNode));
       break;
-    }
     case 'DATABASE':
       Object.assign(result, databaseProperties(propsNode));
       break;
@@ -852,8 +928,9 @@ function convertDestinations(
 
     const remote = remoteFileConnector(connectorType, propsNode, 'destination', channelName, warnings);
     const name = getString(dest, 'name') ?? `Destination ${idx + 1}`;
-    const properties = remote?.properties ?? extractConnectorProperties(propsNode, connectorType);
+    const properties = remote?.properties ?? extractConnectorProperties(propsNode, connectorType, 'destination');
     if (connectorType === 'DATABASE') warnings.push(...databaseWarnings(propsNode, properties['vendor'], `Database Writer "${name}"`, channelName));
+    if (connectorType === 'FILE') warnings.push(...fileConnectorWarnings(propsNode, properties, `File Writer "${name}"`, channelName));
 
     return {
       metaDataId: destinationMetaDataId(dest, idx),

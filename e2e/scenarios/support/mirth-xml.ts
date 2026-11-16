@@ -210,6 +210,8 @@ export interface FileReaderOptions {
   readonly fileFilter?: string;
   readonly regex?: boolean;
   readonly moveToDirectory?: string;
+  /** Mirth's "After Processing Action"; MOVE when moveToDirectory is set, DELETE otherwise. */
+  readonly afterProcessingAction?: 'NONE' | 'MOVE' | 'DELETE';
   readonly username?: string;
   readonly password?: string;
   readonly processBatch?: boolean;
@@ -223,7 +225,7 @@ export const fileReader = (o: FileReaderOptions): Pick<Connector, 'transportName
     : '';
   return {
     transportName: 'File Reader',
-    properties: `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="${V}"><pluginProperties/>${pollProps(o.pollMs ?? 1000)}${sourceProps({ responseVariable: 'None', processBatch: o.processBatch ?? false })}<scheme>${scheme}</scheme>${schemeProps}<host>${esc(o.host)}</host><fileFilter>${esc(o.fileFilter ?? '*')}</fileFilter><regex>${String(o.regex ?? false)}</regex><directoryRecursion>false</directoryRecursion><ignoreDot>true</ignoreDot><anonymous>${String(o.username === undefined)}</anonymous><username>${esc(o.username ?? 'anonymous')}</username><password>${esc(o.password ?? 'anonymous')}</password><timeout>10000</timeout><secure>true</secure><passive>true</passive><validateConnection>true</validateConnection><afterProcessingAction>${o.moveToDirectory ? 'MOVE' : 'DELETE'}</afterProcessingAction><moveToDirectory>${esc(o.moveToDirectory ?? '')}</moveToDirectory><moveToFileName></moveToFileName><errorReadingAction>NONE</errorReadingAction><errorResponseAction>AFTER_PROCESSING</errorResponseAction><errorMoveToDirectory></errorMoveToDirectory><errorMoveToFileName></errorMoveToFileName><checkFileAge>false</checkFileAge><fileAge>1000</fileAge><fileSizeMinimum>0</fileSizeMinimum><fileSizeMaximum></fileSizeMaximum><ignoreFileSizeMaximum>true</ignoreFileSizeMaximum><sortBy>date</sortBy><binary>false</binary><charsetEncoding>DEFAULT_ENCODING</charsetEncoding></properties>`,
+    properties: `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="${V}"><pluginProperties/>${pollProps(o.pollMs ?? 1000)}${sourceProps({ responseVariable: 'None', processBatch: o.processBatch ?? false })}<scheme>${scheme}</scheme>${schemeProps}<host>${esc(o.host)}</host><fileFilter>${esc(o.fileFilter ?? '*')}</fileFilter><regex>${String(o.regex ?? false)}</regex><directoryRecursion>false</directoryRecursion><ignoreDot>true</ignoreDot><anonymous>${String(o.username === undefined)}</anonymous><username>${esc(o.username ?? 'anonymous')}</username><password>${esc(o.password ?? 'anonymous')}</password><timeout>10000</timeout><secure>true</secure><passive>true</passive><validateConnection>true</validateConnection><afterProcessingAction>${o.afterProcessingAction ?? (o.moveToDirectory ? 'MOVE' : 'DELETE')}</afterProcessingAction><moveToDirectory>${esc(o.moveToDirectory ?? '')}</moveToDirectory><moveToFileName></moveToFileName><errorReadingAction>NONE</errorReadingAction><errorResponseAction>AFTER_PROCESSING</errorResponseAction><errorMoveToDirectory></errorMoveToDirectory><errorMoveToFileName></errorMoveToFileName><checkFileAge>false</checkFileAge><fileAge>1000</fileAge><fileSizeMinimum>0</fileSizeMinimum><fileSizeMaximum></fileSizeMaximum><ignoreFileSizeMaximum>true</ignoreFileSizeMaximum><sortBy>date</sortBy><binary>false</binary><charsetEncoding>DEFAULT_ENCODING</charsetEncoding></properties>`,
   };
 };
 
