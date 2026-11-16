@@ -13,6 +13,7 @@ import { z } from 'zod/v4';
 import {
   connectorPortSchema,
   pollingIntervalSchema,
+  withoutKeys,
   sourceCommonProperties,
   destinationCommonProperties,
 } from './connector-property-fields.js';
@@ -74,13 +75,30 @@ export const databaseDestinationObjectSchema = z.strictObject({
   ...destinationCommonProperties,
 });
 
+/**
+ * Keys the Mirth importer wrote from 2026-03-03 until 2026-11-12 and nothing
+ * read (#227). Such a channel deployed once its host, database and query were
+ * filled in, and the editor cannot remove a key, so they are dropped.
+ */
+const MIRTH_IMPORT_KEYS: ReadonlySet<string> = new Set(['url', 'driver']);
+
+/** A source's props with the old importer keys dropped, and its `query` (the importer's SELECT) as `selectQuery` when that is empty. */
+function withoutImportedSourceKeys(value: unknown): unknown {
+  const props = withoutKeys(value, MIRTH_IMPORT_KEYS);
+  if (typeof props !== 'object' || props === null || Array.isArray(props) || !('query' in props)) return props;
+  const { query, ...rest } = props as Record<string, unknown>;
+  const select = rest['selectQuery'];
+  const selectEmpty = typeof select !== 'string' || select.trim() === '';
+  return selectEmpty && typeof query === 'string' ? { ...rest, selectQuery: query } : rest;
+}
+
 /** The source schema, needing an update query whenever the update mode runs one. */
-export const databaseSourcePropertiesSchema = databaseSourceObjectSchema.superRefine((props, ctx) => {
+export const databaseSourcePropertiesSchema = z.preprocess(withoutImportedSourceKeys, databaseSourceObjectSchema.superRefine((props, ctx) => {
   if (props.updateMode !== 'NEVER' && props.updateQuery.trim() === '') {
     ctx.addIssue({ code: 'custom', path: ['updateQuery'], message: `required when updateMode is ${props.updateMode}` });
   }
-});
+}));
 export type DatabaseSourceProperties = z.infer<typeof databaseSourceObjectSchema>;
 
-export const databaseDestinationPropertiesSchema = databaseDestinationObjectSchema;
+export const databaseDestinationPropertiesSchema = z.preprocess((value) => withoutKeys(value, MIRTH_IMPORT_KEYS), databaseDestinationObjectSchema);
 export type DatabaseDestinationProperties = z.infer<typeof databaseDestinationObjectSchema>;

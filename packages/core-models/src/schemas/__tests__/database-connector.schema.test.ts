@@ -110,10 +110,35 @@ describe('databaseDestinationPropertiesSchema', () => {
   });
 
   it('rejects a key it does not know, naming it', () => {
-    const result = databaseDestinationPropertiesSchema.safeParse({ ...DESTINATION_REQUIRED, driver: 'org.postgresql.Driver' });
+    const result = databaseDestinationPropertiesSchema.safeParse({ ...DESTINATION_REQUIRED, connectionString: 'jdbc:postgresql://db/lab' });
     expect(result.success).toBe(false);
     if (result.success) return;
-    expect(result.error.issues[0]?.message).toContain('driver');
+    expect(result.error.issues[0]?.message).toContain('connectionString');
+  });
+
+  // The Mirth importer wrote `url` and `driver` from f1c4614 (2026-03-03) until 9cf36a5 (2026-11-12); nothing read them (#227).
+  it('drops the url and driver the Mirth importer once wrote', () => {
+    const imported = { ...DESTINATION_REQUIRED, url: 'jdbc:postgresql://db/lab', driver: 'org.postgresql.Driver' };
+    expect(databaseDestinationPropertiesSchema.parse(imported)).toEqual(databaseDestinationPropertiesSchema.parse(DESTINATION_REQUIRED));
+  });
+});
+
+describe('a Database Reader the Mirth importer wrote before 2026-11-12 (#227)', () => {
+  const imported = { url: 'jdbc:postgresql://db/orders', driver: 'org.postgresql.Driver', query: 'SELECT id FROM o', host: 'db', database: 'orders' };
+
+  it('reads the old query as the select query when the user left that empty, and drops url and driver', () => {
+    const parsed = databaseSourcePropertiesSchema.parse({ ...imported, selectQuery: '' });
+    expect(parsed.selectQuery).toBe('SELECT id FROM o');
+    expect(parsed).not.toHaveProperty('url');
+    expect(parsed).not.toHaveProperty('driver');
+    expect(parsed).not.toHaveProperty('query');
+    expect(databaseSourcePropertiesSchema.parse(imported).selectQuery).toBe('SELECT id FROM o');
+  });
+
+  it('keeps a select query the user filled in, dropping the old query', () => {
+    const parsed = databaseSourcePropertiesSchema.parse({ ...imported, selectQuery: 'SELECT * FROM o WHERE sent = false' });
+    expect(parsed.selectQuery).toBe('SELECT * FROM o WHERE sent = false');
+    expect(parsed).not.toHaveProperty('query');
   });
 
   // DATABASE_DEST_DEFAULTS from 7793c71 (2026-03) until 73d0a87 (2026-11) added `tls`, with the required fields filled.
