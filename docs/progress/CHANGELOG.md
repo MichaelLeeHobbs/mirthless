@@ -2,7 +2,7 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
-## 2026-11-15 — Load-proof timing tests (#125, branch `fix/125-load-proof-timing-tests`)
+## 2026-11-15 — Load-proof timing tests (#125, D-290, branch `fix/125-load-proof-timing-tests`)
 
 On a loaded machine the engine and server suites failed on almost every local gate run because tests that check a script's result ran it under a 100 to 300 ms limit, or hit vitest's 5 s default while a deploy compiled scripts.
 
@@ -11,6 +11,36 @@ On a loaded machine the engine and server suites failed on almost every local ga
 - **Cache-limit test** moved to `script-cache-limit.test.ts` with esbuild's `transform` stubbed, so filling the cache takes milliseconds instead of up to a minute. It now checks the oldest entry is the one dropped.
 - **Other budgets:** map-continuity messages 20 s, engine-alerts and engine-source-failure waits 10 s, and the 2 s limit on the alert-email test is gone.
 - **Verified:** with 10 busy threads on the 8-core dev machine, main's engine suite failed 7 tests; this branch's engine and server coverage runs passed three times each.
+
+## 2026-11-15 — Faster CI e2e job (branch `ci/e2e-parallel-workers`)
+
+The e2e job took 7m20s on main and is the slowest job for every server or web change (#177 follow-up).
+
+- **Spec files run on 4 Playwright workers** instead of 1 (D-289, superseding D-038). Tests inside a file still run in order. An audit of the 21 spec files found no two that touch the same rows or settings.
+- **CI e2e runs against the built server and web bundle** (`node dist/index.js`, `vite preview`) instead of the dev servers, which made four workers CPU-bound. Local runs keep the dev servers.
+- **`db:seed` exits when it is done.** The example-message step's server pool was never closed, so the script sat for its 30s idle timeout after "Seed complete". `seed-exit.itest.ts` now requires the script to exit within 15s.
+- **CI migrates without rebuilding.** Both jobs call `drizzle-kit migrate` directly, because `pnpm db:migrate` runs `tsc` first (9s) after the build has already run.
+- **Found on the way:** vacuous e2e tests and 96s of fixed sleeps (filed as an issue).
+
+## 2026-11-15 — CI runs only what a change needs (branch `ci/177-change-classifier`)
+
+#177 (D-288). On a pull request, a `changes` job classifies the diff with `scripts/ci/classify-changes.mjs` and the other jobs run only when it selects them. Pushes to main, and pull requests that change CI itself, run everything. A docs-only change runs a `docs` job with just the unit tests that read the changed file; a web change skips both integration lanes; a server change skips connector integration. Unit tests in the gate narrow to the changed packages and their dependents; build, lint and audit stay whole-repo. Root config, workflows, `docker/`, `scripts/`, tags and anything unknown run everything. `ci-ok` is the single check branch protection on main requires (set up the same day: from the GitHub Actions app, branches need not be up to date, force pushes blocked). Table tests (`pnpm test:ci`, now part of `pnpm gate`) also fail when `ci.yml` gains a job the classifier and `ci-ok` don't know, or when `pnpm gate` gains a step CI doesn't run. What runs when: `docs/ops/ci.md`.
+
+- Differs from the issue on purpose: a connectors change also runs the Postgres lane and e2e, because the server depends on connectors; and a push to main runs everything instead of comparing with its parent.
+- Measured on main before this change: e2e is 7m20s of the 7m20s wall clock (Playwright alone 5m34s, one worker), the gate job 3m35s, connector integration 1m. So server and web PRs still wait on e2e.
+
+## 2026-11-15 — Removed the CLI (branch `remove-cli`, #145)
+
+- **`packages/cli` deleted** (D-280). It had no users and wrapped one REST endpoint per command. Its coverage row is gone from `AGENTS.md`, along with the "CLI session refresh" roadmap item (L25).
+- **`docs/ops/api-automation.md`:** `curl` recipes for log in, export, import and redeploy. Redeploy returns once the channel is in its final state and fails when it can't start, so a CI job doesn't need to poll.
+- Not done here: API tokens (#144) and the break-glass admin reset (#141). Until #144, the recipes log in with a password, which won't work for an account with MFA.
+
+## 2026-11-15 — Old status copies cut down, docs slice 4 (branch `docs/status-cutdown`)
+
+Slice 4 of the docs restructure (#116): with the capabilities page as the one home for status (D-279), the copies that drifted are cut back.
+
+- **ROADMAP:** the six "(done)" lists (Core Pipeline, Sandbox, Connectors, API & Auth, Web UI, CLI) are replaced by one link to the capabilities page, which lists what ships with its proof. Removed stale lines: SFTP as a someday idea (it ships) and "Database connectors are PostgreSQL only" (MySQL ships). `[B1]` no longer says the alert engine fires only on CHANNEL_ERROR.
+- **Design docs:** status banners in the house form on 03 and 05 ("original design") and on 09, 12, 13, 14 and 16 ("historical analysis", replacing "Draft for review"), each pointing at the page that is current, with D-182 named where it still binds. Local paths to the OIE source are gone from docs 12 and 13.
 
 ## 2026-11-15 — Capabilities page, docs slice 3 (branch `docs/capabilities`)
 
