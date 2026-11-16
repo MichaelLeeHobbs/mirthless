@@ -209,7 +209,7 @@ The connector adds no transport security. A network share must be protected wher
 
 The source polls a directory on an SFTP server for files that match a glob, downloads each one as a message in name order, and then deletes, moves or leaves it. The source map holds `originalFilename`, `remoteDirectory`, `fileSize` and `lastModified`.
 
-A file the channel stored with an ERROR status, or whose delete or move failed after it was sent, is left in place and not read again. The list of those files is kept in `.galvaniflow-quarantine.json` in the remote directory, so it survives a restart, and that file is never read as a message. The list records each file by name and modification time, so a file uploaded again with a new modification time is read.
+A file the channel stored with an ERROR status, or whose delete or move failed after it was sent, is left in place and not read again. The list of those files is kept in `.galvanigraph-quarantine.json` in the remote directory, so it survives a restart, and that file is never read as a message. A `.galvaniflow-quarantine.json` or `.mirthless-quarantine.json` left by a version from before a rename is still read, and never read as a message. The list records each file by name and modification time, so a file uploaded again with a new modification time is read.
 
 The destination uploads each message as a file, encoded as UTF-8. Each send opens its own connection, creates `remoteDirectory` if it is missing, writes the file and disconnects. A send that takes over 30 seconds is an ERROR. The response is the remote path written.
 

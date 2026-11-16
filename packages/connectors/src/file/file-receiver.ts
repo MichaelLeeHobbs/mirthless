@@ -11,7 +11,14 @@ import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
-import { QuarantineLedger, dispatchQuarantined, type LedgerStorage } from '../quarantine-ledger.js';
+import {
+  QUARANTINE_LEDGER_NAME,
+  QUARANTINE_LEDGER_NAMES,
+  QuarantineLedger,
+  dispatchQuarantined,
+  isQuarantineLedgerName,
+  type LedgerStorage,
+} from '../quarantine-ledger.js';
 
 // ----- Constants -----
 
@@ -28,18 +35,6 @@ const FILE_POST_ACTION = {
   NONE: 'NONE',
 } as const;
 type FilePostAction = typeof FILE_POST_ACTION[keyof typeof FILE_POST_ACTION];
-
-/**
- * Sidecar ledger file (in the watched directory) that persists the quarantine
- * set across restarts. Excluded from polling so it is never dispatched.
- */
-const QUARANTINE_LEDGER = '.galvaniflow-quarantine.json';
-/**
- * Ledger name used before the GalvaniGraph rename. Still read (merged into the
- * set) and never dispatched, but never written: the next persist carries its
- * entries into {@link QUARANTINE_LEDGER}.
- */
-const LEGACY_QUARANTINE_LEDGER = '.mirthless-quarantine.json';
 
 /** Ledgers on the local filesystem. A missing ledger (ENOENT) reads as absent. */
 const LOCAL_LEDGER_STORAGE: LedgerStorage = {
@@ -158,7 +153,7 @@ export class FileReceiver implements SourceConnectorRuntime {
     this.config = config;
     this.logger = logger ?? createConnectorLogger('FILE');
     this.quarantine = new QuarantineLedger(
-      LOCAL_LEDGER_STORAGE, path.join(config.directory, QUARANTINE_LEDGER), this.logger,
+      LOCAL_LEDGER_STORAGE, path.join(config.directory, QUARANTINE_LEDGER_NAME), this.logger,
     );
   }
 
@@ -194,10 +189,7 @@ export class FileReceiver implements SourceConnectorRuntime {
 
       // Restore the current and legacy (pre-rename) quarantine ledgers so files
       // quarantined before a restart are still skipped (never re-dispatched).
-      await this.quarantine.load([
-        path.join(this.config.directory, QUARANTINE_LEDGER),
-        path.join(this.config.directory, LEGACY_QUARANTINE_LEDGER),
-      ]);
+      await this.quarantine.load(QUARANTINE_LEDGER_NAMES.map((name) => path.join(this.config.directory, name)));
 
       this.running = true;
       this.pollTimer = setInterval(() => {
@@ -287,7 +279,7 @@ export class FileReceiver implements SourceConnectorRuntime {
 
   /** Whether a listed name is one to read: not a ledger, not held back, and selected by the filter. */
   private takesName(name: string, listed: ReadonlySet<string>): boolean {
-    if (name === QUARANTINE_LEDGER || name === LEGACY_QUARANTINE_LEDGER) return false; // never dispatch a ledger
+    if (isQuarantineLedgerName(name)) return false; // never dispatch a ledger
     if (heldBack(name, listed)) return false;
     return selectsFileName(name, this.config.fileFilter, this.config.ignoreDot);
   }

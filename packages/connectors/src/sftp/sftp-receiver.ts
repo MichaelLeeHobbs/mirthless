@@ -15,7 +15,14 @@ import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logge
 import { selectsFileName } from '../file/file-receiver.js';
 import { withTimeout } from '../timeout.js';
 import { connectFresh, closeQuietly } from '../client-lifecycle.js';
-import { QuarantineLedger, dispatchQuarantined, type LedgerStorage } from '../quarantine-ledger.js';
+import {
+  QUARANTINE_LEDGER_NAME,
+  QUARANTINE_LEDGER_NAMES,
+  QuarantineLedger,
+  dispatchQuarantined,
+  isQuarantineLedgerName,
+  type LedgerStorage,
+} from '../quarantine-ledger.js';
 import {
   createSsh2SftpClient,
   validateAuth,
@@ -28,18 +35,6 @@ import {
 
 /** Bound each SFTP operation — a hung server must not wedge the poll loop. */
 const SFTP_OP_TIMEOUT_MS = 30_000;
-
-/**
- * Sidecar ledger file (in the remote directory) that persists the quarantine
- * set across restarts. Excluded from polling so it is never dispatched.
- */
-const QUARANTINE_LEDGER = '.galvaniflow-quarantine.json';
-/**
- * Ledger name used before the GalvaniGraph rename. Still read (merged into the
- * set) and never dispatched, but never written: the next persist carries its
- * entries into {@link QUARANTINE_LEDGER}.
- */
-const LEGACY_QUARANTINE_LEDGER = '.mirthless-quarantine.json';
 
 // ----- Constants -----
 
@@ -100,7 +95,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
     this.createClient = createClient ?? createSsh2SftpClient;
     this.logger = logger ?? createConnectorLogger('SFTP');
     this.quarantine = new QuarantineLedger(
-      this.remoteLedgerStorage(), joinRemote(config.remoteDirectory, QUARANTINE_LEDGER), this.logger,
+      this.remoteLedgerStorage(), joinRemote(config.remoteDirectory, QUARANTINE_LEDGER_NAME), this.logger,
     );
   }
 
@@ -141,10 +136,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
       await this.reconnect();
       // Merge the current and legacy (pre-rename) ledgers, so entries
       // quarantined before the rename are still skipped.
-      await this.quarantine.load([
-        joinRemote(this.config.remoteDirectory, QUARANTINE_LEDGER),
-        joinRemote(this.config.remoteDirectory, LEGACY_QUARANTINE_LEDGER),
-      ]);
+      await this.quarantine.load(QUARANTINE_LEDGER_NAMES.map((name) => joinRemote(this.config.remoteDirectory, name)));
       this.running = true;
       this.pollTimer = setInterval(() => {
         void this.pollCycle();
@@ -232,7 +224,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
     const results: SftpFileInfo[] = [];
     for (const entry of entries) {
       if (!entry.isFile) continue;
-      if (entry.name === QUARANTINE_LEDGER || entry.name === LEGACY_QUARANTINE_LEDGER) continue; // never dispatch a ledger
+      if (isQuarantineLedgerName(entry.name)) continue; // never dispatch a ledger
       if (!selectsFileName(entry.name, this.config.filePattern, this.config.ignoreDot)) continue;
       if (now - entry.modifyTime < this.config.minFileAgeMs) continue; // still being written
       results.push(entry);

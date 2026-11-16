@@ -98,9 +98,9 @@ Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside th
 - **Not built yet:** extracting attachments from inbound messages, custom metadata columns, multi-threaded
   destination queues, and FTP/SMB/S3/WebDAV file transports. The UI no longer offers them.
 - **Email source:** after processing an email, GalvaniGraph sets the IMAP keyword
-  `$GalvaniFlowDispatched` on it before the post-action (mark read, delete or move). An
-  email marked `$MirthlessDispatched` by a version from before the rename counts as
-  dispatched too. If the
+  `$GalvaniGraphDispatched` on it before the post-action (mark read, delete or move). An
+  email marked `$GalvaniFlowDispatched` or `$MirthlessDispatched` by a version from
+  before a rename counts as dispatched too. If the
   post-action fails, later polls, restarts and redeploys retry only the post-action. To
   process such an email again, remove the keyword (both, if it has both). A mailbox that rejects custom keywords
   (a warning is logged once) can still reprocess an email after a restart if its post-action failed.

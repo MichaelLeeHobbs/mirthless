@@ -25,14 +25,19 @@ const IMAP_OP_TIMEOUT_MS = 30_000;
  * mail server, so a restart before the post-action succeeds retries only the
  * post-action instead of dispatching the email a second time.
  */
-export const DISPATCHED_KEYWORD = '$GalvaniFlowDispatched';
+export const DISPATCHED_KEYWORD = '$GalvaniGraphDispatched';
 
-/** Keyword set before the GalvaniGraph rename. Still read as dispatched, never set. */
-export const LEGACY_DISPATCHED_KEYWORD = '$MirthlessDispatched';
+/**
+ * Keywords set under the product's earlier names: GalvaniFlow (D-309) and
+ * Mirthless (D-205). Still read as dispatched, never set, so an email handled
+ * before a rename is not delivered again.
+ */
+export const LEGACY_DISPATCHED_KEYWORDS: readonly string[] = ['$GalvaniFlowDispatched', '$MirthlessDispatched'];
 
-/** True when the flags carry the current or the legacy dispatched keyword. */
+/** True when the flags carry the current or a legacy dispatched keyword. */
 export function hasDispatchedKeyword(flags: ReadonlySet<string> | undefined): boolean {
-  return flags !== undefined && (flags.has(DISPATCHED_KEYWORD) || flags.has(LEGACY_DISPATCHED_KEYWORD));
+  if (flags === undefined) return false;
+  return flags.has(DISPATCHED_KEYWORD) || LEGACY_DISPATCHED_KEYWORDS.some((keyword) => flags.has(keyword));
 }
 
 // ----- Constants -----
@@ -81,7 +86,7 @@ export interface EmailMessage {
   readonly date: string;
   readonly body: string;
   readonly attachmentCount: number;
-  /** True when the email already carries {@link DISPATCHED_KEYWORD} or {@link LEGACY_DISPATCHED_KEYWORD}. */
+  /** True when the email already carries {@link DISPATCHED_KEYWORD} or one of {@link LEGACY_DISPATCHED_KEYWORDS}. */
   readonly dispatched: boolean;
 }
 

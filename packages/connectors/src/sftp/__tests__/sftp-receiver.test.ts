@@ -8,7 +8,7 @@ import { stderr, type Result } from '@galvanigraph/core-util';
 import { SftpReceiver, joinRemote, SFTP_POST_ACTION, type SftpReceiverConfig } from '../sftp-receiver.js';
 import type { SftpClientFactory } from '../sftp-client.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
-import { RemoteState, makeMockSftpClient, type MockFailures } from '../../__fixtures__/mock-sftp-client.js';
+import { LEGACY_LEDGER_NAMES, RemoteState, makeMockSftpClient, type MockFailures } from '../../__fixtures__/mock-sftp-client.js';
 
 // ----- Helpers -----
 
@@ -344,7 +344,7 @@ describe('durable quarantine', () => {
     expect(started.ok).toBe(true);
     expect(errors).toHaveLength(1);
     expect(errors[0]!.msg).toBe('Failed to read quarantine ledger; ignoring it (files may be re-dispatched)');
-    expect(errors[0]!.obj['file']).toBe('/inbound/.galvaniflow-quarantine.json');
+    expect(errors[0]!.obj['file']).toBe('/inbound/.galvanigraph-quarantine.json');
   });
 
   it('logs a ledger that cannot be written and still skips the file this session', async () => {
@@ -362,7 +362,7 @@ describe('durable quarantine', () => {
     expect(state.ledger).toBeNull();
     const persistErrors = errors.filter((e) => e.msg === 'Failed to persist quarantine ledger; quarantine will not survive a restart');
     expect(persistErrors).toHaveLength(1);
-    expect(persistErrors[0]!.obj['file']).toBe('/inbound/.galvaniflow-quarantine.json');
+    expect(persistErrors[0]!.obj['file']).toBe('/inbound/.galvanigraph-quarantine.json');
   });
 
   it('treats a corrupt ledger as empty (does not crash) and logs it', async () => {
@@ -381,11 +381,11 @@ describe('durable quarantine', () => {
     expect(errors.some((e) => e.msg.includes('corrupt'))).toBe(true);
   });
 
-  it('honours a pre-rename legacy ledger: a key quarantined there is not re-dispatched', async () => {
+  it.each(LEGACY_LEDGER_NAMES)('honours the pre-rename ledger %s: a key quarantined there is not re-dispatched', async (legacy) => {
     const state = new RemoteState();
     const mtime = Date.now() - 10_000;
     state.addFile('a.hl7', 'X', mtime);
-    state.legacyLedger = JSON.stringify([`a.hl7:${String(mtime)}`]);
+    state.legacyLedgers.set(legacy, JSON.stringify([`a.hl7:${String(mtime)}`]));
 
     let dispatchCount = 0;
     receiver = new SftpReceiver(makeConfig(), factoryFor(state));
@@ -396,34 +396,31 @@ describe('durable quarantine', () => {
     expect(dispatchCount).toBe(0);
   });
 
-  it('merges legacy and current ledgers and writes the union to the current ledger only', async () => {
+  it('merges both legacy ledgers and the current one, and writes the union to the current ledger only', async () => {
     const state = new RemoteState();
     const mtime = Date.now() - 10_000;
-    state.addFile('a.hl7', 'X', mtime);
-    state.addFile('b.hl7', 'Y', mtime);
-    state.addFile('c.hl7', 'Z', mtime);
-    state.legacyLedger = JSON.stringify([`a.hl7:${String(mtime)}`]);
-    state.ledger = JSON.stringify([`b.hl7:${String(mtime)}`]);
-    const legacyBefore = state.legacyLedger;
+    for (const name of ['a.hl7', 'b.hl7', 'c.hl7', 'd.hl7']) state.addFile(name, 'X', mtime);
+    state.legacyLedgers.set('.mirthless-quarantine.json', JSON.stringify([`a.hl7:${String(mtime)}`]));
+    state.legacyLedgers.set('.galvaniflow-quarantine.json', JSON.stringify([`b.hl7:${String(mtime)}`]));
+    state.ledger = JSON.stringify([`c.hl7:${String(mtime)}`]);
+    const legacyBefore = new Map(state.legacyLedgers);
 
     const captured: RawMessage[] = [];
     receiver = new SftpReceiver(makeConfig(), factoryFor(state, { delete: true }));
     receiver.setDispatcher(makeDispatcher((raw) => { captured.push(raw); return { messageId: 1 }; }));
     await receiver.onStart();
-    await vi.advanceTimersByTimeAsync(5_000); // c.hl7 dispatched, delete fails → quarantined
+    await vi.advanceTimersByTimeAsync(5_000); // d.hl7 dispatched, delete fails → quarantined
     await vi.advanceTimersByTimeAsync(5_000);
 
-    expect(captured.map((r) => r.sourceMap['originalFilename'])).toEqual(['c.hl7']);
+    expect(captured.map((r) => r.sourceMap['originalFilename'])).toEqual(['d.hl7']);
     const written = JSON.parse(state.ledger) as string[];
-    expect(written).toEqual(expect.arrayContaining([
-      `a.hl7:${String(mtime)}`, `b.hl7:${String(mtime)}`, `c.hl7:${String(mtime)}`,
-    ]));
-    expect(state.legacyLedger).toBe(legacyBefore); // legacy file never written
+    expect([...written].sort()).toEqual(['a.hl7', 'b.hl7', 'c.hl7', 'd.hl7'].map((n) => `${n}:${String(mtime)}`));
+    expect(state.legacyLedgers).toEqual(legacyBefore); // legacy files never written
   });
 
-  it('never dispatches the legacy ledger sidecar even when the pattern matches it', async () => {
+  it('never dispatches a legacy ledger sidecar even when the pattern matches it', async () => {
     const state = new RemoteState();
-    state.legacyLedger = '[]';
+    for (const name of LEGACY_LEDGER_NAMES) state.legacyLedgers.set(name, '[]');
     state.addFile('a.hl7', 'X', Date.now() - 10_000);
 
     const captured: RawMessage[] = [];

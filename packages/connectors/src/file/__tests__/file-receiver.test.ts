@@ -30,8 +30,13 @@ const mockUnlink = vi.mocked(fs.unlink);
 const mockRename = vi.mocked(fs.rename);
 const mockMkdir = vi.mocked(fs.mkdir);
 
-const QUARANTINE_LEDGER = '.galvaniflow-quarantine.json';
-const LEGACY_LEDGER = '.mirthless-quarantine.json';
+const QUARANTINE_LEDGER = '.galvanigraph-quarantine.json';
+/** Ledgers written under the product's earlier names (D-205, D-309). Still read, never written. */
+const LEGACY_LEDGERS = ['.galvaniflow-quarantine.json', '.mirthless-quarantine.json'] as const;
+
+function isLegacyLedger(p: unknown): boolean {
+  return LEGACY_LEDGERS.some((name) => String(p).endsWith(name));
+}
 
 // ----- Helpers -----
 
@@ -723,14 +728,14 @@ describe('FileReceiver', () => {
       expect(dispatchCount).toBe(0);
     });
 
-    it('honours a pre-rename legacy ledger: a key quarantined there is not re-dispatched', async () => {
+    it.each(LEGACY_LEDGERS)('honours the pre-rename ledger %s: a key quarantined there is not re-dispatched', async (legacy) => {
       const { logger } = makeMockLogger();
       const mtime = Date.now() - 5_000;
       mockReaddir.mockResolvedValue([makeDirent('a.hl7', true)] as never);
       mockStat.mockResolvedValue(makeStatResult(mtime, 100) as never);
       mockReadFile.mockImplementation((p: unknown) => {
-        if (typeof p === 'string' && p.endsWith(LEGACY_LEDGER)) return Promise.resolve(JSON.stringify([`a.hl7:${String(mtime)}`])) as never;
-        if (typeof p === 'string' && p.endsWith(QUARANTINE_LEDGER)) return Promise.reject(enoent()) as never;
+        if (String(p).endsWith(legacy)) return Promise.resolve(JSON.stringify([`a.hl7:${String(mtime)}`])) as never;
+        if (String(p).endsWith('.json')) return Promise.reject(enoent()) as never;
         return Promise.resolve('MSH|^~\\&|X') as never;
       });
 
@@ -743,15 +748,20 @@ describe('FileReceiver', () => {
       expect(dispatchCount).toBe(0);
     });
 
-    it('merges legacy and current ledgers and writes the union to the current ledger only', async () => {
+    it('merges both legacy ledgers and the current one, and writes the union to the current ledger only', async () => {
       const { logger } = makeMockLogger();
       const mtime = Date.now() - 5_000;
-      mockReaddir.mockResolvedValue([makeDirent('a.hl7'), makeDirent('b.hl7'), makeDirent('c.hl7')] as never);
+      mockReaddir.mockResolvedValue(['a.hl7', 'b.hl7', 'c.hl7', 'd.hl7'].map((n) => makeDirent(n)) as never);
       mockStat.mockResolvedValue(makeStatResult(mtime, 100) as never);
       mockUnlink.mockRejectedValue(new Error('EPERM: unlink failed'));
+      const ledgers: Readonly<Record<string, string>> = {
+        '.mirthless-quarantine.json': 'a.hl7',
+        '.galvaniflow-quarantine.json': 'b.hl7',
+        [QUARANTINE_LEDGER]: 'c.hl7',
+      };
       mockReadFile.mockImplementation((p: unknown) => {
-        if (typeof p === 'string' && p.endsWith(LEGACY_LEDGER)) return Promise.resolve(JSON.stringify([`a.hl7:${String(mtime)}`])) as never;
-        if (typeof p === 'string' && p.endsWith(QUARANTINE_LEDGER)) return Promise.resolve(JSON.stringify([`b.hl7:${String(mtime)}`])) as never;
+        const ledger = Object.keys(ledgers).find((name) => String(p).endsWith(name));
+        if (ledger !== undefined) return Promise.resolve(JSON.stringify([`${ledgers[ledger]!}:${String(mtime)}`])) as never;
         return Promise.resolve('MSH|^~\\&|X') as never;
       });
 
@@ -759,17 +769,15 @@ describe('FileReceiver', () => {
       receiver = new FileReceiver(makeConfig(), logger);
       receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(String(raw.sourceMap['originalFilename'])); return { messageId: 1 }; }));
       await receiver.onStart();
-      await vi.advanceTimersByTimeAsync(5_000); // c.hl7 dispatched, unlink fails → quarantined
+      await vi.advanceTimersByTimeAsync(5_000); // d.hl7 dispatched, unlink fails → quarantined
       await vi.advanceTimersByTimeAsync(5_000);
 
-      expect(dispatched).toEqual(['c.hl7']);
+      expect(dispatched).toEqual(['d.hl7']);
       const ledgerWrites = mockWriteFile.mock.calls.filter((c) => String(c[0]).endsWith(QUARANTINE_LEDGER));
       expect(ledgerWrites.length).toBeGreaterThan(0);
       const written = JSON.parse(String(ledgerWrites.at(-1)![1])) as string[];
-      expect(written).toEqual(expect.arrayContaining([
-        `a.hl7:${String(mtime)}`, `b.hl7:${String(mtime)}`, `c.hl7:${String(mtime)}`,
-      ]));
-      expect(mockWriteFile.mock.calls.some((c) => String(c[0]).endsWith(LEGACY_LEDGER))).toBe(false);
+      expect([...written].sort()).toEqual(['a.hl7', 'b.hl7', 'c.hl7', 'd.hl7'].map((n) => `${n}:${String(mtime)}`));
+      expect(mockWriteFile.mock.calls.some((c) => isLegacyLedger(c[0]))).toBe(false);
     });
 
     it('logs an error when a ledger exists but cannot be read, and still starts', async () => {
@@ -810,7 +818,7 @@ describe('FileReceiver', () => {
       mockUnlink.mockResolvedValue(undefined as never);
       mockReadFile.mockImplementation((p: unknown) => {
         if (String(p).endsWith(QUARANTINE_LEDGER)) return Promise.resolve('[not valid json') as never;
-        if (String(p).endsWith(LEGACY_LEDGER)) return Promise.reject(enoent()) as never;
+        if (isLegacyLedger(p)) return Promise.reject(enoent()) as never;
         return Promise.resolve('MSH|^~\\&|X') as never;
       });
 
@@ -846,15 +854,13 @@ describe('FileReceiver', () => {
       expect(String(persistErrors[0]!.obj['file'])).toContain(QUARANTINE_LEDGER);
     });
 
-    it('never dispatches the legacy ledger file even when the filter matches it', async () => {
+    it('never dispatches a current or legacy ledger file even when the filter matches it', async () => {
       const { logger } = makeMockLogger();
       const mtime = Date.now() - 5_000;
-      mockReaddir.mockResolvedValue([makeDirent(LEGACY_LEDGER), makeDirent('a.hl7')] as never);
+      mockReaddir.mockResolvedValue([QUARANTINE_LEDGER, ...LEGACY_LEDGERS, 'a.hl7'].map((n) => makeDirent(n)) as never);
       mockStat.mockResolvedValue(makeStatResult(mtime, 100) as never);
       mockReadFile.mockImplementation((p: unknown) =>
-        (typeof p === 'string' && (p.endsWith(LEGACY_LEDGER) || p.endsWith(QUARANTINE_LEDGER))
-          ? Promise.resolve('[]')
-          : Promise.resolve('MSH|^~\\&|X')) as never,
+        (String(p).endsWith('.json') ? Promise.resolve('[]') : Promise.resolve('MSH|^~\\&|X')) as never,
       );
 
       const dispatched: string[] = [];

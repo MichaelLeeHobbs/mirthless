@@ -139,7 +139,7 @@ async function shoot(browser, name, target, variantName) {
   });
   const signedIn = name !== 'login';
   await page.addInitScript(([auth, mode]) => {
-    localStorage.setItem('galvaniflow_theme', mode);
+    localStorage.setItem('galvanigraph_theme', mode);
     if (auth) localStorage.setItem('galvanigraph_auth', JSON.stringify(auth));
   }, [signedIn ? AUTH : null, v.mode]);
   await page.goto(opts.base + url, { waitUntil: 'networkidle' });
