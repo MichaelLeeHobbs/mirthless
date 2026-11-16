@@ -76,7 +76,7 @@ This doc is the rulebook. The values live in code; the rules below say how to us
 
 ## Verify a UI change
 
-1. `pnpm lint` and the web tests.
+1. `pnpm build`, then `pnpm lint` (it type-checks tests against the built packages) and the web tests.
 2. Start the web dev server (`pnpm dev:web`) and run `pnpm shots` (or `pnpm shots --only dashboard,alerts`). It writes `shots/<page>.<light|dark|phone>.png` and exits 1 if a page threw.
 3. **Look at every image** for the pages you touched: both modes, plus the phone size. Check that text is readable, status reads the same as on other pages, and nothing overflows.
 4. A page that needs data the fake API doesn't serve gets a branch in `scripts/shots/fixture.mjs`. A new page gets an entry in `PAGES` in `scripts/shots/shots.mjs`. Use synthetic data only, never real PHI.

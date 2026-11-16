@@ -6,7 +6,7 @@
 // A message pushed into A is emailed, picked up over IMAP by B, and delivered.
 // Runs only when SMTP_TEST_HOST is set (docker compose --profile test up mail-test).
 
-import { it, expect, afterEach } from 'vitest';
+import { it, expect, afterEach, vi } from 'vitest';
 import nodemailer from 'nodemailer';
 import {
   SmtpDispatcher,
@@ -18,12 +18,6 @@ import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { describeMail, requireMail } from './gates.js';
 
 const TCP_PORT = 17751;
-
-async function waitFor(check: () => boolean, ms: number): Promise<void> {
-  for (let i = 0; i < ms / 50 && !check(); i++) {
-    await new Promise((r) => setTimeout(r, 50));
-  }
-}
 
 let deployed: DeployedChannel[] = [];
 afterEach(async () => {
@@ -125,8 +119,7 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
 
     const firstSink = new CaptureDestination();
     const first = await deployReceiver(1, firstSink);
-    await waitFor(() => firstSink.received.length > 0, 15_000);
-    expect(firstSink.received).toHaveLength(1);
+    await vi.waitFor(() => { expect(firstSink.received).toHaveLength(1); }, { timeout: 15_000, interval: 50 });
     await first.teardown();
     deployed = deployed.filter((c) => c !== first);
 

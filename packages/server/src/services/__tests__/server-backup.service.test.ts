@@ -98,6 +98,11 @@ const {
 
 // ----- Fixtures -----
 
+/** T with every array and object inside it readonly, as an `as const` fixture is. */
+type DeepReadonly<T> = T extends ReadonlyArray<infer U>
+  ? ReadonlyArray<DeepReadonly<U>>
+  : T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]> } : T;
+
 function okResult<T>(value: T): { ok: true; value: T; error: null } {
   return { ok: true, value, error: null };
 }
@@ -653,9 +658,9 @@ describe('ServerBackupService', () => {
   // Every section the shared restore helpers serve, pinned row by row: counts,
   // error text, and the exact values written for each collision mode.
   describe('restore sections', () => {
-    /** The case tables below are `as const`, so their sections arrive as readonly arrays. */
+    /** The case tables below are `as const`, so their sections arrive deeply readonly. */
     async function restoreSection(
-      overrides: Readonly<Record<string, unknown>>,
+      overrides: { readonly [K in keyof ServerBackup]?: DeepReadonly<ServerBackup[K]> },
       mode: 'SKIP' | 'OVERWRITE',
       section: string,
     ): Promise<RestoreSectionResult> {
