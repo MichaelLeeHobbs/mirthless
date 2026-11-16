@@ -7,6 +7,7 @@ import { AuthController } from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 import { authRateLimiter, refreshRateLimiter } from '../middleware/rate-limit.middleware.js';
+import { authJsonBody } from '../middleware/body-limit.middleware.js';
 import { z } from 'zod/v4';
 
 const loginSchema = z.object({
@@ -16,8 +17,8 @@ const loginSchema = z.object({
 
 const router: IRouter = Router();
 
-// Public routes (with rate limiting)
-router.post('/login', authRateLimiter, validate({ body: loginSchema }), AuthController.login);
+// Public routes (with rate limiting). Login reads its small body only after the limiter.
+router.post('/login', authRateLimiter, authJsonBody, validate({ body: loginSchema }), AuthController.login);
 
 // Refresh uses cookie — no body validation needed (own, looser rate limit)
 router.post('/refresh', refreshRateLimiter, AuthController.refresh);

@@ -80,6 +80,7 @@ The simplest solution that works correctly is the best solution.
 - **CSRF protection** — JWT in Authorization header, not cookies
 - **Rate limiting** — On auth endpoints and any public-facing routes
 - **Principle of least privilege** — RBAC enforced at the API layer, not just the UI
+- **One guard for the API** — `routes/index.ts` runs `authenticate` once for every router mounted below it; a router never adds its own, and a new route still needs its `requirePermission`. A public route goes above the guard and into `PUBLIC_ROUTES` in `public-routes.test.ts` with its reason (D-299)
 
 ---
 

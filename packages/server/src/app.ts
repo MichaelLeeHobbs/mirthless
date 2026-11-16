@@ -16,7 +16,6 @@ import apiDocsRoutes from './routes/api-docs.routes.js';
 import { requestId } from './middleware/request-id.middleware.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import { apiRateLimiter } from './middleware/rate-limit.middleware.js';
-import { jsonBody } from './middleware/body-limit.middleware.js';
 import { authenticate } from './middleware/auth.middleware.js';
 import { requirePermission } from './middleware/permission.middleware.js';
 import { checkDatabase, getHealthStatus } from './services/health.service.js';
@@ -48,9 +47,8 @@ app.use(compression({ threshold: 1024 }));
 // Cookie parsing (for httpOnly refresh token cookies)
 app.use(cookieParser());
 
-// Request parsing
-app.use(jsonBody);
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+// Request bodies are parsed in routes/index.ts, after the rate limiter and the
+// guard, never here (#157). No route takes a form-encoded body.
 
 // Request ID tracking (before logging so requestId appears in logs)
 app.use(requestId);
@@ -137,7 +135,7 @@ if (apiDocsEnabled) {
 // production, or API_RATE_LIMIT_MAX (see rate-limit.middleware.ts)
 app.use('/api/v1', apiRateLimiter);
 
-// API routes
+// API routes: the guard, then the body parser (routes/index.ts)
 app.use('/api/v1', routes);
 
 // Error handling

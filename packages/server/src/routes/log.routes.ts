@@ -5,7 +5,6 @@
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { LogController } from '../controllers/log.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
@@ -17,8 +16,6 @@ const logQuerySchema = z.object({
 });
 
 const router: IRouter = Router();
-
-router.use(authenticate);
 
 router.get(
   '/',
