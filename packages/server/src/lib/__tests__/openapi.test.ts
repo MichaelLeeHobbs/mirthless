@@ -52,6 +52,7 @@ describe('generateOpenAPISpec', () => {
     expect(spec.paths['/channels']).toBeDefined();
     expect(spec.paths['/channels/{id}']).toBeDefined();
     expect(spec.paths['/channels/{id}/clone']).toBeDefined();
+    expect(JSON.stringify(spec.paths['/channels/{id}/groups']?.['put'])).toContain('"maxItems":1000');
     expect(spec.paths['/channels/import/mirth']).toBeDefined();
   });
 

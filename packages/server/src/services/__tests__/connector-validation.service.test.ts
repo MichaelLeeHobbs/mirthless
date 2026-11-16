@@ -462,6 +462,45 @@ describe('validateConnectorProperties', () => {
     });
   });
 
+  describe('JAVASCRIPT', () => {
+    // JAVASCRIPT_SOURCE_DEFAULTS and JAVASCRIPT_DEST_DEFAULTS from 45fad27 (2026-03), then with scriptLanguage (1586daf), a script filled.
+    it('accepts JAVASCRIPT channels the editor saved', () => {
+      expect(validateConnectorProperties('JAVASCRIPT', 'source', { script: 'return 1;', pollingIntervalMs: 5000 }).ok).toBe(true);
+      expect(validateConnectorProperties('JAVASCRIPT', 'source', { script: 'return 1;', scriptLanguage: 'TYPESCRIPT', pollingIntervalMs: 5000 }).ok).toBe(true);
+      expect(validateConnectorProperties('JAVASCRIPT', 'destination', { script: 'return msg;' }).ok).toBe(true);
+      expect(validateConnectorProperties('JAVASCRIPT', 'destination', { script: 'return msg;', scriptLanguage: 'JAVASCRIPT' }).ok).toBe(true);
+    });
+
+    // The Mirth importer copied every Mirth property into a JavaScript Reader or Writer until b06ba55 (2026-11-13).
+    it('accepts a JAVASCRIPT connector imported before 2026-11-13', () => {
+      expect(validateConnectorProperties('JAVASCRIPT', 'source', {
+        pluginProperties: '', pollConnectorProperties: { pollingFrequency: '500' }, sourceConnectorProperties: { responseVariable: 'None' }, script: 'return 1;',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('JAVASCRIPT', 'destination', {
+        pluginProperties: '', destinationConnectorProperties: { queueEnabled: 'false' }, script: 'return msg;',
+      }).ok).toBe(true);
+      // A Mirth 3.0.x export's names for the response and queue groups.
+      expect(validateConnectorProperties('JAVASCRIPT', 'source', {
+        pollConnectorProperties: { pollingFrequency: '500' }, responseConnectorProperties: { responseVariable: 'None' }, script: 'return 1;',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('JAVASCRIPT', 'destination', { queueConnectorProperties: { queueEnabled: 'false' }, script: 'return msg;' }).ok).toBe(true);
+    });
+
+    it.each([
+      ['source', { script: 'return 1;', pollInterval: 1000 }, 'pollInterval'],
+      ['source', { script: 'return 1;', pollingIntervalMs: 50 }, 'pollingIntervalMs'],
+      ['source', { script: '   ' }, 'script'],
+      ['source', { script: 'return 1;', scriptLanguage: 'typescript' }, 'scriptLanguage'],
+      ['destination', { script: 'return msg;', pollingIntervalMs: 5000 }, 'pollingIntervalMs'],
+      ['destination', { script: 'return msg;', scriptLanguage: 'PYTHON' }, 'scriptLanguage'],
+    ] as const)('rejects a JAVASCRIPT %s with %j, naming %s', (direction, props, key) => {
+      const result = validateConnectorProperties('JAVASCRIPT', direction, props);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain(key);
+    });
+  });
+
   describe('SFTP', () => {
     // As the SFTP source and destination forms save them (web connector-defaults), filled in.
     const SFTP_SOURCE = {

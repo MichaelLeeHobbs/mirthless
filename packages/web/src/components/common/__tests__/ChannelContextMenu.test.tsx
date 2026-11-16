@@ -89,6 +89,19 @@ describe('ChannelContextMenu', () => {
     expect(onDelete).toHaveBeenCalledWith('ch-1', 'My Channel');
   });
 
+  it('offers Change Group to a user with channels:write', () => {
+    const onChangeGroup = vi.fn();
+    renderMenu({ onChangeGroup });
+    fireEvent.click(screen.getByText('Change Group'));
+    expect(onChangeGroup).toHaveBeenCalledWith('ch-1');
+  });
+
+  it('hides Change Group without channels:write', () => {
+    permissions = new Set(['channels:read']);
+    renderMenu({ onChangeGroup: vi.fn() });
+    expect(screen.queryByText('Change Group')).toBeNull();
+  });
+
   it('offers state-appropriate deploy actions (Start/Undeploy when STOPPED)', () => {
     renderMenu({ state: 'STOPPED' });
     expect(screen.getByText('Start')).toBeTruthy();

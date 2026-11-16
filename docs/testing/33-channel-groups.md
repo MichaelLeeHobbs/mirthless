@@ -30,11 +30,12 @@
 - [ ] Deleting non-existent group returns 404
 
 ### Member Management
-- [ ] `POST /api/v1/channel-groups/:id/members` adds channel to group
-- [ ] Adding non-existent channel returns 404
-- [ ] Adding already-present channel returns 409
-- [ ] `DELETE /api/v1/channel-groups/:id/members/:channelId` removes member
-- [ ] Removing non-existent membership returns 404
+- [ ] `PUT /api/v1/channels/:id/groups` with `{ "groupIds": [...] }` replaces the channel's groups and returns the new set
+- [ ] `{ "groupIds": [] }` takes the channel out of every group
+- [ ] An unknown group returns 404 naming it, and the channel keeps its old groups
+- [ ] An unknown channel returns 404
+- [ ] A repeated group ID or a non-UUID returns 400
+- [ ] A viewer gets 403
 
 ## UI Tests
 

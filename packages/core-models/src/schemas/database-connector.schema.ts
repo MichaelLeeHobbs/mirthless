@@ -12,7 +12,7 @@
 import { z } from 'zod/v4';
 import {
   connectorPortSchema,
-  wholeNumberSchema,
+  pollingIntervalSchema,
   sourceCommonProperties,
   destinationCommonProperties,
 } from './connector-property-fields.js';
@@ -60,7 +60,7 @@ export const databaseSourceObjectSchema = z.strictObject({
   updateQuery: z.string().default(''),
   updateMode: z.enum(DATABASE_UPDATE_MODES).default('NEVER'),
   /** The receiver refuses to poll more often than every 100 ms. */
-  pollingIntervalMs: wholeNumberSchema(100).default(5_000),
+  pollingIntervalMs: pollingIntervalSchema(100, 5_000),
   rowFormat: z.enum(DATABASE_ROW_FORMATS).default('JSON'),
   ...sourceCommonProperties,
 });
