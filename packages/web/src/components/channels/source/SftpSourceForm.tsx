@@ -152,9 +152,20 @@ export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProp
           label="File Pattern"
           value={getStr(properties, 'filePattern', '*')}
           onChange={handleText('filePattern')}
-          helperText="Glob pattern to match files (e.g., *.hl7)"
+          helperText="Glob pattern to match files (e.g., *.hl7). Case-sensitive"
           fullWidth
           sx={{ mb: 2 }}
+        />
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={getBool(properties, 'ignoreDot', true)}
+              onChange={handleBool('ignoreDot')}
+            />
+          }
+          label="Ignore files starting with ."
+          sx={{ mb: 2, display: 'block' }}
         />
 
         <TextField

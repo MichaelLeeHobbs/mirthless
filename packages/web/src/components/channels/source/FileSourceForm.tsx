@@ -63,9 +63,20 @@ export function FileSourceForm({ properties, onChange }: SourceConnectorFormProp
           label="File Filter"
           value={getStr(properties, 'fileFilter', '*')}
           onChange={handleText('fileFilter')}
-          helperText="Glob pattern to match files (e.g., *.hl7, *.xml)"
+          helperText="Glob pattern to match files (e.g., *.hl7, *.xml). Case-sensitive"
           fullWidth
           sx={{ mb: 2 }}
+        />
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={getBool(properties, 'ignoreDot', true)}
+              onChange={handleBool('ignoreDot')}
+            />
+          }
+          label="Ignore files starting with ."
+          sx={{ mb: 2, display: 'block' }}
         />
 
         <TextField
