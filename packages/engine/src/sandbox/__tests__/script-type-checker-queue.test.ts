@@ -142,7 +142,7 @@ describe('checkScriptTypesBatch queueing', () => {
     const waiting = Array.from({ length: TYPE_CHECK_QUEUE_LIMIT }, () => checkScriptTypesBatch([freshJob()], []));
     const refused = await checkScriptTypesBatch([freshJob()], []);
     expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.error.message).toBe(`The type checker is busy: ${String(TYPE_CHECK_QUEUE_LIMIT)} checks are waiting. Try again shortly.`);
+    if (!refused.ok) expect(refused.error.message).toBe(`The type checker is busy: ${String(TYPE_CHECK_QUEUE_LIMIT)} checks are waiting.`);
     await stopTypeChecker();
     await Promise.all([inFlight, ...waiting]);
   });
