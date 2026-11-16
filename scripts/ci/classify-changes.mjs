@@ -19,6 +19,9 @@
 // (`docs/user/connector-reference.md`), a directory above it (`docs/user/`),
 // or the quoted segment `'docs'` (as in `join(root, 'docs', name)`). Only
 // *.test.ts(x) files are scanned: a helper that holds the path hides it.
+// A test that uses the server's `readRepoFile`/`REPO_ROOT` can read any path a
+// doc names (the capabilities guard checks its proof files exist), so it runs
+// on every classified change whose gate does not already run its package.
 
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -43,6 +46,7 @@ const READ_ONLY_PATH =
   /^(docs\/|\.claude\/|\.github\/ISSUE_TEMPLATE\/|\.github\/PULL_REQUEST_TEMPLATE\.md$|\.github\/dependabot\.yml$|LICENSE$|[^/]+\.md$)/;
 const PACKAGE_PATH = /^packages\/([^/]+)\//;
 const TEST_FILE = /^packages\/[^/]+\/.*\.test\.tsx?$/;
+const REPO_READER = /\b(REPO_ROOT|readRepoFile)\b/;
 
 /**
  * Workspace packages by directory, with their workspace dependencies.
@@ -156,7 +160,8 @@ export function classify({ changed, packages, testSources }) {
 
   const testPackages = [...withDependents(changedPackages, byName)].sort();
   const lane = (key) => [...withDependencies(LANE_ROOTS[key], byName)].some((n) => changedPackages.has(n));
-  const docTests = groupByPackage(findReaders(readOnly, testSources), packages).filter((t) => !testPackages.includes(t.pkg));
+  const readers = new Set([...findReaders(readOnly, testSources), ...testSources.filter((t) => REPO_READER.test(t.source))]);
+  const docTests = groupByPackage([...readers], packages).filter((t) => !testPackages.includes(t.pkg));
   return {
     full: false,
     reason: 'classified',

@@ -140,6 +140,22 @@ test('findReaders matches a test by the path it names, a directory it names, or 
   assert.deepEqual(readers('README.md'), []);
 });
 
+test('a test that reads repo paths through readRepoFile runs whenever the gate does not cover its package', () => {
+  // The capabilities guard checks that every proof file the page cites exists,
+  // web tests and e2e specs included, so deleting one must still run it.
+  const reader = {
+    path: 'packages/server/src/__tests__/docs/capabilities.test.ts',
+    source: "import { REPO_ROOT, readRepoFile } from '../../../test/markdown.js';",
+  };
+  const sources = [...testSources, reader];
+  const files = (changed) => classify({ changed, packages, testSources: sources }).docTests.flatMap((t) => t.files);
+  for (const changed of [['packages/web/src/lib/format.test.ts'], ['e2e/auth.spec.ts'], ['docs/progress/CHANGELOG.md'], ['packages/cli/src/index.ts']]) {
+    assert.ok(files(changed).includes('src/__tests__/docs/capabilities.test.ts'), `${changed} should run the capabilities guard`);
+  }
+  assert.ok(!files(['packages/server/src/app.ts']).includes('src/__tests__/docs/capabilities.test.ts'), 'the gate runs it with the server');
+  assert.equal(classify({ changed: ['e2e/auth.spec.ts'], packages, testSources: sources }).docs, true);
+});
+
 test('the real doc guards are found by what they read', () => {
   // Guards against a refactor that moves the path literal out of the test files.
   const result = classify({

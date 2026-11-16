@@ -15,6 +15,8 @@ A pull request is compared with its merge base on `main`; a push with the commit
 | `docs/**`, top-level `*.md`, `.claude/**`, `.github/ISSUE_TEMPLATE/**`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/dependabot.yml`, `LICENSE` | `docs`: the unit tests whose source names a changed file, such as the guards on `docs/user/connector-reference.md`. Nothing else. |
 | Anything else: root `package.json`, `pnpm-lock.yaml`, `tsconfig*`, `eslint.config.js`, `.github/workflows/**`, `docker/**`, `scripts/**`, a path with no rule | Everything |
 
+The server's docs guards that read the repository through `readRepoFile` (connector reference, access control, capabilities) run in the `docs` job on every change whose gate doesn't already run the server's tests. The capabilities page cites proof tests across the repo, so deleting a cited web test or e2e spec must still fail CI.
+
 A package's jobs come from the workspace dependency graph: a job runs when a package it exercises, or one of that package's dependencies, changed. Connector integration exercises connectors; the Postgres lane, server; e2e, server and web.
 
 Inside the gate, build, lint and `pnpm audit` always cover the whole repository. Only the unit tests narrow, to the changed packages and the packages that depend on them, and each package's coverage minimums still apply.
