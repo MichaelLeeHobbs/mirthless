@@ -10,7 +10,7 @@ The items the PR #168 review left in #183.
 - **Backup restore.** A TypeScript global script with type errors in a backup restores as JavaScript and is reported; the other global scripts restore instead of the whole section failing.
 - **Type checker queue.** Checks go to the worker one at a time, each time limit starts when the worker takes the check, and an overrun or crash fails only that check.
 - **Editor.** An empty script opens in its saved language; full screen keeps the same editor, so undo and the cursor survive; undo cannot reach another list item's or tab's text; an edited HL7 sample keeps `\r` endings; an editor whose declarations are not the applied ones shows syntax errors only and says types are checked when you click in (D-292); a transformer step knows the names earlier steps declare.
-- **Tests and docs.** The out-of-memory test expects the heap-limit error only, and test-run tests that should finish get 10 s (the first one failed on a cold worker). D-283 no longer claims editors work under a strict CSP, which nothing tested and the app does not send. Test-run fairness is recorded in D-286 as left out on purpose.
+- **Tests and docs.** The out-of-memory test expects the heap-limit error only. Other tests in that file still fail under `pnpm gate` load on this machine, as they do on main: #188 tracks it (raising budgets did not help). D-283 no longer claims editors work under a strict CSP, which nothing tested and the app does not send. Test-run fairness is recorded in D-286 as left out on purpose.
 
 ## 2026-11-15 — Code editor hill climb (branch `claude/code-editor-climb`)
 
