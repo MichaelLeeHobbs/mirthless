@@ -519,7 +519,7 @@ function remoteFileConnector(
   channelName: string,
   warnings: string[],
 ): ConnectorResult<'SFTP'> | null {
-  const scheme = (getString(propsNode, 'scheme') ?? 'FILE').toUpperCase();
+  const scheme = fileScheme(propsNode);
   if (type !== 'FILE' || scheme === 'FILE') return null;
   if (scheme !== 'SFTP') {
     warnings.push(`Channel "${channelName}": the ${scheme} file scheme is not supported; this ${direction} will not deploy`);
@@ -611,8 +611,8 @@ const FILE_SORT_ORDER: Readonly<Record<string, string>> = { name: 'NAME', date: 
 
 /** A local Mirth File Reader: directory, filter, after-processing action, order and file age. */
 function fileReaderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = { postAction: afterProcessingAction(propsNode) };
-  for (const [from, to] of [['host', 'directory'], ['fileFilter', 'fileFilter'], ['moveToDirectory', 'moveToDirectory']] as const) {
+  const result: Record<string, unknown> = { postAction: afterProcessingAction(propsNode), ...localDirectory(propsNode) };
+  for (const [from, to] of [['fileFilter', 'fileFilter'], ['moveToDirectory', 'moveToDirectory']] as const) {
     const value = getString(propsNode, from);
     if (value) result[to] = value;
   }
@@ -631,12 +631,26 @@ function fileWriterProperties(propsNode: Record<string, unknown>): Record<string
     appendMode: getBoolean(propsNode, 'outputAppend', true),
     tempFileEnabled: getBoolean(propsNode, 'temporary', false),
     binary: getBoolean(propsNode, 'binary', false),
+    ...localDirectory(propsNode),
   };
-  const dir = getString(propsNode, 'host');
-  if (dir) result['directory'] = dir;
   const pattern = outputFileName(propsNode);
   if (pattern) result['outputPattern'] = pattern;
   return { ...result, ...mirthCharset(propsNode), ...sendTemplate(propsNode, 'template') };
+}
+
+/** A Mirth File connector's scheme, upper case; FILE when absent. */
+function fileScheme(propsNode: Record<string, unknown>): string {
+  return (getString(propsNode, 'scheme') ?? 'FILE').toUpperCase();
+}
+
+/**
+ * The folder of a local (file scheme) Mirth File connector. A remote scheme
+ * with no connector here (FTP, SMB, S3, WebDAV) gets none, so the deploy
+ * refuses it, rather than writing to a local folder named after the server.
+ */
+function localDirectory(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const dir = getString(propsNode, 'host');
+  return dir && fileScheme(propsNode) === 'FILE' ? { directory: dir } : {};
 }
 
 /** True when a Mirth File Writer must fail rather than replace a file that is already there. */
@@ -978,10 +992,10 @@ function dicomWarnings(propsNode: Record<string, unknown>, direction: 'source' |
 }
 
 /** `jdbc:<vendor>://host[:port]/database[?options]` */
-const JDBC_URL = /^jdbc:(\w+):\/\/([^:/?;]+)(?::(\d+))?\/([^?;]+)/;
+const JDBC_URL = /^jdbc:(\w+):\/\/([^:/?;]+)(?::(\d+|\$\{[^}]+\}))?\/([^?;]+)/;
 
 /** `jdbc:sqlserver://host[\instance][:port][;databaseName=name;...]` */
-const SQLSERVER_URL = /^jdbc:sqlserver:\/\/([^:;/]+)(?::(\d+))?/i;
+const SQLSERVER_URL = /^jdbc:sqlserver:\/\/([^:;/]+)(?::(\d+|\$\{[^}]+\}))?/i;
 
 /** The database a SQL Server URL names in its `;databaseName=` (or `;database=`) property. */
 const SQLSERVER_DATABASE = /;(?:databaseName|database)=([^;]+)/i;
@@ -989,15 +1003,19 @@ const SQLSERVER_DATABASE = /;(?:databaseName|database)=([^;]+)/i;
 /** The vendors GalvaniFlow's Database Reader and Writer can connect to. */
 const RUNNABLE_DB_VENDORS: ReadonlySet<string> = new Set(Object.values(DATABASE_VENDOR));
 
-/** Host, port and database from a JDBC URL, in the standard form or SQL Server's `;databaseName=` form. */
+/**
+ * Host, port and database from a JDBC URL, in the standard form or SQL
+ * Server's `;databaseName=` form. A `${...}` part stays as written, and a port
+ * that is one stays text, for the deploy to resolve from the configuration map.
+ */
 function jdbcLocation(url: string): Record<string, unknown> {
   if (unreadableUrl(url)) return {};
   const standard = JDBC_URL.exec(url);
-  if (standard) return { host: standard[2], ...(standard[3] ? { port: Number(standard[3]) } : {}), database: standard[4] };
+  if (standard) return { host: standard[2], ...(standard[3] ? { port: portValue(standard[3]) } : {}), database: standard[4] };
   const sqlServer = SQLSERVER_URL.exec(url);
   if (!sqlServer) return {};
   const database = SQLSERVER_DATABASE.exec(url)?.[1];
-  return { host: sqlServer[1], ...(sqlServer[2] ? { port: Number(sqlServer[2]) } : {}), ...(database ? { database } : {}) };
+  return { host: sqlServer[1], ...(sqlServer[2] ? { port: portValue(sqlServer[2]) } : {}), ...(database ? { database } : {}) };
 }
 
 /** MySQL Connector/J's `jdbc:mysql:loadbalance://` and `jdbc:mysql:replication://` URLs. */

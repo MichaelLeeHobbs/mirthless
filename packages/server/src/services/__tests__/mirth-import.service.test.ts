@@ -730,6 +730,11 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     ['jdbc:sqlserver://partner.example.org:1433;databaseName=results', 'sqlserver', { host: 'partner.example.org', port: 1433, database: 'results' }],
     ['jdbc:sqlserver://partner.example.org;encrypt=true;database=results', 'sqlserver', { host: 'partner.example.org', database: 'results' }],
     ['jdbc:sqlserver://partner.example.org\\LAB:1433', 'sqlserver', { host: 'partner.example.org\\LAB', port: 1433 }],
+    // Configuration map references stay as written for the deploy to resolve (#227).
+    ['jdbc:postgresql://${DB_HOST}:${DB_PORT}/lab', 'postgresql', { host: '${DB_HOST}', port: '${DB_PORT}', database: 'lab' }],
+    ['jdbc:postgresql://dbhost:${DB_PORT}/orders', 'postgresql', { host: 'dbhost', port: '${DB_PORT}', database: 'orders' }],
+    ['jdbc:mysql://${DB_HOST}/${DB_NAME}', 'mysql', { host: '${DB_HOST}', database: '${DB_NAME}' }],
+    ['jdbc:sqlserver://${DB_HOST}:${DB_PORT};databaseName=results', 'sqlserver', { host: '${DB_HOST}', port: '${DB_PORT}', database: 'results' }],
   ])('takes the database vendor from the JDBC URL %s', (url, vendor, location) => {
     const writer = `<properties class="com.mirth.connect.connectors.jdbc.DatabaseDispatcherProperties" version="4.5.0"><url>${url}</url><query>INSERT INTO t (a) VALUES (\${mrn})</query></properties>`;
     const channel = convert4x((x) => x
@@ -1079,6 +1084,21 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
 
     it('warns that a scheme with no connector here will not deploy', () => {
       expect(convert('FTP').warnings.some((w) => w.includes('FTP file scheme is not supported'))).toBe(true);
+    });
+
+    it.each(['FTP', 'SMB', 'S3', 'WEBDAV'])('gives a %s File Reader and Writer no local folder, so they refuse to deploy instead of using a folder named after the server (#227)', (scheme) => {
+      const ftpWriter = writer.replace('<scheme>SFTP</scheme>', `<scheme>${scheme}</scheme>`).replace('sftp.partner.org/in', 'ftp.partner.org/in');
+      const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml')
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader(scheme, 'no'))
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, ftpWriter));
+      if (!result.ok) throw result.error;
+      const channel = result.value.channels[0];
+      expect(channel?.sourceConnectorType).toBe('FILE');
+      expect(channel?.sourceConnectorProperties['directory']).toBeUndefined();
+      expect(validateConnectorProperties('FILE', 'source', channel?.sourceConnectorProperties ?? {})).toMatchObject({ ok: false });
+      expect(channel?.destinations[0]?.connectorType).toBe('FILE');
+      expect(channel?.destinations[0]?.properties['directory']).toBeUndefined();
+      expect(validateConnectorProperties('FILE', 'destination', channel?.destinations[0]?.properties ?? {})).toMatchObject({ ok: false });
     });
   });
 
