@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import {
   isSourceConnectorType,
   isDestinationConnectorType,
+  charsetSchema,
   type ChannelExportEntry,
   type ImportResult,
   type SourceConnectorType,
@@ -23,7 +24,7 @@ import {
   type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
 } from './mirth-code-templates.js';
 import { isPlainObject, unescapeControlChars } from '@galvaniflow/core-util';
-import { DATABASE_VENDOR } from '@galvaniflow/connectors';
+import { DATABASE_VENDOR, unknownPlaceholders } from '@galvaniflow/connectors';
 
 // ----- Types -----
 
@@ -60,6 +61,8 @@ const CONNECTOR_TYPE_MAP: ReadonlyMap<string, string> = new Map([
   ['com.mirth.connect.connectors.smtp.SmtpDispatcherProperties', 'SMTP'],
   ['com.mirth.connect.connectors.vm.VmReceiverProperties', 'CHANNEL'],
   ['com.mirth.connect.connectors.vm.VmDispatcherProperties', 'CHANNEL'],
+  ['com.mirth.connect.connectors.dimse.DICOMReceiverProperties', 'DICOM'],
+  ['com.mirth.connect.connectors.dimse.DICOMDispatcherProperties', 'DICOM'],
 ]);
 
 // ----- XML Parser Config -----
@@ -265,8 +268,9 @@ function convertChannel(
   warnings: string[],
 ): ChannelExportEntry {
   const name = getString(mirthChannel, 'name') ?? 'Unnamed Channel';
-  const description = getString(mirthChannel, 'description');
-  const enabled = channelEnabled(mirthChannel);
+  const holds = channelEnabled(mirthChannel) ? disablingSettings(mirthChannel) : [];
+  const enabled = channelEnabled(mirthChannel) && holds.length === 0;
+  const description = withHoldNote(getString(mirthChannel, 'description'), holds);
   const id = getString(mirthChannel, 'id') ?? randomUUID();
 
   // Source connector
@@ -290,10 +294,9 @@ function convertChannel(
   const outboundDataType = extractDataType(sourceConnector, 'outbound') ?? 'HL7V2';
 
   // Filters and transformers
-  const filters = convertFilters(mirthChannel);
+  const filters = convertFilters(mirthChannel, { channelName: name, warnings });
   const transformers = convertTransformers(mirthChannel).map((t) =>
     ((t.metaDataId ?? null) === null && t.inboundDataType !== inboundDataType ? { ...t, inboundDataType } : t));
-  warnings.push(...delimitedWarnings(name, transformers.find((t) => (t.metaDataId ?? null) === null)));
 
   // Channel properties
   const props = isPlainObject(mirthChannel['properties'])
@@ -317,17 +320,19 @@ function convertChannel(
     encryptData: getBoolean(props, 'encryptData', false),
     removeContentOnCompletion: getBoolean(props, 'removeContentOnCompletion', false),
     removeAttachmentsOnCompletion: getBoolean(props, 'removeAttachmentsOnCompletion', false),
-    pruningEnabled: getBoolean(props, 'pruningEnabled', false),
-    pruningMaxAgeDays: null,
-    pruningArchiveEnabled: false,
+    ...convertPruning(mirthChannel, props, name, warnings),
     scripts: convertScripts(mirthChannel),
     destinations,
     metadataColumns: convertMetadataColumns(mirthChannel),
     filters,
     transformers,
   };
+  warnings.push(...delimitedWarnings(entry));
   const scriptWarning = mirthScriptWarning(entry);
   if (scriptWarning) warnings.push(scriptWarning);
+  if (holds.length > 0) {
+    warnings.push(`Channel "${name}": imported disabled because ${holds.join(' and ')}; enable it once you have decided how it should run here`);
+  }
   return entry;
 }
 
@@ -340,6 +345,44 @@ function channelEnabled(mirthChannel: Record<string, unknown>): boolean {
   const metadata = getNestedRecord(getNestedRecord(mirthChannel, 'exportData') ?? {}, 'metadata');
   if (metadata && getString(metadata, 'enabled') !== null) return getBoolean(metadata, 'enabled', true);
   return getBoolean(mirthChannel, 'enabled', true);
+}
+
+// ----- Pruning -----
+
+type PruningSettings = Pick<ChannelExportEntry, 'pruningEnabled' | 'pruningMaxAgeDays' | 'pruningArchiveEnabled'>;
+
+/** A whole number of days above zero, or null (Mirth: keep for good). */
+function pruneDays(settings: Record<string, unknown>, key: string): number | null {
+  const days = getNumber(settings, key, 0);
+  return Number.isInteger(days) && days > 0 ? days : null;
+}
+
+/**
+ * Mirth 3.5+ keeps a channel's pruning in `exportData/metadata/pruningSettings`
+ * (earlier exports, in the channel properties): `pruneMetaDataDays` prunes
+ * whole messages, `pruneContentDays` only their content. GalvaniFlow prunes
+ * whole messages, errored ones included, and archives nothing, so the
+ * preview says where the two differ.
+ */
+function convertPruning(mirthChannel: Record<string, unknown>, props: Record<string, unknown>, channelName: string, warnings: string[]): PruningSettings {
+  const metadata = getNestedRecord(getNestedRecord(mirthChannel, 'exportData') ?? {}, 'metadata') ?? {};
+  const settings = getNestedRecord(metadata, 'pruningSettings') ?? props;
+  const messageDays = pruneDays(settings, 'pruneMetaDataDays');
+  const contentDays = pruneDays(settings, 'pruneContentDays');
+  // Mirth's pruner skips errored messages unless told otherwise; this one prunes them, so pruning stays off then.
+  const prune = messageDays !== null && getBoolean(settings, 'pruneErroredMessages', false);
+  const differences: string[] = [];
+  if (contentDays !== null && (messageDays === null || contentDays < messageDays)) {
+    differences.push(`Mirth removes message content after ${String(contentDays)} days; GalvaniFlow prunes whole messages only, so content is kept ${prune ? `until ${String(messageDays)} days` : 'until pruning is turned on'}`);
+  }
+  if (messageDays !== null && !prune) {
+    differences.push(`Mirth prunes after ${String(messageDays)} days but keeps errored messages; GalvaniFlow would prune errored messages too, so pruning is left off`);
+  }
+  if (prune && getBoolean(settings, 'archiveEnabled', true)) {
+    differences.push('Mirth archives messages before pruning them; GalvaniFlow does not archive');
+  }
+  if (differences.length > 0) warnings.push(`Channel "${channelName}": its pruning differs here: ${differences.join('; ')}`);
+  return { pruningEnabled: prune, pruningMaxAgeDays: messageDays, pruningArchiveEnabled: false };
 }
 
 // ----- Source Response -----
@@ -448,11 +491,15 @@ function convertSourceConnector(
 
   const remote = remoteFileConnector(finalType, propsNode, 'source', channelName, warnings);
   const properties: Record<string, unknown> = {
-    ...(remote?.properties ?? extractConnectorProperties(propsNode, finalType)),
+    ...(remote?.properties ?? extractConnectorProperties(propsNode, finalType, 'source')),
     ...pollingInterval(propsNode),
     ...(getBoolean(getNestedRecord(propsNode, 'sourceConnectorProperties') ?? {}, 'processBatch', false) ? { processBatch: true } : {}),
   };
   if (finalType === 'DATABASE') warnings.push(...databaseWarnings(propsNode, properties['vendor'], 'Database Reader', channelName));
+  if (finalType === 'FILE') warnings.push(...fileConnectorWarnings(propsNode, properties, 'File Reader', channelName));
+  if (finalType === 'DICOM') warnings.push(...dicomWarnings(propsNode, 'source', 'DICOM Listener', channelName));
+  const polling = pollingWarning(propsNode, channelName);
+  if (polling) warnings.push(polling);
   return { type: remote?.type ?? finalType, properties };
 }
 
@@ -472,7 +519,7 @@ function remoteFileConnector(
   channelName: string,
   warnings: string[],
 ): ConnectorResult<'SFTP'> | null {
-  const scheme = (getString(propsNode, 'scheme') ?? 'FILE').toUpperCase();
+  const scheme = fileScheme(propsNode);
   if (type !== 'FILE' || scheme === 'FILE') return null;
   if (scheme !== 'SFTP') {
     warnings.push(`Channel "${channelName}": the ${scheme} file scheme is not supported; this ${direction} will not deploy`);
@@ -495,20 +542,241 @@ function remoteFileConnector(
 }
 
 function sftpReaderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
-  const action = (getString(propsNode, 'afterProcessingAction') ?? 'NONE').toUpperCase();
   return {
     filePattern: getString(propsNode, 'fileFilter') ?? '*',
-    afterProcessing: action === 'DELETE' || action === 'MOVE' ? action : 'NONE',
+    afterProcessing: afterProcessingAction(propsNode),
     moveToDirectory: getString(propsNode, 'moveToDirectory') ?? '',
+    ...mirthCharset(propsNode),
   };
 }
 
 function sftpWriterProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
-  const pattern = getString(propsNode, 'outputPattern');
+  const pattern = outputFileName(propsNode);
   return {
     ...(pattern ? { fileNameTemplate: pattern } : {}),
-    appendMode: getBoolean(propsNode, 'outputAppend', false),
+    appendMode: getBoolean(propsNode, 'outputAppend', true),
   };
+}
+
+/** Mirth's after-processing action as written (upper case), NONE when absent. */
+function mirthAction(propsNode: Record<string, unknown>): string {
+  return (getString(propsNode, 'afterProcessingAction') ?? 'NONE').toUpperCase();
+}
+
+/**
+ * What a Mirth File Reader does with a file it has read: NONE (Mirth's default,
+ * the file stays), MOVE or DELETE. A Move with neither a folder nor a new name
+ * leaves the file where it is in Mirth, so it is NONE here, as is a value this
+ * importer does not know. A Move that only renames the file in place stays
+ * MOVE with no folder, which the deploy refuses: left in place unrenamed, the
+ * file would be read again on every poll. The FILE and SFTP sources delete by
+ * default, so the action is always written out.
+ */
+function afterProcessingAction(propsNode: Record<string, unknown>): 'NONE' | 'MOVE' | 'DELETE' {
+  const action = mirthAction(propsNode);
+  const blank = (key: string): boolean => (getString(propsNode, key) ?? '').trim() === '';
+  if (action === 'MOVE') return blank('moveToDirectory') && blank('moveToFileName') ? 'NONE' : 'MOVE';
+  return action === 'DELETE' ? 'DELETE' : 'NONE';
+}
+
+/**
+ * A Mirth File connector's `charsetEncoding` as the FILE `charset`: nothing for
+ * Mirth's DEFAULT_ENCODING; the FILE name for a Java name the charset schema
+ * knows (`ISO-8859-1` is `latin1`); otherwise the Mirth name as written, which
+ * the deploy refuses, naming it (see {@link fileReaderWarnings}).
+ */
+function mirthCharset(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const name = getString(propsNode, 'charsetEncoding')?.trim() ?? '';
+  if (name === '' || name === 'DEFAULT_ENCODING') return {};
+  const parsed = charsetSchema.safeParse(name);
+  return { charset: parsed.success ? parsed.data : name };
+}
+
+/** Mirth's names for the two values a GalvaniFlow output file name can use. */
+const MIRTH_FILENAME_VALUES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\$\{message\.messageId\}/g, '${messageId}'],
+  [/\$\{SYSTIME\}/g, '${timestamp}'],
+];
+
+/**
+ * A Mirth File Writer's output pattern with Mirth's message id and system time
+ * renamed to `${messageId}` and `${timestamp}`, or null when blank. Any other
+ * `${...}` stays, so the deploy refuses it and the preview warns (see
+ * {@link fileConnectorWarnings}).
+ */
+function outputFileName(propsNode: Record<string, unknown>): string | null {
+  const pattern = getString(propsNode, 'outputPattern');
+  if (pattern === null || pattern.trim() === '') return null;
+  return MIRTH_FILENAME_VALUES.reduce((name, [from, to]) => name.replace(from, to), pattern);
+}
+
+/** Mirth's File Reader sort orders, as the FILE source names them. */
+const FILE_SORT_ORDER: Readonly<Record<string, string>> = { name: 'NAME', date: 'DATE', size: 'SIZE' };
+
+/** A local Mirth File Reader: directory, filter, after-processing action, order and file age. */
+function fileReaderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = { postAction: afterProcessingAction(propsNode), ...localDirectory(propsNode) };
+  const filter = getString(propsNode, 'fileFilter');
+  if (filter) result['fileFilter'] = filter;
+  const moveTo = getString(propsNode, 'moveToDirectory');
+  // On a remote scheme with no connector here, the move-to folder is on the partner's server: no local move.
+  if (fileScheme(propsNode) !== 'FILE') {
+    if (result['postAction'] === 'MOVE') result['postAction'] = 'NONE';
+  } else if (moveTo) {
+    result['moveToDirectory'] = moveTo;
+  }
+  const sortBy = FILE_SORT_ORDER[getString(propsNode, 'sortBy') ?? ''];
+  if (sortBy) result['sortBy'] = sortBy;
+  if (getString(propsNode, 'checkFileAge') !== null) result['checkFileAge'] = getBoolean(propsNode, 'checkFileAge', true);
+  const fileAge = getNumber(propsNode, 'fileAge', -1);
+  if (Number.isInteger(fileAge) && fileAge >= 0) result['fileAgeMs'] = fileAge;
+  if (getString(propsNode, 'binary') !== null) result['binary'] = getBoolean(propsNode, 'binary', false);
+  return { ...result, ...mirthCharset(propsNode) };
+}
+
+/** A local Mirth File Writer: directory, file name, append, temporary file, binary, charset and template. */
+function fileWriterProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    appendMode: getBoolean(propsNode, 'outputAppend', true),
+    tempFileEnabled: getBoolean(propsNode, 'temporary', false),
+    binary: getBoolean(propsNode, 'binary', false),
+    ...localDirectory(propsNode),
+  };
+  const pattern = outputFileName(propsNode);
+  if (pattern) result['outputPattern'] = pattern;
+  return { ...result, ...mirthCharset(propsNode), ...sendTemplate(propsNode, 'template') };
+}
+
+/** A Mirth File connector's scheme, upper case; FILE when absent. */
+function fileScheme(propsNode: Record<string, unknown>): string {
+  return ((getString(propsNode, 'scheme') ?? '').trim() || 'FILE').toUpperCase();
+}
+
+/**
+ * The folder of a local (file scheme) Mirth File connector. A remote scheme
+ * with no connector here (FTP, SMB, S3, WebDAV) gets none, so the deploy
+ * refuses it, rather than writing to a local folder named after the server.
+ */
+function localDirectory(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const dir = getString(propsNode, 'host');
+  return dir && fileScheme(propsNode) === 'FILE' ? { directory: dir } : {};
+}
+
+/** True when a Mirth File Writer must fail rather than replace a file that is already there. */
+function failsOnExistingFile(propsNode: Record<string, unknown>): boolean {
+  return !getBoolean(propsNode, 'outputAppend', true) && getBoolean(propsNode, 'errorOnExists', false);
+}
+
+/** Preview warnings for File (and SFTP) settings that do not carry, Reader and Writer alike. */
+function fileConnectorWarnings(propsNode: Record<string, unknown>, properties: Record<string, unknown>, connector: string, channelName: string): string[] {
+  const prefix = `Channel "${channelName}": the ${connector}`;
+  return [...fileReaderWarnings(propsNode, prefix), ...fileWriterWarnings(propsNode, properties, prefix), ...fileEncodingWarnings(propsNode, properties, prefix)];
+}
+
+/**
+ * A File connector's charset and binary settings that do not carry: Mirth's
+ * server default charset, a charset GalvaniFlow lacks, and, on SFTP, binary
+ * files and a Writer charset other than UTF-8 (the SFTP Writer writes UTF-8).
+ */
+function fileEncodingWarnings(propsNode: Record<string, unknown>, properties: Record<string, unknown>, prefix: string): string[] {
+  const warnings: string[] = [];
+  const binary = getBoolean(propsNode, 'binary', false);
+  const mirthName = getString(propsNode, 'charsetEncoding')?.trim() ?? '';
+  if (!binary && mirthName === 'DEFAULT_ENCODING') {
+    warnings.push(`${prefix} used the Mirth server's default charset (often windows-1252 on Windows before Java 18); GalvaniFlow reads and writes UTF-8 unless a charset is set`);
+  }
+  const charset = properties['charset'];
+  if (typeof charset === 'string' && !charsetSchema.safeParse(charset).success) {
+    warnings.push(`${prefix} reads and writes ${charset}, which GalvaniFlow does not have (UTF-8, ISO-8859-1, US-ASCII and UTF-16LE only); it will not deploy until the charset is changed`);
+  }
+  if (fileScheme(propsNode) !== 'SFTP') return warnings;
+  if (binary) warnings.push(`${prefix} reads or writes files as binary in Mirth; the SFTP connector handles text only`);
+  const writerCharset = mirthCharset(propsNode)['charset'];
+  if (!('afterProcessing' in properties) && writerCharset !== undefined && writerCharset !== 'utf-8') {
+    warnings.push(`${prefix} writes ${mirthName} in Mirth; the SFTP Writer writes UTF-8 only`);
+  }
+  return warnings;
+}
+
+/**
+ * A Reader's settings with no equivalent here: a regular-expression or
+ * comma-separated filter, subfolders, a file size range, a rename on move, and
+ * moving files that fail.
+ */
+function fileReaderWarnings(propsNode: Record<string, unknown>, prefix: string): string[] {
+  const warnings: string[] = [];
+  const regex = getBoolean(propsNode, 'regex', false);
+  if (regex) warnings.push(`${prefix}'s file filter is a regular expression, and GalvaniFlow reads it as a glob (* and ?); rewrite it before deploying`);
+  if (!regex && (getString(propsNode, 'fileFilter') ?? '').includes(',')) {
+    warnings.push(`${prefix}'s file filter is a comma-separated list, which Mirth splits; GalvaniFlow reads it as one glob, so it matches nothing until it is one pattern`);
+  }
+  if (getBoolean(propsNode, 'directoryRecursion', false)) warnings.push(`${prefix} also reads subfolders in Mirth; GalvaniFlow reads only the folder itself`);
+  const minimum = getNumber(propsNode, 'fileSizeMinimum', 0);
+  const maximum = getString(propsNode, 'fileSizeMaximum') ?? '';
+  if (minimum > 0 || (maximum.trim() !== '' && !getBoolean(propsNode, 'ignoreFileSizeMaximum', true))) {
+    warnings.push(`${prefix} skips files outside a file size range in Mirth; GalvaniFlow reads files of every size`);
+  }
+  const rename = getString(propsNode, 'moveToFileName');
+  if (rename && mirthAction(propsNode) === 'MOVE') {
+    warnings.push((getString(propsNode, 'moveToDirectory') ?? '').trim() === ''
+      ? `${prefix} renames each file in place to "${rename}" in Mirth; GalvaniFlow cannot rename, so it will not deploy until a move-to folder is set or the action is changed`
+      : `${prefix} renames the files it moves to "${rename}" in Mirth; GalvaniFlow keeps their names`);
+  }
+  for (const key of ['errorReadingAction', 'errorResponseAction'] as const) {
+    if ((getString(propsNode, key) ?? '').toUpperCase() === 'MOVE') {
+      warnings.push(`${prefix} moves a file whose ${key === 'errorReadingAction' ? 'reading' : 'message'} fails to an error folder in Mirth; GalvaniFlow does not move it`);
+    }
+  }
+  return warnings;
+}
+
+/** A Writer's settings with no equivalent here: file name values it cannot fill, and failing on an existing file. */
+function fileWriterWarnings(propsNode: Record<string, unknown>, properties: Record<string, unknown>, prefix: string): string[] {
+  const warnings: string[] = [];
+  const pattern = properties['outputPattern'] ?? properties['fileNameTemplate'];
+  const unknown = typeof pattern === 'string' ? unknownPlaceholders(pattern) : [];
+  if (unknown.length > 0) {
+    warnings.push(`${prefix}'s file name uses ${unknown.map((n) => '${' + n + '}').join(', ')}, which GalvaniFlow cannot fill (only \${messageId} and \${timestamp}); it will not deploy unless it names a configuration map entry`);
+  }
+  if (failsOnExistingFile(propsNode)) {
+    warnings.push(`${prefix} fails in Mirth when its file already exists; GalvaniFlow has no such check and would overwrite the file`);
+  }
+  return warnings;
+}
+
+/**
+ * Settings with no safe equivalent here, for which the channel is imported
+ * disabled so that someone decides before it runs.
+ */
+function disablingSettings(mirthChannel: Record<string, unknown>): string[] {
+  const reasons: string[] = [];
+  const sourceProps = getNestedRecord(getNestedRecord(mirthChannel, 'sourceConnector') ?? {}, 'properties') ?? {};
+  const pollingType = mirthPollingType(getNestedRecord(sourceProps, 'pollConnectorProperties'));
+  if (pollingType === 'TIME' || pollingType === 'CRON') {
+    reasons.push('its source polls on a schedule (time of day or cron) and would poll at an interval here');
+  }
+  for (const [, dest] of destinationConnectorsById(mirthChannel)) {
+    // A destination disabled in Mirth never writes, so its file setting cannot overwrite anything.
+    if (getBoolean(dest, 'enabled', true) && failsOnExistingFile(getNestedRecord(dest, 'properties') ?? {})) {
+      reasons.push(`the File Writer "${getString(dest, 'name') ?? ''}" must not overwrite an existing file`);
+    }
+  }
+  return reasons;
+}
+
+/**
+ * The channel description with why the import disabled it, so the editor
+ * shows the reason and an export carries it; unchanged when nothing did.
+ */
+function withHoldNote(description: string | null, holds: readonly string[]): string | null {
+  if (holds.length === 0) return description;
+  const note = `Imported disabled from Mirth: ${holds.join('; ')}. Enable it once you have decided how it should run here.`;
+  return description ? `${description}\n\n${note}` : note;
+}
+
+/** A Mirth polling type upper-cased (Mirth 3.0 to 3.2 write `interval`); INTERVAL when absent. */
+function mirthPollingType(poll: Record<string, unknown> | null): string {
+  return (getString(poll ?? {}, 'pollingType') ?? 'INTERVAL').toUpperCase();
 }
 
 /**
@@ -518,9 +786,43 @@ function sftpWriterProperties(propsNode: Record<string, unknown>): Record<string
  */
 function pollingInterval(propsNode: Record<string, unknown>): Record<string, unknown> {
   const poll = getNestedRecord(propsNode, 'pollConnectorProperties');
-  if (!poll || (getString(poll, 'pollingType') ?? 'INTERVAL') !== 'INTERVAL') return {};
+  if (!poll || mirthPollingType(poll) !== 'INTERVAL') return {};
   const ms = getNumber(poll, 'pollingFrequency', 0);
   return ms > 0 ? { pollingIntervalMs: ms } : {};
+}
+
+/**
+ * A preview warning for Mirth polling GalvaniFlow cannot follow: once a day
+ * (TIME), on cron expressions (CRON), or at an interval limited to some days
+ * or hours (the advanced settings). Null for plain interval polling.
+ */
+function pollingWarning(propsNode: Record<string, unknown>, channelName: string): string | null {
+  const poll = getNestedRecord(propsNode, 'pollConnectorProperties');
+  if (!poll) return null;
+  const type = mirthPollingType(poll);
+  const prefix = `Channel "${channelName}": the source polls`;
+  const fallback = "; GalvaniFlow polls only at an interval, so it imported with the connector's default interval. Set its polling interval before deploying";
+  if (type === 'TIME') {
+    const at = (key: string): string => String(getNumber(poll, key, 0)).padStart(2, '0');
+    return `${prefix} once a day at ${at('pollingHour')}:${at('pollingMinute')} in Mirth${fallback}`;
+  }
+  if (type === 'CRON') {
+    const cron = getNestedRecord(poll, 'cronJobs') ?? {};
+    const expressions = toRecordList(cron['cronProperty']).map((job) => getString(job, 'expression') ?? '').filter((e) => e !== '');
+    return `${prefix} on the cron schedule ${expressions.map((e) => `"${e}"`).join(', ')} in Mirth${fallback}`;
+  }
+  return limitedPolling(getNestedRecord(poll, 'pollConnectorPropertiesAdvanced'))
+    ? `${prefix} only on some days or hours in Mirth (its advanced polling settings); GalvaniFlow polls at its interval all day, every day`
+    : null;
+}
+
+/** True when Mirth's advanced polling settings leave out some days (weekly or monthly) or hours. */
+function limitedPolling(advanced: Record<string, unknown> | null): boolean {
+  if (!advanced) return false;
+  const days = getNestedRecord(advanced, 'inactiveDays') ?? {};
+  const raw = days['boolean'];
+  const inactive: readonly unknown[] = Array.isArray(raw) ? raw : [raw];
+  return !getBoolean(advanced, 'weekly', true) || !getBoolean(advanced, 'allDay', true) || inactive.some((d) => String(d) === 'true');
 }
 
 function mapTransportName(transportName: string, channelName: string, warnings: string[]): string {
@@ -547,7 +849,7 @@ function mapTransportName(transportName: string, channelName: string, warnings: 
   return 'JAVASCRIPT';
 }
 
-function extractConnectorProperties(propsNode: Record<string, unknown>, connectorType: string): Record<string, unknown> {
+function extractConnectorProperties(propsNode: Record<string, unknown>, connectorType: string, direction: 'source' | 'destination'): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   // Extract properties based on connector type
@@ -583,15 +885,9 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       if (!listener) Object.assign(result, sendTemplate(propsNode, 'content'), httpSenderProperties(propsNode));
       break;
     }
-    case 'FILE': {
-      const dir = getString(propsNode, 'host');
-      if (dir) result['directory'] = dir;
-      const fileFilter = getString(propsNode, 'fileFilter');
-      if (fileFilter) result['fileFilter'] = fileFilter;
-      const moveToDir = getString(propsNode, 'moveToDirectory');
-      if (moveToDir) result['moveToDirectory'] = moveToDir;
+    case 'FILE':
+      Object.assign(result, direction === 'source' ? fileReaderProperties(propsNode) : fileWriterProperties(propsNode));
       break;
-    }
     case 'DATABASE':
       Object.assign(result, databaseProperties(propsNode));
       break;
@@ -611,6 +907,9 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       if (script) result['script'] = script;
       break;
     }
+    case 'DICOM':
+      Object.assign(result, direction === 'source' ? dicomListenerProperties(propsNode) : dicomSenderProperties(propsNode));
+      break;
     default:
       // For others, copy all non-attribute properties
       for (const [key, value] of Object.entries(propsNode)) {
@@ -653,6 +952,12 @@ function httpSenderProperties(propsNode: Record<string, unknown>): Record<string
   return result;
 }
 
+/** A preview warning for an HTTP Sender with Digest credentials, which GalvaniFlow's HTTP destination cannot send; null otherwise. */
+function httpDigestWarning(propsNode: Record<string, unknown>, connector: string, channelName: string): string | null {
+  if (!getBoolean(propsNode, 'useAuthentication', false) || getString(propsNode, 'authenticationType') !== 'Digest') return null;
+  return `Channel "${channelName}": the ${connector} uses Digest authentication, which GalvaniFlow does not have; its credentials were dropped, so requests go without them. Build the Authorization header in a JavaScript writer`;
+}
+
 /** A Mirth SMTP Sender's server, credentials, addresses, subject and body. */
 function smtpProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -674,11 +979,82 @@ function smtpProperties(propsNode: Record<string, unknown>): Record<string, unkn
   return result;
 }
 
+/**
+ * A Mirth DICOM Listener: its port, its AE title, and the folder it stores
+ * received objects in (`dest`). The files always stay (`postAction` NONE),
+ * never the DICOM source's default DELETE: a message here is the file's path,
+ * so a queued Sender or a reprocess needs the file after the source is done.
+ */
+function dicomListenerProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = { postAction: 'NONE' };
+  const port = getString(getNestedRecord(propsNode, 'listenerConnectorProperties') ?? {}, 'port');
+  if (port) result['port'] = portValue(port);
+  const dest = getString(propsNode, 'dest');
+  if (dest) result['storageDir'] = dest;
+  const aeTitle = getString(propsNode, 'applicationEntity');
+  if (aeTitle) result['aeTitle'] = aeTitle;
+  return { ...result, ...dicomTls(propsNode) };
+}
+
+/**
+ * Mirth's DICOM `tls` when TLS is on, which the DICOM schema refuses: the
+ * connector has no TLS, so the channel must not run in plaintext (D-274).
+ * Nothing when it is `notls`.
+ */
+function dicomTls(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const tls = getString(propsNode, 'tls') ?? 'notls';
+  return tls === 'notls' || tls === '' ? {} : { tls };
+}
+
+/**
+ * A Mirth DICOM Sender: the remote host and port, its AE title (called) and
+ * our own (calling). Blank titles are the ones Mirth sends then (`DCMRCV`, and
+ * dcm4che's `DCMSND`), not the DICOM destination's own defaults.
+ */
+function dicomSenderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    calledAETitle: getString(propsNode, 'applicationEntity') || 'DCMRCV',
+    callingAETitle: getString(propsNode, 'localApplicationEntity') || 'DCMSND',
+  };
+  const host = getString(propsNode, 'host');
+  if (host) result['host'] = host;
+  const port = getString(propsNode, 'port');
+  if (port) result['port'] = portValue(port);
+  return { ...result, ...dicomTls(propsNode) };
+}
+
+/**
+ * Preview warnings for a DICOM connector: TLS, which the DICOM connector does
+ * not have; on a Listener, the message being the stored file's path and a
+ * missing storage folder; on a Sender, a custom template, user identity and
+ * storage commitment.
+ */
+function dicomWarnings(propsNode: Record<string, unknown>, direction: 'source' | 'destination', connector: string, channelName: string): string[] {
+  const prefix = `Channel "${channelName}": the ${connector}`;
+  const warnings: string[] = [];
+  if ((getString(propsNode, 'tls') ?? 'notls') !== 'notls') {
+    warnings.push(`${prefix} uses TLS in Mirth; GalvaniFlow's DICOM connector has no TLS, so it will not deploy rather than send in plaintext. Tunnel the link and import it with TLS off`);
+  }
+  if (direction === 'source') {
+    warnings.push(`${prefix}'s messages are a file path here (the stored object's file), not the DICOM object; scripts read its tags from the source map`);
+    if (!getString(propsNode, 'dest')) warnings.push(`${prefix} stores no files in Mirth; set storageDir, the folder received objects are written to, before deploying`);
+    return warnings;
+  }
+  const template = getString(propsNode, 'template') ?? '';
+  const dropped = [
+    ...(template.trim() !== '' && template.trim() !== '${DICOMMESSAGE}' ? ['its template (it sends the file the message names)'] : []),
+    ...(getString(propsNode, 'username') || getString(propsNode, 'passcode') ? ['user identity'] : []),
+    ...(getBoolean(propsNode, 'stgcmt', false) ? ['storage commitment'] : []),
+  ];
+  if (dropped.length > 0) warnings.push(`${prefix} uses ${dropped.join(', ')}, which GalvaniFlow's DICOM connector does not have; dropped`);
+  return warnings;
+}
+
 /** `jdbc:<vendor>://host[:port]/database[?options]` */
-const JDBC_URL = /^jdbc:(\w+):\/\/([^:/?;]+)(?::(\d+))?\/([^?;]+)/;
+const JDBC_URL = /^jdbc:(\w+):\/\/([^:/?;]+)(?::(\d+|\$\{[^}]+\}))?\/([^?;]+)/;
 
 /** `jdbc:sqlserver://host[\instance][:port][;databaseName=name;...]` */
-const SQLSERVER_URL = /^jdbc:sqlserver:\/\/([^:;/]+)(?::(\d+))?/i;
+const SQLSERVER_URL = /^jdbc:sqlserver:\/\/([^:;/]+)(?::(\d+|\$\{[^}]+\}))?/i;
 
 /** The database a SQL Server URL names in its `;databaseName=` (or `;database=`) property. */
 const SQLSERVER_DATABASE = /;(?:databaseName|database)=([^;]+)/i;
@@ -686,15 +1062,19 @@ const SQLSERVER_DATABASE = /;(?:databaseName|database)=([^;]+)/i;
 /** The vendors GalvaniFlow's Database Reader and Writer can connect to. */
 const RUNNABLE_DB_VENDORS: ReadonlySet<string> = new Set(Object.values(DATABASE_VENDOR));
 
-/** Host, port and database from a JDBC URL, in the standard form or SQL Server's `;databaseName=` form. */
+/**
+ * Host, port and database from a JDBC URL, in the standard form or SQL
+ * Server's `;databaseName=` form. A `${...}` part stays as written, and a port
+ * that is one stays text, for the deploy to resolve from the configuration map.
+ */
 function jdbcLocation(url: string): Record<string, unknown> {
   if (unreadableUrl(url)) return {};
   const standard = JDBC_URL.exec(url);
-  if (standard) return { host: standard[2], ...(standard[3] ? { port: Number(standard[3]) } : {}), database: standard[4] };
+  if (standard) return { host: standard[2], ...(standard[3] ? { port: portValue(standard[3]) } : {}), database: standard[4] };
   const sqlServer = SQLSERVER_URL.exec(url);
   if (!sqlServer) return {};
   const database = SQLSERVER_DATABASE.exec(url)?.[1];
-  return { host: sqlServer[1], ...(sqlServer[2] ? { port: Number(sqlServer[2]) } : {}), ...(database ? { database } : {}) };
+  return { host: sqlServer[1], ...(sqlServer[2] ? { port: portValue(sqlServer[2]) } : {}), ...(database ? { database } : {}) };
 }
 
 /** MySQL Connector/J's `jdbc:mysql:loadbalance://` and `jdbc:mysql:replication://` URLs. */
@@ -713,6 +1093,10 @@ function unreadableUrl(url: string): string | null {
   const mode = MYSQL_MULTI_HOST_MODE.exec(url)?.[1]?.toLowerCase();
   if (mode) return `URL uses MySQL's ${mode} mode over several hosts, which GalvaniFlow does not have`;
   if (MULTI_HOST_URL.test(url)) return 'URL lists several hosts, and GalvaniFlow connects to one';
+  if (url.includes('${') && !JDBC_URL.test(url) && !SQLSERVER_URL.test(url)) {
+    // Name only the references: the rest of a URL can carry credentials.
+    return `URL uses ${(url.match(/\$\{[^}]+\}/g) ?? []).join(', ')} where the import needs a host and a database, so it cannot read them`;
+  }
   return null;
 }
 
@@ -852,8 +1236,12 @@ function convertDestinations(
 
     const remote = remoteFileConnector(connectorType, propsNode, 'destination', channelName, warnings);
     const name = getString(dest, 'name') ?? `Destination ${idx + 1}`;
-    const properties = remote?.properties ?? extractConnectorProperties(propsNode, connectorType);
+    const properties = remote?.properties ?? extractConnectorProperties(propsNode, connectorType, 'destination');
     if (connectorType === 'DATABASE') warnings.push(...databaseWarnings(propsNode, properties['vendor'], `Database Writer "${name}"`, channelName));
+    if (connectorType === 'FILE') warnings.push(...fileConnectorWarnings(propsNode, properties, `File Writer "${name}"`, channelName));
+    if (connectorType === 'DICOM') warnings.push(...dicomWarnings(propsNode, 'destination', `DICOM Sender "${name}"`, channelName));
+    const digest = connectorType === 'HTTP' ? httpDigestWarning(propsNode, `HTTP Sender "${name}"`, channelName) : null;
+    if (digest) warnings.push(digest);
 
     return {
       metaDataId: destinationMetaDataId(dest, idx),
@@ -931,16 +1319,22 @@ function extractDataType(
 
 // ----- Filter Conversion -----
 
-function convertFilters(mirthChannel: Record<string, unknown>): ChannelExportEntry['filters'] {
+/** Where a Rule Builder rule the import cannot read says so. */
+interface WarningSink {
+  readonly channelName: string;
+  readonly warnings: string[];
+}
+
+function convertFilters(mirthChannel: Record<string, unknown>, sink: WarningSink): ChannelExportEntry['filters'] {
   const filters: ChannelExportEntry['filters'] = [];
 
   // Source connector filter
-  const sourceFilter = extractFilterFromConnector(mirthChannel['sourceConnector'], null);
+  const sourceFilter = extractFilterFromConnector(mirthChannel['sourceConnector'], null, sink);
   if (sourceFilter) filters.push(sourceFilter);
 
   // Destination connector filters
   for (const [metaDataId, conn] of destinationConnectorsById(mirthChannel)) {
-    const filter = extractFilterFromConnector(conn, metaDataId);
+    const filter = extractFilterFromConnector(conn, metaDataId, sink);
     if (filter) filters.push(filter);
   }
 
@@ -992,6 +1386,7 @@ function scriptElements(container: Record<string, unknown>, legacyKey: 'steps' |
 function extractFilterFromConnector(
   connector: unknown,
   metaDataId: number | null,
+  sink: WarningSink,
 ): ChannelExportEntry['filters'][number] | null {
   if (!isPlainObject(connector)) return null;
 
@@ -1000,27 +1395,117 @@ function extractFilterFromConnector(
   const filter = getNestedRecord(connector, 'filter') ?? (transformer ? getNestedRecord(transformer, 'filter') : null);
   if (!filter) return null;
 
-  const rules = scriptElements(filter, 'rules', 'rule').map(({ className, node: rule }) => ({
-    enabled: getBoolean(rule, 'enabled', true),
-    name: getString(rule, 'name'),
-    operator: getString(rule, 'operator') ?? 'AND',
-    type: mapFilterRuleType(className ?? getString(rule, 'type')),
-    script: getString(rule, 'script'),
-    field: getString(rule, 'field'),
-    condition: getString(rule, 'condition'),
-    values: stringList(rule['values']),
-  }));
+  const rules = scriptElements(filter, 'rules', 'rule').map(({ className, node: rule }) => {
+    const base = {
+      enabled: getBoolean(rule, 'enabled', true),
+      name: getString(rule, 'name'),
+      operator: getString(rule, 'operator') ?? 'AND',
+      type: mapFilterRuleType(className ?? getString(rule, 'type')),
+      script: getString(rule, 'script'),
+      field: getString(rule, 'field'),
+      condition: getString(rule, 'condition'),
+      values: stringList(rule['values']),
+    };
+    return base.type === 'RULE_BUILDER' ? { ...base, ...ruleBuilderRule(base, sink) } : base;
+  });
 
   if (rules.length === 0) return null;
 
   return { connectorId: null, metaDataId, rules };
 }
 
+/** A filter rule's type: Mirth 4.x `RuleBuilderRule` and older `Rule Builder` rules are RULE_BUILDER. */
 function mapFilterRuleType(type: string | null): string {
   if (!type) return 'JAVASCRIPT';
-  const upper = type.toUpperCase();
-  if (upper.includes('JAVASCRIPT') || upper === 'RULE_BUILDER') return 'JAVASCRIPT';
+  const upper = type.toUpperCase().replace(/\s+/g, '_');
+  if (upper.includes('JAVASCRIPT')) return 'JAVASCRIPT';
+  if (upper === 'RULEBUILDERRULE' || upper === 'RULE_BUILDER') return 'RULE_BUILDER';
   return upper;
+}
+
+/** Mirth's Rule Builder conditions, as the engine's Rule Builder names them. */
+const RULE_BUILDER_CONDITION: Readonly<Record<string, string>> = {
+  EXISTS: 'EXISTS', NOT_EXIST: 'NOT_EXISTS', EQUALS: 'EQUALS', NOT_EQUAL: 'NOT_EQUALS', CONTAINS: 'CONTAINS', NOT_CONTAIN: 'NOT_CONTAINS',
+};
+
+type RuleBuilderFields = Pick<ChannelExportEntry['filters'][number]['rules'][number], 'type' | 'script' | 'field' | 'condition' | 'values'>;
+
+interface MirthRule {
+  readonly enabled: boolean;
+  readonly name: string | null;
+  readonly script: string | null;
+  readonly field: string | null;
+  readonly condition: string | null;
+  readonly values: readonly string[];
+}
+
+/**
+ * A Mirth Rule Builder rule, whose field and values are JavaScript
+ * expressions. An MSH field (`msg['MSH']['MSH.9']['MSH.9.1'].toString()`)
+ * compared with quoted text becomes an engine Rule Builder rule, with no
+ * values read as Mirth's comparison with empty text; any other expression
+ * becomes the JavaScript Mirth itself generates, which the script check reads
+ * like any other. A legacy rule that carries only its generated script keeps
+ * it. An enabled rule with no field or an unknown condition stays a Rule
+ * Builder rule the deploy refuses, with a preview warning.
+ */
+function ruleBuilderRule(rule: MirthRule, sink: WarningSink): RuleBuilderFields {
+  const field = rule.field?.trim() ?? '';
+  if (field === '' && rule.script) return { type: 'JAVASCRIPT', script: rule.script, field: null, condition: null, values: [] };
+  const condition = RULE_BUILDER_CONDITION[rule.condition ?? ''];
+  if (field === '' || condition === undefined) {
+    if (rule.enabled) {
+      sink.warnings.push(`Channel "${sink.channelName}": Rule Builder rule "${rule.name ?? ''}" has ${field === '' ? 'no field' : `the unknown condition "${rule.condition ?? ''}"`}; it will not deploy until it is rewritten`);
+    }
+    return { type: 'RULE_BUILDER', script: null, field, condition: rule.condition, values: [...rule.values] };
+  }
+  const path = hl7FieldPath(field);
+  const texts = rule.values.map(quotedText);
+  const literals = texts.filter((t): t is string => t !== null);
+  if (path !== null && literals.length === texts.length) {
+    const values = condition.endsWith('EXISTS') ? [] : literals.length > 0 ? literals : [''];
+    return { type: 'RULE_BUILDER', script: null, field: path, condition, values };
+  }
+  return { type: 'JAVASCRIPT', script: mirthRuleScript(field, rule.condition ?? '', rule.values), field: null, condition: null, values: [] };
+}
+
+/** `msg['SEG']['SEG.n']...` with an optional `.toString()`: the bracketed names. */
+const E4X_FIELD = /^msg((?:\[\s*(?:'[^'\\]+'|"[^"\\]+")\s*\])+)(?:\.toString\(\))?$/;
+
+/**
+ * The HL7 path (`MSH.9.1`) of an E4X field in MSH, or null. Only MSH: it
+ * occurs once and its fields do not repeat, so the engine's first-occurrence
+ * read agrees with Mirth's. In other segments a segment or field can repeat,
+ * where Mirth's comparison sees every repetition.
+ */
+function hl7FieldPath(field: string): string | null {
+  const brackets = E4X_FIELD.exec(field)?.[1];
+  if (brackets === undefined) return null;
+  const names = [...brackets.matchAll(/\[\s*['"]([^'"]+)['"]\s*\]/g)].map((m) => m[1] ?? '');
+  const last = names[names.length - 1] ?? '';
+  return names[0] === 'MSH' && last.startsWith('MSH.') ? last : null;
+}
+
+/** The text of a quoted JavaScript string with no escapes (`"ORM"`, `'ORM'`), or null. */
+function quotedText(value: string): string | null {
+  return /^(['"])([^'"\\]*)\1$/.exec(value.trim())?.[2] ?? null;
+}
+
+/** The script Mirth's RuleBuilderRule.getScript generates for a field, condition and values. */
+function mirthRuleScript(field: string, condition: string, values: readonly string[]): string {
+  const negated = condition.startsWith('NOT_');
+  const join = negated ? ' && ' : ' || ';
+  let test: string;
+  if (condition === 'EXISTS' || condition === 'NOT_EXIST') {
+    test = `${field}.length ${negated ? '==' : '>'} 0`;
+  } else if (condition === 'CONTAINS' || condition === 'NOT_CONTAIN') {
+    const eq = negated ? '==' : '!=';
+    test = values.length > 0 ? values.map((v) => `(${field}.indexOf(${v}) ${eq} -1)`).join(join) : `${field}.indexOf("") ${eq} -1`;
+  } else {
+    const eq = negated ? '!=' : '==';
+    test = values.length > 0 ? values.map((v) => `${field} ${eq} ${v}`).join(join) : `${field} ${eq} ""`;
+  }
+  return `if(${test}) {\n\treturn true;\n}\nreturn false;`;
 }
 
 /** The `<string>` children of a Mirth string list (`<values><string>a</string></values>`), or a bare array; [] when there are none. */
@@ -1134,10 +1619,21 @@ function withDelimitedOptions(props: Record<string, unknown>, dataType: string):
   return { ...props, delimited };
 }
 
-/** Warnings for Mirth Delimited settings that read differently here. */
-function delimitedWarnings(channelName: string, transformer: ChannelExportEntry['transformers'][number] | undefined): string[] {
+/** Mirth's XML view of a Delimited message: `msg['row']` or `msg.row`. */
+const MIRTH_ROW_ACCESS = /\bmsg\s*(?:\[\s*['"]row['"]\s*\]|\.row\b)/;
+
+/**
+ * Warnings for a Delimited source that reads differently here: fixed-width
+ * columns, and scripts that read rows Mirth's way.
+ */
+function delimitedWarnings(entry: Pick<ChannelExportEntry, 'name' | 'scripts' | 'filters' | 'transformers'>): string[] {
+  const channelName = entry.name;
+  const transformer = entry.transformers.find((t) => (t.metaDataId ?? null) === null);
   if (transformer?.inboundDataType !== 'DELIMITED') return [];
-  const warnings = [`Channel "${channelName}": Delimited messages arrive as an array of rows keyed by column name; read msg[0].column, not msg['row']['column']`];
+  const warnings: string[] = [];
+  if (channelScripts(entry).some((s) => MIRTH_ROW_ACCESS.test(s))) {
+    warnings.push(`Channel "${channelName}": Delimited messages arrive as an array of rows keyed by column name; read msg[0].column, not msg['row']['column']`);
+  }
   const widths = getString(transformer.inboundProperties['serializationProperties'], 'columnWidths');
   if (widths !== null && widths.trim() !== '') {
     warnings.push(`Channel "${channelName}": fixed-width columns are not supported; the message is split on the column delimiter instead`);
@@ -1198,13 +1694,18 @@ const MIRTH_ONLY_CONSTRUCTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(?:return|String\()\s*message\b/, "Mirth's 'message' variable: use rawData"],
 ];
 
-/** One warning per channel naming the Mirth-only constructs its scripts use. */
-function mirthScriptWarning(entry: Pick<ChannelExportEntry, 'name' | 'scripts' | 'filters' | 'transformers'>): string | null {
-  const sources = [
+/** Every script in a channel: channel scripts, filter rules and transformer steps. */
+function channelScripts(entry: Pick<ChannelExportEntry, 'scripts' | 'filters' | 'transformers'>): readonly string[] {
+  return [
     ...entry.scripts.map((s) => s.script),
     ...entry.filters.flatMap((f) => f.rules.map((r) => r.script ?? '')),
     ...entry.transformers.flatMap((t) => t.steps.map((s) => s.script ?? '')),
   ];
+}
+
+/** One warning per channel naming the Mirth-only constructs its scripts use. */
+function mirthScriptWarning(entry: Pick<ChannelExportEntry, 'name' | 'scripts' | 'filters' | 'transformers'>): string | null {
+  const sources = channelScripts(entry);
   const found = MIRTH_ONLY_CONSTRUCTS.filter(([pattern]) => sources.some((s) => pattern.test(s))).map(([, hint]) => hint);
   if (found.length === 0) return null;
   return `Channel "${entry.name}": its scripts use Mirth-only constructs that will fail until rewritten: ${found.join('; ')}`;

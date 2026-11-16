@@ -67,8 +67,8 @@ const MIRTH_COMMON = [
 ];
 
 /**
- * Mirth's DICOM Listener properties, which the importer copies (it has no
- * DICOM mapping) and nothing reads (DICOMReceiverProperties.java).
+ * Mirth's DICOM Listener properties, which the importer copied before it
+ * mapped DICOM (#171) and nothing reads (DICOMReceiverProperties.java).
  */
 const SOURCE_LEGACY_KEYS: ReadonlySet<string> = new Set([
   ...MIRTH_COMMON, 'listenerConnectorProperties', 'sourceConnectorProperties', 'requestTo', 'idleTo', 'rspDelay', 'bigEndian',

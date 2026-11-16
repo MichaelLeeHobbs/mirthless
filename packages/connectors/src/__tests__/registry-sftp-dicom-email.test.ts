@@ -38,7 +38,7 @@ describe('registry DICOM factories', () => {
     })).not.toThrow();
   });
 
-  // The importer copies every Mirth DICOM property, with the values as text.
+  // Before it mapped DICOM (#171), the importer copied every Mirth DICOM property, with the values as text.
   it('build an imported sender, its Mirth keys dropped', () => {
     expect(() => createDestinationConnector('DICOM', {
       pluginProperties: '', destinationConnectorProperties: {}, host: 'pacs', port: '104', applicationEntity: 'PACS1', template: '${DICOMMESSAGE}', tls: 'notls',

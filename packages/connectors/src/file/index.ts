@@ -15,5 +15,6 @@ export {
 export {
   FileDispatcher,
   resolveOutputFilename,
+  unknownPlaceholders,
   type FileDispatcherConfig,
 } from './file-dispatcher.js';

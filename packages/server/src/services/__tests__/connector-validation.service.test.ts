@@ -225,10 +225,18 @@ describe('validateConnectorProperties', () => {
     });
 
     it('rejects a DATABASE key it does not know, naming it', () => {
-      const result = validateConnectorProperties('DATABASE', 'source', { host: 'db', database: 'lab', selectQuery: 'SELECT 1', url: 'jdbc:postgresql://db/lab' });
+      const result = validateConnectorProperties('DATABASE', 'source', { host: 'db', database: 'lab', selectQuery: 'SELECT 1', connectionString: 'jdbc:postgresql://db/lab' });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.message).toContain('url');
+      expect(result.error.message).toContain('connectionString');
+    });
+
+    // The Mirth importer wrote url, driver and a reader's SELECT as query until 2026-11-12 (#227).
+    it('deploys a Database Reader the Mirth importer wrote before 2026-11-12 once its host, database and select query are filled in', () => {
+      const imported = { url: 'jdbc:postgresql://db/lab', driver: 'org.postgresql.Driver', query: 'SELECT 1', host: 'db', database: 'lab' };
+      expect(validateConnectorProperties('DATABASE', 'source', { ...imported, selectQuery: 'SELECT 2' })).toMatchObject({ ok: true });
+      // The old query alone is not a select query: that reader never deployed and must not start now.
+      expect(validateConnectorProperties('DATABASE', 'source', imported)).toMatchObject({ ok: false, error: { message: expect.stringContaining('selectQuery') } });
     });
 
     it('rejects a DATABASE source that would update rows with no update query', () => {

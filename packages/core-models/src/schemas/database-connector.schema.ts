@@ -13,6 +13,7 @@ import { z } from 'zod/v4';
 import {
   connectorPortSchema,
   pollingIntervalSchema,
+  withoutKeys,
   sourceCommonProperties,
   destinationCommonProperties,
 } from './connector-property-fields.js';
@@ -74,13 +75,28 @@ export const databaseDestinationObjectSchema = z.strictObject({
   ...destinationCommonProperties,
 });
 
+/**
+ * Keys the Mirth importer wrote from 2026-03-03 until 2026-11-12 and nothing
+ * read (#227). Such a channel deployed once its host, database and query were
+ * filled in, and the editor cannot remove a key, so they are dropped.
+ */
+const MIRTH_IMPORT_KEYS: ReadonlySet<string> = new Set(['url', 'driver']);
+
+/**
+ * A source also drops the importer's `query` (its SELECT). It is never read as
+ * the select query: a reader with only that never deployed, and starting it
+ * now would run a SELECT nobody sees, with no update query, re-reading the
+ * same rows every poll. It still refuses, naming `selectQuery`.
+ */
+const MIRTH_IMPORT_SOURCE_KEYS: ReadonlySet<string> = new Set([...MIRTH_IMPORT_KEYS, 'query']);
+
 /** The source schema, needing an update query whenever the update mode runs one. */
-export const databaseSourcePropertiesSchema = databaseSourceObjectSchema.superRefine((props, ctx) => {
+export const databaseSourcePropertiesSchema = z.preprocess((value) => withoutKeys(value, MIRTH_IMPORT_SOURCE_KEYS), databaseSourceObjectSchema.superRefine((props, ctx) => {
   if (props.updateMode !== 'NEVER' && props.updateQuery.trim() === '') {
     ctx.addIssue({ code: 'custom', path: ['updateQuery'], message: `required when updateMode is ${props.updateMode}` });
   }
-});
+}));
 export type DatabaseSourceProperties = z.infer<typeof databaseSourceObjectSchema>;
 
-export const databaseDestinationPropertiesSchema = databaseDestinationObjectSchema;
+export const databaseDestinationPropertiesSchema = z.preprocess((value) => withoutKeys(value, MIRTH_IMPORT_KEYS), databaseDestinationObjectSchema);
 export type DatabaseDestinationProperties = z.infer<typeof databaseDestinationObjectSchema>;
