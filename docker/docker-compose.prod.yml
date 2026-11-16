@@ -33,7 +33,13 @@ services:
     env_file:
       - ../.env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-galvaniflow}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-galvaniflow}
+      # Two database roles (D-307, docs/ops/upgrade.md#database-roles). The
+      # server connects as POSTGRES_APP_USER, which owns no tables and holds only
+      # the grants it needs. POSTGRES_USER, the superuser that owns the tables,
+      # runs the migrations at container start and creates and grants the app
+      # role; the entrypoint then drops its credentials before the server starts.
+      DATABASE_URL: postgresql://${POSTGRES_APP_USER:-galvaniflow_app}:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD is required, see docs/ops/upgrade.md#database-roles}@db:5432/${POSTGRES_DB:-galvaniflow}
+      MIGRATION_DATABASE_URL: postgresql://${POSTGRES_USER:-galvaniflow}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-galvaniflow}
     expose:
       - "3000"
     ports:

@@ -19,7 +19,12 @@ version you run is the commit you have checked out. Tag or pin that commit.
 
 1. Copy `.env.production.example` to `.env` at the repository root and fill in every
    `CHANGE_ME`:
-   - `POSTGRES_PASSWORD`: required; compose refuses to start without it.
+   - `POSTGRES_PASSWORD`: required; compose refuses to start without it. The password of
+     the superuser that owns the tables and runs migrations.
+   - `POSTGRES_APP_PASSWORD`: required, and different. The server connects as its own role
+     (`galvaniflow_app`), which owns no tables; the migration step creates it with this
+     password. Use letters and digits only (`openssl rand -hex 24`) for both, as they go into
+     connection URLs. See [Database roles](upgrade.md#database-roles).
    - `JWT_SECRET`: at least 32 random characters (`openssl rand -base64 48`).
    - `CONTENT_ENCRYPTION_KEY`: 64 hex characters (`openssl rand -hex 32`). Set it
      before you create anything. Data source passwords are stored encrypted with it,
@@ -36,8 +41,9 @@ version you run is the commit you have checked out. Tag or pin that commit.
    docker compose -f docker/docker-compose.prod.yml up -d --build
    ```
 
-   The server container runs migrations, then an idempotent seed, then starts. A failed
-   migration stops the container rather than serving a half-migrated schema.
+   The server container runs migrations as the owner, grants and checks its own role, then
+   runs an idempotent seed and starts as that role. A failed migration or role check stops
+   the container rather than serving a half-migrated schema or running as the superuser.
 3. Sign in at `FRONTEND_URL` as `admin` / `Admin123!`. You must choose a new password
    before anything else works. Do this immediately: until you do, the admin account is
    on a published default password.

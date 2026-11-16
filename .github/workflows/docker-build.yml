@@ -54,18 +54,22 @@ jobs:
       - name: Build server image
         run: docker build -f docker/Dockerfile.server -t galvaniflow-server:smoke .
 
+      # Migrates as the owner, then creates and grants the server's own role
+      # and runs the seed and server as it (D-307).
       - name: Run server container (migrates + seeds on start)
         run: |
           docker run -d --name galvaniflow-smoke --network host \
-            -e DATABASE_URL=postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test \
+            -e MIGRATION_DATABASE_URL=postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test \
+            -e DATABASE_URL=postgresql://galvaniflow_app:smoke_app_password@localhost:5432/galvaniflow_test \
             -e JWT_SECRET=ci-smoke-secret-that-is-at-least-32-characters \
             -e NODE_ENV=production \
             galvaniflow-server:smoke
 
-      - name: Wait for /health/live
+      # /health/ready queries the database, so it proves the server's role works.
+      - name: Wait for /health/ready
         run: |
           for i in $(seq 1 45); do
-            if curl -fsS http://localhost:3000/health/live; then
+            if curl -fsS http://localhost:3000/health/ready; then
               echo "server healthy"
               exit 0
             fi
