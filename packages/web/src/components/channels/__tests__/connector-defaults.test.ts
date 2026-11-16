@@ -12,6 +12,8 @@ import {
   FILE_SOURCE_DEFAULTS,
   JAVASCRIPT_SOURCE_DEFAULTS,
   CHANNEL_SOURCE_DEFAULTS,
+  DICOM_SOURCE_DEFAULTS,
+  EMAIL_SOURCE_DEFAULTS,
   getDefaultProperties,
 } from '../source/connector-defaults.js';
 import {
@@ -23,6 +25,7 @@ import {
   JAVASCRIPT_DEST_DEFAULTS,
   CHANNEL_DEST_DEFAULTS,
   FHIR_DEST_DEFAULTS,
+  DICOM_DEST_DEFAULTS,
   SMTP_DEST_DEFAULTS,
   getDestDefaultProperties,
   createDefaultDestination,
@@ -42,6 +45,11 @@ import {
   channelDestinationPropertiesSchema,
   fhirDestinationPropertiesSchema,
   smtpDestinationPropertiesSchema,
+  dicomSourcePropertiesSchema,
+  dicomDestinationPropertiesSchema,
+  emailSourcePropertiesSchema,
+  sftpSourcePropertiesSchema,
+  sftpDestinationPropertiesSchema,
   httpSourcePropertiesSchema,
   httpDestinationPropertiesSchema,
   databaseSourcePropertiesSchema,
@@ -166,7 +174,7 @@ describe('JAVASCRIPT defaults match the core-models schema', () => {
   });
 });
 
-describe('CHANNEL, FHIR and SMTP defaults match the core-models schemas', () => {
+describe('CHANNEL, FHIR, SMTP, DICOM, EMAIL and SFTP defaults match the core-models schemas', () => {
   // The schema returns the defaults unchanged once the fields a user must fill
   // in are set (deploy sets the CHANNEL source's id): it rejects unknown keys,
   // and it would add any defaulted key the form left out.
@@ -175,6 +183,11 @@ describe('CHANNEL, FHIR and SMTP defaults match the core-models schemas', () => 
     ['CHANNEL destination', channelDestinationPropertiesSchema, { ...CHANNEL_DEST_DEFAULTS, targetChannelId: 'c2' }],
     ['FHIR destination', fhirDestinationPropertiesSchema, { ...FHIR_DEST_DEFAULTS, baseUrl: 'https://fhir.example/r4' }],
     ['SMTP destination', smtpDestinationPropertiesSchema, { ...SMTP_DEST_DEFAULTS, host: 'mail', from: 'a@x', to: 'b@x' }],
+    ['DICOM source', dicomSourcePropertiesSchema, { ...DICOM_SOURCE_DEFAULTS, storageDir: '/dicom' }],
+    ['DICOM destination', dicomDestinationPropertiesSchema, DICOM_DEST_DEFAULTS],
+    ['EMAIL source', emailSourcePropertiesSchema, { ...EMAIL_SOURCE_DEFAULTS, host: 'imap', username: 'u', password: 'p' }],
+    ['SFTP source', sftpSourcePropertiesSchema, { ...SFTP_SOURCE_DEFAULTS, host: 'h', username: 'u', password: 'p', remoteDirectory: '/in', hostKey: 'k' }],
+    ['SFTP destination', sftpDestinationPropertiesSchema, { ...SFTP_DEST_DEFAULTS, host: 'h', username: 'u', password: 'p', remoteDirectory: '/out', hostKey: 'k' }],
   ] as const)('%s', (_name, schema, filled) => {
     expect(schema.parse(filled)).toEqual(filled);
   });

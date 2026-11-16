@@ -480,6 +480,31 @@ describe('EngineManager', () => {
     });
   });
 
+  // A DICOM Sender imported from Mirth carries Mirth's default template, which means "the message".
+  describe('destination templates', () => {
+    const dicomDest = (template: string): Record<string, unknown> => ({
+      id: 'dest-1', metaDataId: 1, name: 'PACS', enabled: true, connectorType: 'DICOM',
+      properties: { host: 'pacs', port: 104, template },
+      queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 5000, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
+    });
+    const templateGiven = async (template: string): Promise<unknown> => {
+      const { MessageProcessor } = await import('@galvaniflow/engine');
+      const ctor = vi.mocked(MessageProcessor);
+      ctor.mockClear();
+      await new EngineManager('test-server').deploy(makeChannel({ destinations: [dicomDest(template)] }) as never);
+      const pipeline = ctor.mock.calls[0]?.[3] as { destinations: ReadonlyArray<{ template?: string }> };
+      return pipeline.destinations[0]?.template;
+    };
+
+    it("sends the message itself for Mirth's ${DICOMMESSAGE}, not the text", async () => {
+      expect(await templateGiven('${DICOMMESSAGE}')).toBeUndefined();
+    });
+
+    it('keeps any other template', async () => {
+      expect(await templateGiven('${message.encodedData}')).toBe('${message.encodedData}');
+    });
+  });
+
   describe('deploy with JavaScript connectors', () => {
     it('wires ScriptRunner for JavaScript source connector', async () => {
       const channel = makeChannel({

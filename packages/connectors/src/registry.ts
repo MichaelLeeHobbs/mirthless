@@ -25,8 +25,8 @@ import { ChannelDispatcher } from './channel/channel-dispatcher.js';
 import { FhirDispatcher, type FhirDispatcherConfig } from './fhir/fhir-dispatcher.js';
 import { DicomReceiver } from './dicom/dicom-receiver.js';
 import { DicomDispatcher } from './dicom/dicom-dispatcher.js';
-import { EmailReceiver, EMAIL_POST_ACTION, type EmailPostAction, type EmailProtocol } from './email/email-receiver.js';
-import { SftpReceiver, SFTP_POST_ACTION, type SftpPostAction } from './sftp/sftp-receiver.js';
+import { EmailReceiver } from './email/email-receiver.js';
+import { SftpReceiver } from './sftp/sftp-receiver.js';
 import { SftpDispatcher } from './sftp/sftp-dispatcher.js';
 import { KafkaReceiver } from './kafka/kafka-receiver.js';
 import { KafkaDispatcher } from './kafka/kafka-dispatcher.js';
@@ -53,24 +53,13 @@ import {
   channelDestinationPropertiesSchema,
   fhirDestinationPropertiesSchema,
   smtpDestinationPropertiesSchema,
+  dicomSourcePropertiesSchema,
+  dicomDestinationPropertiesSchema,
+  emailSourcePropertiesSchema,
+  sftpSourcePropertiesSchema,
+  sftpDestinationPropertiesSchema,
   formatPropertyIssues,
 } from '@galvaniflow/core-models';
-
-/** A plain decimal number as text: optional sign, digits with an optional dot and fraction, or a dot and fraction. */
-const DECIMAL_TEXT = /^[+-]?(?:\d+\.?\d*|\.\d+)$/;
-
-/**
- * A config property as a finite number, or `fallback`. A plain decimal string
- * (trimmed) is read too, because a `${name}` configuration map reference
- * resolves to text at deploy (`"6661"` for a port). Anything else falls back:
- * blank text, booleans, hex or exponent text, NaN and Infinity.
- */
-export function num(props: Record<string, unknown>, key: string, fallback: number): number {
-  const v = props[key];
-  if (typeof v === 'number') return Number.isFinite(v) ? v : fallback;
-  if (typeof v === 'string' && DECIMAL_TEXT.test(v.trim())) return Number(v);
-  return fallback;
-}
 
 /** A database connector's vendor (PostgreSQL when unset) and port, the port defaulting to the vendor's own. */
 export function databaseTarget(props: { readonly vendor?: DatabaseVendor | undefined; readonly port?: number | undefined }): { vendor: DatabaseVendor; port: number } {
@@ -248,6 +237,36 @@ export function smtpDispatcherConfig(props: Record<string, unknown>): SmtpDispat
   return { ...config, ...(authUser ? { auth: { user: authUser, pass: authPass ?? '' } } : {}) };
 }
 
+/** A DICOM Listener: schema-checked props. */
+function dicomReceiver(props: Record<string, unknown>): DicomReceiver {
+  const { processBatch: _processBatch, ...config } = parseProps('DICOM', dicomSourcePropertiesSchema, props);
+  return new DicomReceiver(config);
+}
+
+/** A DICOM Sender: schema-checked props. */
+function dicomDispatcher(props: Record<string, unknown>): DicomDispatcher {
+  const { template: _template, ...config } = parseProps('DICOM', dicomDestinationPropertiesSchema, props);
+  return new DicomDispatcher(config);
+}
+
+/** An Email (IMAP) Reader: schema-checked props. */
+function emailReceiver(props: Record<string, unknown>): EmailReceiver {
+  const { processBatch: _processBatch, ...config } = parseProps('EMAIL', emailSourcePropertiesSchema, props);
+  return new EmailReceiver(config);
+}
+
+/** An SFTP Reader: schema-checked props. */
+function sftpReceiver(props: Record<string, unknown>): SftpReceiver {
+  const { processBatch: _processBatch, ...config } = parseProps('SFTP', sftpSourcePropertiesSchema, props);
+  return new SftpReceiver(config);
+}
+
+/** An SFTP Writer: schema-checked props. */
+function sftpDispatcher(props: Record<string, unknown>): SftpDispatcher {
+  const { template: _template, ...config } = parseProps('SFTP', sftpDestinationPropertiesSchema, props);
+  return new SftpDispatcher(config);
+}
+
 // ----- Source Factories -----
 
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
@@ -259,49 +278,9 @@ const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnec
   ['DATABASE', databaseReceiver],
   ['JAVASCRIPT', javascriptReceiver],
   ['CHANNEL', channelReceiver],
-  ['DICOM', (props): SourceConnectorRuntime => new DicomReceiver({
-    port: num(props, 'port', 0),
-    storageDir: props['storageDir'] as string,
-    aeTitle: (props['aeTitle'] as string | undefined) ?? 'GALVANIFLOW',
-    minPoolSize: num(props, 'minPoolSize', 2),
-    maxPoolSize: num(props, 'maxPoolSize', 10),
-    connectionTimeoutMs: num(props, 'connectionTimeoutMs', 10_000),
-    dispatchMode: (props['dispatchMode'] as 'PER_FILE' | 'PER_ASSOCIATION' | undefined) ?? 'PER_FILE',
-    postAction: (props['postAction'] as 'DELETE' | 'MOVE' | 'NONE' | undefined) ?? 'DELETE',
-    moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
-  })],
-  ['EMAIL', (props): SourceConnectorRuntime => new EmailReceiver({
-    host: props['host'] as string,
-    port: num(props, 'port', 993),
-    secure: (props['secure'] as boolean | undefined) ?? true,
-    username: (props['username'] as string | undefined) ?? '',
-    password: (props['password'] as string | undefined) ?? '',
-    protocol: (props['protocol'] as EmailProtocol | undefined) ?? 'IMAP',
-    folder: (props['folder'] as string | undefined) ?? 'INBOX',
-    pollingIntervalMs: num(props, 'pollingIntervalMs', 60_000),
-    postAction: (props['postAction'] as EmailPostAction | undefined) ?? EMAIL_POST_ACTION.MARK_READ,
-    moveToFolder: (props['moveToFolder'] as string | undefined) ?? '',
-    subjectFilter: (props['subjectFilter'] as string | undefined) ?? '',
-    includeAttachments: (props['includeAttachments'] as boolean | undefined) ?? false,
-  })],
-  ['SFTP', (props): SourceConnectorRuntime => new SftpReceiver({
-    host: props['host'] as string,
-    port: num(props, 'port', 22),
-    username: props['username'] as string,
-    password: props['password'] as string | undefined,
-    privateKey: props['privateKey'] as string | undefined,
-    passphrase: props['passphrase'] as string | undefined,
-    remoteDirectory: props['remoteDirectory'] as string,
-    filePattern: (props['filePattern'] as string | undefined) ?? '*',
-    pollingIntervalMs: num(props, 'pollingIntervalMs', 5_000),
-    afterProcessing: (props['afterProcessing'] as SftpPostAction | undefined) ?? SFTP_POST_ACTION.DELETE,
-    moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
-    minFileAgeMs: num(props, 'minFileAgeMs', 1_000),
-    ignoreDot: (props['ignoreDot'] as boolean | undefined) ?? true,
-    strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
-    hostKey: props['hostKey'] as string | undefined,
-    charset: (props['charset'] as string | undefined) ?? 'utf-8',
-  })],
+  ['DICOM', dicomReceiver],
+  ['EMAIL', emailReceiver],
+  ['SFTP', sftpReceiver],
   ['KAFKA', (props): SourceConnectorRuntime => new KafkaReceiver(parseQueueProps('KAFKA', kafkaSourcePropertiesSchema, props))],
   ['AMQP', (props): SourceConnectorRuntime => new AmqpReceiver(parseQueueProps('AMQP', amqpSourcePropertiesSchema, props))],
 ]);
@@ -319,30 +298,8 @@ const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<De
   ['SMTP', (props): DestinationConnectorRuntime => new SmtpDispatcher(smtpDispatcherConfig(props))],
   ['CHANNEL', channelDispatcher],
   ['FHIR', (props): DestinationConnectorRuntime => new FhirDispatcher(fhirDispatcherConfig(props))],
-  ['DICOM', (props): DestinationConnectorRuntime => new DicomDispatcher({
-    host: props['host'] as string,
-    port: num(props, 'port', 0),
-    calledAETitle: (props['calledAETitle'] as string | undefined) ?? 'PACS',
-    callingAETitle: (props['callingAETitle'] as string | undefined) ?? 'GALVANIFLOW',
-    mode: (props['mode'] as 'single' | 'multiple' | undefined) ?? 'multiple',
-    maxAssociations: num(props, 'maxAssociations', 4),
-    maxRetries: num(props, 'maxRetries', 3),
-    retryDelayMs: num(props, 'retryDelayMs', 1_000),
-    timeoutMs: num(props, 'timeoutMs', 30_000),
-  })],
-  ['SFTP', (props): DestinationConnectorRuntime => new SftpDispatcher({
-    host: props['host'] as string,
-    port: num(props, 'port', 22),
-    username: props['username'] as string,
-    password: props['password'] as string | undefined,
-    privateKey: props['privateKey'] as string | undefined,
-    passphrase: props['passphrase'] as string | undefined,
-    remoteDirectory: props['remoteDirectory'] as string,
-    fileNameTemplate: (props['fileNameTemplate'] as string | undefined) ?? '${messageId}.dat',
-    appendMode: (props['appendMode'] as boolean | undefined) ?? false,
-    strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
-    hostKey: props['hostKey'] as string | undefined,
-  })],
+  ['DICOM', dicomDispatcher],
+  ['SFTP', sftpDispatcher],
   ['KAFKA', (props): DestinationConnectorRuntime => new KafkaDispatcher(parseQueueProps('KAFKA', kafkaDestinationPropertiesSchema, props))],
   ['AMQP', (props): DestinationConnectorRuntime => new AmqpDispatcher(parseQueueProps('AMQP', amqpDestinationPropertiesSchema, props))],
 ]);
