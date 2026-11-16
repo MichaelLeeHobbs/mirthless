@@ -66,14 +66,14 @@ const mockReturning = vi.fn();
 const mockInsertValues = vi.fn().mockReturnValue({ returning: mockReturning });
 const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 
-const mockDeleteReturning = vi.fn();
-const mockDeleteWhere = vi.fn().mockReturnValue({ returning: mockDeleteReturning });
-const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
+const mockDelete = vi.fn();
+const mockExecute = vi.fn();
 
 const mockDb = {
   select: mockSelect,
   insert: mockInsert,
   delete: mockDelete,
+  execute: mockExecute,
 };
 
 vi.mock('../../lib/db.js', () => ({
@@ -93,6 +93,7 @@ vi.mock('drizzle-orm', () => ({
 }));
 
 const { EventService } = await import('../event.service.js');
+const { sql } = await import('drizzle-orm');
 
 // ----- Fixtures -----
 
@@ -373,25 +374,38 @@ describe('EventService', () => {
   // ===== purge =====
 
   describe('purge', () => {
-    it('deletes old events and returns count', async () => {
-      mockDeleteReturning.mockResolvedValueOnce([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    it('purges through the owner function, not a DELETE, and returns its count', async () => {
+      mockExecute.mockResolvedValueOnce({ rows: [{ deleted: '3' }] });
+      mockReturning.mockResolvedValueOnce([makeEventRow({ name: 'EVENTS_PURGED' })]);
 
       const result = await EventService.purge(90);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.deleted).toBe(3);
-      expect(mockDelete).toHaveBeenCalled();
+      // The server's database role may not DELETE from events (D-307).
+      expect(mockDelete).not.toHaveBeenCalled();
+      const [strings, ...values] = vi.mocked(sql).mock.calls.at(-1) ?? [];
+      expect((strings as readonly string[]).join('?')).toBe('SELECT public.purge_events(?::integer) AS deleted');
+      expect(values).toEqual([90]);
     });
 
     it('returns zero when no events match', async () => {
-      mockDeleteReturning.mockResolvedValueOnce([]);
+      mockExecute.mockResolvedValueOnce({ rows: [{ deleted: 0 }] });
 
       const result = await EventService.purge(1);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.deleted).toBe(0);
+    });
+
+    it('returns the database error, such as the function refusing the age', async () => {
+      mockExecute.mockRejectedValueOnce(new Error('older_than_days must be at least 1, got 0'));
+
+      const result = await EventService.purge(0);
+
+      expect(result.ok).toBe(false);
     });
   });
 });

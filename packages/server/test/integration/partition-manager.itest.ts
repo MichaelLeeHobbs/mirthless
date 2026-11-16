@@ -8,7 +8,9 @@
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
+import {
+  deleteTestChannel, describeIntegration, insertTestChannel, loadServerModules, unwrap, type ServerModules,
+} from './_setup.js';
 
 describeIntegration('PartitionManager (real Postgres)', () => {
   let mods: ServerModules;
@@ -30,6 +32,7 @@ describeIntegration('PartitionManager (real Postgres)', () => {
   it('createPartitions creates the channel\'s partitions, idempotently, and rows land in them', async () => {
     const { PartitionManagerService, db, sql } = mods;
     const channelId = randomUUID();
+    await insertTestChannel(mods, channelId);
     try {
       unwrap(await PartitionManagerService.createPartitions(channelId));
       // Idempotent: channel import asks again for a channel that may have them.
@@ -42,7 +45,18 @@ describeIntegration('PartitionManager (real Postgres)', () => {
       expect(inserted.rows[0]?.part).toBe(`messages_p_${channelId.replace(/-/g, '_')}`);
     } finally {
       unwrap(await PartitionManagerService.dropPartitions(channelId));
+      await deleteTestChannel(mods, channelId);
     }
+  });
+
+  it('createPartitions returns a Failure, and creates nothing, for an id with no channel', async () => {
+    const { PartitionManagerService } = mods;
+    const channelId = randomUUID();
+
+    const created = await PartitionManagerService.createPartitions(channelId);
+
+    expect(created.ok).toBe(false);
+    expect(unwrap(await PartitionManagerService.partitionExists(channelId))).toBe(false);
   });
 
   it('createPartitions returns a Failure for an id that is not a uuid', async () => {
