@@ -390,7 +390,7 @@ galvaniflow/             — repository root (the GitHub repository is still nam
 ├── docker/              — Dockerfiles, Compose (development and production), nginx
 ├── docs/design/         — Design documents and dated analyses (00-18)
 ├── docs/ops/            — Deployment, TLS, backup, upgrade, soak test
-├── docs/progress/       — Roadmap, changelog, decisions
+├── docs/progress/       — Roadmap, decisions
 ├── docs/standards/      — Coding, logging, and config standards
 ├── docs/testing/        — Manual test scenarios
 ├── docs/user/           — User documentation (connector reference, quickstart, scripting API)
@@ -422,10 +422,11 @@ The original NextGen Connect source is at `reference/connect/` for architecture 
 | Doc | Purpose | When to Update |
 |-----|---------|---------------|
 | [`docs/progress/ROADMAP.md`](docs/progress/ROADMAP.md) | What's planned, not started | Check off items as they ship, add new items as they emerge |
-| [`docs/progress/CHANGELOG.md`](docs/progress/CHANGELOG.md) | What was built, session by session | Add an entry at the end of each working session |
 | [`docs/progress/DECISIONS.md`](docs/progress/DECISIONS.md) | Why we chose X over Y | Add whenever a non-obvious architectural or design choice is made |
 
-**Do NOT duplicate what git tracks.** These docs capture what git cannot: plans, rationale, and session context.
+**Do NOT duplicate what git tracks.** These docs capture what git cannot: plans and rationale. What was built, what was checked and what was left out go in the pull request description, not a log file (D-291).
+
+Add a decision at the end of `DECISIONS.md` with the next `D-NNN` number. Git merges the file with `merge=union`, so two branches that add a decision both keep theirs, and a test in `pnpm gate` (`packages/server/src/__tests__/docs/decisions.test.ts`) fails when two decisions share a number. The branch that merges second renumbers its decision and every place that cites it.
 
 Git is the source of truth for what changed and when. Use `git log` for that, not STATUS.md.
 
