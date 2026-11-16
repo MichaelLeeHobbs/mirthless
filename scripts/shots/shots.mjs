@@ -60,6 +60,8 @@ const PAGES = {
   'alert-templates': { url: '/alerts/a1', keys: 'End' },
   'code-templates': '/code-templates',
   'global-scripts': '/global-scripts',
+  // Two editors with different declarations: the one not focused says types are checked when you click in.
+  'channel-scripts': { url: '/channels/c1', click: ['Scripts', 'Deploy Script', 'Preprocessor'] },
   resources: '/resources',
   collections: '/collections',
   'collection-records': '/collections/k1/records',
@@ -123,6 +125,10 @@ async function shoot(browser, name, target, variantName) {
     if (m.type() === 'error' && !m.text().includes('socket.io')) problems.push(`ERR ${m.text().slice(0, 200)}`);
   });
   await page.route('**/socket.io/**', (r) => r.abort());
+  // page.route does not see websockets. Without this the dev server proxies the
+  // socket to whatever listens on port 3000, which refuses the fake token and
+  // signs the page out.
+  await page.routeWebSocket('**/socket.io/**', (ws) => { ws.close(); });
   await page.route('**/api/v1/**', async (r) => {
     const u = new URL(r.request().url());
     if (r.request().method() !== 'GET') return r.fulfill({ json: { success: true, data: null } });
