@@ -6,6 +6,7 @@
 // still enforces authorization on every request.
 
 import { useMemo } from 'react';
+import { holdsPermission } from '@galvanigraph/core-models';
 import { useAuthStore } from '../stores/auth.store.js';
 import type { PermissionString } from '../lib/permissions.js';
 
@@ -24,13 +25,13 @@ export function usePermissions(): PermissionApi {
   const user = useAuthStore((state) => state.user);
 
   return useMemo((): PermissionApi => {
-    const set = new Set<string>(user?.permissions ?? []);
-    const has = (permission: PermissionString): boolean => set.has(permission);
+    const held = user?.permissions;
+    const has = (permission: PermissionString): boolean => holdsPermission(held, permission);
     return {
-      permissions: set,
+      permissions: new Set<string>(held ?? []),
       has,
-      hasAny: (perms): boolean => perms.some((p) => set.has(p)),
-      hasAll: (perms): boolean => perms.every((p) => set.has(p)),
+      hasAny: (perms): boolean => perms.some(has),
+      hasAll: (perms): boolean => perms.every(has),
     };
   }, [user]);
 }

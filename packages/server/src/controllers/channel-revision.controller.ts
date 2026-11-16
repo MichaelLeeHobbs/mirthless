@@ -4,7 +4,7 @@
 // Handles HTTP requests for channel revision history.
 
 import type { Request, Response } from 'express';
-import { AUDIT_ACTION } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, holdsPermission } from '@galvanigraph/core-models';
 import { recordReadBestEffort } from '../lib/audited-read.js';
 import { ChannelRevisionService } from '../services/channel-revision.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
@@ -39,7 +39,7 @@ export class ChannelRevisionController {
 
     // A snapshot carries the full connector config; readers without
     // channels:write get credentials masked exactly as on GET /channels/:id.
-    const canWrite = req.user?.permissions.includes('channels:write') ?? false;
+    const canWrite = holdsPermission(req.user?.permissions, 'channels:write');
     const data = canWrite
       ? result.value
       : { ...result.value, snapshot: redactChannelDetail(result.value.snapshot) };

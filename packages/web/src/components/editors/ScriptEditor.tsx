@@ -136,11 +136,11 @@ export function ScriptEditor({
 
   // Test runs: only inside a channel (which provides the sample) and when editable.
   const testSample = useScriptTestSample();
-  const permissions = usePermissions();
+  const { has } = usePermissions();
   const testRun = useScriptTestRun();
   const [testOpen, setTestOpen] = useState(false);
   // A test run needs the permission to write channel scripts, as the server checks (D-286).
-  const canTest = testKind !== undefined && testSample !== undefined && !readOnly && permissions.has('channels:write');
+  const canTest = testKind !== undefined && testSample !== undefined && !readOnly && has('channels:write');
   const runTest = (): void => {
     if (!canTest) return;
     setTestOpen(true);

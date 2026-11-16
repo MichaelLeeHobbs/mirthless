@@ -12,7 +12,7 @@ import { darkTheme } from '../../../styles/theme.js';
 
 const deployMutate = vi.fn();
 const toggleEnabledMutate = vi.fn();
-let permissions = new Set<string>(['channels:read', 'channels:write', 'channels:deploy', 'channels:delete']);
+let granted = new Set<string>(['channels:read', 'channels:write', 'channels:deploy', 'channels:delete']);
 
 vi.mock('react-router', () => ({ useNavigate: () => vi.fn() }));
 vi.mock('../../../hooks/use-deployment.js', () => ({
@@ -22,7 +22,7 @@ vi.mock('../../../hooks/use-channels.js', () => ({
   useToggleChannelEnabled: () => ({ mutate: toggleEnabledMutate }),
 }));
 vi.mock('../../../hooks/use-permissions.js', () => ({
-  usePermissions: () => ({ has: (p: string) => permissions.has(p) }),
+  usePermissions: () => ({ has: (p: string) => granted.has(p) }),
 }));
 
 import { ChannelContextMenu } from '../ChannelContextMenu.js';
@@ -47,7 +47,7 @@ function renderMenu(props: Partial<Parameters<typeof ChannelContextMenu>[0]> = {
 beforeEach(() => {
   deployMutate.mockClear();
   toggleEnabledMutate.mockClear();
-  permissions = new Set(['channels:read', 'channels:write', 'channels:deploy', 'channels:delete']);
+  granted = new Set(['channels:read', 'channels:write', 'channels:deploy', 'channels:delete']);
 });
 afterEach(() => { cleanup(); });
 
@@ -72,7 +72,7 @@ describe('ChannelContextMenu', () => {
   });
 
   it('hides the Enable/Disable item without channels:write', () => {
-    permissions = new Set(['channels:read']);
+    granted = new Set(['channels:read']);
     renderMenu({ enabled: true });
     expect(screen.queryByText('Disable')).toBeNull();
   });
@@ -97,7 +97,7 @@ describe('ChannelContextMenu', () => {
   });
 
   it('hides Change Group without channels:write', () => {
-    permissions = new Set(['channels:read']);
+    granted = new Set(['channels:read']);
     renderMenu({ onChangeGroup: vi.fn() });
     expect(screen.queryByText('Change Group')).toBeNull();
   });

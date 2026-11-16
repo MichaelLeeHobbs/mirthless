@@ -6,7 +6,7 @@
 // event, once a minute per caller, route and reason (#158).
 
 import type { NextFunction, Request, Response } from 'express';
-import { AUDIT_ACTION, type Permission } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, holdsPermission, type Permission } from '@galvanigraph/core-models';
 import { errorInfo } from '@galvanigraph/core-util';
 import { ServiceError, type ServiceErrorCode } from '../lib/service-error.js';
 import { errorResponse, mapErrorToStatus } from '../lib/controller-helpers.js';
@@ -175,12 +175,12 @@ function guard(permissions: readonly Permission[], passes: (held: readonly strin
  * Typed by the core-models list, so an unknown permission is a compile error.
  */
 export function requirePermission(...permissions: readonly Permission[]): Guard {
-  return guard(permissions, (held) => permissions.some((p) => held.includes(p)));
+  return guard(permissions, (held) => permissions.some((p) => holdsPermission(held, p)));
 }
 
 /**
  * Require user to have all of the specified permissions.
  */
 export function requireAllPermissions(...permissions: readonly Permission[]): Guard {
-  return guard(permissions, (held) => permissions.every((p) => held.includes(p)));
+  return guard(permissions, (held) => permissions.every((p) => holdsPermission(held, p)));
 }

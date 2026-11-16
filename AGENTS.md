@@ -58,6 +58,7 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `parseHeaderLines` in `core-models/src/schemas/http-connector.schema.ts`: header text (`Name: value` per line) to a map, for the HTTP schema and the web headers editor; `headerMapSchema` there is the headers field (text or map) the HTTP and FHIR schemas share. `requiredTextSchema` (text that is not blank) and `pollingIntervalSchema(min, default)` (capped at `MAX_TIMER_DELAY_MS`, the longest delay Node's timers honour) in `core-models/src/schemas/connector-property-fields.ts`. `optionalTlsSchema`, `withoutKeys` and `charsetSchema` in `core-models/src/schemas/connector-property-fields.ts`: a connector schema's optional `tls` object, its dropped legacy keys, and a payload charset with the old names (`UTF-8`, `ISO-8859-1`) mapped; the editor's list of those charsets is `CHARSET_OPTIONS` in `web/src/components/channels/common/charset-options.ts`.
   - `createThrottle` in `core-util/src/throttle.ts`: run a function at most once per interval, at once for the first call and once at the window's end for the calls after it (D-306). The server coalesces live socket events with it (`emitToRoomCoalesced` in `server/src/lib/socket.ts`) and the web throttles their refetches (`useThrottledSocketEvent` in `web/src/hooks/use-socket.ts`).
   - `GlobalChannelMap` in `engine/src/runtime/global-channel-map.ts` is the in-memory script map; `GlobalMapProxy` keeps its entries in one rather than its own `Map`.
+  - `PERMISSION_CATALOG`, `foldGrants`, `can` and `holdsPermission` in `core-models/src/authz/` (D-310): what each permission is and where it may be held, how assignments combine, and the one permission check. Lint fails `permissions.includes` anywhere else.
 - No speculative generalization — design for today's requirements, not hypothetical futures
 - If you find yourself saying "this might be useful later" — stop and don't build it
 
@@ -144,7 +145,7 @@ Tests are mandatory, not optional. This is healthcare software.
 | core-util | 93 | 83 | 92 | 96 |
 | connectors | 89 | 78 | 85 | 91 |
 | server | 57 | 58 | 71 | 57 |
-| core-models | 40 | 49 | 54 | 39 |
+| core-models | 79 | 87 | 90 | 79 |
 | web | 26 | 29 | 23 | 26 |
 
 The server number is low because the controllers, `engine.ts` and several services have few unit tests (the Postgres integration and Playwright suites exercise some of that code but are not counted here). The web number is low because most pages have no component tests. Raising both is on `docs/progress/ROADMAP.md`.
