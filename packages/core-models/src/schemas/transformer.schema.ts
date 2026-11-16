@@ -12,7 +12,7 @@ export const transformerStepInputSchema = z.object({
   name: z.string().max(255).optional(),
   type: z.enum(TRANSFORMER_STEP_TYPES),
   script: z.string().nullable().default(null),
-  /** The language of `script`. Create stores JavaScript when it is left out; update requires it with a script (D-293). */
+  /** The language of `script`. Create stores JavaScript when it is left out; update requires it with a script (D-294). */
   language: scriptLanguageSchema.optional(),
   // Mapper fields (null for other types)
   sourceField: z.string().max(500).nullable().default(null),

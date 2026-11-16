@@ -4,7 +4,7 @@
 // The script of a JavaScript source or destination, in the shared script
 // editor. The script and its language live in the connector's properties
 // (`script`, `scriptLanguage`); a script saved before languages were stored
-// has none and reads as JavaScript (#200, D-295).
+// has none and reads as JavaScript (#200, D-296).
 
 import { type ReactNode } from 'react';
 import type { ScriptSurface } from '@galvaniflow/core-models';

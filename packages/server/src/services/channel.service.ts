@@ -943,7 +943,7 @@ export class ChannelService {
         }
 
         // Update scripts if provided. A language the request leaves out keeps
-        // the stored one (D-293): defaulting it would turn TypeScript into
+        // the stored one (D-294): defaulting it would turn TypeScript into
         // JavaScript and switch off the script's deploy type check.
         if (input.scripts) {
           const { languages, ...scriptsByKey } = input.scripts;
