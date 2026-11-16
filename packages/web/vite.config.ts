@@ -1,7 +1,8 @@
-import { defineConfig } from 'vite';
+import { createLogger, defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { quietWsProxyResets } from './vite-proxy-logger.js';
 
 const pkg = JSON.parse(
   readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8'),
@@ -9,6 +10,9 @@ const pkg = JSON.parse(
 
 export default defineConfig({
   plugins: [react()],
+  // The dev server and `vite preview` both log through this; it drops the websocket
+  // proxy's reset/EPIPE lines from closed tabs and nothing else (#167).
+  customLogger: quietWsProxyResets(createLogger()),
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
