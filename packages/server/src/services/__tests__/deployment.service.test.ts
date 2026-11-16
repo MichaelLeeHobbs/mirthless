@@ -655,9 +655,43 @@ describe('DeploymentService', () => {
       mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b')] }));
       mockListAllDependencies.mockResolvedValue({ ok: false, value: null, error: new Error('db down') });
 
-      await DeploymentService.autoDeployChannels();
+      const result = await DeploymentService.autoDeployChannels();
 
       expect(deployedOrder()).toEqual([]);
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toContain('no channel was redeployed');
+    });
+
+    it('succeeds when every enabled channel redeploys', async () => {
+      mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b')] }));
+      mockListAllDependencies.mockResolvedValue(ok([]));
+
+      const result = await DeploymentService.autoDeployChannels();
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('fails, naming the channels, when the channel list cannot load', async () => {
+      mockChannelService.list.mockResolvedValue({ ok: false, value: null, error: new Error('db down') });
+
+      const result = await DeploymentService.autoDeployChannels();
+
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toContain('db down');
+    });
+
+    it('deploys the other channels when one fails, then fails naming the one that did not deploy', async () => {
+      mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b'), summary('c')] }));
+      mockListAllDependencies.mockResolvedValue(ok([]));
+      mockChannelService.getById.mockImplementation(async (id: string) => (id === 'b'
+        ? { ok: false, value: null, error: new Error('gone') }
+        : ok({ ...CHANNEL_DETAIL, id })));
+
+      const result = await DeploymentService.autoDeployChannels();
+
+      expect(deployedOrder()).toEqual(['a', 'b', 'c']);
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toBe('1 of 3 channels failed to redeploy: ch-b');
     });
   });
 });

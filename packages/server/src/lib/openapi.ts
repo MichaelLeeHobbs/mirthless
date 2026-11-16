@@ -775,20 +775,24 @@ export function generateOpenAPISpec(): OpenAPISpec {
       '/health/ready': {
         get: {
           tags: ['Health'],
-          summary: 'Readiness probe (checks database)',
+          summary: 'Readiness probe (checks database and startup steps)',
           operationId: 'healthReady',
           responses: {
             '200': {
-              description: 'Server is ready',
+              description: 'Server is ready. `degraded` when a startup step failed; `startup.failedSteps` names it',
               content: {
                 'application/json': {
                   schema: {
                     type: 'object',
                     properties: {
-                      status: { type: 'string', enum: ['ok'] },
+                      status: { type: 'string', enum: ['ok', 'degraded'] },
                       database: {
                         type: 'object',
                         properties: { connected: { type: 'boolean' } },
+                      },
+                      startup: {
+                        type: 'object',
+                        properties: { failedSteps: { type: 'array', items: { type: 'string', enum: ['queue', 'pruner-scheduler', 'channel-redeploy'] } } },
                       },
                     },
                   },
@@ -796,7 +800,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
               },
             },
             '503': {
-              description: 'Server not ready',
+              description: 'Server not ready (database unreachable)',
               content: {
                 'application/json': {
                   schema: {
@@ -806,6 +810,10 @@ export function generateOpenAPISpec(): OpenAPISpec {
                       database: {
                         type: 'object',
                         properties: { connected: { type: 'boolean' } },
+                      },
+                      startup: {
+                        type: 'object',
+                        properties: { failedSteps: { type: 'array', items: { type: 'string' } } },
                       },
                     },
                   },
@@ -1143,6 +1151,19 @@ export function generateOpenAPISpec(): OpenAPISpec {
             database: { type: 'object', properties: { connected: { type: 'boolean' } } },
             memory: { type: 'object', properties: { heapUsedMB: { type: 'number' }, heapTotalMB: { type: 'number' } } },
             engine: { type: 'object', properties: { deployedChannels: { type: 'integer' } } },
+            startup: {
+              type: 'object',
+              description: 'Startup steps that failed (queue, pruner-scheduler, channel-redeploy). Any failure makes the status degraded.',
+              properties: {
+                failed: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: { step: { type: 'string' }, errMsg: { type: 'string' }, failedAt: { type: 'string', format: 'date-time' } },
+                  },
+                },
+              },
+            },
           },
         },
       },
