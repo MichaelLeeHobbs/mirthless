@@ -116,10 +116,35 @@ describe('classifyAckResponse control id check', () => {
     expect(result.errorMessage).toContain('CTRL1');
   });
 
-  it('compares the whole control id field, components included', () => {
-    const sent = 'MSH|^~\\&|S|F|R|F|20260101||ADT^A01|ID^X|P|2.5.1';
-    expect(classifyAckResponse(ack('AA', 'ID^X'), controlIdOf(sent)).accepted).toBe(true);
-    expect(classifyAckResponse(ack('AA', 'ID^Y'), controlIdOf(sent)).accepted).toBe(false);
+  describe('a control id with components (#197)', () => {
+    const sentId = controlIdOf('MSH|^~\\&|S|F|R|F|20260101||ADT^A01|ID^X|P|2.5.1');
+
+    it('accepts an acknowledgement that echoes the whole control id', () => {
+      expect(classifyAckResponse(ack('AA', 'ID^X'), sentId).accepted).toBe(true);
+    });
+
+    it('accepts one that echoes only its first component, so the message is not resent', () => {
+      expect(classifyAckResponse(ack('AA', 'ID'), sentId).accepted).toBe(true);
+    });
+
+    it('rejects one whose later component differs', () => {
+      expect(classifyAckResponse(ack('AA', 'ID^Y'), sentId).accepted).toBe(false);
+    });
+
+    it('rejects one for another message', () => {
+      expect(classifyAckResponse(ack('AA', 'OTHER'), sentId).accepted).toBe(false);
+    });
+
+    it('takes the first component with the acknowledgement\'s own component separator', () => {
+      const custom = (id: string): string => `MSH|@~\\&|R|F|S|F|20260101||ACK|X1|P|2.5.1\rMSA|AA|${id}`;
+      expect(classifyAckResponse(custom('ID'), 'ID@X').accepted).toBe(true);
+      expect(classifyAckResponse(custom('ID'), 'ID^X').accepted).toBe(false);
+    });
+
+    it('takes it with ^ when the acknowledgement has no MSH to read', () => {
+      expect(classifyAckResponse('MSA|AA|ID', sentId).accepted).toBe(true);
+      expect(classifyAckResponse('MSA|AA|IDX', sentId).accepted).toBe(false);
+    });
   });
 
   it('accepts the acknowledgement createAck builds for the message sent', () => {
