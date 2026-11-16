@@ -15,7 +15,7 @@ import { scenario, mirthId } from './support/scenario.js';
 const PORT = 16610;
 
 const orm = (accession: string): string => [
-  `MSH|^~\\&|RIS|SITE10|VNS|VNS|20261110120000||ORM^O01|S10${accession}|P|2.3`,
+  `MSH|^~\\&|RIS|SITE10|HUB|HUB|20261110120000||ORM^O01|S10${accession}|P|2.3`,
   `ORC|NW|${accession}`,
 ].join('\r');
 

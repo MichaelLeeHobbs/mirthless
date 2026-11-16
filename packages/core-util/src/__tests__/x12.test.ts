@@ -7,7 +7,7 @@ const X12_270 = [
   'GS*HS*SUBMITTER*RECEIVER*20261110*1200*20*X*005010X279A1~',
   'ST*270*0020*005010X279A1~',
   'NM1*PR*2*ACME HEALTH*****PI*12345~',
-  'NM1*1P*2*VNS IMAGING*****XX*1234567893~',
+  'NM1*1P*2*HUB IMAGING*****XX*1234567893~',
   'NM1*IL*1*DOE*JANE****MI*MEMBER123~',
   'EQ*30**HC:99213~',
   'SE*6*0020~',
@@ -33,7 +33,7 @@ describe('X12Message', () => {
 
   it('returns the segment text for a segment path, and undefined for what is not there', () => {
     const msg = X12Message.parse(X12_270);
-    expect(msg.get('NM1[2]')).toBe('NM1*1P*2*VNS IMAGING*****XX*1234567893');
+    expect(msg.get('NM1[2]')).toBe('NM1*1P*2*HUB IMAGING*****XX*1234567893');
     expect(msg.get('NM1[4].1')).toBeUndefined();
     expect(msg.get('NM1.20')).toBeUndefined();
     expect(msg.get('EQ.3.5')).toBeUndefined();

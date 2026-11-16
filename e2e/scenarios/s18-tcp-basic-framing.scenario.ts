@@ -16,7 +16,7 @@ scenario('S18 TCP listener accepts STX/ETX framed messages and answers in the sa
     destinations: [{ name: 'Store', ...jsWriter('return;') }],
   }), ['S18 Lab Instrument']);
 
-  const ack = await sendFramed(PORT, 'MSH|^~\\&|LAB|S18|VNS|V|20261110120000||ORU^R01|S18CTL|P|2.5\rOBX|1|NM|GLU||98', '\x02', '\x03');
+  const ack = await sendFramed(PORT, 'MSH|^~\\&|LAB|S18|HUB|V|20261110120000||ORU^R01|S18CTL|P|2.5\rOBX|1|NM|GLU||98', '\x02', '\x03');
   expect(ack).toContain('MSA|AA|S18CTL');
   await expect.poll(async () => (await api.messages(ids['S18 Lab Instrument']!)).total, { timeout: 10_000 }).toBe(1);
 });

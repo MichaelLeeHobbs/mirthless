@@ -47,22 +47,22 @@ describeIntegration('CollectionService (real Postgres)', () => {
 
     // Two orders for the same accession/institution: an older NW, a newer SC.
     unwrap(await CollectionService.store(name, {
-      fields: { accessionNumber: 'A1', institutionName: 'Valor', orderControl: 'NW' },
+      fields: { accessionNumber: 'A1', institutionName: 'North', orderControl: 'NW' },
       payload: 'ORDER-NW',
     }));
     await new Promise((r) => setTimeout(r, 5));
     unwrap(await CollectionService.store(name, {
-      fields: { accessionNumber: 'A1', institutionName: 'Valor', orderControl: 'SC' },
+      fields: { accessionNumber: 'A1', institutionName: 'North', orderControl: 'SC' },
       payload: 'ORDER-SC',
     }));
     // A decoy for a different accession.
     unwrap(await CollectionService.store(name, {
-      fields: { accessionNumber: 'OTHER', institutionName: 'Valor', orderControl: 'SC' },
+      fields: { accessionNumber: 'OTHER', institutionName: 'North', orderControl: 'SC' },
       payload: 'DECOY',
     }));
 
     const rows = unwrap(await CollectionService.find(name, {
-      match: { accessionNumber: 'A1', institutionName: 'Valor' },
+      match: { accessionNumber: 'A1', institutionName: 'North' },
       filter: { orderControl: ['XO', 'NW', 'SC'] },
       latest: true,
       order: 'desc',

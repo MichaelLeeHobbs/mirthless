@@ -45,8 +45,8 @@ describe('a destination with a template', () => {
     const config: PipelineConfig = {
       channelId: '00000000-0000-0000-0000-000000000011', serverId: 'server-01', dataType: 'RAW',
       scripts: { sourceTransformer: { code: '$c("oru", "MSH|ORU for " + msg);' } },
-      configMap: { 'vns.SITE': 'NORTH' },
-      destinations: [{ metaDataId: 1, name: 'Sender', enabled: true, scripts: {}, queueMode: 'NEVER', template: '${oru} at ${vns.SITE}' }],
+      configMap: { 'site.SITE': 'NORTH' },
+      destinations: [{ metaDataId: 1, name: 'Sender', enabled: true, scripts: {}, queueMode: 'NEVER', template: '${oru} at ${site.SITE}' }],
     };
     const processor = new MessageProcessor(new VmSandboxExecutor(), s, send, config, DEFAULT_EXECUTION_OPTIONS);
 

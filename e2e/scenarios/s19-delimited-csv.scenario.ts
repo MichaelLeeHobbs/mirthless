@@ -31,7 +31,7 @@ scenario('S19 Delimited CSV rows are read by column name', async (api) => {
           script: [
             "var mrn = msg[0].mrn;",
             "var name = msg[0].family + '^' + msg[0].given;",
-            "$c('hl7','MSH|^~\\\\&|CSV|S19|VNS|V|20261110120000||ADT^A04|' + mrn + '|P|2.5\\rPID|||' + mrn + '||' + name);",
+            "$c('hl7','MSH|^~\\\\&|CSV|S19|HUB|V|20261110120000||ADT^A04|' + mrn + '|P|2.5\\rPID|||' + mrn + '||' + name);",
           ].join('\n'),
         }],
       },

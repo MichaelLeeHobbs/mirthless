@@ -35,19 +35,19 @@ scenario('S17 HTTP Sender sends Basic auth, query parameters and substituted val
           method: 'put',
           basicAuth: { username: 'mirth', password: 's3cret' },
           parameters: { site: '${site}' },
-          headers: { 'X-Source': 'VNS' },
+          headers: { 'X-Source': 'HUB' },
           content: '{"accession":"${accession}"}',
         }),
       }],
     }), ['S17 Portal Orders']);
 
-    await sendMllp(PORT, 'MSH|^~\\&|RIS|SITE17|VNS|V|20261110120000||ORM^O01|S17|P|2.3\rORC|NW|ACC017');
+    await sendMllp(PORT, 'MSH|^~\\&|RIS|SITE17|HUB|V|20261110120000||ORM^O01|S17|P|2.3\rORC|NW|ACC017');
     await expect.poll(() => sink.requests.length, { timeout: 15_000 }).toBe(1);
     const r = sink.requests[0]!;
     expect(r.method).toBe('PUT');
     expect(r.url).toBe('/orders/ACC017?site=SITE17');
     expect(r.headers['authorization']).toBe(`Basic ${Buffer.from('mirth:s3cret').toString('base64')}`);
-    expect(r.headers['x-source']).toBe('VNS');
+    expect(r.headers['x-source']).toBe('HUB');
     expect(JSON.parse(r.body)).toEqual({ accession: 'ACC017' });
   } finally {
     await sink.close();

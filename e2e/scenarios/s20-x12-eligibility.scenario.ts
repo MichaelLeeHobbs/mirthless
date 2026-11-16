@@ -20,7 +20,7 @@ const X12_270 = [
   'HL*1**20*1~',
   'NM1*PR*2*ACME HEALTH*****PI*12345~',
   'HL*2*1*21*1~',
-  'NM1*1P*2*VNS IMAGING*****XX*1234567893~',
+  'NM1*1P*2*HUB IMAGING*****XX*1234567893~',
   'HL*3*2*22*0~',
   'NM1*IL*1*DOE*JANE****MI*MEMBER123~',
   'EQ*30~',
@@ -46,7 +46,7 @@ scenario('S20 X12 270 member id is read with msg.get', async (api) => {
           name: 'Member',
           script: [
             "var member = msg.get('NM1[3].9');",
-            "$c('out','MSH|^~\\\\&|X12|S20|VNS|V|20261110120000||ZEL^Z01|S20|P|2.5\\rZEL|' + member);",
+            "$c('out','MSH|^~\\\\&|X12|S20|HUB|V|20261110120000||ZEL^Z01|S20|P|2.5\\rZEL|' + member);",
           ].join('\n'),
         }],
       },

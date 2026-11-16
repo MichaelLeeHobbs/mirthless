@@ -6,17 +6,17 @@ import { describe, it, expect } from 'vitest';
 import { configLookup, resolveConfigReferences } from '../config-references.js';
 
 const entries = [
-  { category: 'vns', name: 'SENDER_HOST', value: 'lis.example.org' },
-  { category: 'vns', name: 'SENDER_PORT', value: '6661' },
+  { category: 'site', name: 'SENDER_HOST', value: 'lis.example.org' },
+  { category: 'site', name: 'SENDER_PORT', value: '6661' },
   { category: 'east', name: 'SITE', value: 'E' },
   { category: 'west', name: 'SITE', value: 'W' },
-  { category: 'vns', name: 'UNSET', value: null },
+  { category: 'site', name: 'UNSET', value: null },
 ];
 
 describe('configLookup', () => {
   it('finds a value by category.name, and by name when only one category has it', () => {
     const lookup = configLookup(entries);
-    expect(lookup.get('vns.SENDER_HOST')).toBe('lis.example.org');
+    expect(lookup.get('site.SENDER_HOST')).toBe('lis.example.org');
     expect(lookup.get('SENDER_HOST')).toBe('lis.example.org');
     expect(lookup.get('east.SITE')).toBe('E');
     expect(lookup.has('SITE')).toBe(false);
@@ -29,7 +29,7 @@ describe('resolveConfigReferences', () => {
 
   it('replaces references in nested strings and leaves message variables for the message', () => {
     const resolved = resolveConfigReferences({
-      host: '${SENDER_HOST}', port: '${vns.SENDER_PORT}',
+      host: '${SENDER_HOST}', port: '${site.SENDER_PORT}',
       template: '${oru}', headers: { 'X-Site': 'site ${west.SITE}' }, retries: 3,
     }, lookup);
     expect(resolved).toEqual({
