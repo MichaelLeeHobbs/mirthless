@@ -14,6 +14,8 @@ export function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'FORBIDDEN')) return 403;
   if (isServiceError(error, 'SYSTEM_PROTECTED')) return 403;
   if (isServiceError(error, 'INVALID_CREDENTIALS')) return 401;
+  if (isServiceError(error, 'UNAUTHORIZED')) return 401;
+  if (isServiceError(error, 'PASSWORD_CHANGE_REQUIRED')) return 403;
   if (isServiceError(error, 'ACCOUNT_LOCKED')) return 423;
   if (isServiceError(error, 'ACCOUNT_DEACTIVATED')) return 403;
   if (isServiceError(error, 'SELF_ACTION')) return 400;

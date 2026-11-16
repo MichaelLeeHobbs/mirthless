@@ -7,6 +7,10 @@
 export const SERVICE_ERRORS = {
   NOT_FOUND: 'NOT_FOUND',
   ALREADY_EXISTS: 'ALREADY_EXISTS',
+  /** No credential, or one the server does not accept. */
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  /** The caller must change their password before anything else. */
+  PASSWORD_CHANGE_REQUIRED: 'PASSWORD_CHANGE_REQUIRED',
   FORBIDDEN: 'FORBIDDEN',
   SYSTEM_PROTECTED: 'SYSTEM_PROTECTED',
   SELF_ACTION: 'SELF_ACTION',

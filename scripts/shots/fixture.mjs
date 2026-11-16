@@ -170,8 +170,8 @@ const alerts = [
 }));
 
 const events = Array.from({ length: 12 }, (_, i) => ({
-  id: 900 - i, level: ['INFORMATION', 'WARNING', 'ERROR'][i % 3], name: ['USER_LOGIN', 'CHANNEL_DEPLOYED', 'MESSAGE_ERROR', 'SETTINGS_CHANGED'][i % 4],
-  outcome: i % 3 === 2 ? 'FAILURE' : 'SUCCESS', userId: i % 2 ? 'u1' : null, channelId: i % 4 === 1 ? 'c1' : null,
+  id: 900 - i, level: ['INFORMATION', 'WARNING', 'ERROR'][i % 3], name: ['USER_LOGIN', 'CHANNEL_DEPLOYED', 'MESSAGE_ERROR', 'SETTINGS_CHANGED', 'ACCESS_DENIED'][i % 5],
+  outcome: i % 3 === 2 || i % 5 === 4 ? 'FAILURE' : 'SUCCESS', userId: i % 2 ? 'u1' : null, channelId: i % 4 === 1 ? 'c1' : null,
   ipAddress: '10.0.4.12', createdAt: ago(i * 11),
 }));
 
