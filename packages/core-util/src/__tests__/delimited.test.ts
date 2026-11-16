@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { delimitedOptionsSchema } from '@galvaniflow/core-models';
+import { delimitedOptionsSchema } from '@galvanigraph/core-models';
 import { parseDelimited, serializeDelimited, unescapeControlChars } from '../delimited.js';
 
 const csv = delimitedOptionsSchema.parse({ columnNames: ['mrn', 'family', 'given'] });

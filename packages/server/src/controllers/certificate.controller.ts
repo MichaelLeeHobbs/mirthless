@@ -4,7 +4,7 @@
 // Handles HTTP requests for certificate CRUD.
 
 import type { Request, Response } from 'express';
-import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@galvaniflow/core-models';
+import type { CreateCertificateInput, UpdateCertificateInput, CertificateListQuery } from '@galvanigraph/core-models';
 import { CertificateService } from '../services/certificate.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

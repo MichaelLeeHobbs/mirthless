@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { dispatchActions, substituteAlertTemplate, type ActionDispatcherDeps } from '../action-dispatcher.js';
 import type { LoadedAlert, ChannelErrorEvent } from '../alert-evaluator.js';
-import { ALERT_TEMPLATE_VARIABLES } from '@galvaniflow/core-models';
+import { ALERT_TEMPLATE_VARIABLES } from '@galvanigraph/core-models';
 
 // ----- Helpers -----
 

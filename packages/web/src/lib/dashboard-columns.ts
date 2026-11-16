@@ -5,7 +5,7 @@
 // are always shown; everything here is toggleable per-user. Order here is the
 // render order (config columns, then the stat counters).
 
-import type { ConnectorType } from '@galvaniflow/core-models';
+import type { ConnectorType } from '@galvanigraph/core-models';
 
 export type DashboardColumnId =
   | 'source' | 'dataTypes' | 'rev' | 'updated'

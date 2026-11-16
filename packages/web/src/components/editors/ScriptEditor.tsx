@@ -6,7 +6,7 @@
 // line with the cursor position and the script's problems.
 
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { SCRIPT_TEST_KINDS, ScriptLanguageCode, ScriptSurface } from '@galvaniflow/core-models';
+import type { SCRIPT_TEST_KINDS, ScriptLanguageCode, ScriptSurface } from '@galvanigraph/core-models';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import ToggleButton from '@mui/material/ToggleButton';
@@ -160,7 +160,7 @@ export function ScriptEditor({
   useEffect(() => {
     if (!editor || !canTest) return undefined;
     const action = editor.addAction({
-      id: 'galvaniflow.runScriptTest',
+      id: 'galvanigraph.runScriptTest',
       label: 'Run against the sample message',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
       run: () => { runRef.current(); },

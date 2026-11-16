@@ -6,7 +6,7 @@
 // verification settings. Verification defaults to ON — never silently
 // disable certificate checks.
 
-import { isPlainObject } from '@galvaniflow/core-util';
+import { isPlainObject } from '@galvanigraph/core-util';
 
 /** TLS options for a server (receiver) that terminates TLS. */
 export interface TlsServerOptions {

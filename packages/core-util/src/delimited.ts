@@ -4,7 +4,7 @@
 // CSV and other delimited text as rows of named columns. Every value is text:
 // "000123" is an MRN, and turning it into 123 corrupts the message.
 
-import type { DelimitedOptions } from '@galvaniflow/core-models';
+import type { DelimitedOptions } from '@galvanigraph/core-models';
 
 /** One record: column name to value. */
 export type DelimitedRow = Record<string, string>;

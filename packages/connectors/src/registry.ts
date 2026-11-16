@@ -4,7 +4,7 @@
 // Maps connector types to factory functions. The keys are typed by the
 // core-models connector lists, so a type the lists don't name is a compile error.
 
-import type { SourceConnectorType, DestinationConnectorType } from '@galvaniflow/core-models';
+import type { SourceConnectorType, DestinationConnectorType } from '@galvanigraph/core-models';
 import type { SourceConnectorRuntime, DestinationConnectorRuntime } from './base.js';
 import { TcpMllpReceiver } from './tcp-mllp/tcp-mllp-receiver.js';
 import { TcpMllpDispatcher } from './tcp-mllp/tcp-mllp-dispatcher.js';
@@ -59,7 +59,7 @@ import {
   sftpSourcePropertiesSchema,
   sftpDestinationPropertiesSchema,
   formatPropertyIssues,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 
 /** A database connector's vendor (PostgreSQL when unset) and port, the port defaulting to the vendor's own. */
 export function databaseTarget(props: { readonly vendor?: DatabaseVendor | undefined; readonly port?: number | undefined }): { vendor: DatabaseVendor; port: number } {

@@ -24,7 +24,7 @@ import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { ServerRestoreResult } from '@galvaniflow/core-models';
+import type { ServerRestoreResult } from '@galvanigraph/core-models';
 import { useBackup, useRestore } from '../../hooks/use-backup.js';
 
 /** Every error and warning the restore reported, under its section. */
@@ -64,7 +64,7 @@ export function BackupRestoreSection(): ReactNode {
         const a = document.createElement('a');
         a.href = url;
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        a.download = `galvaniflow-backup-${timestamp}.json`;
+        a.download = `galvanigraph-backup-${timestamp}.json`;
         a.click();
         URL.revokeObjectURL(url);
       },

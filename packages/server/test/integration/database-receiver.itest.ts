@@ -5,7 +5,7 @@
 // runs in a savepoint. A mocked pool cannot show that; a real one can.
 
 import { beforeAll, afterAll, beforeEach, afterEach, expect, it } from 'vitest';
-import { DatabaseReceiver } from '@galvaniflow/connectors';
+import { DatabaseReceiver } from '@galvanigraph/connectors';
 import { describeIntegration, loadServerModules, type ServerModules } from './_setup.js';
 
 describeIntegration('DatabaseReceiver (real Postgres)', () => {

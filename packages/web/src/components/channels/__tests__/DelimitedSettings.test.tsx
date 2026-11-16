@@ -8,7 +8,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { useState, type ReactElement } from 'react';
 import { darkTheme } from '../../../styles/theme.js';
 import { SourceTransformerSection } from '../source/SourceTransformerSection.js';
-import { unescapeControlChars } from '@galvaniflow/core-util';
+import { unescapeControlChars } from '@galvanigraph/core-util';
 import { showEscapes, readColumnNames, delimitedProblem } from '../source/DelimitedSettings.js';
 import type { TransformerFormValues } from '../source/types.js';
 

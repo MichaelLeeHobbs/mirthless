@@ -10,7 +10,7 @@ import { colorsForMode, syntaxForMode } from './tokens.js';
 
 /** Monaco theme name for a palette mode. */
 export function editorThemeName(mode: PaletteMode): string {
-  return mode === 'dark' ? 'galvaniflow-dark' : 'galvaniflow-light';
+  return mode === 'dark' ? 'galvanigraph-dark' : 'galvanigraph-light';
 }
 
 /** Monaco wants `#rrggbb` or `#rrggbbaa`; the tokens also use `rgba(...)`. */

@@ -4,7 +4,7 @@
 // Sends messages as emails via SMTP using nodemailer.
 // Supports template variable substitution in subject/body.
 
-import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvaniflow/core-util';
+import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvanigraph/core-util';
 import { fillVariables, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { createRequire } from 'node:module';
 import { withTimeoutSignal } from '../timeout.js';

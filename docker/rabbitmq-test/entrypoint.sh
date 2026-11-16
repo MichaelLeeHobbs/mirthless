@@ -9,7 +9,7 @@ set -eu
 if [ ! -s /certs/server.pem ]; then
   cd /certs
   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-    -keyout ca-key.pem -out ca.pem -subj "/CN=GalvaniFlow test CA" 2>/dev/null
+    -keyout ca-key.pem -out ca.pem -subj "/CN=GalvaniGraph test CA" 2>/dev/null
   openssl req -newkey rsa:2048 -nodes \
     -keyout server-key.pem -out server.csr -subj "/CN=localhost" 2>/dev/null
   printf 'subjectAltName=DNS:localhost,IP:127.0.0.1,DNS:rabbitmq-test\nextendedKeyUsage=serverAuth\n' > server.ext

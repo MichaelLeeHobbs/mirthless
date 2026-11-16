@@ -10,8 +10,8 @@
 // who ran a script for which channel.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { runScriptTestIsolated, type ScriptTestResult } from '@galvaniflow/engine';
-import type { ScriptTestRunInput, TemplateSource } from '@galvaniflow/core-models';
+import { runScriptTestIsolated, type ScriptTestResult } from '@galvanigraph/engine';
+import type { ScriptTestRunInput, TemplateSource } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { ChannelService } from './channel.service.js';

@@ -9,7 +9,7 @@ import type {
   UpdateCodeTemplateLibraryInput,
   CreateCodeTemplateInput,
   UpdateCodeTemplateInput,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { api, type CodeTemplateLibrary, type CodeTemplateDetail } from '../api/client.js';
 
 // ----- Query Keys -----

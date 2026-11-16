@@ -1,5 +1,5 @@
 {
-  "name": "@galvaniflow/web",
+  "name": "@galvanigraph/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -18,8 +18,8 @@
     "@emotion/react": "^11.13.0",
     "@emotion/styled": "^11.13.0",
     "@fontsource-variable/inter": "^5.3.0",
-    "@galvaniflow/core-models": "workspace:*",
-    "@galvaniflow/core-util": "workspace:*",
+    "@galvanigraph/core-models": "workspace:*",
+    "@galvanigraph/core-util": "workspace:*",
     "@monaco-editor/react": "^4.7.0",
     "@mui/icons-material": "^9.5.0",
     "@mui/material": "^9.5.0",

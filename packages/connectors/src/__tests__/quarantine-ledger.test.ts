@@ -3,12 +3,12 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { stderr, type Result } from '@galvaniflow/core-util';
+import { stderr, type Result } from '@galvanigraph/core-util';
 import type { DispatchResult, RawMessage } from '../base.js';
 import { QuarantineLedger, dispatchQuarantined, type LedgerStorage, type QuarantinedFile } from '../quarantine-ledger.js';
 import { makeMockLogger, type MockLogger } from '../__fixtures__/mock-logger.js';
 
-const LEDGER = '/in/.galvaniflow-quarantine.json';
+const LEDGER = '/in/.galvanigraph-quarantine.json';
 const LEGACY = '/in/.mirthless-quarantine.json';
 
 /** In-memory ledger storage; a path mapped to an Error fails that operation. */

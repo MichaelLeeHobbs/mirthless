@@ -12,7 +12,7 @@ import type {
   UpdateCodeTemplateLibraryInput,
   CreateCodeTemplateInput,
   UpdateCodeTemplateInput,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';

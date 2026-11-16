@@ -12,8 +12,8 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
-import { delimitedOptionsSchema } from '@galvaniflow/core-models';
-import { unescapeControlChars } from '@galvaniflow/core-util';
+import { delimitedOptionsSchema } from '@galvanigraph/core-models';
+import { unescapeControlChars } from '@galvanigraph/core-util';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 import { propertyUpdaters } from '../common/connector-properties.js';
 

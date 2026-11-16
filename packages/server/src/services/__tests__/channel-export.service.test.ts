@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { stderr } from '@galvaniflow/core-util';
+import { stderr } from '@galvanigraph/core-util';
 
 // Mock the channel service
 vi.mock('../channel.service.js', () => ({

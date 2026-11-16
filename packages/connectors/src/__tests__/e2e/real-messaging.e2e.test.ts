@@ -15,13 +15,13 @@
 //           cascade from the project vision.
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { CONTENT_TYPE } from '@galvaniflow/core-models';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import {
   ChannelReceiver,
   ChannelDispatcher,
   clearChannelRegistry,
 } from '../../index.js';
-import type { CodeTemplateData } from '@galvaniflow/engine';
+import type { CodeTemplateData } from '@galvanigraph/engine';
 import {
   deployChannel,
   teardownAll,

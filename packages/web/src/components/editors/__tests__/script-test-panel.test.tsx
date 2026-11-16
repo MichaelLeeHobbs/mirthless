@@ -4,7 +4,7 @@ import { PERMISSION } from '../../../lib/permissions.js';
 import { render, screen, cleanup, fireEvent, getDefaultNormalizer } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ScriptTestResult } from '@galvaniflow/core-models';
+import type { ScriptTestResult } from '@galvanigraph/core-models';
 import { lightTheme } from '../../../styles/theme.js';
 import { ScriptTestPanel } from '../ScriptTestPanel.js';
 import { ScriptEditor } from '../ScriptEditor.js';

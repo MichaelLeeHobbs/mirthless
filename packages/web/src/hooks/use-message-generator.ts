@@ -3,7 +3,7 @@
 // ===========================================
 
 import { useMutation } from '@tanstack/react-query';
-import type { GenerateMessagesInput } from '@galvaniflow/core-models';
+import type { GenerateMessagesInput } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
 
 interface GenerateResult {

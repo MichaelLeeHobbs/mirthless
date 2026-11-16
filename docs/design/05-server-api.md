@@ -2,7 +2,7 @@
 
 > Express REST API, authentication, authorization, and deployment orchestration.
 
-> **Status (2026-11): original design.** Kept for its reasoning; parts were built differently. Who can do what today: [access control](../user/access-control.md); what is missing: [What GalvaniFlow can do](../user/capabilities.md).
+> **Status (2026-11): original design.** Kept for its reasoning; parts were built differently. Who can do what today: [access control](../user/access-control.md); what is missing: [What GalvaniGraph can do](../user/capabilities.md).
 
 ## Architecture
 
@@ -56,7 +56,7 @@ From fullstack-template patterns. JWT + sessions.
 
 ### Key Differences from Connect
 
-| Aspect | Connect | GalvaniFlow |
+| Aspect | Connect | GalvaniGraph |
 |---|---|---|
 | Auth | Session cookies + Basic Auth | JWT + refresh tokens |
 | RBAC | Always-true default (commercial plugin) | Built-in roles + permissions |

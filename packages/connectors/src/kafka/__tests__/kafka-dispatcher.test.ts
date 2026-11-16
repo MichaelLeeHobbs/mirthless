@@ -9,7 +9,7 @@ import { FakeKafkaProducer } from '../../__fixtures__/fake-kafka.js';
 
 const config: KafkaDispatcherConfig = {
   brokers: 'kafka:9092',
-  clientId: 'galvaniflow',
+  clientId: 'galvanigraph',
   saslMechanism: 'NONE',
   saslUsername: '',
   saslPassword: '',
@@ -51,13 +51,13 @@ describe('send', () => {
     const { dispatcher, producer } = await started({
       topic: 'results-${site}',
       messageKey: '${patientId}',
-      headers: { source: 'galvaniflow', trace: '${traceId}' },
+      headers: { source: 'galvanigraph', trace: '${traceId}' },
     });
     await dispatcher.send(message({ site: 'north', patientId: 'P42', traceId: 't-1' }), new AbortController().signal);
     const sent = producer.sent[0];
     expect(sent?.topic).toBe('results-north');
     expect(sent?.key?.toString()).toBe('P42');
-    expect(sent?.headers['source']?.toString()).toBe('galvaniflow');
+    expect(sent?.headers['source']?.toString()).toBe('galvanigraph');
     expect(sent?.headers['trace']?.toString()).toBe('t-1');
   });
 

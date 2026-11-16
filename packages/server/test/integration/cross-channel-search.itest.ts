@@ -8,7 +8,7 @@
 
 import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import type { MessageStatus } from '@galvaniflow/core-models';
+import type { MessageStatus } from '@galvanigraph/core-models';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('CrossChannelSearchService (real Postgres)', () => {

@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PERMISSIONS } from '@galvaniflow/core-models';
+import { PERMISSIONS } from '@galvanigraph/core-models';
 
 const routesDir = fileURLToPath(new URL('..', import.meta.url));
 const appFile = fileURLToPath(new URL('../../app.ts', import.meta.url));

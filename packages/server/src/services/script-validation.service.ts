@@ -6,7 +6,7 @@
 // successful results with valid=false, since the service call itself succeeded.
 
 import type { Result } from 'stderr-lib';
-import { compileErrorMessages, compileScript } from '@galvaniflow/engine';
+import { compileErrorMessages, compileScript } from '@galvanigraph/engine';
 import { ServiceError } from '../lib/service-error.js';
 
 // ----- Types -----

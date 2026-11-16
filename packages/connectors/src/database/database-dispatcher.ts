@@ -4,7 +4,7 @@
 // Executes parameterized INSERT/UPDATE queries
 // against a PostgreSQL or MySQL database.
 
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { toPoolConfig, type DatabasePool } from './connection-pool.js';
 import { prepare, type PreparedQuery } from './query-builder.js';

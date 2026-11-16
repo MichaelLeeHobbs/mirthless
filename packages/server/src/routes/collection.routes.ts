@@ -11,7 +11,7 @@ import {
   listRecordsQuerySchema,
   storeRecordSchema,
   updateRecordSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { CollectionController } from '../controllers/collection.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

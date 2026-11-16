@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { PERMISSIONS } from '@galvaniflow/core-models';
+import { PERMISSIONS } from '@galvanigraph/core-models';
 import { permissionRowsForRole, permissionNamesForRole, isKnownRole, permissionRow } from '../role-permissions.js';
 import { defaultPermissions } from '../../db/seeds/permissions.js';
 

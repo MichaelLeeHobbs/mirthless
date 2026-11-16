@@ -1,6 +1,6 @@
 // S19: a CSV file is read with the Delimited data type and mapped through msg.
 // Gap doc 13 N2: Mirth serializes delimited text to XML and a transformer reads
-// msg['row']['column']. GalvaniFlow has no E4X (D-244); a Delimited message is
+// msg['row']['column']. GalvaniGraph has no E4X (D-244); a Delimited message is
 // an array of rows keyed by the configured column names (doc 17, approved
 // 2026-11-13), so the script reads msg[0].
 

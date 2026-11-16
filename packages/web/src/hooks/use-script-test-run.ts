@@ -4,7 +4,7 @@
 // POST /scripts/test-run: run a script against a sample message, no side effects.
 
 import { useMutation } from '@tanstack/react-query';
-import type { ScriptTestResult, ScriptTestRunInput } from '@galvaniflow/core-models';
+import type { ScriptTestResult, ScriptTestRunInput } from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
 
 /** The request as the client sends it; the server fills defaults. */

@@ -7,7 +7,7 @@ import {
   createChannelGroupSchema,
   updateChannelGroupSchema,
   channelGroupUuidParamSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { ChannelGroupController } from '../controllers/channel-group.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

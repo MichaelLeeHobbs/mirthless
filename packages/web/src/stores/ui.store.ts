@@ -2,13 +2,19 @@ import { create } from 'zustand';
 
 type ThemeMode = 'dark' | 'light';
 
-const THEME_STORAGE_KEY = 'galvaniflow_theme';
-/** Key used before the rename to GalvaniFlow; read only, so existing users keep their theme. */
-const LEGACY_THEME_STORAGE_KEY = 'mirthless_theme';
+const THEME_STORAGE_KEY = 'galvanigraph_theme';
+/**
+ * Keys used under the product's earlier names, newest first: GalvaniFlow (D-309)
+ * and Mirthless (D-205). Read only, so existing users keep their theme.
+ * `index.html` reads the same keys before first paint.
+ */
+const LEGACY_THEME_STORAGE_KEYS: readonly string[] = ['galvaniflow_theme', 'mirthless_theme'];
 
 function loadThemeMode(): ThemeMode {
   try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY) ?? localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+    const stored = [THEME_STORAGE_KEY, ...LEGACY_THEME_STORAGE_KEYS]
+      .map((key) => localStorage.getItem(key))
+      .find((value) => value !== null);
     if (stored === 'light' || stored === 'dark') return stored;
   } catch {
     // localStorage may be unavailable

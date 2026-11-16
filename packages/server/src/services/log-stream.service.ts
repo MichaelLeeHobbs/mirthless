@@ -5,7 +5,7 @@
 // Captures Pino log output and emits to Socket.IO.
 
 import { Writable } from 'node:stream';
-import { SOCKET_EVENT } from '@galvaniflow/core-models';
+import { SOCKET_EVENT } from '@galvanigraph/core-models';
 import { emitToRoom } from '../lib/socket.js';
 
 // ----- Constants -----

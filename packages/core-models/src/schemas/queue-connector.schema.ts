@@ -68,7 +68,7 @@ const brokers = required.refine(
 
 const kafkaConnection = {
   brokers,
-  clientId: required.default('galvaniflow'),
+  clientId: required.default('galvanigraph'),
   useTls: z.boolean().default(false),
   tls: clientTlsRefSchema.optional(),
   saslMechanism: z.enum(KAFKA_SASL_MECHANISMS).default('NONE'),

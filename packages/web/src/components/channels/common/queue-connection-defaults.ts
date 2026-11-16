@@ -12,7 +12,7 @@ export const QUEUE_TLS_DEFAULTS: Readonly<Record<string, unknown>> = {
 
 export const KAFKA_CONNECTION_DEFAULTS: Readonly<Record<string, unknown>> = {
   brokers: '',
-  clientId: 'galvaniflow',
+  clientId: 'galvanigraph',
   saslMechanism: 'NONE',
   saslUsername: '',
   saslPassword: '',

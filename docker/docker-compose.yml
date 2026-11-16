@@ -1,18 +1,18 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: galvaniflow-db
+    container_name: galvanigraph-db
     environment:
-      POSTGRES_DB: galvaniflow
-      POSTGRES_USER: galvaniflow
-      POSTGRES_PASSWORD: galvaniflow_dev
+      POSTGRES_DB: galvanigraph
+      POSTGRES_USER: galvanigraph
+      POSTGRES_PASSWORD: galvanigraph_dev
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U galvaniflow -d galvaniflow"]
+      test: ["CMD-SHELL", "pg_isready -U galvanigraph -d galvanigraph"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,7 +23,7 @@ services:
 
   sftp-test:
     image: atmoz/sftp:alpine
-    container_name: galvaniflow-sftp-test
+    container_name: galvanigraph-sftp-test
     profiles: ["test"]
     # user:password:::dir  → creates /home/mirth/upload, writable, chrooted.
     command: mirth:mirthpw:::upload
@@ -33,7 +33,7 @@ services:
   mail-test:
     # GreenMail: SMTP (3025) + IMAP (3143) in one container for mail connectors.
     image: greenmail/standalone:2.1.15
-    container_name: galvaniflow-mail-test
+    container_name: galvanigraph-mail-test
     profiles: ["test"]
     environment:
       GREENMAIL_OPTS: >-
@@ -47,7 +47,7 @@ services:
   mysql-test:
     # A partner MySQL database for the migration scenario suite (e2e/scenarios).
     image: mysql:8.4
-    container_name: galvaniflow-mysql-test
+    container_name: galvanigraph-mysql-test
     profiles: ["test"]
     environment:
       MYSQL_ROOT_PASSWORD: mirthpw
@@ -61,7 +61,7 @@ services:
     # Single-node KRaft Kafka for the Kafka connectors. 19092 is plaintext,
     # 19093 is SASL/PLAIN (user mirth / mirthpw). Topics are not auto-created.
     image: apache/kafka:4.3.1
-    container_name: galvaniflow-kafka-test
+    container_name: galvanigraph-kafka-test
     profiles: ["test"]
     environment:
       KAFKA_NODE_ID: 1
@@ -75,7 +75,7 @@ services:
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       # The image refuses to start a SASL listener without KAFKA_OPTS; the JAAS
       # config is the per-listener property below, so this only has to be set.
-      KAFKA_OPTS: -Dgalvaniflow.test=true
+      KAFKA_OPTS: -Dgalvanigraph.test=true
       KAFKA_LISTENER_NAME_SASL__PLAINTEXT_PLAIN_SASL_JAAS_CONFIG: org.apache.kafka.common.security.plain.PlainLoginModule required username="mirth" password="mirthpw" user_mirth="mirthpw";
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -96,15 +96,15 @@ services:
     # suite drop client connections to test reconnects. 5674 is AMQPS with a
     # test certificate the entrypoint writes to docker/test-certs on first start.
     image: rabbitmq:4.4-management-alpine
-    container_name: galvaniflow-rabbitmq-test
+    container_name: galvanigraph-rabbitmq-test
     profiles: ["test"]
-    entrypoint: ["/bin/sh", "/opt/galvaniflow/entrypoint.sh"]
+    entrypoint: ["/bin/sh", "/opt/galvanigraph/entrypoint.sh"]
     command: ["rabbitmq-server"]
     environment:
       RABBITMQ_DEFAULT_USER: mirth
       RABBITMQ_DEFAULT_PASS: mirthpw
     volumes:
-      - ./rabbitmq-test/entrypoint.sh:/opt/galvaniflow/entrypoint.sh:ro
+      - ./rabbitmq-test/entrypoint.sh:/opt/galvanigraph/entrypoint.sh:ro
       - ./rabbitmq-test/20-tls.conf:/etc/rabbitmq/conf.d/20-tls.conf:ro
       - ./test-certs:/certs
     ports:

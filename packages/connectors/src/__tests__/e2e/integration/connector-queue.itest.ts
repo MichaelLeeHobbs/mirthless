@@ -89,11 +89,11 @@ describeKafka('Kafka connectors (real broker)', () => {
   };
 
   const connection = (): KafkaConnectionConfig => ({
-    brokers: requireKafka().brokers, clientId: 'galvaniflow-e2e', saslMechanism: 'NONE', saslUsername: '', saslPassword: '',
+    brokers: requireKafka().brokers, clientId: 'galvanigraph-e2e', saslMechanism: 'NONE', saslUsername: '', saslPassword: '',
   });
 
   beforeAll(async () => {
-    const admin = new Admin({ clientId: 'galvaniflow-e2e-admin', bootstrapBrokers: [requireKafka().brokers] });
+    const admin = new Admin({ clientId: 'galvanigraph-e2e-admin', bootstrapBrokers: [requireKafka().brokers] });
     try {
       await admin.createTopics({ topics: Object.values(topics), partitions: 1, replicas: 1 });
     } finally {
@@ -122,7 +122,7 @@ describeKafka('Kafka connectors (real broker)', () => {
           ...connection(),
           topic: `e2e-\${site}-${RUN}`,
           messageKey: '${patientId}',
-          headers: { source: 'galvaniflow', patient: '${patientId}' },
+          headers: { source: 'galvanigraph', patient: '${patientId}' },
         }),
       }],
     });
@@ -136,7 +136,7 @@ describeKafka('Kafka connectors (real broker)', () => {
       body: 'MSH|^~\\&|KAFKA',
       topic: topics.cascade,
       key: 'P42',
-      headers: { source: 'galvaniflow', patient: 'P42' },
+      headers: { source: 'galvanigraph', patient: 'P42' },
     });
   }, TEST_TIMEOUT);
 
@@ -182,7 +182,7 @@ describeKafka('Kafka connectors (real broker)', () => {
   it('publishes and consumes over SASL/PLAIN, and refuses a wrong password', async () => {
     const cfg = requireKafka();
     const sasl: KafkaConnectionConfig = {
-      brokers: cfg.saslBrokers, clientId: 'galvaniflow-e2e', saslMechanism: 'PLAIN', saslUsername: cfg.username, saslPassword: cfg.password,
+      brokers: cfg.saslBrokers, clientId: 'galvanigraph-e2e', saslMechanism: 'PLAIN', saslUsername: cfg.username, saslPassword: cfg.password,
     };
     const sink = new CaptureDestination();
     deployed.push(await deployChannel({
@@ -399,13 +399,13 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     await publishDirect('before');
     await vi.waitFor(() => { expect(sink.received.map((m) => m.content)).toEqual(['before']); }, WAIT);
 
-    // Close the connector's connection from the broker side (it names itself "galvaniflow").
+    // Close the connector's connection from the broker side (it names itself "galvanigraph").
     const cfg = requireAmqp();
     const api = `http://${cfg.host}:${String(cfg.managementPort)}/api/connections`;
     const auth = { Authorization: `Basic ${Buffer.from(`${cfg.username}:${cfg.password}`).toString('base64')}` };
     const victims = await vi.waitFor(async () => {
       const list = await (await fetch(api, { headers: auth })).json() as { name: string; client_properties?: { connection_name?: string } }[];
-      const ours = list.filter((c) => c.client_properties?.connection_name === 'galvaniflow');
+      const ours = list.filter((c) => c.client_properties?.connection_name === 'galvanigraph');
       expect(ours.length).toBeGreaterThan(0);
       return ours;
     }, WAIT);

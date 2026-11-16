@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clearScriptCache, scriptCacheSize } from '@galvaniflow/engine';
+import { clearScriptCache, scriptCacheSize } from '@galvanigraph/engine';
 import { ScriptValidationService, assertScriptCompiles } from '../script-validation.service.js';
 
 // Deploy compiles every channel's scripts through one bounded cache. A syntax

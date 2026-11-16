@@ -8,7 +8,7 @@ import {
   updateCertificateSchema,
   certificateUuidParamSchema,
   certificateListQuerySchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { CertificateController } from '../controllers/certificate.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

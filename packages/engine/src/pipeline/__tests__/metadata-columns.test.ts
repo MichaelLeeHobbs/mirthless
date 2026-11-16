@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi } from 'vitest';
-import type { Result } from '@galvaniflow/core-util';
+import type { Result } from '@galvanigraph/core-util';
 import { MessageProcessor, metadataValues } from '../message-processor.js';
 import type { MessageStore, PipelineConfig } from '../message-processor.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';

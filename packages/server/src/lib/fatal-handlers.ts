@@ -6,7 +6,7 @@
 // log and channels are not stopped in order.
 
 import type { Logger } from 'pino';
-import { errorInfo } from '@galvaniflow/core-util';
+import { errorInfo } from '@galvanigraph/core-util';
 
 /** The part of `process` the handlers need. */
 export interface FatalEventSource {

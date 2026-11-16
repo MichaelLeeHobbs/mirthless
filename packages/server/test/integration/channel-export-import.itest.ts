@@ -8,7 +8,7 @@
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { createChannelSchema, updateChannelSchema } from '@galvaniflow/core-models';
+import { createChannelSchema, updateChannelSchema } from '@galvanigraph/core-models';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('Channel export and import (real Postgres)', () => {

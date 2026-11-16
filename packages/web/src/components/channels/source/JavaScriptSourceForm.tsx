@@ -7,7 +7,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import Grid from '@mui/material/Grid';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import { CODE_TEMPLATE_CONTEXT } from '@galvaniflow/core-models';
+import { CODE_TEMPLATE_CONTEXT } from '@galvanigraph/core-models';
 import type { SourceConnectorFormProps } from './types.js';
 import { JAVASCRIPT_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { getNum, propertyUpdaters } from '../common/connector-properties.js';

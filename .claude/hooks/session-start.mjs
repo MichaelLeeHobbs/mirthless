@@ -12,7 +12,7 @@ const run = (command) => execSync(command, { cwd: root, stdio: 'inherit' });
 
 try {
   run('pnpm install --frozen-lockfile');
-  run('pnpm --filter @galvaniflow/core-models --filter @galvaniflow/core-util build');
+  run('pnpm --filter @galvanigraph/core-models --filter @galvanigraph/core-util build');
 } catch (error) {
   // Say so and carry on: a failed install must not block the session, but the
   // agent needs to know checks will fail until it is fixed.

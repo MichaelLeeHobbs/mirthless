@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a defect in GalvaniFlow
+about: Report a defect in GalvaniGraph
 title: "[Bug]: "
 labels: bug
 assignees: ''
@@ -41,7 +41,7 @@ What actually happened. Include error messages, logs, and status codes.
 
 ## Environment
 
-- GalvaniFlow version / commit:
+- GalvaniGraph version / commit:
 - Deployment: (Docker / local dev / other)
 - Node.js version:
 - PostgreSQL version:

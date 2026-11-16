@@ -7,7 +7,7 @@
 Users write arbitrary JavaScript/TypeScript that runs inside the integration engine. Connect uses Rhino (Mozilla's JS engine) with **zero sandboxing** — user scripts have full access to every Java class on the classpath. This is a massive security risk.
 
 We need:
-1. **Isolation** — User code cannot access the host filesystem, network, or Node.js internals. This was the goal for the original `isolated-vm` design below, and it is not what ships. The current model: Channel scripts are isolated on a best-effort basis. The sandbox blocks accidental and casual access to the host, but it is not a security boundary. Treat anyone who can create or edit a channel, code template or global script as able to run code on the GalvaniFlow server. See `packages/engine/src/sandbox/README.md` and `SECURITY.md`.
+1. **Isolation** — User code cannot access the host filesystem, network, or Node.js internals. This was the goal for the original `isolated-vm` design below, and it is not what ships. The current model: Channel scripts are isolated on a best-effort basis. The sandbox blocks accidental and casual access to the host, but it is not a security boundary. Treat anyone who can create or edit a channel, code template or global script as able to run code on the GalvaniGraph server. See `packages/engine/src/sandbox/README.md` and `SECURITY.md`.
 2. **Resource limits** — CPU timeout (30s default), memory limits
 3. **Controlled API** — Explicit surface: message access, maps, logging, HTTP, DB
 4. **TypeScript support** — Transpile TS on-the-fly before execution

@@ -7,8 +7,8 @@
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
 import { eq } from 'drizzle-orm';
-import { PERMISSIONS, type Permission } from '@galvaniflow/core-models';
-import { createThrottle, errorInfo, type Throttle } from '@galvaniflow/core-util';
+import { PERMISSIONS, type Permission } from '@galvanigraph/core-models';
+import { createThrottle, errorInfo, type Throttle } from '@galvanigraph/core-util';
 import { config } from '../config/index.js';
 import { db } from './db.js';
 import { users } from '../db/schema/index.js';

@@ -3,7 +3,7 @@
 // user wrote.
 
 import { describe, it, expect } from 'vitest';
-import { wrapScriptBody } from '@galvaniflow/core-models';
+import { wrapScriptBody } from '@galvanigraph/core-models';
 import { flattenMessage, scriptBodyMarkers } from '../script-body-check.js';
 
 /** 1-based line and column of an offset in `text`, as a Monaco model's getPositionAt gives it. */

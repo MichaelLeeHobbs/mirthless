@@ -4,8 +4,8 @@
 // Parse raw string content into sandbox-friendly objects based on data type,
 // and serialize sandbox results back to strings for storage/transport.
 
-import { Hl7Message, X12Message, parseDelimited, serializeDelimited } from '@galvaniflow/core-util';
-import { delimitedOptionsSchema, type DelimitedOptions } from '@galvaniflow/core-models';
+import { Hl7Message, X12Message, parseDelimited, serializeDelimited } from '@galvanigraph/core-util';
+import { delimitedOptionsSchema, type DelimitedOptions } from '@galvanigraph/core-models';
 import { XMLParser } from 'fast-xml-parser';
 import { buildXmlInOriginalOrder } from './xml-order.js';
 import type { Hl7MessageProxy } from '../sandbox/bridge-functions.js';

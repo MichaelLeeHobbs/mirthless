@@ -9,7 +9,7 @@ import type {
   UpdateCollectionInput,
   StoreRecordInput,
   UpdateRecordInput,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { api } from '../api/client.js';
 import type { RecordColumn } from '../lib/collections.js';
 

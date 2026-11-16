@@ -120,7 +120,7 @@ export function diagnosticsText(info: SystemInfo, now: Date): string {
   const { server, os, memory, engine, database } = info;
   const load = hasLoadAverage(info) ? os.loadAverage.map((n) => n.toFixed(2)).join(' / ') : 'n/a';
   return [
-    `GalvaniFlow system information (${now.toISOString()})`,
+    `GalvaniGraph system information (${now.toISOString()})`,
     '',
     `Server     v${server.version} · ${server.env} · Node.js ${server.nodeVersion}`,
     `Process    pid ${server.pid} on ${server.hostname} · up ${formatUptime(server.uptime)} (since ${server.startedAt})`,

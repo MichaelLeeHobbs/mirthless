@@ -3,7 +3,7 @@
 // ===========================================
 
 import type { Request, Response } from 'express';
-import type { BulkDeleteInput, BulkReprocessInput } from '@galvaniflow/core-models';
+import type { BulkDeleteInput, BulkReprocessInput } from '@galvanigraph/core-models';
 import { MessageReprocessService } from '../services/message-reprocess.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

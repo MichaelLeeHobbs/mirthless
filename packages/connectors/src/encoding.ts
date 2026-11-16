@@ -7,7 +7,7 @@
 // poll/write. The file connectors refuse an unknown value at deploy (see
 // isKnownEncoding): decoding with the wrong charset corrupts text in silence.
 
-import type { QueueCharset } from '@galvaniflow/core-models';
+import type { QueueCharset } from '@galvanigraph/core-models';
 
 const ALIASES: Readonly<Record<string, BufferEncoding>> = {
   'utf8': 'utf8',

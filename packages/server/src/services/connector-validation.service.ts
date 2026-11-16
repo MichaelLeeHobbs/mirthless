@@ -32,7 +32,7 @@ import {
   sftpSourcePropertiesSchema,
   sftpDestinationPropertiesSchema,
   formatPropertyIssues,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 
 // Every connector type's properties have one schema in core-models (#115).

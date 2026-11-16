@@ -19,7 +19,7 @@ import {
   DEFAULT_EXECUTION_OPTIONS,
   compileScript,
   prependTemplates,
-} from '@galvaniflow/engine';
+} from '@galvanigraph/engine';
 import type {
   MessageStore,
   PipelineConfig,
@@ -32,14 +32,14 @@ import type {
   CompiledScript,
   CodeTemplateData,
   ProcessedMessage,
-} from '@galvaniflow/engine';
+} from '@galvanigraph/engine';
 import type {
   SourceConnectorRuntime,
   DestinationConnectorRuntime,
   ConnectorMessage,
   ConnectorResponse,
 } from '../../../index.js';
-import type { Result } from '@galvaniflow/core-util';
+import type { Result } from '@galvanigraph/core-util';
 
 // ----- Result helper -----
 

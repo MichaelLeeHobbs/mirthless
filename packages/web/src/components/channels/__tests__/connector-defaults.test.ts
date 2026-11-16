@@ -55,7 +55,7 @@ import {
   databaseSourcePropertiesSchema,
   databaseDestinationPropertiesSchema,
   DATABASE_VENDORS,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { DATABASE_VENDOR_OPTIONS } from '../common/DatabaseVendorField.js';
 
 // Exact keys the SFTP connectors read — must not drift.

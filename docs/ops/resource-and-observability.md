@@ -1,6 +1,6 @@
 # Resource Sizing, Logging & Observability
 
-Operational guidance for running GalvaniFlow: health/readiness probes, Prometheus
+Operational guidance for running GalvaniGraph: health/readiness probes, Prometheus
 metrics, log configuration, and rough sizing. Endpoints below are served by the
 Node server on `:3000` (reachable through nginx in the production stack).
 
@@ -68,10 +68,10 @@ Scrape config sketch (when `METRICS_PUBLIC=true` on an internal network):
 
 ```yaml
 scrape_configs:
-  - job_name: galvaniflow
+  - job_name: galvanigraph
     metrics_path: /metrics
     static_configs:
-      - targets: ['galvaniflow-server:3000']
+      - targets: ['galvanigraph-server:3000']
 ```
 
 If you keep `/metrics` auth-gated instead, configure the scraper with a bearer token for
@@ -124,7 +124,7 @@ generally less protected than the database.
 
 ## Resource Sizing (starting points)
 
-GalvaniFlow is currently a **single-instance** deployment (no horizontal clustering yet).
+GalvaniGraph is currently a **single-instance** deployment (no horizontal clustering yet).
 There are no hard, benchmarked numbers for every workload — start here and adjust from the
 `/health` memory stats and `/metrics` under your real load. See
 [`docs/ops/throughput-benchmark.md`](throughput-benchmark.md) for a measured baseline and

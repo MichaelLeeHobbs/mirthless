@@ -9,7 +9,7 @@ import {
   changePasswordSchema,
   changeOwnPasswordSchema,
   userIdParamSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { UserController } from '../controllers/user.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

@@ -1,5 +1,5 @@
 {
-  "name": "@galvaniflow/connectors",
+  "name": "@galvanigraph/connectors",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -22,9 +22,9 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@galvaniflow/core-models": "workspace:*",
-    "@galvaniflow/core-util": "workspace:*",
-    "@galvaniflow/engine": "workspace:*",
+    "@galvanigraph/core-models": "workspace:*",
+    "@galvanigraph/core-util": "workspace:*",
+    "@galvanigraph/engine": "workspace:*",
     "@platformatic/kafka": "^2.15.0",
     "amqplib": "^2.3.1",
     "dcmjs-dimse": "^0.3.4",

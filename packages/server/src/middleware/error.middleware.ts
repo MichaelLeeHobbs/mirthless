@@ -4,7 +4,7 @@
 // Global error handler for Express.
 
 import type { NextFunction, Request, Response } from 'express';
-import { errorInfo } from '@galvaniflow/core-util';
+import { errorInfo } from '@galvanigraph/core-util';
 import logger from '../lib/logger.js';
 import { config } from '../config/index.js';
 

@@ -8,7 +8,7 @@ import {
   configMapQuerySchema,
   upsertConfigMapEntrySchema,
   bulkUpsertConfigMapSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { ConfigMapController } from '../controllers/config-map.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

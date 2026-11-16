@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi } from 'vitest';
-import type { Result } from '@galvaniflow/core-util';
+import type { Result } from '@galvanigraph/core-util';
 import { renderDestinationTemplate } from '../destination-template.js';
 import { MessageProcessor } from '../message-processor.js';
 import type { MessageStore, PipelineConfig } from '../message-processor.js';

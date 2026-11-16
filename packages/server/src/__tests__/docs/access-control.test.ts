@@ -8,7 +8,7 @@
 // routes/__tests__/role-access.test.ts.
 
 import { describe, it, expect } from 'vitest';
-import { PERMISSIONS, USER_ROLE } from '@galvaniflow/core-models';
+import { PERMISSIONS, USER_ROLE } from '@galvanigraph/core-models';
 import { permissionNamesForRole } from '../../lib/role-permissions.js';
 import { readRepoFile, tables, brokenRelativeLinks } from '../../../test/markdown.js';
 

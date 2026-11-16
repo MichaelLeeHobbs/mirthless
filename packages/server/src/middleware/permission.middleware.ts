@@ -5,7 +5,7 @@
 // Checks directly against req.user.permissions array.
 
 import type { NextFunction, Request, Response } from 'express';
-import type { Permission } from '@galvaniflow/core-models';
+import type { Permission } from '@galvanigraph/core-models';
 import logger from '../lib/logger.js';
 
 /**

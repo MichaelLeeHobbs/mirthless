@@ -5,7 +5,7 @@
 // Source connectors additionally dispatch messages into the pipeline.
 // Destination connectors send messages to external systems.
 
-import { fillPlaceholders, recordLookup, type Result } from '@galvaniflow/core-util';
+import { fillPlaceholders, recordLookup, type Result } from '@galvanigraph/core-util';
 
 // ----- Lifecycle -----
 

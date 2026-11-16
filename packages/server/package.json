@@ -1,5 +1,5 @@
 {
-  "name": "@galvaniflow/server",
+  "name": "@galvanigraph/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -19,10 +19,10 @@
     "db:seed": "tsx src/db/seeds/run-seed.ts"
   },
   "dependencies": {
-    "@galvaniflow/connectors": "workspace:^",
-    "@galvaniflow/core-models": "workspace:*",
-    "@galvaniflow/core-util": "workspace:*",
-    "@galvaniflow/engine": "workspace:^",
+    "@galvanigraph/connectors": "workspace:^",
+    "@galvanigraph/core-models": "workspace:*",
+    "@galvanigraph/core-util": "workspace:*",
+    "@galvanigraph/engine": "workspace:^",
     "@prometheus-io/client": "^0.16.1",
     "bcryptjs": "3.0.3",
     "compression": "1.8.2",

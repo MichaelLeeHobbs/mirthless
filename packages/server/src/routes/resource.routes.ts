@@ -7,7 +7,7 @@ import {
   createResourceSchema,
   updateResourceSchema,
   resourceUuidParamSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { ResourceController } from '../controllers/resource.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

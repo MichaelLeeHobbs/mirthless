@@ -32,6 +32,7 @@ import { useKeyboardShortcuts } from '../../hooks/use-keyboard-shortcuts.js';
 import { usePermissions } from '../../hooks/use-permissions.js';
 import { NAV_SECTIONS } from './nav-items.js';
 import { KeyboardShortcutHelp } from '../common/KeyboardShortcutHelp.js';
+import { Wordmark } from '../common/Wordmark.js';
 import { CommandPalette } from './CommandPalette.js';
 import { JumpToButton } from './JumpToButton.js';
 import { HeaderBreadcrumbs } from './HeaderBreadcrumbs.js';
@@ -244,7 +245,7 @@ export function AppLayout(): ReactNode {
               component="div"
               sx={{ display: { xs: 'none', lg: 'block' }, fontWeight: 700, letterSpacing: '-0.01em', color: 'text.primary' }}
             >
-              GalvaniFlow
+              <Wordmark />
             </Typography>
             <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', lg: 'block' }, my: 2, mx: 0.5 }} />
             <HeaderBreadcrumbs compact={isMobile} />

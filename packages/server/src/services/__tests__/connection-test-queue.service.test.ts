@@ -21,8 +21,8 @@ vi.mock('node:dns/promises', () => ({
 
 const mockTestKafka = vi.fn();
 const mockTestAmqp = vi.fn();
-vi.mock('@galvaniflow/connectors', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@galvaniflow/connectors')>()),
+vi.mock('@galvanigraph/connectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@galvanigraph/connectors')>()),
   testKafkaConnection: (...args: unknown[]) => mockTestKafka(...args),
   testAmqpConnection: (...args: unknown[]) => mockTestAmqp(...args),
 }));

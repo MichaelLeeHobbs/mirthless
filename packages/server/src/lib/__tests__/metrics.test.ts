@@ -91,33 +91,33 @@ describe('Prometheus Metrics Registry', () => {
   it('deployedChannelsGauge is registered', async () => {
     deployedChannelsGauge.set(3);
     const output = await registry.metrics();
-    expect(output).toContain('galvaniflow_deployed_channels');
+    expect(output).toContain('galvanigraph_deployed_channels');
     expect(output).toContain('3');
   });
 
   it('startedChannelsGauge is registered', async () => {
     startedChannelsGauge.set(2);
     const output = await registry.metrics();
-    expect(output).toContain('galvaniflow_started_channels');
+    expect(output).toContain('galvanigraph_started_channels');
     expect(output).toContain('2');
   });
 
   it('messagesProcessedTotal is registered', async () => {
     messagesProcessedTotal.inc();
     const output = await registry.metrics();
-    expect(output).toContain('galvaniflow_messages_processed_total');
+    expect(output).toContain('galvanigraph_messages_processed_total');
   });
 
   it('dbPoolTotal is registered', async () => {
     dbPoolTotal.set(10);
     const output = await registry.metrics();
-    expect(output).toContain('galvaniflow_db_pool_total');
+    expect(output).toContain('galvanigraph_db_pool_total');
   });
 
   it('dbPoolIdle is registered', async () => {
     dbPoolIdle.set(5);
     const output = await registry.metrics();
-    expect(output).toContain('galvaniflow_db_pool_idle');
+    expect(output).toContain('galvanigraph_db_pool_idle');
   });
 
   // ----- All Custom Metrics Present -----
@@ -127,11 +127,11 @@ describe('Prometheus Metrics Registry', () => {
     const expectedNames = [
       'http_request_duration_seconds',
       'http_requests_total',
-      'galvaniflow_deployed_channels',
-      'galvaniflow_started_channels',
-      'galvaniflow_messages_processed_total',
-      'galvaniflow_db_pool_total',
-      'galvaniflow_db_pool_idle',
+      'galvanigraph_deployed_channels',
+      'galvanigraph_started_channels',
+      'galvanigraph_messages_processed_total',
+      'galvanigraph_db_pool_total',
+      'galvanigraph_db_pool_idle',
     ];
     for (const name of expectedNames) {
       expect(output).toContain(name);

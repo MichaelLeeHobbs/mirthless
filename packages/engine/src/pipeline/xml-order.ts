@@ -13,7 +13,7 @@
 // CDATA sections and whitespace the script cannot see are kept where they were.
 
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
-import { isPlainObject } from '@galvaniflow/core-util';
+import { isPlainObject } from '@galvanigraph/core-util';
 
 const ATTR_PREFIX = '@_';
 const TEXT = '#text';

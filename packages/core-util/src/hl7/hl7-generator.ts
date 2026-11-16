@@ -74,7 +74,7 @@ function buildMsh(msgDef: typeof MESSAGE_TYPES[HL7MessageType], rng: () => numbe
   const parts = [
     'MSH',
     '^~\\&',
-    'GALVANIFLOW',
+    'GALVANIGRAPH',
     sendFac,
     'RECEIVER',
     recvFac,

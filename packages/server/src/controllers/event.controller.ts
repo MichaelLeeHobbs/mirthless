@@ -4,7 +4,7 @@
 // Handles HTTP requests for event (audit log) operations.
 
 import type { Request, Response } from 'express';
-import type { EventListQuery, EventIdParam, PurgeEventsQuery } from '@galvaniflow/core-models';
+import type { EventListQuery, EventIdParam, PurgeEventsQuery } from '@galvanigraph/core-models';
 import { EventService } from '../services/event.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

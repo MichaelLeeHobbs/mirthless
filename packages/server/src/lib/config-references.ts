@@ -5,7 +5,7 @@
 // or `${site.MIRTH_SENDER_HOST}`. They are resolved when the channel deploys, so
 // one export runs against each environment's own hosts and ports.
 
-import { fillPlaceholders } from '@galvaniflow/core-util';
+import { fillPlaceholders } from '@galvanigraph/core-util';
 
 /** A configuration map entry as the service lists it. */
 export interface ConfigEntry {

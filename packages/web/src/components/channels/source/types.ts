@@ -4,7 +4,7 @@
 // Shared interfaces for connector-specific settings forms.
 
 import type { Control, FieldErrors } from 'react-hook-form';
-import type { ScriptLanguageCode } from '@galvaniflow/core-models';
+import type { ScriptLanguageCode } from '@galvanigraph/core-models';
 import { NEW_SCRIPT_LANGUAGE } from '../../../lib/script-language.js';
 import type { ChannelFormData } from '../../../pages/ChannelEditorPage.js';
 

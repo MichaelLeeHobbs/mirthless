@@ -3,7 +3,7 @@
 // ===========================================
 // Maps roles to permission sets.
 
-import { PERMISSIONS, USER_ROLE, type Permission, type UserRole } from '@galvaniflow/core-models';
+import { PERMISSIONS, USER_ROLE, type Permission, type UserRole } from '@galvanigraph/core-models';
 
 export interface RoleDefinition {
   readonly name: UserRole;

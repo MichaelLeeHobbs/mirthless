@@ -15,8 +15,8 @@
 // them, so a step can use what an earlier step declared. Checks run off the
 // main thread and are cached (checkScriptTypesBatch).
 
-import { checkScriptTypesBatch, onlySyntaxWhileBroken, type ScriptTypeError } from '@galvaniflow/engine';
-import { CODE_TEMPLATE_CONTEXT, toScriptLanguage, type ScriptSurface, type TemplateSource } from '@galvaniflow/core-models';
+import { checkScriptTypesBatch, onlySyntaxWhileBroken, type ScriptTypeError } from '@galvanigraph/engine';
+import { CODE_TEMPLATE_CONTEXT, toScriptLanguage, type ScriptSurface, type TemplateSource } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import type { ChannelDetail } from './channel.service.js';
 import type { GlobalScriptsData } from './global-script.service.js';

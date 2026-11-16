@@ -9,7 +9,7 @@ import {
   bulkDeleteParamsSchema,
   bulkReprocessInputSchema,
   resendParamsSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { MessageReprocessController } from '../controllers/message-reprocess.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

@@ -4,7 +4,7 @@
 // Handles HTTP requests for channel export and import operations.
 
 import type { Request, Response } from 'express';
-import type { ChannelImportInput } from '@galvaniflow/core-models';
+import type { ChannelImportInput } from '@galvanigraph/core-models';
 import { ChannelExportService } from '../services/channel-export.service.js';
 import { ChannelImportService } from '../services/channel-import.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';

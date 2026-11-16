@@ -10,7 +10,7 @@ import {
   updateCodeTemplateSchema,
   codeTemplateListQuerySchema,
   codeTemplateUuidParamSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { CodeTemplateController } from '../controllers/code-template.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

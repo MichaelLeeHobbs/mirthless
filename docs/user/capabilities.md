@@ -1,6 +1,6 @@
-# What GalvaniFlow can do
+# What GalvaniGraph can do
 
-This page lists what GalvaniFlow does today beside what it does not do yet, one row per capability, so users can see what it covers and maintainers can see the gaps. Each row has a status, its limits, the plan for what is missing, and the automated tests that prove it.
+This page lists what GalvaniGraph does today beside what it does not do yet, one row per capability, so users can see what it covers and maintainers can see the gaps. Each row has a status, its limits, the plan for what is missing, and the automated tests that prove it.
 
 ## How to read this page
 
@@ -86,7 +86,7 @@ The [connector reference](connector-reference.md) lists every connector and its 
 
 ## Certificates
 
-Mirth Connect sells certificate management as its SSL Manager extension. GalvaniFlow includes it.
+Mirth Connect sells certificate management as its SSL Manager extension. GalvaniGraph includes it.
 
 | Capability | Status | Limits | Plan | Docs | Mirth | Proof |
 |---|---|---|---|---|---|---|
@@ -115,7 +115,7 @@ Mirth Connect sells certificate management as its SSL Manager extension. Galvani
 
 ## Mirth migration
 
-The importer reads a Mirth channel export or server backup (`POST /api/v1/channels/import/mirth`, with a dry-run preview that returns warnings). This table is what each Mirth feature becomes. Scripts are not translated: E4X and Mirth's script APIs must be rewritten in GalvaniFlow's API (D-244), and the preview names the constructs it finds. The scenario suite proves whole channels end to end, but it runs on a developer machine only, so this section is not CI-proven beyond the importer's unit tests.
+The importer reads a Mirth channel export or server backup (`POST /api/v1/channels/import/mirth`, with a dry-run preview that returns warnings). This table is what each Mirth feature becomes. Scripts are not translated: E4X and Mirth's script APIs must be rewritten in GalvaniGraph's API (D-244), and the preview names the constructs it finds. The scenario suite proves whole channels end to end, but it runs on a developer machine only, so this section is not CI-proven beyond the importer's unit tests.
 
 | Mirth feature | Imports as | Deploys | Warning at preview | Proof |
 |---|---|---|---|---|
@@ -123,7 +123,7 @@ The importer reads a Mirth channel export or server backup (`POST /api/v1/channe
 | TCP Sender (`TcpDispatcherProperties`) | `TCP_MLLP` destination with host, port, template and frame bytes | Yes | No | `packages/server/src/services/__tests__/mirth-import.service.test.ts`<br>`e2e/scenarios/s06-queued-tcp-sender-ack.scenario.ts` |
 | HTTP Listener (`HttpReceiverProperties`) | `HTTP` source serving every path under its context path | Yes | No | `packages/server/src/services/__tests__/mirth-import.service.test.ts`<br>`e2e/scenarios/s07-http-api-context-path.scenario.ts` |
 | HTTP Sender (`HttpDispatcherProperties`) | `HTTP` destination with method, headers, parameters, content and Basic credentials | Yes; Digest credentials are dropped | Yes, for Digest credentials | `packages/server/src/services/__tests__/mirth-import.service.test.ts`<br>`e2e/scenarios/s17-http-sender-auth-params.scenario.ts` |
-| File Reader and Writer, file scheme | `FILE` source or destination with the directory, file filter, after-processing action (None when the export names none or a Move has neither a folder nor a new name, as in Mirth; a Move that renames in place stays a Move the deploy refuses until a folder is set), move-to directory, sort order, file age, binary flag, charset and "ignore files starting with ." (`ignoreDot`, D-304); a Writer's file name (Mirth's message id and system time renamed to `${messageId}` and `${timestamp}`), append setting, temporary file setting and template | Yes, unless the Writer's file name uses another Mirth value or the charset is one GalvaniFlow lacks; a channel whose Writer must not overwrite an existing file is imported disabled (D-301) | Yes, for a regular-expression or comma-separated file filter, subfolders, a file size range, a rename on move, moving files that fail, a charset or file name value that cannot be used, Mirth's server-default charset, and "error if the file exists" | `packages/server/src/services/__tests__/mirth-import.service.test.ts`<br>`e2e/scenarios/s28-file-reader-keeps-files.scenario.ts` |
+| File Reader and Writer, file scheme | `FILE` source or destination with the directory, file filter, after-processing action (None when the export names none or a Move has neither a folder nor a new name, as in Mirth; a Move that renames in place stays a Move the deploy refuses until a folder is set), move-to directory, sort order, file age, binary flag, charset and "ignore files starting with ." (`ignoreDot`, D-304); a Writer's file name (Mirth's message id and system time renamed to `${messageId}` and `${timestamp}`), append setting, temporary file setting and template | Yes, unless the Writer's file name uses another Mirth value or the charset is one GalvaniGraph lacks; a channel whose Writer must not overwrite an existing file is imported disabled (D-301) | Yes, for a regular-expression or comma-separated file filter, subfolders, a file size range, a rename on move, moving files that fail, a charset or file name value that cannot be used, Mirth's server-default charset, and "error if the file exists" | `packages/server/src/services/__tests__/mirth-import.service.test.ts`<br>`e2e/scenarios/s28-file-reader-keeps-files.scenario.ts` |
 | File Reader and Writer, sftp scheme | `SFTP` source or destination, with the Reader's after-processing action, charset and `ignoreDot` (D-304) and the Writer's file name and append setting; a channel whose Writer must not overwrite an existing file is imported disabled (D-301) | Yes, once the host key is entered when Mirth checked it | Yes, when host key checking is on, and for binary files or a Writer charset other than UTF-8 | `packages/server/src/services/__tests__/mirth-import.service.test.ts`<br>`e2e/scenarios/s16-sftp-file-reader.scenario.ts` |
 | File Reader and Writer, ftp, smb, s3 or webdav scheme | `FILE` connector without a directory | No | Yes | `packages/server/src/services/__tests__/mirth-import.service.test.ts` |
 | Database Reader and Writer on PostgreSQL, MySQL or MariaDB | `DATABASE` with the vendor, host, port and database from the JDBC URL, a `${...}` part kept for the deploy to resolve; Reader rows arrive as JSON | Yes | Yes, for the Reader's JSON rows | `packages/server/src/services/__tests__/mirth-import.service.test.ts`<br>`e2e/scenarios/s14-database-reader.scenario.ts`<br>`e2e/scenarios/s15-database-writer-mysql.scenario.ts` |
@@ -170,7 +170,7 @@ The importer reads a Mirth channel export or server backup (`POST /api/v1/channe
 | Response transformers and response modes | Yes | | | | Response transformer, Respond from | `packages/engine/src/pipeline/__tests__/response-transformer.test.ts`<br>`packages/server/src/__tests__/engine-dispatch-status.test.ts` |
 | Split batches by delimiter, regex or script | Partial | Only HL7 v2 Process Batch is reachable from a channel; the other splitters have no setting. | | | Batch processing | `packages/engine/src/batch/__tests__/batch-processor.test.ts` |
 | E4X access to messages | Won't | Use the path API (`msg.get('PID.5.1')`). | D-244 "does not support E4X" | [scripting-api.md](scripting-api.md) | E4X | |
-| Mirth script APIs (ResponseFactory, DateUtil, channelMap.put) | Won't | Rewrite in GalvaniFlow's API; the import preview names them. | D-244 "scripts are rewritten in GalvaniFlow's API" | [scripting-api.md](scripting-api.md) | userutil API | |
+| Mirth script APIs (ResponseFactory, DateUtil, channelMap.put) | Won't | Rewrite in GalvaniGraph's API; the import preview names them. | D-244 "the same holds for Mirth's other script APIs" | [scripting-api.md](scripting-api.md) | userutil API | |
 | Java classes, JAR loading or Python in scripts | Won't | Use JavaScript built-ins and the IO bridges. | D-260 "no Java interop, JAR loading or Python runtime" | | Java interop | |
 | Multiple threads per destination queue | No | Split the load over several channels; destinations already run as parallel chains. | ROADMAP N7 | | Queue threads, Rotate | |
 | Keep per-patient order while scaling out | No | none known | ROADMAP B3 | | Thread assignment variable | |

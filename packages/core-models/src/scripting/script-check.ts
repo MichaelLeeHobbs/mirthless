@@ -26,7 +26,7 @@ export const SCRIPT_COMPILER_OPTIONS = {
 } as const;
 
 /** The first line of the function the engine runs every script in. */
-export const SCRIPT_BODY_OPEN = 'async function __galvaniflowScript() {';
+export const SCRIPT_BODY_OPEN = 'async function __galvanigraphScript() {';
 
 /**
  * A script as the body of the function the engine runs it in, which is how the

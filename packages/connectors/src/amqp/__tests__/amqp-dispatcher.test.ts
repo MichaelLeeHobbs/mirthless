@@ -122,7 +122,7 @@ describe('send', () => {
 describe('connection options', () => {
   it('uses amqp without TLS and keeps credentials out of a URL', () => {
     expect(connectOptions({ ...config })).toEqual({ protocol: 'amqp', hostname: 'rabbit', port: 5672, vhost: '/', heartbeat: 30, username: 'u', password: 'p' });
-    expect(socketOptions({ ...config })).toEqual({ timeout: 30_000, clientProperties: { connection_name: 'galvaniflow' } });
+    expect(socketOptions({ ...config })).toEqual({ timeout: 30_000, clientProperties: { connection_name: 'galvanigraph' } });
   });
 
   it('leaves out credentials when no username is set', () => {

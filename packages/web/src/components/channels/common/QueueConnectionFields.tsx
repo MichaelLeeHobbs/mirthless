@@ -5,7 +5,7 @@
 // destination forms.
 
 import type { ReactNode } from 'react';
-import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvaniflow/core-models';
+import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvanigraph/core-models';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -85,7 +85,7 @@ export function KafkaConnectionFields({ properties, onChange }: FieldsProps): Re
       />
       <TextField
         label="Client ID"
-        value={getStr(properties, 'clientId', 'galvaniflow')}
+        value={getStr(properties, 'clientId', 'galvanigraph')}
         onChange={handleText('clientId')}
         helperText="Shown in broker logs and quotas"
         fullWidth

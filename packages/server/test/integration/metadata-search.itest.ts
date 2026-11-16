@@ -6,7 +6,7 @@
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { messageSearchQuerySchema } from '@galvaniflow/core-models';
+import { messageSearchQuerySchema } from '@galvanigraph/core-models';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('Message search by custom metadata (real Postgres)', () => {

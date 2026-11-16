@@ -3,7 +3,7 @@
 // ===========================================
 
 import { Router, type IRouter } from 'express';
-import { updateGlobalScriptsSchema } from '@galvaniflow/core-models';
+import { updateGlobalScriptsSchema } from '@galvanigraph/core-models';
 import { GlobalScriptController } from '../controllers/global-script.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

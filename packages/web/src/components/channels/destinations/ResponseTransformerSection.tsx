@@ -13,7 +13,7 @@ import AccordionDetails from '@mui/material/AccordionDetails';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import type { ScriptLanguageCode } from '@galvaniflow/core-models';
+import type { ScriptLanguageCode } from '@galvanigraph/core-models';
 import { ScriptEditor } from '../../editors/ScriptEditor.js';
 
 interface ResponseTransformerSectionProps {

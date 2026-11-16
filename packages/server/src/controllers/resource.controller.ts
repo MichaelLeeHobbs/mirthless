@@ -4,7 +4,7 @@
 // Handles HTTP requests for resource CRUD.
 
 import type { Request, Response } from 'express';
-import type { CreateResourceInput, UpdateResourceInput } from '@galvaniflow/core-models';
+import type { CreateResourceInput, UpdateResourceInput } from '@galvanigraph/core-models';
 import { ResourceService } from '../services/resource.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

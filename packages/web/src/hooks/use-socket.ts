@@ -4,7 +4,7 @@
 // React hooks for managing socket.io lifecycle and event subscriptions.
 
 import { useEffect, useRef, useState } from 'react';
-import { createThrottle } from '@galvaniflow/core-util';
+import { createThrottle } from '@galvanigraph/core-util';
 import { useAuthStore } from '../stores/auth.store.js';
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socket.js';
 import { queryClient } from '../providers/QueryProvider.js';

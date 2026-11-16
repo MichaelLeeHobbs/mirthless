@@ -7,7 +7,7 @@ import { Router, type IRouter } from 'express';
 import {
   setDependenciesSchema,
   channelDependencyParamSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { ChannelDependencyService } from '../services/channel-dependency.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

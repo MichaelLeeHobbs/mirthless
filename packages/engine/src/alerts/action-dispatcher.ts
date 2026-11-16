@@ -4,8 +4,8 @@
 // Executes alert actions: LOG writes to the logger,
 // CHANNEL routes error details to a target channel.
 
-import type { AlertTemplateVariable } from '@galvaniflow/core-models';
-import { fillPlaceholders, recordLookup } from '@galvaniflow/core-util';
+import type { AlertTemplateVariable } from '@galvanigraph/core-models';
+import { fillPlaceholders, recordLookup } from '@galvanigraph/core-util';
 import type { LoadedAlert, AlertAction, ChannelErrorEvent } from './alert-evaluator.js';
 
 // ----- Types -----

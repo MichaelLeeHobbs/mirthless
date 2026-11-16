@@ -8,7 +8,7 @@
 // genuine input to transform).
 //
 // Assertions target the stored connector content types defined in
-// @galvaniflow/core-models CONTENT_TYPE:
+// @galvanigraph/core-models CONTENT_TYPE:
 //   - CT_SENT (5)                 — outbound content AFTER the dest transformer
 //   - CT_RESPONSE (6)             — raw response from the destination
 //   - CT_RESPONSE_TRANSFORMED (7) — response AFTER the response transformer
@@ -17,7 +17,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
-import { CONTENT_TYPE } from '@galvaniflow/core-models';
+import { CONTENT_TYPE } from '@galvanigraph/core-models';
 import {
   MLLP_RESPONSE_MODE,
   wrapMllp,
@@ -30,12 +30,12 @@ import {
   MessageProcessor,
   ChannelRuntime,
   DEFAULT_EXECUTION_OPTIONS,
-} from '@galvaniflow/engine';
+} from '@galvanigraph/engine';
 import type {
   CompiledScript,
   PipelineConfig,
   ChannelRuntimeConfig,
-} from '@galvaniflow/engine';
+} from '@galvanigraph/engine';
 import { createInMemoryStore, toDispatchResult } from './support/e2e-harness.js';
 import { mllpSource, mllpDestination, sendMllp } from './support/tcp-helpers.js';
 

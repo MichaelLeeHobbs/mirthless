@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea or enhancement for GalvaniFlow
+about: Suggest an idea or enhancement for GalvaniGraph
 title: "[Feature]: "
 labels: enhancement
 assignees: ''

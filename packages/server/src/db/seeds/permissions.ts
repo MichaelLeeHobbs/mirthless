@@ -3,7 +3,7 @@
 // ===========================================
 // Seed rows for the permission strings defined in core-models (PERMISSIONS).
 
-import { PERMISSIONS, type Permission } from '@galvaniflow/core-models';
+import { PERMISSIONS, type Permission } from '@galvanigraph/core-models';
 import { permissionRow } from '../../lib/role-permissions.js';
 
 export interface PermissionDefinition {

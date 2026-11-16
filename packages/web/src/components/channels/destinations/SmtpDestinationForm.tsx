@@ -17,7 +17,7 @@ import { SMTP_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 import { getStr, getNum, getBool, propertyUpdaters } from '../common/connector-properties.js';
-import { SMTP_CONTENT_TYPES } from '@galvaniflow/core-models';
+import { SMTP_CONTENT_TYPES } from '@galvanigraph/core-models';
 
 const DEFAULT_MIME_TYPE = 'text/plain';
 

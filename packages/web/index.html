@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GalvaniFlow</title>
+    <title>GalvaniGraph</title>
     <style>
       html {
         /* Painted before React mounts to avoid a wrong-theme flash. Overwritten
@@ -20,7 +20,10 @@
       // Apply the saved theme's surface colour before first paint.
       (function () {
         try {
-          var mode = localStorage.getItem('galvaniflow_theme') || localStorage.getItem('mirthless_theme');
+          // Same keys as ui.store.ts: the current one, then the pre-rename ones.
+          var mode = localStorage.getItem('galvanigraph_theme')
+            || localStorage.getItem('galvaniflow_theme')
+            || localStorage.getItem('mirthless_theme');
           if (mode === 'light') {
             document.documentElement.style.backgroundColor = '#f3f6fb';
             document.documentElement.style.colorScheme = 'light';

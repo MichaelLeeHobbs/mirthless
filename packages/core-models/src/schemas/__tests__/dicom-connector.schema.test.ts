@@ -35,7 +35,7 @@ describe('dicomSourcePropertiesSchema', () => {
 
   it('needs a port and a storage directory, and fills the rest', () => {
     expect(dicomSourcePropertiesSchema.parse({ port: '4242', storageDir: '/in' })).toEqual({
-      port: 4242, storageDir: '/in', aeTitle: 'GALVANIFLOW', minPoolSize: 2, maxPoolSize: 10, connectionTimeoutMs: 10000,
+      port: 4242, storageDir: '/in', aeTitle: 'GALVANIGRAPH', minPoolSize: 2, maxPoolSize: 10, connectionTimeoutMs: 10000,
       dispatchMode: 'PER_FILE', postAction: 'DELETE', moveToDirectory: '',
     });
   });
@@ -78,7 +78,7 @@ describe('dicomDestinationPropertiesSchema', () => {
   // An imported DICOM Sender keeps Mirth's host and port and deploys unedited.
   it('drops the Mirth keys the importer copies, keeping host and port', () => {
     expect(dicomDestinationPropertiesSchema.parse({ ...MIRTH_SENDER, host: 'pacs', port: '104' })).toEqual({
-      host: 'pacs', port: 104, calledAETitle: 'PACS', callingAETitle: 'GALVANIFLOW', mode: 'multiple', maxAssociations: 4,
+      host: 'pacs', port: 104, calledAETitle: 'PACS', callingAETitle: 'GALVANIGRAPH', mode: 'multiple', maxAssociations: 4,
       maxRetries: 3, retryDelayMs: 1000, timeoutMs: 30000,
     });
   });

@@ -12,6 +12,28 @@ import type { MessageDispatcher, RawMessage } from './base.js';
 import { dispatchFailure } from './base.js';
 import { errorInfo, type ConnectorLogger } from './logger.js';
 
+/** The ledger file a source writes in its watched directory. */
+export const QUARANTINE_LEDGER_NAME = '.galvanigraph-quarantine.json';
+
+/**
+ * Ledger files written under the product's earlier names: GalvaniFlow (D-309)
+ * and Mirthless (D-205). Still read and merged at start, never written, so a
+ * file quarantined before a rename stays quarantined. The next persist carries
+ * their entries into {@link QUARANTINE_LEDGER_NAME}.
+ */
+export const LEGACY_QUARANTINE_LEDGER_NAMES: readonly string[] = [
+  '.galvaniflow-quarantine.json',
+  '.mirthless-quarantine.json',
+];
+
+/** Every ledger file a source loads at start, current first. */
+export const QUARANTINE_LEDGER_NAMES: readonly string[] = [QUARANTINE_LEDGER_NAME, ...LEGACY_QUARANTINE_LEDGER_NAMES];
+
+/** True when a file name is a current or legacy ledger, which is never dispatched. */
+export function isQuarantineLedgerName(name: string): boolean {
+  return QUARANTINE_LEDGER_NAMES.includes(name);
+}
+
 /** Where a receiver keeps its ledger files. */
 export interface LedgerStorage {
   /**

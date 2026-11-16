@@ -7,7 +7,7 @@
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { createChannelSchema } from '@galvaniflow/core-models';
+import { createChannelSchema } from '@galvanigraph/core-models';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('Channel clone keeps code template library scope (real Postgres)', () => {

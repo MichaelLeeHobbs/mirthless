@@ -11,9 +11,9 @@
 
 import { createHash } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
-import type { Result } from '@galvaniflow/core-util';
-import { tryCatch } from '@galvaniflow/core-util';
-import { scriptDeclarations, templateDeclarations, type ScriptSurface, type TemplateSource } from '@galvaniflow/core-models';
+import type { Result } from '@galvanigraph/core-util';
+import { tryCatch } from '@galvanigraph/core-util';
+import { scriptDeclarations, templateDeclarations, type ScriptSurface, type TemplateSource } from '@galvanigraph/core-models';
 import type { ScriptTypeError } from './script-type-check.js';
 import { workerEntry } from './worker-entry.js';
 

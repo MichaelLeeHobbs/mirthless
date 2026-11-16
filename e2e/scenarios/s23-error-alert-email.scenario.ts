@@ -17,7 +17,7 @@ scenario('S23 destination error triggers an alert email naming the channel', asy
   await api.put('/settings/smtp.host', { key: 'smtp.host', value: '127.0.0.1', category: 'smtp' });
   await api.put('/settings/smtp.port', { key: 'smtp.port', value: String(MAIL.smtpPort), type: 'number', category: 'smtp' });
   await api.put('/settings/smtp.secure', { key: 'smtp.secure', value: 'false', type: 'boolean', category: 'smtp' });
-  await api.put('/settings/smtp.from', { key: 'smtp.from', value: 'galvaniflow@example.com', category: 'smtp' });
+  await api.put('/settings/smtp.from', { key: 'smtp.from', value: 'galvanigraph@example.com', category: 'smtp' });
 
   const ids = await api.importAndDeploy(channelExport({
     id: mirthId(23),

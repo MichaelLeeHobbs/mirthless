@@ -33,7 +33,7 @@
 
 import { beforeAll, afterAll, afterEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { createChannelSchema } from '@galvaniflow/core-models';
+import { createChannelSchema } from '@galvanigraph/core-models';
 import { describeIntegration, unwrap } from './_setup.js';
 
 const LOCK_WAIT_TIMEOUT_MS = 10_000;

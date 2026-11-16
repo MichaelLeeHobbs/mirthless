@@ -10,8 +10,8 @@ import TextField from '@mui/material/TextField';
 import Grid from '@mui/material/Grid';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
-import { ALERT_TEMPLATE_VARIABLES } from '@galvaniflow/core-models';
-import { placeholderNames } from '@galvaniflow/core-util';
+import { ALERT_TEMPLATE_VARIABLES } from '@galvanigraph/core-models';
+import { placeholderNames } from '@galvanigraph/core-util';
 
 export interface TemplateFormValues {
   readonly subjectTemplate: string;

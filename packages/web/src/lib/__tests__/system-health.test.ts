@@ -119,7 +119,7 @@ describe('diagnosticsText', () => {
 
   it('summarises every section on one line each', () => {
     const text = diagnosticsText(info(), now);
-    expect(text).toContain('GalvaniFlow system information (2026-10-27T12:00:00.000Z)');
+    expect(text).toContain('GalvaniGraph system information (2026-10-27T12:00:00.000Z)');
     expect(text).toContain('Database   connected · PostgreSQL 17.2 · 3.2 ms · 2.0 GB');
     expect(text).toContain('load 0.50 / 0.40 / 0.30');
     expect(text).toContain('pid 42 on mirth-01');

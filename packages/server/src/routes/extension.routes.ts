@@ -4,7 +4,7 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod';
-import { setExtensionEnabledSchema } from '@galvaniflow/core-models';
+import { setExtensionEnabledSchema } from '@galvanigraph/core-models';
 import { ExtensionController } from '../controllers/extension.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

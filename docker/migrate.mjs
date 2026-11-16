@@ -3,7 +3,7 @@
 // ===========================================
 // Applies Drizzle migrations using drizzle-orm's built-in migrator.
 // This avoids shipping drizzle-kit (a devDependency) in the runtime image —
-// drizzle-orm and pg are both production dependencies of @galvaniflow/server.
+// drizzle-orm and pg are both production dependencies of @galvanigraph/server.
 //
 // Two database roles (D-307): MIGRATION_DATABASE_URL is the role that owns the
 // tables, and runs the migrations. DATABASE_URL is the server's own role, which
