@@ -106,13 +106,17 @@ export function MessageBrowserPage(): ReactNode {
   useSocketRoom('join:channel', 'leave:channel', channelId);
 
   // --- WebSocket: refresh this channel's message list on new messages ---
-  // Throttled (D-306), and the list only: an open message's detail does not
-  // change when other messages arrive.
+  // Throttled (D-306) and scoped to the channel. The list only: an open message's
+  // detail no longer refreshes on live events, so while a message is still being
+  // processed its detail can lag its list row until it is reselected once its
+  // cached detail is stale (30 s), the page reloads, or the socket reconnects.
+  // That is the accepted trade-off for not re-reading PHI content on every
+  // message (refetch on window focus is off app-wide).
   const handleNewMessage = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: MESSAGE_KEYS.channelSearches(channelId) });
   }, [queryClient, channelId]);
 
-  useThrottledSocketEvent(SOCKET_EVENT.MESSAGE_NEW, handleNewMessage);
+  useThrottledSocketEvent(SOCKET_EVENT.MESSAGE_NEW, handleNewMessage, channelId);
 
   // Build search params
   const searchParams: MessageSearchParams = {

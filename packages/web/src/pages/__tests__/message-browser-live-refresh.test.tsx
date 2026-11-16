@@ -15,11 +15,15 @@ import { lightTheme } from '../../styles/theme.js';
 
 const throttled = vi.hoisted(() => new Map<string, () => void>());
 const plainEvents = vi.hoisted(() => [] as string[]);
+const scopes = vi.hoisted(() => new Map<string, string | undefined>());
 
 vi.mock('../../hooks/use-socket.js', () => ({
   useSocketRoom: vi.fn(),
   useSocketEvent: (event: string) => { plainEvents.push(event); },
-  useThrottledSocketEvent: (event: string, handler: () => void) => { throttled.set(event, handler); },
+  useThrottledSocketEvent: (event: string, handler: () => void, scope?: string) => {
+    throttled.set(event, handler);
+    scopes.set(event, scope);
+  },
 }));
 vi.mock('../../hooks/use-messages.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../hooks/use-messages.js')>()),
@@ -43,6 +47,7 @@ const { MESSAGE_KEYS } = await import('../../hooks/use-messages.js');
 afterEach(() => {
   cleanup();
   throttled.clear();
+  scopes.clear();
   plainEvents.length = 0;
 });
 
@@ -63,6 +68,11 @@ describe('MessageBrowserPage live refresh', () => {
     renderPage(new QueryClient());
     expect(throttled.has('message:new')).toBe(true);
     expect(plainEvents).not.toContain('message:new');
+  });
+
+  it('scopes the throttle to the channel, so a run pending for one channel does not fire for the next', () => {
+    renderPage(new QueryClient());
+    expect(scopes.get('message:new')).toBe('c1');
   });
 
   it('invalidates the channel message list and not an open message detail or another channel', () => {
