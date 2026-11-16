@@ -541,7 +541,7 @@ describe('validateConnectorProperties', () => {
     const SFTP_SOURCE = {
       host: 'sftp.lab.example', port: 22, username: 'lab', password: 'pw', privateKey: '', passphrase: '',
       remoteDirectory: '/inbound', filePattern: '*', pollingIntervalMs: 5000, afterProcessing: 'DELETE',
-      moveToDirectory: '', minFileAgeMs: 1000, charset: 'utf-8', strictHostKey: true, hostKey: 'AAAAkey',
+      moveToDirectory: '', minFileAgeMs: 1000, ignoreDot: true, charset: 'utf-8', strictHostKey: true, hostKey: 'AAAAkey',
     };
     const SFTP_DEST = {
       host: 'sftp.lab.example', port: 22, username: 'lab', password: '', privateKey: '-----BEGIN KEY-----', passphrase: '',
@@ -585,6 +585,17 @@ describe('validateConnectorProperties', () => {
       expect(validateConnectorProperties('SFTP', 'source', { ...SFTP_SOURCE, afterProcessing: 'MOVE', moveToDirectory: '' }).ok).toBe(false);
       expect(validateConnectorProperties('SFTP', 'source', { ...SFTP_SOURCE, afterProcessing: 'MOVE', moveToDirectory: '/done' }).ok).toBe(true);
       expect(validateConnectorProperties('SFTP', 'source', { ...SFTP_SOURCE, afterProcessing: 'ARCHIVE' }).ok).toBe(false);
+    });
+
+    // ignoreDot (#244) is a switch: text such as "false" is refused at deploy, as the FILE schema does.
+    it('rejects an SFTP source whose ignoreDot is not true or false, naming it, and accepts one without it', () => {
+      const result = validateConnectorProperties('SFTP', 'source', { ...SFTP_SOURCE, ignoreDot: 'false' });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('ignoreDot');
+      expect(validateConnectorProperties('SFTP', 'source', { ...SFTP_SOURCE, ignoreDot: false }).ok).toBe(true);
+      const { ignoreDot: _ignoreDot, ...saved } = SFTP_SOURCE;
+      expect(validateConnectorProperties('SFTP', 'source', saved).ok).toBe(true);
     });
 
     it.each(['username', 'remoteDirectory'])('rejects an SFTP destination with an empty %s', (key) => {
