@@ -575,7 +575,7 @@ async function syncFilters(
         operator: rule.operator,
         type: rule.type,
         script: rule.script ?? null,
-        language: rule.language,
+        language: rule.language ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
         field: rule.field ?? null,
         condition: rule.condition ?? null,
         values: rule.values ?? null,
@@ -626,7 +626,7 @@ async function syncTransformers(
         name: step.name ?? null,
         type: step.type,
         script: step.script ?? null,
-        language: step.language,
+        language: step.language ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
         sourceField: step.sourceField ?? null,
         targetField: step.targetField ?? null,
         defaultValue: step.defaultValue ?? null,
@@ -796,7 +796,7 @@ export class ChannelService {
             queueThreadCount: dest.queueThreadCount,
             waitForPrevious: dest.waitForPrevious,
             responseTransformer: dest.responseTransformer ?? null,
-            responseTransformerLanguage: dest.responseTransformerLanguage,
+            responseTransformerLanguage: dest.responseTransformerLanguage ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
           }));
           const insertedDests = await tx.insert(channelConnectors).values(destValues).returning({
             id: channelConnectors.id,
@@ -942,15 +942,18 @@ export class ChannelService {
           });
         }
 
-        // Update scripts if provided
+        // Update scripts if provided. A language the request leaves out keeps
+        // the stored one (D-291): defaulting it would turn TypeScript into
+        // JavaScript and switch off the script's deploy type check.
         if (input.scripts) {
           const { languages, ...scriptsByKey } = input.scripts;
           for (const [key, value] of Object.entries(scriptsByKey)) {
             if (value !== undefined) {
               const scriptType = key.toUpperCase();
+              const language = languages[key as keyof typeof languages];
               await tx
                 .update(channelScripts)
-                .set({ script: value ?? '', language: languages[key as keyof typeof languages] })
+                .set({ script: value ?? '', ...(language === undefined ? {} : { language }) })
                 .where(and(eq(channelScripts.channelId, id), eq(channelScripts.scriptType, scriptType)));
             }
           }
@@ -975,7 +978,7 @@ export class ChannelService {
               queueThreadCount: dest.queueThreadCount,
               waitForPrevious: dest.waitForPrevious,
               responseTransformer: dest.responseTransformer ?? null,
-              responseTransformerLanguage: dest.responseTransformerLanguage,
+              responseTransformerLanguage: dest.responseTransformerLanguage ?? DEFAULT_STORED_SCRIPT_LANGUAGE,
             }));
             const insertedDests = await tx.insert(channelConnectors).values(destValues).returning({
               id: channelConnectors.id,

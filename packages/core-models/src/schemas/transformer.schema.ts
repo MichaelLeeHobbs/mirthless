@@ -3,7 +3,7 @@
 // ===========================================
 
 import { z } from 'zod/v4';
-import { DEFAULT_STORED_SCRIPT_LANGUAGE, scriptLanguageSchema } from './script-language.schema.js';
+import { scriptLanguageSchema } from './script-language.schema.js';
 
 export const TRANSFORMER_STEP_TYPES = ['JAVASCRIPT', 'MAPPER', 'MESSAGE_BUILDER'] as const;
 
@@ -12,8 +12,8 @@ export const transformerStepInputSchema = z.object({
   name: z.string().max(255).optional(),
   type: z.enum(TRANSFORMER_STEP_TYPES),
   script: z.string().nullable().default(null),
-  /** The language of `script`. */
-  language: scriptLanguageSchema.default(DEFAULT_STORED_SCRIPT_LANGUAGE),
+  /** The language of `script`. Create stores JavaScript when it is left out; update requires it with a script (D-291). */
+  language: scriptLanguageSchema.optional(),
   // Mapper fields (null for other types)
   sourceField: z.string().max(500).nullable().default(null),
   targetField: z.string().max(500).nullable().default(null),
