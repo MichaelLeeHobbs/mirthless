@@ -11,7 +11,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
 import { permissionNamesForRole } from '../lib/role-permissions.js';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { signAccessToken, signRefreshToken, tokenExpiresAt, verifyRefreshToken } from '../lib/jwt.js';
 import { emitEvent } from '../lib/event-emitter.js';
 
@@ -43,27 +43,32 @@ function auditLoginFailure(
   });
 }
 
+/** What counting a wrong password did to the account. */
+type FailedAttemptOutcome = 'counted' | 'locked_now' | 'already_locked';
+
 /**
- * Count a wrong password and lock the account when the count reaches
- * MAX_FAILED_ATTEMPTS. Called only when the account is not locked, so a
- * `lockedUntil` still set here has expired: that lock's attempts no longer
- * count, and the new count starts at one. Returns true when this attempt locks.
+ * Count a wrong password in one UPDATE, so concurrent wrong guesses each count
+ * and a late write cannot clear a lock another request set (#174). The row is
+ * updated only while it is not locked at `now`. A lock that has expired no
+ * longer counts: the count starts again at one and the old lock is cleared.
+ * Reaching MAX_FAILED_ATTEMPTS sets a new lock. No row updated means a
+ * concurrent request locked the account first.
  */
-async function recordFailedAttempt(
-  user: { readonly id: string; readonly failedLoginAttempts: number; readonly lockedUntil: Date | null },
-): Promise<boolean> {
-  const priorAttempts = user.lockedUntil === null ? user.failedLoginAttempts : 0;
-  const attempts = priorAttempts + 1;
-  const locked = attempts >= MAX_FAILED_ATTEMPTS;
-  await db
+async function recordFailedAttempt(userId: string, now: Date): Promise<FailedAttemptOutcome> {
+  const lockExpired = sql`(${users.lockedUntil} IS NOT NULL AND ${users.lockedUntil} <= ${now}::timestamptz)`;
+  const attempts = sql`(CASE WHEN ${lockExpired} THEN 1 ELSE ${users.failedLoginAttempts} + 1 END)`;
+  const lockUntil = new Date(now.getTime() + LOCKOUT_DURATION_MS);
+  const [row] = await db
     .update(users)
     .set({
       failedLoginAttempts: attempts,
-      lockedUntil: locked ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null,
-      updatedAt: new Date(),
+      lockedUntil: sql`CASE WHEN ${attempts} >= ${MAX_FAILED_ATTEMPTS} THEN ${lockUntil}::timestamptz WHEN ${lockExpired} THEN NULL ELSE ${users.lockedUntil} END`,
+      updatedAt: now,
     })
-    .where(eq(users.id, user.id));
-  return locked;
+    .where(and(eq(users.id, userId), or(isNull(users.lockedUntil), lte(users.lockedUntil, now))))
+    .returning({ failedLoginAttempts: users.failedLoginAttempts });
+  if (!row) return 'already_locked';
+  return row.failedLoginAttempts >= MAX_FAILED_ATTEMPTS ? 'locked_now' : 'counted';
 }
 
 export interface SessionMetadata {
@@ -150,17 +155,18 @@ export class AuthService {
       // Verify password
       const valid = await bcrypt.compare(password, user.passwordHash);
       if (!valid) {
-        const locked = await recordFailedAttempt(user);
-        auditLoginFailure(username, user.id, locked ? 'invalid_password_locked' : 'invalid_password', metadata);
-        if (locked) {
-          throw new ServiceError(
-            'ACCOUNT_LOCKED',
-            'Too many failed attempts. Account has been temporarily locked.',
-            { lockedNow: true }
-          );
+        const outcome = await recordFailedAttempt(user.id, new Date());
+        if (outcome === 'counted') {
+          auditLoginFailure(username, user.id, 'invalid_password', metadata);
+          throw new ServiceError('INVALID_CREDENTIALS', 'Invalid credentials');
         }
-
-        throw new ServiceError('INVALID_CREDENTIALS', 'Invalid credentials');
+        // This attempt locked the account, or a concurrent one did first.
+        auditLoginFailure(username, user.id, outcome === 'locked_now' ? 'invalid_password_locked' : 'account_locked', metadata);
+        throw new ServiceError(
+          'ACCOUNT_LOCKED',
+          'Too many failed attempts. Account has been temporarily locked.',
+          { lockedNow: true }
+        );
       }
 
       // Reset failed attempts and update last login
@@ -199,19 +205,19 @@ export class AuthService {
       // session + a fresh user check below rather than the token's own claims.
       verifyRefreshToken(refreshToken);
 
-      // Find session in database by hashed token
-      const hashedToken = hashToken(refreshToken);
+      // Consume the session in one statement: of two concurrent refreshes with
+      // the same token, only one gets the row back, so a token works once (#174).
       const [session] = await db
-        .select()
-        .from(sessions)
-        .where(eq(sessions.refreshToken, hashedToken));
+        .delete(sessions)
+        .where(eq(sessions.refreshToken, hashToken(refreshToken)))
+        .returning({ userId: sessions.userId, expiresAt: sessions.expiresAt });
 
       if (!session || session.expiresAt < new Date()) {
         throw new Error('Invalid refresh token');
       }
 
       // Re-validate the user on every refresh: a disabled or deleted user must not
-      // be able to keep rotating tokens. Drop the session and fail loudly.
+      // be able to keep rotating tokens. Their session is already gone.
       const [user] = await db
         .select({
           id: users.id, username: users.username, email: users.email, role: users.role,
@@ -221,12 +227,8 @@ export class AuthService {
         .where(eq(users.id, session.userId));
 
       if (!user || !user.enabled) {
-        await db.delete(sessions).where(eq(sessions.id, session.id));
         throw new Error('Invalid refresh token');
       }
-
-      // Delete old session (rotate tokens)
-      await db.delete(sessions).where(eq(sessions.id, session.id));
 
       const tokens = await this.createTokens(session.userId, metadata);
       return { user: toUserResponse(user), ...tokens };

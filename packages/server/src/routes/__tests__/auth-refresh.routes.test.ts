@@ -16,21 +16,17 @@ import { permissionNamesForRole } from '../../lib/role-permissions.js';
 const state = vi.hoisted(() => ({ role: 'deployer', insertedUserAgents: [] as unknown[] }));
 
 vi.mock('../../lib/db.js', () => {
-  const session = { id: 'sess-1', userId: 'u-1', expiresAt: new Date(Date.now() + 3_600_000) };
-  let selects = 0;
+  const session = { userId: 'u-1', expiresAt: new Date(Date.now() + 3_600_000) };
   const db = {
-    // Each refresh reads the session, then the user.
+    // Each refresh consumes the session (DELETE ... RETURNING), then reads the user.
+    delete: () => ({ where: () => ({ returning: () => Promise.resolve([session]) }) }),
     select: () => ({
       from: () => ({
-        where: () => {
-          selects++;
-          return Promise.resolve(selects % 2 === 1 ? [session] : [{
-            id: 'u-1', username: 'kpatel', email: 'kpatel@example.test', role: state.role, enabled: true, mustChangePassword: false,
-          }]);
-        },
+        where: () => Promise.resolve([{
+          id: 'u-1', username: 'kpatel', email: 'kpatel@example.test', role: state.role, enabled: true, mustChangePassword: false,
+        }]),
       }),
     }),
-    delete: () => ({ where: () => Promise.resolve(undefined) }),
     insert: () => ({
       values: (v: { userAgent?: unknown }) => {
         state.insertedUserAgents.push(v.userAgent);
