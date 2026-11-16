@@ -2,6 +2,8 @@
 // FHIR R4 Dispatcher Tests
 // ===========================================
 
+import * as http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ConnectorMessage } from '../../base.js';
 import {
@@ -354,5 +356,56 @@ describe('FhirDispatcher.send', () => {
 
     expect(result.ok).toBe(false);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ----- redirects (#163) -----
+
+describe('FhirDispatcher redirects', () => {
+  let server: http.Server | undefined;
+  let requests: Array<{ method: string; url: string }> = [];
+
+  /** A FHIR server that redirects the POST to /moved, where a body-less GET answers 200. */
+  async function startRedirectingServer(status: number): Promise<string> {
+    requests = [];
+    const created = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        requests.push({ method: req.method ?? '', url: req.url ?? '' });
+        if (req.url === '/moved') { res.writeHead(200); res.end('{"resourceType":"Bundle"}'); return; }
+        res.writeHead(status, { Location: '/moved' });
+        res.end();
+      });
+    });
+    server = created;
+    await new Promise<void>((resolve) => { created.listen(0, '127.0.0.1', resolve); });
+    const address = created.address() as AddressInfo;
+    return `http://127.0.0.1:${String(address.port)}/fhir`;
+  }
+
+  beforeEach(() => {
+    // These tests talk to a real server, so they use the real fetch.
+    vi.unstubAllGlobals();
+  });
+
+  afterEach(async () => {
+    const running = server;
+    server = undefined;
+    if (running) await new Promise<void>((resolve) => { running.close(() => { resolve(); }); });
+  });
+
+  it.each([301, 302, 303, 307, 308])('reports a %i redirect as an error naming the target and does not follow it', async (status) => {
+    const baseUrl = await startRedirectingServer(status);
+    const dispatcher = new FhirDispatcher(makeConfig({ baseUrl }));
+    await dispatcher.onStart();
+
+    const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('ERROR');
+    expect(result.value.errorMessage).toContain(String(status));
+    expect(result.value.errorMessage).toContain('/moved');
+    expect(requests).toEqual([{ method: 'POST', url: '/fhir/Patient' }]);
   });
 });

@@ -3,7 +3,9 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { detectEncoding, encodingCharsString, escapeValue, unescapeValue, type Hl7Encoding } from '../hl7-encoding.js';
+import {
+  detectEncoding, encodingCharsString, escapeValue, hexEscapeCharset, unescapeValue, type Hl7Encoding,
+} from '../hl7-encoding.js';
 
 // ----- Helpers -----
 
@@ -178,5 +180,79 @@ describe('unescapeValue round trip', () => {
 
   it('leaves an unknown sequence as it is', () => {
     expect(unescapeValue('a\\H\\bold\\N\\', enc)).toBe('a\\H\\bold\\N\\');
+  });
+});
+
+describe('unescapeValue hex escapes (#194)', () => {
+  const enc = standardEncoding();
+  const cp = (...codes: number[]): string => String.fromCodePoint(...codes);
+  const hex = (b: number): string => `\\X${b.toString(16).toUpperCase().padStart(2, '0')}\\`;
+
+  it('reads every byte from 0x80 to 0x9F as Windows-1252 by default', () => {
+    const bytes = Array.from({ length: 32 }, (_, i) => 0x80 + i);
+    // WHATWG windows-1252; the five undefined bytes (0x81, 0x8D, 0x8F, 0x90, 0x9D) keep their C1 code points.
+    const expected = cp(
+      0x20AC, 0x81, 0x201A, 0x192, 0x201E, 0x2026, 0x2020, 0x2021, 0x2C6, 0x2030, 0x160, 0x2039, 0x152, 0x8D, 0x17D, 0x8F,
+      0x90, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x2DC, 0x2122, 0x161, 0x203A, 0x153, 0x9D, 0x17E, 0x178,
+    );
+    expect(unescapeValue(bytes.map(hex).join('-'), enc)).toBe([...expected].join('-'));
+    expect(unescapeValue('\\X93\\q\\X94\\', enc)).toBe(cp(0x201C) + 'q' + cp(0x201D));
+  });
+
+  it('reads 0xA0 to 0xFF and ASCII bytes as Latin-1 by default', () => {
+    expect(unescapeValue('caf\\XE9\\ \\XA0\\\\XFF\\ \\X41\\', enc)).toBe(`caf${cp(0xE9)} ${cp(0xA0, 0xFF)} A`);
+  });
+
+  it('decodes the bytes of an escape as UTF-8 when the charset is UTF-8', () => {
+    expect(unescapeValue('caf\\XC3A9\\', enc, 'utf-8')).toBe(`caf${cp(0xE9)}`);
+    expect(unescapeValue('\\XE28099\\ \\XF09F9880\\', enc, 'utf-8')).toBe(`${cp(0x2019)} ${cp(0x1F600)}`);
+  });
+
+  it('joins adjacent hex escapes into one byte run, so a character split across escapes decodes', () => {
+    expect(unescapeValue('caf\\XC3\\\\XA9\\', enc, 'utf-8')).toBe(`caf${cp(0xE9)}`);
+    expect(unescapeValue('\\X0D\\\\X0A\\', enc, 'utf-8')).toBe('\r\n');
+  });
+
+  it('reads a run that is not valid UTF-8 byte by byte as Windows-1252, so no byte is lost', () => {
+    expect(unescapeValue('caf\\XE9\\', enc, 'utf-8')).toBe(`caf${cp(0xE9)}`);
+    expect(unescapeValue('a\\XC3\\b', enc, 'utf-8')).toBe(`a${cp(0xC3)}b`);
+    expect(unescapeValue('\\X93\\q\\X94\\', enc, 'utf-8')).toBe(cp(0x201C) + 'q' + cp(0x201D));
+  });
+
+  it('keeps a UTF-8 byte order mark as U+FEFF rather than dropping it', () => {
+    expect(unescapeValue('\\XEFBBBF\\x', enc, 'utf-8')).toBe(`${cp(0xFEFF)}x`);
+  });
+
+  it('chooses UTF-8 only for the UTF-8 spellings of MSH-18, and Windows-1252 for everything else', () => {
+    for (const utf8 of ['UNICODE UTF-8', ' Unicode_UTF8 ', 'UTF 8', 'utf-8']) {
+      expect(hexEscapeCharset(utf8)).toBe('utf-8');
+    }
+    for (const other of [undefined, '', 'ASCII', '8859/1', '8859/15', 'UNICODE UTF-16', 'UNICODE']) {
+      expect(hexEscapeCharset(other)).toBe('windows-1252');
+    }
+  });
+
+  it('decodes the single-character escapes the same way under UTF-8', () => {
+    expect(unescapeValue('a\\F\\b\\E\\c\\X0D\\', enc, 'utf-8')).toBe('a|b\\c\r');
+  });
+
+  it('leaves malformed hex escapes as literal text', () => {
+    for (const text of ['\\XABC\\', '\\X\\', '\\XZZ\\']) {
+      expect(unescapeValue(text, enc, 'utf-8')).toBe(text);
+      expect(unescapeValue(text, enc)).toBe(text);
+    }
+  });
+
+  it('accepts lower-case hex digits and several bytes in one escape', () => {
+    expect(unescapeValue('\\Xc3a9\\', enc, 'utf-8')).toBe(cp(0xE9));
+    expect(unescapeValue('\\X0D0A\\', enc)).toBe('\r\n');
+  });
+
+  it('never reads an escaped escape character as the start of a hex escape', () => {
+    expect(unescapeValue('\\E\\XC3\\', enc, 'utf-8')).toBe('\\XC3\\');
+  });
+
+  it('does not join hex escapes that another escape separates', () => {
+    expect(unescapeValue('\\XC3\\\\E\\\\XA9\\', enc, 'utf-8')).toBe(`${cp(0xC3)}\\${cp(0xA9)}`);
   });
 });

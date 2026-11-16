@@ -175,7 +175,7 @@ The connector adds no transport security. A network share must be protected wher
 |---|---|---|
 | `directory` | Yes | Directory to poll. |
 | `fileFilter` | No | Glob (`*`, `?`) for the files to read, `*` by default. Not empty. |
-| `pollingIntervalMs` | No | Milliseconds between polls, at least 100, 5000 by default. |
+| `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 100 to 2147483647 (about 24.8 days), 5000 by default. |
 | `sortBy` | No | `NAME` (default), `DATE` or `SIZE`: the order files are read in. |
 | `charset` | No | `utf-8` (default), `latin1` (ISO-8859-1), `ascii` or `utf16le`, used to decode the file. Case is ignored, and `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. Any other refuses to deploy, in binary mode too. |
 | `binary` | No | `true` reads the file as base64 instead of text. |
@@ -286,7 +286,7 @@ Set `tls` to true to connect over TLS. The database server's certificate is then
 | `selectQuery` | Yes | Query that returns the rows to send. |
 | `updateQuery` | No | Statement run after rows are sent, such as marking them processed. Required when `updateMode` is `ALWAYS` or `ON_SUCCESS`. |
 | `updateMode` | No | `NEVER` (default), `ALWAYS` or `ON_SUCCESS`: when `updateQuery` runs. With `NEVER`, the next poll returns the same rows again unless `selectQuery` excludes them. |
-| `pollingIntervalMs` | No | Milliseconds between polls, at least 100. Defaults to 5000. |
+| `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 100 to 2147483647 (about 24.8 days). Defaults to 5000. |
 | `rowFormat` | No | `JSON`, the only format. |
 | `tls` | No | `true` connects over TLS with certificate verification. `true` or `false` only. |
 
@@ -329,16 +329,16 @@ The script runs inside the server. Whatever it reaches through the script bridge
 
 | Property | Required | Notes |
 |---|---|---|
-| `script` | Yes | Script whose return value is sent. An empty script refuses to deploy. It runs with no message (`msg`, `tmp` and `rawData` are empty), and sees `channelId` and `channelName`. |
-| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
-| `pollingIntervalMs` | No | Milliseconds between runs. |
+| `script` | Yes | Script whose return value is sent. An empty or blank script refuses to deploy. It runs with no message (`msg`, `tmp` and `rawData` are empty), and sees `channelId` and `channelName`. |
+| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`; any other value refuses to deploy. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
+| `pollingIntervalMs` | No | Milliseconds between runs, a whole number from 100 to 2147483647 (about 24.8 days). Default 5000. |
 
 ### JAVASCRIPT as a destination
 
 | Property | Required | Notes |
 |---|---|---|
-| `script` | Yes | Script run for each message. An empty script refuses to deploy. It sees `msg` parsed for the channel's data type, `channelId`, `channelName` and `connectorMessage` (the message being sent, with its ids and content). |
-| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
+| `script` | Yes | Script run for each message. An empty or blank script refuses to deploy. It sees `msg` parsed for the channel's data type, `channelId`, `channelName` and `connectorMessage` (the message being sent, with its ids and content). |
+| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`; any other value refuses to deploy. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
 
 ### JAVASCRIPT limits
 
@@ -498,9 +498,7 @@ It sends one email per message. The subject, body and attachment fields may use 
 
 FHIR can only send; it cannot receive messages. There is no FHIR source.
 
-It posts the message content as-is to a FHIR R4 server: POST to `<baseUrl>/<resourceType>`, or PUT to `<baseUrl>/<resourceType>/<id>` with the id read from the resource. The message must already be a FHIR resource in the configured format. An HL7 v2 message sent here is posted unchanged and the server rejects it; write a transformer that builds the resource first. A 2xx response is SENT, anything else an ERROR.
-
-Unlike the HTTP destination, FHIR follows redirects. A 301, 302 or 303 turns the POST into a GET with no body, so a 200 from that GET is recorded as SENT although nothing was created ([#163](https://github.com/MichaelLeeHobbs/mirthless/issues/163)). Point `baseUrl` at the server's final address, not one that redirects.
+It posts the message content as-is to a FHIR R4 server: POST to `<baseUrl>/<resourceType>`, or PUT to `<baseUrl>/<resourceType>/<id>` with the id read from the resource. The message must already be a FHIR resource in the configured format. An HL7 v2 message sent here is posted unchanged and the server rejects it; write a transformer that builds the resource first. A 2xx response is SENT. A 3xx is an ERROR naming the redirect target, because redirects are not followed: following one would turn the POST into a GET with no body, and nothing would be created. Any other status is an ERROR.
 
 ### FHIR security
 
@@ -510,7 +508,7 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 
 | Property | Required | Notes |
 |---|---|---|
-| `baseUrl` | Yes | FHIR server base URL. Use the final address: redirects are followed (see what it does). |
+| `baseUrl` | Yes | FHIR server base URL. Use the final address: a redirect is an ERROR. |
 | `resourceType` | No | Resource type in the URL. Defaults to `Patient`, so set it for any other resource. |
 | `method` | No | `POST` (create) or `PUT` (update). `PUT` needs an `id` in the resource, and an id outside the FHIR id rules is refused. |
 | `authType` | No | `NONE`, `BASIC`, `BEARER` or `API_KEY`. |
@@ -528,7 +526,6 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 - No FHIR source connector.
 - No HL7 v2 to FHIR mapping; the message must already be a FHIR resource.
 - No client certificate (mutual TLS) support.
-- Redirects are followed, and a redirected POST can be recorded as SENT with nothing created ([#163](https://github.com/MichaelLeeHobbs/mirthless/issues/163)).
 
 ## KAFKA
 

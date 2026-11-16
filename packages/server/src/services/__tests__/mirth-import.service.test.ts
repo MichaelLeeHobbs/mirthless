@@ -260,6 +260,10 @@ describe('MirthImportService.convertXml', () => {
     expect(result.value.channels[0]?.sourceConnectorType).toBe('JAVASCRIPT');
     expect(result.value.warnings.some((w) => w.includes('SMTP cannot be a source'))).toBe(true);
     expect(result.value.channels[0]?.destinations[0]?.connectorType).toBe('SMTP');
+    // The stand-in has no script and none of the SMTP keys, so it refuses to deploy, naming the script.
+    const standIn = result.value.channels[0]?.sourceConnectorProperties ?? {};
+    expect(standIn).toEqual({});
+    expect(validateConnectorProperties('JAVASCRIPT', 'source', standIn)).toMatchObject({ ok: false, error: { message: expect.stringContaining('script') } });
   });
 
   it('converts filter rules from source connector', () => {
@@ -845,6 +849,16 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     const batch = convert4x((x) => swap('INTERVAL')(x).replace('<responseVariable>None</responseVariable>', '<responseVariable>None</responseVariable><processBatch>true</processBatch>'));
     expect(batch.sourceConnectorProperties['processBatch']).toBe(true);
     expect(convert4x(swap('TIME')).sourceConnectorProperties).toEqual({ script: "return 'tick';" });
+    expect(validateConnectorProperties('JAVASCRIPT', 'source', convert4x(swap('INTERVAL')).sourceConnectorProperties)).toMatchObject({ ok: true });
+    expect(validateConnectorProperties('JAVASCRIPT', 'source', batch.sourceConnectorProperties)).toMatchObject({ ok: true });
+  });
+
+  it('gives a JavaScript Writer only its script, which the JAVASCRIPT schema accepts', () => {
+    const writers = convert4x().destinations.filter((d) => d.connectorType === 'JAVASCRIPT');
+    expect(writers.map((d) => d.properties)).toEqual([{ script: "logger.info('sent');" }, { script: 'return;' }]);
+    for (const writer of writers) {
+      expect(validateConnectorProperties('JAVASCRIPT', 'destination', writer.properties)).toMatchObject({ ok: true });
+    }
   });
 
   it('maps an HTTP Sender\'s method, headers, parameters, Basic credentials and content, and an SMTP Sender\'s mail', () => {
