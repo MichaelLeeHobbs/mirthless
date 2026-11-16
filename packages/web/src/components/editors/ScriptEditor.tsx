@@ -113,8 +113,9 @@ export function ScriptEditor({
     dataType: surfaceProp?.message === false ? undefined : channelDataType,
     message: surfaceProp?.message,
     destinationSet: surfaceProp?.destinationSet,
+    connectorMessage: surfaceProp?.connectorMessage,
     templateContext: surfaceProp?.templateContext,
-  }), [channelDataType, surfaceProp?.message, surfaceProp?.destinationSet, surfaceProp?.templateContext]);
+  }), [channelDataType, surfaceProp?.message, surfaceProp?.destinationSet, surfaceProp?.connectorMessage, surfaceProp?.templateContext]);
   const [internalLang, setInternalLang] = useState<ScriptLanguageCode>('TYPESCRIPT');
   const language = languageProp ?? internalLang;
   const [editor, setEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null);
