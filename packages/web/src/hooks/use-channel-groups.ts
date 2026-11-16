@@ -141,31 +141,3 @@ export function useSetChannelGroups(): ReturnType<typeof useMutation<void, Error
     },
   });
 }
-
-export function useAddGroupMember(): ReturnType<typeof useMutation<void, Error, { groupId: string; channelId: string }>> {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ groupId, channelId }: { groupId: string; channelId: string }) => {
-      const result = await api.post<void>(`/channel-groups/${groupId}/members`, { channelId });
-      if (!result.success) throw new Error(result.error.message);
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: GROUP_KEYS.all });
-    },
-  });
-}
-
-export function useRemoveGroupMember(): ReturnType<typeof useMutation<void, Error, { groupId: string; channelId: string }>> {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ groupId, channelId }: { groupId: string; channelId: string }) => {
-      const result = await api.delete<void>(`/channel-groups/${groupId}/members/${channelId}`);
-      if (!result.success) throw new Error(result.error.message);
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: GROUP_KEYS.all });
-    },
-  });
-}

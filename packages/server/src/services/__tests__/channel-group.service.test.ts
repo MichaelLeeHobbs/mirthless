@@ -368,55 +368,6 @@ describe('ChannelGroupService', () => {
     });
   });
 
-  describe('addMember', () => {
-    it('succeeds', async () => {
-      // Group exists
-      pushResponse([{ id: GROUP_ID }]);
-      // Channel exists
-      pushResponse([{ id: CHANNEL_ID }]);
-      // No existing membership
-      pushResponse([]);
-
-      const result = await ChannelGroupService.addMember(GROUP_ID, CHANNEL_ID);
-
-      expect(result.ok).toBe(true);
-      expect(mockInsert).toHaveBeenCalled();
-    });
-
-    it('returns NOT_FOUND for invalid group', async () => {
-      pushResponse([]);
-
-      const result = await ChannelGroupService.addMember(GROUP_ID, CHANNEL_ID);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('message', expect.stringContaining('group'));
-    });
-
-    it('returns NOT_FOUND for invalid channel', async () => {
-      pushResponse([{ id: GROUP_ID }]);
-      pushResponse([]);
-
-      const result = await ChannelGroupService.addMember(GROUP_ID, CHANNEL_ID);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('message', expect.stringContaining('Channel'));
-    });
-
-    it('returns ALREADY_EXISTS for duplicate membership', async () => {
-      pushResponse([{ id: GROUP_ID }]);
-      pushResponse([{ id: CHANNEL_ID }]);
-      pushResponse([{ channelGroupId: GROUP_ID }]);
-
-      const result = await ChannelGroupService.addMember(GROUP_ID, CHANNEL_ID);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('message', expect.stringContaining('already a member'));
-    });
-  });
-
   describe('setChannelGroups', () => {
     const GROUP_2 = '00000000-0000-0000-0000-000000000002';
 
@@ -509,27 +460,6 @@ describe('ChannelGroupService', () => {
       if (result.ok) return;
       expect(result.error.message).toContain('foreign key');
       expect(emitSuccessEvent).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('removeMember', () => {
-    it('succeeds', async () => {
-      pushResponse([{ channelGroupId: GROUP_ID }]);
-
-      const result = await ChannelGroupService.removeMember(GROUP_ID, CHANNEL_ID);
-
-      expect(result.ok).toBe(true);
-      expect(mockDelete).toHaveBeenCalled();
-    });
-
-    it('returns NOT_FOUND for non-existent membership', async () => {
-      pushResponse([]);
-
-      const result = await ChannelGroupService.removeMember(GROUP_ID, CHANNEL_ID);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('message', expect.stringContaining('not a member'));
     });
   });
 });

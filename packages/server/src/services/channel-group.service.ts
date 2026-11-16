@@ -277,56 +277,6 @@ export class ChannelGroupService {
     });
   }
 
-  /** Add a channel to a group. */
-  static async addMember(
-    groupId: string,
-    channelId: string,
-    context?: AuditContext,
-  ): Promise<Result<void>> {
-    return tryCatch(async () => {
-      const [group] = await db
-        .select({ id: channelGroups.id })
-        .from(channelGroups)
-        .where(eq(channelGroups.id, groupId));
-
-      if (!group) {
-        throw new ServiceError('NOT_FOUND', `Channel group ${groupId} not found`);
-      }
-
-      const [channel] = await db
-        .select({ id: channels.id })
-        .from(channels)
-        .where(eq(channels.id, channelId));
-
-      if (!channel) {
-        throw new ServiceError('NOT_FOUND', `Channel ${channelId} not found`);
-      }
-
-      const [existing] = await db
-        .select({ channelGroupId: channelGroupMembers.channelGroupId })
-        .from(channelGroupMembers)
-        .where(and(
-          eq(channelGroupMembers.channelGroupId, groupId),
-          eq(channelGroupMembers.channelId, channelId),
-        ));
-
-      if (existing) {
-        throw new ServiceError('ALREADY_EXISTS', 'Channel is already a member of this group');
-      }
-
-      await db
-        .insert(channelGroupMembers)
-        .values({ channelGroupId: groupId, channelId });
-
-      emitEvent({
-        level: 'INFO', name: 'CHANNEL_GROUP_UPDATED', outcome: 'SUCCESS',
-        userId: context?.userId ?? null, channelId: null,
-        serverId: null, ipAddress: context?.ipAddress ?? null,
-        attributes: { action: 'addMember', groupId, channelId },
-      });
-    });
-  }
-
   /**
    * Replace every group membership a channel has with `groupIds`, in one
    * transaction: a failure part way leaves the old memberships in place. An
@@ -366,41 +316,6 @@ export class ChannelGroupService {
         action: 'setChannelGroups', channelId, groupIds: wanted, previousGroupIds: previous,
       });
       return { channelId, groupIds: wanted };
-    });
-  }
-
-  /** Remove a channel from a group. */
-  static async removeMember(
-    groupId: string,
-    channelId: string,
-    context?: AuditContext,
-  ): Promise<Result<void>> {
-    return tryCatch(async () => {
-      const [existing] = await db
-        .select({ channelGroupId: channelGroupMembers.channelGroupId })
-        .from(channelGroupMembers)
-        .where(and(
-          eq(channelGroupMembers.channelGroupId, groupId),
-          eq(channelGroupMembers.channelId, channelId),
-        ));
-
-      if (!existing) {
-        throw new ServiceError('NOT_FOUND', 'Channel is not a member of this group');
-      }
-
-      await db
-        .delete(channelGroupMembers)
-        .where(and(
-          eq(channelGroupMembers.channelGroupId, groupId),
-          eq(channelGroupMembers.channelId, channelId),
-        ));
-
-      emitEvent({
-        level: 'INFO', name: 'CHANNEL_GROUP_UPDATED', outcome: 'SUCCESS',
-        userId: context?.userId ?? null, channelId: null,
-        serverId: null, ipAddress: context?.ipAddress ?? null,
-        attributes: { action: 'removeMember', groupId, channelId },
-      });
     });
   }
 }

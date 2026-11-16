@@ -4,7 +4,7 @@
 // Handles HTTP requests for channel group CRUD + member management.
 
 import type { Request, Response } from 'express';
-import type { CreateChannelGroupInput, UpdateChannelGroupInput, AddChannelGroupMemberInput, SetChannelGroupsInput } from '@galvaniflow/core-models';
+import type { CreateChannelGroupInput, UpdateChannelGroupInput, SetChannelGroupsInput } from '@galvaniflow/core-models';
 import { ChannelGroupService } from '../services/channel-group.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
@@ -97,22 +97,6 @@ export class ChannelGroupController {
     res.status(204).send();
   }
 
-  static async addMember(req: Request, res: Response): Promise<void> {
-    const groupId = req.params['id'] as string;
-    const { channelId } = req.body as AddChannelGroupMemberInput;
-    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
-    const result = await ChannelGroupService.addMember(groupId, channelId, context);
-
-    if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
-      logger.warn({ errMsg: result.error.message, groupId, channelId }, 'Failed to add member');
-      res.status(status).json({ success: false, error: errorResponse(result.error) });
-      return;
-    }
-
-    res.status(201).json({ success: true, data: null });
-  }
-
   /** PUT /channels/:id/groups: replace the channel's group memberships in one step. */
   static async setChannelGroups(req: Request, res: Response): Promise<void> {
     const channelId = req.params['id'] as string;
@@ -128,21 +112,5 @@ export class ChannelGroupController {
     }
 
     res.json({ success: true, data: result.value });
-  }
-
-  static async removeMember(req: Request, res: Response): Promise<void> {
-    const groupId = req.params['id'] as string;
-    const channelId = req.params['channelId'] as string;
-    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
-    const result = await ChannelGroupService.removeMember(groupId, channelId, context);
-
-    if (!result.ok) {
-      const status = mapErrorToStatus(result.error);
-      logger.warn({ errMsg: result.error.message, groupId, channelId }, 'Failed to remove member');
-      res.status(status).json({ success: false, error: errorResponse(result.error) });
-      return;
-    }
-
-    res.status(204).send();
   }
 }

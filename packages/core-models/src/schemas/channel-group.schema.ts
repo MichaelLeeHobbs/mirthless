@@ -23,12 +23,6 @@ export type UpdateChannelGroupInput = z.infer<typeof updateChannelGroupSchema>;
 
 // ----- Member Management -----
 
-export const addChannelGroupMemberSchema = z.object({
-  channelId: z.string().uuid(),
-});
-
-export type AddChannelGroupMemberInput = z.infer<typeof addChannelGroupMemberSchema>;
-
 /**
  * The full set of groups a channel belongs to, replacing what it had. An empty
  * list takes the channel out of every group.
@@ -44,9 +38,4 @@ export type SetChannelGroupsInput = z.infer<typeof setChannelGroupsSchema>;
 
 export const channelGroupUuidParamSchema = z.object({
   id: z.string().uuid(),
-});
-
-export const channelGroupMemberParamSchema = z.object({
-  id: z.string().uuid(),
-  channelId: z.string().uuid(),
 });
