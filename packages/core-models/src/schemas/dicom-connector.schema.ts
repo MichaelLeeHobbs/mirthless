@@ -13,6 +13,7 @@ import {
   wholeNumberSchema,
   MAX_TIMER_DELAY_MS,
   withoutKeys,
+  destinationTemplate,
   sourceCommonProperties,
   destinationCommonProperties,
 } from './connector-property-fields.js';
@@ -24,7 +25,7 @@ export const DICOM_SEND_MODES = ['single', 'multiple'] as const;
 /** A DICOM application entity title: at most 16 characters. */
 const aeTitle = z.string().max(16);
 
-/** Milliseconds for a DICOM association; 0 is passed to dcmjs-dimse as given. */
+/** Milliseconds for a DICOM association; 0 means dcmjs-dimse's own default (180 s connect, 60 s association). */
 const dicomTimeout = wholeNumberSchema(0, MAX_TIMER_DELAY_MS);
 
 /** The source's keys; the docs guard compares them with the connector reference. */
@@ -62,7 +63,7 @@ export type DicomDestinationProperties = z.infer<typeof dicomDestinationObjectSc
 const MIRTH_COMMON = [
   'pluginProperties', 'applicationEntity', 'localHost', 'localPort', 'localApplicationEntity', 'soCloseDelay', 'releaseTo', 'reaper',
   'pdv1', 'sndpdulen', 'rcvpdulen', 'async', 'bufSize', 'sorcvbuf', 'sosndbuf', 'tcpDelay', 'keyPW', 'keyStore', 'keyStorePW',
-  'noClientAuth', 'nossl2', 'tls', 'trustStore', 'trustStorePW', 'responseConnectorProperties', 'queueConnectorProperties',
+  'noClientAuth', 'nossl2', 'trustStore', 'trustStorePW', 'responseConnectorProperties', 'queueConnectorProperties',
 ];
 
 /**
@@ -80,20 +81,32 @@ const DESTINATION_LEGACY_KEYS: ReadonlySet<string> = new Set([
   'stgcmt', 'ts1', 'uidnegrsp', 'username',
 ]);
 
-/** Mirth's default DICOM Sender template: the message itself, which sending without a template already does. */
-const MIRTH_DICOM_TEMPLATE = '${DICOMMESSAGE}';
+/**
+ * Mirth's DICOM `tls` setting: `notls` unless TLS is on. This connector has
+ * no TLS, so a channel set for TLS in Mirth is refused rather than run in
+ * plaintext; `notls` (or nothing) is dropped like the other Mirth keys.
+ */
+function withoutMirthKeys(value: unknown, keys: ReadonlySet<string>, ctx: z.RefinementCtx): unknown {
+  const props = withoutKeys(value, keys);
+  if (typeof props !== 'object' || props === null || Array.isArray(props)) return props;
+  const { tls, ...rest } = props as Record<string, unknown>;
+  if (tls !== undefined && tls !== 'notls' && tls !== '') {
+    ctx.addIssue({ code: 'custom', path: ['tls'], message: `Mirth's DICOM TLS setting "${String(tls)}" is not supported: this connector has no TLS and would send in plaintext` });
+  }
+  return rest;
+}
 
-/** Destination props without the Mirth keys, and without Mirth's default template. */
-function dropDestinationLegacy(value: unknown): unknown {
-  const props = withoutKeys(value, DESTINATION_LEGACY_KEYS);
+/** Destination props without the Mirth keys, and without a template that means the message itself. */
+function dropDestinationLegacy(value: unknown, ctx: z.RefinementCtx): unknown {
+  const props = withoutMirthKeys(value, DESTINATION_LEGACY_KEYS, ctx);
   if (typeof props !== 'object' || props === null || Array.isArray(props)) return props;
   const { template, ...rest } = props as Record<string, unknown>;
-  return template === MIRTH_DICOM_TEMPLATE ? rest : props;
+  return typeof template === 'string' && destinationTemplate('DICOM', { template }) === undefined ? rest : props;
 }
 
 /** The source schema: the pool's maximum at least its minimum, and a move-to directory for MOVE. */
 export const dicomSourcePropertiesSchema = z.preprocess(
-  (value) => withoutKeys(value, SOURCE_LEGACY_KEYS),
+  (value, ctx) => withoutMirthKeys(value, SOURCE_LEGACY_KEYS, ctx),
   dicomSourceObjectSchema.superRefine((props, ctx) => {
     if (props.maxPoolSize < props.minPoolSize) {
       ctx.addIssue({ code: 'custom', path: ['maxPoolSize'], message: 'must be at least minPoolSize' });

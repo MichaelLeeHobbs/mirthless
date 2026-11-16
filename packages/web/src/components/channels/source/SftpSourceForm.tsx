@@ -16,16 +16,10 @@ import type { SourceConnectorFormProps } from './types.js';
 import { SFTP_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { getStr, getNum, getBool, propertyUpdaters } from '../common/connector-properties.js';
+import { CHARSET_OPTIONS } from '../common/charset-options.js';
 
 const AFTER_PROCESSING = ['DELETE', 'MOVE', 'NONE'] as const;
 
-// Values must be encodings the server can decode (see connectors/src/encoding.ts).
-const CHARSETS: readonly { value: string; label: string }[] = [
-  { value: 'utf-8', label: 'UTF-8' },
-  { value: 'latin1', label: 'ISO-8859-1 (Latin-1)' },
-  { value: 'ascii', label: 'US-ASCII' },
-  { value: 'utf16le', label: 'UTF-16 LE' },
-];
 
 export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -166,7 +160,7 @@ export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProp
           fullWidth
           sx={{ mb: 2 }}
         >
-          {CHARSETS.map((c) => (
+          {CHARSET_OPTIONS.map((c) => (
             <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>
           ))}
         </TextField>
