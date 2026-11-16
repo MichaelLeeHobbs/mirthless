@@ -117,6 +117,29 @@ describeIntegration('Example messages seed (real Postgres)', () => {
     expect(await correlationCount(jsonId, CASCADE_CORRELATION_ID)).toBe(1);
   });
 
+  /** The partitions holding the channel's rows in a partitioned message table. */
+  async function partitionsHolding(table: string, channelId: string): Promise<string[]> {
+    const { db, sql } = mods;
+    const result = await db.execute(
+      sql`SELECT DISTINCT tableoid::regclass::text AS part FROM ${sql.identifier(table)} WHERE channel_id = ${channelId}`,
+    );
+    return (result.rows as Array<{ part: string }>).map((r) => r.part).sort();
+  }
+
+  it.each([
+    'Example: Echo (RAW)',
+    'Example: Multi-Destination',
+    'Example: Full Pipeline',
+  ])('puts the messages of "%s" in the channel\'s own partitions, not the default ones (#260)', async (name) => {
+    const channelId = await findChannelId(name);
+    const suffix = `_p_${channelId.replace(/-/g, '_')}`;
+
+    expect(await messageCount(channelId)).toBeGreaterThan(0);
+    for (const table of ['messages', 'connector_messages', 'message_content']) {
+      expect(await partitionsHolding(table, channelId), table).toEqual([`${table}${suffix}`]);
+    }
+  });
+
   it('is idempotent: a second run adds no new messages', async () => {
     const { seedExampleMessages } = await import('../../src/db/seeds/seed-example-messages.js');
     const echoId = await findChannelId('Example: Echo (RAW)');
