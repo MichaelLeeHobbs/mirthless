@@ -18,7 +18,8 @@ async function run(overrides: Partial<IsolatedTestInput>, readers = {}, limits: 
       ...overrides,
     },
     readers,
-    { timeoutMs: 1_000, maxOldGenerationSizeMb: 32, maxMemoryGrowthMb: 256, ...limits },
+    // A script that should finish gets a generous budget: a cold worker start counts against it (D-290).
+    { timeoutMs: 10_000, maxOldGenerationSizeMb: 32, maxMemoryGrowthMb: 256, ...limits },
   );
 }
 
@@ -33,7 +34,7 @@ describe('runScriptTestIsolated', () => {
   it('stops an endless loop without blocking the main thread', async () => {
     let ticks = 0;
     const timer = setInterval(() => { ticks += 1; }, 50);
-    const result = await run({ kind: 'script', script: 'while (true) {}' });
+    const result = await run({ kind: 'script', script: 'while (true) {}' }, {}, { timeoutMs: 1_000 });
     clearInterval(timer);
     expect(result.outcome).toBe('error');
     // The sandbox's own timeout usually stops it inside the worker; the worker is killed if not.
@@ -43,9 +44,14 @@ describe('runScriptTestIsolated', () => {
   });
 
   it('reports a script that runs out of memory as an error, and the process lives on', async () => {
-    const result = await run({ kind: 'script', script: 'const a = []; while (true) { a.push(new Array(1e5).fill(1)); }' }, {});
+    // The time limit and the memory-growth cap are far off, so only the heap limit can stop it (#183).
+    const result = await run(
+      { kind: 'script', script: 'const a = []; while (true) { a.push(new Array(1e5).fill(1)); }' },
+      {},
+      { maxMemoryGrowthMb: 4_096 },
+    );
     expect(result.outcome).toBe('error');
-    expect(result.error).toMatch(/ran out of memory|stopped after/);
+    expect(result.error).toBe('The script ran out of memory (the test-run limit is 32 MB).');
   });
 
   it('stops a script that fills memory outside the heap limit (typed arrays)', async () => {
