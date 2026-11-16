@@ -21,7 +21,7 @@ import { useCodeTemplates } from '../../hooks/use-code-templates.js';
 import { usePermissions } from '../../hooks/use-permissions.js';
 import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
-import { settledProblems, useCursor, useEditorTheme, useProblems, useSuggestRoom } from './editor-hooks.js';
+import { settledProblems, useCursor, useEditorTheme, useExternalValue, useProblems, useSuggestRoom } from './editor-hooks.js';
 import { EditorToolbarButton } from './EditorToolbarButton.js';
 import { ProblemStatus } from './ProblemStatus.js';
 import { ScriptTestPanel } from './ScriptTestPanel.js';
@@ -111,6 +111,7 @@ export function ScriptEditor({
   const [expanded, setExpanded] = useState(false);
   const problems = useProblems(editor);
   const cursor = useCursor(editor);
+  useExternalValue(editor, value);
   const [contentHeight, setContentHeight] = useState<number>(AUTO_HEIGHT.min);
   // Room the open completion list needs; above zero also means the user is mid-word.
   const suggestRoomPx = useSuggestRoom(editor);
@@ -258,7 +259,7 @@ export function ScriptEditor({
         height="100%"
         language={MONACO_LANGUAGE[language]}
         theme={theme}
-        value={value}
+        defaultValue={value}
         onChange={(v) => { onChange(v ?? ''); }}
         onMount={(ed) => { setEditor(ed); }}
         options={{ ...BASE_EDITOR_OPTIONS, readOnly, ariaLabel: label, autoClosingBrackets: 'always', formatOnPaste: true }}

@@ -116,6 +116,33 @@ export function useSuggestRoom(editor: CodeEditor | null): number {
   return room;
 }
 
+/** Monaco stores text with its own line endings, so compare text with all of them as `\n`. */
+function sameText(a: string, b: string): boolean {
+  return a.replace(/\r\n?/g, '\n') === b.replace(/\r\n?/g, '\n');
+}
+
+/**
+ * Put text the host gave into the editor when it is not what the editor
+ * holds. Replacing the model's value clears its undo history, so undo cannot
+ * bring back the text of another list item or tab the editor showed before
+ * (#183). Returns whether it replaced the text.
+ */
+export function replaceExternalValue(editor: CodeEditor, value: string): boolean {
+  if (sameText(editor.getValue(), value)) return false;
+  editor.getModel()?.setValue(value);
+  return true;
+}
+
+/**
+ * Keep the editor showing the host's value. Pass the editor `defaultValue`,
+ * not `value`: @monaco-editor/react applies a new `value` as an undoable edit.
+ */
+export function useExternalValue(editor: CodeEditor | null, value: string): void {
+  useEffect(() => {
+    if (editor) replaceExternalValue(editor, value);
+  }, [editor, value]);
+}
+
 /** Move the cursor to a problem and focus the editor. */
 export function revealProblem(editor: CodeEditor, problem: Problem): void {
   editor.setPosition({ lineNumber: problem.line, column: problem.column });
