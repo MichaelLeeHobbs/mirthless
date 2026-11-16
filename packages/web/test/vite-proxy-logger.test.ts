@@ -1,7 +1,7 @@
 // @vitest-environment node
-import { describe, it, expect, vi } from 'vitest';
-import { createLogger, type Logger } from 'vite';
-import { quietWsProxyResets } from '../vite-proxy-logger.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { createLogger, resolveConfig, type LogLevel, type Logger } from 'vite';
+import { quietWsProxyResets, quietWsProxyResetsPlugin } from '../vite-proxy-logger.js';
 
 /** A real Vite logger that writes to a fake console, wrapped by the filter. */
 function capture(): { readonly logger: Logger; readonly printed: () => readonly string[] } {
@@ -74,5 +74,43 @@ describe('quietWsProxyResets', () => {
     const kept = capture();
     kept.logger.error('something real broke');
     expect(kept.logger.hasWarned).toBe(true);
+  });
+});
+
+describe('quietWsProxyResetsPlugin', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  /** Resolve a config the way `vite --logLevel <level>` does and return the logger Vite built. */
+  async function resolvedLogger(logLevel: LogLevel): Promise<{ readonly logger: Logger; readonly printed: () => readonly string[] }> {
+    const lines: string[] = [];
+    const record = (line: unknown): void => { lines.push(String(line)); };
+    vi.spyOn(console, 'error').mockImplementation(record);
+    vi.spyOn(console, 'warn').mockImplementation(record);
+    vi.spyOn(console, 'log').mockImplementation(record);
+    const config = await resolveConfig(
+      { configFile: false, logLevel, clearScreen: false, plugins: [quietWsProxyResetsPlugin()] },
+      'serve',
+    );
+    return { logger: config.logger, printed: () => lines };
+  }
+
+  it('filters the logger Vite resolved and still prints other errors', async () => {
+    const { logger, printed } = await resolvedLogger('info');
+    logger.error('ws proxy error:', { error: socketError('ECONNRESET', 'read ECONNRESET') });
+    logger.error('ws proxy error:', { error: socketError('ECONNREFUSED', 'connect ECONNREFUSED') });
+    expect(printed()).toHaveLength(1);
+    expect(printed()[0]).toContain('ws proxy error:');
+  });
+
+  it('keeps the configured log level', async () => {
+    const warnLevel = await resolvedLogger('warn');
+    warnLevel.logger.info('an info line');
+    warnLevel.logger.error('a real error');
+    expect(warnLevel.printed()).toEqual([expect.stringContaining('a real error')]);
+    vi.restoreAllMocks();
+
+    const silent = await resolvedLogger('silent');
+    silent.logger.error('a real error');
+    expect(silent.printed()).toEqual([]);
   });
 });
