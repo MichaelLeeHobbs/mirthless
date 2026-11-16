@@ -39,7 +39,7 @@ Measured on GitHub's runners on 2026-11-16, after #177 (job selection) and #181 
 | Web only ([run](https://github.com/MichaelLeeHobbs/mirthless/actions/runs/43784090750)) | gate with web tests 1m21s, e2e 2m49s, docs 30s | 3m02s |
 | Everything: a connectors, engine or core change, CI files, root config, a push to `main` ([run](https://github.com/MichaelLeeHobbs/mirthless/actions/runs/43783845444)) | gate 2m22s, e2e 3m06s, connector integration 1m09s | 3m29s |
 
-e2e is the longest job whenever it runs. #182 tracks about 96s of fixed sleeps in the specs.
+e2e is the longest job whenever it runs. Since #182 every spec checks its result instead of sleeping, so the Playwright step takes about 2m24s rather than 1m59s ([run](https://github.com/MichaelLeeHobbs/mirthless/actions/runs/43798945084/job/133074235512)). Of 480 s of summed test time, about 200 s is each test logging in through the UI.
 
 ## The required check
 
