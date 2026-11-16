@@ -15,6 +15,8 @@ export const STARTUP_STEP = {
   QUEUE: 'queue',
   PRUNER_SCHEDULER: 'pruner-scheduler',
   CHANNEL_REDEPLOY: 'channel-redeploy',
+  /** Keep audit_log's month partitions ahead (D-312). Also rerun daily by server.ts. */
+  AUDIT_PARTITIONS: 'audit-partitions',
 } as const;
 export type StartupStepName = typeof STARTUP_STEP[keyof typeof STARTUP_STEP];
 
@@ -56,6 +58,7 @@ export interface StartupDeps {
   readonly startQueue: () => Promise<Result<void>>;
   readonly startPrunerScheduler: () => Promise<Result<void>>;
   readonly redeployChannels: () => Promise<Result<void>>;
+  readonly ensureAuditPartitions: () => Promise<Result<void>>;
 }
 
 /**
@@ -89,7 +92,17 @@ export async function runStartupSteps(deps: StartupDeps): Promise<void> {
   await Promise.all([
     queueThenPruner(),
     runStep(deps, STARTUP_STEP.CHANNEL_REDEPLOY, deps.redeployChannels),
+    runStep(deps, STARTUP_STEP.AUDIT_PARTITIONS, deps.ensureAuditPartitions),
   ]);
+}
+
+/**
+ * Run a step again after startup (the daily audit partition run): a failure is
+ * logged, emitted and recorded like a startup failure, and a success clears
+ * the step's earlier failure. True when it succeeded.
+ */
+export function rerunStep(deps: StartupDeps, step: StartupStepName, run: () => Promise<Result<void>>): Promise<boolean> {
+  return runStep(deps, step, run);
 }
 
 /**

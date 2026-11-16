@@ -12,6 +12,7 @@ function info(overrides: { [K in keyof SystemInfo]?: Partial<SystemInfo[K]> } = 
     memory: { rss: 512 * MB, heapUsed: 200 * MB, heapTotal: 300 * MB, heapLimit: 4 * GB, external: 12 * MB, ...overrides.memory },
     engine: { deployed: 4, started: 4, stopped: 0, paused: 0, ...overrides.engine },
     database: { connected: true, latencyMs: 3.2, version: '17.2', sizeBytes: 2 * GB, ...overrides.database },
+    audit: { rowsOutsideMonths: 0, ...overrides.audit },
   };
 }
 
@@ -76,6 +77,18 @@ describe('healthCells', () => {
   it('marks a slow database as a warning and shows the round trip', () => {
     const c = cell(info({ database: { latencyMs: 400 } }), 'database');
     expect(c).toMatchObject({ level: 'warning', word: 'Slow', summary: 'PostgreSQL 17.2 · 400 ms' });
+  });
+
+  it('warns when audit rows landed outside every monthly partition, and says what to do', () => {
+    const c = cell(info({ audit: { rowsOutsideMonths: 3 } }), 'database');
+    expect(c).toMatchObject({ level: 'warning', word: 'Attention' });
+    expect(c.summary).toBe('3 audit rows outside a monthly partition: see the audit log runbook');
+  });
+
+  it('says one audit row in the singular, and stays healthy when the count is unknown', () => {
+    expect(cell(info({ audit: { rowsOutsideMonths: 1 } }), 'database').summary).toBe('1 audit row outside a monthly partition: see the audit log runbook');
+    expect(cell(info({ audit: { rowsOutsideMonths: null } }), 'database').level).toBe('healthy');
+    expect(cell(info({ audit: { rowsOutsideMonths: 10_000 } }), 'database').summary).toMatch(/^10,000\+ audit rows/);
   });
 
   it('still describes a connected database whose version and latency are unknown', () => {

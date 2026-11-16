@@ -30,6 +30,7 @@ export * from './resources.js';
 export * from './collections.js';
 export * from './data-sources.js';
 export * from './events.js';
+export * from './audit-log.js';
 export * from './settings.js';
 export * from './channel-revisions.js';
 export * from './certificates.js';

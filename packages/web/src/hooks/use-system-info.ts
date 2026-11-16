@@ -48,6 +48,10 @@ export interface SystemInfo {
     readonly version: string | null;
     readonly sizeBytes: number | null;
   };
+  readonly audit: {
+    /** Audit rows in the DEFAULT partition (counted up to 10,000); null when unknown. */
+    readonly rowsOutsideMonths: number | null;
+  };
 }
 
 // ----- Query Keys -----

@@ -85,4 +85,12 @@ export const defaultSettings: readonly NewSystemSetting[] = [
     category: 'pruner',
     description: 'Cron expression for data pruner schedule (default: 3 AM daily)',
   },
+  // Audit log (D-312). drop_expired_audit_partitions() reads it and never keeps less than 6.
+  {
+    key: 'audit.retention_years',
+    value: '6',
+    type: 'number',
+    category: 'audit',
+    description: 'Years of audit log kept before its months can be dropped (minimum 6)',
+  },
 ];

@@ -64,6 +64,31 @@ export class PartitionManagerService {
   }
 
   /**
+   * Make any missing audit_log month partition from this month through three
+   * months on, and return how many were made. The server's role cannot add a
+   * partition itself (D-307), so this calls the no-argument owner function
+   * `ensure_audit_partitions` (migration 0017). Runs at start and daily
+   * (server.ts); rows written in a month with no partition land in DEFAULT,
+   * which system info reports. The function makes every month it can and
+   * names the ones it could not; any such month fails this call, after the
+   * others were made.
+   */
+  static async ensureAuditPartitions(): Promise<Result<number>> {
+    return tryCatch(async () => {
+      const result = await db.execute<{ made: number; failed: string[] | null }>(
+        sql`SELECT made, failed FROM public.ensure_audit_partitions()`,
+      );
+      const made = result.rows[0]?.made ?? 0;
+      const failed = result.rows[0]?.failed ?? [];
+      if (made > 0) logger.info({ made }, 'Created audit log partitions');
+      if (failed.length > 0) {
+        throw new Error(`Could not create audit log partitions (see docs/ops/audit-log.md): ${failed.join('; ')}`);
+      }
+      return made;
+    });
+  }
+
+  /**
    * Drop partitions for all message-related tables for a given channel.
    * Uses DROP TABLE IF EXISTS ... CASCADE. Needs the tables' owner: the
    * production server's role cannot drop a table (D-307), and no server code

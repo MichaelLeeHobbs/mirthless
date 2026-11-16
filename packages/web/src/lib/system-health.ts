@@ -62,9 +62,15 @@ export function hasLoadAverage(info: SystemInfo): boolean {
   return info.os.platform !== 'win32';
 }
 
-function databaseCell(db: SystemInfo['database']): HealthCell {
+function databaseCell(db: SystemInfo['database'], audit: SystemInfo['audit']): HealthCell {
   if (!db.connected) {
     return { key: 'database', label: 'Database', level: 'critical', word: 'Unreachable', summary: 'The probe query failed. Messages cannot be stored.' };
+  }
+  const stray = audit.rowsOutsideMonths ?? 0;
+  if (stray > 0) {
+    // The server counts up to 10,000.
+    const rows = stray === 1 ? '1 audit row' : stray >= 10_000 ? '10,000+ audit rows' : `${String(stray)} audit rows`;
+    return { key: 'database', label: 'Database', level: 'warning', word: 'Attention', summary: `${rows} outside a monthly partition: see the audit log runbook` };
   }
   const version = db.version ? `PostgreSQL ${db.version}` : 'PostgreSQL';
   const latency = db.latencyMs === null ? '' : ` · ${db.latencyMs} ms`;
@@ -105,7 +111,7 @@ function hostCell(info: SystemInfo): HealthCell {
 export function healthCells(info: SystemInfo): readonly HealthCell[] {
   return [
     { key: 'server', label: 'Server', level: 'healthy', word: 'Running', summary: `v${info.server.version} · up ${formatUptime(info.server.uptime)}` },
-    databaseCell(info.database),
+    databaseCell(info.database, info.audit),
     engineCell(info.engine),
     memoryCell(info.memory),
     hostCell(info),
