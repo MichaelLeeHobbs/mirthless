@@ -10,7 +10,7 @@ A pull request is compared with its merge base on `main`.
 | `packages/server` | Gate (server tests), Postgres integration, e2e |
 | `packages/connectors` | Gate (connectors and server tests), connector integration, Postgres integration, e2e |
 | `packages/engine`, `core-util`, `core-models` | Gate (the package and everything that depends on it), both integration lanes, e2e |
-| `e2e/**`, `playwright.*` | e2e |
+| `e2e/**`, `playwright.*` | e2e, which lints `e2e/` before it runs the specs, since the gate's lint doesn't run |
 | `docs/**`, top-level `*.md`, `.claude/**`, `.github/ISSUE_TEMPLATE/**`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/dependabot.yml`, `LICENSE` | `docs`: the unit tests whose source names a changed file, such as the guards on `docs/user/connector-reference.md`. Nothing else. |
 | `.github/workflows/**`, `scripts/ci/**` | Everything, decided in the workflow without running the classifier, so a pull request that breaks the classifier still runs its tests |
 | Anything else: root `package.json`, `pnpm-lock.yaml`, `tsconfig*`, `eslint.config.js`, `docker/**`, `scripts/**`, a path with no rule | Everything |

@@ -257,10 +257,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # A pull request that changes only e2e/ skips build-lint-test, so the
+      # specs are linted here: no fixed sleeps, no non-waiting isVisible()
+      # guards (#182).
+      - name: Lint specs
+        run: pnpm exec eslint e2e --max-warnings 0
+
       - name: Build
         run: pnpm build
 
-      # Playwright's webServer starts dev:server + dev:web; the specs log in as
+      # Playwright's webServer starts the built server and web app; the specs log in as
       # the seeded admin, so the DB must be migrated and seeded first. The
       # server is already built, so drizzle-kit runs directly (`pnpm db:migrate`
       # would run tsc again first).
