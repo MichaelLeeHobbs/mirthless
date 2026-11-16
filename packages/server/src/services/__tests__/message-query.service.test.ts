@@ -121,6 +121,7 @@ describe('MessageQueryService', () => {
       ]);
 
       const result = await MessageQueryService.searchMessages(CHANNEL_ID, {
+        status: undefined,
         limit: 25,
         offset: 0,
         sort: 'receivedAt',
@@ -141,6 +142,7 @@ describe('MessageQueryService', () => {
         .mockResolvedValueOnce({ rows: [] });
 
       const result = await MessageQueryService.searchMessages(CHANNEL_ID, {
+        status: undefined,
         limit: 25,
         offset: 0,
         sort: 'receivedAt',
@@ -201,6 +203,7 @@ describe('MessageQueryService', () => {
       pushSelectResponse([makeConnectorRow()]);
 
       const result = await MessageQueryService.searchMessages(CHANNEL_ID, {
+        status: undefined,
         receivedFrom: new Date('2026-02-28T00:00:00Z'),
         receivedTo: new Date('2026-02-28T23:59:59Z'),
         limit: 25,
@@ -221,6 +224,7 @@ describe('MessageQueryService', () => {
       pushSelectResponse([makeConnectorRow({ metaDataId: 1 })]);
 
       const result = await MessageQueryService.searchMessages(CHANNEL_ID, {
+        status: undefined,
         metaDataId: 1,
         limit: 25,
         offset: 0,
@@ -240,6 +244,7 @@ describe('MessageQueryService', () => {
       pushSelectResponse([makeConnectorRow()]);
 
       const result = await MessageQueryService.searchMessages(CHANNEL_ID, {
+        status: undefined,
         contentSearch: 'ADT',
         limit: 25,
         offset: 0,
@@ -259,6 +264,7 @@ describe('MessageQueryService', () => {
       pushSelectResponse([makeConnectorRow({ messageId: 26 })]);
 
       const result = await MessageQueryService.searchMessages(CHANNEL_ID, {
+        status: undefined,
         limit: 25,
         offset: 25,
         sort: 'receivedAt',
@@ -281,6 +287,7 @@ describe('MessageQueryService', () => {
       ]);
 
       const result = await MessageQueryService.searchMessages(CHANNEL_ID, {
+        status: undefined,
         limit: 25,
         offset: 0,
         sort: 'messageId',
@@ -296,6 +303,7 @@ describe('MessageQueryService', () => {
       mockExecute.mockRejectedValue(new Error('DB error'));
 
       const result = await MessageQueryService.searchMessages(CHANNEL_ID, {
+        status: undefined,
         limit: 25,
         offset: 0,
         sort: 'receivedAt',

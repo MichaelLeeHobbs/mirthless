@@ -14,7 +14,7 @@ vi.mock('../certificate.service.js', () => ({
   CertificateService: { getMaterialById: (...args: unknown[]) => mockGetMaterialById(...args) },
 }));
 
-const mockDnsLookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]);
+const mockDnsLookup = vi.fn(async (..._args: unknown[]) => [{ address: '93.184.216.34', family: 4 }]);
 vi.mock('node:dns/promises', () => ({
   lookup: (...args: unknown[]) => mockDnsLookup(...args),
 }));

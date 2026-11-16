@@ -346,6 +346,7 @@ describe('CodeTemplateService', () => {
         name: 'test',
         description: '',
         type: 'FUNCTION',
+        language: 'JAVASCRIPT',
         code: '',
         contexts: [],
       });
