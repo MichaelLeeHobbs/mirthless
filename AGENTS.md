@@ -94,7 +94,7 @@ Michael tests this project by hand, and it is too big for that. Every change you
 
 ## Verification Matrix
 
-Run what matches the files you touched. `pnpm gate` runs build, lint and every package's tests with coverage minimums; CI runs the same command.
+Run what matches the files you touched. `pnpm gate` runs build, lint and every package's tests with coverage minimums. On a pull request, CI runs the same steps but only the jobs and package tests the diff needs: a docs-only change runs just the tests that read the changed docs. A push to `main` runs everything. [`docs/ops/ci.md`](docs/ops/ci.md) lists what runs when; `node scripts/ci/classify-changes.mjs origin/main` shows it for your branch. A pull request is green when the `ci-ok` check passes; branch protection on `main` requires it.
 
 | You changed | Run | Also |
 |---|---|---|
@@ -108,6 +108,7 @@ Run what matches the files you touched. `pnpm gate` runs build, lint and every p
 | A role, a permission, or the permission a route checks | `pnpm --filter @galvaniflow/server test` (the access guard and `role-access.test.ts`) | Update `docs/user/access-control.md`; add a PHI or destructive endpoint to `ENDPOINTS` in `role-access.test.ts` |
 | Throughput or memory | `pnpm soak` (see `docs/ops/soak-test.md`) | Compare with the recorded baseline |
 | The Mirth importer, or behaviour a migrated channel relies on | `pnpm test:scenarios` (needs Postgres and the test containers, see `docs/testing/migration-scenarios.md`) | Compare the score with the last recorded one; nothing that passed may fail |
+| `.github/workflows/ci.yml` or `scripts/ci/` | `pnpm test:ci` | Update `docs/ops/ci.md` when what runs changes |
 | Docs only | Check the commands and paths you mention exist | |
 
 If a check can't run in your environment (no Postgres, no browser), say so in your verdict. Don't mark it passed.
