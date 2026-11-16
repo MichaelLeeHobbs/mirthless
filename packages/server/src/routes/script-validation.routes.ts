@@ -11,6 +11,7 @@ import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 import { ScriptValidationController } from '../controllers/script-validation.controller.js';
+import { testRunRateLimiter } from '../middleware/rate-limit.middleware.js';
 
 const validateScriptSchema = z.object({
   script: z.string(),
@@ -28,11 +29,13 @@ router.post(
   ScriptValidationController.validate,
 );
 
-// Runs user code on the server (sandboxed, no side effects), so it needs the
-// permission to write channel scripts, not just read them.
+// Runs user code on the server now (in a worker, no side effects). Until test
+// runs, a developer's code ran only after a deployer deployed it, so running
+// code needs the deploy permission too (D-284).
 router.post(
   '/test-run',
-  requirePermission('channels:write'),
+  requirePermission('channels:deploy'),
+  testRunRateLimiter,
   validate({ body: scriptTestRunSchema }),
   ScriptValidationController.testRun,
 );

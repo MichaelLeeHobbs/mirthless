@@ -20,6 +20,11 @@ import type { BridgeDependencies, CollectionBridge } from './bridge-functions.js
 import { parseForSandbox, serializeFromSandbox } from '../pipeline/data-type-handler.js';
 import { DestinationSet, createDestinationSetProxy } from '../pipeline/destination-set.js';
 
+/** Most logger lines a test run returns; the rest are counted. */
+export const MAX_TEST_LOG_LINES = 200;
+/** Most characters of output (and of the returned value) a test run returns. */
+export const MAX_TEST_OUTPUT_CHARS = 256 * 1024;
+
 /** How the pipeline reads the script's result. */
 export type ScriptTestKind = 'filter' | 'transformer' | 'script';
 
@@ -127,18 +132,27 @@ export async function runScriptTest(input: ScriptTestInput): Promise<Result<Scri
     if (!result.ok) return errorResult(result.error.message, started, [], skipped);
 
     const { returnValue, msg, logs, mapUpdates } = result.value;
-    const logLines = logs.map((l) => ({ level: l.level, message: l.message }));
+    // A loop that logs or builds a huge message must not send megabytes back to the browser.
+    const logLines = logs.slice(0, MAX_TEST_LOG_LINES).map((l) => ({ level: l.level, message: l.message }));
+    if (logs.length > MAX_TEST_LOG_LINES) {
+      logLines.push({ level: 'INFO', message: `${String(logs.length - MAX_TEST_LOG_LINES)} more logger lines not shown` });
+    }
     const filter = input.kind === 'filter';
     let output: string | null = null;
     if (!filter && dataType !== undefined) {
       const value = replacement(returnValue, msg);
       output = value == null ? null : serializeFromSandbox(value, dataType, input.sample);
     }
+    if (output !== null && output.length > MAX_TEST_OUTPUT_CHARS) {
+      output = output.slice(0, MAX_TEST_OUTPUT_CHARS);
+      logLines.push({ level: 'INFO', message: `Output cut to the first ${String(MAX_TEST_OUTPUT_CHARS)} characters` });
+    }
+    const returned = returnValue === msg ? null : asText(returnValue);
     return {
       outcome: filter ? (returnValue === true ? 'accepted' : 'filtered') : 'completed',
       output,
       // Compiled transformer steps end with `return msg`: that is the output, not a returned value.
-      returned: returnValue === msg ? null : asText(returnValue),
+      returned: returned === null ? null : returned.slice(0, MAX_TEST_OUTPUT_CHARS),
       logs: logLines,
       maps: Object.fromEntries(Object.entries(mapUpdates).filter(([, entries]) => Object.keys(entries).length > 0)),
       destinations: destSet ? [...destSet.getConnectorNames()] : null,

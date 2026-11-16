@@ -35,7 +35,9 @@ export class ScriptValidationController {
     const result = await ScriptTestRunService.run(input, context);
 
     if (!result.ok) {
-      logger.error({ errMsg: result.error.message, kind: input.kind, channelId: input.channelId }, 'Script test run failed');
+      // The error text can quote the script or sample (PHI), so only its code is logged.
+      const errCode = (result.error as { code?: unknown }).code;
+      logger.error({ errCode: typeof errCode === 'string' ? errCode : result.error.name, kind: input.kind, channelId: input.channelId }, 'Script test run failed');
       res.status(mapErrorToStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
       return;
     }

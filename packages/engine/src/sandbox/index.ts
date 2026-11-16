@@ -13,6 +13,8 @@ export { createBridgeFunctions } from './bridge-functions.js';
 export { isAllowedHost, isBlockedAddress, isBlockedHostname, isReservedAddress, isReservedHostname } from './ssrf.js';
 export type { ScriptTestInput, ScriptTestKind, ScriptTestReaders, ScriptTestResult } from './script-test-run.js';
 export { runScriptTest } from './script-test-run.js';
+export type { IsolatedTestInput, IsolationLimits } from './script-test-isolated.js';
+export { runScriptTestIsolated } from './script-test-isolated.js';
 export type { ScriptTypeError } from './script-type-check.js';
 export { checkScriptTypes } from './script-type-check.js';
 export type { CodeTemplateData } from './template-injector.js';

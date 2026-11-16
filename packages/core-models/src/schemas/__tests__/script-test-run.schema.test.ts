@@ -20,8 +20,11 @@ describe('scriptTestRunSchema', () => {
     expect(scriptTestRunSchema.safeParse({ script: 'x', kind: 'script', sample: '', templateContext: 'NOPE' }).success).toBe(false);
   });
 
-  it('refuses a sample over 1 MB', () => {
-    const sample = 'x'.repeat(1024 * 1024 + 1);
-    expect(scriptTestRunSchema.safeParse({ script: 'x', kind: 'script', sample }).success).toBe(false);
+  it('refuses a script or sample that would not fit, together, in the 1 MB request body', () => {
+    expect(scriptTestRunSchema.safeParse({ script: 'x', kind: 'script', sample: 'x'.repeat(512 * 1024 + 1) }).success).toBe(false);
+    expect(scriptTestRunSchema.safeParse({ script: 'x'.repeat(256 * 1024 + 1), kind: 'script', sample: '' }).success).toBe(false);
+    // The largest accepted request still fits under the body limit.
+    const largest = JSON.stringify({ script: 'x'.repeat(256 * 1024), kind: 'script', sample: 'x'.repeat(512 * 1024) });
+    expect(largest.length).toBeLessThan(1024 * 1024);
   });
 });

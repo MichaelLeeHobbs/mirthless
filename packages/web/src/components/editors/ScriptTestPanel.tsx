@@ -147,7 +147,7 @@ export function ScriptTestPanel({ dataType, sample, onSampleChange, onRun, runni
           height="180px"
         />
         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-          Kept in this page only. A test run sends, writes and routes nothing.
+          Kept in this page only. A test run sends, writes and routes nothing, and its global and configuration maps start empty.
         </Typography>
       </Box>
       <Box sx={{ minWidth: 0 }}>

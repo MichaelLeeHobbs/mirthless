@@ -4,9 +4,9 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Each run compiles with esbuild; its first start in a cold worker can take
-// several seconds, past the 5 s default.
-vi.setConfig({ testTimeout: 20_000 });
+// Each run starts a worker thread and compiles with esbuild, and one test waits
+// out the 5 s test-run limit, so the 5 s default is too short.
+vi.setConfig({ testTimeout: 30_000 });
 
 const mockChannelService = { getById: vi.fn() };
 const mockTemplates = { listTemplatesForChannel: vi.fn(), listTemplates: vi.fn() };
@@ -21,7 +21,7 @@ vi.mock('../../engine.js', () => ({
   createCollectionBridge: () => ({ find: vi.fn(async () => []) }),
 }));
 
-const { ScriptTestRunService, MAX_TEST_TIMEOUT_MS } = await import('../script-test-run.service.js');
+const { ScriptTestRunService, TEST_RUN_TIMEOUT_MS } = await import('../script-test-run.service.js');
 
 const ADT = 'MSH|^~\\&|EPIC|HOSP|GF|HOSP|20261115093000||ADT^A01|MSG1|P|2.5.1\rPID|1||4821193^^^HOSP^MR||NGUYEN^AVERY';
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
@@ -69,14 +69,33 @@ describe('ScriptTestRunService.run', () => {
     expect(JSON.stringify(event)).not.toContain('NGUYEN');
   });
 
-  it('caps the timeout at the most a test run may take, even for a channel that allows longer', async () => {
+  it('stops an endless loop at the test-run limit, even for a channel that allows longer', async () => {
     mockChannelService.getById.mockResolvedValue(ok({ id: CHANNEL_ID, scriptTimeoutSeconds: 600, destinations: [] }));
     const started = Date.now();
     const result = await ScriptTestRunService.run({
-      kind: 'script', dataType: 'HL7V2', destinationSet: false, channelId: CHANNEL_ID, sample: ADT, script: 'return 1;',
+      kind: 'script', dataType: 'HL7V2', destinationSet: false, channelId: CHANNEL_ID, sample: ADT, script: 'while (true) {}',
     });
     expect(result.ok).toBe(true);
-    expect(Date.now() - started).toBeLessThan(MAX_TEST_TIMEOUT_MS);
+    if (!result.ok) return;
+    expect(result.value.outcome).toBe('error');
+    expect(result.value.error).toMatch(new RegExp(`${String(TEST_RUN_TIMEOUT_MS)} ?ms`));
+    expect(Date.now() - started).toBeLessThan(TEST_RUN_TIMEOUT_MS + 3_000);
+  });
+
+  it('runs one test at a time per server, refusing the second instead of queueing it', async () => {
+    const first = ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'while (true) {}' });
+    const second = await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error).toHaveProperty('code', 'CONFLICT');
+    await first;
+    // Once the first finishes, the next run is accepted.
+    expect((await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' })).ok).toBe(true);
+  });
+
+  it('audits a run whose script fails, as well as one that succeeds', async () => {
+    await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: "throw new Error('bad');" }, { userId: 'u1', ipAddress: null });
+    expect(emitEvent).toHaveBeenCalledTimes(1);
+    expect(emitEvent.mock.calls[0]![0]).toMatchObject({ name: 'SCRIPT_TEST_RUN', outcome: 'FAILURE', userId: 'u1' });
   });
 
   it('refuses a channel that does not exist', async () => {

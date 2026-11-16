@@ -2,7 +2,9 @@
 // same transformer output) and must never send, write or route anything.
 
 import { describe, it, expect, vi } from 'vitest';
-import { runScriptTest, type ScriptTestInput, type ScriptTestResult } from '../script-test-run.js';
+import {
+  runScriptTest, MAX_TEST_LOG_LINES, MAX_TEST_OUTPUT_CHARS, type ScriptTestInput, type ScriptTestResult,
+} from '../script-test-run.js';
 
 const ADT = [
   'MSH|^~\\&|EPIC|HOSP|GF|HOSP|20261115093000||ADT^A01|MSG1|P|2.5.1',
@@ -105,6 +107,16 @@ describe('runScriptTest', () => {
     expect(result.logs).toEqual([{ level: 'INFO', message: 'string 3' }]);
     expect(result.output).toBeNull();
     expect(result.destinations).toBeNull();
+  });
+
+  it('caps logger lines and output size, and says what it cut', async () => {
+    const chatty = await run({ kind: 'script', script: 'for (let i = 0; i < 1000; i++) logger.info(String(i));' });
+    expect(chatty.logs).toHaveLength(MAX_TEST_LOG_LINES + 1);
+    expect(chatty.logs.at(-1)?.message).toBe(`${String(1000 - MAX_TEST_LOG_LINES)} more logger lines not shown`);
+
+    const big = await run({ kind: 'transformer', script: `return 'x'.repeat(${String(MAX_TEST_OUTPUT_CHARS + 10)});` });
+    expect(big.output).toHaveLength(MAX_TEST_OUTPUT_CHARS);
+    expect(big.logs.at(-1)?.message).toBe(`Output cut to the first ${String(MAX_TEST_OUTPUT_CHARS)} characters`);
   });
 
   it('reports a sample that does not parse as the channel data type', async () => {

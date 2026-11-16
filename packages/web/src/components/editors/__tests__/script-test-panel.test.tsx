@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { useAuthStore } from '../../../stores/auth.store.js';
+import { PERMISSION } from '../../../lib/permissions.js';
 import { render, screen, cleanup, fireEvent, getDefaultNormalizer } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -33,7 +35,7 @@ describe('ScriptTestPanel', () => {
     panel(undefined);
     expect(screen.getByText(/Run the script \(Ctrl\+Enter in the editor\)/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Generate fake ADT' })).toBeTruthy();
-    expect(screen.getByText('Kept in this page only. A test run sends, writes and routes nothing.')).toBeTruthy();
+    expect(screen.getByText('Kept in this page only. A test run sends, writes and routes nothing, and its global and configuration maps start empty.')).toBeTruthy();
   });
 
   it('shows a filter outcome, logger lines, map changes and destinations', () => {
@@ -70,6 +72,20 @@ describe('ScriptTestPanel', () => {
 
 describe('ScriptEditor test run button', () => {
   const sample = { channelId: undefined, sample: '', setSample: vi.fn() };
+  const signIn = (permissions: readonly string[]): void => {
+    useAuthStore.setState({ user: { id: 'u1', username: 't', email: 't@x.com', role: 'deployer', permissions }, accessToken: 'tok', isAuthenticated: true });
+  };
+  beforeEach(() => { signIn([PERMISSION.CHANNELS_WRITE, PERMISSION.CHANNELS_DEPLOY]); });
+
+  it('is absent for a user who cannot deploy, since a test run runs code now', () => {
+    signIn([PERMISSION.CHANNELS_WRITE]);
+    wrap(
+      <ScriptTestSampleContext.Provider value={sample}>
+        <ScriptEditor value="return true;" onChange={vi.fn()} testKind="filter" />
+      </ScriptTestSampleContext.Provider>,
+    );
+    expect(screen.queryByRole('button', { name: 'Test run' })).toBeNull();
+  });
 
   it('appears inside a channel for a script with a test kind, and opens the panel', () => {
     wrap(

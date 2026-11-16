@@ -18,6 +18,7 @@ import Editor from '@monaco-editor/react';
 import { applyScriptSurface, monaco } from './monaco.js';
 import { useScriptDataType, useScriptTestSample } from './script-context.js';
 import { useCodeTemplates } from '../../hooks/use-code-templates.js';
+import { usePermissions } from '../../hooks/use-permissions.js';
 import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
 import { settledProblems, useCursor, useEditorTheme, useProblems, useSuggestRoom } from './editor-hooks.js';
@@ -123,9 +124,11 @@ export function ScriptEditor({
 
   // Test runs: only inside a channel (which provides the sample) and when editable.
   const testSample = useScriptTestSample();
+  const permissions = usePermissions();
   const testRun = useScriptTestRun();
   const [testOpen, setTestOpen] = useState(false);
-  const canTest = testKind !== undefined && testSample !== undefined && !readOnly;
+  // A test run runs code on the server now, so it needs the deploy permission (D-284).
+  const canTest = testKind !== undefined && testSample !== undefined && !readOnly && permissions.has('channels:deploy');
   const runTest = (): void => {
     if (!canTest) return;
     setTestOpen(true);
