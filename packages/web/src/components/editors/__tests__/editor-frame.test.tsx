@@ -1,6 +1,7 @@
 // The editor chrome every host shares. Monaco itself is stubbed (test/setup.ts),
 // so these tests cover the toolbar, status line and full-screen behaviour.
 
+import { useEffect, useState } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
@@ -9,6 +10,7 @@ import { lightTheme } from '../../../styles/theme.js';
 import { ProblemStatus } from '../ProblemStatus.js';
 import { ScriptEditor, AUTO_HEIGHT, autoHeight } from '../ScriptEditor.js';
 import { TextEditor } from '../TextEditor.js';
+import { EditorFrame } from '../EditorFrame.js';
 import { problemKind, settledProblems, suggestRoom, type Problem } from '../editor-hooks.js';
 
 afterEach(() => { cleanup(); });
@@ -173,6 +175,40 @@ describe('ScriptEditor chrome', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand to full screen' }));
     expect(screen.getByRole('dialog')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+// #183: full screen used to render a second editor in a dialog, so the editor's
+// undo history and cursor were lost going in and out.
+describe('EditorFrame full screen', () => {
+  function Counted({ mounts }: { readonly mounts: { count: number } }): React.ReactNode {
+    useEffect(() => { mounts.count += 1; }, [mounts]);
+    return <div>editor body</div>;
+  }
+
+  function Host({ mounts, height = 200 }: { readonly mounts: { count: number }; readonly height?: string | number }): React.ReactNode {
+    const [expanded, setExpanded] = useState(false);
+    return (
+      <EditorFrame label="Deploy script" height={height} expanded={expanded} onExpandedChange={setExpanded}>
+        <Counted mounts={mounts} />
+      </EditorFrame>
+    );
+  }
+
+  it.each([200, '100%'])('keeps the same editor mounted going in and out (height %s)', (height) => {
+    const mounts = { count: 0 };
+    wrap(<Host mounts={mounts} height={height} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand to full screen' }));
+    expect(screen.getByRole('dialog', { name: 'Deploy script' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' }));
+    expect(mounts.count).toBe(1);
+  });
+
+  it('leaves full screen on Escape', () => {
+    wrap(<Host mounts={{ count: 0 }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand to full screen' }));
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

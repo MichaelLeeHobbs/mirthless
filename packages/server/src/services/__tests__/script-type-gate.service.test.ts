@@ -66,6 +66,37 @@ describe('typeScriptScripts', () => {
       ['Response transformer of destination "To EHR"', { dataType: 'HL7V2', templateContext: 'DESTINATION_RESPONSE_TRANSFORMER' }],
     ]);
   });
+
+  // #200: the JavaScript source's polling script and a JavaScript destination's script.
+  it('checks TypeScript JavaScript-connector scripts on the surfaces the engine runs them with', () => {
+    const c = channel({
+      sourceConnectorType: 'JAVASCRIPT',
+      sourceConnectorProperties: { script: 'return [];', scriptLanguage: 'TYPESCRIPT' },
+      destinations: [
+        { id: 'd1', name: 'To API', connectorType: 'JAVASCRIPT', properties: { script: 'return msg;', scriptLanguage: 'TYPESCRIPT' } },
+        { id: 'd2', name: 'Old', connectorType: 'JAVASCRIPT', properties: { script: 'return msg;' } },
+        { id: 'd3', name: 'Empty', connectorType: 'JAVASCRIPT', properties: { script: '  ', scriptLanguage: 'TYPESCRIPT' } },
+        { id: 'd4', name: 'File', connectorType: 'FILE', properties: { script: 'x', scriptLanguage: 'TYPESCRIPT' } },
+      ],
+    } as unknown as Partial<ChannelDetail>);
+    expect(typeScriptScripts(c).map((s) => [s.segments[0]!.label, s.surface])).toEqual([
+      ['JavaScript source polling script', { message: false, templateContext: 'SOURCE_RECEIVER' }],
+      ['Script of JavaScript destination "To API"', { dataType: 'HL7V2', connectorMessage: true, templateContext: 'DESTINATION_DISPATCHER' }],
+    ]);
+  });
+
+  it('reads the connector message in a destination script and refuses a polling script that uses msg', async () => {
+    const c = channel({
+      sourceConnectorType: 'JAVASCRIPT',
+      // Not inside the `return`: TypeScript skips a top-level return's expression (#206).
+      sourceConnectorProperties: { script: "const ids = [msg.get('MSH.10')];\nreturn ids;", scriptLanguage: 'TYPESCRIPT' },
+      destinations: [{ id: 'd1', name: 'To API', connectorType: 'JAVASCRIPT', properties: { script: 'const id: number = connectorMessage.messageId;\nreturn id;', scriptLanguage: 'TYPESCRIPT' } }],
+    } as unknown as Partial<ChannelDetail>);
+    const failures = await findTypeFailures(typeScriptScripts(c), []);
+    expect(failures.map((f) => [f.label, f.errors.map((e) => e.message)])).toEqual([
+      ['JavaScript source polling script', ["Cannot find name 'msg'."]],
+    ]);
+  });
 });
 
 describe('transformer steps are checked as the engine runs them: joined', () => {

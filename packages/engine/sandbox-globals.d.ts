@@ -63,6 +63,16 @@ declare var rawData: string;
 declare var channelId: string;
 /** The channel's name. Deploy, undeploy and JavaScript connector scripts only. */
 declare var channelName: string;
+/** The message a JavaScript destination is sending. JavaScript destination scripts only. */
+declare var connectorMessage: {
+  readonly channelId: string;
+  readonly messageId: number;
+  readonly metaDataId: number;
+  readonly content: string;
+  readonly dataType: string;
+  readonly correlationId?: string;
+  readonly variables?: Readonly<Record<string, unknown>>;
+};
 /** Source system metadata. Propagates through the pipeline. */
 declare var sourceMap: Record<string, unknown>;
 /** Channel-scoped persistent state. Cleared on channel redeploy. */

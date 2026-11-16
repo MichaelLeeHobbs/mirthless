@@ -170,6 +170,13 @@ describe('validateConnectorProperties', () => {
       expect(result.error.message).toContain('path: must start with /');
     });
 
+    it('rejects an HTTP source BASIC guard with no password, naming it (#207)', () => {
+      const result = validateConnectorProperties('HTTP', 'source', { port: 8080, auth: { type: 'BASIC', username: 'svc' } });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('auth.password');
+    });
+
     it('accepts HTTP channels the 2026-02 to 2026-07 editor saved', () => {
       const source = { host: '0.0.0.0', port: 8080, contextPath: '/', methods: ['POST'], responseStatusCode: 200, responseContentType: 'text/plain', charset: 'UTF-8' };
       const dest = { url: 'http://localhost:8080', method: 'POST', headers: '', contentType: 'text/plain', charset: 'UTF-8', responseTimeout: 30000 };

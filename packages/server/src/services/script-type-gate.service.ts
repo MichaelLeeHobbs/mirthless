@@ -16,7 +16,7 @@
 // main thread and are cached (checkScriptTypesBatch).
 
 import { checkScriptTypesBatch, onlySyntaxWhileBroken, type ScriptTypeError } from '@galvaniflow/engine';
-import { CODE_TEMPLATE_CONTEXT, type ScriptSurface, type TemplateSource } from '@galvaniflow/core-models';
+import { CODE_TEMPLATE_CONTEXT, toScriptLanguage, type ScriptSurface, type TemplateSource } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import type { ChannelDetail } from './channel.service.js';
 import type { GlobalScriptsData } from './global-script.service.js';
@@ -125,6 +125,33 @@ function connectorScripts(channel: ChannelDetail): TypedScript[] {
   return out;
 }
 
+/**
+ * The JavaScript source's polling script and each JavaScript destination's
+ * script, when written in TypeScript. Their language lives in the connector's
+ * properties beside the script (`scriptLanguage`); missing means JavaScript.
+ * The polling script runs with no message, like a deploy script; a
+ * destination's script also gets the connector message (engine.ts).
+ */
+function javascriptConnectorScripts(channel: ChannelDetail): TypedScript[] {
+  const out: TypedScript[] = [];
+  const source = channel.sourceConnectorProperties;
+  if (channel.sourceConnectorType === 'JAVASCRIPT' && isTypeScript(toScriptLanguage(source['scriptLanguage']), connectorScript(source))) {
+    out.push(single('JavaScript source polling script', connectorScript(source), { message: false, templateContext: CODE_TEMPLATE_CONTEXT.SOURCE_RECEIVER }));
+  }
+  for (const dest of channel.destinations) {
+    if (dest.connectorType !== 'JAVASCRIPT' || !isTypeScript(toScriptLanguage(dest.properties['scriptLanguage']), connectorScript(dest.properties))) continue;
+    out.push(single(`Script of JavaScript destination "${dest.name}"`, connectorScript(dest.properties), {
+      dataType: channel.inboundDataType, connectorMessage: true, templateContext: CODE_TEMPLATE_CONTEXT.DESTINATION_DISPATCHER,
+    }));
+  }
+  return out;
+}
+
+/** A JavaScript connector's script property, '' when missing. */
+function connectorScript(properties: Readonly<Record<string, unknown>>): string {
+  return typeof properties['script'] === 'string' ? properties['script'] : '';
+}
+
 /** Every TypeScript script that belongs to this channel (global scripts are checked when saved). */
 export function typeScriptScripts(channel: ChannelDetail): TypedScript[] {
   const own = channel.scripts.flatMap((s): TypedScript[] => {
@@ -135,7 +162,7 @@ export function typeScriptScripts(channel: ChannelDetail): TypedScript[] {
       : { message: false, templateContext: meta.context };
     return [single(meta.name, s.script, surface)];
   });
-  return [...own, ...connectorScripts(channel)];
+  return [...own, ...connectorScripts(channel), ...javascriptConnectorScripts(channel)];
 }
 
 /** Which global scripts: deploy, undeploy, preprocessor, postprocessor. */

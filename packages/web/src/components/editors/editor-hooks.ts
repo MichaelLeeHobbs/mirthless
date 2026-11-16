@@ -116,6 +116,65 @@ export function useSuggestRoom(editor: CodeEditor | null): number {
   return room;
 }
 
+/** The owner Monaco's TypeScript service sets its markers under (the language id). */
+const TYPESCRIPT_MARKER_OWNER = 'typescript';
+
+/** The markers that do not depend on the declarations: syntax errors. */
+export function syntaxMarkers(markers: readonly monaco.editor.IMarker[]): monaco.editor.IMarker[] {
+  return markers.filter((m) => problemKind(m.code) === 'syntax');
+}
+
+/**
+ * While another editor's surface is applied (`stale`), TypeScript checks this
+ * editor against declarations that are not its own: drop the type errors it
+ * reports, keeping syntax errors, until this editor's surface is applied again.
+ */
+export function useStaleTypeMarkers(editor: CodeEditor | null, stale: boolean): void {
+  useEffect(() => {
+    if (!editor || !stale) return undefined;
+    const strip = (): void => {
+      const model = editor.getModel();
+      if (!model) return;
+      const markers = monaco.editor.getModelMarkers({ resource: model.uri, owner: TYPESCRIPT_MARKER_OWNER });
+      const kept = syntaxMarkers(markers);
+      if (kept.length !== markers.length) monaco.editor.setModelMarkers(model, TYPESCRIPT_MARKER_OWNER, kept);
+    };
+    strip();
+    const sub = monaco.editor.onDidChangeMarkers((uris) => {
+      const model = editor.getModel();
+      if (model && uris.some((u) => u.toString() === model.uri.toString())) strip();
+    });
+    return () => { sub.dispose(); };
+  }, [editor, stale]);
+}
+
+/** Monaco stores text with its own line endings, so compare text with all of them as `\n`. */
+function sameText(a: string, b: string): boolean {
+  return a.replace(/\r\n?/g, '\n') === b.replace(/\r\n?/g, '\n');
+}
+
+/**
+ * Put text the host gave into the editor when it is not what the editor
+ * holds. Replacing the model's value clears its undo history, so undo cannot
+ * bring back the text of another list item or tab the editor showed before
+ * (#183). Returns whether it replaced the text.
+ */
+export function replaceExternalValue(editor: CodeEditor, value: string): boolean {
+  if (sameText(editor.getValue(), value)) return false;
+  editor.getModel()?.setValue(value);
+  return true;
+}
+
+/**
+ * Keep the editor showing the host's value. Pass the editor `defaultValue`,
+ * not `value`: @monaco-editor/react applies a new `value` as an undoable edit.
+ */
+export function useExternalValue(editor: CodeEditor | null, value: string): void {
+  useEffect(() => {
+    if (editor) replaceExternalValue(editor, value);
+  }, [editor, value]);
+}
+
 /** Move the cursor to a problem and focus the editor. */
 export function revealProblem(editor: CodeEditor, problem: Problem): void {
   editor.setPosition({ lineNumber: problem.line, column: problem.column });

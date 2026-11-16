@@ -127,9 +127,9 @@ The destination verifies the server certificate against `tls.caCertId` or the No
 | `errorStatusCode` | No | Status when the pipeline fails, 100 to 599; `500` by default. |
 | `maxBodyBytes` | No | Largest request body; a larger one gets 413. |
 | `auth.type` | No | `BASIC` or `TOKEN`. With no `auth` object, anyone who can reach the port can post. API only. |
-| `auth.username` | No | Expected Basic username. |
-| `auth.password` | No | Expected Basic password. |
-| `auth.token` | No | Expected bearer token, compared with `Authorization: Bearer <token>`. |
+| `auth.username` | No | Expected Basic username. Required with `BASIC`: a guard without it refuses to deploy. |
+| `auth.password` | No | Expected Basic password. Required with `BASIC`: a guard without it refuses to deploy. |
+| `auth.token` | No | Expected bearer token, compared with `Authorization: Bearer <token>`. Required with `TOKEN`: a guard without it refuses to deploy. |
 | `scheme` | No | `HTTP` or `HTTPS`. HTTPS needs `tls.serverCertId`. |
 | `tls.serverCertId` | No | Certificate store entry with a private key. Required when `scheme` is HTTPS. |
 | `tls.caCertId` | No | CA used to verify client certificates. |
@@ -329,14 +329,16 @@ The script runs inside the server. Whatever it reaches through the script bridge
 
 | Property | Required | Notes |
 |---|---|---|
-| `script` | Yes | Script whose return value is sent. An empty script refuses to deploy. |
+| `script` | Yes | Script whose return value is sent. An empty script refuses to deploy. It runs with no message (`msg`, `tmp` and `rawData` are empty), and sees `channelId` and `channelName`. |
+| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
 | `pollingIntervalMs` | No | Milliseconds between runs. |
 
 ### JAVASCRIPT as a destination
 
 | Property | Required | Notes |
 |---|---|---|
-| `script` | Yes | Script run for each message. An empty script refuses to deploy. |
+| `script` | Yes | Script run for each message. An empty script refuses to deploy. It sees `msg` parsed for the channel's data type, `channelId`, `channelName` and `connectorMessage` (the message being sent, with its ids and content). |
+| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
 
 ### JAVASCRIPT limits
 

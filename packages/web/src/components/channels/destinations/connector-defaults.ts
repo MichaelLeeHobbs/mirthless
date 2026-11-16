@@ -57,6 +57,7 @@ export const DATABASE_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
 
 export const JAVASCRIPT_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   script: '',
+  scriptLanguage: NEW_SCRIPT_LANGUAGE,
 };
 
 export const SMTP_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {

@@ -61,4 +61,15 @@ describe('script declarations match the sandbox', () => {
     const runtime = (await runtimeGlobals(context)).filter((n) => !['msg', 'tmp', 'rawData'].includes(n));
     expect(drift(declaredGlobals(scriptDeclarations({ message: false })), runtime)).toEqual({ undeclared: [], missing: [] });
   });
+
+  // The server runs a JavaScript destination's script with these extras (engine.ts, wireJavaScriptDestinations).
+  it('in a JavaScript destination script, which also gets the channel identity and the connector message', async () => {
+    const connectorMessage = { channelId: 'c1', messageId: 7, metaDataId: 1, content: 'MSH|^~\\&|', dataType: 'HL7V2' };
+    const context: SandboxContext = {
+      ...createSandboxContext('MSH|^~\\&|', 'MSH|^~\\&|', 'MSH|^~\\&|'),
+      extras: { channelId: 'c1', channelName: 'ADT', connectorMessage },
+    };
+    const declared = declaredGlobals(scriptDeclarations({ dataType: 'HL7V2', connectorMessage: true }));
+    expect(drift(declared, await runtimeGlobals(context))).toEqual({ undeclared: [], missing: [] });
+  });
 });

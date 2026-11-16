@@ -496,6 +496,42 @@ describe('ServerBackupService', () => {
       expect(mockGlobalScriptUpdate).toHaveBeenCalledWith(backup.globalScripts);
     });
 
+    // #183: a backup can hold a TypeScript global script with type errors, saved
+    // before saves were type-checked. That one script restores as JavaScript (the
+    // engine runs it the same) and the section reports it; the others restore.
+    it('restores a TypeScript global script with type errors as JavaScript and keeps the rest', async () => {
+      const languages = { deploy: 'TYPESCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' } as const;
+      const backup = makeMinimalBackup({ globalScripts: { deploy: 'const n: number = "x";', undeploy: 'logger.info(1);', preprocessor: '', postprocessor: '', languages } });
+      mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+      mockGlobalScriptUpdate.mockImplementation(async (input: { languages?: Record<string, string> }) =>
+        (input.languages?.['deploy'] === 'TYPESCRIPT' ? errResult('type errors') : okResult(backup.globalScripts)));
+
+      const result = await ServerBackupService.restoreBackup(backup, 'SKIP');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const section = result.value.sections.find((s) => s.section === 'globalScripts');
+      expect(section?.updated).toBe(4);
+      expect(section?.errors).toEqual([expect.stringMatching(/^The global deploy script was restored as JavaScript.*type errors/)]);
+      expect(mockGlobalScriptUpdate).toHaveBeenCalledWith({ deploy: 'const n: number = "x";', languages: { deploy: 'JAVASCRIPT' } });
+      expect(mockGlobalScriptUpdate).toHaveBeenCalledWith({ undeploy: 'logger.info(1);', languages: { undeploy: 'JAVASCRIPT' } });
+    });
+
+    it('reports a global script that fails in either language and restores the rest', async () => {
+      const backup = makeMinimalBackup({ globalScripts: { deploy: 'not js (', undeploy: 'logger.info(1);', preprocessor: '', postprocessor: '' } });
+      mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+      mockGlobalScriptUpdate.mockImplementation(async (input: { deploy?: string }) =>
+        (input.deploy === 'not js (' ? errResult('does not compile') : okResult(backup.globalScripts)));
+
+      const result = await ServerBackupService.restoreBackup(backup, 'SKIP');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const section = result.value.sections.find((s) => s.section === 'globalScripts');
+      expect(section?.updated).toBe(3);
+      expect(section?.errors).toEqual(['The global deploy script was not restored: does not compile']);
+    });
+
     it('restores global map entries in OVERWRITE mode', async () => {
       const backup = makeMinimalBackup({
         globalMap: [{ key: 'counter', value: '42', isJson: false }],

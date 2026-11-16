@@ -2,11 +2,9 @@
 // Global Scripts E2E Tests
 // ===========================================
 
-import { test, expect, request, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
-import { ADMIN_USER } from './fixtures/test-data.js';
-
-const API_BASE = 'http://localhost:3000/api/v1';
+import { API_BASE, adminApi, getData } from './fixtures/api.js';
 
 interface GlobalScripts {
   readonly deploy: string;
@@ -19,9 +17,7 @@ let api: APIRequestContext;
 let original: GlobalScripts;
 
 async function savedScripts(): Promise<GlobalScripts> {
-  const res = await api.get(`${API_BASE}/global-scripts`);
-  expect(res.ok(), `GET /global-scripts returned ${String(res.status())}`).toBeTruthy();
-  return (await res.json() as { data: GlobalScripts }).data;
+  return getData<GlobalScripts>(api, '/global-scripts');
 }
 
 /**
@@ -41,12 +37,7 @@ async function appendLineAndSave(page: Page, line: string): Promise<void> {
 
 test.describe('Global Scripts', () => {
   test.beforeAll(async () => {
-    const loginCtx = await request.newContext();
-    const loginRes = await loginCtx.post(`${API_BASE}/auth/login`, { data: ADMIN_USER });
-    expect(loginRes.ok(), `Admin login failed: ${String(loginRes.status())}`).toBeTruthy();
-    const { accessToken } = (await loginRes.json() as { data: { accessToken: string } }).data;
-    await loginCtx.dispose();
-    api = await request.newContext({ extraHTTPHeaders: { Authorization: `Bearer ${accessToken}` } });
+    api = await adminApi();
     original = await savedScripts();
   });
 

@@ -4,6 +4,7 @@
 // Default property objects for each source connector type.
 
 import { KAFKA_CONNECTION_DEFAULTS, AMQP_CONNECTION_DEFAULTS } from '../common/queue-connection-defaults.js';
+import { NEW_SCRIPT_LANGUAGE } from '../../../lib/script-language.js';
 
 // Keys must match what packages/connectors/src/registry.ts reads for each type.
 // TCP_MLLP, KAFKA and AMQP defaults must equal their core-models schema
@@ -63,6 +64,7 @@ export const DATABASE_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
 
 export const JAVASCRIPT_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   script: '',
+  scriptLanguage: NEW_SCRIPT_LANGUAGE,
   pollingIntervalMs: 5000,
 };
 

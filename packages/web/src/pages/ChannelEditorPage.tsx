@@ -37,7 +37,7 @@ import type { AdvancedFormValues } from '../components/channels/AdvancedTab.js';
 import type { DestinationFormValues } from '../components/channels/destinations/types.js';
 import type { FilterFormValues, TransformerFormValues, FilterRuleFormValues, TransformerStepFormValues } from '../components/channels/source/types.js';
 import { createDefaultFilter, createDefaultTransformer, transformerHasContent } from '../components/channels/source/types.js';
-import { NEW_SCRIPT_LANGUAGE, loadedScriptLanguage } from '../lib/script-language.js';
+import { NEW_CHANNEL_SCRIPT_LANGUAGES, loadedScriptLanguage } from '../lib/script-language.js';
 import { RevisionHistoryDialog } from '../components/channels/RevisionHistoryDialog.js';
 import { ScriptDataTypeContext, ScriptTestSampleContext } from '../components/editors/script-context.js';
 import { PageHeader } from '../components/common/PageHeader.js';
@@ -76,12 +76,7 @@ const DEFAULT_SCRIPTS: ScriptsFormValues = {
   undeploy: '',
   preprocessor: '',
   postprocessor: '',
-  languages: {
-    deploy: NEW_SCRIPT_LANGUAGE,
-    undeploy: NEW_SCRIPT_LANGUAGE,
-    preprocessor: NEW_SCRIPT_LANGUAGE,
-    postprocessor: NEW_SCRIPT_LANGUAGE,
-  },
+  languages: { ...NEW_CHANNEL_SCRIPT_LANGUAGES },
 };
 
 type ApiFilterRule = ChannelDetail['filters'][number]['rules'][number];
@@ -256,7 +251,7 @@ export function ChannelEditorPage(): ReactNode {
         };
       }));
 
-      // Load scripts with their languages (an empty script starts as TypeScript).
+      // Load scripts with their stored languages.
       const scriptMap: ScriptsFormValues = { ...DEFAULT_SCRIPTS, languages: { ...DEFAULT_SCRIPTS.languages } };
       for (const s of channel.scripts) {
         const key = s.scriptType.toLowerCase() as keyof ScriptsFormValues['languages'];

@@ -242,8 +242,8 @@ export function EventsPage(): ReactNode {
             Export audit events to a file. Current filters will be applied to the export.
           </DialogContentText>
           <FormControl fullWidth size="small">
-            <InputLabel>Format</InputLabel>
-            <Select
+            <InputLabel id="event-export-format-label">Format</InputLabel>
+            <Select labelId="event-export-format-label"
               value={exportFormat}
               label="Format"
               onChange={(e: SelectChangeEvent) => { setExportFormat(e.target.value as 'csv' | 'json'); }}

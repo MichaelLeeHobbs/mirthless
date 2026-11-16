@@ -13,7 +13,9 @@ import type {
   RestoreSectionResult,
   ServerRestoreResult,
   SettingType,
+  ScriptLanguageCode,
 } from '@galvaniflow/core-models';
+import { DEFAULT_STORED_SCRIPT_LANGUAGE } from '@galvaniflow/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { ChannelExportService } from './channel-export.service.js';
@@ -492,16 +494,46 @@ async function restoreCodeTemplates(
 
 const ALL_JAVASCRIPT = { deploy: 'JAVASCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' } as const;
 
+const GLOBAL_SCRIPT_KEYS = ['deploy', 'undeploy', 'preprocessor', 'postprocessor'] as const;
+
+/**
+ * Restore one global script. A TypeScript script the save refuses (a backup
+ * can hold one with type errors, saved before saves were type-checked) is
+ * restored as JavaScript, which the engine runs the same, and reported.
+ * Returns the error to report, or null.
+ */
+async function restoreGlobalScript(
+  key: (typeof GLOBAL_SCRIPT_KEYS)[number], script: string, language: ScriptLanguageCode,
+): Promise<{ readonly restored: boolean; readonly error: string | null }> {
+  const first = await GlobalScriptService.update({ [key]: script, languages: { [key]: language } });
+  if (first.ok) return { restored: true, error: null };
+  if (language === 'TYPESCRIPT') {
+    const asJs = await GlobalScriptService.update({ [key]: script, languages: { [key]: 'JAVASCRIPT' } });
+    if (asJs.ok) {
+      return { restored: true, error: `The global ${key} script was restored as JavaScript because as TypeScript it was refused (type errors): ${first.error.message}. Fix it and switch it back to TypeScript.` };
+    }
+  }
+  return { restored: false, error: `The global ${key} script was not restored: ${first.error.message}` };
+}
+
 async function restoreGlobalScripts(
   scripts: ServerBackup['globalScripts'],
 ): Promise<RestoreSectionResult> {
   // A backup taken before languages were stored holds JavaScript: restore it as
   // such, not in whatever language each script has now.
-  const result = await GlobalScriptService.update(scripts.languages ? scripts : { ...scripts, languages: ALL_JAVASCRIPT });
-  if (!result.ok) {
-    return { section: 'globalScripts', created: 0, updated: 0, skipped: 0, errors: [result.error.message] };
+  const languages = scripts.languages ?? ALL_JAVASCRIPT;
+  const all = await GlobalScriptService.update({ ...scripts, languages });
+  if (all.ok) return { section: 'globalScripts', created: 0, updated: GLOBAL_SCRIPT_KEYS.length, skipped: 0, errors: [] };
+
+  // One script was refused: restore them one at a time so the others are not lost with it (#183).
+  let updated = 0;
+  const errors: string[] = [];
+  for (const key of GLOBAL_SCRIPT_KEYS) {
+    const outcome = await restoreGlobalScript(key, scripts[key], languages[key] ?? DEFAULT_STORED_SCRIPT_LANGUAGE);
+    if (outcome.restored) updated++;
+    if (outcome.error !== null) errors.push(outcome.error);
   }
-  return { section: 'globalScripts', created: 0, updated: 1, skipped: 0, errors: [] };
+  return { section: 'globalScripts', created: 0, updated, skipped: 0, errors };
 }
 
 /**

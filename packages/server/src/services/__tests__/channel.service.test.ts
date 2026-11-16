@@ -719,6 +719,46 @@ describe('ChannelService', () => {
     });
   });
 
+  // #183: a request that leaves a channel script's language out keeps the stored
+  // one instead of writing JavaScript over a TypeScript script.
+  describe('update — channel script languages', () => {
+    function scriptSets(): Array<Record<string, unknown>> {
+      return mockSet.mock.calls
+        .map((c) => c[0] as Record<string, unknown>)
+        .filter((v) => 'script' in v);
+    }
+
+    it('keeps the stored language when the request leaves it out', async () => {
+      const channel = makeChannel();
+      pushResponse([channel]);
+      setupGetByIdMocks(makeChannel({ revision: 2 }));
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        scripts: { deploy: 'return;', undeploy: null, preprocessor: null, postprocessor: null, languages: {} },
+      });
+
+      expect(result.ok).toBe(true);
+      // All four scripts are written (a null one as ''), none with a language.
+      // Strict: a `language: undefined` key would still be a write of the language.
+      expect(scriptSets()).toStrictEqual([{ script: 'return;' }, { script: '' }, { script: '' }, { script: '' }]);
+    });
+
+    it('writes the language the request gives', async () => {
+      const channel = makeChannel();
+      pushResponse([channel]);
+      setupGetByIdMocks(makeChannel({ revision: 2 }));
+
+      const result = await ChannelService.update(CHANNEL_ID, {
+        revision: 1,
+        scripts: { deploy: 'return;', undeploy: null, preprocessor: null, postprocessor: null, languages: { deploy: 'TYPESCRIPT' } },
+      });
+
+      expect(result.ok).toBe(true);
+      expect(scriptSets()).toEqual([{ script: 'return;', language: 'TYPESCRIPT' }, { script: '' }, { script: '' }, { script: '' }]);
+    });
+  });
+
   // ========== PRUNING FIELDS ==========
   describe('getById — pruning fields', () => {
     it('returns pruning fields in channel detail', async () => {

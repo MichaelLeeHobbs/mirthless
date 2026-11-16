@@ -17,6 +17,7 @@ import AddIcon from '@mui/icons-material/Add';
 import type { TransformerFormValues, TransformerStepFormValues } from '../source/types.js';
 import { createDefaultTransformerStep } from '../source/types.js';
 import { TransformerStepEditor } from '../source/TransformerStepEditor.js';
+import { earlierStepNames } from '../../editors/surface-state.js';
 
 const DATA_TYPES = [
   { value: 'RAW', label: 'Raw' },
@@ -95,6 +96,7 @@ export function DestinationTransformerSection({ transformer, onChange }: Destina
               <TransformerStepEditor
                 key={index}
                 stage="destination"
+                earlierNames={earlierStepNames(transformer.steps, index)}
                 step={step}
                 index={index}
                 total={transformer.steps.length}

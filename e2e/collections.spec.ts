@@ -2,41 +2,53 @@
 // Collections E2E Tests
 // ===========================================
 
-import { test, expect, request } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
-import { ADMIN_USER } from './fixtures/test-data.js';
+import { adminApi, deleteOk, getData, postData } from './fixtures/api.js';
 
-const API_BASE = 'http://localhost:3000/api/v1';
 const TEST_COLLECTION_NAME = 'E2E Test Collection';
+const INDEXED_FIELDS = ['accessionNumber', 'institutionName', 'orderControl'] as const;
+
+let api: APIRequestContext;
+
+interface CollectionSummary { readonly id: string; readonly name: string }
+
+/** The collections table row whose name link reads exactly this name. */
+function collectionRow(page: Page, name: string): Locator {
+  return page.getByRole('row').filter({ has: page.getByRole('link', { name, exact: true }) });
+}
+
+async function collectionNames(): Promise<string[]> {
+  return (await getData<CollectionSummary[]>(api, '/collections')).map((c) => c.name);
+}
+
+/** Delete every collection whose name passes the test, from this run or an interrupted one. */
+async function removeCollections(match: (name: string) => boolean): Promise<void> {
+  for (const c of await getData<CollectionSummary[]>(api, '/collections')) {
+    if (match(c.name)) await deleteOk(api, `/collections/${c.id}`);
+  }
+}
+
+test.beforeAll(async () => {
+  api = await adminApi();
+});
+
+test.afterAll(async () => {
+  await api?.dispose();
+});
 
 test.describe('Collections', () => {
-  // Clean up stale test data from previous runs.
-  test.beforeAll(async () => {
-    // Full URLs: a leading-slash path would drop the /api/v1 part of a baseURL,
-    // which made this cleanup a silent no-op.
-    const ctx = await request.newContext();
-    try {
-      const loginRes = await ctx.post(`${API_BASE}/auth/login`, {
-        data: { username: ADMIN_USER.username, password: ADMIN_USER.password },
-      });
-      if (!loginRes.ok()) return;
-      const loginBody = await loginRes.json() as { success: boolean; data: { accessToken: string } };
-      if (!loginBody.data?.accessToken) return;
-      const token = loginBody.data.accessToken;
+  test.describe.configure({ mode: 'serial' });
 
-      const listRes = await ctx.get(`${API_BASE}/collections`, { headers: { Authorization: `Bearer ${token}` } });
-      if (listRes.ok()) {
-        const body = await listRes.json() as { data: Array<{ id: string; name: string }> };
-        const items = Array.isArray(body.data) ? body.data : [];
-        for (const c of items) {
-          if (c.name.startsWith(TEST_COLLECTION_NAME)) {
-            await ctx.delete(`${API_BASE}/collections/${c.id}`, { headers: { Authorization: `Bearer ${token}` } });
-          }
-        }
-      }
-    } finally {
-      await ctx.dispose();
-    }
+  // Exact names: the records grid below keeps its own collection, whose name shares this prefix.
+  const ownNames = [TEST_COLLECTION_NAME, `${TEST_COLLECTION_NAME} NoFields`];
+
+  test.beforeAll(async () => {
+    await removeCollections((name) => ownNames.includes(name));
+  });
+
+  test.afterAll(async () => {
+    await removeCollections((name) => ownNames.includes(name));
   });
 
   test.beforeEach(async ({ page }) => {
@@ -45,29 +57,36 @@ test.describe('Collections', () => {
 
   test('navigate to collections page', async ({ page }) => {
     await page.goto('/collections');
-    await expect(page.getByRole('heading', { name: /collections/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Collections' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Create Collection' })).toBeEnabled();
   });
 
   test('create a collection with indexed fields and a TTL', async ({ page }) => {
     await page.goto('/collections');
-    await page.getByRole('button', { name: /create collection/i }).click();
+    await page.getByRole('button', { name: 'Create Collection' }).click();
 
-    await page.getByLabel('Name').fill(TEST_COLLECTION_NAME);
-    await page.getByLabel('Indexed Fields').fill('accessionNumber, institutionName, orderControl');
-    await page.getByLabel(/Default TTL/i).fill('604800');
-    await page.getByRole('button', { name: /^create$/i }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create Collection' });
+    await dialog.getByLabel('Name').fill(TEST_COLLECTION_NAME);
+    await dialog.getByLabel('Indexed Fields').fill(INDEXED_FIELDS.join(', '));
+    await dialog.getByLabel(/Default TTL/i).fill('604800');
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
-    // Appears in the list; TTL renders as 7d.
-    await expect(page.getByText(TEST_COLLECTION_NAME)).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('7d').first()).toBeVisible();
+    // Appears in the list with its fields; a TTL of 604800 seconds renders as 7d.
+    await expect(dialog).toBeHidden();
+    const row = collectionRow(page, TEST_COLLECTION_NAME);
+    for (const field of INDEXED_FIELDS) await expect(row.getByText(field, { exact: true })).toBeVisible();
+    await expect(row.getByRole('cell', { name: '7d', exact: true })).toBeVisible();
   });
 
   test('create is disabled without indexed fields', async ({ page }) => {
     await page.goto('/collections');
-    await page.getByRole('button', { name: /create collection/i }).click();
-    await page.getByLabel('Name').fill('E2E Test Collection NoFields');
+    await page.getByRole('button', { name: 'Create Collection' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create Collection' });
+    await dialog.getByLabel('Name').fill(`${TEST_COLLECTION_NAME} NoFields`);
     // No indexed fields entered → the Create button stays disabled.
-    await expect(page.getByRole('button', { name: /^create$/i })).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: 'Create', exact: true })).toBeDisabled();
+    await dialog.getByLabel('Indexed Fields').fill('accession');
+    await expect(dialog.getByRole('button', { name: 'Create', exact: true })).toBeEnabled();
   });
 
   test('the collection name opens its records grid', async ({ page }) => {
@@ -80,17 +99,15 @@ test.describe('Collections', () => {
 
   test('delete a collection with confirmation', async ({ page }) => {
     await page.goto('/collections');
-    await page.waitForTimeout(1_000);
-    const row = page.locator('table tbody tr').filter({ hasText: TEST_COLLECTION_NAME }).first();
-    if (await row.isVisible()) {
-      await row.getByRole('button', { name: /delete collection/i }).click();
-      const confirmBtn = page.getByRole('button', { name: /^delete$/i });
-      if (await confirmBtn.isVisible()) {
-        await confirmBtn.click();
-        await page.waitForTimeout(1_000);
-      }
-      await expect(page.getByText(TEST_COLLECTION_NAME)).not.toBeVisible({ timeout: 10_000 });
-    }
+    await collectionRow(page, TEST_COLLECTION_NAME).getByRole('button', { name: 'Delete collection' }).click();
+
+    const confirm = page.getByRole('dialog', { name: 'Delete Collection' });
+    await expect(confirm).toContainText(TEST_COLLECTION_NAME);
+    await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
+
+    await expect(confirm).toBeHidden();
+    await expect(collectionRow(page, TEST_COLLECTION_NAME)).toHaveCount(0);
+    await expect.poll(collectionNames).not.toContain(TEST_COLLECTION_NAME);
   });
 });
 
@@ -99,28 +116,20 @@ test.describe('Collections', () => {
 const GRID_COLLECTION_NAME = 'E2E Test Collection Records';
 
 test.describe('Collection records grid', () => {
+  test.describe.configure({ mode: 'serial' });
   let collectionId = '';
 
   // A fresh collection with three records, made through the API.
   test.beforeAll(async () => {
-    // Full URLs: a leading-slash path would drop the /api/v1 part of a baseURL.
-    const ctx = await request.newContext();
-    try {
-      const loginRes = await ctx.post(`${API_BASE}/auth/login`, { data: { username: ADMIN_USER.username, password: ADMIN_USER.password } });
-      const token = (await loginRes.json() as { data: { accessToken: string } }).data.accessToken;
-      const headers = { Authorization: `Bearer ${token}` };
-      const list = await ctx.get(`${API_BASE}/collections`, { headers });
-      for (const c of (await list.json() as { data: Array<{ id: string; name: string }> }).data) {
-        if (c.name === GRID_COLLECTION_NAME) await ctx.delete(`${API_BASE}/collections/${c.id}`, { headers });
-      }
-      const created = await ctx.post(`${API_BASE}/collections`, { headers, data: { name: GRID_COLLECTION_NAME, indexedFields: ['accession', 'facility'] } });
-      collectionId = (await created.json() as { data: { id: string } }).data.id;
-      for (const [accession, facility, payload] of [['B200', 'North', 'second'], ['A100', 'South', 'first'], ['C300', 'North', 'third']]) {
-        await ctx.post(`${API_BASE}/collections/${collectionId}/records`, { headers, data: { fields: { accession, facility }, payload } });
-      }
-    } finally {
-      await ctx.dispose();
+    await removeCollections((name) => name === GRID_COLLECTION_NAME);
+    collectionId = (await postData<{ id: string }>(api, '/collections', { name: GRID_COLLECTION_NAME, indexedFields: ['accession', 'facility'] })).id;
+    for (const [accession, facility, payload] of [['B200', 'North', 'second'], ['A100', 'South', 'first'], ['C300', 'North', 'third']]) {
+      await postData(api, `/collections/${collectionId}/records`, { fields: { accession, facility }, payload });
     }
+  });
+
+  test.afterAll(async () => {
+    await removeCollections((name) => name === GRID_COLLECTION_NAME);
   });
 
   test.beforeEach(async ({ page }) => {
@@ -129,7 +138,7 @@ test.describe('Collection records grid', () => {
     await expect(page.getByRole('heading', { name: GRID_COLLECTION_NAME })).toBeVisible({ timeout: 10_000 });
   });
 
-  const accessions = (page: import('@playwright/test').Page): Promise<string[]> =>
+  const accessions = (page: Page): Promise<string[]> =>
     page.locator('table tbody tr td:first-child').allTextContents();
 
   test('sorts by an indexed field from its column head', async ({ page }) => {
@@ -143,6 +152,7 @@ test.describe('Collection records grid', () => {
   test('filters with the search box', async ({ page }) => {
     await page.getByRole('textbox', { name: 'Search records' }).fill('north');
     await expect(page.getByText('2 records found')).toBeVisible();
+    await expect.poll(() => accessions(page)).toHaveLength(2);
     await page.getByRole('textbox', { name: 'Search records' }).fill('nothing-like-this');
     await expect(page.getByText('No matching records')).toBeVisible();
   });
@@ -152,18 +162,24 @@ test.describe('Collection records grid', () => {
     const add = page.getByRole('dialog', { name: 'Add record' });
     await add.getByLabel('accession').fill('Z900');
     await add.getByLabel('Payload').fill('added from e2e');
-    await add.getByRole('button', { name: 'Add' }).click();
+    await add.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(add).toBeHidden();
     await expect(page.getByRole('cell', { name: 'Z900' })).toBeVisible();
+    await expect(page.getByText('4 records')).toBeVisible();
 
     await page.getByRole('cell', { name: 'Z900' }).click();
     const edit = page.getByRole('dialog', { name: 'Edit record' });
     await edit.getByLabel('accession').fill('Z901');
     await edit.getByRole('button', { name: 'Save' }).click();
+    await expect(edit).toBeHidden();
     await expect(page.getByRole('cell', { name: 'Z901' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Z900' })).toHaveCount(0);
 
-    await page.locator('table tbody tr', { hasText: 'Z901' }).getByRole('button', { name: 'Delete record' }).click();
-    await page.getByRole('button', { name: /^delete$/i }).click();
-    await expect(page.getByRole('cell', { name: 'Z901' })).not.toBeVisible();
+    await page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'Z901' }) }).getByRole('button', { name: 'Delete record' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Delete record' });
+    await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(confirm).toBeHidden();
+    await expect(page.getByRole('cell', { name: 'Z901' })).toHaveCount(0);
     await expect(page.getByText('3 records')).toBeVisible();
   });
 });

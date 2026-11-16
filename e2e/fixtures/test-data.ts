@@ -16,6 +16,12 @@ export const TEST_CHANNEL = {
   destPort: 18662,
 } as const;
 
+/** The channel channel-deploy.spec.ts deploys from the dashboard. Its port is its own. */
+export const DEPLOY_CHANNEL = {
+  name: 'E2E Deploy Channel',
+  sourcePort: 18671,
+} as const;
+
 /** Test user constants */
 export const TEST_USER = {
   username: 'e2e-test-user',

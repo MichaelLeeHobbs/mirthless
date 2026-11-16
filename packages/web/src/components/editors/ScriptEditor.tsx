@@ -5,7 +5,7 @@
 // scripts, code templates): a language switch, format, full screen, and a status
 // line with the cursor position and the script's problems.
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { SCRIPT_TEST_KINDS, ScriptLanguageCode, ScriptSurface } from '@galvaniflow/core-models';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
@@ -21,7 +21,10 @@ import { useCodeTemplates } from '../../hooks/use-code-templates.js';
 import { usePermissions } from '../../hooks/use-permissions.js';
 import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
-import { settledProblems, useCursor, useEditorTheme, useProblems, useSuggestRoom } from './editor-hooks.js';
+import {
+  settledProblems, useCursor, useEditorTheme, useExternalValue, useProblems, useStaleTypeMarkers, useSuggestRoom,
+} from './editor-hooks.js';
+import { appliedSurfaceKey, onSurfaceApplied, surfaceLibs } from './surface-state.js';
 import { EditorToolbarButton } from './EditorToolbarButton.js';
 import { ProblemStatus } from './ProblemStatus.js';
 import { ScriptTestPanel } from './ScriptTestPanel.js';
@@ -79,6 +82,11 @@ export interface ScriptEditorProps {
    * script (anything else).
    */
   readonly testKind?: ScriptTestKind;
+  /**
+   * Top-level names the enabled transformer steps before this one declare. The
+   * engine runs a transformer's steps as one body, so this step can use them.
+   */
+  readonly earlierNames?: readonly string[] | undefined;
 }
 
 type ScriptTestKind = (typeof SCRIPT_TEST_KINDS)[number];
@@ -95,6 +103,7 @@ export function ScriptEditor({
   readOnly = false,
   surface: surfaceProp,
   testKind,
+  earlierNames,
 }: ScriptEditorProps): ReactNode {
   const theme = useEditorTheme();
   const channelDataType = useScriptDataType();
@@ -111,6 +120,7 @@ export function ScriptEditor({
   const [expanded, setExpanded] = useState(false);
   const problems = useProblems(editor);
   const cursor = useCursor(editor);
+  useExternalValue(editor, value);
   const [contentHeight, setContentHeight] = useState<number>(AUTO_HEIGHT.min);
   // Room the open completion list needs; above zero also means the user is mid-word.
   const suggestRoomPx = useSuggestRoom(editor);
@@ -157,14 +167,22 @@ export function ScriptEditor({
   }, [editor, canTest]);
 
   // The type service holds one set of globals; this editor's surface applies on
-  // mount and whenever it takes focus.
+  // mount and whenever it takes focus. While another editor's is applied, this
+  // one shows syntax errors only and says types are checked when focused.
+  const earlierKey = (earlierNames ?? []).join(',');
+  const libs = useMemo(
+    () => surfaceLibs(surface, templates ?? [], earlierKey === '' ? [] : earlierKey.split(',')),
+    [surface, templates, earlierKey],
+  );
+  const stale = useSyncExternalStore(onSurfaceApplied, () => appliedSurfaceKey() !== libs.key);
+  useStaleTypeMarkers(editor, stale);
   useEffect(() => {
     if (!editor) return undefined;
-    const apply = (): void => { applyScriptSurface(surface, templates ?? []); };
+    const apply = (): void => { applyScriptSurface(libs); };
     apply();
     const focus = editor.onDidFocusEditorText(apply);
     return () => { focus.dispose(); };
-  }, [editor, surface, templates]);
+  }, [editor, libs]);
 
   // Read-only: the status line names the language; a disabled switch only looked editable.
   const start = showLanguageToggle && !readOnly ? (
@@ -238,6 +256,11 @@ export function ScriptEditor({
       status={
         <>
           <ProblemStatus editor={editor} problems={settledProblems(problems, cursor, suggestRoomPx > 0)} />
+          {stale && language === 'TYPESCRIPT' ? (
+            <Tooltip title="The type checker follows the editor you are in. Click in this one to check its types.">
+              <Box component="span">Types are checked when you click in</Box>
+            </Tooltip>
+          ) : null}
           <Box sx={{ flexGrow: 1 }} />
           <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Ln {cursor.line}, Col {cursor.column}</Box>
           <Tooltip title={language === 'TYPESCRIPT'
@@ -258,7 +281,7 @@ export function ScriptEditor({
         height="100%"
         language={MONACO_LANGUAGE[language]}
         theme={theme}
-        value={value}
+        defaultValue={value}
         onChange={(v) => { onChange(v ?? ''); }}
         onMount={(ed) => { setEditor(ed); }}
         options={{ ...BASE_EDITOR_OPTIONS, readOnly, ariaLabel: label, autoClosingBrackets: 'always', formatOnPaste: true }}

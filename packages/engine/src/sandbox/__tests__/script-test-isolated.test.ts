@@ -43,9 +43,14 @@ describe('runScriptTestIsolated', () => {
   });
 
   it('reports a script that runs out of memory as an error, and the process lives on', async () => {
-    const result = await run({ kind: 'script', script: 'const a = []; while (true) { a.push(new Array(1e5).fill(1)); }' }, {});
+    // The time limit and the memory-growth cap are far off, so only the heap limit can stop it (#183).
+    const result = await run(
+      { kind: 'script', script: 'const a = []; while (true) { a.push(new Array(1e5).fill(1)); }' },
+      {},
+      { timeoutMs: 20_000, maxMemoryGrowthMb: 4_096 },
+    );
     expect(result.outcome).toBe('error');
-    expect(result.error).toMatch(/ran out of memory|stopped after/);
+    expect(result.error).toBe('The script ran out of memory (the test-run limit is 32 MB).');
   });
 
   it('stops a script that fills memory outside the heap limit (typed arrays)', async () => {

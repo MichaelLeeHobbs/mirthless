@@ -649,3 +649,68 @@ describe('createChannelSchema — destinations array', () => {
     expect(result.data.metadataColumns).toHaveLength(2);
   });
 });
+
+// #183: a client that leaves languages out must not turn TypeScript scripts into
+// JavaScript on save, which would switch off their deploy type check.
+describe('script languages on update', () => {
+  const rule = { type: 'JAVASCRIPT', script: 'return true;' };
+  const step = { type: 'JAVASCRIPT', script: 'msg = msg;' };
+  const dest = { name: 'D', connectorType: 'HTTP', properties: {} };
+
+  it('refuses a filter rule script with no language', () => {
+    const result = updateChannelSchema.safeParse({ revision: 1, filters: [{ rules: [rule] }] });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path).toEqual(['filters', 0, 'rules', 0, 'language']);
+  });
+
+  it('refuses a transformer step script with no language', () => {
+    const result = updateChannelSchema.safeParse({ revision: 1, transformers: [{ steps: [step] }] });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path).toEqual(['transformers', 0, 'steps', 0, 'language']);
+  });
+
+  it('refuses a response transformer with no language', () => {
+    const result = updateChannelSchema.safeParse({ revision: 1, destinations: [{ ...dest, responseTransformer: 'x;' }] });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path).toEqual(['destinations', 0, 'responseTransformerLanguage']);
+  });
+
+  it('accepts items with no script and no language', () => {
+    const result = updateChannelSchema.safeParse({
+      revision: 1,
+      filters: [{ rules: [{ type: 'RULE_BUILDER', field: 'PID.3', condition: 'EXISTS' }] }],
+      transformers: [{ steps: [{ type: 'MAPPER', sourceField: 'a', targetField: 'b' }] }],
+      destinations: [dest],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts scripts that carry their language', () => {
+    const result = updateChannelSchema.safeParse({
+      revision: 1,
+      filters: [{ rules: [{ ...rule, language: 'TYPESCRIPT' }] }],
+      transformers: [{ steps: [{ ...step, language: 'TYPESCRIPT' }] }],
+      destinations: [{ ...dest, responseTransformer: 'x;', responseTransformerLanguage: 'TYPESCRIPT' }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('leaves an omitted channel script language unset, so the stored one is kept', () => {
+    const result = updateChannelSchema.safeParse({ revision: 1, scripts: { deploy: 'return;' } });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.scripts?.languages.deploy).toBeUndefined();
+  });
+
+  it('still lets create leave languages out (the service stores JavaScript)', () => {
+    const result = createChannelSchema.safeParse({
+      name: 'C', inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
+      sourceConnectorType: 'TCP_MLLP', sourceConnectorProperties: {},
+      filters: [{ rules: [rule] }],
+    });
+    expect(result.success).toBe(true);
+  });
+});

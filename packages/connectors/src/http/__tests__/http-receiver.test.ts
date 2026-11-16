@@ -104,6 +104,21 @@ describe('HttpReceiver', () => {
     expect(result.ok).toBe(false);
   });
 
+  it.each([
+    [{ type: 'BASIC' }],
+    [{ type: 'BASIC', username: 'svc' }],
+    [{ type: 'BASIC', password: 'p' }],
+    [{ type: 'TOKEN' }],
+    [{ type: 'TOKEN', token: '' }],
+  ] as const)('refuses to deploy auth %j, which would accept empty credentials or nothing', async (auth) => {
+    receiver = new HttpReceiver(makeConfig({ auth }));
+    const result = await receiver.onDeploy();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/auth/);
+  });
+
   it('deploys with valid config', async () => {
     receiver = new HttpReceiver(makeConfig());
     const result = await receiver.onDeploy();

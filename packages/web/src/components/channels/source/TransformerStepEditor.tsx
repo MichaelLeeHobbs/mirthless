@@ -27,10 +27,13 @@ interface TransformerStepEditorProps {
   readonly onMoveDown: () => void;
   /** Source steps can choose destinations; the stage also picks the code templates offered. */
   readonly stage?: ScriptStage;
+  /** Names the enabled steps before this one declare; deploy runs the steps joined. */
+  readonly earlierNames?: readonly string[];
 }
 
 export function TransformerStepEditor({
   stage = 'source',
+  earlierNames,
   step,
   index,
   total,
@@ -105,6 +108,7 @@ export function TransformerStepEditor({
             label={`${step.name || 'Step'} script`}
             surface={FILTER_TRANSFORMER_SURFACE[stage]}
             testKind="transformer"
+            earlierNames={earlierNames}
             language={step.language}
             onLanguageChange={(language) => { onChange({ language }); }}
             value={step.script}
