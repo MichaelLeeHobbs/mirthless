@@ -12,6 +12,9 @@ import { GlobalMapProxy } from '../../runtime/global-map-proxy.js';
 
 // ----- Helpers -----
 
+/** Generous: these tests check the maps, not speed, and compile and run several scripts each (#125). */
+const MESSAGE_BUDGET_MS = 20_000;
+
 function makeStore(): MessageStore {
   return {
     createMessage: vi.fn().mockResolvedValue({ ok: true, value: { messageId: 1, correlationId: '00000000-0000-0000-0000-000000000099' }, error: null }),
@@ -70,7 +73,7 @@ describe('Pipeline Map Continuity', () => {
     const processor = new MessageProcessor(executor, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
     const result = await processor.processMessage(
       { rawContent: 'MSH|test', sourceMap: {} },
-      AbortSignal.timeout(5_000),
+      AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
     expect(result.ok).toBe(true);
@@ -98,7 +101,7 @@ describe('Pipeline Map Continuity', () => {
     const processor = new MessageProcessor(executor, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
     const result = await processor.processMessage(
       { rawContent: 'test', sourceMap: {} },
-      AbortSignal.timeout(5_000),
+      AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
     expect(result.ok).toBe(true);
@@ -132,7 +135,7 @@ describe('Pipeline Map Continuity', () => {
     const processor = new MessageProcessor(executor, makeStore(), sendFn, config, DEFAULT_EXECUTION_OPTIONS);
     const result = await processor.processMessage(
       { rawContent: 'test', sourceMap: {} },
-      AbortSignal.timeout(5_000),
+      AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
     expect(result.ok).toBe(true);
@@ -156,7 +159,7 @@ describe('Pipeline Map Continuity', () => {
     const processor = new MessageProcessor(executor, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
     await processor.processMessage(
       { rawContent: 'test', sourceMap: {} },
-      AbortSignal.timeout(5_000),
+      AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
     // GlobalChannelMap should have the accumulated value
@@ -180,7 +183,7 @@ describe('Pipeline Map Continuity', () => {
     const processor = new MessageProcessor(executor, store, makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
     const result = await processor.processMessage(
       { rawContent: 'test', sourceMap: {} },
-      AbortSignal.timeout(5_000),
+      AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
     expect(result.ok).toBe(true);
@@ -209,7 +212,7 @@ describe('Pipeline Map Continuity', () => {
     const processor = new MessageProcessor(executor, store, makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
     const result = await processor.processMessage(
       { rawContent: 'test', sourceMap: { customField: 'sourceValue' } },
-      AbortSignal.timeout(5_000),
+      AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
     expect(result.ok).toBe(true);
@@ -237,7 +240,7 @@ describe('Pipeline Map Continuity', () => {
     const processor = new MessageProcessor(executor, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
     const result = await processor.processMessage(
       { rawContent: 'test', sourceMap: {} },
-      AbortSignal.timeout(5_000),
+      AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
     expect(result.ok).toBe(true);
@@ -259,7 +262,7 @@ describe('Pipeline Map Continuity', () => {
       ],
     };
     const processor = new MessageProcessor(executor, makeStore(), send, config, DEFAULT_EXECUTION_OPTIONS);
-    const result = await processor.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(5_000));
+    const result = await processor.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(MESSAGE_BUDGET_MS));
 
     expect(result.ok).toBe(true);
     const sent = (send as ReturnType<typeof vi.fn>).mock.calls.map((c: unknown[]) => [c[0], c[2]]);
@@ -279,7 +282,7 @@ describe('Pipeline Map Continuity', () => {
       globalChannelMap: gcm,
     };
     const processor = new MessageProcessor(executor, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
-    const result = await processor.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(5_000));
+    const result = await processor.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(MESSAGE_BUDGET_MS));
 
     expect(result.ok).toBe(true);
     expect(gcm.get('seen')).toBe('accepted');
@@ -294,8 +297,8 @@ describe('Pipeline Map Continuity', () => {
     const storeB = makeStore();
     const b = new MessageProcessor(executor, storeB, makeSendFn(), { ...base, channelId: 'ch-b', scripts: { sourceTransformer: reader } }, DEFAULT_EXECUTION_OPTIONS);
 
-    expect((await a.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(5_000))).ok).toBe(true);
-    expect((await b.processMessage({ rawContent: 'y', sourceMap: {} }, AbortSignal.timeout(5_000))).ok).toBe(true);
+    expect((await a.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(MESSAGE_BUDGET_MS))).ok).toBe(true);
+    expect((await b.processMessage({ rawContent: 'y', sourceMap: {} }, AbortSignal.timeout(MESSAGE_BUDGET_MS))).ok).toBe(true);
 
     const calls = (storeB.storeContent as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls.find((c: unknown[]) => c[3] === 3)![4]).toBe('00123');
@@ -308,7 +311,7 @@ describe('Pipeline Map Continuity', () => {
     const preprocessor = await compile('delete globalChannelMap["stale"]; return msg;');
     const config: PipelineConfig = { channelId: 'ch-1', serverId: 'srv-1', dataType: 'RAW', scripts: { preprocessor }, destinations: [], globalChannelMap: gcm };
     const processor = new MessageProcessor(executor, makeStore(), makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
-    expect((await processor.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(5_000))).ok).toBe(true);
+    expect((await processor.processMessage({ rawContent: 'x', sourceMap: {} }, AbortSignal.timeout(MESSAGE_BUDGET_MS))).ok).toBe(true);
     expect(gcm.containsKey('stale')).toBe(false);
   });
 
@@ -329,7 +332,7 @@ describe('Pipeline Map Continuity', () => {
     const processor = new MessageProcessor(executor, store, makeSendFn(), config, DEFAULT_EXECUTION_OPTIONS);
     const result = await processor.processMessage(
       { rawContent: 'test', sourceMap: {} },
-      AbortSignal.timeout(5_000),
+      AbortSignal.timeout(MESSAGE_BUDGET_MS),
     );
 
     expect(result.ok).toBe(true);
