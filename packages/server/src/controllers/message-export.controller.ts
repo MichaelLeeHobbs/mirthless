@@ -3,13 +3,13 @@
 // ===========================================
 // Streams channel message metadata as CSV or JSON. This is a PHI read (the
 // export lists message metadata, and optionally raw content), so every export
-// emits a MESSAGES_EXPORTED audit event.
+// is recorded as MESSAGES_EXPORTED in the audit log before the file is sent.
 
 import type { Request, Response } from 'express';
-import type { MessageExportQuery } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, type MessageExportQuery } from '@galvanigraph/core-models';
 import { MessageExportService } from '../services/message-export.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
-import { emitEvent } from '../lib/event-emitter.js';
+import { recordReadOrRefuse } from '../lib/audited-read.js';
 import logger from '../lib/logger.js';
 
 export class MessageExportController {
@@ -27,19 +27,20 @@ export class MessageExportController {
 
     const data = result.value;
 
-    // HIPAA audit: exporting message metadata (and optionally content) is a PHI read.
-    emitEvent({
-      level: 'INFO', name: 'MESSAGES_EXPORTED', outcome: 'SUCCESS',
-      userId: req.user?.id ?? null, channelId,
-      serverId: null, ipAddress: req.ip ?? null,
+    // An export is a PHI read: recorded, with every exported id, before the file
+    // goes out, and never deduped (D-312).
+    const recorded = await recordReadOrRefuse(req, res, {
+      action: AUDIT_ACTION.MESSAGES_EXPORTED, channelId,
       attributes: {
         format: query.format,
         exported: data.rows.length,
         total: data.total,
         truncated: data.truncated,
         includeContent: query.includeContent,
+        messageIds: data.rows.map((r) => r.messageId),
       },
     });
+    if (!recorded) return;
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     res.setHeader('X-Export-Truncated', String(data.truncated));

@@ -17,6 +17,13 @@ export const AUDIT_ACTION = {
   EVENTS_PURGED: 'EVENTS_PURGED',
   /** Written by drop_expired_audit_partitions() before it drops months (migration 0017). */
   AUDIT_PARTITIONS_DROPPED: 'AUDIT_PARTITIONS_DROPPED',
+  // PHI reads, written fail-closed before the content is sent (lib/audited-read.ts).
+  MESSAGE_SEARCHED: 'MESSAGE_SEARCHED',
+  MESSAGE_CONTENT_VIEWED: 'MESSAGE_CONTENT_VIEWED',
+  MESSAGES_EXPORTED: 'MESSAGES_EXPORTED',
+  ATTACHMENT_DOWNLOADED: 'ATTACHMENT_DOWNLOADED',
+  /** A search across channels (the Traffic page). */
+  MESSAGES_SEARCHED_ALL_CHANNELS: 'MESSAGES_SEARCHED_ALL_CHANNELS',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];

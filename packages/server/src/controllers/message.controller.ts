@@ -4,10 +4,11 @@
 // HTTP adapter for message search, detail, and deletion.
 
 import type { Request, Response } from 'express';
-import type { MessageSearchQuery } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, type MessageSearchQuery } from '@galvanigraph/core-models';
 import { MessageQueryService } from '../services/message-query.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { emitEvent } from '../lib/event-emitter.js';
+import { recordReadOrRefuse } from '../lib/audited-read.js';
 import logger from '../lib/logger.js';
 
 export class MessageController {
@@ -24,13 +25,14 @@ export class MessageController {
       return;
     }
 
-    // HIPAA audit: searching messages (esp. contentSearch) touches PHI.
-    emitEvent({
-      level: 'INFO', name: 'MESSAGE_SEARCHED', outcome: 'SUCCESS',
-      userId: req.user?.id ?? null, channelId,
-      serverId: null, ipAddress: req.ip ?? null,
-      attributes: { contentSearch: filters.contentSearch !== undefined && filters.contentSearch.length > 0, resultCount: result.value.total },
+    // A PHI read: recorded before the list goes out, with the term as typed (D-312).
+    const { contentSearch, ...rest } = filters;
+    const recorded = await recordReadOrRefuse(req, res, {
+      action: AUDIT_ACTION.MESSAGE_SEARCHED, channelId,
+      attributes: { term: contentSearch ?? null, filters: rest, total: result.value.total },
+      dedupe: { key: `search|${channelId}|${JSON.stringify(filters)}`, ids: result.value.items.map((m) => m.messageId) },
     });
+    if (!recorded) return;
 
     res.json({ success: true, data: result.value });
   }
@@ -47,13 +49,13 @@ export class MessageController {
       return;
     }
 
-    // HIPAA audit: message detail returns raw/transformed/sent content (PHI).
-    emitEvent({
-      level: 'INFO', name: 'MESSAGE_CONTENT_VIEWED', outcome: 'SUCCESS',
-      userId: req.user?.id ?? null, channelId,
-      serverId: null, ipAddress: req.ip ?? null,
+    // Message detail returns raw, transformed and sent content (PHI): recorded first.
+    const recorded = await recordReadOrRefuse(req, res, {
+      action: AUDIT_ACTION.MESSAGE_CONTENT_VIEWED, channelId,
       attributes: { messageId: msgId },
+      dedupe: { key: `detail|${channelId}|${String(msgId)}`, ids: [msgId] },
     });
+    if (!recorded) return;
 
     res.json({ success: true, data: result.value });
   }

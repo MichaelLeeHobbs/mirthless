@@ -125,9 +125,10 @@ Scripts run in a `node:vm` sandbox. [SECURITY.md](../../SECURITY.md) says this s
 
 | Path | Permission | Roles | Audited? |
 |---|---|---|---|
-| Message search and message detail | `messages:read` | All four | Yes: `MESSAGE_SEARCHED`, `MESSAGE_CONTENT_VIEWED` |
-| Message export (`GET /api/v1/channels/:id/messages/export`) | `messages:read` | All four | Yes: `MESSAGES_EXPORTED` |
-| Attachment download | `messages:read` | All four | Yes: `ATTACHMENT_DOWNLOADED`. Listing a message's attachments is not. |
+| Message search and message detail | `messages:read` | All four | Yes, fail-closed in the audit log: `MESSAGE_SEARCHED`, `MESSAGE_CONTENT_VIEWED` |
+| Message export (`GET /api/v1/channels/:id/messages/export`) | `messages:read` | All four | Yes, fail-closed in the audit log, with every exported id: `MESSAGES_EXPORTED` |
+| Attachment download | `messages:read` | All four | Yes, fail-closed in the audit log: `ATTACHMENT_DOWNLOADED`. Listing a message's attachments is not. |
+| Cross-channel message search (Traffic, `GET /api/v1/messages`) | `channels:read` | All four | Yes, fail-closed in the audit log: `MESSAGES_SEARCHED_ALL_CHANNELS` |
 | Reprocess and resend to destinations | `messages:reprocess` | admin, deployer | Yes: `MESSAGE_REPROCESSED`, `MESSAGES_REPROCESSED`, `MESSAGE_RESEND_QUEUED` |
 | Collection records | `collections:read` | All four | No |
 | Global map and configuration map values | `global_map:read`, `config_map:read` | admin, deployer, developer | No |
@@ -149,7 +150,9 @@ Roles with a scope of channel groups arrive with [#265](https://github.com/Micha
 
 > Scope limits what a person or key can see and change through GalvaniGraph's screens and API. Message reads, searches and exports, and the reads listed under "What is recorded", are recorded in an audit log that the product can't change or delete; each entry there says whether the read is refused when it can't be recorded or recorded on a best-effort basis. Reads under "What is not audited" aren't. Scope is not a boundary for code: anyone who can change or deploy channel code, code templates or global scripts, or restore a backup, can reach every channel's messages and credentials through that code, and that reach is not recorded. A database owner can still alter the audit log.
 
-The audit log is the `audit_log` table. The server's database role may only add rows to it and read them, and triggers refuse changes and deletions even from the table's owner. Only the owner can drop a month of it. The owner function for that, `drop_expired_audit_partitions`, drops no month younger than the retention setting (at least six years), but an owner can still drop a partition by hand. The [audit log runbook](../ops/audit-log.md) covers retention and the partitions. Only `audit:read`, held by admin, reads it; the Events page shows it under Access records. It holds sign-ins, sign-outs and failed sign-ins, refused requests and event purges. The other audit events in this page are still written to the `events` table until the rest of [#264](https://github.com/MichaelLeeHobbs/mirthless/issues/264) moves them.
+The audit log is the `audit_log` table. The server's database role may only add rows to it and read them, and triggers refuse changes and deletions even from the table's owner. Only the owner can drop a month of it. The owner function for that, `drop_expired_audit_partitions`, drops no month younger than the retention setting (at least six years), but an owner can still drop a partition by hand. The [audit log runbook](../ops/audit-log.md) covers retention and the partitions. Only `audit:read`, held by admin, reads it; the Events page shows it under Access records. It holds sign-ins, sign-outs and failed sign-ins, refused requests, event purges, and message searches, detail views, exports and attachment downloads.
+
+**What is recorded.** A message search (in one channel or across channels), a message's detail, a message export and an attachment download are recorded before anything is sent. When the record cannot be written within 2 seconds the request is refused with 503 `AUDIT_UNAVAILABLE` and nothing is sent. A search records the search term as typed, the filters, the total and up to 100 of the message ids it returned; an export records every exported id. The same caller repeating the same search page or detail view within 15 minutes is not recorded again, except that a repeated page records message ids it has not recorded yet, at most once a minute. Exports and attachment downloads are recorded every time. The other audit events in this page are still written to the `events` table until the rest of [#264](https://github.com/MichaelLeeHobbs/mirthless/issues/264) moves them.
 
 ## What is not audited
 
@@ -159,7 +162,6 @@ These write no audit event:
 - Reading the global map and the configuration map.
 - Reading the server log, and the live log stream.
 - Listing, viewing and exporting audit events.
-- Cross-channel message search (`GET /api/v1/messages`).
 - Socket.IO live feeds: the dashboard and channel feeds carry IDs, states and counts; the log feed carries log entries.
 - Reading channels, code templates, resources, data sources and settings. Channel export is audited.
 - Listing a message's attachments. Downloads are audited.
