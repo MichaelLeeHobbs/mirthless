@@ -10,6 +10,7 @@ import * as https from 'node:https';
 import { TextDecoder } from 'node:util';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { DEFAULT_MAX_BODY_BYTES } from '@galvaniflow/core-models';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import type { TlsServerOptions } from '../tls.js';
@@ -39,8 +40,8 @@ export interface HttpAuthConfig {
   readonly token?: string | undefined;
 }
 
-/** Default cap on request body size (bytes) — DoS guard. */
-export const DEFAULT_MAX_BODY_BYTES = 50 * 1024 * 1024;
+/** Default cap on request body size (bytes), a DoS guard; core-models owns it with the property schema. */
+export { DEFAULT_MAX_BODY_BYTES };
 
 export interface HttpReceiverConfig {
   readonly host: string;

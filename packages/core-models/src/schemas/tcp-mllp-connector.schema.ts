@@ -17,6 +17,8 @@ import {
   wholeNumberSchema,
   sourceCommonProperties,
   destinationCommonProperties,
+  optionalTlsSchema,
+  withoutKeys,
 } from './connector-property-fields.js';
 
 /** Payload encodings, as Node names them. */
@@ -52,10 +54,9 @@ const CHARSET_ALIASES: Readonly<Record<string, TcpMllpCharset>> = {
   utf16le: 'utf16le', 'utf-16le': 'utf16le',
 };
 
-/** Props without the legacy keys; anything that is not a plain object passes through to fail the schema. */
+/** Props without the legacy keys. */
 function dropLegacyKeys(value: unknown): unknown {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !LEGACY_KEYS.has(key)));
+  return withoutKeys(value, LEGACY_KEYS);
 }
 
 const charset = z.preprocess(
@@ -65,11 +66,6 @@ const charset = z.preprocess(
 
 /** Optional PEM text; null is unset, as the connector reads it. */
 const pem = z.string().nullable().optional();
-
-/** A TLS object, or none: absent, null or false (read as null). */
-function tlsSchema<T extends z.ZodRawShape>(fields: T): z.ZodType {
-  return z.preprocess((value) => (value === false ? null : value), z.strictObject(fields).nullable()).optional();
-}
 
 /**
  * Frame bytes as hex pairs (`0B`, `1C0D`); MLLP's when both are absent.
@@ -90,7 +86,7 @@ export const tcpMllpSourceObjectSchema = z.strictObject({
   maxFrameBytes: wholeNumberSchema(1).default(DEFAULT_MAX_FRAME_BYTES),
   ...framing,
   /** Listener TLS: needs `cert` and `key`. */
-  tls: tlsSchema({ cert: pem, key: pem, ca: pem, requireClientCert: z.boolean().nullable().optional() }),
+  tls: optionalTlsSchema({ cert: pem, key: pem, ca: pem, requireClientCert: z.boolean().nullable().optional() }),
   ...sourceCommonProperties,
 });
 
@@ -106,7 +102,7 @@ export const tcpMllpDestinationObjectSchema = z.strictObject({
   charset,
   ...framing,
   /** Client TLS; the certificate is optional, but `cert` and `key` come as a pair. */
-  tls: tlsSchema({ cert: pem, key: pem, ca: pem, rejectUnauthorized: z.boolean().nullable().optional() }),
+  tls: optionalTlsSchema({ cert: pem, key: pem, ca: pem, rejectUnauthorized: z.boolean().nullable().optional() }),
   ...destinationCommonProperties,
 });
 

@@ -575,7 +575,7 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
         const host = getString(listener, 'host');
         const port = getString(listener, 'port');
         if (host) result['host'] = host;
-        if (port) result['port'] = Number(port);
+        if (port) result['port'] = portValue(port);
         Object.assign(result, httpListenerProperties(propsNode));
       }
       const url = getString(propsNode, 'host');

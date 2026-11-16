@@ -24,6 +24,8 @@ import {
   tcpMllpDestinationPropertiesSchema,
   TCP_MLLP_CHARSETS,
   TCP_MLLP_RESPONSE_MODES,
+  httpSourcePropertiesSchema,
+  httpDestinationPropertiesSchema,
 } from '@galvaniflow/core-models';
 
 // Exact keys the SFTP connectors read — must not drift.
@@ -109,6 +111,17 @@ describe('TCP/MLLP defaults match the core-models schema', () => {
   it('the form offers exactly the schema charsets and response modes', () => {
     expect(MLLP_CHARSETS.map((o) => o.value)).toEqual([...TCP_MLLP_CHARSETS]);
     expect(MLLP_RESPONSE_MODES.map((o) => o.value)).toEqual([...TCP_MLLP_RESPONSE_MODES]);
+  });
+});
+
+describe('HTTP defaults match the core-models schema', () => {
+  // The schema returns the defaults unchanged: it rejects unknown keys, and
+  // it would add any defaulted key the form left out.
+  it.each([
+    ['source', httpSourcePropertiesSchema, HTTP_SOURCE_DEFAULTS],
+    ['destination', httpDestinationPropertiesSchema, HTTP_DEST_DEFAULTS],
+  ] as const)('%s', (_name, schema, defaults) => {
+    expect(schema.parse(defaults)).toEqual(defaults);
   });
 });
 
