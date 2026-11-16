@@ -164,7 +164,7 @@ export function SftpSourceForm({ properties, onChange }: SourceConnectorFormProp
               onChange={handleBool('ignoreDot')}
             />
           }
-          label="Ignore files starting with ."
+          label="Skip files whose names start with a dot"
           sx={{ mb: 2, display: 'block' }}
         />
 
