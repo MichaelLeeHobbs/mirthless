@@ -52,6 +52,7 @@ vi.mock('../../db/schema/index.js', () => ({
 import { ChannelImportService, stripRedactedProperties, connectorDirectionError } from '../channel-import.service.js';
 import { PartitionManagerService } from '../partition-manager.service.js';
 import { db } from '../../lib/db.js';
+import { StdError } from 'stderr-lib';
 
 describe('stripRedactedProperties', () => {
   it('drops redacted credential values but keeps everything else', () => {
@@ -181,7 +182,7 @@ describe('ChannelImportService.importChannels', () => {
 
   it('does not write a channel whose partitions cannot be created, and reports it (#260)', async () => {
     vi.mocked(PartitionManagerService.createPartitions)
-      .mockResolvedValueOnce({ ok: false, value: null, error: new Error('permission denied for table messages') });
+      .mockResolvedValueOnce({ ok: false, value: null, error: new StdError('permission denied for table messages') });
     const entries = [makeEntry({ id: 'ch-1', name: 'No Partitions' }), makeEntry({ id: 'ch-2', name: 'Fine' })];
 
     const result = await ChannelImportService.importChannels(entries, 'SKIP');

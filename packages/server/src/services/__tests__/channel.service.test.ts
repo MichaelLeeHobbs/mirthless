@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { StdError } from 'stderr-lib';
 import { PartitionManagerService } from '../partition-manager.service.js';
 
 // ----- Mock DB -----
@@ -395,7 +396,7 @@ describe('ChannelService', () => {
     it('fails without writing the channel when its partitions cannot be created (#260)', async () => {
       pushResponse([]); // uniqueness check
       vi.mocked(PartitionManagerService.createPartitions)
-        .mockResolvedValueOnce({ ok: false, value: null, error: new Error('permission denied for table messages') });
+        .mockResolvedValueOnce({ ok: false, value: null, error: new StdError('permission denied for table messages') });
 
       const result = await ChannelService.create(CREATE_INPUT);
 
