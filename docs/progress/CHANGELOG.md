@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Load-proof timing tests (#125, D-290, branch `fix/125-load-proof-timing-tests`)
+
+On a loaded machine the engine and server suites failed on almost every local gate run because tests that check a script's result ran it under a 100 to 300 ms limit, or hit vitest's 5 s default while a deploy compiled scripts.
+
+- **Engine and server `testTimeout` is 30 s.** A hung test still fails, later.
+- **Sandbox tests:** scripts meant to finish get 10 s; only the tests about the limit keep a short one. The slow-IO timeout test matches `/^Script execution timed out/` (V8 adds "after Nms" when its own timer fires first) and checks that the IO never answered instead of timing the run. The after-a-bridge loop test now checks the script got past the await.
+- **Cache-limit test** moved to `script-cache-limit.test.ts` with esbuild's `transform` stubbed, so filling the cache takes milliseconds instead of up to a minute. It now checks the oldest entry is the one dropped.
+- **Other budgets:** map-continuity messages 20 s, engine-alerts and engine-source-failure waits 10 s, and the 2 s limit on the alert-email test is gone.
+- **Verified:** with 10 busy threads on the 8-core dev machine, main's engine suite failed 7 tests; this branch's engine and server coverage runs passed three times each.
+
 ## 2026-11-15 — Faster CI e2e job (branch `ci/e2e-parallel-workers`)
 
 The e2e job took 7m20s on main and is the slowest job for every server or web change (#177 follow-up).

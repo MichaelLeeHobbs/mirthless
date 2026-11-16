@@ -172,6 +172,9 @@ beforeEach(() => {
   alerts.sendMail.mockResolvedValue(OK);
 });
 
+/** Generous: delivery runs a deploy and a second channel, which takes seconds on a loaded machine (#125). */
+const WAIT = { timeout: 10_000 };
+
 describe('EngineManager alerts', () => {
   it('does not hold a message up while the alert email is being sent', async () => {
     alertWith({ actionType: 'EMAIL', recipients: ['oncall@example.org'] });
@@ -179,12 +182,13 @@ describe('EngineManager alerts', () => {
     const engine = new EngineManager('test-server');
     await engine.deploy(makeChannel(FAILING));
 
+    // The email never finishes, so a message that waited on it would never return here.
     const result = await engine.getRuntime(CHANNEL_ID)!.processMessage('x');
 
     expect(result.ok && result.value.status).toBe('ERROR');
     expect(alerts.sendMail).toHaveBeenCalledTimes(1);
     await engine.dispose();
-  }, 2_000);
+  });
 
   it('delivers a CHANNEL alert action to the target channel', async () => {
     alertWith({ actionType: 'CHANNEL', properties: { channelId: TARGET_ID } });
@@ -195,7 +199,7 @@ describe('EngineManager alerts', () => {
     await engine.getRuntime(TARGET_ID)!.runtime.start();
 
     await engine.getRuntime(CHANNEL_ID)!.processMessage('x');
-    await vi.waitFor(() => { expect(ms.initializeMessage).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => { expect(ms.initializeMessage).toHaveBeenCalledTimes(2); }, WAIT);
 
     const sinkCall = ms.initializeMessage.mock.calls.find((c: unknown[]) => c[0] === TARGET_ID)!;
     expect((sinkCall[3] as Array<{ content: string }>)[0]!.content).toContain('ALERT Script error in preprocessor');
@@ -212,7 +216,7 @@ describe('EngineManager alerts', () => {
 
     await vi.waitFor(() => {
       expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ targetChannelId: TARGET_ID }), expect.stringContaining('Failed to dispatch alert'));
-    });
+    }, WAIT);
     await engine.dispose();
   });
 
