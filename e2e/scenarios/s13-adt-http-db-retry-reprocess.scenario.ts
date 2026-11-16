@@ -14,7 +14,7 @@ const PORT = 16613;
 const API_PORT = 16663;
 
 const adt = (event: string, ctl: string, family: string): string => [
-  `MSH|^~\\&|EHR|SITE13|VNS|VNS|20261110120000||ADT^${event}|${ctl}|P|2.5`,
+  `MSH|^~\\&|EHR|SITE13|HUB|HUB|20261110120000||ADT^${event}|${ctl}|P|2.5`,
   `EVN|${event}|20261110120000`,
   `PID|||MRN${ctl}^^^SITE13||${family}^PAT||19900101|F`,
 ].join('\r');

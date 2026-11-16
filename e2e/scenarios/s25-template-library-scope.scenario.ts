@@ -26,7 +26,7 @@ const channel = (name: string, id: string, port: number): ChannelSpec => ({
   postprocessor: "return createACK(rawData, 'AA', $c('label'));",
 });
 
-const orm = (ctl: string): string => `MSH|^~\\&|RIS|SITE25|VNS|VNS|20261110120000||ORM^O01|${ctl}|P|2.3\rORC|NW|ACC025`;
+const orm = (ctl: string): string => `MSH|^~\\&|RIS|SITE25|HUB|HUB|20261110120000||ORM^O01|${ctl}|P|2.3\rORC|NW|ACC025`;
 
 /**
  * Remove this scenario's libraries. While templates are not scoped, their

@@ -47,7 +47,7 @@ scenario('S15 Database Writer inserts rows into MySQL', async (api) => {
     }],
   }), ['S15 Results to MySQL']);
 
-  await sendMllp(PORT, 'MSH|^~\\&|EXA|S|VNS|V|20261110120000||ORU^R01|S15|P|2.4\rOBR|1|ACC015|\rOBX|1|TX|IMP||Mild degenerative change');
+  await sendMllp(PORT, 'MSH|^~\\&|EXA|S|HUB|V|20261110120000||ORU^R01|S15|P|2.4\rOBR|1|ACC015|\rOBX|1|TX|IMP||Mild degenerative change');
   await expect.poll(() => mysqlQuery<{ accession: string; impression: string }>('SELECT accession, impression FROM s15_results'), { timeout: 15_000 })
     .toEqual([{ accession: 'ACC015', impression: 'Mild degenerative change' }]);
 });

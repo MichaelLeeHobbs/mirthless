@@ -242,14 +242,14 @@ describe('DeploymentService', () => {
 
     it('resolves configuration map references in connector settings before validating them', async () => {
       mockConfigEntries.mockResolvedValueOnce(ok([
-        { category: 'vns', name: 'SENDER_HOST', value: '10.0.0.5' },
-        { category: 'vns', name: 'SENDER_PORT', value: '6661' },
+        { category: 'site', name: 'SENDER_HOST', value: '10.0.0.5' },
+        { category: 'site', name: 'SENDER_PORT', value: '6661' },
       ]));
       mockChannelService.getById.mockResolvedValue(ok({
         ...CHANNEL_DETAIL,
         destinations: [{
           id: 'dest-1', metaDataId: 1, name: 'Sender', enabled: true,
-          connectorType: 'TCP_MLLP', properties: { host: '${SENDER_HOST}', port: '${vns.SENDER_PORT}', template: '${oru}' },
+          connectorType: 'TCP_MLLP', properties: { host: '${SENDER_HOST}', port: '${site.SENDER_PORT}', template: '${oru}' },
           queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 10000,
           rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
         }],

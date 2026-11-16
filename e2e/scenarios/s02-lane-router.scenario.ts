@@ -51,7 +51,7 @@ const listener: ChannelSpec = {
 };
 
 const msg = (type: string, ctl: string, processing = 'P'): string => [
-  `MSH|^~\\&|RIS|SITE1|VNS|VNS|20261110120000||${type}|${ctl}|${processing}|2.3`,
+  `MSH|^~\\&|RIS|SITE1|HUB|HUB|20261110120000||${type}|${ctl}|${processing}|2.3`,
   'PID|||MRN002^^^SITE1||ROE^RICHARD',
 ].join('\r');
 

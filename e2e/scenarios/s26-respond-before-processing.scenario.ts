@@ -25,7 +25,7 @@ scenario('S26 a listener that responds before processing answers AA even when it
   }), ['S26 Early ACK']);
   const channelId = ids['S26 Early ACK']!;
 
-  const ack = await sendMllp(PORT, 'MSH|^~\\&|RIS|SITE26|VNS|VNS|20261110120000||ORM^O01|S26CTL|P|2.3\rORC|NW|BAD');
+  const ack = await sendMllp(PORT, 'MSH|^~\\&|RIS|SITE26|HUB|HUB|20261110120000||ORM^O01|S26CTL|P|2.3\rORC|NW|BAD');
   expect(ack).toContain('MSA|AA|S26CTL');
 
   await expect.poll(async () => (await api.messages(channelId)).items[0]?.connectors.find((c) => c.metaDataId === 0)?.status, { timeout: 10_000 })

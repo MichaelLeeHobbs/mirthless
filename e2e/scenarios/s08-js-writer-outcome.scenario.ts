@@ -20,7 +20,7 @@ const WRITER = [
 ].join('\n');
 
 const orm = (accession: string): string => [
-  `MSH|^~\\&|RIS|SITE8|VNS|VNS|20261110120000||ORM^O01|S08${accession}|P|2.3`,
+  `MSH|^~\\&|RIS|SITE8|HUB|HUB|20261110120000||ORM^O01|S08${accession}|P|2.3`,
   `ORC|NW|${accession}`,
 ].join('\r');
 

@@ -2,7 +2,7 @@
 // Configuration map references in connector settings
 // ===========================================
 // A connector field may name a configuration map entry: `${MIRTH_SENDER_HOST}`
-// or `${vns.MIRTH_SENDER_HOST}`. They are resolved when the channel deploys, so
+// or `${site.MIRTH_SENDER_HOST}`. They are resolved when the channel deploys, so
 // one export runs against each environment's own hosts and ports.
 
 import { fillPlaceholders } from '@galvaniflow/core-util';

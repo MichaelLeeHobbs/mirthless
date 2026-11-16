@@ -825,25 +825,25 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
   });
 
   it('maps an HTTP Sender\'s method, headers, parameters, Basic credentials and content, and an SMTP Sender\'s mail', () => {
-    const http = '<properties class="com.mirth.connect.connectors.http.HttpDispatcherProperties" version="4.5.0"><host>http://api/orders/${accession}</host><method>put</method><headers class="linked-hash-map"><entry><string>X-Source</string><list><string>VNS</string><string>LAB</string></list></entry></headers><parameters class="linked-hash-map"><entry><string>site</string><list><string>${site}</string></list></entry></parameters><useAuthentication>true</useAuthentication><authenticationType>Basic</authenticationType><username>mirth</username><password>s3cret</password><content>{"a":"${accession}"}</content><contentType>application/json</contentType></properties>';
-    const smtp = '<properties class="com.mirth.connect.connectors.smtp.SmtpDispatcherProperties" version="4.5.0"><smtpHost>mail</smtpHost><smtpPort>25</smtpPort><encryption>tls</encryption><authentication>true</authentication><username>u</username><password>p</password><to>${email}</to><from>vns@example.com</from><cc></cc><subject>${subject}</subject><html>true</html><body>Ready</body></properties>';
+    const http = '<properties class="com.mirth.connect.connectors.http.HttpDispatcherProperties" version="4.5.0"><host>http://api/orders/${accession}</host><method>put</method><headers class="linked-hash-map"><entry><string>X-Source</string><list><string>HUB</string><string>LAB</string></list></entry></headers><parameters class="linked-hash-map"><entry><string>site</string><list><string>${site}</string></list></entry></parameters><useAuthentication>true</useAuthentication><authenticationType>Basic</authenticationType><username>mirth</username><password>s3cret</password><content>{"a":"${accession}"}</content><contentType>application/json</contentType></properties>';
+    const smtp = '<properties class="com.mirth.connect.connectors.smtp.SmtpDispatcherProperties" version="4.5.0"><smtpHost>mail</smtpHost><smtpPort>25</smtpPort><encryption>tls</encryption><authentication>true</authentication><username>u</username><password>p</password><to>${email}</to><from>reports@example.com</from><cc></cc><subject>${subject}</subject><html>true</html><body>Ready</body></properties>';
     const channel = convert4x((x) => x
       .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, http)
       .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, smtp));
 
     expect(channel.destinations[0]?.properties).toEqual({
-      url: 'http://api/orders/${accession}', method: 'PUT', headers: { 'X-Source': 'VNS, LAB' }, parameters: { site: '${site}' },
+      url: 'http://api/orders/${accession}', method: 'PUT', headers: { 'X-Source': 'HUB, LAB' }, parameters: { site: '${site}' },
       contentType: 'application/json', basicAuth: { username: 'mirth', password: 's3cret' }, template: '{"a":"${accession}"}',
     });
     expect(channel.destinations[1]?.properties).toEqual({
-      host: 'mail', port: 25, to: '${email}', from: 'vns@example.com', subject: '${subject}', bodyTemplate: 'Ready',
+      host: 'mail', port: 25, to: '${email}', from: 'reports@example.com', subject: '${subject}', bodyTemplate: 'Ready',
       contentType: 'text/html', requireTLS: true, authUser: 'u', authPass: 'p',
     });
   });
 
   describe('a File connector with a remote scheme', () => {
-    const reader = (scheme: string, hostKeyChecking: string): string => `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>${scheme}</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>${hostKeyChecking}</hostKeyChecking></schemeProperties><host>sftp.partner.org:2222/out/orders</host><fileFilter>*.hl7</fileFilter><username>vns</username><password>pw</password><afterProcessingAction>DELETE</afterProcessingAction><moveToDirectory></moveToDirectory></properties><transformer`;
-    const writer = '<properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0"><scheme>SFTP</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>no</hostKeyChecking></schemeProperties><host>sftp.partner.org/in</host><outputPattern>${messageId}.hl7</outputPattern><outputAppend>false</outputAppend><username>vns</username><password>pw</password></properties>';
+    const reader = (scheme: string, hostKeyChecking: string): string => `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>${scheme}</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>${hostKeyChecking}</hostKeyChecking></schemeProperties><host>sftp.partner.org:2222/out/orders</host><fileFilter>*.hl7</fileFilter><username>svc</username><password>pw</password><afterProcessingAction>DELETE</afterProcessingAction><moveToDirectory></moveToDirectory></properties><transformer`;
+    const writer = '<properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0"><scheme>SFTP</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>no</hostKeyChecking></schemeProperties><host>sftp.partner.org/in</host><outputPattern>${messageId}.hl7</outputPattern><outputAppend>false</outputAppend><username>svc</username><password>pw</password></properties>';
     const convert = (scheme: string, hostKeyChecking = 'no'): MirthConvertResult => {
       const xml = loadFixture('mirth-4x-channel.xml')
         .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader(scheme, hostKeyChecking))
@@ -857,7 +857,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       const { channels } = convert('SFTP');
       expect(channels[0]?.sourceConnectorType).toBe('SFTP');
       expect(channels[0]?.sourceConnectorProperties).toEqual({
-        host: 'sftp.partner.org', port: 2222, remoteDirectory: '/out/orders', username: 'vns', password: 'pw',
+        host: 'sftp.partner.org', port: 2222, remoteDirectory: '/out/orders', username: 'svc', password: 'pw',
         strictHostKey: false, filePattern: '*.hl7', afterProcessing: 'DELETE', moveToDirectory: '',
       });
       expect(channels[0]?.destinations[0]).toMatchObject({

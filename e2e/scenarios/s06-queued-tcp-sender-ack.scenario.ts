@@ -12,7 +12,7 @@ const PORT = 16606;
 const SINK = 16656;
 
 const oru = (ctl: string): string => [
-  `MSH|^~\\&|VNS|VNS|GOV|GOV|20261110120000||ORU^R01|${ctl}|P|2.4`,
+  `MSH|^~\\&|HUB|HUB|GOV|GOV|20261110120000||ORU^R01|${ctl}|P|2.4`,
   'PID|||MRN006',
   'OBX|1|TX|IMP||Report text',
 ].join('\r');

@@ -8,7 +8,7 @@
 // must inspect the requested presentation contexts and ACCEPT the ones whose
 // abstract syntax (SOP class) and a transfer syntax it supports, otherwise the
 // association is rejected ("Source: Service User"). The accept-list here mirrors
-// the production MedFusion DIMSE service (packages/dicom + apps/dimse).
+// what production DIMSE services commonly accept.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';

@@ -32,7 +32,7 @@ const STAMP_SITE = [
 ].join('\n');
 
 const ORM = [
-  'MSH|^~\\&|RIS|SITE4|VNS|VNS|20261110120000||ORM^O01|S04CTL|P|2.3',
+  'MSH|^~\\&|RIS|SITE4|HUB|HUB|20261110120000||ORM^O01|S04CTL|P|2.3',
   'PID|||MRN004^^^SITE4||LEE^SAM',
 ].join('\r');
 
@@ -65,7 +65,7 @@ scenario('S04 channel calls code templates imported with the server backup', asy
 
     await sendMllp(PORT, ORM);
     await expect.poll(() => sink.received.length, { timeout: 15_000 }).toBe(1);
-    expect(sink.received[0]).toContain('MSH|^~\\&|RIS|SITE4-NORTH|VNS|');
+    expect(sink.received[0]).toContain('MSH|^~\\&|RIS|SITE4-NORTH|HUB|');
   } finally {
     await sink.close();
   }
