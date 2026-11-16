@@ -2,9 +2,9 @@
 // HL7v2 ACK Tests
 // ===========================================
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Hl7Message } from '../hl7-message.js';
-import { createAck } from '../hl7-ack.js';
+import { createAck, newControlId } from '../hl7-ack.js';
 
 // ----- Helpers -----
 
@@ -31,9 +31,21 @@ describe('createAck', () => {
     expect(ack.get('MSH.5')).toBe('SENDER');
     expect(ack.get('MSH.6')).toBe('SFAC');
 
-    // MSA segment
     expect(ack.get('MSH.9.1')).toBe('ACK');
-    expect(ack.get('MSH.10')).toBe('MSG001');
+    expect(ack.get('MSA.2')).toBe('MSG001');
+  });
+
+  it('stamps MSH-7 with its UTC offset (#187)', () => {
+    const ack = parseAck(createAck(Hl7Message.parse(ADT_A01), { ackCode: 'AA' }));
+    expect(ack.get('MSH.7')).toMatch(/^\d{14}[+-]\d{4}$/);
+  });
+
+  it('gives the ACK a control id of its own that fits MSH-10 (#187)', () => {
+    const ack = parseAck(createAck(Hl7Message.parse(ADT_A01), { ackCode: 'AA' }));
+    const id = ack.get('MSH.10')!;
+    expect(id).not.toBe('MSG001');
+    expect(id).toMatch(/^GF\d+$/);
+    expect(id.length).toBeLessThanOrEqual(20);
   });
 
   it('includes MSA with ack code and control ID', () => {
@@ -46,6 +58,12 @@ describe('createAck', () => {
     expect(msaParts[0]).toBe('MSA');
     expect(msaParts[1]).toBe('AA');
     expect(msaParts[2]).toBe('MSG001');
+  });
+
+  it('echoes the whole inbound MSH-10 in MSA-2, not just its first component (#187)', () => {
+    const original = Hl7Message.parse('MSH|^~\\&|S|SF|R|RF|20260101||ADT^A01|ID^X\\T\\Y|P|2.5.1');
+    const ack = Hl7Message.parse(createAck(original, { ackCode: 'AA' }));
+    expect(ack.getRaw('MSA.2')).toBe('ID^X\\T\\Y');
   });
 
   it('includes text message in MSA for AE ack', () => {
@@ -64,9 +82,38 @@ describe('createAck', () => {
 
     const segments = ackStr.split('\r');
     expect(segments).toHaveLength(3);
-    const errParts = segments[2]!.split('|');
-    expect(errParts[0]).toBe('ERR');
-    expect(errParts[1]).toBe('207');
+    const err = Hl7Message.parse(ackStr);
+    expect(err.getRaw('ERR.1')).toBeUndefined();
+    expect(err.getRaw('ERR.3')).toBe('207^^HL70357');
+    expect(err.get('ERR.4')).toBe('E');
+  });
+
+  it('puts the error code in ERR-1 for a v2.3 or v2.4 sender, which has no ERR-3 or ERR-4', () => {
+    for (const version of ['2.3', '2.3.1', '2.4']) {
+      const original = Hl7Message.parse(ADT_A01.replace('|P|2.5.1', `|P|${version}`));
+      const ackStr = createAck(original, { ackCode: 'AE', errorCode: '207' });
+      expect(ackStr.split('\r')[2]).toBe('ERR|^^^207');
+      const ack = Hl7Message.parse(ackStr);
+      expect(ack.get('ERR.1.4')).toBe('207');
+      expect(ack.get('MSH.12')).toBe(version);
+    }
+  });
+
+  it('uses ERR-3 and ERR-4 from v2.5 on, and when the version is missing or unreadable', () => {
+    for (const version of ['2.5', '2.6', '2.8', '', 'X']) {
+      const original = Hl7Message.parse(ADT_A01.replace('|P|2.5.1', `|P|${version}`));
+      expect(createAck(original, { ackCode: 'AE', errorCode: '207' }).split('\r')[2]).toBe('ERR|||207^^HL70357|E');
+    }
+  });
+
+  it('echoes the whole inbound MSH-12, every component of the version id', () => {
+    const original = Hl7Message.parse(ADT_A01.replace('|P|2.5.1', '|P|2.5.1^USA'));
+    expect(parseAck(createAck(original, { ackCode: 'AA' })).getRaw('MSH.12')).toBe('2.5.1^USA');
+  });
+
+  it('names the message structure in MSH-9.3 (#187)', () => {
+    const ack = parseAck(createAck(Hl7Message.parse(ADT_A01), { ackCode: 'AA' }));
+    expect(ack.getRaw('MSH.9')).toBe('ACK^A01^ACK');
   });
 
   it('preserves encoding characters from original', () => {
@@ -112,7 +159,7 @@ describe('createAck text escaping', () => {
 
   it('escapes delimiters in the ERR code', () => {
     const ack = createAck(Hl7Message.parse(ORIGINAL), { ackCode: 'AR', errorCode: 'x|y' });
-    expect(ack.split('\r')[2]).toBe('ERR|x\\F\\y');
+    expect(ack.split('\r')[2]).toBe('ERR|||x\\F\\y^^HL70357|E');
   });
 });
 
@@ -123,6 +170,23 @@ describe('createAck with composite header fields', () => {
     const ack = createAck(original, { ackCode: 'AA' });
 
     expect(ack.split('\r')[0]).toMatch(/^MSH\|\^~\\&\|EHR\^9\.9\^ISO\|HOSP\^8\.8\^ISO\|LAB\^1\.2\.3\^ISO\|FAC\^4\.5\^ISO\|/);
-    expect(ack.split('\r')[0]).toContain('|42|P^T|2.5');
+    expect(ack.split('\r')[0]).toContain('|P^T|2.5');
+    expect(ack.split('\r')[1]).toBe('MSA|AA|42');
+  });
+});
+
+describe('newControlId', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('gives different ids to ACKs made in the same millisecond', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    const ids = new Set([newControlId(), newControlId(), newControlId()]);
+    expect(ids.size).toBe(3);
+    for (const id of ids) {
+      expect(id.startsWith('GF1800000000000')).toBe(true);
+      expect(id.length).toBe(20);
+    }
   });
 });

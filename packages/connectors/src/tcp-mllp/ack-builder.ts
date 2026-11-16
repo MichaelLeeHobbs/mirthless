@@ -6,7 +6,7 @@
 // destination connector must treat a NAK (MSA-1 = AE/AR/CE/CR) as an ERROR,
 // not a silent SENT.
 
-import { Hl7Message, createAck, formatTimestamp, escapeValue, type Hl7Encoding } from '@galvaniflow/core-util';
+import { Hl7Message, createAck, formatTimestamp, escapeValue, newControlId, type Hl7Encoding } from '@galvaniflow/core-util';
 
 /** HL7 acknowledgement codes we emit. */
 export type AckCode = 'AA' | 'AE' | 'AR';
@@ -37,9 +37,8 @@ const DEFAULT_ENCODING: Hl7Encoding = {
 
 /** Minimal ACK used when the inbound message is not parseable HL7. */
 function buildFallbackAck(ackCode: AckCode, textMessage?: string): string {
-  const timestamp = formatTimestamp(new Date());
-  // MSH-10 holds at most 20 characters: "GF" plus the millisecond clock is 15.
-  const controlId = `GF${String(Date.now())}`;
+  const timestamp = formatTimestamp(new Date(), { utcOffset: true });
+  const controlId = newControlId();
   const msh = ['MSH', '^~\\&', '', '', '', '', timestamp, '', 'ACK', controlId, 'P', '2.5.1'].join('|');
   const msaParts = ['MSA', ackCode, controlId];
   if (textMessage !== undefined) msaParts.push(escapeValue(textMessage, DEFAULT_ENCODING));
@@ -59,7 +58,7 @@ export interface AckClassification {
  * or unparseable) is a failure so the message surfaces and can retry.
  *
  * A positive acknowledgement that names a different message (MSA-2 differs
- * from the control ID that was sent) is also a failure: on a reused connection
+ * from the control ID that was sent, compared as whole encoded fields) is also a failure: on a reused connection
  * it means the reply belongs to something else, and counting it would mark an
  * undelivered message SENT. An acknowledgement with no MSA-2 is accepted.
  *
@@ -104,7 +103,7 @@ function extractMsa(response: string): { code: string; controlId?: string; text?
     const msg = Hl7Message.parse(response);
     const code = msg.get('MSA.1');
     if (code !== undefined) {
-      const controlId = msg.get('MSA.2');
+      const controlId = msg.getRaw('MSA.2');
       const text = msg.get('MSA.3');
       return { code, ...(controlId !== undefined ? { controlId } : {}), ...(text !== undefined ? { text } : {}) };
     }
@@ -120,10 +119,13 @@ function extractMsa(response: string): { code: string; controlId?: string; text?
   return undefined;
 }
 
-/** MSH-10 of an outbound message, or undefined when it is not HL7 or has none. */
+/**
+ * MSH-10 of an outbound message as it is encoded, every component included, or
+ * undefined when it is not HL7 or has none. A receiver echoes it whole in MSA-2.
+ */
 export function controlIdOf(message: string): string | undefined {
   try {
-    const id = Hl7Message.parse(message).get('MSH.10');
+    const id = Hl7Message.parse(message).getRaw('MSH.10');
     return id !== undefined && id !== '' ? id : undefined;
   } catch {
     return undefined;

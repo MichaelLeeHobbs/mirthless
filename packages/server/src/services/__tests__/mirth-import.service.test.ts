@@ -543,6 +543,8 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     const warning = result.value.warnings.find((w) => w.includes('Mirth-only constructs'));
     expect(warning).toContain('Channel "4x Listener"');
     expect(warning).toContain("E4X field access (msg['PID']...)");
+    // Mirth's E4X indexes count from 0 and GalvaniFlow paths from 1, so a straight port reads the wrong segment.
+    expect(warning).toContain("[n] counts from 1, so Mirth's msg['OBX'][1] is msg.get('OBX[2].5')");
     expect(warning).toContain('Java map methods (channelMap.put)');
     expect(warning).not.toContain("'message' variable");
   });
