@@ -64,7 +64,7 @@ An install created before this change runs the server as the superuser. After `g
 
 The application tables, and the partitions the old server created, stay owned by the owner; only the `pgboss` schema changes owner, and nothing is moved or rewritten. To go back to the previous version, check out its compose file: it connects as the owner again, and the unused role does no harm.
 
-**The empty `galvanigraph_test` database.** The production compose used to mount `docker/init-db`, so every production volume also got an empty `galvanigraph_test` database, meant only for the dev stack's tests. It no longer does. Nothing uses that database in production; once you have checked it is empty, you may drop it yourself (`DROP DATABASE galvanigraph_test;` as the owner). The upgrade leaves it alone.
+**The empty test database.** The production compose used to mount `docker/init-db`, so every production volume also got an empty `galvaniflow_test` database (`mirthless_test` on older volumes), meant only for the dev stack's tests. It no longer does. Nothing uses that database in production; once you have checked it is empty, you may drop it yourself (for example `DROP DATABASE galvaniflow_test;` as the owner). The upgrade leaves it alone.
 
 **Running the image another way** (your own compose file, Kubernetes): set `MIGRATION_DATABASE_URL` to the owner's connection string and `DATABASE_URL` to the server role's. The container refuses to start without `MIGRATION_DATABASE_URL`, or when `DATABASE_URL` connects as a superuser or the owner.
 
@@ -368,8 +368,8 @@ WHERE connector_type IN ('KAFKA','AMQP') AND jsonb_typeof(properties->'tls') = '
 
 ```bash
 # 1. BACK UP FIRST (see docs/ops/backup-restore.md)
-#    First upgrade after the rename: the container is still mirthless-db-prod and
-#    the database and user are mirthless (see "Renamed from Mirthless" below).
+#    First upgrade after a rename: the container, database and user still have the
+#    old name (see "Renamed from Mirthless or GalvaniFlow" below).
 docker exec -t galvanigraph-db-prod pg_dump -U galvanigraph -d galvanigraph -F c > pre-upgrade.dump
 
 # 2. Pull the new code
@@ -385,50 +385,54 @@ docker compose -f docker/docker-compose.prod.yml logs server | grep -i migrat
 
 Watch the server logs for `[migrate] migrations applied` before the startup banner.
 
-## Renamed from Mirthless
+## Renamed from Mirthless or GalvaniFlow
 
-The project was renamed from Mirthless to GalvaniGraph. Upgrading an install created under
-the old name has these one-time effects.
+The project was called Mirthless until 2026-10-27 (D-205), then GalvaniFlow until 2026-11-16 (D-309), and is now GalvaniGraph. Upgrading an install created under either old name has these one-time effects. Below, `<old>` is the name your install was created under: `mirthless` or `galvaniflow`.
 
 **Database name and user.** New installs default to database and user `galvanigraph`.
 Postgres applies `POSTGRES_DB` / `POSTGRES_USER` only when it first creates the data
-volume, so an existing volume still holds database `mirthless` owned by user
-`mirthless`. Nothing in the code depends on the database name; keep using the old one:
+volume, so an existing volume still holds database `<old>` owned by user `<old>`.
+Nothing in the code depends on the database name; keep using the old one:
 
-- **Docker prod stack:** set `POSTGRES_DB=mirthless` and `POSTGRES_USER=mirthless` in the
+- **Docker prod stack:** set `POSTGRES_DB=<old>` and `POSTGRES_USER=<old>` in the
   same place you set `POSTGRES_PASSWORD`. `docker/docker-compose.prod.yml` builds the
   server's `DATABASE_URL` from these three, so leaving them unset points the server at a
   `galvanigraph` database that does not exist in the old volume.
+- **Server role:** the default for `POSTGRES_APP_USER` is now `galvanigraph_app`. A GalvaniFlow
+  install already has `galvaniflow_app`; set `POSTGRES_APP_USER=galvaniflow_app` to keep
+  using it. Left unset, the migration step creates `galvanigraph_app` with the same
+  grants and the old role sits unused.
 - **Local / non-Docker:** keep your existing `DATABASE_URL` in `.env`
-  (`postgresql://mirthless:...@.../mirthless`). The dev compose (`pnpm docker:up`) keeps
+  (`postgresql://<old>:...@.../<old>`). The dev compose (`pnpm docker:up`) keeps
   the same volume, so the old databases are still there; for `pnpm test:integration`,
-  point `DATABASE_URL` at `mirthless_test`. Or start fresh with `pnpm docker:reset`,
+  point `DATABASE_URL` at `<old>_test`. Or start fresh with `pnpm docker:reset`,
   which deletes the dev volume and its data.
 - The data volume keeps its name (`docker_postgres_data`; the compose project is named
   after the `docker/` folder), so no data moves. Only the containers are renamed:
-  `mirthless-db-prod`, `mirthless-server` and `mirthless-web` become
-  `galvanigraph-db-prod`, `galvanigraph-server` and `galvanigraph-web` (dev: `mirthless-db`
+  `<old>-db-prod`, `<old>-server` and `<old>-web` become
+  `galvanigraph-db-prod`, `galvanigraph-server` and `galvanigraph-web` (dev: `<old>-db`
   becomes `galvanigraph-db`). Update any backup cron jobs or scripts that name a container.
 
 **Other changes:**
 
 - **CLI:** removed (D-280). Scripts call the REST API; see `docs/ops/api-automation.md`.
-- **Prometheus metrics** are renamed from `mirthless_*` to `galvanigraph_*` (for example
+- **Prometheus metrics** are renamed from `<old>_*` to `galvanigraph_*` (for example
   `galvanigraph_messages_processed_total`). Update dashboards, alert rules and recording
   rules.
 - **Web UI:** each user signs in once more after the upgrade (the browser stores the
-  session under a new key).
-- **Wire defaults** change from `MIRTHLESS` to `GALVANIGRAPH`: the DICOM source AE title
-  and destination calling AE title for new connectors, MSH-3 in generated test HL7
-  messages, and the control-ID prefix of the fallback ACK sent for unparseable HL7.
+  session under a new key). The light or dark theme carries over.
+- **Wire defaults** change from `MIRTHLESS` or `GALVANIFLOW` to `GALVANIGRAPH`: the DICOM
+  source AE title and destination calling AE title for new connectors, MSH-3 in generated
+  test HL7 messages, and the control-ID prefix of the fallback ACK sent for unparseable HL7.
   Existing channels keep the AE titles saved in them. If a trading partner checks these
   values (for example a PACS that allow-lists calling AE titles), tell them before you
   create new channels or rely on the fallback ACK.
-- **File and SFTP sources:** the quarantine ledger is now `.galvaniflow-quarantine.json`.
-  An existing `.mirthless-quarantine.json` in the watched directory is still read, so
-  quarantined files stay quarantined.
-- **Email sources:** processed emails are now marked `$GalvaniFlowDispatched`. Emails
-  marked `$MirthlessDispatched` by the old version still count as dispatched.
+- **File and SFTP sources:** the quarantine ledger is now `.galvanigraph-quarantine.json`.
+  An existing `.galvaniflow-quarantine.json` or `.mirthless-quarantine.json` in the
+  watched directory is still read and merged into it, so quarantined files stay quarantined.
+- **Email sources:** processed emails are now marked `$GalvaniGraphDispatched`. Emails
+  marked `$GalvaniFlowDispatched` or `$MirthlessDispatched` by an older version still
+  count as dispatched.
 
 ## Standard upgrade (local / non-Docker)
 

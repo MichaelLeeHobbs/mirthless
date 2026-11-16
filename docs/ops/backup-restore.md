@@ -22,11 +22,12 @@ This is the authoritative backup. The production stack runs Postgres 17 in the
 `galvanigraph-db-prod` container (`galvanigraph-db` in the dev compose), database `galvanigraph`,
 user `galvanigraph`, with data on the named volume `postgres_data`.
 
-> **Installs created before the GalvaniGraph rename** keep the database and user
-> `mirthless` (set as `POSTGRES_DB` / `POSTGRES_USER`, see [Upgrade](upgrade.md#renamed-from-mirthless)).
-> Use `-U mirthless -d mirthless` in the commands below. The container is still
-> `galvanigraph-db-prod` once the stack has been restarted on the new compose file;
-> before that it is `mirthless-db-prod`.
+> **Installs created under an earlier name** keep the database and user they were
+> created with, `galvaniflow` or `mirthless` (set as `POSTGRES_DB` / `POSTGRES_USER`, see
+> [Upgrade](upgrade.md#renamed-from-mirthless-or-galvaniflow)). Use that name in `-U` and
+> `-d` in the commands below. The container is `galvanigraph-db-prod` once the stack has
+> been restarted on the new compose file; before that it is `galvaniflow-db-prod` or
+> `mirthless-db-prod`.
 
 ### Logical backup with `pg_dump` (recommended)
 

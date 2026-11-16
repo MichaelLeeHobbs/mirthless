@@ -6,7 +6,7 @@ Instructions for AI coding agents (Claude Code, Codex and others) working in thi
 
 **GalvaniGraph** — A modern, open-source healthcare integration engine built from scratch in Node.js/TypeScript. Spiritual successor to NextGen Connect (Mirth Connect), redesigned natively for the Node.js ecosystem.
 
-> The project is named GalvaniGraph (formerly Mirthless). The name is centralized in the package.json `name` field.
+> The project is named GalvaniGraph (formerly GalvaniFlow, and before that Mirthless; D-309, D-205). The name is centralized in the package.json `name` field. Markers that guard against reprocessing keep the old names readable: see D-309 before renaming anything a running install has already written.
 
 GalvaniGraph is a message routing and transformation engine for healthcare systems. Core concepts:
 
@@ -45,7 +45,7 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `compileScript` and `compileErrorMessages` in `engine/src/sandbox/script-compiler.ts`: compile a user script the way deploy does, and turn its errors into `Line N: <text>` on the script's own lines. Script validation uses both.
   - `wrapScriptBody` and `scriptBodyPosition` in `core-models/src/scripting/script-check.ts`: a script as the body of the function the engine runs it in, and a position in that wrapped text back on the script's own lines. The compiler, the deploy type check and the editor's type check use both (D-297).
   - `toPoolConfig` in `connectors/src/database/connection-pool.ts`: a database connector's pool config from its connection fields.
-  - `QuarantineLedger` and `dispatchQuarantined` in `connectors/src/quarantine-ledger.ts`: the quarantine set, its sidecar ledger and the dispatch-then-quarantine step, for any polling file source. The source supplies only the storage.
+  - `QuarantineLedger` and `dispatchQuarantined` in `connectors/src/quarantine-ledger.ts`: the quarantine set, its sidecar ledger and the dispatch-then-quarantine step, for any polling file source. The source supplies only the storage. The ledger file names, current and pre-rename, are `QUARANTINE_LEDGER_NAMES` and `isQuarantineLedgerName` in the same file.
   - `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`: connect a polling receiver's remote client, or close it, under a timeout.
   - `redirectMessage` in `connectors/src/redirect.ts`: the ERROR text for a 3xx answer, which the HTTP and FHIR destinations never follow.
   - `createNodemailerTransport` in `connectors/src/smtp/smtp-dispatcher.ts` (exported from `@galvanigraph/connectors`): builds a nodemailer transport for the SMTP connector and the server's own mail. SMTP Test Connection (`connection-test.service.ts`) builds its options with `buildNodemailerOptions` from the same file, so it logs in as the connector does.
