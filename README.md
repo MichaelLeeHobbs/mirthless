@@ -19,7 +19,8 @@ GalvaniFlow keeps what works (channels, transformers, filters, the pipeline mode
 
 - **TypeScript/Node.js** — not Java. Fast startup, npm ecosystem, familiar to web developers
 - **Web-based admin** — React + Material UI. No client install. Works on any device with a browser
-- **Everything is free** — RBAC, channel history, message search, alerting — all built-in, no tiers (MFA is on the roadmap, not yet shipped)
+- **Everything is free** — RBAC, channel history, message search, alerting, certificate management (Mirth's paid SSL Manager) — all built-in, no tiers (MFA is on the roadmap, not yet shipped)
+- **Shared data for scripts** — Collections (a keyed record store), Data Sources (named database connections with encrypted passwords) and Resources, managed in the web UI. The global map is saved to the database, so it survives a restart. Mirth has no Collections or Data Sources, and its global map is lost on restart
 - **TypeScript in transformers** — write channel scripts in TypeScript with full Monaco editor + autocomplete
 - **13ms message processing** — batched CTE queries on native Postgres. Mirth does ~70ms for comparable workloads
 - **Real-time dashboard** — WebSocket-driven updates, not polling
@@ -93,6 +94,10 @@ Running GalvaniFlow in production? See the operator guides in [`docs/ops/`](docs
 - [Contributing guide](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security policy](SECURITY.md)
 
 ## Architecture
+
+![GalvaniFlow architecture: the six packages as layers, and the functional domains](docs/design/architecture.svg)
+
+The top half shows the packages as layers and what talks to them. The bottom half shows the functional domains, with badges for what Mirth Connect charges for, what it has no equivalent for, and what is planned.
 
 ```
 packages/
