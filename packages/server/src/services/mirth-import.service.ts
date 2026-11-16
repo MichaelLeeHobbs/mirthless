@@ -60,6 +60,8 @@ const CONNECTOR_TYPE_MAP: ReadonlyMap<string, string> = new Map([
   ['com.mirth.connect.connectors.smtp.SmtpDispatcherProperties', 'SMTP'],
   ['com.mirth.connect.connectors.vm.VmReceiverProperties', 'CHANNEL'],
   ['com.mirth.connect.connectors.vm.VmDispatcherProperties', 'CHANNEL'],
+  ['com.mirth.connect.connectors.dimse.DICOMReceiverProperties', 'DICOM'],
+  ['com.mirth.connect.connectors.dimse.DICOMDispatcherProperties', 'DICOM'],
 ]);
 
 // ----- XML Parser Config -----
@@ -290,10 +292,9 @@ function convertChannel(
   const outboundDataType = extractDataType(sourceConnector, 'outbound') ?? 'HL7V2';
 
   // Filters and transformers
-  const filters = convertFilters(mirthChannel);
+  const filters = convertFilters(mirthChannel, { channelName: name, warnings });
   const transformers = convertTransformers(mirthChannel).map((t) =>
     ((t.metaDataId ?? null) === null && t.inboundDataType !== inboundDataType ? { ...t, inboundDataType } : t));
-  warnings.push(...delimitedWarnings(name, transformers.find((t) => (t.metaDataId ?? null) === null)));
 
   // Channel properties
   const props = isPlainObject(mirthChannel['properties'])
@@ -317,15 +318,14 @@ function convertChannel(
     encryptData: getBoolean(props, 'encryptData', false),
     removeContentOnCompletion: getBoolean(props, 'removeContentOnCompletion', false),
     removeAttachmentsOnCompletion: getBoolean(props, 'removeAttachmentsOnCompletion', false),
-    pruningEnabled: getBoolean(props, 'pruningEnabled', false),
-    pruningMaxAgeDays: null,
-    pruningArchiveEnabled: false,
+    ...convertPruning(mirthChannel, props, name, warnings),
     scripts: convertScripts(mirthChannel),
     destinations,
     metadataColumns: convertMetadataColumns(mirthChannel),
     filters,
     transformers,
   };
+  warnings.push(...delimitedWarnings(entry));
   const scriptWarning = mirthScriptWarning(entry);
   if (scriptWarning) warnings.push(scriptWarning);
   return entry;
@@ -340,6 +340,42 @@ function channelEnabled(mirthChannel: Record<string, unknown>): boolean {
   const metadata = getNestedRecord(getNestedRecord(mirthChannel, 'exportData') ?? {}, 'metadata');
   if (metadata && getString(metadata, 'enabled') !== null) return getBoolean(metadata, 'enabled', true);
   return getBoolean(mirthChannel, 'enabled', true);
+}
+
+// ----- Pruning -----
+
+type PruningSettings = Pick<ChannelExportEntry, 'pruningEnabled' | 'pruningMaxAgeDays' | 'pruningArchiveEnabled'>;
+
+/** A whole number of days above zero, or null (Mirth: keep for good). */
+function pruneDays(settings: Record<string, unknown>, key: string): number | null {
+  const days = getNumber(settings, key, 0);
+  return Number.isInteger(days) && days > 0 ? days : null;
+}
+
+/**
+ * Mirth 3.5+ keeps a channel's pruning in `exportData/metadata/pruningSettings`
+ * (earlier exports, in the channel properties): `pruneMetaDataDays` prunes
+ * whole messages, `pruneContentDays` only their content. GalvaniFlow prunes
+ * whole messages, errored ones included, and archives nothing, so the
+ * preview says where the two differ.
+ */
+function convertPruning(mirthChannel: Record<string, unknown>, props: Record<string, unknown>, channelName: string, warnings: string[]): PruningSettings {
+  const metadata = getNestedRecord(getNestedRecord(mirthChannel, 'exportData') ?? {}, 'metadata') ?? {};
+  const settings = getNestedRecord(metadata, 'pruningSettings') ?? props;
+  const messageDays = pruneDays(settings, 'pruneMetaDataDays');
+  const contentDays = pruneDays(settings, 'pruneContentDays');
+  const differences: string[] = [];
+  if (contentDays !== null && (messageDays === null || contentDays < messageDays)) {
+    differences.push(`Mirth removes message content after ${String(contentDays)} days; GalvaniFlow prunes whole messages only, so content is kept ${messageDays === null ? 'for good' : `until ${String(messageDays)} days`}`);
+  }
+  if (messageDays !== null && !getBoolean(settings, 'pruneErroredMessages', false)) {
+    differences.push('Mirth keeps errored messages; GalvaniFlow prunes them with the rest');
+  }
+  if (messageDays !== null && getBoolean(settings, 'archiveEnabled', true)) {
+    differences.push('Mirth archives messages before pruning them; GalvaniFlow does not archive');
+  }
+  if (differences.length > 0) warnings.push(`Channel "${channelName}": its pruning differs here: ${differences.join('; ')}`);
+  return { pruningEnabled: messageDays !== null, pruningMaxAgeDays: messageDays, pruningArchiveEnabled: false };
 }
 
 // ----- Source Response -----
@@ -454,6 +490,9 @@ function convertSourceConnector(
   };
   if (finalType === 'DATABASE') warnings.push(...databaseWarnings(propsNode, properties['vendor'], 'Database Reader', channelName));
   if (finalType === 'FILE') warnings.push(...fileConnectorWarnings(propsNode, properties, 'File Reader', channelName));
+  if (finalType === 'DICOM') warnings.push(...dicomWarnings(propsNode, 'source', 'DICOM Listener', channelName));
+  const polling = pollingWarning(propsNode, channelName);
+  if (polling) warnings.push(polling);
   return { type: remote?.type ?? finalType, properties };
 }
 
@@ -605,6 +644,40 @@ function pollingInterval(propsNode: Record<string, unknown>): Record<string, unk
   return ms > 0 ? { pollingIntervalMs: ms } : {};
 }
 
+/**
+ * A preview warning for Mirth polling GalvaniFlow cannot follow: once a day
+ * (TIME), on cron expressions (CRON), or at an interval limited to some days
+ * or hours (the advanced settings). Null for plain interval polling.
+ */
+function pollingWarning(propsNode: Record<string, unknown>, channelName: string): string | null {
+  const poll = getNestedRecord(propsNode, 'pollConnectorProperties');
+  if (!poll) return null;
+  const type = getString(poll, 'pollingType') ?? 'INTERVAL';
+  const prefix = `Channel "${channelName}": the source polls`;
+  const fallback = "; GalvaniFlow polls only at an interval, so it imported with the connector's default interval. Set its polling interval before deploying";
+  if (type === 'TIME') {
+    const at = (key: string): string => String(getNumber(poll, key, 0)).padStart(2, '0');
+    return `${prefix} once a day at ${at('pollingHour')}:${at('pollingMinute')} in Mirth${fallback}`;
+  }
+  if (type === 'CRON') {
+    const cron = getNestedRecord(poll, 'cronJobs') ?? {};
+    const expressions = toRecordList(cron['cronProperty']).map((job) => getString(job, 'expression') ?? '').filter((e) => e !== '');
+    return `${prefix} on the cron schedule ${expressions.map((e) => `"${e}"`).join(', ')} in Mirth${fallback}`;
+  }
+  return limitedPolling(getNestedRecord(poll, 'pollConnectorPropertiesAdvanced'))
+    ? `${prefix} only on some days or hours in Mirth (its advanced polling settings); GalvaniFlow polls at its interval all day, every day`
+    : null;
+}
+
+/** True when Mirth's advanced polling settings leave out some days (weekly or monthly) or hours. */
+function limitedPolling(advanced: Record<string, unknown> | null): boolean {
+  if (!advanced) return false;
+  const days = getNestedRecord(advanced, 'inactiveDays') ?? {};
+  const raw = days['boolean'];
+  const inactive: readonly unknown[] = Array.isArray(raw) ? raw : [raw];
+  return !getBoolean(advanced, 'weekly', true) || !getBoolean(advanced, 'allDay', true) || inactive.some((d) => String(d) === 'true');
+}
+
 function mapTransportName(transportName: string, channelName: string, warnings: string[]): string {
   const transportMap: Record<string, string> = {
     'TCP Listener': 'TCP_MLLP',
@@ -687,6 +760,9 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
       if (script) result['script'] = script;
       break;
     }
+    case 'DICOM':
+      Object.assign(result, direction === 'source' ? dicomListenerProperties(propsNode) : dicomSenderProperties(propsNode));
+      break;
     default:
       // For others, copy all non-attribute properties
       for (const [key, value] of Object.entries(propsNode)) {
@@ -729,6 +805,12 @@ function httpSenderProperties(propsNode: Record<string, unknown>): Record<string
   return result;
 }
 
+/** A preview warning for an HTTP Sender with Digest credentials, which GalvaniFlow's HTTP destination cannot send; null otherwise. */
+function httpDigestWarning(propsNode: Record<string, unknown>, connector: string, channelName: string): string | null {
+  if (!getBoolean(propsNode, 'useAuthentication', false) || getString(propsNode, 'authenticationType') !== 'Digest') return null;
+  return `Channel "${channelName}": the ${connector} uses Digest authentication, which GalvaniFlow does not have; its credentials were dropped, so requests go without them. Build the Authorization header in a JavaScript writer`;
+}
+
 /** A Mirth SMTP Sender's server, credentials, addresses, subject and body. */
 function smtpProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -748,6 +830,63 @@ function smtpProperties(propsNode: Record<string, unknown>): Record<string, unkn
     result['authPass'] = getString(propsNode, 'password') ?? '';
   }
   return result;
+}
+
+/**
+ * A Mirth DICOM Listener: its port, its AE title, and the folder it stores
+ * received objects in (`dest`). Mirth keeps the stored files, so they stay
+ * (`postAction` NONE) instead of the DICOM source's default DELETE.
+ */
+function dicomListenerProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const port = getString(getNestedRecord(propsNode, 'listenerConnectorProperties') ?? {}, 'port');
+  if (port) result['port'] = portValue(port);
+  const dest = getString(propsNode, 'dest');
+  if (dest) Object.assign(result, { storageDir: dest, postAction: 'NONE' });
+  const aeTitle = getString(propsNode, 'applicationEntity');
+  if (aeTitle) result['aeTitle'] = aeTitle;
+  return result;
+}
+
+/** A Mirth DICOM Sender: the remote host and port, its AE title (called) and our own (calling). */
+function dicomSenderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const host = getString(propsNode, 'host');
+  if (host) result['host'] = host;
+  const port = getString(propsNode, 'port');
+  if (port) result['port'] = portValue(port);
+  const called = getString(propsNode, 'applicationEntity');
+  if (called) result['calledAETitle'] = called;
+  const calling = getString(propsNode, 'localApplicationEntity');
+  if (calling) result['callingAETitle'] = calling;
+  return result;
+}
+
+/**
+ * Preview warnings for a DICOM connector: TLS, which the DICOM connector does
+ * not have; on a Listener, the message being the stored file's path and a
+ * missing storage folder; on a Sender, a custom template, user identity and
+ * storage commitment.
+ */
+function dicomWarnings(propsNode: Record<string, unknown>, direction: 'source' | 'destination', connector: string, channelName: string): string[] {
+  const prefix = `Channel "${channelName}": the ${connector}`;
+  const warnings: string[] = [];
+  if ((getString(propsNode, 'tls') ?? 'notls') !== 'notls') {
+    warnings.push(`${prefix} uses TLS in Mirth; GalvaniFlow's DICOM connector has no TLS, so the partner cannot connect until the link is tunnelled or TLS is turned off`);
+  }
+  if (direction === 'source') {
+    warnings.push(`${prefix}'s messages are a file path here (the stored object's file), not the DICOM object; scripts read its tags from the source map`);
+    if (!getString(propsNode, 'dest')) warnings.push(`${prefix} stores no files in Mirth; set storageDir, the folder received objects are written to, before deploying`);
+    return warnings;
+  }
+  const template = getString(propsNode, 'template') ?? '';
+  const dropped = [
+    ...(template.trim() !== '' && template.trim() !== '${DICOMMESSAGE}' ? ['its template (it sends the file the message names)'] : []),
+    ...(getString(propsNode, 'username') || getString(propsNode, 'passcode') ? ['user identity'] : []),
+    ...(getBoolean(propsNode, 'stgcmt', false) ? ['storage commitment'] : []),
+  ];
+  if (dropped.length > 0) warnings.push(`${prefix} uses ${dropped.join(', ')}, which GalvaniFlow's DICOM connector does not have; dropped`);
+  return warnings;
 }
 
 /** `jdbc:<vendor>://host[:port]/database[?options]` */
@@ -931,6 +1070,9 @@ function convertDestinations(
     const properties = remote?.properties ?? extractConnectorProperties(propsNode, connectorType, 'destination');
     if (connectorType === 'DATABASE') warnings.push(...databaseWarnings(propsNode, properties['vendor'], `Database Writer "${name}"`, channelName));
     if (connectorType === 'FILE') warnings.push(...fileConnectorWarnings(propsNode, properties, `File Writer "${name}"`, channelName));
+    if (connectorType === 'DICOM') warnings.push(...dicomWarnings(propsNode, 'destination', `DICOM Sender "${name}"`, channelName));
+    const digest = connectorType === 'HTTP' ? httpDigestWarning(propsNode, `HTTP Sender "${name}"`, channelName) : null;
+    if (digest) warnings.push(digest);
 
     return {
       metaDataId: destinationMetaDataId(dest, idx),
@@ -1008,16 +1150,22 @@ function extractDataType(
 
 // ----- Filter Conversion -----
 
-function convertFilters(mirthChannel: Record<string, unknown>): ChannelExportEntry['filters'] {
+/** Where a Rule Builder rule the import cannot read says so. */
+interface WarningSink {
+  readonly channelName: string;
+  readonly warnings: string[];
+}
+
+function convertFilters(mirthChannel: Record<string, unknown>, sink: WarningSink): ChannelExportEntry['filters'] {
   const filters: ChannelExportEntry['filters'] = [];
 
   // Source connector filter
-  const sourceFilter = extractFilterFromConnector(mirthChannel['sourceConnector'], null);
+  const sourceFilter = extractFilterFromConnector(mirthChannel['sourceConnector'], null, sink);
   if (sourceFilter) filters.push(sourceFilter);
 
   // Destination connector filters
   for (const [metaDataId, conn] of destinationConnectorsById(mirthChannel)) {
-    const filter = extractFilterFromConnector(conn, metaDataId);
+    const filter = extractFilterFromConnector(conn, metaDataId, sink);
     if (filter) filters.push(filter);
   }
 
@@ -1069,6 +1217,7 @@ function scriptElements(container: Record<string, unknown>, legacyKey: 'steps' |
 function extractFilterFromConnector(
   connector: unknown,
   metaDataId: number | null,
+  sink: WarningSink,
 ): ChannelExportEntry['filters'][number] | null {
   if (!isPlainObject(connector)) return null;
 
@@ -1077,27 +1226,108 @@ function extractFilterFromConnector(
   const filter = getNestedRecord(connector, 'filter') ?? (transformer ? getNestedRecord(transformer, 'filter') : null);
   if (!filter) return null;
 
-  const rules = scriptElements(filter, 'rules', 'rule').map(({ className, node: rule }) => ({
-    enabled: getBoolean(rule, 'enabled', true),
-    name: getString(rule, 'name'),
-    operator: getString(rule, 'operator') ?? 'AND',
-    type: mapFilterRuleType(className ?? getString(rule, 'type')),
-    script: getString(rule, 'script'),
-    field: getString(rule, 'field'),
-    condition: getString(rule, 'condition'),
-    values: stringList(rule['values']),
-  }));
+  const rules = scriptElements(filter, 'rules', 'rule').map(({ className, node: rule }) => {
+    const base = {
+      enabled: getBoolean(rule, 'enabled', true),
+      name: getString(rule, 'name'),
+      operator: getString(rule, 'operator') ?? 'AND',
+      type: mapFilterRuleType(className ?? getString(rule, 'type')),
+      script: getString(rule, 'script'),
+      field: getString(rule, 'field'),
+      condition: getString(rule, 'condition'),
+      values: stringList(rule['values']),
+    };
+    return base.type === 'RULE_BUILDER' ? { ...base, ...ruleBuilderRule(base, sink) } : base;
+  });
 
   if (rules.length === 0) return null;
 
   return { connectorId: null, metaDataId, rules };
 }
 
+/** A filter rule's type: Mirth 4.x `RuleBuilderRule` and older `Rule Builder` rules are RULE_BUILDER. */
 function mapFilterRuleType(type: string | null): string {
   if (!type) return 'JAVASCRIPT';
-  const upper = type.toUpperCase();
-  if (upper.includes('JAVASCRIPT') || upper === 'RULE_BUILDER') return 'JAVASCRIPT';
+  const upper = type.toUpperCase().replace(/\s+/g, '_');
+  if (upper.includes('JAVASCRIPT')) return 'JAVASCRIPT';
+  if (upper === 'RULEBUILDERRULE' || upper === 'RULE_BUILDER') return 'RULE_BUILDER';
   return upper;
+}
+
+/** Mirth's Rule Builder conditions, as the engine's Rule Builder names them. */
+const RULE_BUILDER_CONDITION: Readonly<Record<string, string>> = {
+  EXISTS: 'EXISTS', NOT_EXIST: 'NOT_EXISTS', EQUALS: 'EQUALS', NOT_EQUAL: 'NOT_EQUALS', CONTAINS: 'CONTAINS', NOT_CONTAIN: 'NOT_CONTAINS',
+};
+
+type RuleBuilderFields = Pick<ChannelExportEntry['filters'][number]['rules'][number], 'type' | 'script' | 'field' | 'condition' | 'values'>;
+
+interface MirthRule {
+  readonly name: string | null;
+  readonly script: string | null;
+  readonly field: string | null;
+  readonly condition: string | null;
+  readonly values: readonly string[];
+}
+
+/**
+ * A Mirth Rule Builder rule, whose field and values are JavaScript
+ * expressions. An HL7 field (`msg['MSH']['MSH.9']['MSH.9.1'].toString()`)
+ * compared with quoted text becomes an engine Rule Builder rule; any other
+ * expression becomes the JavaScript Mirth itself generates, which the script
+ * check reads like any other. A legacy rule that carries only its generated
+ * script keeps it. A rule with no field or an unknown condition stays a Rule
+ * Builder rule the deploy refuses, with a preview warning.
+ */
+function ruleBuilderRule(rule: MirthRule, sink: WarningSink): RuleBuilderFields {
+  const field = rule.field?.trim() ?? '';
+  if (field === '' && rule.script) return { type: 'JAVASCRIPT', script: rule.script, field: null, condition: null, values: [] };
+  const condition = RULE_BUILDER_CONDITION[rule.condition ?? ''];
+  if (field === '' || condition === undefined) {
+    sink.warnings.push(`Channel "${sink.channelName}": Rule Builder rule "${rule.name ?? ''}" has ${field === '' ? 'no field' : `the unknown condition "${rule.condition ?? ''}"`}; it will not deploy until it is rewritten`);
+    return { type: 'RULE_BUILDER', script: null, field, condition: rule.condition, values: [...rule.values] };
+  }
+  const path = hl7FieldPath(field);
+  const texts = rule.values.map(quotedText);
+  const literals = texts.filter((t): t is string => t !== null);
+  if (path !== null && literals.length === texts.length) {
+    return { type: 'RULE_BUILDER', script: null, field: path, condition, values: condition.endsWith('EXISTS') ? [] : literals };
+  }
+  return { type: 'JAVASCRIPT', script: mirthRuleScript(field, rule.condition ?? '', rule.values), field: null, condition: null, values: [] };
+}
+
+/** `msg['SEG']['SEG.n']...` with an optional `.toString()`: the bracketed names. */
+const E4X_FIELD = /^msg((?:\[\s*(?:'[^'\\]+'|"[^"\\]+")\s*\])+)(?:\.toString\(\))?$/;
+
+/** The HL7 path (`MSH.9.1`) of an E4X field expression, or null when it is not one. */
+function hl7FieldPath(field: string): string | null {
+  const brackets = E4X_FIELD.exec(field)?.[1];
+  if (brackets === undefined) return null;
+  const names = [...brackets.matchAll(/\[\s*['"]([^'"]+)['"]\s*\]/g)].map((m) => m[1] ?? '');
+  const segment = names[0] ?? '';
+  const last = names[names.length - 1] ?? '';
+  return last.startsWith(`${segment}.`) ? last : null;
+}
+
+/** The text of a quoted JavaScript string with no escapes (`"ORM"`, `'ORM'`), or null. */
+function quotedText(value: string): string | null {
+  return /^(['"])([^'"\\]*)\1$/.exec(value.trim())?.[2] ?? null;
+}
+
+/** The script Mirth's RuleBuilderRule.getScript generates for a field, condition and values. */
+function mirthRuleScript(field: string, condition: string, values: readonly string[]): string {
+  const negated = condition.startsWith('NOT_');
+  const join = negated ? ' && ' : ' || ';
+  let test: string;
+  if (condition === 'EXISTS' || condition === 'NOT_EXIST') {
+    test = `${field}.length ${negated ? '==' : '>'} 0`;
+  } else if (condition === 'CONTAINS' || condition === 'NOT_CONTAIN') {
+    const eq = negated ? '==' : '!=';
+    test = values.length > 0 ? values.map((v) => `(${field}.indexOf(${v}) ${eq} -1)`).join(join) : `${field}.indexOf("") ${eq} -1`;
+  } else {
+    const eq = negated ? '!=' : '==';
+    test = values.length > 0 ? values.map((v) => `${field} ${eq} ${v}`).join(join) : `${field} ${eq} ""`;
+  }
+  return `if(${test}) {\n\treturn true;\n}\nreturn false;`;
 }
 
 /** The `<string>` children of a Mirth string list (`<values><string>a</string></values>`), or a bare array; [] when there are none. */
@@ -1211,10 +1441,21 @@ function withDelimitedOptions(props: Record<string, unknown>, dataType: string):
   return { ...props, delimited };
 }
 
-/** Warnings for Mirth Delimited settings that read differently here. */
-function delimitedWarnings(channelName: string, transformer: ChannelExportEntry['transformers'][number] | undefined): string[] {
+/** Mirth's XML view of a Delimited message: `msg['row']` or `msg.row`. */
+const MIRTH_ROW_ACCESS = /\bmsg\s*(?:\[\s*['"]row['"]\s*\]|\.row\b)/;
+
+/**
+ * Warnings for a Delimited source that reads differently here: fixed-width
+ * columns, and scripts that read rows Mirth's way.
+ */
+function delimitedWarnings(entry: Pick<ChannelExportEntry, 'name' | 'scripts' | 'filters' | 'transformers'>): string[] {
+  const channelName = entry.name;
+  const transformer = entry.transformers.find((t) => (t.metaDataId ?? null) === null);
   if (transformer?.inboundDataType !== 'DELIMITED') return [];
-  const warnings = [`Channel "${channelName}": Delimited messages arrive as an array of rows keyed by column name; read msg[0].column, not msg['row']['column']`];
+  const warnings: string[] = [];
+  if (channelScripts(entry).some((s) => MIRTH_ROW_ACCESS.test(s))) {
+    warnings.push(`Channel "${channelName}": Delimited messages arrive as an array of rows keyed by column name; read msg[0].column, not msg['row']['column']`);
+  }
   const widths = getString(transformer.inboundProperties['serializationProperties'], 'columnWidths');
   if (widths !== null && widths.trim() !== '') {
     warnings.push(`Channel "${channelName}": fixed-width columns are not supported; the message is split on the column delimiter instead`);
@@ -1275,13 +1516,18 @@ const MIRTH_ONLY_CONSTRUCTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(?:return|String\()\s*message\b/, "Mirth's 'message' variable: use rawData"],
 ];
 
-/** One warning per channel naming the Mirth-only constructs its scripts use. */
-function mirthScriptWarning(entry: Pick<ChannelExportEntry, 'name' | 'scripts' | 'filters' | 'transformers'>): string | null {
-  const sources = [
+/** Every script in a channel: channel scripts, filter rules and transformer steps. */
+function channelScripts(entry: Pick<ChannelExportEntry, 'scripts' | 'filters' | 'transformers'>): readonly string[] {
+  return [
     ...entry.scripts.map((s) => s.script),
     ...entry.filters.flatMap((f) => f.rules.map((r) => r.script ?? '')),
     ...entry.transformers.flatMap((t) => t.steps.map((s) => s.script ?? '')),
   ];
+}
+
+/** One warning per channel naming the Mirth-only constructs its scripts use. */
+function mirthScriptWarning(entry: Pick<ChannelExportEntry, 'name' | 'scripts' | 'filters' | 'transformers'>): string | null {
+  const sources = channelScripts(entry);
   const found = MIRTH_ONLY_CONSTRUCTS.filter(([pattern]) => sources.some((s) => pattern.test(s))).map(([, hint]) => hint);
   if (found.length === 0) return null;
   return `Channel "${entry.name}": its scripts use Mirth-only constructs that will fail until rewritten: ${found.join('; ')}`;
