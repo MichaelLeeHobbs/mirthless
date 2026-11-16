@@ -22,7 +22,7 @@ import { usePermissions } from '../../hooks/use-permissions.js';
 import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
 import {
-  settledProblems, useCursor, useEditorTheme, useExternalValue, useProblems, useSuggestRoom,
+  isExternalReplace, settledProblems, useCursor, useEditorTheme, useExternalValue, useProblems, useSuggestRoom,
 } from './editor-hooks.js';
 import { useScriptBodyTypeMarkers } from './script-body-check.js';
 import { appliedSurfaceKey, onSurfaceApplied, surfaceLibs } from './surface-state.js';
@@ -113,8 +113,9 @@ export function ScriptEditor({
     dataType: surfaceProp?.message === false ? undefined : channelDataType,
     message: surfaceProp?.message,
     destinationSet: surfaceProp?.destinationSet,
+    connectorMessage: surfaceProp?.connectorMessage,
     templateContext: surfaceProp?.templateContext,
-  }), [channelDataType, surfaceProp?.message, surfaceProp?.destinationSet, surfaceProp?.templateContext]);
+  }), [channelDataType, surfaceProp?.message, surfaceProp?.destinationSet, surfaceProp?.connectorMessage, surfaceProp?.templateContext]);
   const [internalLang, setInternalLang] = useState<ScriptLanguageCode>('TYPESCRIPT');
   const language = languageProp ?? internalLang;
   const [editor, setEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -167,9 +168,12 @@ export function ScriptEditor({
     return () => { action.dispose(); };
   }, [editor, canTest]);
 
-  // The type service holds one set of globals; this editor's surface applies on
-  // mount and whenever it takes focus. While another editor's is applied, this
-  // one shows syntax errors only and says types are checked when focused.
+  // The type service holds one set of globals; this editor's surface applies
+  // whenever it takes focus, and when it changes while this editor has focus or
+  // no editor has (on mount). While another editor's is applied, this one shows
+  // syntax errors only and says types are checked when focused. Applying on
+  // every change made a step whose earlier names changed as the focused step
+  // was typed in take the surface away from it (#228).
   const earlierKey = (earlierNames ?? []).join(',');
   const libs = useMemo(
     () => surfaceLibs(surface, templates ?? [], earlierKey === '' ? [] : earlierKey.split(',')),
@@ -180,7 +184,7 @@ export function ScriptEditor({
   useEffect(() => {
     if (!editor) return undefined;
     const apply = (): void => { applyScriptSurface(libs); };
-    apply();
+    if (editor.hasTextFocus() || !monaco.editor.getEditors().some((e) => e.hasTextFocus())) apply();
     const focus = editor.onDidFocusEditorText(apply);
     return () => { focus.dispose(); };
   }, [editor, libs]);
@@ -283,7 +287,7 @@ export function ScriptEditor({
         language={MONACO_LANGUAGE[language]}
         theme={theme}
         defaultValue={value}
-        onChange={(v) => { onChange(v ?? ''); }}
+        onChange={(v) => { if (!isExternalReplace(editor)) onChange(v ?? ''); }}
         onMount={(ed) => { setEditor(ed); }}
         options={{ ...BASE_EDITOR_OPTIONS, readOnly, ariaLabel: label, autoClosingBrackets: 'always', formatOnPaste: true }}
       />

@@ -196,7 +196,9 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
 
       {/* Small enough that the editor's status line fits in the pane at 1440x900. */}
       <Box sx={{ flexGrow: 1, minHeight: 240 }}>
+        {/* One editor per template, so undo stays with the template it was typed in (#228). */}
         <ScriptEditor
+          key={template.id}
           height="100%"
           label="Template code"
           value={code}

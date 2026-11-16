@@ -15,6 +15,7 @@ describe('mapErrorToStatus', () => {
     ['ACCOUNT_DEACTIVATED', 403],
     ['SELF_ACTION', 400],
     ['NOT_SUPPORTED', 422],
+    ['UNAVAILABLE', 503],
   ] as const)('maps %s to %i', (code, status) => {
     expect(mapErrorToStatus(new ServiceError(code, 'x'))).toBe(status);
   });
