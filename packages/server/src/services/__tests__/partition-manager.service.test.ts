@@ -3,6 +3,8 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 // ----- Mock DB -----
 
@@ -53,36 +55,16 @@ beforeEach(() => {
 describe('PartitionManagerService', () => {
   // ========== CREATE PARTITIONS ==========
   describe('createPartitions', () => {
-    it('generates CREATE TABLE IF NOT EXISTS for each partitioned table', async () => {
+    it('creates them through the owner function, passing the channel id as a parameter', async () => {
       const result = await PartitionManagerService.createPartitions(CHANNEL_ID);
 
       expect(result.ok).toBe(true);
-      expect(mockExecute).toHaveBeenCalledTimes(PARTITIONED_TABLES.length);
-
-      for (let i = 0; i < PARTITIONED_TABLES.length; i++) {
-        const table = PARTITIONED_TABLES[i]!;
-        const call = mockExecute.mock.calls[i]!;
-        const sqlObj = call[0] as { queryChunks: ReadonlyArray<{ value: readonly string[] }> };
-        // sql.raw wraps the string in queryChunks
-        const rawSql = sqlObj.queryChunks[0]!.value[0]!;
-        expect(rawSql).toContain('CREATE TABLE IF NOT EXISTS');
-        expect(rawSql).toContain(`"${table}_p_${SANITIZED_ID}"`);
-        expect(rawSql).toContain(`PARTITION OF "${table}"`);
-        expect(rawSql).toContain(`FOR VALUES IN ('${CHANNEL_ID}')`);
-      }
-    });
-
-    it('sanitizes channel ID by replacing hyphens with underscores in table name', async () => {
-      const result = await PartitionManagerService.createPartitions(CHANNEL_ID);
-
-      expect(result.ok).toBe(true);
-      const call = mockExecute.mock.calls[0]!;
-      const sqlObj = call[0] as { queryChunks: ReadonlyArray<{ value: readonly string[] }> };
-      const rawSql = sqlObj.queryChunks[0]!.value[0]!;
-      // Partition table name should use underscores (sanitized)
-      expect(rawSql).toContain(`"messages_p_${SANITIZED_ID}"`);
-      // The FOR VALUES IN clause should still use the original UUID with hyphens
-      expect(rawSql).toContain(`FOR VALUES IN ('${CHANNEL_ID}')`);
+      // The server's role does not own the parent tables, so it cannot run
+      // CREATE TABLE ... PARTITION OF itself (D-307).
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+      const query = new PgDialect().sqlToQuery(mockExecute.mock.calls[0]![0] as SQL);
+      expect(query.sql).toBe('SELECT public.create_channel_partitions($1::uuid)');
+      expect(query.params).toEqual([CHANNEL_ID]);
     });
 
     it('returns error when db.execute fails', async () => {
@@ -91,18 +73,6 @@ describe('PartitionManagerService', () => {
       const result = await PartitionManagerService.createPartitions(CHANNEL_ID);
 
       expect(result.ok).toBe(false);
-    });
-
-    it('returns error when second table creation fails', async () => {
-      mockExecute
-        .mockResolvedValueOnce({ rows: [] })
-        .mockRejectedValueOnce(new Error('Permission denied'));
-
-      const result = await PartitionManagerService.createPartitions(CHANNEL_ID);
-
-      expect(result.ok).toBe(false);
-      // First call succeeded, second failed
-      expect(mockExecute).toHaveBeenCalledTimes(2);
     });
   });
 

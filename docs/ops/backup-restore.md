@@ -70,6 +70,13 @@ cat galvaniflow-20260712-020000.dump | \
 docker compose -f docker/docker-compose.prod.yml start server web
 ```
 
+The dump also holds the grants to the server's role (`galvaniflow_app`, see
+[Database roles](upgrade.md#database-roles)). Restoring into a new Postgres where that
+role does not exist yet, `pg_restore` reports `role "galvaniflow_app" does not exist` for
+each of those grants, ends with `errors ignored on restore: N` and exits 1, and restores
+everything else. Those are the only errors to expect: the server container creates the
+role, grants it again and hands it the `pgboss` schema when it starts.
+
 The dump captures the exact migrated schema, so restoring an older dump onto a newer
 binary may require the pending migrations to run — the server container runs migrations
 on start automatically. Restoring a **newer** dump onto an **older** binary is not
