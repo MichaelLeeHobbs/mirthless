@@ -5,10 +5,10 @@
 // All methods return Result<T> using tryCatch from stderr-lib.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, count, asc } from 'drizzle-orm';
+import { eq, and, count, asc, inArray } from 'drizzle-orm';
 import { DEFAULT_GROUP_NAME, type CreateChannelGroupInput, type UpdateChannelGroupInput } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
-import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import { emitEvent, emitSuccessEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { channelGroups, channelGroupMembers, channels } from '../db/schema/index.js';
 
@@ -26,6 +26,28 @@ export interface ChannelGroupSummary {
 
 export interface ChannelGroupDetail extends ChannelGroupSummary {
   readonly channels: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+}
+
+/** The groups a channel belongs to after a set. */
+export interface ChannelGroupSet {
+  readonly channelId: string;
+  readonly groupIds: readonly string[];
+}
+
+type GroupTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Fail with NOT_FOUND naming each id in `groupIds` that is not a group. */
+async function assertGroupsExist(tx: GroupTx, groupIds: readonly string[]): Promise<void> {
+  if (groupIds.length === 0) return;
+  const found = await tx
+    .select({ id: channelGroups.id })
+    .from(channelGroups)
+    .where(inArray(channelGroups.id, [...groupIds]));
+  const foundIds = new Set(found.map((g) => g.id));
+  const missing = groupIds.filter((id) => !foundIds.has(id));
+  if (missing.length > 0) {
+    throw new ServiceError('NOT_FOUND', `Channel group not found: ${missing.join(', ')}`);
+  }
 }
 
 // ----- Service -----
@@ -302,6 +324,48 @@ export class ChannelGroupService {
         serverId: null, ipAddress: context?.ipAddress ?? null,
         attributes: { action: 'addMember', groupId, channelId },
       });
+    });
+  }
+
+  /**
+   * Replace every group membership a channel has with `groupIds`, in one
+   * transaction: a failure part way leaves the old memberships in place. An
+   * empty list takes the channel out of every group. The channel row is locked
+   * for the transaction so two sets on one channel run one after the other.
+   */
+  static async setChannelGroups(
+    channelId: string,
+    groupIds: readonly string[],
+    context?: AuditContext,
+  ): Promise<Result<ChannelGroupSet>> {
+    return tryCatch(async () => {
+      const wanted = [...new Set(groupIds)];
+      const previous = await db.transaction(async (tx) => {
+        const [channel] = await tx
+          .select({ id: channels.id })
+          .from(channels)
+          .where(eq(channels.id, channelId))
+          .for('update');
+        if (!channel) {
+          throw new ServiceError('NOT_FOUND', `Channel ${channelId} not found`);
+        }
+        await assertGroupsExist(tx, wanted);
+        const removed = await tx
+          .delete(channelGroupMembers)
+          .where(eq(channelGroupMembers.channelId, channelId))
+          .returning({ channelGroupId: channelGroupMembers.channelGroupId });
+        if (wanted.length > 0) {
+          await tx
+            .insert(channelGroupMembers)
+            .values(wanted.map((channelGroupId) => ({ channelGroupId, channelId })));
+        }
+        return removed.map((r) => r.channelGroupId);
+      });
+
+      emitSuccessEvent('CHANNEL_GROUP_UPDATED', context, {
+        action: 'setChannelGroups', channelId, groupIds: wanted, previousGroupIds: previous,
+      });
+      return { channelId, groupIds: wanted };
     });
   }
 

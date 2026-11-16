@@ -89,11 +89,36 @@ const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
 
+// A transaction gets its own executor so a test can tell what ran inside it.
+const txState = {
+  channel: [] as unknown[],
+  groups: [] as unknown[],
+  removed: [] as unknown[],
+  insertError: null as Error | null,
+};
+const txInsertValues = vi.fn().mockImplementation(async () => {
+  if (txState.insertError) throw txState.insertError;
+});
+const txDeleteWhere = vi.fn().mockImplementation(() => ({ returning: vi.fn().mockImplementation(async () => txState.removed) }));
+const txFor = vi.fn().mockImplementation(async () => txState.channel);
+const mockTx = {
+  select: vi.fn().mockImplementation(() => ({
+    from: vi.fn().mockReturnValue({
+      // The channel lookup ends in .for('update'); the group lookup is awaited directly.
+      where: vi.fn().mockImplementation(() => Object.assign(Promise.resolve(txState.groups), { for: txFor })),
+    }),
+  })),
+  delete: vi.fn().mockReturnValue({ where: txDeleteWhere }),
+  insert: vi.fn().mockReturnValue({ values: txInsertValues }),
+};
+const mockTransaction = vi.fn().mockImplementation(async (fn: (tx: typeof mockTx) => Promise<unknown>) => fn(mockTx));
+
 const mockDb = {
   select: mockSelect,
   insert: mockInsert,
   update: mockUpdate,
   delete: mockDelete,
+  transaction: mockTransaction,
 };
 
 vi.mock('../../lib/db.js', () => ({
@@ -106,10 +131,13 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   count: vi.fn(() => 'count_agg'),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
+  inArray: vi.fn((_col: unknown, vals: unknown) => ({ type: 'inArray', vals })),
 }));
 
+const { emitSuccessEvent } = vi.hoisted(() => ({ emitSuccessEvent: vi.fn() }));
 vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
+  emitSuccessEvent,
 }));
 
 const { ChannelGroupService } = await import('../channel-group.service.js');
@@ -137,6 +165,10 @@ function makeGroupRow(overrides?: Partial<Record<string, unknown>>): Record<stri
 beforeEach(() => {
   resetSelectState();
   vi.clearAllMocks();
+  txState.channel = [{ id: CHANNEL_ID }];
+  txState.groups = [];
+  txState.removed = [];
+  txState.insertError = null;
 });
 
 describe('ChannelGroupService', () => {
@@ -382,6 +414,101 @@ describe('ChannelGroupService', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('message', expect.stringContaining('already a member'));
+    });
+  });
+
+  describe('setChannelGroups', () => {
+    const GROUP_2 = '00000000-0000-0000-0000-000000000002';
+
+    it('replaces the memberships inside one transaction and returns the new set', async () => {
+      txState.groups = [{ id: GROUP_ID }, { id: GROUP_2 }];
+      txState.removed = [{ channelGroupId: '00000000-0000-0000-0000-000000000009' }];
+
+      const result = await ChannelGroupService.setChannelGroups(CHANNEL_ID, [GROUP_ID, GROUP_2], { userId: 'u1', ipAddress: null });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toEqual({ channelId: CHANNEL_ID, groupIds: [GROUP_ID, GROUP_2] });
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(txFor).toHaveBeenCalledWith('update');
+      expect(txDeleteWhere).toHaveBeenCalledTimes(1);
+      expect(txInsertValues).toHaveBeenCalledWith([
+        { channelGroupId: GROUP_ID, channelId: CHANNEL_ID },
+        { channelGroupId: GROUP_2, channelId: CHANNEL_ID },
+      ]);
+      // Nothing is written outside the transaction.
+      expect(mockInsert).not.toHaveBeenCalled();
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+
+    it('audits the old and new groups after the transaction commits', async () => {
+      txState.groups = [{ id: GROUP_ID }];
+      txState.removed = [{ channelGroupId: GROUP_2 }];
+
+      await ChannelGroupService.setChannelGroups(CHANNEL_ID, [GROUP_ID], { userId: 'u1', ipAddress: '10.0.0.1' });
+
+      expect(emitSuccessEvent).toHaveBeenCalledWith('CHANNEL_GROUP_UPDATED', { userId: 'u1', ipAddress: '10.0.0.1' }, {
+        action: 'setChannelGroups', channelId: CHANNEL_ID, groupIds: [GROUP_ID], previousGroupIds: [GROUP_2],
+      });
+    });
+
+    it('with an empty list removes every membership and inserts nothing', async () => {
+      txState.removed = [{ channelGroupId: GROUP_ID }];
+
+      const result = await ChannelGroupService.setChannelGroups(CHANNEL_ID, []);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.groupIds).toEqual([]);
+      expect(txDeleteWhere).toHaveBeenCalledTimes(1);
+      expect(txInsertValues).not.toHaveBeenCalled();
+    });
+
+    it('inserts a repeated group once', async () => {
+      txState.groups = [{ id: GROUP_ID }];
+
+      await ChannelGroupService.setChannelGroups(CHANNEL_ID, [GROUP_ID, GROUP_ID]);
+
+      expect(txInsertValues).toHaveBeenCalledWith([{ channelGroupId: GROUP_ID, channelId: CHANNEL_ID }]);
+    });
+
+    it('returns NOT_FOUND for an unknown channel and changes nothing', async () => {
+      txState.channel = [];
+
+      const result = await ChannelGroupService.setChannelGroups(CHANNEL_ID, [GROUP_ID]);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+      expect(result.error.message).toContain(CHANNEL_ID);
+      expect(txDeleteWhere).not.toHaveBeenCalled();
+      expect(txInsertValues).not.toHaveBeenCalled();
+      expect(emitSuccessEvent).not.toHaveBeenCalled();
+    });
+
+    it('returns NOT_FOUND naming each unknown group and changes nothing', async () => {
+      txState.groups = [{ id: GROUP_ID }];
+
+      const result = await ChannelGroupService.setChannelGroups(CHANNEL_ID, [GROUP_ID, GROUP_2]);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+      expect(result.error.message).toBe(`Channel group not found: ${GROUP_2}`);
+      expect(txDeleteWhere).not.toHaveBeenCalled();
+      expect(emitSuccessEvent).not.toHaveBeenCalled();
+    });
+
+    it('returns the error and audits nothing when the insert fails', async () => {
+      txState.groups = [{ id: GROUP_ID }];
+      txState.insertError = new Error('violates foreign key constraint');
+
+      const result = await ChannelGroupService.setChannelGroups(CHANNEL_ID, [GROUP_ID]);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('foreign key');
+      expect(emitSuccessEvent).not.toHaveBeenCalled();
     });
   });
 

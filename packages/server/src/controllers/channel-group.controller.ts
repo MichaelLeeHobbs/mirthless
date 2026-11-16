@@ -4,7 +4,7 @@
 // Handles HTTP requests for channel group CRUD + member management.
 
 import type { Request, Response } from 'express';
-import type { CreateChannelGroupInput, UpdateChannelGroupInput, AddChannelGroupMemberInput } from '@galvaniflow/core-models';
+import type { CreateChannelGroupInput, UpdateChannelGroupInput, AddChannelGroupMemberInput, SetChannelGroupsInput } from '@galvaniflow/core-models';
 import { ChannelGroupService } from '../services/channel-group.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
@@ -111,6 +111,23 @@ export class ChannelGroupController {
     }
 
     res.status(201).json({ success: true, data: null });
+  }
+
+  /** PUT /channels/:id/groups: replace the channel's group memberships in one step. */
+  static async setChannelGroups(req: Request, res: Response): Promise<void> {
+    const channelId = req.params['id'] as string;
+    const { groupIds } = req.body as SetChannelGroupsInput;
+    const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    const result = await ChannelGroupService.setChannelGroups(channelId, groupIds, context);
+
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      logger.warn({ errMsg: result.error.message, channelId }, 'Failed to set channel groups');
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
+      return;
+    }
+
+    res.json({ success: true, data: result.value });
   }
 
   static async removeMember(req: Request, res: Response): Promise<void> {
