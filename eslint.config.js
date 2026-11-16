@@ -19,6 +19,7 @@ const SHARED_HELPERS = [
   { names: 'expiryDays|expiryColor|expiryLabel', home: 'packages/web/src/lib/certificate-expiry.ts' },
   { names: 'getStr|getNum|getBool|getTls|getTlsStr|getTlsBool|propertyUpdaters', home: 'packages/web/src/components/channels/common/connector-properties.ts' },
   { names: 'compileScript|compileErrorMessages|extractEsbuildErrors', home: 'packages/engine/src/sandbox/script-compiler.ts' },
+  { names: 'wrapScriptBody|scriptBodyPosition', home: '@galvaniflow/core-models (scripting/script-check.ts, D-297)' },
   { names: 'toPoolConfig', home: 'packages/connectors/src/database/connection-pool.ts' },
   { names: 'dispatchQuarantined', home: 'packages/connectors/src/quarantine-ledger.ts' },
   { names: 'connectFresh|closeQuietly', home: 'packages/connectors/src/client-lifecycle.ts' },
@@ -32,6 +33,7 @@ const SHARED_HELPERS = [
   { names: 'definedSearchParams|messageFilterParts', home: 'packages/web/src/lib/search-params.ts and message-filter-query.ts' },
   { names: 'createNodemailerTransport|buildNodemailerOptions', home: '@galvaniflow/connectors (smtp/smtp-dispatcher.ts)' },
   { names: 'parseHeaderLines|parseHeaders|headersFromText', home: '@galvaniflow/core-models (http-connector.schema.ts)' },
+  { names: 'redirectMessage', home: 'packages/connectors/src/redirect.ts' },
 ];
 const sharedHelperSelectors = SHARED_HELPERS.flatMap(({ names, home }) => [
   { selector: `:not(ExportNamedDeclaration) > FunctionDeclaration[id.name=/^(${names})$/]`, message: `Import this from ${home} instead of copying it.` },

@@ -6,9 +6,7 @@ import { Router, type IRouter } from 'express';
 import {
   createChannelGroupSchema,
   updateChannelGroupSchema,
-  addChannelGroupMemberSchema,
   channelGroupUuidParamSchema,
-  channelGroupMemberParamSchema,
 } from '@galvaniflow/core-models';
 import { ChannelGroupController } from '../controllers/channel-group.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
@@ -60,18 +58,7 @@ router.delete(
   ChannelGroupController.delete,
 );
 
-router.post(
-  '/:id/members',
-  requirePermission('channels:write'),
-  validate({ params: channelGroupUuidParamSchema, body: addChannelGroupMemberSchema }),
-  ChannelGroupController.addMember,
-);
-
-router.delete(
-  '/:id/members/:channelId',
-  requirePermission('channels:write'),
-  validate({ params: channelGroupMemberParamSchema }),
-  ChannelGroupController.removeMember,
-);
+// A channel's memberships change through PUT /channels/:id/groups, in one
+// transaction (#223).
 
 export default router;

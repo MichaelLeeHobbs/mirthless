@@ -23,7 +23,8 @@ const sessionRow = { id: 'sess-1', userId: 'user-1', expiresAt: new Date(Date.no
 const selectResponses: unknown[][] = [];
 const mockDb = {
   select: vi.fn(() => ({ from: () => ({ where: () => Promise.resolve(selectResponses.shift() ?? []) }) })),
-  delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+  // The refresh consumes its session with DELETE ... RETURNING.
+  delete: vi.fn(() => ({ where: () => ({ returning: vi.fn().mockResolvedValue([sessionRow]) }) })),
   insert: vi.fn(() => ({
     values: (values: Record<string, unknown>) => {
       insertedSessions.push(values);
@@ -47,7 +48,7 @@ function expectAbout(actualMs: number, expectedMs: number): void {
 
 describe('session lifetime from JWT_REFRESH_EXPIRES_IN', () => {
   it('uses the configured 30 days for the JWT exp, the session row and the cookie', async () => {
-    selectResponses.push([sessionRow], [{ id: 'user-1', enabled: true }]);
+    selectResponses.push([{ id: 'user-1', enabled: true }]);
 
     const result = await AuthService.refreshSession(signRefreshToken({ userId: 'user-1' }));
     expect(result.ok).toBe(true);

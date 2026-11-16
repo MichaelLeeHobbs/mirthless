@@ -6,6 +6,7 @@
 
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
+import { redirectMessage } from '../redirect.js';
 
 // ----- Auth Types -----
 
@@ -94,10 +95,20 @@ export class FhirDispatcher implements DestinationConnectorRuntime {
         headers,
         body: message.content,
         signal: combinedSignal,
+        // Never follow a redirect: fetch would re-send the POST as a body-less
+        // GET, the server would answer 200, and nothing would be created (#163).
+        redirect: 'manual',
       });
 
       const responseBody = await response.text();
 
+      if (response.status >= 300 && response.status < 400) {
+        return {
+          status: 'ERROR' as const,
+          content: responseBody,
+          errorMessage: redirectMessage(response.status, response.headers.get('location')),
+        };
+      }
       if (response.ok) {
         return { status: 'SENT' as const, content: responseBody };
       }

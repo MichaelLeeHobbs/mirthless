@@ -51,3 +51,40 @@ describe('checkScriptTypes', () => {
     expect(await errors('getPatientName(rawData);', [broken])).toEqual([]);
   });
 });
+
+// #206: TypeScript does not check the expression of a `return` outside a
+// function, so the check runs the script as the body of the function the engine
+// runs it in.
+describe('checkScriptTypes on a top-level return', () => {
+  const NO_MESSAGE = { message: false } as const;
+  const noMessageErrors = async (script: string): Promise<string[]> => {
+    const result = await checkScriptTypes(script, NO_MESSAGE, []);
+    if (!result.ok) throw result.error;
+    return result.value.map((e) => `${String(e.line)}:${String(e.column)} ${e.message}`);
+  };
+
+  it.each([
+    ["msg.get('MSH.10');", ["1:1 Cannot find name 'msg'."]],
+    ["return [msg.get('MSH.10')];", ["1:9 Cannot find name 'msg'."]],
+    ["const x = [msg.get('MSH.10')];\nreturn x;", ["1:12 Cannot find name 'msg'."]],
+  ])('reports the error in %j', async (script, expected) => {
+    expect(await noMessageErrors(script)).toEqual(expected);
+  });
+
+  it('reports a type error in a returned expression on the line the user wrote', async () => {
+    expect(await errors("logger.info('x');\nif (rawData === '') {\n  return msg.gett('PID.3');\n}\nreturn true;")).toEqual([
+      "3:14 Property 'gett' does not exist on type 'Hl7MessageProxy'. Did you mean 'get'?",
+    ]);
+  });
+
+  it('still allows a top-level return and await, and keeps declarations local to the script', async () => {
+    expect(await noMessageErrors("const r = await routeMessage('Archive', 'x');\nfunction f(): number { return 1; }\nreturn f() > 0 && r.filtered;")).toEqual([]);
+  });
+
+  it('puts an error at the end of the script when a block is left open', async () => {
+    const result = await checkScriptTypes('if (true) {\n  logger.info("x");', NO_MESSAGE, []);
+    if (!result.ok) throw result.error;
+    expect(result.value.length).toBeGreaterThan(0);
+    expect(result.value.every((e) => e.line >= 1 && e.line <= 2)).toBe(true);
+  });
+});

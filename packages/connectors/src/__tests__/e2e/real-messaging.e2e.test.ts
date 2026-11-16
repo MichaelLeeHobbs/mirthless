@@ -14,7 +14,7 @@
 //           routing + per-channel transformation. This is the "silly but good"
 //           cascade from the project vision.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { CONTENT_TYPE } from '@galvaniflow/core-models';
 import {
   TcpMllpReceiver,
@@ -58,6 +58,10 @@ const SRC_PORT_1 = 17681;
 const DEST_PORT_1 = 17682;
 const SRC_PORT_2 = 17683;
 
+// Delivery runs compiled scripts and crosses real sockets, which takes seconds on a
+// loaded machine (#213). The wait stays inside the 30 s test budget so a miss names it.
+const DELIVERY_WAIT = { timeout: 20_000, interval: 10 } as const;
+
 let deployed: DeployedChannel[] = [];
 let captureServer: MllpCaptureServer | null = null;
 
@@ -99,7 +103,7 @@ describe('real message through a single channel (TCP → transform → TCP)', ()
 
     // The destination server received the TRANSFORMED message off the wire.
     // Allow the async dispatch to settle.
-    await viWaitFor(() => captureServer!.received.length === 1);
+    await vi.waitFor(() => { expect(captureServer?.received).toHaveLength(1); }, DELIVERY_WAIT);
     const delivered = captureServer.received[0] ?? '';
     expect(delivered).toContain('REDACTED^^^MRN');
     expect(delivered).toContain('ZZZ|processed');
@@ -176,7 +180,7 @@ describe('cascade across channels (A → B → C), converting the payload at eac
     deployed.push(channelA, channelB, channelC);
 
     await sendMllp(SRC_PORT_2, HL7_ADT);
-    await viWaitFor(() => sink.received.length === 1);
+    await vi.waitFor(() => { expect(sink.received).toHaveLength(1); }, DELIVERY_WAIT);
 
     const finalXml = sink.lastContent() ?? '';
     expect(finalXml).toContain('<name>DOE^JOHN</name>');
@@ -189,14 +193,3 @@ describe('cascade across channels (A → B → C), converting the payload at eac
     expect(channelC.store.messageCount()).toBe(1);
   });
 });
-
-// ----- small polling helper (avoids a fixed sleep for async dispatch) -----
-
-async function viWaitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    if (predicate()) return;
-    if (Date.now() - start > timeoutMs) throw new Error('viWaitFor: condition not met in time');
-    await new Promise((r) => setTimeout(r, 10));
-  }
-}
