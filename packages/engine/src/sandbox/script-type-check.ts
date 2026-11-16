@@ -12,7 +12,7 @@
 import type { Result } from '@galvaniflow/core-util';
 import { tryCatch } from '@galvaniflow/core-util';
 import {
-  IGNORED_SCRIPT_DIAGNOSTICS, SCRIPT_COMPILER_OPTIONS, scriptBodyPosition, scriptDeclarations, templateDeclarations,
+  SCRIPT_COMPILER_OPTIONS, scriptBodyPosition, scriptDeclarations, templateDeclarations,
   wrapScriptBody, type ScriptSurface, type TemplateSource,
 } from '@galvaniflow/core-models';
 
@@ -93,15 +93,14 @@ export async function checkScriptTypes(
     // (transformer steps) must not let one part's syntax error hide another
     // part's type errors, so the "syntax errors only while it does not parse"
     // rule is applied per part by the caller (onlySyntaxWhileBroken).
-    const relevant = (d: import('typescript').Diagnostic): boolean => !IGNORED_SCRIPT_DIAGNOSTICS.includes(d.code);
     const toError = (syntax: boolean) => (d: import('typescript').Diagnostic): ScriptTypeError => {
       const pos = d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start) : { line: 0, character: 0 };
       const at = scriptBodyPosition(script, pos.line + 1, pos.character + 1);
       return { line: at.line, column: at.column, message: ts.flattenDiagnosticMessageText(d.messageText, ' '), code: d.code, syntax };
     };
     return [
-      ...program.getSyntacticDiagnostics(source).filter(relevant).map(toError(true)),
-      ...program.getSemanticDiagnostics(source).filter(relevant).map(toError(false)),
+      ...program.getSyntacticDiagnostics(source).map(toError(true)),
+      ...program.getSemanticDiagnostics(source).map(toError(false)),
     ].sort((a, b) => a.line - b.line || a.column - b.column);
   });
 }

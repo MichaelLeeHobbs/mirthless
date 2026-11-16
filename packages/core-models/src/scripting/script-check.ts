@@ -50,13 +50,3 @@ export function scriptBodyPosition(code: string, line: number, column: number): 
   if (line > lines.length + 1) return { line: lines.length, column: (lines.at(-1) ?? '').length + 1 };
   return { line: line - 1, column };
 }
-
-/**
- * Diagnostics that are not errors in a script. The engine runs every script as
- * the body of an async function, so a top-level `return` and `await` are allowed.
- */
-export const IGNORED_SCRIPT_DIAGNOSTICS: readonly number[] = [
-  1108, // A 'return' statement can only be used within a function body.
-  1375, // 'await' expressions are only allowed at the top level of a file when that file is a module.
-  1378, // Top-level 'await' expressions are only allowed when the 'module' option is set to ...
-];
