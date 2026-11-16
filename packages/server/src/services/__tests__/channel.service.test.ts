@@ -1102,7 +1102,7 @@ describe('ChannelService', () => {
       const result = await ChannelService.update(CHANNEL_ID, {
         revision: 1,
         filters: [{
-          connectorId: null,
+          connectorId: null, metaDataId: null,
           rules: [{
             enabled: true,
             operator: 'AND',
@@ -1153,7 +1153,7 @@ describe('ChannelService', () => {
       const result = await ChannelService.update(CHANNEL_ID, {
         revision: 1,
         transformers: [{
-          connectorId: null,
+          connectorId: null, metaDataId: null,
           inboundDataType: 'HL7V2',
           outboundDataType: 'JSON',
           inboundProperties: {},
@@ -1234,7 +1234,7 @@ describe('ChannelService', () => {
 
       const result = await ChannelService.update(CHANNEL_ID, {
         revision: 1,
-        filters: [{ connectorId: null, rules: [] }],
+        filters: [{ connectorId: null, metaDataId: null, rules: [] }],
       });
 
       expect(result.ok).toBe(true);
@@ -1267,7 +1267,7 @@ describe('ChannelService', () => {
       const result = await ChannelService.update(CHANNEL_ID, {
         revision: 1,
         transformers: [{
-          connectorId: null,
+          connectorId: null, metaDataId: null,
           inboundDataType: 'HL7V2',
           outboundDataType: 'HL7V2',
           inboundProperties: {},

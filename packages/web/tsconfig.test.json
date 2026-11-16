@@ -1,0 +1,10 @@
+{
+  "//": "Type-checks the tests, the Vite configs and the proxy logger, which the build tsconfig.json leaves out (#242). Node types are added for the configs and test/setup; the build check of src keeps the browser-only types. pnpm lint runs it.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "rootDir": "."
+  },
+  "include": ["src/**/*", "test/**/*", "*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

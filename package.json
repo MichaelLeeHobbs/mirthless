@@ -10,8 +10,9 @@
 
     "------------ Build & Quality ------------": "",
     "build": "pnpm run -r build",
-    "lint": "eslint packages e2e --max-warnings 0",
+    "lint": "eslint packages e2e --max-warnings 0 && pnpm typecheck:tests",
     "lint:fix": "eslint packages e2e --max-warnings 0 --fix",
+    "typecheck:tests": "pnpm -r run typecheck:tests && tsc -p e2e/tsconfig.json && tsc -p e2e/scenarios/tsconfig.json",
     "gate": "pnpm build && pnpm lint && pnpm test:coverage && pnpm test:ci",
     "clean": "pnpm run -r clean",
 

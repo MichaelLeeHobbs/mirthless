@@ -17,6 +17,8 @@ export const SERVICE_ERRORS = {
   CONFLICT: 'CONFLICT',
   NOT_SUPPORTED: 'NOT_SUPPORTED',
   CONFIG_ERROR: 'CONFIG_ERROR',
+  /** A dependency is busy or failed for now (the type checker); the same request can succeed later. */
+  UNAVAILABLE: 'UNAVAILABLE',
   INTERNAL: 'INTERNAL',
 } as const;
 

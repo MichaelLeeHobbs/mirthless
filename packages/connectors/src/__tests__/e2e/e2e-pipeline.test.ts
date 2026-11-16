@@ -7,12 +7,11 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
-import type { Result } from '@galvaniflow/core-util';
 import {
-  TcpMllpReceiver,
-  TcpMllpDispatcher,
   wrapMllp,
   MllpParser,
+  type SourceConnectorRuntime,
+  type DestinationConnectorRuntime,
 } from '../../index.js';
 import {
   VmSandboxExecutor,
@@ -21,117 +20,11 @@ import {
   DEFAULT_EXECUTION_OPTIONS,
 } from '@galvaniflow/engine';
 import type {
-  MessageStore,
   PipelineConfig,
   ChannelRuntimeConfig,
 } from '@galvaniflow/engine';
-
-// ----- In-Memory Message Store -----
-
-interface StoredMessage {
-  readonly channelId: string;
-  readonly messageId: number;
-  readonly serverId: string;
-  processed: boolean;
-}
-
-interface StoredConnectorMessage {
-  readonly channelId: string;
-  readonly messageId: number;
-  readonly metaDataId: number;
-  readonly connectorName: string;
-  status: string;
-}
-
-interface StoredContent {
-  readonly channelId: string;
-  readonly messageId: number;
-  readonly metaDataId: number;
-  readonly contentType: number;
-  readonly content: string;
-  readonly dataType: string;
-}
-
-interface StoredStat {
-  readonly channelId: string;
-  readonly metaDataId: number;
-  readonly serverId: string;
-  received: number;
-  filtered: number;
-  sent: number;
-  errored: number;
-}
-
-function ok<T>(value: T): Result<T> {
-  return { ok: true, value, error: null } as Result<T>;
-}
-
-function createInMemoryStore(): MessageStore & {
-  messages: StoredMessage[];
-  connectorMessages: StoredConnectorMessage[];
-  contents: StoredContent[];
-  stats: StoredStat[];
-} {
-  let nextMessageId = 1;
-  const messages: StoredMessage[] = [];
-  const connectorMessages: StoredConnectorMessage[] = [];
-  const contents: StoredContent[] = [];
-  const stats: StoredStat[] = [];
-
-  return {
-    messages,
-    connectorMessages,
-    contents,
-    stats,
-
-    createMessage: async (channelId, serverId) => {
-      const messageId = nextMessageId++;
-      messages.push({ channelId, messageId, serverId, processed: false });
-      return ok({ messageId });
-    },
-    createConnectorMessage: async (channelId, messageId, metaDataId, connectorName, status) => {
-      connectorMessages.push({ channelId, messageId, metaDataId, connectorName, status });
-      return ok(undefined);
-    },
-    updateConnectorMessageStatus: async (channelId, messageId, metaDataId, status) => {
-      const cm = connectorMessages.find(
-        (m) => m.channelId === channelId && m.messageId === messageId && m.metaDataId === metaDataId,
-      );
-      if (cm) (cm as { status: string }).status = status;
-      return ok(undefined);
-    },
-    storeContent: async (channelId, messageId, metaDataId, contentType, content, dataType) => {
-      contents.push({ channelId, messageId, metaDataId, contentType, content, dataType });
-      return ok(undefined);
-    },
-    markProcessed: async (channelId, messageId) => {
-      const msg = messages.find((m) => m.channelId === channelId && m.messageId === messageId);
-      if (msg) (msg as { processed: boolean }).processed = true;
-      return ok(undefined);
-    },
-    enqueue: async () => ok(undefined),
-    loadContent: async (channelId, messageId, metaDataId, contentType) => {
-      const entry = contents.find(
-        (c) => c.channelId === channelId && c.messageId === messageId
-          && c.metaDataId === metaDataId && c.contentType === contentType,
-      );
-      return ok(entry?.content ?? null);
-    },
-    incrementStats: async (channelId, metaDataId, serverId, field) => {
-      let stat = stats.find(
-        (s) => s.channelId === channelId && s.metaDataId === metaDataId && s.serverId === serverId,
-      );
-      if (!stat) {
-        stat = { channelId, metaDataId, serverId, received: 0, filtered: 0, sent: 0, errored: 0 };
-        stats.push(stat);
-      }
-      (stat as Record<string, number>)[field]++;
-      return ok(undefined);
-    },
-    dequeue: async () => ok([]),
-    release: async () => ok(undefined),
-  };
-}
+import { createInMemoryStore, toDispatchResult } from './support/e2e-harness.js';
+import { mllpSource, mllpDestination, sendMllp } from './support/tcp-helpers.js';
 
 // ----- Test Constants -----
 
@@ -149,7 +42,7 @@ const HL7_ADT = [
 
 // ----- Tests -----
 
-let receiver: TcpMllpReceiver | null = null;
+let receiver: SourceConnectorRuntime | null = null;
 let destServer: net.Server | null = null;
 let runtime: ChannelRuntime | null = null;
 
@@ -198,19 +91,10 @@ describe('E2E Pipeline', () => {
     const store = createInMemoryStore();
 
     // Source connector
-    receiver = new TcpMllpReceiver({
-      host: '127.0.0.1',
-      port: SOURCE_PORT,
-      maxConnections: 10,
-    });
+    receiver = mllpSource(SOURCE_PORT, { maxConnections: 10 });
 
     // Destination connector
-    const dispatcher = new TcpMllpDispatcher({
-      host: '127.0.0.1',
-      port: DEST_PORT,
-      maxConnections: 5,
-      responseTimeout: 5_000,
-    });
+    const dispatcher = mllpDestination(DEST_PORT, { maxConnections: 5, responseTimeout: 5_000 });
 
     // Pipeline config — passthrough (no filters, no transformers)
     const pipelineConfig: PipelineConfig = {
@@ -245,17 +129,17 @@ describe('E2E Pipeline', () => {
     // ---- 3. Set up runtime ----
     runtime = new ChannelRuntime();
 
-    const destinations = new Map<number, TcpMllpDispatcher>();
+    const destinations = new Map<number, DestinationConnectorRuntime>();
     destinations.set(1, dispatcher);
 
     const runtimeConfig: ChannelRuntimeConfig = {
       channelId: CHANNEL_ID,
       source: receiver,
       destinations,
-      onMessage: async (raw) => processor.processMessage(
+      onMessage: async (raw) => toDispatchResult(await processor.processMessage(
         { rawContent: raw.content, sourceMap: raw.sourceMap },
         AbortSignal.timeout(10_000),
-      ),
+      )),
     };
 
     // ---- 4. Deploy and start ----
@@ -266,26 +150,7 @@ describe('E2E Pipeline', () => {
     expect(startResult.ok).toBe(true);
 
     // ---- 5. Send HL7 message via TCP/MLLP ----
-    const response = await new Promise<string>((resolve, reject) => {
-      const client = net.createConnection({ host: '127.0.0.1', port: SOURCE_PORT }, () => {
-        client.write(wrapMllp(HL7_ADT));
-      });
-
-      const parser = new MllpParser();
-      client.on('data', (chunk: Buffer) => {
-        const msgs = parser.parse(chunk);
-        if (msgs.length > 0) {
-          client.end();
-          resolve(msgs[0]!);
-        }
-      });
-
-      client.on('error', reject);
-      setTimeout(() => {
-        client.destroy();
-        reject(new Error('Timeout waiting for response'));
-      }, 10_000);
-    });
+    const response = await sendMllp(SOURCE_PORT, HL7_ADT);
 
     // ---- 6. Verify results ----
 

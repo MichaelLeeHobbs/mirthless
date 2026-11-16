@@ -57,10 +57,13 @@ pnpm dev                    # starts server (:3000) + web UI (:5173)
 
 The production stack (Postgres + server + nginx-served web) is defined in
 [`docker/docker-compose.prod.yml`](docker/docker-compose.prod.yml). The server image runs
-database migrations and an idempotent seed on start before booting.
+database migrations and an idempotent seed on start before booting. Migrations run as the
+Postgres superuser (`POSTGRES_PASSWORD`); the server itself connects as `galvaniflow_app`
+(`POSTGRES_APP_PASSWORD`), a role that owns no application tables. See
+[Database roles](docs/ops/upgrade.md#database-roles).
 
 ```bash
-cp .env.production.example .env   # set POSTGRES_PASSWORD, JWT_SECRET, etc.
+cp .env.production.example .env   # set POSTGRES_PASSWORD, POSTGRES_APP_PASSWORD, JWT_SECRET, etc.
 docker compose -f docker/docker-compose.prod.yml up -d --build
 ```
 

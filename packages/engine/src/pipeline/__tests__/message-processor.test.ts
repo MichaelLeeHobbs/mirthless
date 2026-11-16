@@ -2,7 +2,7 @@
 // Message Processor Tests
 // ===========================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Result } from '@galvaniflow/core-util';
 import { delimitedOptionsSchema } from '@galvaniflow/core-models';
 import { MessageProcessor, groupDestinationChains } from '../message-processor.js';

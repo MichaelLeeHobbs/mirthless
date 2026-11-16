@@ -27,6 +27,26 @@ import type { SelectChangeEvent } from '@mui/material/Select';
 import type { ServerRestoreResult } from '@galvaniflow/core-models';
 import { useBackup, useRestore } from '../../hooks/use-backup.js';
 
+/** Every error and warning the restore reported, under its section. */
+function RestoreErrors({ sections }: { readonly sections: ServerRestoreResult['sections'] }): ReactNode {
+  const withErrors = sections.filter((s) => s.errors.length > 0);
+  if (withErrors.length === 0) return null;
+  return (
+    <Box sx={{ mt: 2 }}>
+      {withErrors.map((s) => (
+        <Box key={s.section} sx={{ mb: 1.5 }}>
+          <Typography variant="subtitle2">{s.section}</Typography>
+          <Box component="ul" sx={{ m: 0, pl: 3 }}>
+            {s.errors.map((message, i) => (
+              <Typography component="li" variant="body2" key={i} sx={{ wordBreak: 'break-word' }}>{message}</Typography>
+            ))}
+          </Box>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 export function BackupRestoreSection(): ReactNode {
   const backupMutation = useBackup();
   const restoreMutation = useRestore();
@@ -132,9 +152,12 @@ export function BackupRestoreSection(): ReactNode {
 
       {restoreResult && (
         <Box sx={{ mt: 2 }}>
-          <Alert severity="success" sx={{ mb: 2 }}>
-            Restore complete: {restoreResult.totalCreated} created, {restoreResult.totalUpdated} updated,
+          {/* A restore with errors left something out or changed it (#228): say so, and say what. */}
+          <Alert severity={restoreResult.totalErrors > 0 ? 'warning' : 'success'} sx={{ mb: 2 }}>
+            {restoreResult.totalErrors > 0 ? 'Restore partly done' : 'Restore complete'}:
+            {' '}{restoreResult.totalCreated} created, {restoreResult.totalUpdated} updated,
             {' '}{restoreResult.totalSkipped} skipped, {restoreResult.totalErrors} errors
+            {restoreResult.totalErrors > 0 ? '. Each item listed below was not restored, or not as it was in the backup.' : null}
           </Alert>
           <Table size="small">
             <TableHead>
@@ -158,6 +181,7 @@ export function BackupRestoreSection(): ReactNode {
               ))}
             </TableBody>
           </Table>
+          <RestoreErrors sections={restoreResult.sections} />
         </Box>
       )}
 

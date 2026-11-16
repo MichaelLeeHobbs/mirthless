@@ -57,7 +57,7 @@ type PooledDataSource = import('../data-source-pool-manager.js').PooledDataSourc
 function makeSource(overrides?: Partial<PooledDataSource>): PooledDataSource {
   return {
     id: 'ds-1', host: 'db.internal', port: 5432, database: 'reports', user: 'ro', password: 'pw',
-    readOnly: true, maxConnections: 5, statementTimeoutMs: 30_000, maxRows: 100, ...overrides,
+    readOnly: true, tls: false, maxConnections: 5, statementTimeoutMs: 30_000, maxRows: 100, ...overrides,
   };
 }
 

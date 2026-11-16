@@ -13,7 +13,7 @@ import {
 import { wrapMllp, MllpParser } from '../../transmission/mllp-mode.js';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import { DISPATCH_STATUS } from '../../base.js';
-import type { Result } from '@galvaniflow/core-util';
+import { stderr, type Result } from '@galvaniflow/core-util';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 
 // ----- Helpers -----
@@ -53,7 +53,7 @@ function makeLogger(): {
 
 /** Dispatcher that returns a failed Result (processing error → AE). */
 function failingDispatcher(): (raw: RawMessage) => Promise<Result<DispatchResult>> {
-  return async () => ({ ok: false as const, value: null, error: new Error('pipeline boom') });
+  return async () => ({ ok: false as const, value: null, error: stderr('pipeline boom') });
 }
 
 function makeDispatcher(

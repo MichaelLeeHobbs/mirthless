@@ -7,9 +7,9 @@
 // against ship in packages/engine/sandbox-globals.d.ts.
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { TcpMllpReceiver, clearChannelRegistry } from '../../index.js';
+import { clearChannelRegistry } from '../../index.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
-import { sendMllp } from './support/tcp-helpers.js';
+import { mllpSource, sendMllp } from './support/tcp-helpers.js';
 
 const HL7 = [
   'MSH|^~\\&|S|F|R|F|20260101||ADT^A01|1|P|2.5',
@@ -29,7 +29,7 @@ async function runScriptChannel(channelId: string, port: number, transformer: st
   const channel = await deployChannel({
     channelId,
     dataType: 'RAW',
-    source: new TcpMllpReceiver({ host: '127.0.0.1', port, maxConnections: 10 }),
+    source: mllpSource(port, { maxConnections: 10 }),
     transformer,
     destinations: [{ metaDataId: 1, name: 'sink', connector: sink }],
   });

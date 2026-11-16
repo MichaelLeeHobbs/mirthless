@@ -15,6 +15,7 @@ import AddIcon from '@mui/icons-material/Add';
 import type { FilterFormValues, FilterRuleFormValues } from './types.js';
 import { createDefaultFilterRule } from './types.js';
 import { FilterRuleEditor } from './FilterRuleEditor.js';
+import { useListKeys } from '../../../hooks/use-list-keys.js';
 
 interface SourceFilterSectionProps {
   readonly filter: FilterFormValues;
@@ -31,9 +32,12 @@ export function SourceFilterSection({ filter, onChange }: SourceFilterSectionPro
     onChange({ rules: updated });
   }, [filter, onChange]);
 
+  const { keys, remove: removeKey, swap: swapKeys } = useListKeys(filter.rules.length);
+
   const handleRemove = useCallback((index: number): void => {
+    removeKey(index);
     onChange({ rules: filter.rules.filter((_, i) => i !== index) });
-  }, [filter, onChange]);
+  }, [filter, onChange, removeKey]);
 
   const handleMoveUp = useCallback((index: number): void => {
     if (index <= 0) return;
@@ -41,8 +45,9 @@ export function SourceFilterSection({ filter, onChange }: SourceFilterSectionPro
     const temp = updated[index - 1]!;
     updated[index - 1] = updated[index]!;
     updated[index] = temp;
+    swapKeys(index - 1, index);
     onChange({ rules: updated });
-  }, [filter, onChange]);
+  }, [filter, onChange, swapKeys]);
 
   const handleMoveDown = useCallback((index: number): void => {
     if (index >= filter.rules.length - 1) return;
@@ -50,8 +55,9 @@ export function SourceFilterSection({ filter, onChange }: SourceFilterSectionPro
     const temp = updated[index + 1]!;
     updated[index + 1] = updated[index]!;
     updated[index] = temp;
+    swapKeys(index, index + 1);
     onChange({ rules: updated });
-  }, [filter, onChange]);
+  }, [filter, onChange, swapKeys]);
 
   return (
     <Accordion disableGutters>
@@ -79,7 +85,7 @@ export function SourceFilterSection({ filter, onChange }: SourceFilterSectionPro
           <Box sx={{ mb: 2 }}>
             {filter.rules.map((rule, index) => (
               <FilterRuleEditor
-                key={index}
+                key={keys[index]}
                 rule={rule}
                 index={index}
                 total={filter.rules.length}

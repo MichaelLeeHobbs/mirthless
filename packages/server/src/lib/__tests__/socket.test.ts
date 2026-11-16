@@ -2,7 +2,7 @@
 // Socket.IO Auth & Room Management Tests
 // ===========================================
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import jwt from 'jsonwebtoken';
 
 // ----- Hoisted Mocks -----
@@ -227,14 +227,14 @@ describe('Socket.IO Auth & Room Management', () => {
 
     function connectedSocket(rooms: string[]): {
       id: string; data: Record<string, unknown>; rooms: Set<string>;
-      leave: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn>;
+      leave: Mock<(room: string) => unknown>; disconnect: Mock<(close?: boolean) => unknown>;
     } {
       return {
         id: 'sock-1',
         data: { user: { userId: 'user-1', sessionId: 's1', type: 'access', permissions: permissionNamesForRole('admin') } },
         rooms: new Set(['sock-1', ...rooms]),
-        leave: vi.fn(),
-        disconnect: vi.fn(),
+        leave: vi.fn<(room: string) => unknown>(),
+        disconnect: vi.fn<(close?: boolean) => unknown>(),
       };
     }
 

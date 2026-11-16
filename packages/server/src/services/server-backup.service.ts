@@ -26,6 +26,7 @@ import { GlobalScriptService } from './global-script.service.js';
 import { UserService } from './user.service.js';
 import { SettingsService } from './settings.service.js';
 import { REDACTED } from '../lib/secret-redaction.js';
+import { isServiceError } from '../lib/service-error.js';
 import { ResourceService } from './resource.service.js';
 import { ChannelGroupService } from './channel-group.service.js';
 import { TagService } from './tag.service.js';
@@ -497,9 +498,12 @@ const ALL_JAVASCRIPT = { deploy: 'JAVASCRIPT', undeploy: 'JAVASCRIPT', preproces
 const GLOBAL_SCRIPT_KEYS = ['deploy', 'undeploy', 'preprocessor', 'postprocessor'] as const;
 
 /**
- * Restore one global script. A TypeScript script the save refuses (a backup
- * can hold one with type errors, saved before saves were type-checked) is
- * restored as JavaScript, which the engine runs the same, and reported.
+ * Restore one global script. A TypeScript script the save refuses as invalid
+ * (a backup can hold one with type errors, saved before saves were
+ * type-checked) is restored as JavaScript, which the engine runs the same, and
+ * reported. Any other refusal (the type checker timed out, crashed or was busy)
+ * says nothing about the script, so it is not restored and is reported: falling
+ * back would drop the type check of a script that may have no errors (#228).
  * Returns the error to report, or null.
  */
 async function restoreGlobalScript(
@@ -507,7 +511,7 @@ async function restoreGlobalScript(
 ): Promise<{ readonly restored: boolean; readonly error: string | null }> {
   const first = await GlobalScriptService.update({ [key]: script, languages: { [key]: language } });
   if (first.ok) return { restored: true, error: null };
-  if (language === 'TYPESCRIPT') {
+  if (language === 'TYPESCRIPT' && isServiceError(first.error, 'INVALID_INPUT')) {
     const asJs = await GlobalScriptService.update({ [key]: script, languages: { [key]: 'JAVASCRIPT' } });
     if (asJs.ok) {
       return { restored: true, error: `The global ${key} script was restored as JavaScript because as TypeScript it was refused (type errors): ${first.error.message}. Fix it and switch it back to TypeScript.` };

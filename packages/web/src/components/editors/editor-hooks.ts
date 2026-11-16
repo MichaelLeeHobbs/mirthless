@@ -121,16 +121,37 @@ function sameText(a: string, b: string): boolean {
   return a.replace(/\r\n?/g, '\n') === b.replace(/\r\n?/g, '\n');
 }
 
+/** Editors whose text the host is replacing right now. */
+const replacing = new WeakSet<CodeEditor>();
+
 /**
  * Put text the host gave into the editor when it is not what the editor
  * holds. Replacing the model's value clears its undo history, so undo cannot
  * bring back the text of another list item or tab the editor showed before
- * (#183). Returns whether it replaced the text.
+ * (#183). Returns whether it replaced the text. Text equal to the editor's
+ * is not replaced, so a host that shows several documents in turn gives each
+ * its own editor (a React key per tab, template or list item): otherwise two
+ * documents with the same text would share one undo history (#228).
  */
 export function replaceExternalValue(editor: CodeEditor, value: string): boolean {
   if (sameText(editor.getValue(), value)) return false;
-  editor.getModel()?.setValue(value);
+  replacing.add(editor);
+  try {
+    editor.getModel()?.setValue(value);
+  } finally {
+    replacing.delete(editor);
+  }
   return true;
+}
+
+/**
+ * Whether a content change is the host's own text going in, not an edit.
+ * Monaco reports `setValue` as a content change, and @monaco-editor/react
+ * passes it to `onChange`, so without this a host saw its own text come back
+ * as an edit: switching Global Scripts tabs marked the page unsaved (#228).
+ */
+export function isExternalReplace(editor: CodeEditor | null): boolean {
+  return editor !== null && replacing.has(editor);
 }
 
 /**
