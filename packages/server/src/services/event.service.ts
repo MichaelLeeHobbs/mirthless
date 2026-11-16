@@ -189,13 +189,17 @@ export class EventService {
     });
   }
 
-  /** Purge events older than N days. Admin-only. */
+  /**
+   * Purge events at least N days old (N >= 1). Admin-only. The server's database
+   * role cannot delete events itself (D-307), so this calls the owner function
+   * `purge_events`, which refuses N below 1.
+   */
   static async purge(olderThanDays: number, actor?: { userId?: string | null; ipAddress?: string | null }): Promise<Result<{ deleted: number }>> {
     return tryCatch(async () => {
-      const result = await db
-        .delete(events)
-        .where(lte(events.createdAt, sql`now() - ${String(olderThanDays)} * interval '1 day'`))
-        .returning({ id: events.id });
+      const purged = await db.execute<{ deleted: string | number }>(
+        sql`SELECT public.purge_events(${olderThanDays}::integer) AS deleted`,
+      );
+      const deleted = Number(purged.rows[0]?.deleted ?? 0);
 
       // Record the purge itself so erasing the audit trail is not invisible. This
       // new event is created after the delete, so it survives the cutoff.
@@ -203,10 +207,10 @@ export class EventService {
         level: 'WARN', name: 'EVENTS_PURGED', outcome: 'SUCCESS',
         userId: actor?.userId ?? null, channelId: null, serverId: null,
         ipAddress: actor?.ipAddress ?? null,
-        attributes: { olderThanDays, deleted: result.length },
+        attributes: { olderThanDays, deleted },
       });
 
-      return { deleted: result.length };
+      return { deleted };
     });
   }
 }

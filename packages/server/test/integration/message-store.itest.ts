@@ -7,7 +7,9 @@
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
+import {
+  deleteTestChannel, describeIntegration, insertTestChannel, loadServerModules, unwrap, type ServerModules,
+} from './_setup.js';
 
 describeIntegration('Message store statements (real Postgres)', () => {
   let mods: ServerModules;
@@ -15,11 +17,13 @@ describeIntegration('Message store statements (real Postgres)', () => {
 
   beforeAll(async () => {
     mods = await loadServerModules();
+    await insertTestChannel(mods, channelId);
     unwrap(await mods.PartitionManagerService.createPartitions(channelId));
   });
 
   afterAll(async () => {
     await mods?.PartitionManagerService.dropPartitions(channelId);
+    if (mods) await deleteTestChannel(mods, channelId);
     await mods?.pool.end();
   });
 

@@ -45,29 +45,23 @@ function partitionName(parentTable: string, sanitizedId: string): string {
 
 export class PartitionManagerService {
   /**
-   * Create partitions for all message-related tables for a given channel.
-   * Uses CREATE TABLE IF NOT EXISTS with PARTITION OF ... FOR VALUES IN.
+   * Create partitions for all message-related tables for a given channel, if missing.
+   * Only the tables' owner may add a partition, and the server's role owns no
+   * tables (D-307), so this calls the owner function `create_channel_partitions`
+   * (migration 0016), which creates the same six `<table>_p_<id>` partitions.
    */
   static async createPartitions(channelId: string): Promise<Result<void>> {
     return tryCatch(async () => {
-      const sanitizedId = sanitizeChannelId(channelId);
-
-      for (const parentTable of PARTITIONED_TABLES) {
-        const partition = partitionName(parentTable, sanitizedId);
-        await db.execute(
-          sql.raw(
-            `CREATE TABLE IF NOT EXISTS "${partition}" PARTITION OF "${parentTable}" FOR VALUES IN ('${channelId}')`
-          )
-        );
-      }
-
+      await db.execute(sql`SELECT public.create_channel_partitions(${channelId}::uuid)`);
       logger.debug({ channelId }, 'Created partitions for channel');
     });
   }
 
   /**
    * Drop partitions for all message-related tables for a given channel.
-   * Uses DROP TABLE IF EXISTS ... CASCADE.
+   * Uses DROP TABLE IF EXISTS ... CASCADE. Needs the tables' owner: the
+   * production server's role cannot drop a table (D-307), and no server code
+   * calls this; the integration tests use it to clean up.
    */
   static async dropPartitions(channelId: string): Promise<Result<void>> {
     return tryCatch(async () => {
