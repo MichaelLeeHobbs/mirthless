@@ -5,7 +5,7 @@ describe('registry databaseTarget()', () => {
   it('is PostgreSQL on 5432 by default, MySQL on 3306, and keeps a port that is set', () => {
     expect(databaseTarget({})).toEqual({ vendor: 'postgresql', port: 5432 });
     expect(databaseTarget({ vendor: 'mysql' })).toEqual({ vendor: 'mysql', port: 3306 });
-    expect(databaseTarget({ vendor: 'mysql', port: '3307' })).toEqual({ vendor: 'mysql', port: 3307 });
+    expect(databaseTarget({ vendor: 'mysql', port: 3307 })).toEqual({ vendor: 'mysql', port: 3307 });
   });
 });
 

@@ -10,8 +10,8 @@
 
     "------------ Build & Quality ------------": "",
     "build": "pnpm run -r build",
-    "lint": "eslint packages --max-warnings 0",
-    "lint:fix": "eslint packages --max-warnings 0 --fix",
+    "lint": "eslint packages e2e --max-warnings 0",
+    "lint:fix": "eslint packages e2e --max-warnings 0 --fix",
     "gate": "pnpm build && pnpm lint && pnpm test:coverage && pnpm test:ci",
     "clean": "pnpm run -r clean",
 

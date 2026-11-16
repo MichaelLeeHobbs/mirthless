@@ -51,8 +51,8 @@ export function EventFilterBar({ filters, onFilterChange }: EventFilterBarProps)
   return (
     <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
       <FormControl size="small" sx={{ minWidth: 120 }}>
-        <InputLabel>Level</InputLabel>
-        <Select value={filters.level} label="Level" onChange={handleLevelChange}>
+        <InputLabel id="event-filter-level-label">Level</InputLabel>
+        <Select labelId="event-filter-level-label" value={filters.level} label="Level" onChange={handleLevelChange}>
           <MenuItem value="">All</MenuItem>
           {EVENT_LEVELS.filter((l) => l !== '').map((level) => (
             <MenuItem key={level} value={level}>{humanize(level)}</MenuItem>
@@ -61,8 +61,8 @@ export function EventFilterBar({ filters, onFilterChange }: EventFilterBarProps)
       </FormControl>
 
       <FormControl size="small" sx={{ minWidth: 200 }}>
-        <InputLabel>Event Name</InputLabel>
-        <Select value={filters.name} label="Event Name" onChange={handleNameChange}>
+        <InputLabel id="event-filter-event-name-label">Event Name</InputLabel>
+        <Select labelId="event-filter-event-name-label" value={filters.name} label="Event Name" onChange={handleNameChange}>
           <MenuItem value="">All</MenuItem>
           {EVENT_NAMES.filter((n) => n !== '').map((name) => (
             <MenuItem key={name} value={name}>{humanize(name)}</MenuItem>
@@ -71,8 +71,8 @@ export function EventFilterBar({ filters, onFilterChange }: EventFilterBarProps)
       </FormControl>
 
       <FormControl size="small" sx={{ minWidth: 120 }}>
-        <InputLabel>Outcome</InputLabel>
-        <Select value={filters.outcome} label="Outcome" onChange={handleOutcomeChange}>
+        <InputLabel id="event-filter-outcome-label">Outcome</InputLabel>
+        <Select labelId="event-filter-outcome-label" value={filters.outcome} label="Outcome" onChange={handleOutcomeChange}>
           <MenuItem value="">All</MenuItem>
           {EVENT_OUTCOMES.filter((o) => o !== '').map((outcome) => (
             <MenuItem key={outcome} value={outcome}>{humanize(outcome)}</MenuItem>

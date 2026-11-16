@@ -694,7 +694,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
 
   it('maps a Database Writer and Reader JDBC URL, credentials, queries and update mode', () => {
     const writer = '<properties class="com.mirth.connect.connectors.jdbc.DatabaseDispatcherProperties" version="4.5.0"><driver>org.postgresql.Driver</driver><url>jdbc:postgresql://db.example.org:5433/partner?ssl=true</url><username>mirth</username><password>0123</password><query>INSERT INTO t (a) VALUES (${mrn})</query><useScript>false</useScript></properties>';
-    const reader = '<properties class="com.mirth.connect.connectors.jdbc.DatabaseReceiverProperties" version="4.5.0"><driver>org.postgresql.Driver</driver><url>jdbc:postgresql://db.example.org/orders</url><username>mirth</username><password>pw</password><select>SELECT id FROM o</select><update>UPDATE o SET s = 1 WHERE id = ${id}</update><updateMode>3</updateMode></properties><transformer';
+    const reader = '<properties class="com.mirth.connect.connectors.jdbc.DatabaseReceiverProperties" version="4.5.0"><pluginProperties/><pollConnectorProperties version="4.5.0"><pollingType>INTERVAL</pollingType><pollOnStart>false</pollOnStart><pollingFrequency>2000</pollingFrequency></pollConnectorProperties><sourceConnectorProperties version="4.5.0"><responseVariable>None</responseVariable><processBatch>true</processBatch></sourceConnectorProperties><driver>org.postgresql.Driver</driver><url>jdbc:postgresql://db.example.org/orders</url><username>mirth</username><password>pw</password><select>SELECT id FROM o</select><update>UPDATE o SET s = 1 WHERE id = ${id}</update><useScript>false</useScript><aggregateResults>false</aggregateResults><cacheResults>true</cacheResults><keepConnectionOpen>true</keepConnectionOpen><updateMode>3</updateMode><retryCount>3</retryCount><retryInterval>10000</retryInterval><fetchSize>1000</fetchSize><encoding>DEFAULT_ENCODING</encoding></properties><transformer';
     const channel = convert4x((x) => x
       .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer)
       .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader));
@@ -705,7 +705,11 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(channel.sourceConnectorProperties).toEqual({
       vendor: 'postgresql', host: 'db.example.org', database: 'orders', username: 'mirth', password: 'pw',
       selectQuery: 'SELECT id FROM o', updateQuery: 'UPDATE o SET s = 1 WHERE id = ${id}', updateMode: 'ON_SUCCESS',
+      pollingIntervalMs: 2000, processBatch: true,
     });
+    // Every key the importer writes is one the DATABASE schemas accept, so the channel deploys as imported.
+    expect(validateConnectorProperties('DATABASE', 'destination', channel.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
+    expect(validateConnectorProperties('DATABASE', 'source', channel.sourceConnectorProperties)).toMatchObject({ ok: true });
     // The reader's rows are JSON objects here, so the channel and its source transformer read JSON.
     expect(channel.inboundDataType).toBe('JSON');
     expect(channel.transformers.find((t) => (t.metaDataId ?? null) === null)?.inboundDataType).toBe('JSON');

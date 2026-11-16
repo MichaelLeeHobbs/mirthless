@@ -74,6 +74,7 @@ An HTTP channel now fails to deploy when it has:
 - a `method` other than GET, POST, PUT, PATCH or DELETE.
 - a `responseStatusCode` or `errorStatusCode` outside 100 to 599, a `maxBodyBytes` below 1, or a destination `responseTimeout` below 1. Before, a value that wasn't a number was replaced by the default without a word, and a `responseTimeout` of 0 failed every send at once (the editor wrongly said 0 meant no timeout).
 - an `auth` whose `type` is not `BASIC` or `TOKEN`, header, `parameters` or `basicAuth` values that are not text, or a `scheme` other than `HTTP` or `HTTPS`.
+- an `auth` guard missing a credential: `BASIC` without a non-empty `username` and `password`, or `TOKEN` without a non-empty `token`. Before, a `BASIC` guard with no username or password accepted a request with empty ones, so the channel was open to anyone who could reach the port (#207). Set the credentials, or remove `auth` if the channel was meant to be open.
 - a `tls` that is not an object, `false` or `null`, or a key inside it the table doesn't list. That includes a destination `tls` with inline PEM pasted into `ca`, `cert` or `key`; pick the certificates from the store instead (`tls.caCertId`, `tls.clientCertId`).
 
 Before upgrading, list the keys the schema would refuse:
@@ -86,6 +87,33 @@ WHERE source_connector_type = 'HTTP'
 SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
 WHERE connector_type = 'HTTP'
   AND k NOT IN ('url','method','headers','parameters','basicAuth','contentType','responseTimeout','scheme','tls','template','charset');
+```
+
+**DATABASE** is the third. Channels saved by this app's own editor keep deploying: the Database Reader and Writer forms have saved the same keys since 2026-03, plus `tls` since 2026-11, so there is nothing to drop or map. Nothing in the database is rewritten.
+
+Two things now deploy that didn't. `port` is no longer required: with none set, the connector uses the vendor's port (5432 for PostgreSQL, 3306 for MySQL), as the registry always did. A Database Reader imported from Mirth with no port in its JDBC URL used to fail its deploy with `port: expected number`; it now deploys. A port written as digits (`"5432"`, e.g. a resolved configuration reference) is also accepted.
+
+A DATABASE channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. a misspelling such as `pollingInterval`. Before, such a key was ignored. Channels imported from Mirth before 2026-11-12 carry `url` and `driver` (and a reader's SELECT under `query`); they never deployed, because they had no `host`. Import them again.
+- a `vendor` other than `postgresql` or `mysql`. That refused before too, with the same message.
+- an empty or blank `host`, `database`, `selectQuery` or `query`, or a `port` outside 1 to 65535.
+- an `updateMode` other than `NEVER`, `ALWAYS` or `ON_SUCCESS`, or `ALWAYS`/`ON_SUCCESS` with an empty `updateQuery`. Before, an unknown mode marked every row as `ALWAYS` does; the empty query failed when the connector deployed, without naming the key.
+- a `pollingIntervalMs` that is not a whole number of at least 100. Before, a value that wasn't a number became 5000 without a word.
+- a `tls`, `useTransaction` or `returnGeneratedKeys` that is not `true` or `false`, or a `username` or `password` that is not text. Before, a `tls` of `"true"` connected in plaintext.
+- a `rowFormat` other than `JSON`.
+
+Before upgrading, list the keys the schema would refuse:
+
+```sql
+SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE source_connector_type = 'DATABASE'
+  AND k NOT IN ('vendor','host','port','database','username','password','tls',
+                'selectQuery','updateQuery','updateMode','pollingIntervalMs','rowFormat','processBatch');
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'DATABASE'
+  AND k NOT IN ('vendor','host','port','database','username','password','tls',
+                'query','useTransaction','returnGeneratedKeys','template');
 ```
 
 ## Standard upgrade (Docker)

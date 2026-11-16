@@ -101,7 +101,7 @@ Run what matches the files you touched. `pnpm gate` runs build, lint and every p
 |---|---|---|
 | Anything | `pnpm gate` | |
 | `packages/web` UI | `pnpm shots --only <pages>` with `pnpm dev:web` running | Look at the light, dark and phone images (`create-ui` skill) |
-| A multi-step UI flow | `pnpm test:e2e` (needs Postgres, migrated and seeded) | Add or extend a spec in `e2e/`. Spec files run in parallel against one database, so a spec uses rows with names of its own and puts back any server-wide setting it changes (D-289) |
+| A multi-step UI flow | `pnpm test:e2e` (needs Postgres, migrated and seeded) | Add or extend a spec in `e2e/`. Spec files run in parallel against one database, so a spec uses rows with names of its own and puts back any server-wide setting it changes (D-289). A step waits on a condition (`await expect(...)`), never a fixed sleep or an `if (await x.isVisible())` guard; lint fails both (D-293) |
 | `packages/server/src/db/schema` | `pnpm db:generate`, commit the migration | `pnpm test:integration` against Postgres |
 | SQL, queues, pruning, partitions | `pnpm test:integration` | |
 | Engine pipeline or a connector | The package's tests (`pnpm --filter @galvaniflow/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes. For a connector, `pnpm --filter @galvaniflow/connectors test:integration` with the compose `test` profile up (CI job `connector-integration` runs it, D-273) |
@@ -190,7 +190,7 @@ pnpm dev                              # Run all packages in dev mode
 pnpm dev:server                       # Run only server
 pnpm dev:web                          # Run only web UI
 pnpm build                            # Build all packages
-pnpm lint                             # ESLint across all packages (--max-warnings 0)
+pnpm lint                             # ESLint across all packages and e2e/ (--max-warnings 0)
 pnpm lint:fix                         # ESLint with auto-fix
 pnpm gate                             # build + lint + tests with coverage (what CI runs)
 pnpm test                             # Run all tests
@@ -320,7 +320,7 @@ Start with the type lists in `packages/core-models/src/constants.ts` (`SOURCE_CO
 - Certificate-ID resolvers in `packages/server/src/engine.ts` (`SOURCE_TLS_RESOLVERS`, `DESTINATION_TLS_RESOLVERS`), if the connector takes certificates from the store.
 - Editor forms and defaults: `SOURCE_CONNECTOR_FORMS` in `packages/web/src/components/channels/source/ConnectorSettingsSection.tsx`, `DEST_CONNECTOR_FORMS` in `destinations/DestinationConnectorSettings.tsx`, and the defaults maps in both `connector-defaults.ts` files.
 - The Mirth importer in `packages/server/src/services/mirth-import.service.ts`, if Mirth has an equivalent: the class map (`CONNECTOR_TYPE_MAP`), the `transportMap` in `mapTransportName`, and a case in the `extractConnectorProperties` switch. A connector missing from the maps imports as JAVASCRIPT with a warning. One with no case in the switch keeps Mirth's own property names, which the connector does not read, so its settings are lost on import.
-- The property tables in `docs/user/connector-reference.md`. Their keys are checked only for connectors whose properties have a core-models schema, by `packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts` (TCP_MLLP and HTTP today); add the connector there when its schema lands ([#115](https://github.com/MichaelLeeHobbs/mirthless/issues/115)).
+- The property tables in `docs/user/connector-reference.md`. Their keys are checked only for connectors whose properties have a core-models schema, by `packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts` (TCP_MLLP, HTTP and DATABASE today); add the connector there when its schema lands ([#115](https://github.com/MichaelLeeHobbs/mirthless/issues/115)).
 
 ---
 

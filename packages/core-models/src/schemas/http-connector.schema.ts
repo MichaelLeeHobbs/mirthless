@@ -70,12 +70,11 @@ export const httpSourceObjectSchema = z.strictObject({
   responseStatusCode: statusCode.default(200),
   errorStatusCode: statusCode.default(500),
   maxBodyBytes: wholeNumberSchema(1).default(DEFAULT_MAX_BODY_BYTES),
-  auth: z.strictObject({
-    type: z.enum(['BASIC', 'TOKEN']),
-    username: z.string().optional(),
-    password: z.string().optional(),
-    token: z.string().optional(),
-  }).optional(),
+  /** Inbound guard. Every credential is required: a missing one would let a request with an empty one in (#207). */
+  auth: z.discriminatedUnion('type', [
+    z.strictObject({ type: z.literal('BASIC'), username: z.string().min(1), password: z.string().min(1) }),
+    z.strictObject({ type: z.literal('TOKEN'), token: z.string().min(1) }),
+  ]).optional(),
   scheme: z.enum(HTTP_SCHEMES).optional(),
   /** Certificate-store IDs; HTTPS needs `serverCertId` (checked when the server resolves it). */
   tls: optionalTlsSchema({

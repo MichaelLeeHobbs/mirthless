@@ -15,10 +15,8 @@ import { DATABASE_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
-import { DatabaseVendorField, databaseVendor, defaultDatabasePort } from '../common/DatabaseVendorField.js';
-
-const UPDATE_MODES = ['NEVER', 'ALWAYS', 'ON_SUCCESS'] as const;
-const ROW_FORMATS = ['JSON'] as const;
+import { defaultDatabasePort, DATABASE_UPDATE_MODES, DATABASE_ROW_FORMATS } from '@galvaniflow/core-models';
+import { DatabaseVendorField, databaseVendor } from '../common/DatabaseVendorField.js';
 
 export function DatabaseSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -155,7 +153,7 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
           fullWidth
           sx={{ mb: 2 }}
         >
-          {UPDATE_MODES.map((m) => (
+          {DATABASE_UPDATE_MODES.map((m) => (
             <MenuItem key={m} value={m}>{m}</MenuItem>
           ))}
         </TextField>
@@ -179,7 +177,7 @@ export function DatabaseSourceForm({ properties, onChange }: SourceConnectorForm
           fullWidth
           sx={{ mb: 2 }}
         >
-          {ROW_FORMATS.map((f) => (
+          {DATABASE_ROW_FORMATS.map((f) => (
             <MenuItem key={f} value={f}>{f}</MenuItem>
           ))}
         </TextField>

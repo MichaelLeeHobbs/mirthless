@@ -54,6 +54,14 @@ describe('httpSourcePropertiesSchema', () => {
     ['maxBodyBytes', 0],
     ['auth', { type: 'DIGEST' }],
     ['auth', { type: 'TOKEN', secret: 't' }],
+    // Missing credentials would let a request with empty ones in (#207).
+    ['auth', { type: 'BASIC' }],
+    ['auth', { type: 'BASIC', username: 'svc' }],
+    ['auth', { type: 'BASIC', username: 'svc', password: '' }],
+    ['auth', { type: 'BASIC', password: 'p' }],
+    ['auth', { type: 'TOKEN' }],
+    ['auth', { type: 'TOKEN', token: '' }],
+    ['auth', { type: 'TOKEN', token: 't', username: 'svc' }],
     ['scheme', 'https'],
     ['tls', { serverCertId: 'srv', cert: 'PEM' }],
   ])('rejects %s = %j', (key, value) => {

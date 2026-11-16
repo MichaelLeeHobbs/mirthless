@@ -14,7 +14,7 @@ import { readTlsServerOptions, readTlsClientOptions } from './tls.js';
 import { HttpDispatcher } from './http/http-dispatcher.js';
 import { FileReceiver, FILE_SORT_BY, FILE_POST_ACTION, type FileSortBy, type FilePostAction } from './file/file-receiver.js';
 import { FileDispatcher } from './file/file-dispatcher.js';
-import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, type UpdateMode, type RowFormat } from './database/database-receiver.js';
+import { DatabaseReceiver } from './database/database-receiver.js';
 import { DatabaseDispatcher } from './database/database-dispatcher.js';
 import { DATABASE_VENDOR, type DatabaseVendor } from './database/database-vendor.js';
 import { JavaScriptReceiver } from './javascript/javascript-receiver.js';
@@ -42,6 +42,9 @@ import {
   tcpMllpDestinationPropertiesSchema,
   httpSourcePropertiesSchema,
   httpDestinationPropertiesSchema,
+  databaseSourcePropertiesSchema,
+  databaseDestinationPropertiesSchema,
+  defaultDatabasePort,
   formatPropertyIssues,
 } from '@galvaniflow/core-models';
 
@@ -61,10 +64,10 @@ export function num(props: Record<string, unknown>, key: string, fallback: numbe
   return fallback;
 }
 
-/** A database connector's vendor and port, the port defaulting to the vendor's own. */
-export function databaseTarget(props: Record<string, unknown>): { vendor: DatabaseVendor; port: number } {
-  const vendor = (props['vendor'] as DatabaseVendor | undefined) ?? DATABASE_VENDOR.POSTGRESQL;
-  return { vendor, port: num(props, 'port', vendor === DATABASE_VENDOR.MYSQL ? 3306 : 5432) };
+/** A database connector's vendor (PostgreSQL when unset) and port, the port defaulting to the vendor's own. */
+export function databaseTarget(props: { readonly vendor?: DatabaseVendor | undefined; readonly port?: number | undefined }): { vendor: DatabaseVendor; port: number } {
+  const vendor = props.vendor ?? DATABASE_VENDOR.POSTGRESQL;
+  return { vendor, port: props.port ?? defaultDatabasePort(vendor) };
 }
 
 /**
@@ -194,6 +197,18 @@ function httpDispatcher(props: Record<string, unknown>): HttpDispatcher {
   return new HttpDispatcher({ ...config, basicAuth: readBasicAuth(basicAuth), tls: readTlsClientOptions(props) });
 }
 
+/** A Database Reader: schema-checked props, the port defaulting to the vendor's. */
+function databaseReceiver(props: Record<string, unknown>): DatabaseReceiver {
+  const { vendor, port, processBatch: _processBatch, ...config } = parseProps('DATABASE', databaseSourcePropertiesSchema, props);
+  return new DatabaseReceiver({ ...config, ...databaseTarget({ vendor, port }) });
+}
+
+/** A Database Writer: schema-checked props, the port defaulting to the vendor's. */
+function databaseDispatcher(props: Record<string, unknown>): DatabaseDispatcher {
+  const { vendor, port, template: _template, ...config } = parseProps('DATABASE', databaseDestinationPropertiesSchema, props);
+  return new DatabaseDispatcher({ ...config, ...databaseTarget({ vendor, port }) });
+}
+
 // ----- Source Factories -----
 
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
@@ -213,19 +228,7 @@ const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnec
     postAction: (props['postAction'] as FilePostAction | undefined) ?? FILE_POST_ACTION.DELETE,
     moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
   })],
-  ['DATABASE', (props): SourceConnectorRuntime => new DatabaseReceiver({
-    host: props['host'] as string,
-    ...databaseTarget(props),
-    database: props['database'] as string,
-    username: props['username'] as string,
-    password: props['password'] as string,
-    selectQuery: props['selectQuery'] as string,
-    updateQuery: (props['updateQuery'] as string | undefined) ?? '',
-    updateMode: (props['updateMode'] as UpdateMode | undefined) ?? UPDATE_MODE.NEVER,
-    pollingIntervalMs: num(props, 'pollingIntervalMs', 5_000),
-    rowFormat: (props['rowFormat'] as RowFormat | undefined) ?? ROW_FORMAT.JSON,
-    tls: props['tls'] === true,
-  })],
+  ['DATABASE', databaseReceiver],
   ['JAVASCRIPT', (props): SourceConnectorRuntime => new JavaScriptReceiver({
     script: (props['script'] as string | undefined) ?? '',
     pollingIntervalMs: num(props, 'pollingIntervalMs', 5_000),
@@ -294,17 +297,7 @@ const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<De
     tempFileEnabled: (props['tempFileEnabled'] as boolean | undefined) ?? true,
     appendMode: (props['appendMode'] as boolean | undefined) ?? false,
   })],
-  ['DATABASE', (props): DestinationConnectorRuntime => new DatabaseDispatcher({
-    host: props['host'] as string,
-    ...databaseTarget(props),
-    database: props['database'] as string,
-    username: props['username'] as string,
-    password: props['password'] as string,
-    query: props['query'] as string,
-    useTransaction: (props['useTransaction'] as boolean | undefined) ?? false,
-    returnGeneratedKeys: (props['returnGeneratedKeys'] as boolean | undefined) ?? false,
-    tls: props['tls'] === true,
-  })],
+  ['DATABASE', databaseDispatcher],
   ['JAVASCRIPT', (props): DestinationConnectorRuntime => new JavaScriptDispatcher({
     script: (props['script'] as string | undefined) ?? '',
   })],
