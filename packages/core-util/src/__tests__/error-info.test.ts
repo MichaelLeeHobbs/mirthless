@@ -25,4 +25,29 @@ describe('errorInfo', () => {
     const hostile = { toString(): string { throw new Error('no'); } };
     expect(errorInfo(hostile)).toEqual({ errMsg: 'Unprintable error value' });
   });
+
+  it('never throws for an Error subclass whose message getter throws', () => {
+    class LazyError extends Error {
+      override get message(): string { throw new Error('getter'); }
+    }
+    expect(errorInfo(new LazyError())).toEqual({ errMsg: 'Unprintable error value' });
+  });
+
+  it('never throws for a Proxy whose get trap throws', () => {
+    const hostile = new Proxy({}, { get(): never { throw new Error('trap'); } });
+    expect(errorInfo(hostile)).toEqual({ errMsg: 'Unprintable error value' });
+  });
+
+  it('falls back to the string form when only a field read throws', () => {
+    const odd = {
+      get message(): string { throw new Error('getter'); },
+      toString(): string { return 'odd value'; },
+    };
+    expect(errorInfo(odd)).toEqual({ errMsg: 'odd value' });
+  });
+
+  it('never throws for a Proxy whose getPrototypeOf trap throws', () => {
+    const hostile = new Proxy({}, { getPrototypeOf(): never { throw new Error('proto'); } });
+    expect(errorInfo(hostile)).toEqual({ errMsg: '[object Object]' });
+  });
 });
