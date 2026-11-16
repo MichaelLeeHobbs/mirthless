@@ -99,7 +99,7 @@ A DATABASE channel now fails to deploy when it has:
 - a `vendor` other than `postgresql` or `mysql`. That refused before too, with the same message.
 - an empty or blank `host`, `database`, `selectQuery` or `query`, or a `port` outside 1 to 65535.
 - an `updateMode` other than `NEVER`, `ALWAYS` or `ON_SUCCESS`, or `ALWAYS`/`ON_SUCCESS` with an empty `updateQuery`. Before, an unknown mode marked every row as `ALWAYS` does; the empty query failed when the connector deployed, without naming the key.
-- a `pollingIntervalMs` that is not a whole number of at least 100. Before, a value that wasn't a number became 5000 without a word.
+- a `pollingIntervalMs` that is not a whole number from 100 to 2147483647. Before, a value that wasn't a number became 5000 without a word.
 - a `tls`, `useTransaction` or `returnGeneratedKeys` that is not `true` or `false`, or a `username` or `password` that is not text. Before, a `tls` of `"true"` connected in plaintext.
 - a `rowFormat` other than `JSON`.
 
@@ -123,7 +123,7 @@ A FILE channel now fails to deploy when it has:
 - any other key its table doesn't list, e.g. `filePattern` or `fileNameTemplate` (the SFTP connector's names). Before, such a key was ignored.
 - a `charset` that is none of the above, even with `binary` on. Before, a binary channel ignored its charset. The other names the connector used to read (`iso8859-1`, `latin-1`, `ucs2`, `ucs-2`, `binary`, `base64`, `hex`) now refuse too; the editor never offered them.
 - a `sortBy` other than `NAME`, `DATE` or `SIZE`, or a `postAction` other than `DELETE`, `MOVE` or `NONE`. Before, an unknown sort read files by name, and an unknown post action left each file in place, so the next poll read it again.
-- a `pollingIntervalMs` that is not a whole number of at least 100, or a `fileAgeMs` that is not a whole number of at least 0. Before, a value that wasn't a number was replaced by the default without a word.
+- a `pollingIntervalMs` that is not a whole number from 100 to 2147483647, or a `fileAgeMs` that is not a whole number of at least 0. Before, a value that wasn't a number was replaced by the default without a word.
 - a `binary`, `checkFileAge`, `tempFileEnabled` or `appendMode` that is not `true` or `false`. Before, any text, `"false"` included, turned the setting on.
 - an empty `directory`, `fileFilter` or `outputPattern`. These failed before as well, when the connector deployed, without naming the key. A `directory`, `fileFilter` or `outputPattern` of only spaces now fails too.
 - `postAction` `MOVE` with an empty `moveToDirectory`. This failed before as well, without naming the key.
@@ -138,6 +138,30 @@ WHERE source_connector_type = 'FILE'
 SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
 WHERE connector_type = 'FILE'
   AND k NOT IN ('directory','outputPattern','charset','binary','tempFileEnabled','appendMode','template');
+```
+
+**JAVASCRIPT** is the fifth. Channels saved by this app's own editor keep deploying: the JavaScript Reader and Writer forms have saved `script` (and the reader `pollingIntervalMs`) since 2026-03, plus `scriptLanguage` since 2026-11-15. Until 2026-11-13 the Mirth importer copied all of a JavaScript Reader's or Writer's Mirth properties into the channel: `pluginProperties`, `pollConnectorProperties` and `sourceConnectorProperties` on a reader, `pluginProperties` and `destinationConnectorProperties` on a writer, or `responseConnectorProperties` and `queueConnectorProperties` from a Mirth 3.0 export. Nothing read them, and the schema drops them, so those channels keep deploying and still poll every 5000 ms. Import such a channel again to get Mirth's polling interval and Process Batch setting, which the importer now maps. Nothing in the database is rewritten.
+
+The importer brings in a connector it has no mapping for as JAVASCRIPT with a warning, and since 2026-11-15 also a connector used in a direction it cannot run in (e.g. SMTP as a source, EMAIL as a destination). Such a stand-in has no `script`, so it never deployed, and still doesn't. An unmapped connector imported before 2026-11-13 also carries the other connector's Mirth properties, which are now refused as well; replace the connector in the editor.
+
+A JAVASCRIPT channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. a misspelling such as `pollingInterval`, or `pollingIntervalMs` on a destination. Before, such a key was ignored.
+- a `scriptLanguage` other than `JAVASCRIPT` or `TYPESCRIPT`, e.g. `typescript`. Before, any other value was read as JavaScript, so a TypeScript script written through the API with a misspelled language skipped its deploy type check.
+- a `script` of only spaces or line breaks. Before, it deployed and did nothing. An empty `script` failed before as well.
+- a `pollingIntervalMs` that is not a whole number from 100 to 2147483647. Below 100 failed before as well, when the connector deployed, without naming the key; a value that wasn't a number became 5000 without a word.
+- a `processBatch` that is not `true` or `false`, or a `template` that is not text.
+
+Before upgrading, list the keys the schema would refuse:
+
+```sql
+SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE source_connector_type = 'JAVASCRIPT'
+  AND k NOT IN ('script','scriptLanguage','pollingIntervalMs','processBatch',
+                'pluginProperties','pollConnectorProperties','sourceConnectorProperties','responseConnectorProperties');
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'JAVASCRIPT'
+  AND k NOT IN ('script','scriptLanguage','template','pluginProperties','destinationConnectorProperties','queueConnectorProperties');
 ```
 
 ## Standard upgrade (Docker)

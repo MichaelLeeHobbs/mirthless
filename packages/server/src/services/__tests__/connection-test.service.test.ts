@@ -21,7 +21,7 @@ import {
   resetFactories,
   _testing,
 } from '../connection-test.service.js';
-import type { SftpClient, SftpConnectionOptions } from '@galvaniflow/connectors';
+import type { SftpClient, SftpConnectionOptions, SftpPathKind } from '@galvaniflow/connectors';
 
 // ----- TLS fixtures (self-signed CN=localhost pair; test-only) -----
 
@@ -683,16 +683,16 @@ describe('ConnectionTestService', () => {
       remoteDirectory: '/inbound', strictHostKey: true, hostKey: 'AAAAkey',
     };
     const mockSftpConnect = vi.fn<() => Promise<void>>();
-    const mockSftpExists = vi.fn<(path: string) => Promise<boolean>>();
+    const mockSftpPathKind = vi.fn<(path: string) => Promise<SftpPathKind>>();
     const mockSftpEnd = vi.fn<() => Promise<void>>();
     const sftpFactory = vi.fn<(options: SftpConnectionOptions) => SftpClient>();
 
     beforeEach(() => {
       mockSftpConnect.mockResolvedValue(undefined);
-      mockSftpExists.mockResolvedValue(true);
+      mockSftpPathKind.mockResolvedValue('directory');
       mockSftpEnd.mockResolvedValue(undefined);
       sftpFactory.mockImplementation(() => ({
-        connect: mockSftpConnect, exists: mockSftpExists, end: mockSftpEnd,
+        connect: mockSftpConnect, pathKind: mockSftpPathKind, end: mockSftpEnd,
       }) as unknown as SftpClient);
       setSftpClientFactory(sftpFactory);
     });
@@ -710,7 +710,7 @@ describe('ConnectionTestService', () => {
       expect(sftpFactory).toHaveBeenCalledWith(expect.objectContaining({
         host: 'sftp.lab.example', port: 2222, username: 'lab', password: 'pw', strictHostKey: true, hostKey: 'AAAAkey',
       }));
-      expect(mockSftpExists).toHaveBeenCalledWith('/inbound');
+      expect(mockSftpPathKind).toHaveBeenCalledWith('/inbound');
       expect(mockSftpEnd).toHaveBeenCalledOnce();
     });
 
@@ -720,17 +720,28 @@ describe('ConnectionTestService', () => {
       expect(sftpFactory).toHaveBeenCalledWith(expect.objectContaining({ port: 22 }));
     });
 
-    it('says it found a remote path, not a directory, since exists() is true for a file too', async () => {
+    it('says it found the remote directory', async () => {
       const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.message).toContain('remote path /inbound found');
-      expect(result.value.message).not.toContain('directory');
+      expect(result.value.message).toContain('remote directory /inbound found');
+    });
+
+    it.each(['SOURCE', 'DESTINATION'])('fails when the remote directory is a regular file (%s)', async (mode) => {
+      mockSftpPathKind.mockResolvedValue('file');
+
+      const result = await ConnectionTestService.testConnection('SFTP', mode, SFTP_PROPS);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toContain('/inbound is a file, not a directory');
+      expect(mockSftpEnd).toHaveBeenCalledOnce();
     });
 
     it('fails a source whose remote path does not exist', async () => {
-      mockSftpExists.mockResolvedValue(false);
+      mockSftpPathKind.mockResolvedValue('missing');
 
       const result = await ConnectionTestService.testConnection('SFTP', 'SOURCE', SFTP_PROPS);
 
@@ -743,7 +754,7 @@ describe('ConnectionTestService', () => {
     });
 
     it('passes a destination whose remote directory does not exist yet, since the dispatcher creates it', async () => {
-      mockSftpExists.mockResolvedValue(false);
+      mockSftpPathKind.mockResolvedValue('missing');
 
       const result = await ConnectionTestService.testConnection('SFTP', 'DESTINATION', { ...SFTP_PROPS, remoteDirectory: '/outbound' });
 
@@ -764,7 +775,7 @@ describe('ConnectionTestService', () => {
       if (!result.ok) return;
       expect(result.value.success).toBe(false);
       expect(result.value.message).toContain('All configured authentication methods failed');
-      expect(mockSftpExists).not.toHaveBeenCalled();
+      expect(mockSftpPathKind).not.toHaveBeenCalled();
       expect(mockSftpEnd).toHaveBeenCalledOnce();
     });
 

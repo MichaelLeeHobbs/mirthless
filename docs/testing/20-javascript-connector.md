@@ -35,8 +35,8 @@
 | 15 | Script returns non-string value | Script: `return 42;` | Value converted to string "42" and dispatched | |
 | 16 | Script returns array with mixed types | Script: `return ['valid', null, '', 'also valid'];` | Only non-empty string items dispatched ("valid", "also valid") | |
 | 17 | Polling interval respected | Set pollingIntervalMs=2000, script returns one message | Script executes approximately every 2 seconds | |
-| 18 | Empty script rejected on deploy | Leave script empty, deploy channel | Deploy fails with "Script is required" error | |
-| 19 | Polling interval too low | Set pollingIntervalMs=50, deploy channel | Deploy fails with "Polling interval must be at least 100ms" | |
+| 18 | Empty script rejected on deploy | Leave script empty (or only spaces), deploy channel | Deploy fails with "Invalid source connector properties for JAVASCRIPT: script: required" | |
+| 19 | Polling interval too low | Set pollingIntervalMs=50, deploy channel | Deploy fails with "Invalid source connector properties for JAVASCRIPT: pollingIntervalMs: ..." (at least 100) | |
 | 20 | Script error recovery | Script throws an error on first poll | Error logged, next poll cycle still executes | |
 | 21 | sourceMap populated | Script returns a message | sourceMap contains connectorType="JAVASCRIPT" and executedAt timestamp | |
 | 22 | No sandbox runner fallback | scriptRunner not set (edge case) | No messages dispatched, no crash | |
@@ -49,5 +49,5 @@
 | 24 | Script returns null | Script: `return null;` | Response content is empty string, status SENT | |
 | 25 | Script returns undefined | Script: no return statement | Response content is empty string, status SENT | |
 | 26 | Script error returns ERROR status | Script: `throw new Error('fail');` | ConnectorResponse status is ERROR with errorMessage | |
-| 27 | Empty script rejected on deploy | Leave script empty, deploy channel | Deploy fails with "Script is required" error | |
+| 27 | Empty script rejected on deploy | Leave script empty (or only spaces), deploy channel | Deploy fails with "Invalid destination connector properties for JAVASCRIPT: script: required" | |
 | 28 | Send aborted | Send with already-aborted AbortSignal | Error: "Send aborted" | |
