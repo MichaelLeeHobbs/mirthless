@@ -53,6 +53,38 @@ export async function removeChannel(api: APIRequestContext, id: string): Promise
   await deleteOk(api, `/channels/${id}`);
 }
 
+/** Create an HL7 channel with an auto-ACKing TCP/MLLP source on 127.0.0.1:port and return its id. */
+export async function createMllpChannel(
+  api: APIRequestContext,
+  fields: { readonly name: string; readonly port: number; readonly description?: string; readonly initialState?: string },
+): Promise<string> {
+  const { port, ...rest } = fields;
+  const created = await postData<{ id: string }>(api, '/channels', {
+    ...rest,
+    enabled: true,
+    inboundDataType: 'HL7V2',
+    outboundDataType: 'HL7V2',
+    sourceConnectorType: 'TCP_MLLP',
+    sourceConnectorProperties: {
+      host: '127.0.0.1',
+      port,
+      maxConnections: 10,
+      responseMode: 'AUTO_ACK',
+      charset: 'utf-8',
+      maxFrameBytes: 52428800,
+    },
+  });
+  return created.id;
+}
+
+/** Deploy a channel, start it if its initial state left it stopped, and wait until it reports STARTED. */
+export async function deployAndStart(api: APIRequestContext, id: string): Promise<void> {
+  const state = async (): Promise<string> => (await getData<{ state: string }>(api, `/channels/${id}/status`)).state;
+  await postData(api, `/channels/${id}/deploy`);
+  if (await state() !== 'STARTED') await postData(api, `/channels/${id}/start`);
+  await expect.poll(state).toBe('STARTED');
+}
+
 /** Remove every channel with this exact name (leftovers from an interrupted run). */
 export async function removeChannelsNamed(api: APIRequestContext, name: string): Promise<void> {
   const list = await getData<{ data: Array<{ id: string; name: string }> }>(api, '/channels?pageSize=100');

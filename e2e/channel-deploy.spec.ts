@@ -7,7 +7,7 @@
 
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
-import { API_BASE, adminApi, getData, postData, removeChannel, removeChannelsNamed } from './fixtures/api.js';
+import { API_BASE, adminApi, createMllpChannel, getData, removeChannel, removeChannelsNamed } from './fixtures/api.js';
 import { DEPLOY_CHANNEL } from './fixtures/test-data.js';
 
 let api: APIRequestContext;
@@ -46,23 +46,11 @@ test.describe('Channel Deployment', () => {
   test.beforeAll(async () => {
     api = await adminApi();
     await removeChannelsNamed(api, DEPLOY_CHANNEL.name);
-    const created = await postData<{ id: string }>(api, '/channels', {
+    channelId = await createMllpChannel(api, {
       name: DEPLOY_CHANNEL.name,
-      enabled: true,
+      port: DEPLOY_CHANNEL.sourcePort,
       initialState: 'STOPPED',
-      inboundDataType: 'HL7V2',
-      outboundDataType: 'HL7V2',
-      sourceConnectorType: 'TCP_MLLP',
-      sourceConnectorProperties: {
-        host: '127.0.0.1',
-        port: DEPLOY_CHANNEL.sourcePort,
-        maxConnections: 10,
-        responseMode: 'AUTO_ACK',
-        charset: 'utf-8',
-        maxFrameBytes: 52428800,
-      },
     });
-    channelId = created.id;
   });
 
   test.afterAll(async () => {
