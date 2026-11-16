@@ -3,6 +3,7 @@
 // ===========================================
 // Server enums (CHANNEL_ERROR, USER_LOGIN, admin) are identifiers, not labels.
 // Pages show them through these helpers so every list reads the same way.
+// (CI probe for #177: a web-only change. This PR is not for merging.)
 
 interface TimestampOptions {
   /** Shown when there is no timestamp. Defaults to "—". */
