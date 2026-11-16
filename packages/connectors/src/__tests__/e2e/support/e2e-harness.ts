@@ -49,7 +49,7 @@ function ok<T>(value: T): Result<T> {
 
 /**
  * The pipeline's result as the source connector's dispatch result: SENT maps
- * to PROCESSED, as the server engine maps it.
+ * to PROCESSED, as the server engine maps it under the default response mode.
  */
 export function toDispatchResult(result: Result<ProcessedMessage>): Awaited<ReturnType<ChannelRuntimeConfig['onMessage']>> {
   if (!result.ok) return result;
