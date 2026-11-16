@@ -39,7 +39,7 @@ migration will not migrate it for you. From 1.0 onward, migrations will be data-
 
 ## Stricter connector properties (#115)
 
-Connector properties are moving, one connector type at a time, to a schema in `packages/core-models` that refuses keys it does not list and values of the wrong type. A channel that deployed before can then fail its deploy, including the auto-deploy at server start, with `Invalid source connector properties for <TYPE>: ...` or `Invalid destination connector properties for <TYPE>: ...`. The message names the key. Nothing in the database is changed; edit the channel's properties and deploy again. `docs/user/connector-reference.md` lists the keys each type accepts.
+Connector properties moved, one connector type at a time, to a schema in `packages/core-models` that refuses keys it does not list and values of the wrong type. A channel that deployed before can then fail its deploy, including the auto-deploy at server start, with `Invalid source connector properties for <TYPE>: ...` or `Invalid destination connector properties for <TYPE>: ...`. The message names the key. Nothing in the database is changed; edit the channel's properties and deploy again. `docs/user/connector-reference.md` lists the keys each type accepts.
 
 **TCP_MLLP** is the first. Channels saved by this app's own editor keep deploying. From 2026-02 to 2026-07 the TCP/MLLP forms saved `receiveTimeout`, `bufferSize`, `keepConnectionOpen`, `transmissionMode` and `sendTimeout`, which no connector reads; the schema drops those five keys. It also reads a charset name in any case and maps the names that editor saved: `UTF-8` and `utf8` become `utf-8`, `ISO-8859-1` becomes `latin1`, `US-ASCII` becomes `ascii`, and `UTF-16LE` becomes `utf16le`. Nothing in the database is rewritten. A channel saved with `ISO-8859-1` or `US-ASCII` used to deploy and then fail on its first message, because Node has no encoding by those names; it now works.
 
@@ -220,6 +220,95 @@ SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_
 WHERE connector_type = 'SMTP'
   AND k NOT IN ('host','port','secure','requireTLS','authUser','authPass','from','to','cc','bcc','subject','bodyTemplate',
                 'contentType','attachContent','attachments','template');
+```
+
+**DICOM** is the ninth. Channels saved by this app's own editor keep deploying: the DICOM forms have saved the same keys since 2026-03. The Mirth importer has no DICOM mapping, so since 2026-03-03 it has copied all of a DICOM Listener's or Sender's Mirth properties (`applicationEntity`, `localHost`, `dest`, `tls`, `keyStorePW`, `stgcmt` and some 30 more, listed in `packages/core-models/src/schemas/dicom-connector.schema.ts`). Nothing reads them, and the schema drops them, so an imported Sender (whose `host` and `port` have the same names here) keeps deploying, and so does a Listener once its port and storage directory were filled in. Nothing in the database is rewritten.
+
+One behaviour changes without a deploy error. An imported DICOM Sender also carries Mirth's default template, `${DICOMMESSAGE}`. Since 2026-11-12 the engine has sent a destination's template instead of the message, so every send from such a channel failed: the text `${DICOMMESSAGE}` is not a DICOM file. The engine and the schema now treat that one template as no template (`destinationTemplate` in core-models), so the message itself is sent, as in Mirth. Mirth's `applicationEntity` is still not mapped to `calledAETitle`; set the called AE title by hand ([#171](https://github.com/MichaelLeeHobbs/mirthless/issues/171)).
+
+A DICOM channel now fails to deploy when it has:
+
+- any other key its table doesn't list. Before, such a key was ignored.
+- an imported Mirth `tls` setting other than `notls` (`aes`, `3des` or `without`). This connector has no TLS, so before, such a channel connected in plaintext without a word. Remove `tls` only if plaintext is acceptable on that network.
+- a `dispatchMode` other than `PER_FILE` or `PER_ASSOCIATION`, a `postAction` other than `DELETE`, `MOVE` or `NONE`, or a destination `mode` other than `single` or `multiple`.
+- a number that is not a whole number (digits as text are read), a negative timeout, retry count, delay or `maxAssociations`, or a timeout above 2147483647. Before, a value that wasn't a number became the default without a word, and number text with a sign or a dot (`+5`, `30000.`) was read as a number.
+- a `storageDir` or `host` of only spaces. An empty one, a port outside 1 to 65535, an AE title longer than 16 characters, a `minPoolSize` below 1, a `maxPoolSize` below `minPoolSize`, and `MOVE` without `moveToDirectory` failed before as well, when the connector deployed, without naming the key.
+
+```sql
+SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE source_connector_type = 'DICOM'
+  AND k NOT IN ('port','storageDir','aeTitle','minPoolSize','maxPoolSize','connectionTimeoutMs','dispatchMode','postAction',
+                'moveToDirectory','processBatch');
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'DICOM'
+  AND k NOT IN ('host','port','calledAETitle','callingAETitle','mode','maxAssociations','maxRetries','retryDelayMs','timeoutMs','template');
+```
+
+These queries also list the Mirth keys the schema drops; compare what they print with the list in `dicom-connector.schema.ts`.
+
+**EMAIL** is the tenth. Channels saved by this app's own editor keep deploying: the Email form has saved the same keys since 2026-03, and the importer never creates an EMAIL source. Nothing in the database is rewritten. `port` no longer needs to be set (993 by default), and digits as text are read.
+
+An EMAIL channel now fails to deploy when it has:
+
+- any other key its table doesn't list. Before, such a key was ignored.
+- a `secure` or `includeAttachments` that is not `true` or `false`. Before, any text, `"false"` included, turned `secure` on.
+- a `postAction` other than `DELETE`, `MARK_READ` or `MOVE`, or a `pollingIntervalMs` above 2147483647.
+- a `host`, `username`, `password` or `folder` of only spaces. An empty one, `POP3`, a polling interval below 1000 ms, and `MOVE` without `moveToFolder` failed before as well, when the connector deployed, without naming the key.
+
+```sql
+SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE source_connector_type = 'EMAIL'
+  AND k NOT IN ('host','port','secure','username','password','protocol','folder','pollingIntervalMs','postAction','moveToFolder',
+                'subjectFilter','includeAttachments','processBatch');
+```
+
+**SFTP** is the eleventh. Channels saved by this app's own editor keep deploying: the SFTP forms have saved the same keys since 2026-07 (`charset` since 2026-11-11), and the importer writes only keys the connector reads. Nothing in the database is rewritten. The charset is read as for FILE: `utf-8`, `latin1`, `ascii` or `utf16le` in any case, with `UTF-8`, `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` mapped onto them.
+
+An SFTP channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. `fileFilter` or `outputPattern` (the FILE connector's names). Before, such a key was ignored.
+- a `charset` that is none of the above. The other names the connector used to read (an empty charset, `iso8859-1`, `latin-1`, `ucs2`, `ucs-2`, `base64`, `hex`, `binary`) now refuse too; the editor never offered them.
+- an `appendMode` that is not `true` or `false`. Before, any text, `"false"` included, turned it on. A `strictHostKey` that is not `true` or `false` failed before as well.
+- a `pollingIntervalMs` or `minFileAgeMs` that is not a whole number, a negative `minFileAgeMs`, or a polling interval above 2147483647. Before, a value that wasn't a number became the default without a word, and number text with a sign or a dot was read as a number.
+- a `host`, `username`, `remoteDirectory`, `filePattern`, `fileNameTemplate` or `moveToDirectory` of only spaces. An empty one, no password or private key, host key checking with no host key, and `MOVE` without a directory failed before as well.
+
+```sql
+SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE source_connector_type = 'SFTP'
+  AND k NOT IN ('host','port','username','password','privateKey','passphrase','remoteDirectory','strictHostKey','hostKey',
+                'filePattern','pollingIntervalMs','afterProcessing','moveToDirectory','minFileAgeMs','charset','processBatch');
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'SFTP'
+  AND k NOT IN ('host','port','username','password','privateKey','passphrase','remoteDirectory','strictHostKey','hostKey',
+                'fileNameTemplate','appendMode','template');
+```
+
+**KAFKA** and **AMQP** come last. They have had a core-models schema since they shipped, but it dropped a key it did not list instead of refusing it; now it refuses it, like every other type. Their forms have saved the same keys since they reached `main` on 2026-11-15, and the importer never creates them, so channels saved by the editor keep deploying. Nothing in the database is rewritten. The Kafka destination's record key has always been `messageKey` on `main`; a channel saved with `key` on the pre-release branch now fails and needs it renamed.
+
+A KAFKA or AMQP channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. `key`, `prefetch` or `persistent`, or a key inside `tls` other than `caCertId`, `clientCertId` and `rejectUnauthorized` (such as pasted PEM). Before, such a key was dropped without a word.
+- an AMQP `port` or a `maxStoreAttempts` of `true`, or text other than plain digits (`"0x1628"`, `"5.672e3"`). Before, `true` was read as 1 and such text as the number it spells.
+
+```sql
+SELECT id, name, source_connector_type, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE (source_connector_type = 'KAFKA'
+       AND k NOT IN ('brokers','clientId','useTls','tls','saslMechanism','saslUsername','saslPassword','topic','groupId',
+                     'startFrom','charset','maxStoreAttempts','processBatch'))
+   OR (source_connector_type = 'AMQP'
+       AND k NOT IN ('host','port','vhost','username','password','useTls','tls','queue','charset','maxStoreAttempts','processBatch'));
+SELECT channel_id, name, connector_type, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE (connector_type = 'KAFKA'
+       AND k NOT IN ('brokers','clientId','useTls','tls','saslMechanism','saslUsername','saslPassword','topic','messageKey','headers','template'))
+   OR (connector_type = 'AMQP'
+       AND k NOT IN ('host','port','vhost','username','password','useTls','tls','exchange','routingKey','headers','contentType','template'));
+-- Keys inside tls, both directions:
+SELECT id, name, k AS unknown_tls_key FROM channels, jsonb_object_keys(source_connector_properties->'tls') k
+WHERE source_connector_type IN ('KAFKA','AMQP') AND jsonb_typeof(source_connector_properties->'tls') = 'object'
+  AND k NOT IN ('caCertId','clientCertId','rejectUnauthorized');
+SELECT channel_id, name, k AS unknown_tls_key FROM channel_connectors, jsonb_object_keys(properties->'tls') k
+WHERE connector_type IN ('KAFKA','AMQP') AND jsonb_typeof(properties->'tls') = 'object'
+  AND k NOT IN ('caCertId','clientCertId','rejectUnauthorized');
 ```
 
 ## Standard upgrade (Docker)
