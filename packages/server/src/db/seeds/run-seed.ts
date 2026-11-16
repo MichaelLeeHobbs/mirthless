@@ -192,8 +192,16 @@ async function seed(): Promise<void> {
   }
 }
 
-seed().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('Seed failed:', err);
-  process.exit(1);
-});
+seed().then(
+  () => {
+    // Printed once every pool is closed. seed-exit.itest.ts times the exit from
+    // this line, so keep the text in step with SEED_FINISHED there.
+    // eslint-disable-next-line no-console
+    console.log('\nSeed finished.');
+  },
+  (err: unknown) => {
+    // eslint-disable-next-line no-console
+    console.error('Seed failed:', err);
+    process.exit(1);
+  },
+);
