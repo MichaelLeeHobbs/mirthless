@@ -895,6 +895,21 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     expect(validateConnectorProperties('FILE', 'destination', channel.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
   });
 
+  // The importer has no DICOM case: it copies every Mirth property (DICOMReceiverProperties / DICOMDispatcherProperties).
+  it('imports a DICOM Sender that deploys, and a DICOM Listener that deploys once its port and folder are filled', () => {
+    const listener = '<properties class="com.mirth.connect.connectors.dimse.DICOMReceiverProperties" version="4.5.0"><pluginProperties/><listenerConnectorProperties version="4.5.0"><host>0.0.0.0</host><port>104</port></listenerConnectorProperties><sourceConnectorProperties version="4.5.0"><responseVariable>None</responseVariable></sourceConnectorProperties><applicationEntity>MIRTH</applicationEntity><localHost></localHost><localPort></localPort><localApplicationEntity></localApplicationEntity><soCloseDelay>50</soCloseDelay><releaseTo>5</releaseTo><requestTo>5</requestTo><idleTo>60</idleTo><reaper>10</reaper><rspDelay>0</rspDelay><pdv1>false</pdv1><sndpdulen>16</sndpdulen><rcvpdulen>16</rcvpdulen><async>0</async><bigEndian>false</bigEndian><bufSize>1</bufSize><defts>false</defts><dest>/mirth/dicom</dest><nativeData>false</nativeData><sorcvbuf>0</sorcvbuf><sosndbuf>0</sosndbuf><tcpDelay>true</tcpDelay><keyPW></keyPW><keyStore></keyStore><keyStorePW></keyStorePW><noClientAuth>true</noClientAuth><nossl2>true</nossl2><tls>notls</tls><trustStore></trustStore><trustStorePW></trustStorePW></properties><transformer';
+    const sender = '<properties class="com.mirth.connect.connectors.dimse.DICOMDispatcherProperties" version="4.5.0"><pluginProperties/><destinationConnectorProperties version="4.5.0"><queueEnabled>false</queueEnabled></destinationConnectorProperties><host>pacs.example</host><port>104</port><applicationEntity>PACS1</applicationEntity><localHost></localHost><localPort></localPort><localApplicationEntity></localApplicationEntity><template>${DICOMMESSAGE}</template><acceptTo>5000</acceptTo><async>0</async><bufSize>1</bufSize><connectTo>0</connectTo><priority>med</priority><passcode></passcode><pdv1>false</pdv1><rcvpdulen>16</rcvpdulen><reaper>10</reaper><releaseTo>5</releaseTo><rspTo>60</rspTo><shutdownDelay>1000</shutdownDelay><sndpdulen>16</sndpdulen><soCloseDelay>50</soCloseDelay><sorcvbuf>0</sorcvbuf><sosndbuf>0</sosndbuf><stgcmt>false</stgcmt><tcpDelay>true</tcpDelay><ts1>false</ts1><uidnegrsp>false</uidnegrsp><username></username><keyPW></keyPW><keyStore></keyStore><keyStorePW></keyStorePW><noClientAuth>true</noClientAuth><nossl2>true</nossl2><tls>notls</tls><trustStore></trustStore><trustStorePW></trustStorePW></properties>';
+    const channel = convert4x((x) => x
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, listener)
+      .replace('<transportName>TCP Listener</transportName>', '<transportName>DICOM Listener</transportName>')
+      .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, sender)
+      .replace('<transportName>JavaScript Writer</transportName>', '<transportName>DICOM Sender</transportName>'));
+    expect(channel.sourceConnectorType).toBe('DICOM');
+    expect(channel.destinations[0]?.connectorType).toBe('DICOM');
+    expect(validateConnectorProperties('DICOM', 'destination', channel.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
+    expect(validateConnectorProperties('DICOM', 'source', { ...channel.sourceConnectorProperties, port: 104, storageDir: '/dicom/in' })).toMatchObject({ ok: true });
+  });
+
   describe('a File connector with a remote scheme', () => {
     const reader = (scheme: string, hostKeyChecking: string): string => `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>${scheme}</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>${hostKeyChecking}</hostKeyChecking></schemeProperties><host>sftp.partner.org:2222/out/orders</host><fileFilter>*.hl7</fileFilter><username>svc</username><password>pw</password><afterProcessingAction>DELETE</afterProcessingAction><moveToDirectory></moveToDirectory></properties><transformer`;
     const writer = '<properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0"><scheme>SFTP</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>no</hostKeyChecking></schemeProperties><host>sftp.partner.org/in</host><outputPattern>${messageId}.hl7</outputPattern><outputAppend>false</outputAppend><username>svc</username><password>pw</password></properties>';
@@ -918,6 +933,8 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
         connectorType: 'SFTP',
         properties: { host: 'sftp.partner.org', remoteDirectory: '/in', fileNameTemplate: '${messageId}.hl7', appendMode: false, strictHostKey: false },
       });
+      expect(validateConnectorProperties('SFTP', 'source', channels[0]?.sourceConnectorProperties ?? {})).toMatchObject({ ok: true });
+      expect(validateConnectorProperties('SFTP', 'destination', channels[0]?.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
     });
 
     it('keeps host key checking on, and says the key must be entered', () => {

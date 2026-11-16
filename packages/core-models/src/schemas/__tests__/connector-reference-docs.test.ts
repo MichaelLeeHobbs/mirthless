@@ -17,6 +17,9 @@ import { javascriptSourceObjectSchema, javascriptDestinationObjectSchema } from 
 import { channelSourceObjectSchema, channelDestinationObjectSchema } from '../channel-connector.schema.js';
 import { fhirDestinationObjectSchema } from '../fhir-connector.schema.js';
 import { smtpDestinationObjectSchema } from '../smtp-connector.schema.js';
+import { dicomSourceObjectSchema, dicomDestinationObjectSchema } from '../dicom-connector.schema.js';
+import { emailSourceObjectSchema } from '../email-connector.schema.js';
+import { sftpSourceObjectSchema, sftpDestinationObjectSchema } from '../sftp-connector.schema.js';
 
 const DOC = readFileSync(new URL('../../../../../docs/user/connector-reference.md', import.meta.url), 'utf-8');
 
@@ -55,6 +58,11 @@ const SCHEMAS = [
   ['CHANNEL as a destination', 'destination', channelDestinationObjectSchema.shape],
   ['FHIR as a destination', 'destination', fhirDestinationObjectSchema.shape],
   ['SMTP as a destination', 'destination', smtpDestinationObjectSchema.shape],
+  ['DICOM as a source', 'source', dicomSourceObjectSchema.shape],
+  ['DICOM as a destination', 'destination', dicomDestinationObjectSchema.shape],
+  ['EMAIL as a source', 'source', emailSourceObjectSchema.shape],
+  ['SFTP as a source', 'source', sftpSourceObjectSchema.shape],
+  ['SFTP as a destination', 'destination', sftpDestinationObjectSchema.shape],
 ] as const;
 
 describe('docs/user/connector-reference.md property tables', () => {

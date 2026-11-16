@@ -92,6 +92,25 @@ export const sourceCommonProperties = {
   processBatch: z.boolean().optional(),
 } as const;
 
+/**
+ * Templates the Mirth importer copies that mean "send the message itself",
+ * which a destination with no template already does. Sent as written they
+ * are text, not the message (a DICOM Sender sent `${DICOMMESSAGE}` as a file
+ * path and failed every message).
+ */
+const MESSAGE_ITSELF_TEMPLATES: Readonly<Record<string, string>> = { DICOM: '${DICOMMESSAGE}' };
+
+/**
+ * The template a destination sends instead of the encoded message, or
+ * undefined to send the message. The engine and the destination schemas both
+ * read it through here, so a Mirth default is dropped in both.
+ */
+export function destinationTemplate(connectorType: string, properties: Readonly<Record<string, unknown>>): string | undefined {
+  const template = properties['template'];
+  if (typeof template !== 'string') return undefined;
+  return MESSAGE_ITSELF_TEMPLATES[connectorType] === template ? undefined : template;
+}
+
 /** Keys the engine reads from any destination connector's properties. */
 export const destinationCommonProperties = {
   /** What to send instead of the encoded message; may use `${...}` (set by the Mirth importer). */
