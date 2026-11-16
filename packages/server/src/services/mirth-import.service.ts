@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import {
   isSourceConnectorType,
   isDestinationConnectorType,
+  charsetSchema,
   type ChannelExportEntry,
   type ImportResult,
   type SourceConnectorType,
@@ -268,7 +269,8 @@ function convertChannel(
 ): ChannelExportEntry {
   const name = getString(mirthChannel, 'name') ?? 'Unnamed Channel';
   const description = getString(mirthChannel, 'description');
-  const enabled = channelEnabled(mirthChannel);
+  const holds = channelEnabled(mirthChannel) ? disablingSettings(mirthChannel) : [];
+  const enabled = channelEnabled(mirthChannel) && holds.length === 0;
   const id = getString(mirthChannel, 'id') ?? randomUUID();
 
   // Source connector
@@ -328,6 +330,9 @@ function convertChannel(
   warnings.push(...delimitedWarnings(entry));
   const scriptWarning = mirthScriptWarning(entry);
   if (scriptWarning) warnings.push(scriptWarning);
+  if (holds.length > 0) {
+    warnings.push(`Channel "${name}": imported disabled because ${holds.join(' and ')}; enable it once you have decided how it should run here`);
+  }
   return entry;
 }
 
@@ -550,14 +555,35 @@ function sftpWriterProperties(propsNode: Record<string, unknown>): Record<string
   };
 }
 
+/** Mirth's after-processing action as written (upper case), NONE when absent. */
+function mirthAction(propsNode: Record<string, unknown>): string {
+  return (getString(propsNode, 'afterProcessingAction') ?? 'NONE').toUpperCase();
+}
+
 /**
  * What a Mirth File Reader does with a file it has read: NONE (Mirth's default,
- * the file stays), MOVE or DELETE. The FILE and SFTP sources delete by default,
- * so the action is always written out.
+ * the file stays), MOVE or DELETE. A Move with no move-to folder leaves the
+ * file where it is in Mirth, so it is NONE here, as is a value this importer
+ * does not know. The FILE and SFTP sources delete by default, so the action is
+ * always written out.
  */
 function afterProcessingAction(propsNode: Record<string, unknown>): 'NONE' | 'MOVE' | 'DELETE' {
-  const action = (getString(propsNode, 'afterProcessingAction') ?? 'NONE').toUpperCase();
-  return action === 'DELETE' || action === 'MOVE' ? action : 'NONE';
+  const action = mirthAction(propsNode);
+  if (action === 'MOVE') return (getString(propsNode, 'moveToDirectory') ?? '').trim() === '' ? 'NONE' : 'MOVE';
+  return action === 'DELETE' ? 'DELETE' : 'NONE';
+}
+
+/**
+ * A Mirth File connector's `charsetEncoding` as the FILE `charset`: nothing for
+ * Mirth's DEFAULT_ENCODING; the FILE name for a Java name the charset schema
+ * knows (`ISO-8859-1` is `latin1`); otherwise the Mirth name as written, which
+ * the deploy refuses, naming it (see {@link fileReaderWarnings}).
+ */
+function mirthCharset(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const name = getString(propsNode, 'charsetEncoding')?.trim() ?? '';
+  if (name === '' || name === 'DEFAULT_ENCODING') return {};
+  const parsed = charsetSchema.safeParse(name);
+  return { charset: parsed.success ? parsed.data : name };
 }
 
 /** Mirth's names for the two values a GalvaniFlow output file name can use. */
@@ -594,42 +620,93 @@ function fileReaderProperties(propsNode: Record<string, unknown>): Record<string
   const fileAge = getNumber(propsNode, 'fileAge', -1);
   if (Number.isInteger(fileAge) && fileAge >= 0) result['fileAgeMs'] = fileAge;
   if (getString(propsNode, 'binary') !== null) result['binary'] = getBoolean(propsNode, 'binary', false);
-  return result;
+  return { ...result, ...mirthCharset(propsNode) };
 }
 
-/** A local Mirth File Writer: directory, file name, append setting, binary flag and template. */
+/** A local Mirth File Writer: directory, file name, append, temporary file, binary, charset and template. */
 function fileWriterProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {
     appendMode: getBoolean(propsNode, 'outputAppend', true),
+    tempFileEnabled: getBoolean(propsNode, 'temporary', false),
     binary: getBoolean(propsNode, 'binary', false),
   };
   const dir = getString(propsNode, 'host');
   if (dir) result['directory'] = dir;
   const pattern = outputFileName(propsNode);
   if (pattern) result['outputPattern'] = pattern;
-  return { ...result, ...sendTemplate(propsNode, 'template') };
+  return { ...result, ...mirthCharset(propsNode), ...sendTemplate(propsNode, 'template') };
+}
+
+/** True when a Mirth File Writer must fail rather than replace a file that is already there. */
+function failsOnExistingFile(propsNode: Record<string, unknown>): boolean {
+  return !getBoolean(propsNode, 'outputAppend', true) && getBoolean(propsNode, 'errorOnExists', false);
+}
+
+/** Preview warnings for File (and SFTP) settings that do not carry, Reader and Writer alike. */
+function fileConnectorWarnings(propsNode: Record<string, unknown>, properties: Record<string, unknown>, connector: string, channelName: string): string[] {
+  const prefix = `Channel "${channelName}": the ${connector}`;
+  const warnings = [...fileReaderWarnings(propsNode, prefix), ...fileWriterWarnings(propsNode, properties, prefix)];
+  const charset = properties['charset'];
+  if (typeof charset === 'string' && !charsetSchema.safeParse(charset).success) {
+    warnings.push(`${prefix} reads and writes ${charset}, which GalvaniFlow does not have (UTF-8, ISO-8859-1, US-ASCII and UTF-16LE only); it will not deploy until the charset is changed`);
+  }
+  return warnings;
 }
 
 /**
- * Preview warnings for File (and SFTP) settings that do not carry: a Reader's
- * regular-expression filter or move-to file name, and a Writer's file name
- * placeholders that cannot be filled.
+ * A Reader's settings with no equivalent here: a regular-expression or
+ * comma-separated filter, subfolders, a file size range, a rename on move, and
+ * moving files that fail.
  */
-function fileConnectorWarnings(propsNode: Record<string, unknown>, properties: Record<string, unknown>, connector: string, channelName: string): string[] {
+function fileReaderWarnings(propsNode: Record<string, unknown>, prefix: string): string[] {
   const warnings: string[] = [];
-  if (getBoolean(propsNode, 'regex', false)) {
-    warnings.push(`Channel "${channelName}": the ${connector}'s file filter is a regular expression, and GalvaniFlow reads it as a glob (* and ?); rewrite it before deploying`);
+  const regex = getBoolean(propsNode, 'regex', false);
+  if (regex) warnings.push(`${prefix}'s file filter is a regular expression, and GalvaniFlow reads it as a glob (* and ?); rewrite it before deploying`);
+  if (!regex && (getString(propsNode, 'fileFilter') ?? '').includes(',')) {
+    warnings.push(`${prefix}'s file filter is a comma-separated list, which Mirth splits; GalvaniFlow reads it as one glob, so it matches nothing until it is one pattern`);
+  }
+  if (getBoolean(propsNode, 'directoryRecursion', false)) warnings.push(`${prefix} also reads subfolders in Mirth; GalvaniFlow reads only the folder itself`);
+  const minimum = getNumber(propsNode, 'fileSizeMinimum', 0);
+  const maximum = getString(propsNode, 'fileSizeMaximum') ?? '';
+  if (minimum > 0 || (maximum.trim() !== '' && !getBoolean(propsNode, 'ignoreFileSizeMaximum', true))) {
+    warnings.push(`${prefix} skips files outside a file size range in Mirth; GalvaniFlow reads files of every size`);
   }
   const rename = getString(propsNode, 'moveToFileName');
-  if (rename) {
-    warnings.push(`Channel "${channelName}": the ${connector} renames moved files to "${rename}" in Mirth; GalvaniFlow moves them under their own name`);
+  if (rename && mirthAction(propsNode) === 'MOVE') warnings.push(`${prefix} renames the files it moves to "${rename}" in Mirth; GalvaniFlow keeps their names`);
+  for (const key of ['errorReadingAction', 'errorResponseAction'] as const) {
+    if ((getString(propsNode, key) ?? '').toUpperCase() === 'MOVE') {
+      warnings.push(`${prefix} moves a file whose ${key === 'errorReadingAction' ? 'reading' : 'message'} fails to an error folder in Mirth; GalvaniFlow does not move it`);
+    }
   }
+  return warnings;
+}
+
+/** A Writer's settings with no equivalent here: file name values it cannot fill, and failing on an existing file. */
+function fileWriterWarnings(propsNode: Record<string, unknown>, properties: Record<string, unknown>, prefix: string): string[] {
+  const warnings: string[] = [];
   const pattern = properties['outputPattern'] ?? properties['fileNameTemplate'];
   const unknown = typeof pattern === 'string' ? unknownPlaceholders(pattern) : [];
   if (unknown.length > 0) {
-    warnings.push(`Channel "${channelName}": the ${connector}'s file name uses ${unknown.map((n) => '${' + n + '}').join(', ')}, which GalvaniFlow cannot fill (only \${messageId} and \${timestamp}); it will not deploy until the file name is changed`);
+    warnings.push(`${prefix}'s file name uses ${unknown.map((n) => '${' + n + '}').join(', ')}, which GalvaniFlow cannot fill (only \${messageId} and \${timestamp}); it will not deploy unless it names a configuration map entry`);
+  }
+  if (failsOnExistingFile(propsNode)) {
+    warnings.push(`${prefix} fails in Mirth when its file already exists; GalvaniFlow has no such check and would overwrite the file`);
   }
   return warnings;
+}
+
+/**
+ * Settings with no safe equivalent here, for which the channel is imported
+ * disabled so that someone decides before it runs.
+ */
+function disablingSettings(mirthChannel: Record<string, unknown>): string[] {
+  const reasons: string[] = [];
+  for (const [, dest] of destinationConnectorsById(mirthChannel)) {
+    if (failsOnExistingFile(getNestedRecord(dest, 'properties') ?? {})) {
+      reasons.push(`the File Writer "${getString(dest, 'name') ?? ''}" must not overwrite an existing file`);
+    }
+  }
+  return reasons;
 }
 
 /**

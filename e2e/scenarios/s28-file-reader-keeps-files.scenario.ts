@@ -48,7 +48,8 @@ scenario('S28 File Reader leaves or moves the files it reads as Mirth did', asyn
     drop(keepDir, 'order1.hl7', order(1));
     drop(moveDir, 'order2.hl7', order(2));
 
-    await expect.poll(() => keepSink.received.length, { timeout: 20_000 }).toBeGreaterThanOrEqual(1);
+    // A second receipt means a later poll found the file again, so a delete after the first can't pass.
+    await expect.poll(() => keepSink.received.length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
     expect(keepSink.received[0]).toContain('ORC|NW|ACC0281');
     expect(exists(keepDir, 'order1.hl7')).toBe(true);
 

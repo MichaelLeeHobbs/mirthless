@@ -961,6 +961,89 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       const result = convert('<afterProcessingAction>MOVE</afterProcessingAction><moveToDirectory>/d</moveToDirectory><moveToFileName>${originalFilename}.done</moveToFileName>');
       expect(result.warnings.some((w) => w.includes('${originalFilename}.done'))).toBe(true);
     });
+
+    it('reads an action it does not know as NONE, leaving the file in place', () => {
+      expect(source('<afterProcessingAction>AFTER_PROCESSING</afterProcessingAction>')['postAction']).toBe('NONE');
+      expect(source('<afterProcessingAction>Shred</afterProcessingAction>')['postAction']).toBe('NONE');
+    });
+
+    it('keeps the file in place, as Mirth does, for a Move with no move-to folder, and warns about a rename only on a Move', () => {
+      const blank = convert('<afterProcessingAction>MOVE</afterProcessingAction><moveToDirectory></moveToDirectory><moveToFileName>${originalFilename}.done</moveToFileName>');
+      expect(blank.channels[0]?.sourceConnectorProperties['postAction']).toBe('NONE');
+      expect(validateConnectorProperties('FILE', 'source', blank.channels[0]?.sourceConnectorProperties ?? {})).toMatchObject({ ok: true });
+      expect(blank.warnings.some((w) => w.includes('${originalFilename}.done'))).toBe(true);
+      expect(convert('<afterProcessingAction>DELETE</afterProcessingAction><moveToFileName>left.over</moveToFileName>').warnings.some((w) => w.includes('left.over'))).toBe(false);
+    });
+
+    it('says a file name value that cannot be filled stops the deploy unless it names a configuration map entry', () => {
+      const warning = convert('', '<outputPattern>${site}.hl7</outputPattern>').warnings.find((w) => w.includes('${site}'));
+      expect(warning).toContain('unless it names a configuration map entry');
+    });
+
+    it.each([
+      ['UTF-8', 'utf-8'],
+      ['ISO-8859-1', 'latin1'],
+      ['US-ASCII', 'ascii'],
+      ['UTF-16LE', 'utf16le'],
+    ])('carries the charset %s as %s on the Reader and Writer', (java, charset) => {
+      const result = convert(`<charsetEncoding>${java}</charsetEncoding>`, `<outputPattern>a.txt</outputPattern><charsetEncoding>${java}</charsetEncoding>`);
+      expect(result.channels[0]?.sourceConnectorProperties['charset']).toBe(charset);
+      expect(result.channels[0]?.destinations[0]?.properties['charset']).toBe(charset);
+      expect(validateConnectorProperties('FILE', 'source', result.channels[0]?.sourceConnectorProperties ?? {})).toMatchObject({ ok: true });
+    });
+
+    it('leaves Mirth\'s DEFAULT_ENCODING to the FILE default, and keeps a charset it cannot map so the deploy refuses it, with a warning', () => {
+      expect(source('<charsetEncoding>DEFAULT_ENCODING</charsetEncoding>')['charset']).toBeUndefined();
+      const odd = convert('<charsetEncoding>windows-1252</charsetEncoding>');
+      expect(odd.channels[0]?.sourceConnectorProperties['charset']).toBe('windows-1252');
+      expect(validateConnectorProperties('FILE', 'source', odd.channels[0]?.sourceConnectorProperties ?? {})).toMatchObject({ ok: false });
+      expect(odd.warnings.some((w) => w.includes('windows-1252'))).toBe(true);
+    });
+
+    it('carries the Writer\'s temporary-file setting, off as in Mirth when absent', () => {
+      expect(dest('<outputPattern>a.txt</outputPattern><temporary>true</temporary>')['tempFileEnabled']).toBe(true);
+      expect(dest('<outputPattern>a.txt</outputPattern>')['tempFileEnabled']).toBe(false);
+    });
+
+    it('imports the channel disabled, with a warning, when a Writer must fail rather than overwrite an existing file', () => {
+      const result = convert('', '<outputPattern>a.txt</outputPattern><outputAppend>false</outputAppend><errorOnExists>true</errorOnExists>');
+      expect(result.channels[0]?.enabled).toBe(false);
+      expect(result.warnings.some((w) => w.includes('File Writer "Try then queue"') && w.includes('already exists'))).toBe(true);
+      expect(result.warnings.some((w) => w.includes('imported disabled'))).toBe(true);
+      // Appending never overwrites, so Mirth's check never fires.
+      const appending = convert('', '<outputPattern>a.txt</outputPattern><outputAppend>true</outputAppend><errorOnExists>true</errorOnExists>');
+      expect(appending.channels[0]?.enabled).toBe(true);
+      expect(appending.warnings.some((w) => w.includes('already exists'))).toBe(false);
+    });
+
+    it.each([
+      ['<directoryRecursion>true</directoryRecursion>', 'subfolders'],
+      ['<fileSizeMinimum>10</fileSizeMinimum>', 'file size'],
+      ['<fileSizeMaximum>1000</fileSizeMaximum><ignoreFileSizeMaximum>false</ignoreFileSizeMaximum>', 'file size'],
+      ['<errorReadingAction>MOVE</errorReadingAction><errorMoveToDirectory>/err</errorMoveToDirectory>', 'error'],
+      ['<errorResponseAction>MOVE</errorResponseAction><errorMoveToDirectory>/err</errorMoveToDirectory>', 'error'],
+    ])('warns about a Reader setting with no equivalent: %s', (inner, needle) => {
+      const warnings = convert(inner).warnings.filter((w) => w.includes('File Reader'));
+      expect(warnings.some((w) => w.includes(needle))).toBe(true);
+    });
+
+    it('says nothing about Mirth\'s default Reader settings', () => {
+      const defaults = '<regex>false</regex><directoryRecursion>false</directoryRecursion><afterProcessingAction>NONE</afterProcessingAction><moveToDirectory></moveToDirectory><moveToFileName></moveToFileName><errorReadingAction>NONE</errorReadingAction><errorResponseAction>AFTER_PROCESSING</errorResponseAction><errorMoveToDirectory></errorMoveToDirectory><errorMoveToFileName></errorMoveToFileName><checkFileAge>true</checkFileAge><fileAge>1000</fileAge><fileSizeMinimum>0</fileSizeMinimum><fileSizeMaximum></fileSizeMaximum><ignoreFileSizeMaximum>true</ignoreFileSizeMaximum><sortBy>date</sortBy><binary>false</binary><charsetEncoding>DEFAULT_ENCODING</charsetEncoding>';
+      expect(convert(defaults).warnings.filter((w) => w.includes('File Reader'))).toEqual([]);
+    });
+
+    it('warns that a comma-separated file filter, which Mirth splits, is one glob here', () => {
+      const withFilter = (filter: string): MirthConvertResult => {
+        const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml').replace(
+          /<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/,
+          `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>FILE</scheme><host>/data/in</host><fileFilter>${filter}</fileFilter></properties><transformer`,
+        ));
+        if (!result.ok) throw result.error;
+        return result.value;
+      };
+      expect(withFilter('*.hl7').warnings.some((w) => w.includes('comma'))).toBe(false);
+      expect(withFilter('*.hl7,*.txt').warnings.some((w) => w.includes('comma'))).toBe(true);
+    });
   });
 
   describe('a File connector with a remote scheme', () => {
