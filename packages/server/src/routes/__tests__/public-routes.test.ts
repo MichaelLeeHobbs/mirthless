@@ -5,65 +5,17 @@
 // This boots the real app, walks every route the routers define, and calls
 // each one without credentials, with a bogus bearer token and with a malformed
 // body. Anything other than the guard's 401 fails, unless the route is in
-// PUBLIC_ROUTES; a body parser in front of the guard fails it too (#157). A route
+// PUBLIC_ROUTES (api-routes.ts); a body parser in front of the guard fails it too (#157). A route
 // mounted above the guard by mistake, or a router mounted before it, shows up
 // here. Nothing reaches a handler, so no database is needed.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { connect, type AddressInfo } from 'node:net';
-import type { Router } from 'express';
-
-interface ApiRoute {
-  readonly method: string;
-  readonly path: string;
-}
-
-interface PublicRoute extends ApiRoute {
-  readonly reason: string;
-}
-
-/** The only /api/v1 routes a caller without a session reaches. Each needs a reason. */
-const PUBLIC_ROUTES: readonly PublicRoute[] = [
-  { method: 'GET', path: '/api/v1/health', reason: 'Liveness for load balancers and Playwright; answers only "ok".' },
-  { method: 'POST', path: '/api/v1/auth/login', reason: 'The caller has no session yet. Behind the login rate limiter.' },
-  { method: 'POST', path: '/api/v1/auth/refresh', reason: 'Proves itself with the httpOnly refresh cookie. Behind its own rate limiter.' },
-];
+import { walkApiRoutes, isPublic, PUBLIC_ROUTES, type ApiRoute } from './api-routes.js';
 
 const ID = '3f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0c';
 
-interface RouteLayer {
-  readonly route?: { readonly path: string | readonly string[]; readonly methods: Readonly<Record<string, boolean>> };
-}
-
-/** The routes a router defines itself, under `prefix`. */
-function routesOf(router: Router, prefix: string): readonly ApiRoute[] {
-  return (router.stack as unknown as readonly RouteLayer[]).flatMap((layer) => {
-    const route = layer.route;
-    if (!route) return [];
-    const paths = typeof route.path === 'string' ? [route.path] : route.path;
-    return paths.flatMap((p) => Object.keys(route.methods).map((m) => ({ method: m.toUpperCase(), path: `${prefix}${p === '/' ? '' : p}` })));
-  });
-}
-
-/** Every route under /api/v1: index.ts's own, then each mounted router's, from index.ts's imports and mounts. */
-async function walkApiRoutes(index: Router): Promise<readonly ApiRoute[]> {
-  const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
-  const files = new Map([...source.matchAll(/import (\w+) from '\.\/([\w-]+\.routes)\.js'/g)].map((m) => [m[1] ?? '', m[2] ?? '']));
-  const mounts = [...source.matchAll(/router\.use\('([^']+)',\s*(\w+)\)/g)].map((m) => [m[1] ?? '', m[2] ?? ''] as const);
-  const walked: ApiRoute[] = [...routesOf(index, '/api/v1')];
-  for (const [mount, name] of mounts) {
-    const file = files.get(name);
-    if (!file) throw new Error(`index.ts mounts ${name}, which it does not import from a routes file`);
-    // Vite resolves a variable import only against source files, so name the .ts.
-    const router = ((await import(`../${file}.ts`)) as { default: Router }).default;
-    walked.push(...routesOf(router, `/api/v1${mount}`));
-  }
-  return walked;
-}
-
-const isPublic = (r: ApiRoute): boolean => PUBLIC_ROUTES.some((p) => p.method === r.method && p.path === r.path);
 const concrete = (path: string): string => path.replace(/:\w+/g, ID);
 
 /** The parts of an Express 5 router layer these checks read. */
@@ -85,7 +37,7 @@ beforeAll(async () => {
   process.env['API_RATE_LIMIT_MAX'] = '100000';
   const app = (await import('../../app.js')).default;
   const index = (await import('../index.js')).default;
-  routes = await walkApiRoutes(index);
+  routes = (await walkApiRoutes(index)).map(({ method, path }) => ({ method, path }));
   appLayers = (app as unknown as { router: { stack: readonly StackLayer[] } }).router.stack;
   indexLayers = index.stack as unknown as readonly StackLayer[];
   real = {

@@ -14,8 +14,15 @@ interface ValidationTarget {
   params?: ZodType;
 }
 
+const validators = new WeakSet<object>();
+
+/** True for a handler `validate` made. The role walk sends such a route input it refuses, so the handler never runs. */
+export function isValidator(handler: unknown): boolean {
+  return typeof handler === 'function' && validators.has(handler);
+}
+
 export function validate(schema: ValidationTarget) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  const check = (req: Request, res: Response, next: NextFunction): void => {
     if (schema.params) {
       const result = schema.params.safeParse(req.params);
       if (!result.success) {
@@ -61,4 +68,6 @@ export function validate(schema: ValidationTarget) {
 
     next();
   };
+  validators.add(check);
+  return check;
 }

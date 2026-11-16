@@ -155,7 +155,8 @@ These write no audit event:
 - Sending a test message into a channel, Test Connection, and the data source connection test.
 - Resetting channel statistics and unlocking an account. Enabling or disabling an extension writes a `SETTINGS_CHANGED` event with no user or client address.
 - Token refreshes.
-- Requests refused with 401 or 403. They leave only a debug log line ([#158](https://github.com/MichaelLeeHobbs/mirthless/issues/158)).
+
+**Refused requests.** A request the API refuses for its credential or its permission writes an `ACCESS_DENIED` event (level WARN, outcome FAILURE). It records the method, the route template (`/api/v1/channels/:id`, never the URL or query string), the reason, the status, the user when known, the client address and the request id; never the body or the token. The reasons are `no_credentials`, `bad_token`, `user_not_found` and `session_revoked` (401), and `account_disabled`, `password_change_required` and `no_permission` (403). A refusal of the credential happens before the request is routed, so it carries no route. The first refusal for a user (or an anonymous caller), method, route and reason writes an event, and further ones in the next minute are counted rather than written: when the minute ends, one more event carries their number in `repeatsSinceLast`. The route's mount path is recorded in lower case, so changing the case of a URL does not open a new minute. Until the protected audit log ships ([#264](https://github.com/MichaelLeeHobbs/mirthless/issues/264)), these events can be purged like any other.
 
 Audit events are written in the background. If the database write fails, the server logs a warning and the event is lost; the action itself still succeeds.
 
