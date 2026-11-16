@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { buildAck, classifyAckResponse } from '../ack-builder.js';
+import { buildAck, classifyAckResponse, controlIdOf } from '../ack-builder.js';
 
 const VALID_HL7 = 'MSH|^~\\&|SEND|FAC|RECV|RFAC|20240101||ADT^A01|CTRL42|P|2.5.1';
 
@@ -29,6 +29,18 @@ describe('buildAck', () => {
     expect(ack.startsWith('MSH')).toBe(true);
     expect(ack).toContain('MSA|AA|');
     expect(ack).not.toContain('/var/data/out');
+  });
+
+  it('answers a message with an invalid MSH-2 with the fallback ACK, not one built from misread delimiters', () => {
+    const ack = buildAck('MSH|^~|SEND|FAC|RECV|RFAC|20240101||ADT^A01|CTRL42|P|2.5.1', 'AE');
+    expect(ack).toMatch(/^MSH\|\^~\\&\|\|\|\|\|/);
+    expect(ack).toContain('MSA|AE|GF');
+  });
+
+  it('acknowledges a sender whose MSH-2 has no subcomponent character with its own encoding characters', () => {
+    const ack = buildAck('MSH|^~\\|SEND|FAC|RECV|RFAC|20240101||ADT^A01|CTRL42|P|2.3', 'AA');
+    expect(ack.startsWith('MSH|^~\\|RECV|RFAC|SEND|FAC|')).toBe(true);
+    expect(ack.split('\r')[1]).toBe('MSA|AA|CTRL42');
   });
 
   it('includes MSA-3 diagnostic text when provided', () => {
@@ -76,6 +88,11 @@ describe('fallback ACK', () => {
     expect(ack.split('\r')[1]!.split('|')[2]).toBe(controlId);
   });
 
+  it('stamps MSH-7 with its UTC offset', () => {
+    const ack = buildAck('not hl7 at all', 'AE');
+    expect(ack.split('\r')[0]!.split('|')[6]).toMatch(/^\d{14}[+-]\d{4}$/);
+  });
+
   it('escapes delimiters in the text', () => {
     const ack = buildAck('not hl7 at all', 'AE', 'bad|text\rMSA|AA');
     const lines = ack.split('\r');
@@ -97,6 +114,42 @@ describe('classifyAckResponse control id check', () => {
     expect(result.accepted).toBe(false);
     expect(result.errorMessage).toContain('OTHER');
     expect(result.errorMessage).toContain('CTRL1');
+  });
+
+  describe('a control id with components (#197)', () => {
+    const sentId = controlIdOf('MSH|^~\\&|S|F|R|F|20260101||ADT^A01|ID^X|P|2.5.1');
+
+    it('accepts an acknowledgement that echoes the whole control id', () => {
+      expect(classifyAckResponse(ack('AA', 'ID^X'), sentId).accepted).toBe(true);
+    });
+
+    it('accepts one that echoes only its first component, so the message is not resent', () => {
+      expect(classifyAckResponse(ack('AA', 'ID'), sentId).accepted).toBe(true);
+    });
+
+    it('rejects one whose later component differs', () => {
+      expect(classifyAckResponse(ack('AA', 'ID^Y'), sentId).accepted).toBe(false);
+    });
+
+    it('rejects one for another message', () => {
+      expect(classifyAckResponse(ack('AA', 'OTHER'), sentId).accepted).toBe(false);
+    });
+
+    it('takes the first component with the acknowledgement\'s own component separator', () => {
+      const custom = (id: string): string => `MSH|@~\\&|R|F|S|F|20260101||ACK|X1|P|2.5.1\rMSA|AA|${id}`;
+      expect(classifyAckResponse(custom('ID'), 'ID@X').accepted).toBe(true);
+      expect(classifyAckResponse(custom('ID'), 'ID^X').accepted).toBe(false);
+    });
+
+    it('takes it with ^ when the acknowledgement has no MSH to read', () => {
+      expect(classifyAckResponse('MSA|AA|ID', sentId).accepted).toBe(true);
+      expect(classifyAckResponse('MSA|AA|IDX', sentId).accepted).toBe(false);
+    });
+  });
+
+  it('accepts the acknowledgement createAck builds for the message sent', () => {
+    const sent = 'MSH|^~\\&|S|F|R|F|20260101||ADT^A01|ID^X|P|2.5.1';
+    expect(classifyAckResponse(buildAck(sent, 'AA'), controlIdOf(sent)).accepted).toBe(true);
   });
 
   it('accepts when the acknowledgement carries no control id', () => {

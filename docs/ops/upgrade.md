@@ -63,6 +63,31 @@ WHERE connector_type = 'TCP_MLLP'
                 'receiveTimeout','bufferSize','keepConnectionOpen','transmissionMode','sendTimeout');
 ```
 
+**HTTP** is the second. Channels saved by this app's own editor keep deploying. The old HTTP forms saved keys no connector reads: `contextPath`, `methods` and `charset` on the source (2026-02 to 2026-07), `charset` on the destination (2026-03 to 2026-07). The schema drops them, so the source still serves `/` and `POST` as before. On 2026-07-14 the destination form saved empty inline-PEM fields (`ca`, `cert`, `key`) inside `tls`; empty ones are dropped too. A method is read in any case (`put` is `PUT`). Nothing in the database is rewritten.
+
+One behaviour changes without a deploy error. The 2026-03 to 2026-07 destination form saved `headers` as text. The editor has shown that text as `Name: value` lines since then, but the connector sent one junk header per character (`0`, `1`, ...). The text is now read the way the editor shows it, so those headers are sent as written. Empty header text sends none, as before.
+
+An HTTP channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. a misspelling such as `responseStatus`. Before, such a key was ignored.
+- a source `path` that doesn't start with `/`. Before, it deployed and answered 404 to every request.
+- a `method` other than GET, POST, PUT, PATCH or DELETE.
+- a `responseStatusCode` or `errorStatusCode` outside 100 to 599, a `maxBodyBytes` below 1, or a destination `responseTimeout` below 1. Before, a value that wasn't a number was replaced by the default without a word, and a `responseTimeout` of 0 failed every send at once (the editor wrongly said 0 meant no timeout).
+- an `auth` whose `type` is not `BASIC` or `TOKEN`, header, `parameters` or `basicAuth` values that are not text, or a `scheme` other than `HTTP` or `HTTPS`.
+- a `tls` that is not an object, `false` or `null`, or a key inside it the table doesn't list. That includes a destination `tls` with inline PEM pasted into `ca`, `cert` or `key`; pick the certificates from the store instead (`tls.caCertId`, `tls.clientCertId`).
+
+Before upgrading, list the keys the schema would refuse:
+
+```sql
+SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE source_connector_type = 'HTTP'
+  AND k NOT IN ('host','port','path','matchSubpaths','method','responseContentType','responseStatusCode','errorStatusCode',
+                'maxBodyBytes','auth','scheme','tls','processBatch','contextPath','methods','charset');
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'HTTP'
+  AND k NOT IN ('url','method','headers','parameters','basicAuth','contentType','responseTimeout','scheme','tls','template','charset');
+```
+
 ## Standard upgrade (Docker)
 
 ```bash

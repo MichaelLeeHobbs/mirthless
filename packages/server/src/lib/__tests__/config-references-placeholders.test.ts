@@ -8,9 +8,9 @@ import { describe, it, expect } from 'vitest';
 import { configLookup, resolveConfigReferences } from '../config-references.js';
 
 const lookup = configLookup([
-  { category: 'vns', name: 'HOST', value: 'lis.example.org' },
-  { category: 'vns', name: 'UNSET', value: null },
-  { category: 'vns', name: 'REF', value: '${HOST}' },
+  { category: 'site', name: 'HOST', value: 'lis.example.org' },
+  { category: 'site', name: 'UNSET', value: null },
+  { category: 'site', name: 'REF', value: '${HOST}' },
 ]);
 
 function resolve(text: string): unknown {
@@ -20,7 +20,7 @@ function resolve(text: string): unknown {
 describe('resolveConfigReferences', () => {
   it.each([
     ['a plain name', '<${HOST}>', '<lis.example.org>'],
-    ['a padded name', '<${ vns.HOST }>', '<lis.example.org>'],
+    ['a padded name', '<${ site.HOST }>', '<lis.example.org>'],
     ['a missing name', '<${oru}>', '<${oru}>'],
     ['a null value', '<${UNSET}>', '<${UNSET}>'],
     ['an inherited key', '<${toString}>', '<${toString}>'],

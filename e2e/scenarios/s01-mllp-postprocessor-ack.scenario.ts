@@ -11,7 +11,7 @@ const PORT = 16601;
 const NAME = 'S01 HL7 Listener';
 
 const ORM = [
-  'MSH|^~\\&|RIS|SITE1|VNS|VNS|20261110120000||ORM^O01|CTL0001|P|2.3',
+  'MSH|^~\\&|RIS|SITE1|HUB|HUB|20261110120000||ORM^O01|CTL0001|P|2.3',
   'PID|||MRN001^^^SITE1||DOE^JANE||19700101|F',
   'ORC|NW|ACC001',
   'OBR|1|ACC001||71020^CHEST 2V',
@@ -28,7 +28,7 @@ scenario('S01 MLLP listener returns the ACK its postprocessor builds', async (ap
       steps: [{
         name: 'Build ACK',
         script: [
-          "var ack = 'MSH|^~\\\\&|VNS|VNS|' + msg.get('MSH.3') + '|' + msg.get('MSH.4') + '|20261110120001||ACK|' + msg.get('MSH.10') + '|P|' + msg.get('MSH.12') + '\\r' + 'MSA|AA|' + msg.get('MSH.10') + '|Accepted by S01';",
+          "var ack = 'MSH|^~\\\\&|HUB|HUB|' + msg.get('MSH.3') + '|' + msg.get('MSH.4') + '|20261110120001||ACK|' + msg.get('MSH.10') + '|P|' + msg.get('MSH.12') + '\\r' + 'MSA|AA|' + msg.get('MSH.10') + '|Accepted by S01';",
           "$c('ack', ack);",
         ].join('\n'),
       }],
@@ -39,6 +39,6 @@ scenario('S01 MLLP listener returns the ACK its postprocessor builds', async (ap
   }), [NAME]);
 
   const ack = await sendMllp(PORT, ORM);
-  expect(ack).toContain('MSH|^~\\&|VNS|VNS|RIS|SITE1|');
+  expect(ack).toContain('MSH|^~\\&|HUB|HUB|RIS|SITE1|');
   expect(ack).toContain('MSA|AA|CTL0001|Accepted by S01');
 });

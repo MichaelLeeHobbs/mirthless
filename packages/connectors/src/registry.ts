@@ -8,7 +8,7 @@ import type { SourceConnectorType, DestinationConnectorType } from '@galvaniflow
 import type { SourceConnectorRuntime, DestinationConnectorRuntime } from './base.js';
 import { TcpMllpReceiver } from './tcp-mllp/tcp-mllp-receiver.js';
 import { TcpMllpDispatcher } from './tcp-mllp/tcp-mllp-dispatcher.js';
-import { HttpReceiver, DEFAULT_MAX_BODY_BYTES, type HttpAuthConfig } from './http/http-receiver.js';
+import { HttpReceiver } from './http/http-receiver.js';
 import { framingFromHex, type Framing } from './transmission/mllp-mode.js';
 import { readTlsServerOptions, readTlsClientOptions } from './tls.js';
 import { HttpDispatcher } from './http/http-dispatcher.js';
@@ -40,6 +40,8 @@ import {
   amqpDestinationPropertiesSchema,
   tcpMllpSourcePropertiesSchema,
   tcpMllpDestinationPropertiesSchema,
+  httpSourcePropertiesSchema,
+  httpDestinationPropertiesSchema,
   formatPropertyIssues,
 } from '@galvaniflow/core-models';
 
@@ -165,10 +167,31 @@ function tcpMllpDispatcher(props: Record<string, unknown>): TcpMllpDispatcher {
   return new TcpMllpDispatcher({ ...config, tls: readTlsClientOptions({ tls }), framing: readFraming({ frameStart, frameEnd }) });
 }
 
-/** Parse queue props with {@link parseProps}, leaving `tls` (PEM by now, not the stored ids) to {@link readQueueTls}. */
-function parseQueueProps<T>(type: string, schema: Parameters<typeof parseProps<T>>[1], props: Record<string, unknown>): T & { tls: TlsClientOptions | undefined } {
+/**
+ * Parse props with {@link parseProps}, `tls` set aside: the schema checks the
+ * stored certificate ids, and by now the server has swapped them for PEM,
+ * which the caller reads itself.
+ */
+function parseWithoutTls<T>(type: string, schema: Parameters<typeof parseProps<T>>[1], props: Record<string, unknown>): T {
   const { tls: _tls, ...rest } = props;
-  return { ...parseProps(type, schema, rest), tls: readQueueTls(props) };
+  return parseProps(type, schema, rest);
+}
+
+/** Parse queue props with {@link parseWithoutTls}, TLS read by {@link readQueueTls}. */
+function parseQueueProps<T>(type: string, schema: Parameters<typeof parseProps<T>>[1], props: Record<string, unknown>): T & { tls: TlsClientOptions | undefined } {
+  return { ...parseWithoutTls(type, schema, props), tls: readQueueTls(props) };
+}
+
+/** An HTTP source: schema-checked props, TLS read from the PEM the server resolved. */
+function httpReceiver(props: Record<string, unknown>): HttpReceiver {
+  const { tls: _tls, scheme: _scheme, processBatch: _processBatch, ...config } = parseWithoutTls('HTTP', httpSourcePropertiesSchema, props);
+  return new HttpReceiver({ ...config, tls: readHttpSourceTls(props) });
+}
+
+/** An HTTP destination: schema-checked props, TLS read from the PEM the server resolved. */
+function httpDispatcher(props: Record<string, unknown>): HttpDispatcher {
+  const { tls: _tls, template: _template, basicAuth, ...config } = parseWithoutTls('HTTP', httpDestinationPropertiesSchema, props);
+  return new HttpDispatcher({ ...config, basicAuth: readBasicAuth(basicAuth), tls: readTlsClientOptions(props) });
 }
 
 // ----- Source Factories -----
@@ -177,19 +200,7 @@ type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRun
 
 const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnectorType, SourceFactory>([
   ['TCP_MLLP', tcpMllpReceiver],
-  ['HTTP', (props): SourceConnectorRuntime => new HttpReceiver({
-    host: (props['host'] as string | undefined) ?? '0.0.0.0',
-    port: num(props, 'port', 0),
-    path: (props['path'] as string | undefined) ?? '/',
-    matchSubpaths: props['matchSubpaths'] === true,
-    method: (props['method'] as string | undefined) ?? 'POST',
-    responseContentType: (props['responseContentType'] as string | undefined) ?? 'text/plain',
-    responseStatusCode: num(props, 'responseStatusCode', 200),
-    errorStatusCode: num(props, 'errorStatusCode', 500),
-    maxBodyBytes: num(props, 'maxBodyBytes', DEFAULT_MAX_BODY_BYTES),
-    auth: props['auth'] as HttpAuthConfig | undefined,
-    tls: readHttpSourceTls(props),
-  })],
+  ['HTTP', httpReceiver],
   ['FILE', (props): SourceConnectorRuntime => new FileReceiver({
     directory: props['directory'] as string,
     fileFilter: (props['fileFilter'] as string | undefined) ?? '*',
@@ -274,17 +285,7 @@ type DestinationFactory = (properties: Record<string, unknown>) => DestinationCo
 
 const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<DestinationConnectorType, DestinationFactory>([
   ['TCP_MLLP', tcpMllpDispatcher],
-  ['HTTP', (props): DestinationConnectorRuntime => new HttpDispatcher({
-    url: props['url'] as string,
-    method: (props['method'] as string | undefined) ?? 'POST',
-    headers: (props['headers'] as Record<string, string> | undefined) ?? {},
-    parameters: readStringRecord(props['parameters']),
-    basicAuth: readBasicAuth(props['basicAuth']),
-    contentType: (props['contentType'] as string | undefined) ?? 'text/plain',
-    responseTimeout: num(props, 'responseTimeout', 30_000),
-    scheme: props['scheme'] as string | undefined,
-    tls: readTlsClientOptions(props),
-  })],
+  ['HTTP', httpDispatcher],
   ['FILE', (props): DestinationConnectorRuntime => new FileDispatcher({
     directory: props['directory'] as string,
     outputPattern: (props['outputPattern'] as string | undefined) ?? '${messageId}.txt',

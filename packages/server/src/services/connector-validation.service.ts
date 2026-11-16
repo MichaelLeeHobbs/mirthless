@@ -14,6 +14,8 @@ import {
   amqpDestinationPropertiesSchema,
   tcpMllpSourcePropertiesSchema,
   tcpMllpDestinationPropertiesSchema,
+  httpSourcePropertiesSchema,
+  httpDestinationPropertiesSchema,
   connectorPortSchema as portSchema,
   formatPropertyIssues,
 } from '@galvaniflow/core-models';
@@ -24,10 +26,9 @@ import { ServiceError } from '../lib/service-error.js';
 const nonEmptyString = z.string().min(1);
 
 // ----- Source Connector Schemas -----
-// TCP_MLLP, KAFKA and AMQP use their core-models schemas (#115); the others
-// still check only their required keys here.
+// TCP_MLLP, HTTP, KAFKA and AMQP use their core-models schemas (#115); the
+// others still check only their required keys here.
 
-const httpSourceSchema = z.object({ port: portSchema }).passthrough();
 const fileSourceSchema = z.object({ directory: nonEmptyString }).passthrough();
 /** Databases the connectors have a driver for; a Mirth channel on any other refuses to deploy. */
 const databaseVendorSchema = z.enum(['postgresql', 'mysql'], {
@@ -86,7 +87,6 @@ const sftpSourceSchema = sftpConnectionSchema.extend({
 
 // ----- Destination Connector Schemas -----
 
-const httpDestSchema = z.object({ url: nonEmptyString }).passthrough();
 const fileDestSchema = z.object({ directory: nonEmptyString }).passthrough();
 const databaseDestSchema = z.object({
   vendor: databaseVendorSchema,
@@ -106,7 +106,7 @@ const sftpDestSchema = sftpConnectionSchema.superRefine(checkSftpCredentials);
 
 const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   TCP_MLLP: tcpMllpSourcePropertiesSchema,
-  HTTP: httpSourceSchema,
+  HTTP: httpSourcePropertiesSchema,
   FILE: fileSourceSchema,
   DATABASE: databaseSourceSchema,
   JAVASCRIPT: javascriptSourceSchema,
@@ -120,7 +120,7 @@ const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
 
 const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   TCP_MLLP: tcpMllpDestinationPropertiesSchema,
-  HTTP: httpDestSchema,
+  HTTP: httpDestinationPropertiesSchema,
   FILE: fileDestSchema,
   DATABASE: databaseDestSchema,
   JAVASCRIPT: javascriptDestSchema,

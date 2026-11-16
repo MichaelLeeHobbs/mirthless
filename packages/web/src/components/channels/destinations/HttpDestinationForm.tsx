@@ -17,9 +17,7 @@ import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { HeadersEditor, coerceHeaders } from '../../common/HeadersEditor.js';
 import { CertificateSelect } from '../common/CertificateSelect.js';
 import { getStr, getNum, getTlsStr, getTlsBool, propertyUpdaters } from '../common/connector-properties.js';
-
-const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
-const SCHEMES = ['HTTP', 'HTTPS'] as const;
+import { HTTP_METHODS, HTTP_SCHEMES as SCHEMES } from '@galvaniflow/core-models';
 
 export function HttpDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -113,10 +111,10 @@ export function HttpDestinationForm({ properties, onChange }: DestConnectorFormP
           type="number"
           value={getNum(properties, 'responseTimeout', 30000)}
           onChange={handleNumber('responseTimeout')}
-          helperText="Timeout waiting for response (0 = no timeout)"
+          helperText="Milliseconds to wait for the response; at least 1"
           fullWidth
           sx={{ mb: 2 }}
-          slotProps={{ htmlInput: { min: 0 } }}
+          slotProps={{ htmlInput: { min: 1 } }}
         />
       </Grid>
 

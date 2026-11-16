@@ -57,6 +57,7 @@ vi.mock('../../db/schema/index.js', () => ({
 
 import type { ChannelExportEntry } from '@galvaniflow/core-models';
 import { MirthImportService, type MirthConvertResult } from '../mirth-import.service.js';
+import { validateConnectorProperties } from '../connector-validation.service.js';
 import { ChannelImportService } from '../channel-import.service.js';
 import { CodeTemplateService } from '../code-template.service.js';
 
@@ -543,6 +544,9 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     const warning = result.value.warnings.find((w) => w.includes('Mirth-only constructs'));
     expect(warning).toContain('Channel "4x Listener"');
     expect(warning).toContain("E4X field access (msg['PID']...)");
+    // Mirth's E4X indexes count from 0 and GalvaniFlow paths from 1, so a straight port reads the wrong segment.
+    // Both sides name the same thing: field 5 of the second OBX (#198).
+    expect(warning).toContain("[n] counts from 1, so Mirth's msg['OBX'][1]['OBX.5'] is msg.get('OBX[2].5')");
     expect(warning).toContain('Java map methods (channelMap.put)');
     expect(warning).not.toContain("'message' variable");
   });
@@ -665,6 +669,16 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       host: '0.0.0.0', port: 8081, path: '/', matchSubpaths: true, responseContentType: 'application/json',
     });
     expect(convert4x(swap('api', '202')).sourceConnectorProperties).toMatchObject({ path: '/api', responseStatusCode: 202 });
+    // Every key the importer writes is one the HTTP schema accepts, so the channel deploys.
+    const batch = convert4x((x) => swap('api', '202')(x).replace('<contextPath>', '<sourceConnectorProperties version="4.5.0"><processBatch>true</processBatch></sourceConnectorProperties><contextPath>'));
+    expect(batch.sourceConnectorProperties['processBatch']).toBe(true);
+    expect(validateConnectorProperties('HTTP', 'source', batch.sourceConnectorProperties)).toMatchObject({ ok: true });
+  });
+
+  it('keeps an HTTP Listener\'s ${...} port for the deploy to resolve', () => {
+    const listener = '<properties class="com.mirth.connect.connectors.http.HttpReceiverProperties" version="4.5.0"><listenerConnectorProperties version="4.5.0"><host>0.0.0.0</host><port>${HTTP_PORT}</port></listenerConnectorProperties><contextPath>/</contextPath></properties><transformer';
+    const channel = convert4x((x) => x.replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, listener));
+    expect(channel.sourceConnectorProperties['port']).toBe('${HTTP_PORT}');
   });
 
   it('carries a TCP Sender\'s template and keeps a ${...} port for the deploy to resolve', () => {
@@ -825,25 +839,26 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
   });
 
   it('maps an HTTP Sender\'s method, headers, parameters, Basic credentials and content, and an SMTP Sender\'s mail', () => {
-    const http = '<properties class="com.mirth.connect.connectors.http.HttpDispatcherProperties" version="4.5.0"><host>http://api/orders/${accession}</host><method>put</method><headers class="linked-hash-map"><entry><string>X-Source</string><list><string>VNS</string><string>LAB</string></list></entry></headers><parameters class="linked-hash-map"><entry><string>site</string><list><string>${site}</string></list></entry></parameters><useAuthentication>true</useAuthentication><authenticationType>Basic</authenticationType><username>mirth</username><password>s3cret</password><content>{"a":"${accession}"}</content><contentType>application/json</contentType></properties>';
-    const smtp = '<properties class="com.mirth.connect.connectors.smtp.SmtpDispatcherProperties" version="4.5.0"><smtpHost>mail</smtpHost><smtpPort>25</smtpPort><encryption>tls</encryption><authentication>true</authentication><username>u</username><password>p</password><to>${email}</to><from>vns@example.com</from><cc></cc><subject>${subject}</subject><html>true</html><body>Ready</body></properties>';
+    const http = '<properties class="com.mirth.connect.connectors.http.HttpDispatcherProperties" version="4.5.0"><host>http://api/orders/${accession}</host><method>put</method><headers class="linked-hash-map"><entry><string>X-Source</string><list><string>HUB</string><string>LAB</string></list></entry></headers><parameters class="linked-hash-map"><entry><string>site</string><list><string>${site}</string></list></entry></parameters><useAuthentication>true</useAuthentication><authenticationType>Basic</authenticationType><username>mirth</username><password>s3cret</password><content>{"a":"${accession}"}</content><contentType>application/json</contentType></properties>';
+    const smtp = '<properties class="com.mirth.connect.connectors.smtp.SmtpDispatcherProperties" version="4.5.0"><smtpHost>mail</smtpHost><smtpPort>25</smtpPort><encryption>tls</encryption><authentication>true</authentication><username>u</username><password>p</password><to>${email}</to><from>reports@example.com</from><cc></cc><subject>${subject}</subject><html>true</html><body>Ready</body></properties>';
     const channel = convert4x((x) => x
       .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, http)
       .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, smtp));
 
     expect(channel.destinations[0]?.properties).toEqual({
-      url: 'http://api/orders/${accession}', method: 'PUT', headers: { 'X-Source': 'VNS, LAB' }, parameters: { site: '${site}' },
+      url: 'http://api/orders/${accession}', method: 'PUT', headers: { 'X-Source': 'HUB, LAB' }, parameters: { site: '${site}' },
       contentType: 'application/json', basicAuth: { username: 'mirth', password: 's3cret' }, template: '{"a":"${accession}"}',
     });
+    expect(validateConnectorProperties('HTTP', 'destination', channel.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
     expect(channel.destinations[1]?.properties).toEqual({
-      host: 'mail', port: 25, to: '${email}', from: 'vns@example.com', subject: '${subject}', bodyTemplate: 'Ready',
+      host: 'mail', port: 25, to: '${email}', from: 'reports@example.com', subject: '${subject}', bodyTemplate: 'Ready',
       contentType: 'text/html', requireTLS: true, authUser: 'u', authPass: 'p',
     });
   });
 
   describe('a File connector with a remote scheme', () => {
-    const reader = (scheme: string, hostKeyChecking: string): string => `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>${scheme}</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>${hostKeyChecking}</hostKeyChecking></schemeProperties><host>sftp.partner.org:2222/out/orders</host><fileFilter>*.hl7</fileFilter><username>vns</username><password>pw</password><afterProcessingAction>DELETE</afterProcessingAction><moveToDirectory></moveToDirectory></properties><transformer`;
-    const writer = '<properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0"><scheme>SFTP</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>no</hostKeyChecking></schemeProperties><host>sftp.partner.org/in</host><outputPattern>${messageId}.hl7</outputPattern><outputAppend>false</outputAppend><username>vns</username><password>pw</password></properties>';
+    const reader = (scheme: string, hostKeyChecking: string): string => `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>${scheme}</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>${hostKeyChecking}</hostKeyChecking></schemeProperties><host>sftp.partner.org:2222/out/orders</host><fileFilter>*.hl7</fileFilter><username>svc</username><password>pw</password><afterProcessingAction>DELETE</afterProcessingAction><moveToDirectory></moveToDirectory></properties><transformer`;
+    const writer = '<properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0"><scheme>SFTP</scheme><schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties"><hostKeyChecking>no</hostKeyChecking></schemeProperties><host>sftp.partner.org/in</host><outputPattern>${messageId}.hl7</outputPattern><outputAppend>false</outputAppend><username>svc</username><password>pw</password></properties>';
     const convert = (scheme: string, hostKeyChecking = 'no'): MirthConvertResult => {
       const xml = loadFixture('mirth-4x-channel.xml')
         .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader(scheme, hostKeyChecking))
@@ -857,7 +872,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       const { channels } = convert('SFTP');
       expect(channels[0]?.sourceConnectorType).toBe('SFTP');
       expect(channels[0]?.sourceConnectorProperties).toEqual({
-        host: 'sftp.partner.org', port: 2222, remoteDirectory: '/out/orders', username: 'vns', password: 'pw',
+        host: 'sftp.partner.org', port: 2222, remoteDirectory: '/out/orders', username: 'svc', password: 'pw',
         strictHostKey: false, filePattern: '*.hl7', afterProcessing: 'DELETE', moveToDirectory: '',
       });
       expect(channels[0]?.destinations[0]).toMatchObject({

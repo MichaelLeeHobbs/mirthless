@@ -10,31 +10,48 @@ export interface Hl7Encoding {
   readonly componentSep: string;
   readonly repetitionSep: string;
   readonly escapeChar: string;
+  /**
+   * The subcomponent separator, or the field separator when MSH-2 declares none
+   * (three characters, as some legacy senders send). A field never contains the
+   * field separator, so nothing is then split at subcomponent level.
+   */
   readonly subComponentSep: string;
   readonly segmentSep: string;
 }
 
-const MSH_REGEX = /^MSH(.)(.)(.)(.)(.)/;
-
-/** Detect encoding characters from an MSH segment line. */
+/**
+ * Detect encoding characters from an MSH segment line.
+ *
+ * MSH-2 holds 4 distinct characters (component, repetition, escape,
+ * subcomponent), or 5 from v2.7, which adds the truncation character. Some
+ * legacy senders send 3, with no subcomponent separator; that is read as Mirth
+ * reads it, with no subcomponent splitting. Anything else is refused: reading
+ * delimiters from a malformed header would split every field in the wrong place
+ * without an error.
+ */
 export function detectEncoding(mshSegment: string): Hl7Encoding {
-  const matches = MSH_REGEX.exec(mshSegment);
-  if (!matches) {
+  const fieldSep = /^MSH([^\r\n])/.exec(mshSegment)?.[1];
+  if (fieldSep === undefined) {
     throw new Error('Invalid MSH segment — cannot detect encoding');
   }
+  const chars = mshSegment.slice(4).split(fieldSep)[0]!.split(/[\r\n]/)[0]!;
+  if (chars.length < 3 || chars.length > 5 || new Set(chars).size !== chars.length) {
+    throw new Error(`Invalid MSH-2 encoding characters "${chars}": expected 3 to 5 distinct characters`);
+  }
   return {
-    fieldSep: matches[1]!,
-    componentSep: matches[2]!,
-    repetitionSep: matches[3]!,
-    escapeChar: matches[4]!,
-    subComponentSep: matches[5]!,
+    fieldSep,
+    componentSep: chars[0]!,
+    repetitionSep: chars[1]!,
+    escapeChar: chars[2]!,
+    subComponentSep: chars[3] ?? fieldSep,
     segmentSep: '\r',
   };
 }
 
-/** Build the MSH.2 encoding characters string (4 chars: ^~\&). */
+/** Build the MSH.2 encoding characters string (`^~\&`, or `^~\` when there is no subcomponent separator). */
 export function encodingCharsString(enc: Hl7Encoding): string {
-  return `${enc.componentSep}${enc.repetitionSep}${enc.escapeChar}${enc.subComponentSep}`;
+  const sub = enc.subComponentSep === enc.fieldSep ? '' : enc.subComponentSep;
+  return `${enc.componentSep}${enc.repetitionSep}${enc.escapeChar}${sub}`;
 }
 
 /** Escape a regex special character for use in RegExp constructor. */
@@ -51,7 +68,7 @@ function escapeRegex(char: string): string {
  * segment (three-character ID then the field separator) or is blank, because
  * some senders put raw line feeds inside free-text fields.
  */
-export function splitSegments(text: string, enc: Hl7Encoding): string[] {
+export function splitSegments(text: string, enc: Pick<Hl7Encoding, 'fieldSep'>): string[] {
   const sep = escapeRegex(enc.fieldSep);
   const boundary = new RegExp(`\\r\\n?|\\n(?=[A-Z][A-Z0-9]{2}(?:${sep}|[\\r\\n]|$)|[\\r\\n])`);
   return text.replace(/[\r\n]+$/, '').split(boundary).filter((line) => line.trim() !== '');

@@ -25,9 +25,20 @@ export const connectorPortSchema = z.preprocess(
   }).int().min(1).max(65_535),
 );
 
-/** A whole number of at least `min`, digits as text accepted. */
-export function wholeNumberSchema(min: number): z.ZodType<number, unknown> {
-  return z.preprocess(digitsToNumber, z.number().int().min(min));
+/** A whole number of at least `min` (and at most `max` when given), digits as text accepted. */
+export function wholeNumberSchema(min: number, max = Number.MAX_SAFE_INTEGER): z.ZodType<number, unknown> {
+  return z.preprocess(digitsToNumber, z.number().int().min(min).max(max));
+}
+
+/** A TLS object with `fields`, or none: absent, null or false (read as null). */
+export function optionalTlsSchema<T extends z.ZodRawShape>(fields: T): z.ZodType {
+  return z.preprocess((value) => (value === false ? null : value), z.strictObject(fields).nullable()).optional();
+}
+
+/** Props without `keys`; anything that is not a plain object passes through to fail the schema. */
+export function withoutKeys(value: unknown, keys: ReadonlySet<string>): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.has(key)));
 }
 
 /**

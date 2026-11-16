@@ -6,12 +6,11 @@
 ## Why
 
 Channels frequently need to **stash a record now and look it up later from a
-different channel** — the canonical case (live in the user's Mirth prod at
-~100K msgs/day) is order/report matching: an orders channel stores each inbound
+different channel** — the canonical case (common in production Mirth
+deployments at ~100K msgs/day) is order/report matching: an orders channel stores each inbound
 order keyed by accession + institution; later a reports channel looks up the
 newest matching order (filtered by order-control type) to build the outbound
-report. See `reference` memory `vns-mirth-prod-source` →
-`portalApi.hl7message.store/find` and `valor-network/core/populateReportMsg.js`.
+report.
 
 This is **not** a [Resource](#relationship-to-resources): resources are static
 config blobs (read-only, cache-until-invalidated). A collection is mutable,

@@ -13,6 +13,7 @@ import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import { parseHeaderLines } from '@galvaniflow/core-models';
 
 interface HeadersEditorProps {
   readonly value: Record<string, string>;
@@ -30,19 +31,8 @@ export function coerceHeaders(raw: unknown): Record<string, string> {
     }
     return out;
   }
-  if (typeof raw === 'string' && raw.trim().length > 0) {
-    const out: Record<string, string> = {};
-    for (const line of raw.split(/\r?\n/)) {
-      const idx = line.indexOf(':');
-      if (idx > 0) {
-        const key = line.slice(0, idx).trim();
-        const val = line.slice(idx + 1).trim();
-        if (key.length > 0) out[key] = val;
-      }
-    }
-    return out;
-  }
-  return {};
+  // The deploy schema reads saved header text with the same parser.
+  return typeof raw === 'string' ? parseHeaderLines(raw) : {};
 }
 
 /** Ordered rows so typing an empty key doesn't collapse the row. */

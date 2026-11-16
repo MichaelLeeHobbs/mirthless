@@ -10,7 +10,7 @@ import { scenario, mirthId } from './support/scenario.js';
 
 const SINK = 16671;
 
-const msg = (n: number): string => `MSH|^~\\&|LAB|S21|VNS|V|20261110120000||ORU^R01|S21-${String(n)}|P|2.5\rPID|||MRN21${String(n)}\rOBX|1|NM|GLU||${String(90 + n)}`;
+const msg = (n: number): string => `MSH|^~\\&|LAB|S21|HUB|V|20261110120000||ORU^R01|S21-${String(n)}|P|2.5\rPID|||MRN21${String(n)}\rOBX|1|NM|GLU||${String(90 + n)}`;
 
 scenario('S21 HL7 batch file is split into one message per MSH', async (api) => {
   const dir = dropFolder('s21');

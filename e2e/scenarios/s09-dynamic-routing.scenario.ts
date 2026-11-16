@@ -37,7 +37,7 @@ const router: ChannelSpec = {
   ],
 };
 
-const msg = (site: string): string => `MSH|^~\\&|RIS|X|VNS|${site}|20261110120000||ORM^O01|S09${site}|P|2.3\rPID|||MRN009`;
+const msg = (site: string): string => `MSH|^~\\&|RIS|X|HUB|${site}|20261110120000||ORM^O01|S09${site}|P|2.3\rPID|||MRN009`;
 
 scenario('S09 messages reach a channel picked at run time and an audit channel by name', async (api) => {
   const ids = await api.importAndDeploy(
