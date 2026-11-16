@@ -64,6 +64,7 @@ describe('MessageController.getDetail', () => {
       dedupe: { key: 'detail|ch-1|5', ids: [5] },
     });
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { messageId: 5, connectors: [] } });
+    expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.json).mock.invocationCallOrder[0] ?? 0);
   });
 
   it('sends nothing when the read cannot be recorded', async () => {
@@ -99,6 +100,7 @@ describe('MessageController.search', () => {
       dedupe: { key: `search|ch-1|${JSON.stringify(query)}`, ids: [3, 9] },
     });
     expect(res.json).toHaveBeenCalledOnce();
+    expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.json).mock.invocationCallOrder[0] ?? 0);
   });
 
   it('records a search with no term as a null term', async () => {

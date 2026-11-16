@@ -48,6 +48,7 @@ describe('AttachmentController.getById', () => {
       action: 'ATTACHMENT_DOWNLOADED', channelId: 'ch-1', attributes: { messageId: 5, attachmentId: 'a1' },
     });
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: 'a1', content: 'x' } });
+    expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.json).mock.invocationCallOrder[0] ?? 0);
   });
 
   it('sends nothing when the download cannot be recorded', async () => {

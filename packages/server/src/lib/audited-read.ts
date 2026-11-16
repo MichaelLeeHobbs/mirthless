@@ -12,9 +12,6 @@ import { AuditService } from '../services/audit.service.js';
 import { AuditDedupe } from './audit-dedupe.js';
 import { errorResponse, mapErrorToStatus } from './controller-helpers.js';
 
-/** The most message ids one search record lists. */
-export const MAX_RECORDED_IDS = 100;
-
 const dedupe = new AuditDedupe();
 
 export interface AuditedRead {
@@ -24,15 +21,18 @@ export interface AuditedRead {
   readonly attributes: Record<string, unknown>;
   /**
    * The read's dedupe key (route, channel, message id or filters with page)
-   * and the message ids it returned. Omit to record every time.
+   * and the message ids it returned, at most a page (200). Omit to record
+   * every time.
    */
   readonly dedupe?: { readonly key: string; readonly ids: readonly (string | number)[] };
 }
 
 /**
- * Record `read` for the signed-in caller before anything is sent. Returns
- * false when the record could not be written: the request has then been
- * answered 503 and the caller must send nothing more.
+ * Record `read` for the signed-in caller before anything is sent. A deduped
+ * read records every id the page returned that is not recorded yet (D-317),
+ * so the dedupe never holds an id that was not written. Returns false when
+ * the record could not be written: the request has then been answered 503
+ * and the caller must send nothing more.
  */
 export async function recordReadOrRefuse(req: Request, res: Response, read: AuditedRead): Promise<boolean> {
   const userId = req.user?.id ?? null;
@@ -43,7 +43,7 @@ export async function recordReadOrRefuse(req: Request, res: Response, read: Audi
     const toRecord = dedupe.idsToRecord(key, read.dedupe.ids, Date.now());
     if (toRecord === null) return true;
     ids = toRecord;
-    attributes = { ...attributes, messageIds: ids.slice(0, MAX_RECORDED_IDS) };
+    attributes = { ...attributes, messageIds: ids };
   }
   const recorded = await AuditService.recordOrRefuse({
     action: read.action, outcome: 'SUCCESS', userId,

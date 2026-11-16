@@ -40,6 +40,7 @@ describe('CrossChannelSearchController.search', () => {
       dedupe: { key: `traffic|${JSON.stringify(filters)}`, ids: ['c1:4', 'c2:4'] },
     });
     expect(res.json).toHaveBeenCalledWith({ success: true, data: RESULT });
+    expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.json).mock.invocationCallOrder[0] ?? 0);
   });
 
   it('sends nothing when the search cannot be recorded', async () => {

@@ -74,11 +74,15 @@ describe('recordReadOrRefuse', () => {
     expect(recordOrRefuse).toHaveBeenCalledTimes(2);
   });
 
-  it('lists at most 100 message ids in one record', async () => {
-    const ids = Array.from({ length: 150 }, (_, i) => i);
-    await recordReadOrRefuse(req('u-g'), makeRes(), { action: 'MESSAGE_SEARCHED', attributes: { total: 150 }, dedupe: { key: 'search|c1|p1', ids } });
+  it('records every id of a 200-row page, and a repeat records only the ids it has not', async () => {
+    const page = Array.from({ length: 200 }, (_, i) => i);
+    const read = (ids: number[]): Parameters<typeof recordReadOrRefuse>[2] => ({ action: 'MESSAGES_SEARCHED_ALL_CHANNELS', attributes: {}, dedupe: { key: 'traffic|p1', ids } });
+    await recordReadOrRefuse(req('u-g'), makeRes(), read(page));
+    await recordReadOrRefuse(req('u-g'), makeRes(), read([...page.slice(1), 200]));
 
-    const attrs = (recordOrRefuse.mock.calls[0]?.[0] as { attributes: { messageIds: number[] } }).attributes;
-    expect(attrs.messageIds).toHaveLength(100);
+    const recorded = recordOrRefuse.mock.calls.map((c) => (c[0] as { attributes: { messageIds: number[] } }).attributes.messageIds);
+    expect(recorded[0]).toEqual(page);
+    // The new id is recorded at once, on the very next read.
+    expect(recorded[1]).toEqual([200]);
   });
 });
