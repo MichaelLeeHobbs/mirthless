@@ -36,10 +36,16 @@ const SHARED_HELPERS = [
   { names: 'redirectMessage', home: 'packages/connectors/src/redirect.ts' },
   { names: 'createThrottle|throttle', home: '@galvanigraph/core-util (throttle.ts, D-306)' },
 ];
-const sharedHelperSelectors = SHARED_HELPERS.flatMap(({ names, home }) => [
+// A permission check goes through holdsPermission or can (@galvanigraph/core-models
+// authz, D-310), so the move to scoped grants changes one place, not every caller.
+const permissionCheckSelectors = [
+  { selector: 'CallExpression[callee.property.name=/^(includes|indexOf|has)$/][callee.object.name="permissions"]', message: 'Check a permission with holdsPermission or can from @galvanigraph/core-models (authz).' },
+  { selector: 'CallExpression[callee.property.name=/^(includes|indexOf)$/][callee.object.property.name="permissions"]', message: 'Check a permission with holdsPermission or can from @galvanigraph/core-models (authz).' },
+];
+const sharedHelperSelectors = [...permissionCheckSelectors, ...SHARED_HELPERS.flatMap(({ names, home }) => [
   { selector: `:not(ExportNamedDeclaration) > FunctionDeclaration[id.name=/^(${names})$/]`, message: `Import this from ${home} instead of copying it.` },
   { selector: `:not(ExportNamedDeclaration) > VariableDeclaration > VariableDeclarator[id.name=/^(${names})$/][init.type=/^(ArrowFunctionExpression|FunctionExpression)$/]`, message: `Import this from ${home} instead of copying it.` },
-]);
+])];
 
 export default tseslint.config(
   eslint.configs.recommended,

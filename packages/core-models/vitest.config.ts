@@ -13,7 +13,7 @@ export default defineConfig({
       exclude: ['src/**/*.test.ts', 'src/index.ts'],
       // Minimums set ~1 point under coverage on 2026-10-26, re-measured after the
       // Vitest 5 upgrade changed how V8 coverage is counted; raise toward the 95% target (D-193).
-      thresholds: { statements: 40, branches: 49, functions: 54, lines: 39 },
+      thresholds: { statements: 79, branches: 87, functions: 90, lines: 79 },
     },
   },
 });

@@ -15,7 +15,7 @@ import type { AdvancedFormValues } from '../AdvancedTab.js';
 
 const setGroups = vi.fn();
 const notify = vi.fn();
-let permissions = new Set<string>();
+let granted = new Set<string>();
 let memberships: Array<{ channelGroupId: string; channelId: string }> = [];
 
 vi.mock('../../../hooks/use-channel-groups.js', () => ({
@@ -24,7 +24,7 @@ vi.mock('../../../hooks/use-channel-groups.js', () => ({
   useSetChannelGroups: () => ({ mutateAsync: setGroups }),
 }));
 vi.mock('../../../hooks/use-permissions.js', () => ({
-  usePermissions: () => ({ has: (p: string) => permissions.has(p) }),
+  usePermissions: () => ({ has: (p: string) => granted.has(p) }),
 }));
 vi.mock('../../../stores/notification.store.js', () => ({
   useNotification: () => ({ notify }),
@@ -69,7 +69,7 @@ beforeEach(() => {
   setGroups.mockReset();
   setGroups.mockResolvedValue(undefined);
   notify.mockClear();
-  permissions = new Set(['channels:read', 'channels:write']);
+  granted = new Set(['channels:read', 'channels:write']);
   memberships = [{ channelGroupId: 'g1', channelId: 'ch-1' }];
 });
 afterEach(() => { cleanup(); });
@@ -97,7 +97,7 @@ describe('SummaryTab channel group', () => {
   });
 
   it('is read-only without channels:write', () => {
-    permissions = new Set(['channels:read']);
+    granted = new Set(['channels:read']);
     renderTab();
     expect(groupField().getAttribute('aria-disabled')).toBe('true');
   });

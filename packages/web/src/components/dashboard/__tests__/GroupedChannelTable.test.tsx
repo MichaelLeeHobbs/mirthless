@@ -17,7 +17,7 @@ import { darkTheme } from '../../../styles/theme.js';
 
 const setGroups = vi.fn();
 const notify = vi.fn();
-let permissions = new Set<string>(['channels:read', 'channels:write']);
+let granted = new Set<string>(['channels:read', 'channels:write']);
 let onDragEnd: ((e: DragEndEvent) => void) | undefined;
 
 vi.mock('@dnd-kit/core', async (importOriginal) => {
@@ -43,7 +43,7 @@ vi.mock('../../../hooks/use-channels.js', () => ({
   useToggleChannelEnabled: () => ({ mutate: vi.fn() }),
 }));
 vi.mock('../../../hooks/use-permissions.js', () => ({
-  usePermissions: () => ({ has: (p: string) => permissions.has(p) }),
+  usePermissions: () => ({ has: (p: string) => granted.has(p) }),
 }));
 vi.mock('../../../stores/notification.store.js', () => ({
   useNotification: () => ({ notify }),
@@ -123,7 +123,7 @@ beforeEach(() => {
   setGroups.mockResolvedValue(undefined);
   notify.mockClear();
   onDragEnd = undefined;
-  permissions = new Set(['channels:read', 'channels:write']);
+  granted = new Set(['channels:read', 'channels:write']);
 });
 afterEach(() => { cleanup(); });
 
@@ -134,7 +134,7 @@ describe('GroupedChannelTable drag handle', () => {
   });
 
   it('hides the drag handle without channels:write', () => {
-    permissions = new Set(['channels:read']);
+    granted = new Set(['channels:read']);
     renderTable();
     expect(screen.queryByRole('button', { name: 'Drag to change group' })).toBeNull();
     // The channels are still listed in their groups.

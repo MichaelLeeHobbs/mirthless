@@ -7,7 +7,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
 import { eq } from 'drizzle-orm';
-import { PERMISSIONS, type Permission } from '@galvanigraph/core-models';
+import { PERMISSIONS, holdsPermission, type Permission } from '@galvanigraph/core-models';
 import { createThrottle, errorInfo, type Throttle } from '@galvanigraph/core-util';
 import { config } from '../config/index.js';
 import { db } from './db.js';
@@ -41,7 +41,7 @@ let revalidateTimer: ReturnType<typeof setInterval> | null = null;
 /** True when the authenticated socket holds the given `resource:action` permission. */
 function socketHasPermission(socket: { data: Record<string, unknown> }, permission: Permission): boolean {
   const user = socket.data['user'] as SocketUserData | undefined;
-  return user?.permissions.includes(permission) ?? false;
+  return holdsPermission(user?.permissions, permission);
 }
 
 /**
@@ -124,7 +124,7 @@ export async function revalidateSocket(socket: RevalidatableSocket): Promise<boo
   socket.data['user'] = fresh;
   for (const room of socket.rooms) {
     const needed = roomPermission(room);
-    if (needed !== null && !fresh.permissions.includes(needed)) void socket.leave(room);
+    if (needed !== null && !holdsPermission(fresh.permissions, needed)) void socket.leave(room);
   }
   return true;
 }

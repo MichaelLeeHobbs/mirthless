@@ -11,7 +11,7 @@ import type {
   ChannelListQuery,
   PatchChannelEnabledInput,
 } from '@galvanigraph/core-models';
-import { AUDIT_ACTION } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, holdsPermission } from '@galvanigraph/core-models';
 import { ChannelService } from '../services/channel.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { recordReadBestEffort } from '../lib/audited-read.js';
@@ -47,7 +47,7 @@ export class ChannelController {
     // for read-only callers. Only a caller who can already edit the channel
     // (`channels:write`) sees the real values; everyone else, notably the
     // `viewer` role, gets the redacted marker.
-    const canWrite = req.user?.permissions.includes('channels:write') ?? false;
+    const canWrite = holdsPermission(req.user?.permissions, 'channels:write');
     const data = canWrite
       ? result.value
       : redactChannelDetail(result.value as unknown as Record<string, unknown>);
