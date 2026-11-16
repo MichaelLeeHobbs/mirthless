@@ -35,6 +35,11 @@ describe('createAck', () => {
     expect(ack.get('MSA.2')).toBe('MSG001');
   });
 
+  it('stamps MSH-7 with its UTC offset (#187)', () => {
+    const ack = parseAck(createAck(Hl7Message.parse(ADT_A01), { ackCode: 'AA' }));
+    expect(ack.get('MSH.7')).toMatch(/^\d{14}[+-]\d{4}$/);
+  });
+
   it('gives the ACK a control id of its own that fits MSH-10 (#187)', () => {
     const ack = parseAck(createAck(Hl7Message.parse(ADT_A01), { ackCode: 'AA' }));
     const id = ack.get('MSH.10')!;

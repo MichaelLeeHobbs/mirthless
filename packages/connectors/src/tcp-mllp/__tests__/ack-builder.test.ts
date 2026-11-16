@@ -82,6 +82,11 @@ describe('fallback ACK', () => {
     expect(ack.split('\r')[1]!.split('|')[2]).toBe(controlId);
   });
 
+  it('stamps MSH-7 with its UTC offset', () => {
+    const ack = buildAck('not hl7 at all', 'AE');
+    expect(ack.split('\r')[0]!.split('|')[6]).toMatch(/^\d{14}[+-]\d{4}$/);
+  });
+
   it('escapes delimiters in the text', () => {
     const ack = buildAck('not hl7 at all', 'AE', 'bad|text\rMSA|AA');
     const lines = ack.split('\r');

@@ -44,7 +44,7 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
   const controlId = original.getRaw('MSH.10') ?? '';
   const version = original.get('MSH.12') ?? '2.5.1';
 
-  const timestamp = formatTimestamp(new Date());
+  const timestamp = formatTimestamp(new Date(), { utcOffset: true });
 
   // Build MSH segment (swap sender/receiver)
   const msh = [
