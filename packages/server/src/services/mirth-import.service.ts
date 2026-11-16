@@ -993,7 +993,17 @@ function dicomListenerProperties(propsNode: Record<string, unknown>): Record<str
   if (dest) result['storageDir'] = dest;
   const aeTitle = getString(propsNode, 'applicationEntity');
   if (aeTitle) result['aeTitle'] = aeTitle;
-  return result;
+  return { ...result, ...dicomTls(propsNode) };
+}
+
+/**
+ * Mirth's DICOM `tls` when TLS is on, which the DICOM schema refuses: the
+ * connector has no TLS, so the channel must not run in plaintext (D-274).
+ * Nothing when it is `notls`.
+ */
+function dicomTls(propsNode: Record<string, unknown>): Record<string, unknown> {
+  const tls = getString(propsNode, 'tls') ?? 'notls';
+  return tls === 'notls' || tls === '' ? {} : { tls };
 }
 
 /**
@@ -1010,7 +1020,7 @@ function dicomSenderProperties(propsNode: Record<string, unknown>): Record<strin
   if (host) result['host'] = host;
   const port = getString(propsNode, 'port');
   if (port) result['port'] = portValue(port);
-  return result;
+  return { ...result, ...dicomTls(propsNode) };
 }
 
 /**
@@ -1023,7 +1033,7 @@ function dicomWarnings(propsNode: Record<string, unknown>, direction: 'source' |
   const prefix = `Channel "${channelName}": the ${connector}`;
   const warnings: string[] = [];
   if ((getString(propsNode, 'tls') ?? 'notls') !== 'notls') {
-    warnings.push(`${prefix} uses TLS in Mirth; GalvaniFlow's DICOM connector has no TLS, so the partner cannot connect until the link is tunnelled or TLS is turned off`);
+    warnings.push(`${prefix} uses TLS in Mirth; GalvaniFlow's DICOM connector has no TLS, so it will not deploy rather than send in plaintext. Tunnel the link and import it with TLS off`);
   }
   if (direction === 'source') {
     warnings.push(`${prefix}'s messages are a file path here (the stored object's file), not the DICOM object; scripts read its tags from the source map`);

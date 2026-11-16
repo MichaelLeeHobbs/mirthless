@@ -18,7 +18,7 @@ const DEST_SAVED = {
   maxRetries: 3, retryDelayMs: 1000, timeoutMs: 30000,
 };
 
-/** A few of the Mirth DICOM Listener properties the importer copies (it has no DICOM case). */
+/** A few of the Mirth DICOM Listener properties the importer copied before it mapped DICOM (#171). */
 const MIRTH_LISTENER = {
   pluginProperties: '', listenerConnectorProperties: { host: '0.0.0.0', port: '104' }, sourceConnectorProperties: { responseVariable: 'None' },
   applicationEntity: 'MIRTH', localHost: '', localPort: '', dest: '/mirth/dicom', tls: 'notls', keyStorePW: '', reaper: '10', bufSize: '1',

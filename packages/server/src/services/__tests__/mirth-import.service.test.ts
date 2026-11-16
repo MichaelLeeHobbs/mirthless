@@ -1255,6 +1255,19 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
         expect(sending).toContain('user identity');
         expect(sending).toContain('storage commitment');
       });
+
+      it('keeps Mirth\'s TLS setting so the deploy refuses a channel it would otherwise run in plaintext', () => {
+        const tlsSender = sender().replace('<tls>notls</tls>', '<tls>aes</tls>');
+        const result = convertXml(dicom(listener('/d', 'aes'), tlsSender));
+        const channel = result.channels[0];
+        expect(validateConnectorProperties('DICOM', 'source', channel?.sourceConnectorProperties ?? {})).toMatchObject({ ok: false, error: { message: expect.stringContaining('tls') } });
+        expect(validateConnectorProperties('DICOM', 'destination', channel?.destinations[0]?.properties ?? {})).toMatchObject({ ok: false, error: { message: expect.stringContaining('tls') } });
+        expect(warningsWith(result, 'TLS').join(' ')).toContain('will not deploy');
+        // Without TLS both directions validate as imported.
+        const plain = convertXml(dicom(listener('/d'), sender())).channels[0];
+        expect(validateConnectorProperties('DICOM', 'source', plain?.sourceConnectorProperties ?? {})).toMatchObject({ ok: true });
+        expect(validateConnectorProperties('DICOM', 'destination', plain?.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
+      });
     });
 
     describe('polling schedules', () => {
