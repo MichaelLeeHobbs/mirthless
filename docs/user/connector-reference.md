@@ -384,7 +384,7 @@ The destination is a storage SCU. The message content must be the path of a DICO
 
 ### DICOM security
 
-DICOM traffic is not encrypted: neither direction supports TLS. The source accepts every association whatever the calling and called AE titles, so anyone who can reach the port can store files. Keep DICOM on a trusted network or a VPN.
+DICOM traffic is not encrypted: neither direction supports TLS. The source accepts every association whatever the calling and called AE titles, so anyone who can reach the port can store files. Keep DICOM on a trusted network or a VPN. A DICOM connector imported from Mirth with TLS on (Mirth's `tls` other than `notls`) refuses to deploy rather than run in plaintext; remove `tls` only if plaintext is acceptable on that network.
 
 ### DICOM as a source
 

@@ -89,6 +89,14 @@ describe('dicomDestinationPropertiesSchema', () => {
     expect(dicomDestinationPropertiesSchema.parse({ ...DEST_SAVED, template: '${message.encodedData}' })).toEqual({ ...DEST_SAVED, template: '${message.encodedData}' });
   });
 
+  // Mirth's DICOM `tls` is `notls` unless TLS is on; this connector has no TLS, so dropping it would send PHI in plaintext.
+  it.each([['aes'], ['3des'], ['without']])("refuses Mirth's tls = %s, naming the key, instead of sending in plaintext", (tls) => {
+    const sender = dicomDestinationPropertiesSchema.safeParse({ ...MIRTH_SENDER, host: 'pacs', port: '104', tls });
+    expect(sender.success ? [] : sender.error.issues.map((i) => i.path)).toEqual([['tls']]);
+    const listener = dicomSourcePropertiesSchema.safeParse({ ...MIRTH_LISTENER, ...SOURCE_SAVED, tls });
+    expect(listener.success ? [] : listener.error.issues.map((i) => i.path)).toEqual([['tls']]);
+  });
+
   it.each([
     ['host', ''],
     ['port', 70000],

@@ -223,13 +223,14 @@ WHERE connector_type = 'SMTP'
 
 **DICOM** is the ninth. Channels saved by this app's own editor keep deploying: the DICOM forms have saved the same keys since 2026-03. The Mirth importer has no DICOM mapping, so since 2026-03-03 it has copied all of a DICOM Listener's or Sender's Mirth properties (`applicationEntity`, `localHost`, `dest`, `tls`, `keyStorePW`, `stgcmt` and some 30 more, listed in `packages/core-models/src/schemas/dicom-connector.schema.ts`). Nothing reads them, and the schema drops them, so an imported Sender (whose `host` and `port` have the same names here) keeps deploying, and so does a Listener once its port and storage directory were filled in. Nothing in the database is rewritten.
 
-One behaviour changes without a deploy error. An imported DICOM Sender also carries Mirth's default template, `${DICOMMESSAGE}`. Since 2026-11-12 the engine has sent a destination's template instead of the message, so every send from such a channel failed: the text `${DICOMMESSAGE}` is not a DICOM file. The schema drops that one template, so the message itself is sent, as in Mirth. Mirth's `applicationEntity` is still not mapped to `calledAETitle`; set the called AE title by hand ([#171](https://github.com/MichaelLeeHobbs/mirthless/issues/171)).
+One behaviour changes without a deploy error. An imported DICOM Sender also carries Mirth's default template, `${DICOMMESSAGE}`. Since 2026-11-12 the engine has sent a destination's template instead of the message, so every send from such a channel failed: the text `${DICOMMESSAGE}` is not a DICOM file. The engine and the schema now treat that one template as no template (`destinationTemplate` in core-models), so the message itself is sent, as in Mirth. Mirth's `applicationEntity` is still not mapped to `calledAETitle`; set the called AE title by hand ([#171](https://github.com/MichaelLeeHobbs/mirthless/issues/171)).
 
 A DICOM channel now fails to deploy when it has:
 
 - any other key its table doesn't list. Before, such a key was ignored.
+- an imported Mirth `tls` setting other than `notls` (`aes`, `3des` or `without`). This connector has no TLS, so before, such a channel connected in plaintext without a word. Remove `tls` only if plaintext is acceptable on that network.
 - a `dispatchMode` other than `PER_FILE` or `PER_ASSOCIATION`, a `postAction` other than `DELETE`, `MOVE` or `NONE`, or a destination `mode` other than `single` or `multiple`.
-- a number that is not a whole number (digits as text are read), a negative timeout, retry count or delay, or a timeout above 2147483647. Before, a value that wasn't a number became the default without a word.
+- a number that is not a whole number (digits as text are read), a negative timeout, retry count, delay or `maxAssociations`, or a timeout above 2147483647. Before, a value that wasn't a number became the default without a word, and number text with a sign or a dot (`+5`, `30000.`) was read as a number.
 - a `storageDir` or `host` of only spaces. An empty one, a port outside 1 to 65535, an AE title longer than 16 characters, a `minPoolSize` below 1, a `maxPoolSize` below `minPoolSize`, and `MOVE` without `moveToDirectory` failed before as well, when the connector deployed, without naming the key.
 
 ```sql
@@ -267,8 +268,8 @@ An SFTP channel now fails to deploy when it has:
 - any other key its table doesn't list, e.g. `fileFilter` or `outputPattern` (the FILE connector's names). Before, such a key was ignored.
 - a `charset` that is none of the above. The other names the connector used to read (an empty charset, `iso8859-1`, `latin-1`, `ucs2`, `ucs-2`, `base64`, `hex`, `binary`) now refuse too; the editor never offered them.
 - an `appendMode` that is not `true` or `false`. Before, any text, `"false"` included, turned it on. A `strictHostKey` that is not `true` or `false` failed before as well.
-- a `pollingIntervalMs` or `minFileAgeMs` that is not a whole number, or a polling interval above 2147483647. Before, a value that wasn't a number became the default without a word.
-- an empty `filePattern` or `fileNameTemplate`, or a `host`, `username`, `remoteDirectory` or `moveToDirectory` of only spaces. An empty `host`, `username` or `remoteDirectory`, no password or private key, host key checking with no host key, and `MOVE` without a directory failed before as well.
+- a `pollingIntervalMs` or `minFileAgeMs` that is not a whole number, a negative `minFileAgeMs`, or a polling interval above 2147483647. Before, a value that wasn't a number became the default without a word, and number text with a sign or a dot was read as a number.
+- a `host`, `username`, `remoteDirectory`, `filePattern`, `fileNameTemplate` or `moveToDirectory` of only spaces. An empty one, no password or private key, host key checking with no host key, and `MOVE` without a directory failed before as well.
 
 ```sql
 SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
