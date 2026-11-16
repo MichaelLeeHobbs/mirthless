@@ -13,6 +13,9 @@ vi.mock('../../lib/jwt.js', () => ({
   verifyAccessToken: (token: string) => mockVerify(token),
 }));
 
+const mockEmit = vi.fn();
+vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: (...args: unknown[]) => { mockEmit(...args); } }));
+
 vi.mock('../../lib/logger.js', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -104,5 +107,37 @@ describe('authenticate — forced password change gate', () => {
 
     expect(next).toHaveBeenCalledOnce();
     expect(res.statusCode).toBeUndefined();
+  });
+});
+
+describe('authenticate — refusals are recorded through deny()', () => {
+  const recorded = (): Record<string, unknown> => mockEmit.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+
+  it('records a refused password-change caller by user id', async () => {
+    userRow = { id: 'u-pw', username: 'admin', email: 'a@b.c', role: 'admin', enabled: true, mustChangePassword: true };
+
+    await authenticate(makeReq('GET', '/api/v1/channels'), makeRes(), vi.fn());
+
+    expect(recorded()).toMatchObject({ name: 'ACCESS_DENIED', userId: 'u-pw', attributes: { reason: 'password_change_required', principal: 'user', route: null } });
+  });
+
+  it('records a disabled account by user id', async () => {
+    userRow = { id: 'u-off', username: 'x', email: 'a@b.c', role: 'viewer', enabled: false, mustChangePassword: false };
+    const res = makeRes();
+
+    await authenticate(makeReq('GET', '/api/v1/channels'), res, vi.fn());
+
+    expect(res.body).toEqual({ success: false, error: { code: 'ACCOUNT_DEACTIVATED', message: 'Account is deactivated' } });
+    expect(recorded()).toMatchObject({ userId: 'u-off', attributes: { reason: 'account_disabled' } });
+  });
+
+  it('records a token that does not verify as an anonymous bad token', async () => {
+    mockVerify.mockImplementation(() => { throw new Error('jwt malformed'); });
+    const res = makeRes();
+
+    await authenticate(makeReq('GET', '/api/v1/channels'), res, vi.fn());
+
+    expect(res.statusCode).toBe(401);
+    expect(recorded()).toMatchObject({ userId: null, attributes: { reason: 'bad_token', principal: 'anonymous' } });
   });
 });

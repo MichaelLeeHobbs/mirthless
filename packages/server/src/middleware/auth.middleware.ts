@@ -11,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import { isSessionLive } from '../lib/session-live.js';
 import { permissionNamesForRole } from '../lib/role-permissions.js';
 import logger from '../lib/logger.js';
+import { deny, DENY_REASON } from './permission.middleware.js';
 
 // Extend Express Request type
 declare global {
@@ -51,7 +52,7 @@ export async function authenticate(
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+    deny(req, res, DENY_REASON.NO_CREDENTIALS);
     return;
   }
 
@@ -74,18 +75,18 @@ export async function authenticate(
       .where(eq(users.id, payload.userId));
 
     if (!user) {
-      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'User not found' } });
+      deny(req, res, DENY_REASON.USER_NOT_FOUND);
       return;
     }
 
     if (!user.enabled) {
-      res.status(403).json({ success: false, error: { code: 'ACCOUNT_DEACTIVATED', message: 'Account is deactivated' } });
+      deny(req, res, DENY_REASON.ACCOUNT_DISABLED, user.id);
       return;
     }
 
     // Reject tokens whose session was revoked (logout / password reset).
     if (!(await isSessionLive(payload.sessionId, user.id))) {
-      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Session expired or revoked' } });
+      deny(req, res, DENY_REASON.SESSION_REVOKED, user.id);
       return;
     }
 
@@ -94,10 +95,7 @@ export async function authenticate(
     // — otherwise the flag is cosmetic (UI-only) and a known default credential
     // (e.g. the seeded admin) grants full API access indefinitely.
     if (user.mustChangePassword && !isPasswordChangeExempt(req)) {
-      res.status(403).json({
-        success: false,
-        error: { code: 'PASSWORD_CHANGE_REQUIRED', message: 'You must change your password before continuing.' },
-      });
+      deny(req, res, DENY_REASON.PASSWORD_CHANGE_REQUIRED, user.id);
       return;
     }
 
@@ -118,6 +116,6 @@ export async function authenticate(
     next();
   } catch (error) {
     logger.debug({ errMsg: error instanceof Error ? error.message : String(error) }, 'Token verification failed');
-    res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token' } });
+    deny(req, res, DENY_REASON.BAD_TOKEN);
   }
 }

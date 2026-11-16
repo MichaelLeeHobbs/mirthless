@@ -47,8 +47,9 @@ import userRoutes from './user.routes.js';
 const router: IRouter = Router();
 
 // ----- Public: the only routes a caller without a session reaches (D-299) -----
-// public-routes.test.ts lists them and fails on any other route that answers an
-// anonymous caller. Add one only with a reason in that list.
+// PUBLIC_ROUTES in __tests__/api-routes.ts lists them, and public-routes.test.ts
+// fails on any other route that answers an anonymous caller. Add one only with a
+// reason in that list.
 
 // Health check, used by Playwright and load balancers
 router.get('/health', (_req, res) => {
