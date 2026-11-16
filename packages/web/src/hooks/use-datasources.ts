@@ -52,6 +52,8 @@ export function useDataSources(): ReturnType<typeof useQuery<readonly DataSource
   });
 }
 
+// Mutations don't wait for the list to reload: a dialog closes, and its button
+// re-enables, once its own request succeeds, and the list catches up after (#241).
 export function useCreateDataSource(): ReturnType<typeof useMutation<DataSourceSummary, Error, CreateDataSourceInput>> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -60,7 +62,7 @@ export function useCreateDataSource(): ReturnType<typeof useMutation<DataSourceS
       if (!result.success) throw new Error(result.error.message);
       return result.data;
     },
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: DS_KEYS.all }); },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: DS_KEYS.all }); },
   });
 }
 
@@ -72,7 +74,7 @@ export function useUpdateDataSource(): ReturnType<typeof useMutation<DataSourceS
       if (!result.success) throw new Error(result.error.message);
       return result.data;
     },
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: DS_KEYS.all }); },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: DS_KEYS.all }); },
   });
 }
 
@@ -83,7 +85,7 @@ export function useDeleteDataSource(): ReturnType<typeof useMutation<void, Error
       const result = await api.delete<void>(`/datasources/${id}`);
       if (!result.success) throw new Error(result.error.message);
     },
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: DS_KEYS.all }); },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: DS_KEYS.all }); },
   });
 }
 

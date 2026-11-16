@@ -387,7 +387,7 @@ describe('SmtpDispatcher.send', () => {
     vi.useFakeTimers();
     try {
       const transport = makeMockTransport({
-        sendMail: vi.fn(() => new Promise(() => { /* never resolves */ })),
+        sendMail: vi.fn(() => new Promise<never>(() => { /* never resolves */ })),
         close: vi.fn(),
       });
       const dispatcher = new SmtpDispatcher(makeConfig(), makeFactory(transport));

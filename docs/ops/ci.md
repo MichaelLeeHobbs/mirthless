@@ -10,7 +10,7 @@ A pull request is compared with its merge base on `main`.
 | `packages/server` | Gate (server tests), Postgres integration, e2e |
 | `packages/connectors` | Gate (connectors and server tests), connector integration, Postgres integration, e2e |
 | `packages/engine`, `core-util`, `core-models` | Gate (the package and everything that depends on it), both integration lanes, e2e |
-| `e2e/**`, `playwright.*` | e2e, which lints `e2e/` before it runs the specs, since the gate's lint doesn't run |
+| `e2e/**`, `playwright.*` | e2e, which lints and type-checks `e2e/` before it runs the specs, since the gate's lint doesn't run |
 | `docs/**`, top-level `*.md`, `.claude/**`, `.github/ISSUE_TEMPLATE/**`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/dependabot.yml`, `LICENSE` | `docs`: the unit tests whose source names a changed file, such as the guards on `docs/user/connector-reference.md`. Nothing else. |
 | `.github/workflows/**`, `scripts/ci/**` | Everything, decided in the workflow without running the classifier, so a pull request that breaks the classifier still runs its tests |
 | Anything else: root `package.json`, `pnpm-lock.yaml`, `tsconfig*`, `eslint.config.js`, `docker/**`, `scripts/**`, a path with no rule | Everything |
@@ -19,7 +19,7 @@ The server's docs guards that read the repository through `readRepoFile` (connec
 
 A package's jobs come from the workspace dependency graph: a job runs when a package it exercises, or one of that package's dependencies, changed. Connector integration exercises connectors; the Postgres lane, server; e2e, server and web.
 
-Inside the gate, build, lint and `pnpm audit` always cover the whole repository. Only the unit tests narrow, to the changed packages and the packages that depend on them, and each package's coverage minimums still apply.
+Inside the gate, build, lint and `pnpm audit` always cover the whole repository. Lint runs ESLint and then `pnpm typecheck:tests`, which type-checks what the build leaves out: each package's tests, Vite and Vitest configs (its `tsconfig.test.json`) and `e2e/` (#242, D-305). Only the unit tests narrow, to the changed packages and the packages that depend on them, and each package's coverage minimums still apply.
 
 These run everything, whatever changed:
 

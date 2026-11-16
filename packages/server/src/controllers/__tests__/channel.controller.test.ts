@@ -196,7 +196,7 @@ describe('ChannelController', () => {
 
       const req = makeReq({
         params: { id: '00000000-0000-0000-0000-000000000001' } as Request['params'],
-        user: { id: 'u1', permissions: ['channels:read'] } as unknown as Request['user'],
+        user: { id: 'u1', permissions: ['channels:read'] } as unknown as NonNullable<Request['user']>,
       });
       const res = makeRes();
 
@@ -221,7 +221,7 @@ describe('ChannelController', () => {
 
       const req = makeReq({
         params: { id: '00000000-0000-0000-0000-000000000001' } as Request['params'],
-        user: { id: 'u1', permissions: ['channels:read', 'channels:write'] } as unknown as Request['user'],
+        user: { id: 'u1', permissions: ['channels:read', 'channels:write'] } as unknown as NonNullable<Request['user']>,
       });
       const res = makeRes();
 

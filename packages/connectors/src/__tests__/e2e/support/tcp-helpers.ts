@@ -4,7 +4,28 @@
 // Real TCP servers/clients for exercising the TCP/MLLP connectors end to end.
 
 import * as net from 'node:net';
-import { wrapMllp, MllpParser } from '../../../index.js';
+import {
+  wrapMllp,
+  MllpParser,
+  createSourceConnector,
+  createDestinationConnector,
+  type SourceConnectorRuntime,
+  type DestinationConnectorRuntime,
+} from '../../../index.js';
+
+/**
+ * A TCP/MLLP source on 127.0.0.1, built by the connector registry from stored
+ * properties as a deploy builds it, so the schema's defaults (response mode,
+ * charset, frame limit) apply (#242).
+ */
+export function mllpSource(port: number, props: Readonly<Record<string, unknown>> = {}): SourceConnectorRuntime {
+  return createSourceConnector('TCP_MLLP', { host: '127.0.0.1', port, ...props });
+}
+
+/** A TCP/MLLP destination to 127.0.0.1, built by the connector registry as a deploy builds it. */
+export function mllpDestination(port: number, props: Readonly<Record<string, unknown>> = {}): DestinationConnectorRuntime {
+  return createDestinationConnector('TCP_MLLP', { host: '127.0.0.1', port, ...props });
+}
 
 export interface MllpCaptureServer {
   /** Every framed message the server has received, in order. */

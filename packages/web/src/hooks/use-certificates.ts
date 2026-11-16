@@ -75,6 +75,8 @@ export function useCertificate(id: string): ReturnType<typeof useQuery<Certifica
   });
 }
 
+// Mutations don't wait for the list to reload: a dialog closes, and its button
+// re-enables, once its own request succeeds, and the list catches up after (#241).
 export function useCreateCertificate(): ReturnType<typeof useMutation<CertificateDetail, Error, CreateCertificateInput>> {
   const queryClient = useQueryClient();
 
@@ -84,9 +86,7 @@ export function useCreateCertificate(): ReturnType<typeof useMutation<Certificat
       if (!result.success) throw new Error(result.error.message);
       return result.data;
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: CERT_KEYS.all });
-    },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: CERT_KEYS.all }); },
   });
 }
 
@@ -99,9 +99,7 @@ export function useUpdateCertificate(): ReturnType<typeof useMutation<Certificat
       if (!result.success) throw new Error(result.error.message);
       return result.data;
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: CERT_KEYS.all });
-    },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: CERT_KEYS.all }); },
   });
 }
 
@@ -113,8 +111,6 @@ export function useDeleteCertificate(): ReturnType<typeof useMutation<void, Erro
       const result = await api.delete<void>(`/certificates/${id}`);
       if (!result.success) throw new Error(result.error.message);
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: CERT_KEYS.all });
-    },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: CERT_KEYS.all }); },
   });
 }

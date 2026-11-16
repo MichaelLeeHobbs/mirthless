@@ -94,7 +94,7 @@ vi.mock('node:net', async (importOriginal) => ({
 
 // Mock DNS so the SSRF guard resolves test hostnames to a public IP (allowed)
 // without real network I/O.
-const mockDnsLookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]);
+const mockDnsLookup = vi.fn(async (..._args: unknown[]) => [{ address: '93.184.216.34', family: 4 }]);
 vi.mock('node:dns/promises', () => ({
   lookup: (...args: unknown[]) => mockDnsLookup(...args),
 }));

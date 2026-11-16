@@ -22,7 +22,7 @@ vi.mock('../../lib/logger.js', () => ({
 let userRow: Record<string, unknown> | undefined;
 const mockWhere = vi.fn();
 const mockFrom = vi.fn(() => ({ where: mockWhere }));
-const mockSelect = vi.fn(() => ({ from: mockFrom }));
+const mockSelect = vi.fn((..._args: unknown[]) => ({ from: mockFrom }));
 vi.mock('../../lib/db.js', () => ({
   db: { select: (...args: unknown[]) => mockSelect(...args) },
 }));

@@ -1,0 +1,12 @@
+{
+  "//": "Type-checks the Playwright specs, fixtures and config (#242). e2e/scenarios has its own tsconfig. pnpm lint runs both.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["./**/*.ts", "../playwright.config.ts"],
+  "exclude": ["./scenarios/**"]
+}

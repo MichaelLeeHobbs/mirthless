@@ -17,8 +17,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { CONTENT_TYPE } from '@galvaniflow/core-models';
 import {
-  TcpMllpReceiver,
-  TcpMllpDispatcher,
   ChannelReceiver,
   ChannelDispatcher,
   clearChannelRegistry,
@@ -30,7 +28,7 @@ import {
   CaptureDestination,
   type DeployedChannel,
 } from './support/e2e-harness.js';
-import { startMllpCaptureServer, sendMllp, type MllpCaptureServer } from './support/tcp-helpers.js';
+import { mllpSource, mllpDestination, startMllpCaptureServer, sendMllp, type MllpCaptureServer } from './support/tcp-helpers.js';
 
 // ----- Fixtures -----
 
@@ -81,7 +79,7 @@ describe('real message through a single channel (TCP → transform → TCP)', ()
     const channel = await deployChannel({
       channelId: '00000000-0000-0000-0000-realmsg00001',
       dataType: 'HL7V2',
-      source: new TcpMllpReceiver({ host: '127.0.0.1', port: SRC_PORT_1, maxConnections: 10 }),
+      source: mllpSource(SRC_PORT_1, { maxConnections: 10 }),
       templates: [REDACT_TEMPLATE],
       // TS source transformer: uses the injected template, then appends a segment.
       transformer: [
@@ -91,9 +89,7 @@ describe('real message through a single channel (TCP → transform → TCP)', ()
       destinations: [{
         metaDataId: 1,
         name: 'TCP Out',
-        connector: new TcpMllpDispatcher({
-          host: '127.0.0.1', port: DEST_PORT_1, maxConnections: 5, responseTimeout: 5_000,
-        }),
+        connector: mllpDestination(DEST_PORT_1, { maxConnections: 5, responseTimeout: 5_000 }),
       }],
     });
     deployed.push(channel);
@@ -162,7 +158,7 @@ describe('cascade across channels (A → B → C), converting the payload at eac
     const channelA = await deployChannel({
       channelId: CH_A,
       dataType: 'HL7V2',
-      source: new TcpMllpReceiver({ host: '127.0.0.1', port: SRC_PORT_2, maxConnections: 10 }),
+      source: mllpSource(SRC_PORT_2, { maxConnections: 10 }),
       // A: HL7 → JSON (pull PID-5 patient name).
       transformer: [
         'const lines = String(msg).split(String.fromCharCode(13));',

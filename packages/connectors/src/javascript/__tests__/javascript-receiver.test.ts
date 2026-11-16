@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
-import type { Result } from '@galvaniflow/core-util';
+import { stderr, type Result } from '@galvaniflow/core-util';
 import { JavaScriptReceiver, normalizeScriptResult, type JavaScriptReceiverConfig, type ScriptRunner } from '../javascript-receiver.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
@@ -38,7 +38,7 @@ function makeFailingRunner(message: string): ScriptRunner {
   return async () => ({
     ok: false as const,
     value: null,
-    error: { name: 'Error', message, code: 'SCRIPT_ERROR' },
+    error: stderr({ name: 'Error', message, code: 'SCRIPT_ERROR' }),
   });
 }
 
