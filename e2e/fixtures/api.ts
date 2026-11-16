@@ -13,14 +13,23 @@ export const API_BASE = 'http://localhost:3000/api/v1';
 
 interface Envelope<T> { readonly success: boolean; readonly data: T }
 
-/** Log in as the seeded admin and return a client that sends its token. Dispose it in afterAll. */
+/**
+ * Log in as the seeded admin and return a client that sends its token. Dispose it in afterAll.
+ *
+ * The client lives for a whole spec file and sits idle while the UI steps run.
+ * Playwright keeps its sockets alive, and the server closes an idle one after
+ * Node's default 5 s, so a request sent just as the server closes it fails with
+ * ECONNRESET (#126). `Connection: close` gives every request a socket of its own.
+ */
 export async function adminApi(): Promise<APIRequestContext> {
   const loginCtx = await request.newContext();
   try {
     const res = await loginCtx.post(`${API_BASE}/auth/login`, { data: ADMIN_USER });
     expect(res.ok(), `Admin login failed: ${String(res.status())}`).toBeTruthy();
     const { accessToken } = (await res.json() as Envelope<{ accessToken: string }>).data;
-    return await request.newContext({ extraHTTPHeaders: { Authorization: `Bearer ${accessToken}` } });
+    return await request.newContext({
+      extraHTTPHeaders: { Authorization: `Bearer ${accessToken}`, Connection: 'close' },
+    });
   } finally {
     await loginCtx.dispose();
   }
