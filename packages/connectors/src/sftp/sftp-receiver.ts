@@ -12,7 +12,7 @@ import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../e
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
-import { matchGlob } from '../file/file-receiver.js';
+import { selectsFileName } from '../file/file-receiver.js';
 import { withTimeout } from '../timeout.js';
 import { connectFresh, closeQuietly } from '../client-lifecycle.js';
 import { QuarantineLedger, dispatchQuarantined, type LedgerStorage } from '../quarantine-ledger.js';
@@ -62,6 +62,8 @@ export interface SftpReceiverConfig extends SftpConnectionOptions {
   readonly afterProcessing: SftpPostAction;
   readonly moveToDirectory: string;
   readonly minFileAgeMs: number;
+  /** Leave names starting with `.` alone, as a Mirth File Reader does by default. */
+  readonly ignoreDot: boolean;
   /** Character encoding of the remote files. Defaults to UTF-8. */
   readonly charset?: string | undefined;
 }
@@ -231,7 +233,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
     for (const entry of entries) {
       if (!entry.isFile) continue;
       if (entry.name === QUARANTINE_LEDGER || entry.name === LEGACY_QUARANTINE_LEDGER) continue; // never dispatch a ledger
-      if (!matchGlob(this.config.filePattern, entry.name)) continue;
+      if (!selectsFileName(entry.name, this.config.filePattern, this.config.ignoreDot)) continue;
       if (now - entry.modifyTime < this.config.minFileAgeMs) continue; // still being written
       results.push(entry);
     }

@@ -38,6 +38,7 @@ export const HTTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
 export const FILE_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   directory: '',
   fileFilter: '*',
+  ignoreDot: true,
   pollingIntervalMs: 5000,
   sortBy: 'NAME',
   charset: 'utf-8',
@@ -102,7 +103,7 @@ export const EMAIL_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
 // Keys MUST match exactly what the SFTP source connector reads in
 // packages/connectors/src/sftp (host/port/username/password/privateKey/
 // passphrase/remoteDirectory/filePattern/pollingIntervalMs/afterProcessing/
-// moveToDirectory/minFileAgeMs/strictHostKey/hostKey).
+// moveToDirectory/minFileAgeMs/ignoreDot/strictHostKey/hostKey/charset).
 export const SFTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: '',
   port: 22,
@@ -116,6 +117,7 @@ export const SFTP_SOURCE_DEFAULTS: Readonly<Record<string, unknown>> = {
   afterProcessing: 'DELETE',
   moveToDirectory: '',
   minFileAgeMs: 1000,
+  ignoreDot: true,
   charset: 'utf-8',
   strictHostKey: true,
   hostKey: '',
