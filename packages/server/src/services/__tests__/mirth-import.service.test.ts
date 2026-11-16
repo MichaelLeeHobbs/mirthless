@@ -1149,10 +1149,22 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     it('carries an SFTP Reader\'s charset, and warns about a Writer charset or binary files the SFTP connector cannot handle', () => {
       const result = sftp('<charsetEncoding>ISO-8859-1</charsetEncoding><binary>true</binary>', '<outputAppend>true</outputAppend><charsetEncoding>ISO-8859-1</charsetEncoding>');
       expect(result.channels[0]?.sourceConnectorProperties['charset']).toBe('latin1');
+      // The strict SFTP schema (charsetSchema, like FILE) takes the carried charset.
+      expect(validateConnectorProperties('SFTP', 'source', result.channels[0]?.sourceConnectorProperties ?? {})).toMatchObject({ ok: true });
       expect(result.warnings.some((w) => w.includes('SFTP Writer writes UTF-8 only'))).toBe(true);
       expect(result.warnings.some((w) => w.includes('File Reader') && w.includes('binary'))).toBe(true);
       const plain = sftp('<charsetEncoding>UTF-8</charsetEncoding>', '<outputAppend>true</outputAppend><charsetEncoding>UTF-8</charsetEncoding>');
       expect(plain.warnings.some((w) => w.includes('UTF-8 only') || w.includes('binary'))).toBe(false);
+    });
+
+    it('keeps an SFTP rename in place as a Move the strict SFTP schema refuses until a folder is set', () => {
+      const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml')
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader('SFTP', 'no')
+          .replace('<afterProcessingAction>DELETE</afterProcessingAction>', '<afterProcessingAction>MOVE</afterProcessingAction><moveToFileName>${originalFilename}.done</moveToFileName>')));
+      if (!result.ok) throw result.error;
+      const props = result.value.channels[0]?.sourceConnectorProperties ?? {};
+      expect(props['afterProcessing']).toBe('MOVE');
+      expect(validateConnectorProperties('SFTP', 'source', props)).toMatchObject({ ok: false, error: { message: expect.stringContaining('moveToDirectory') } });
     });
 
     it('imports the channel disabled when an SFTP Writer must fail rather than overwrite an existing file', () => {
