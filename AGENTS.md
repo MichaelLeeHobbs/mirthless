@@ -100,7 +100,7 @@ Run what matches the files you touched. `pnpm gate` runs build, lint and every p
 |---|---|---|
 | Anything | `pnpm gate` | |
 | `packages/web` UI | `pnpm shots --only <pages>` with `pnpm dev:web` running | Look at the light, dark and phone images (`create-ui` skill) |
-| A multi-step UI flow | `pnpm test:e2e` (needs Postgres, migrated and seeded) | Add or extend a spec in `e2e/` |
+| A multi-step UI flow | `pnpm test:e2e` (needs Postgres, migrated and seeded) | Add or extend a spec in `e2e/`. Spec files run in parallel against one database, so a spec uses rows with names of its own and puts back any server-wide setting it changes (D-289) |
 | `packages/server/src/db/schema` | `pnpm db:generate`, commit the migration | `pnpm test:integration` against Postgres |
 | SQL, queues, pruning, partitions | `pnpm test:integration` | |
 | Engine pipeline or a connector | The package's tests (`pnpm --filter @galvaniflow/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes. For a connector, `pnpm --filter @galvaniflow/connectors test:integration` with the compose `test` profile up (CI job `connector-integration` runs it, D-273) |
