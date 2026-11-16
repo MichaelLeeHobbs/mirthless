@@ -52,6 +52,7 @@ function makeConfig(overrides?: Partial<FileReceiverConfig>): FileReceiverConfig
     fileAgeMs: 1_000,
     postAction: FILE_POST_ACTION.DELETE,
     moveToDirectory: '',
+    ignoreDot: true,
     ...overrides,
   };
 }
@@ -115,9 +116,11 @@ describe('matchGlob', () => {
     expect(matchGlob('data.csv', 'other.csv')).toBe(false);
   });
 
-  it('is case insensitive', () => {
-    expect(matchGlob('*.HL7', 'patient.hl7')).toBe(true);
-    expect(matchGlob('*.hl7', 'PATIENT.HL7')).toBe(true);
+  it('is case sensitive, as a Mirth File Reader filter is, on every platform', () => {
+    expect(matchGlob('*.HL7', 'patient.hl7')).toBe(false);
+    expect(matchGlob('*.hl7', 'PATIENT.HL7')).toBe(false);
+    expect(matchGlob('ADT_*', 'adt_a01.hl7')).toBe(false);
+    expect(matchGlob('*.HL7', 'PATIENT.HL7')).toBe(true);
   });
 
   it('treats regex metacharacters as literals instead of throwing', () => {
@@ -855,13 +858,65 @@ describe('FileReceiver', () => {
       );
 
       const dispatched: string[] = [];
-      receiver = new FileReceiver(makeConfig({ fileFilter: '*' }), logger);
+      // ignoreDot off, so the ledger rule (not the dotfile rule) is what keeps it out.
+      receiver = new FileReceiver(makeConfig({ fileFilter: '*', ignoreDot: false }), logger);
       receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(String(raw.sourceMap['originalFilename'])); return { messageId: 1 }; }));
       await receiver.onStart();
       await vi.advanceTimersByTimeAsync(5_000);
 
       expect(dispatched).toEqual(['a.hl7']);
     });
+  });
+});
+
+describe('FileReceiver leaves alone the files a Mirth File Reader leaves alone (#244)', () => {
+  /** Poll once over a folder of these names, and return the names dispatched and the paths deleted. */
+  async function pollOnce(
+    names: readonly string[],
+    overrides?: Partial<FileReceiverConfig>,
+  ): Promise<{ dispatched: string[]; deleted: string[] }> {
+    mockReaddir.mockResolvedValue(names.map((n) => makeDirent(n)) as never);
+    mockStat.mockResolvedValue(makeStatResult(Date.now() - 5_000, 100) as never);
+    mockReadFile.mockImplementation((p: unknown) =>
+      (String(p).endsWith('.json') ? Promise.reject(enoent()) : Promise.resolve('MSH|^~\\&|X')) as never,
+    );
+    mockUnlink.mockResolvedValue(undefined);
+    const dispatched: string[] = [];
+    receiver = new FileReceiver(makeConfig({ postAction: FILE_POST_ACTION.DELETE, ...overrides }));
+    receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(String(raw.sourceMap['originalFilename'])); return { messageId: 1 }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+    return { dispatched, deleted: mockUnlink.mock.calls.map((c) => String(c[0])) };
+  }
+
+  it('neither reads nor deletes a dotfile by default, even when the filter matches it', async () => {
+    const { dispatched, deleted } = await pollOnce(['.lock', '.a.hl7.swp', 'a.hl7'], { fileFilter: '*' });
+    expect(dispatched).toEqual(['a.hl7']);
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toMatch(/a\.hl7$/);
+  });
+
+  it('reads a dotfile when ignoreDot is off', async () => {
+    const { dispatched } = await pollOnce(['.lock', 'a.hl7'], { fileFilter: '*', ignoreDot: false });
+    expect(dispatched).toEqual(['.lock', 'a.hl7']);
+  });
+
+  it('neither reads nor deletes a file whose name differs from the filter only in case', async () => {
+    const { dispatched, deleted } = await pollOnce(['A.HL7', 'b.hl7'], { fileFilter: '*.hl7' });
+    expect(dispatched).toEqual(['b.hl7']);
+    expect(deleted).toHaveLength(1);
+  });
+
+  it('never reads a file whose name ends in .ignore', async () => {
+    const { dispatched } = await pollOnce(['notes.ignore', 'a.hl7'], { fileFilter: '*' });
+    expect(dispatched).toEqual(['a.hl7']);
+  });
+
+  it('holds back a file while a <name>.ignore file sits next to it', async () => {
+    const { dispatched, deleted } = await pollOnce(['a.hl7', 'a.hl7.ignore', 'b.hl7'], { fileFilter: '*' });
+    expect(dispatched).toEqual(['b.hl7']);
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toMatch(/b\.hl7$/);
   });
 });
 

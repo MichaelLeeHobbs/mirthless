@@ -288,6 +288,7 @@ const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnec
     afterProcessing: (props['afterProcessing'] as SftpPostAction | undefined) ?? SFTP_POST_ACTION.DELETE,
     moveToDirectory: (props['moveToDirectory'] as string | undefined) ?? '',
     minFileAgeMs: num(props, 'minFileAgeMs', 1_000),
+    ignoreDot: (props['ignoreDot'] as boolean | undefined) ?? true,
     strictHostKey: (props['strictHostKey'] as boolean | undefined) ?? true,
     hostKey: props['hostKey'] as string | undefined,
     charset: (props['charset'] as string | undefined) ?? 'utf-8',

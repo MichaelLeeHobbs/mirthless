@@ -11,7 +11,7 @@ import {
 } from '../file-connector.schema.js';
 
 const SOURCE_DEFAULTS = {
-  fileFilter: '*', pollingIntervalMs: 5000, sortBy: 'NAME', charset: 'utf-8', binary: false,
+  fileFilter: '*', ignoreDot: true, pollingIntervalMs: 5000, sortBy: 'NAME', charset: 'utf-8', binary: false,
   checkFileAge: true, fileAgeMs: 1000, postAction: 'DELETE', moveToDirectory: '',
 };
 
@@ -26,7 +26,7 @@ describe('fileSourcePropertiesSchema', () => {
 
   it('accepts every key the connector reads', () => {
     const all = {
-      directory: '/in', fileFilter: '*.hl7', pollingIntervalMs: '100', sortBy: 'SIZE', charset: 'latin1', binary: true,
+      directory: '/in', fileFilter: '*.hl7', ignoreDot: false, pollingIntervalMs: '100', sortBy: 'SIZE', charset: 'latin1', binary: true,
       checkFileAge: false, fileAgeMs: 0, postAction: 'MOVE', moveToDirectory: '/done', processBatch: true,
     };
     expect(fileSourcePropertiesSchema.parse(all)).toEqual({ ...all, pollingIntervalMs: 100 });
@@ -42,6 +42,7 @@ describe('fileSourcePropertiesSchema', () => {
     ['sortBy', 'AGE'],
     ['charset', 'windows-1252'],
     ['binary', 'true'],
+    ['ignoreDot', 'false'],
     ['checkFileAge', 1],
     ['fileAgeMs', -1],
     ['fileAgeMs', 1.5],
