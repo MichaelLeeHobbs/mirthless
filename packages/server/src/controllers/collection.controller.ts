@@ -11,7 +11,7 @@ import type {
   ListRecordsQuery,
   StoreRecordInput,
   UpdateRecordInput,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { CollectionService } from '../services/collection.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

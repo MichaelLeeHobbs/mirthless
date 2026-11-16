@@ -4,7 +4,7 @@
 // Handles HTTP request for script syntax validation.
 
 import type { Request, Response } from 'express';
-import type { ScriptTestRunInput } from '@galvaniflow/core-models';
+import type { ScriptTestRunInput } from '@galvanigraph/core-models';
 import { ScriptValidationService } from '../services/script-validation.service.js';
 import { ScriptTestRunService } from '../services/script-test-run.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';

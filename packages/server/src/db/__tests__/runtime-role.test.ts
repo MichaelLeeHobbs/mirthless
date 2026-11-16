@@ -15,7 +15,7 @@ interface QuoteRow {
 }
 
 const QUOTED: QuoteRow = {
-  role: 'galvaniflow_app', verifier: "'SCRAM-SHA-256$4096:c2FsdA==$a2V5:a2V5'", database: 'galvaniflow',
+  role: 'galvanigraph_app', verifier: "'SCRAM-SHA-256$4096:c2FsdA==$a2V5:a2V5'", database: 'galvanigraph',
   is_owner: false, exists: false, too_powerful: false, member_of: null,
 };
 
@@ -49,19 +49,19 @@ describe('provisionRuntimeRole', () => {
   it('creates a missing role, sets its password and grants in one transaction', async () => {
     const { client, statements } = fakeClient([QUOTED]);
 
-    const result = await provisionRuntimeRole(client, { user: 'galvaniflow_app', password: 'secret' });
+    const result = await provisionRuntimeRole(client, { user: 'galvanigraph_app', password: 'secret' });
 
     expect(result.ok).toBe(true);
     expect(statements.slice(1, 4)).toEqual([
       'BEGIN',
-      'CREATE ROLE galvaniflow_app LOGIN',
-      `ALTER ROLE galvaniflow_app PASSWORD ${QUOTED.verifier}`,
+      'CREATE ROLE galvanigraph_app LOGIN',
+      `ALTER ROLE galvanigraph_app PASSWORD ${QUOTED.verifier}`,
     ]);
-    expect(statements).toContain('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO galvaniflow_app');
-    expect(statements).toContain('REVOKE UPDATE, DELETE ON TABLE public.events FROM galvaniflow_app');
+    expect(statements).toContain('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO galvanigraph_app');
+    expect(statements).toContain('REVOKE UPDATE, DELETE ON TABLE public.events FROM galvanigraph_app');
     for (const fn of ['public.create_channel_partitions(uuid)', 'public.purge_events(integer)']) {
       expect(statements).toContain(`REVOKE ALL ON FUNCTION ${fn} FROM PUBLIC`);
-      expect(statements).toContain(`GRANT EXECUTE ON FUNCTION ${fn} TO galvaniflow_app`);
+      expect(statements).toContain(`GRANT EXECUTE ON FUNCTION ${fn} TO galvanigraph_app`);
     }
     expect(statements.at(-2)).toMatch(/^DO \$pgboss\$/);
     expect(statements.at(-1)).toBe('COMMIT');
@@ -71,7 +71,7 @@ describe('provisionRuntimeRole', () => {
   it('leaves an existing role in place and its password alone when none is given', async () => {
     const { client, statements } = fakeClient([{ ...QUOTED, exists: true }]);
 
-    const result = await provisionRuntimeRole(client, { user: 'galvaniflow_app', password: '' });
+    const result = await provisionRuntimeRole(client, { user: 'galvanigraph_app', password: '' });
 
     expect(result.ok).toBe(true);
     expect(statements.some((s) => s.startsWith('CREATE ROLE') || s.startsWith('ALTER ROLE'))).toBe(false);
@@ -80,7 +80,7 @@ describe('provisionRuntimeRole', () => {
   it('refuses the role that runs migrations, before changing anything', async () => {
     const { client, statements } = fakeClient([{ ...QUOTED, is_owner: true }]);
 
-    const result = await provisionRuntimeRole(client, { user: 'galvaniflow', password: 'secret' });
+    const result = await provisionRuntimeRole(client, { user: 'galvanigraph', password: 'secret' });
 
     expect(result.ok).toBe(false);
     expect(result.error?.message).toContain('runs migrations');
@@ -98,19 +98,19 @@ describe('provisionRuntimeRole', () => {
   });
 
   it('refuses a role that is a member of another role, which it could SET ROLE to', async () => {
-    const { client, statements } = fakeClient([{ ...QUOTED, exists: true, member_of: 'galvaniflow, pg_read_server_files' }]);
+    const { client, statements } = fakeClient([{ ...QUOTED, exists: true, member_of: 'galvanigraph, pg_read_server_files' }]);
 
-    const result = await provisionRuntimeRole(client, { user: 'galvaniflow_app', password: 'secret' });
+    const result = await provisionRuntimeRole(client, { user: 'galvanigraph_app', password: 'secret' });
 
     expect(result.ok).toBe(false);
-    expect(result.error?.message).toContain('is a member of galvaniflow, pg_read_server_files');
+    expect(result.error?.message).toContain('is a member of galvanigraph, pg_read_server_files');
     expect(statements).toHaveLength(1);
   });
 
   it('never sends the password itself, only a SCRAM verifier of it', async () => {
     const { client, statements, values } = fakeClient([QUOTED]);
 
-    await provisionRuntimeRole(client, { user: 'galvaniflow_app', password: 'Pa55word-not-sent' });
+    await provisionRuntimeRole(client, { user: 'galvanigraph_app', password: 'Pa55word-not-sent' });
 
     expect([...statements, ...values].some((s) => String(s).includes('Pa55word-not-sent'))).toBe(false);
     expect(values).toContainEqual(expect.stringMatching(/^SCRAM-SHA-256\$4096:/));
@@ -128,7 +128,7 @@ describe('provisionRuntimeRole', () => {
   it('rolls back and returns the error when a grant fails', async () => {
     const { client, statements } = fakeClient([QUOTED], 'GRANT EXECUTE');
 
-    const result = await provisionRuntimeRole(client, { user: 'galvaniflow_app', password: 'secret' });
+    const result = await provisionRuntimeRole(client, { user: 'galvanigraph_app', password: 'secret' });
 
     expect(result.ok).toBe(false);
     expect(result.error?.message).toContain('GRANT EXECUTE');
@@ -139,7 +139,7 @@ describe('provisionRuntimeRole', () => {
   it('returns an error when the role lookup returns no row', async () => {
     const { client } = fakeClient([]);
 
-    const result = await provisionRuntimeRole(client, { user: 'galvaniflow_app', password: 'secret' });
+    const result = await provisionRuntimeRole(client, { user: 'galvanigraph_app', password: 'secret' });
 
     expect(result.ok).toBe(false);
   });
@@ -147,18 +147,18 @@ describe('provisionRuntimeRole', () => {
 
 describe('checkRuntimeRole', () => {
   it('passes a role that is neither a superuser nor has the owner\'s rights', async () => {
-    const { client } = fakeClient([{ name: 'galvaniflow_app', superuser: false, owner_rights: false, member_of: null }]);
+    const { client } = fakeClient([{ name: 'galvanigraph_app', superuser: false, owner_rights: false, member_of: null }]);
 
     expect((await checkRuntimeRole(client)).ok).toBe(true);
   });
 
   it('fails a superuser connection', async () => {
-    const { client } = fakeClient([{ name: 'galvaniflow', superuser: true, owner_rights: true, member_of: null }]);
+    const { client } = fakeClient([{ name: 'galvanigraph', superuser: true, owner_rights: true, member_of: null }]);
 
     const result = await checkRuntimeRole(client);
 
     expect(result.ok).toBe(false);
-    expect(result.error?.message).toContain('"galvaniflow", which is a superuser');
+    expect(result.error?.message).toContain('"galvanigraph", which is a superuser');
   });
 
   it('fails a connection with the rights of the table owner', async () => {
@@ -171,12 +171,12 @@ describe('checkRuntimeRole', () => {
   });
 
   it('fails a connection whose role is a member of another role', async () => {
-    const { client } = fakeClient([{ name: 'galvaniflow_app', superuser: false, owner_rights: false, member_of: 'galvaniflow' }]);
+    const { client } = fakeClient([{ name: 'galvanigraph_app', superuser: false, owner_rights: false, member_of: 'galvanigraph' }]);
 
     const result = await checkRuntimeRole(client);
 
     expect(result.ok).toBe(false);
-    expect(result.error?.message).toContain('which is a member of galvaniflow');
+    expect(result.error?.message).toContain('which is a member of galvanigraph');
   });
 
   it('fails when the current role cannot be read', async () => {
@@ -188,23 +188,23 @@ describe('checkRuntimeRole', () => {
 
 describe('runtimeRoleFromUrl', () => {
   it('reads the user and the decoded password', () => {
-    const result = runtimeRoleFromUrl('postgresql://galvaniflow_app:p%40ss%2Fword@db:5432/galvaniflow');
+    const result = runtimeRoleFromUrl('postgresql://galvanigraph_app:p%40ss%2Fword@db:5432/galvanigraph');
 
-    expect(result.ok && result.value).toEqual({ user: 'galvaniflow_app', password: 'p@ss/word' });
+    expect(result.ok && result.value).toEqual({ user: 'galvanigraph_app', password: 'p@ss/word' });
   });
 
   it('reads an empty password when the URL has none', () => {
-    const result = runtimeRoleFromUrl('postgresql://galvaniflow_app@db:5432/galvaniflow');
+    const result = runtimeRoleFromUrl('postgresql://galvanigraph_app@db:5432/galvanigraph');
 
-    expect(result.ok && result.value).toEqual({ user: 'galvaniflow_app', password: '' });
+    expect(result.ok && result.value).toEqual({ user: 'galvanigraph_app', password: '' });
   });
 
   it('fails a URL without a user name', () => {
-    expect(runtimeRoleFromUrl('postgresql://db:5432/galvaniflow').ok).toBe(false);
+    expect(runtimeRoleFromUrl('postgresql://db:5432/galvanigraph').ok).toBe(false);
   });
 
   it('fails, without the password in the message, when a % is not followed by two hex digits', () => {
-    const result = runtimeRoleFromUrl('postgresql://galvaniflow_app:abc%zzsecret@db:5432/galvaniflow');
+    const result = runtimeRoleFromUrl('postgresql://galvanigraph_app:abc%zzsecret@db:5432/galvanigraph');
 
     expect(result.ok).toBe(false);
     expect(result.error?.message).toContain('%25');

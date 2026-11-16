@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { kafkaDestinationPropertiesSchema, amqpDestinationPropertiesSchema } from '@galvaniflow/core-models';
+import { kafkaDestinationPropertiesSchema, amqpDestinationPropertiesSchema } from '@galvanigraph/core-models';
 import {
   redactChannelDetail,
   REDACTED,

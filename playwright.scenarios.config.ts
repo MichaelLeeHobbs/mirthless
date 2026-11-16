@@ -31,7 +31,7 @@ export default defineConfig({
   timeout: 60_000,
   reporter: [['list'], ['json', { outputFile: 'tmp/feature-climb/results.json' }]],
   webServer: {
-    command: 'pnpm --filter @galvaniflow/server exec tsx src/index.ts',
+    command: 'pnpm --filter @galvanigraph/server exec tsx src/index.ts',
     url: `http://localhost:${String(SCENARIO_API_PORT)}/api/v1/health`,
     reuseExistingServer: false,
     timeout: 60_000,

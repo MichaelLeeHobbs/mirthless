@@ -4,7 +4,7 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
-import { messageSearchQuerySchema, messageExportQuerySchema } from '@galvaniflow/core-models';
+import { messageSearchQuerySchema, messageExportQuerySchema } from '@galvanigraph/core-models';
 import { MessageController } from '../controllers/message.controller.js';
 import { MessageExportController } from '../controllers/message-export.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

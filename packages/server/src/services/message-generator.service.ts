@@ -4,8 +4,8 @@
 // Generates HL7v2 test messages.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import type { GenerateMessagesInput } from '@galvaniflow/core-models';
-import { generateHL7Messages } from '@galvaniflow/core-util';
+import type { GenerateMessagesInput } from '@galvanigraph/core-models';
+import { generateHL7Messages } from '@galvanigraph/core-util';
 
 // ----- Response Types -----
 

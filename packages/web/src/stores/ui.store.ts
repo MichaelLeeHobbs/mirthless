@@ -3,7 +3,7 @@ import { create } from 'zustand';
 type ThemeMode = 'dark' | 'light';
 
 const THEME_STORAGE_KEY = 'galvaniflow_theme';
-/** Key used before the rename to GalvaniFlow; read only, so existing users keep their theme. */
+/** Key used before the rename to GalvaniGraph; read only, so existing users keep their theme. */
 const LEGACY_THEME_STORAGE_KEY = 'mirthless_theme';
 
 function loadThemeMode(): ThemeMode {

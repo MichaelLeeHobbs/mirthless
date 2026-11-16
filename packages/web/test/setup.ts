@@ -1,4 +1,4 @@
-// Test setup for @galvaniflow/web
+// Test setup for @galvanigraph/web
 // Add global test utilities, mocks, or polyfills here as needed.
 
 import { vi } from 'vitest';

@@ -3,7 +3,7 @@
 // ===========================================
 
 import { Router, type IRouter } from 'express';
-import { serverRestoreInputSchema } from '@galvaniflow/core-models';
+import { serverRestoreInputSchema } from '@galvanigraph/core-models';
 import { ServerBackupController } from '../controllers/server-backup.controller.js';
 import { largeJsonBody } from '../middleware/body-limit.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

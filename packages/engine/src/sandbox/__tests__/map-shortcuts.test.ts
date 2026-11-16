@@ -311,14 +311,14 @@ describe('Map Shortcuts', () => {
   describe('configMap injection', () => {
     it('exposes configMap as read-only in sandbox', async () => {
       const context = makeContext({
-        configMap: { 'app.name': 'GalvaniFlow' },
+        configMap: { 'app.name': 'GalvaniGraph' },
       });
       const script = makeScript('return configMap["app.name"];');
       const result = await executor.execute(script, context, makeOptions());
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.returnValue).toBe('GalvaniFlow');
+      expect(result.value.returnValue).toBe('GalvaniGraph');
     });
 
     it('prevents writes to frozen configMap', async () => {

@@ -5,7 +5,7 @@
 // Looks up the target channel in the static channel registry.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvaniflow/core-util';
+import { fillPlaceholders, recordLookup, tryCatch, type Result } from '@galvanigraph/core-util';
 import { DISPATCH_STATUS, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
 import { getChannelDispatcher, hasChannel } from './channel-registry.js';
 

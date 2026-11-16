@@ -4,7 +4,7 @@
 // TanStack Query hooks for system settings CRUD.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { UpsertSettingInput, BulkUpsertSettingsInput } from '@galvaniflow/core-models';
+import type { UpsertSettingInput, BulkUpsertSettingsInput } from '@galvanigraph/core-models';
 import { api, type SettingDetail } from '../api/client.js';
 
 // ----- Query Keys -----

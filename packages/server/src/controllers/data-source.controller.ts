@@ -4,7 +4,7 @@
 // HTTP for data source CRUD + connection test. Passwords are never returned.
 
 import type { Request, Response } from 'express';
-import type { CreateDataSourceInput, UpdateDataSourceInput } from '@galvaniflow/core-models';
+import type { CreateDataSourceInput, UpdateDataSourceInput } from '@galvanigraph/core-models';
 import { DataSourceService, type TestConnectionInput } from '../services/data-source.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

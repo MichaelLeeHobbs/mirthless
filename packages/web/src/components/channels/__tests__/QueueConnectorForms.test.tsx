@@ -15,7 +15,7 @@ import {
   kafkaDestinationPropertiesSchema,
   amqpSourcePropertiesSchema,
   amqpDestinationPropertiesSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { darkTheme } from '../../../styles/theme.js';
 import { KAFKA_SOURCE_DEFAULTS, AMQP_SOURCE_DEFAULTS, getDefaultProperties } from '../source/connector-defaults.js';
 import { KAFKA_DEST_DEFAULTS, AMQP_DEST_DEFAULTS, getDestDefaultProperties } from '../destinations/connector-defaults.js';
@@ -102,16 +102,16 @@ describe('KafkaSourceForm', () => {
     renderForm(KafkaSourceForm, { ...KAFKA_SOURCE_DEFAULTS });
     expect(screen.queryByLabelText('SASL Username')).toBeNull();
     selectOption('SASL Mechanism', 'SCRAM-SHA-512');
-    fireEvent.change(screen.getByLabelText('SASL Username'), { target: { value: 'svc-galvaniflow' } });
-    expect(lastProps).toMatchObject({ saslMechanism: 'SCRAM-SHA-512', saslUsername: 'svc-galvaniflow' });
+    fireEvent.change(screen.getByLabelText('SASL Username'), { target: { value: 'svc-galvanigraph' } });
+    expect(lastProps).toMatchObject({ saslMechanism: 'SCRAM-SHA-512', saslUsername: 'svc-galvanigraph' });
   });
 
   it('writes topic, group and start position', () => {
     renderForm(KafkaSourceForm, { ...KAFKA_SOURCE_DEFAULTS });
     fireEvent.change(screen.getByLabelText('Topic'), { target: { value: 'adt' } });
-    fireEvent.change(screen.getByLabelText('Consumer Group'), { target: { value: 'galvaniflow-adt' } });
+    fireEvent.change(screen.getByLabelText('Consumer Group'), { target: { value: 'galvanigraph-adt' } });
     selectOption('Start From', 'Latest (only new records)');
-    expect(lastProps).toMatchObject({ topic: 'adt', groupId: 'galvaniflow-adt', startFrom: 'LATEST' });
+    expect(lastProps).toMatchObject({ topic: 'adt', groupId: 'galvanigraph-adt', startFrom: 'LATEST' });
   });
 
   it('decodes as UTF-8 by default and writes the chosen charset', () => {

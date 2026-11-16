@@ -6,7 +6,7 @@
 // All methods return Result<T> using tryCatch from stderr-lib.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { createNodemailerTransport, type SmtpTransport as ConnectorSmtpTransport } from '@galvaniflow/connectors';
+import { createNodemailerTransport, type SmtpTransport as ConnectorSmtpTransport } from '@galvanigraph/connectors';
 import { SettingsService } from './settings.service.js';
 import logger from '../lib/logger.js';
 

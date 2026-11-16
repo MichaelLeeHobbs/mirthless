@@ -14,7 +14,7 @@ import { DATABASE_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 import { getStr, getNum, getBool, propertyUpdaters } from '../common/connector-properties.js';
-import { defaultDatabasePort } from '@galvaniflow/core-models';
+import { defaultDatabasePort } from '@galvanigraph/core-models';
 import { DatabaseVendorField, databaseVendor } from '../common/DatabaseVendorField.js';
 
 export function DatabaseDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {

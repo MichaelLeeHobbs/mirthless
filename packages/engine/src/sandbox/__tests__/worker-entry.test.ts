@@ -10,7 +10,7 @@ afterEach(() => { process.env = { ...saved }; });
 
 describe('workerEntry', () => {
   it('starts the built worker with no environment at all', () => {
-    process.env['DATABASE_URL'] = 'postgresql://user:secret@db/galvaniflow';
+    process.env['DATABASE_URL'] = 'postgresql://user:secret@db/galvanigraph';
     const entry = workerEntry('file:///app/dist/sandbox/script-test-isolated.js', 'script-test-worker');
     expect(entry.url.href).toBe('file:///app/dist/sandbox/script-test-worker.js');
     expect(entry.execArgv).toEqual([]);
@@ -18,7 +18,7 @@ describe('workerEntry', () => {
   });
 
   it('starts a worker from source through tsx, with only the temp folder variables tsx needs', () => {
-    process.env['DATABASE_URL'] = 'postgresql://user:secret@db/galvaniflow';
+    process.env['DATABASE_URL'] = 'postgresql://user:secret@db/galvanigraph';
     process.env['JWT_SECRET'] = 'secret';
     process.env['TMP'] = 'C:\\temp';
     delete process.env['TMPDIR'];

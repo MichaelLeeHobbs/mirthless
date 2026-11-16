@@ -56,14 +56,14 @@ const TABLE = [
   { changed: ['some-new-top-level-file.json'], jobs: EVERYTHING, full: true },
   { changed: ['packages/brand-new/src/index.ts'], jobs: EVERYTHING, full: true },
   // Packages: a job runs when a package it exercises, or one of their dependencies, changed.
-  { changed: ['packages/web/src/App.tsx'], jobs: ['e2e', 'gate'], test: ['@galvaniflow/web'] },
-  { changed: ['packages/server/src/app.ts'], jobs: ['e2e', 'gate', 'pg'], test: ['@galvaniflow/server'] },
-  { changed: ['packages/connectors/src/registry.ts'], jobs: EVERYTHING, test: ['@galvaniflow/connectors', '@galvaniflow/server'] },
-  { changed: ['packages/engine/src/index.ts'], jobs: EVERYTHING, test: ['@galvaniflow/connectors', '@galvaniflow/engine', '@galvaniflow/server'] },
+  { changed: ['packages/web/src/App.tsx'], jobs: ['e2e', 'gate'], test: ['@galvanigraph/web'] },
+  { changed: ['packages/server/src/app.ts'], jobs: ['e2e', 'gate', 'pg'], test: ['@galvanigraph/server'] },
+  { changed: ['packages/connectors/src/registry.ts'], jobs: EVERYTHING, test: ['@galvanigraph/connectors', '@galvanigraph/server'] },
+  { changed: ['packages/engine/src/index.ts'], jobs: EVERYTHING, test: ['@galvanigraph/connectors', '@galvanigraph/engine', '@galvanigraph/server'] },
   {
     changed: ['packages/core-util/src/index.ts'],
     jobs: EVERYTHING,
-    test: ['@galvaniflow/connectors', '@galvaniflow/core-util', '@galvaniflow/engine', '@galvaniflow/server', '@galvaniflow/web'],
+    test: ['@galvanigraph/connectors', '@galvanigraph/core-util', '@galvanigraph/engine', '@galvanigraph/server', '@galvanigraph/web'],
   },
   // Every workspace package depends on core-models.
   { changed: ['packages/core-models/src/index.ts'], jobs: EVERYTHING, test: [...packages.values()].map((p) => p.name).sort() },
@@ -77,8 +77,8 @@ const TABLE = [
   { changed: ['.claude/skills/create-ui/SKILL.md'], jobs: [] },
   { changed: ['.github/ISSUE_TEMPLATE/bug_report.md', '.github/PULL_REQUEST_TEMPLATE.md'], jobs: [] },
   // The gate already runs the doc test's package, so the docs job is not needed.
-  { changed: ['docs/user/connector-reference.md', 'packages/server/src/app.ts'], jobs: ['docs', 'e2e', 'gate', 'pg'], test: ['@galvaniflow/server'] },
-  { changed: ['docs/user/connector-reference.md', 'packages/web/src/App.tsx'], jobs: ['docs', 'e2e', 'gate'], test: ['@galvaniflow/web'] },
+  { changed: ['docs/user/connector-reference.md', 'packages/server/src/app.ts'], jobs: ['docs', 'e2e', 'gate', 'pg'], test: ['@galvanigraph/server'] },
+  { changed: ['docs/user/connector-reference.md', 'packages/web/src/App.tsx'], jobs: ['docs', 'e2e', 'gate'], test: ['@galvanigraph/web'] },
   // One root file among many still runs everything.
   { changed: ['docs/README.md', 'packages/web/src/App.tsx', 'pnpm-lock.yaml'], jobs: EVERYTHING, full: true },
 ];
@@ -100,18 +100,18 @@ test('an empty diff runs everything, since the classifier cannot tell what chang
 });
 
 test('the test filter names each package to test', () => {
-  assert.equal(run(['packages/server/src/app.ts']).testFilter, '--filter @galvaniflow/server');
+  assert.equal(run(['packages/server/src/app.ts']).testFilter, '--filter @galvanigraph/server');
 });
 
 test('docs job runs only the doc tests outside the packages the gate tests', () => {
   const docsOnly = run(['docs/user/connector-reference.md']);
   assert.deepEqual(docsOnly.docTests, [
-    { pkg: '@galvaniflow/core-models', dir: 'packages/core-models', files: ['src/schemas/__tests__/connector-reference-docs.test.ts'] },
-    { pkg: '@galvaniflow/server', dir: 'packages/server', files: ['src/__tests__/docs/connector-reference.test.ts'] },
+    { pkg: '@galvanigraph/core-models', dir: 'packages/core-models', files: ['src/schemas/__tests__/connector-reference-docs.test.ts'] },
+    { pkg: '@galvanigraph/server', dir: 'packages/server', files: ['src/__tests__/docs/connector-reference.test.ts'] },
   ]);
   const withServer = run(['docs/user/connector-reference.md', 'packages/server/src/app.ts']);
   assert.deepEqual(withServer.docTests, [
-    { pkg: '@galvaniflow/core-models', dir: 'packages/core-models', files: ['src/schemas/__tests__/connector-reference-docs.test.ts'] },
+    { pkg: '@galvanigraph/core-models', dir: 'packages/core-models', files: ['src/schemas/__tests__/connector-reference-docs.test.ts'] },
   ]);
 });
 
@@ -160,8 +160,8 @@ test('the real doc guards are found by what they read', () => {
     testSources: readWorkspaceTestSources(ROOT),
   });
   const found = result.docTests.flatMap((t) => t.files.map((f) => `${t.pkg} ${f}`));
-  assert.ok(found.includes('@galvaniflow/server src/__tests__/docs/connector-reference.test.ts'), found.join('\n'));
-  assert.ok(found.includes('@galvaniflow/core-models src/schemas/__tests__/connector-reference-docs.test.ts'), found.join('\n'));
+  assert.ok(found.includes('@galvanigraph/server src/__tests__/docs/connector-reference.test.ts'), found.join('\n'));
+  assert.ok(found.includes('@galvanigraph/core-models src/schemas/__tests__/connector-reference-docs.test.ts'), found.join('\n'));
 });
 
 // ci.yml must match what the classifier knows, or a new job runs unguarded

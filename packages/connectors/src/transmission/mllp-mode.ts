@@ -5,7 +5,7 @@
 // (0x0B + payload + 0x1C 0x0D). Some partners frame with other bytes (STX/ETX,
 // Mirth's "Basic" mode), so the start and end bytes can be set.
 
-import { DEFAULT_MAX_FRAME_BYTES } from '@galvaniflow/core-models';
+import { DEFAULT_MAX_FRAME_BYTES } from '@galvanigraph/core-models';
 
 // ----- Constants -----
 

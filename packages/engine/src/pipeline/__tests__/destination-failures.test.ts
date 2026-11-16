@@ -5,7 +5,7 @@
 // in the queue), and a queued destination keeps the variables it will send with.
 
 import { describe, it, expect, vi } from 'vitest';
-import type { Result } from '@galvaniflow/core-util';
+import type { Result } from '@galvanigraph/core-util';
 import { MessageProcessor } from '../message-processor.js';
 import type { MessageStore, PipelineConfig, SendToDestination } from '../message-processor.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';

@@ -3,8 +3,8 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { CONNECTOR_TYPES } from '@galvaniflow/core-models';
-import { createSourceConnector, createDestinationConnector } from '@galvaniflow/connectors';
+import { CONNECTOR_TYPES } from '@galvanigraph/core-models';
+import { createSourceConnector, createDestinationConnector } from '@galvanigraph/connectors';
 import { validateConnectorProperties } from '../connector-validation.service.js';
 
 describe('validateConnectorProperties: Kafka and AMQP', () => {

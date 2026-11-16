@@ -87,16 +87,16 @@ const queueChannelDetail = {
   ...channelDetail,
   id: 'c8', name: 'Lab Results via Kafka', sourceConnectorType: 'KAFKA',
   sourceConnectorProperties: {
-    brokers: 'kafka-1.example.test:9093,kafka-2.example.test:9093', clientId: 'galvaniflow', topic: 'lab.results.v1',
-    groupId: 'galvaniflow-lab-results', startFrom: 'EARLIEST', saslMechanism: 'SCRAM-SHA-512', saslUsername: 'svc-galvaniflow',
+    brokers: 'kafka-1.example.test:9093,kafka-2.example.test:9093', clientId: 'galvanigraph', topic: 'lab.results.v1',
+    groupId: 'galvanigraph-lab-results', startFrom: 'EARLIEST', saslMechanism: 'SCRAM-SHA-512', saslUsername: 'svc-galvanigraph',
     saslPassword: 'example', useTls: true, tls: { caCertId: '', clientCertId: '', rejectUnauthorized: true },
   },
   destinations: [{
     ...channelDetail.destinations[0], name: 'To RabbitMQ', connectorType: 'AMQP',
     properties: {
-      host: 'rabbit.example.test', port: 5671, vhost: '/clinical', username: 'galvaniflow', password: 'example',
+      host: 'rabbit.example.test', port: 5671, vhost: '/clinical', username: 'galvanigraph', password: 'example',
       useTls: true, tls: { caCertId: '', clientCertId: '', rejectUnauthorized: true },
-      exchange: 'hl7', routingKey: 'oru.${sendingFacility}', headers: { source: 'galvaniflow' }, contentType: 'application/hl7-v2',
+      exchange: 'hl7', routingKey: 'oru.${sendingFacility}', headers: { source: 'galvanigraph' }, contentType: 'application/hl7-v2',
     },
   }],
 };
@@ -127,7 +127,7 @@ const billingDetail = {
   sourceConnectorProperties: { directory: '/data/billing', fileFilter: '*.csv', pollingIntervalMs: 60000 },
   destinations: [
     { id: 'd6', metaDataId: 1, name: 'Partner billing DB', enabled: true, connectorType: 'DATABASE',
-      properties: { vendor: 'mysql', host: 'billing-db.example.test', port: 3306, database: 'billing', username: 'galvaniflow', password: '', tls: true,
+      properties: { vendor: 'mysql', host: 'billing-db.example.test', port: 3306, database: 'billing', username: 'galvanigraph', password: '', tls: true,
         query: 'INSERT INTO charges (mrn, code, amount) VALUES (${mrn}, ${code}, ${amount})', useTransaction: true, returnGeneratedKeys: false },
       queueMode: 'ON_FAILURE', retryCount: 3, retryIntervalMs: 10000, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false },
   ],
@@ -176,13 +176,13 @@ const events = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 const settings = [
-  ['s1', 'general.server_name', 'GalvaniFlow (staging)', 'string', 'Display name for this server instance', 'general'],
+  ['s1', 'general.server_name', 'GalvaniGraph (staging)', 'string', 'Display name for this server instance', 'general'],
   ['s2', 'general.default_admin_address', 'integration-team@hospital.example', 'string', null, 'general'],
   ['s3', 'smtp.host', 'smtp.hospital.example', 'string', 'SMTP server hostname', 'smtp'],
   ['s4', 'smtp.port', '587', 'number', 'SMTP server port', 'smtp'],
   ['s5', 'smtp.secure', 'false', 'boolean', null, 'smtp'],
-  ['s6', 'smtp.from', 'galvaniflow@hospital.example', 'string', null, 'smtp'],
-  ['s7', 'smtp.auth_user', 'galvaniflow', 'string', null, 'smtp'],
+  ['s6', 'smtp.from', 'galvanigraph@hospital.example', 'string', null, 'smtp'],
+  ['s7', 'smtp.auth_user', 'galvanigraph', 'string', null, 'smtp'],
   ['s8', 'smtp.auth_pass', '__REDACTED__', 'password', null, 'smtp'],
   ['s9', 'pruner.enabled', 'true', 'boolean', 'Run the data pruner nightly', 'pruner'],
   ['s10', 'pruner.cron_expression', '0 3 * * *', 'string', null, 'pruner'],
@@ -225,7 +225,7 @@ const alertDetail = {
   ...{ id: 'a1', name: 'Channel errors', description: 'Any errored message on a production channel', enabled: true, triggerType: 'CHANNEL_ERROR', revision: 1, channelCount: 2, actionCount: 1, createdAt: ago(50000), updatedAt: ago(3000) },
   trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null }, channelIds: ['c1', 'c2'],
   actions: [{ id: 'aa1', actionType: 'EMAIL', recipients: ['oncall@example.test'], properties: null }],
-  subjectTemplate: 'GalvaniFlow: ${channelName} errored', bodyTemplate: '${error}', reAlertIntervalMs: 900000, maxAlerts: 5,
+  subjectTemplate: 'GalvaniGraph: ${channelName} errored', bodyTemplate: '${error}', reAlertIntervalMs: 900000, maxAlerts: 5,
 };
 
 const collection = { id: 'k1', name: 'pending-orders', description: 'Orders waiting for a result, by accession', indexedFields: ['accession', 'facility'], defaultTtlSeconds: 2592000, createdAt: ago(90000), updatedAt: ago(100) };
@@ -289,7 +289,7 @@ export function route(pathname, search) {
   if (p === '/collections/k1') return collection;
   if (p === '/collections/k1/records') return { items: collectionRecords, total: 214 };
   if (p === '/datasources') return [
-    { id: 'ds1', name: 'ehr-replica', description: 'Read-only EHR reporting replica', driver: 'postgres', host: 'ehr-replica.example.test', port: 5432, database: 'ehr', user: 'galvaniflow_ro', readOnly: true, maxConnections: 5, statementTimeoutMs: 10000, maxRows: 1000, createdAt: ago(90000), updatedAt: ago(9000) },
+    { id: 'ds1', name: 'ehr-replica', description: 'Read-only EHR reporting replica', driver: 'postgres', host: 'ehr-replica.example.test', port: 5432, database: 'ehr', user: 'galvanigraph_ro', readOnly: true, maxConnections: 5, statementTimeoutMs: 10000, maxRows: 1000, createdAt: ago(90000), updatedAt: ago(9000) },
   ];
   if (p === '/global-map') return [
     { key: 'lastAdtSequence', value: '48211', updatedAt: ago(1) },

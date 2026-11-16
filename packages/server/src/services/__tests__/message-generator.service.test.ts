@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { generateMessagesInputSchema } from '@galvaniflow/core-models';
+import { generateMessagesInputSchema } from '@galvanigraph/core-models';
 import { MessageGeneratorService } from '../message-generator.service.js';
 
 describe('MessageGeneratorService.generate', () => {

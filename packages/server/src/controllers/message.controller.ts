@@ -4,7 +4,7 @@
 // HTTP adapter for message search, detail, and deletion.
 
 import type { Request, Response } from 'express';
-import type { MessageSearchQuery } from '@galvaniflow/core-models';
+import type { MessageSearchQuery } from '@galvanigraph/core-models';
 import { MessageQueryService } from '../services/message-query.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { emitEvent } from '../lib/event-emitter.js';

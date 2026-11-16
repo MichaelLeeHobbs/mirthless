@@ -1,7 +1,7 @@
 // ===========================================
 // Docs guard: docs/user/capabilities.md
 // ===========================================
-// The capabilities page is where users see what GalvaniFlow does and
+// The capabilities page is where users see what GalvaniGraph does and
 // maintainers see the gaps. It is only useful if its statuses mean what the page
 // says they mean, so this guard enforces the rules stated at its top:
 // - Yes is proved by a test that runs in the gate or in CI, and the file exists;

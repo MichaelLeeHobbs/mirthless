@@ -19,7 +19,7 @@ import { HTTP_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { CertificateSelect } from '../common/CertificateSelect.js';
 import { getStr, getNum, getTlsStr, getTlsBool, propertyUpdaters } from '../common/connector-properties.js';
-import { HTTP_METHODS, HTTP_SCHEMES as SCHEMES } from '@galvaniflow/core-models';
+import { HTTP_METHODS, HTTP_SCHEMES as SCHEMES } from '@galvanigraph/core-models';
 
 export function HttpSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);

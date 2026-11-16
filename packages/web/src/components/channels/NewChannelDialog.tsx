@@ -16,7 +16,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import Stack from '@mui/material/Stack';
 import CircularProgress from '@mui/material/CircularProgress';
-import { SOURCE_CONNECTOR_TYPES } from '@galvaniflow/core-models';
+import { SOURCE_CONNECTOR_TYPES } from '@galvanigraph/core-models';
 import { useCreateChannel } from '../../hooks/use-channels.js';
 import { NEW_CHANNEL_SCRIPT_LANGUAGES } from '../../lib/script-language.js';
 

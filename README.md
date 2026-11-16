@@ -1,4 +1,4 @@
-# GalvaniFlow
+# GalvaniGraph
 
 > A modern, open-source healthcare integration engine. Think Mirth Connect, but built from scratch for Node.js — no Java, no desktop client, no paywall tiers.
 
@@ -13,7 +13,7 @@ Mirth Connect (NextGen Connect) is the de facto standard for healthcare integrat
 - **Paywalled** — RBAC, MFA, channel history, cross-channel search? That'll be $$$ for the Gold tier
 - **Closed direction** — increasingly proprietary with each release
 
-GalvaniFlow keeps what works (channels, transformers, filters, the pipeline model) and rebuilds everything else for the modern era.
+GalvaniGraph keeps what works (channels, transformers, filters, the pipeline model) and rebuilds everything else for the modern era.
 
 ## What's Different
 
@@ -26,7 +26,7 @@ GalvaniFlow keeps what works (channels, transformers, filters, the pipeline mode
 
 ## Security model
 
-Channel scripts are isolated on a best-effort basis. The sandbox blocks accidental and casual access to the host, but it is not a security boundary. Treat anyone who can create or edit a channel, code template or global script as able to run code on the GalvaniFlow server.
+Channel scripts are isolated on a best-effort basis. The sandbox blocks accidental and casual access to the host, but it is not a security boundary. Treat anyone who can create or edit a channel, code template or global script as able to run code on the GalvaniGraph server.
 
 In practice that means the admin, deployer and developer roles: limit them to people you would trust with a shell on the server. Scripts run in `node:vm` with no `require`, `process` or file system, and reach the network and databases only through the bridges the engine provides. This is an improvement on Mirth Connect and OIE, where Rhino scripts have full Java access by design, but it is not the isolation of a separate process. Process isolation per channel, opt-in and with a performance cost, could be added later for deployments whose script authors are not trusted; it is not built. Details: [SECURITY.md](SECURITY.md) and [`packages/engine/src/sandbox/README.md`](packages/engine/src/sandbox/README.md).
 
@@ -57,7 +57,7 @@ pnpm dev                    # starts server (:3000) + web UI (:5173)
 The production stack (Postgres + server + nginx-served web) is defined in
 [`docker/docker-compose.prod.yml`](docker/docker-compose.prod.yml). The server image runs
 database migrations and an idempotent seed on start before booting. Migrations run as the
-Postgres superuser (`POSTGRES_PASSWORD`); the server itself connects as `galvaniflow_app`
+Postgres superuser (`POSTGRES_PASSWORD`); the server itself connects as `galvanigraph_app`
 (`POSTGRES_APP_PASSWORD`), a role that owns no application tables. See
 [Database roles](docs/ops/upgrade.md#database-roles).
 
@@ -74,14 +74,14 @@ front of it, or set `WEB_BIND=0.0.0.0` in `.env` to try it from another machine.
 ### Documentation
 
 - [Quickstart: create your first channel](docs/user/quickstart-first-channel.md)
-- [What can GalvaniFlow do, and what is missing?](docs/user/capabilities.md) Every capability with its status, limits, plan and the tests that prove it, including what a Mirth channel imports as.
+- [What can GalvaniGraph do, and what is missing?](docs/user/capabilities.md) Every capability with its status, limits, plan and the tests that prove it, including what a Mirth channel imports as.
 - [Which connectors can receive, which can send, and what can each do?](docs/user/connector-reference.md#connectors-at-a-glance) Every connector type, its settings and limits.
 - [Who can do what? Users, roles, sign-in and cutting someone off](docs/user/access-control.md) The role and permission matrix, sessions, and what is not supported (SSO, MFA, per-channel access).
 - [Transformer scripting API](docs/user/scripting-api.md) — the sandbox surface for filters/transformers
 
 ### Operations
 
-Running GalvaniFlow in production? See the operator guides in [`docs/ops/`](docs/ops/):
+Running GalvaniGraph in production? See the operator guides in [`docs/ops/`](docs/ops/):
 
 - [Deployment](docs/ops/deployment.md) — first install, required settings, listener ports, known limitations
 - [Backup & restore](docs/ops/backup-restore.md) — Postgres `pg_dump`/`pg_restore` plus the config backup API
@@ -97,7 +97,7 @@ Running GalvaniFlow in production? See the operator guides in [`docs/ops/`](docs
 
 ## Architecture
 
-![GalvaniFlow architecture: the six packages as layers, and the functional domains](docs/design/architecture.svg)
+![GalvaniGraph architecture: the six packages as layers, and the functional domains](docs/design/architecture.svg)
 
 The top half shows the packages as layers and what talks to them. The bottom half shows the functional domains, with badges for what Mirth Connect charges for, what it has no equivalent for, and what is planned.
 

@@ -6,7 +6,7 @@
 // filled per message (D-252). A topic naming a variable the message lacks is an
 // error rather than a publish to a topic called `${...}`.
 
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { fillVariables } from '../base.js';
 import { withTimeoutSignal } from '../timeout.js';

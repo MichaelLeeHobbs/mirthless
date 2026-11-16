@@ -9,7 +9,7 @@
 // (new instance) does not re-dispatch an already-dispatched file.
 
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { selectsFileName } from '../file/file-receiver.js';
@@ -35,7 +35,7 @@ const SFTP_OP_TIMEOUT_MS = 30_000;
  */
 const QUARANTINE_LEDGER = '.galvaniflow-quarantine.json';
 /**
- * Ledger name used before the GalvaniFlow rename. Still read (merged into the
+ * Ledger name used before the GalvaniGraph rename. Still read (merged into the
  * set) and never dispatched, but never written: the next persist carries its
  * entries into {@link QUARANTINE_LEDGER}.
  */

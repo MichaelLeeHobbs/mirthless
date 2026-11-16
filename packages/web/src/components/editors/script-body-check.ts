@@ -11,7 +11,7 @@
 // The visible model keeps Monaco's syntax checking (monaco.ts).
 
 import { useEffect } from 'react';
-import { scriptBodyPosition, wrapScriptBody } from '@galvaniflow/core-models';
+import { scriptBodyPosition, wrapScriptBody } from '@galvanigraph/core-models';
 import { monaco } from './monaco.js';
 import { errorMessage } from '../../lib/error-message.js';
 

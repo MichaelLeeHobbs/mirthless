@@ -14,7 +14,7 @@ Every property below is the key the connector reads from the channel's saved pro
 | [SFTP](#sftp) | Yes | Yes | Files on a remote SFTP server | SSH, with host key checking on by default; an empty `hostKey` refuses to deploy while it is on | Password or private key | File Reader / File Writer with the sftp scheme, imported automatically by the Mirth importer |
 | [DATABASE](#database) | Yes | Yes | PostgreSQL and MySQL/MariaDB only. No SQL Server or Oracle | `tls` flag; when on, the server certificate is verified | Database username and password | Database Reader / Database Writer |
 | [JAVASCRIPT](#javascript) | Yes | Yes | Whatever a sandboxed script can produce or reach through the script bridges | Not applicable (runs in the server) | Not applicable | JavaScript Reader / JavaScript Writer |
-| [CHANNEL](#channel) | Yes | Yes | Another GalvaniFlow channel on the same server | Not applicable (in memory) | Not applicable | Channel Reader / Channel Writer |
+| [CHANNEL](#channel) | Yes | Yes | Another GalvaniGraph channel on the same server | Not applicable (in memory) | Not applicable | Channel Reader / Channel Writer |
 | [DICOM](#dicom) | Yes | Yes | DICOM C-STORE in and out | No TLS | None. The listener accepts any calling and called AE title | DICOM Listener / DICOM Sender |
 | [EMAIL](#email) | Yes | No | Reading an IMAP mailbox. POP3 refuses to deploy | `secure` (IMAP over TLS), on by default | Mailbox username and password | none (Mirth Connect has no email reader connector) |
 | [SMTP](#smtp) | No | Yes | Sending email only | `secure` (implicit TLS) and `requireTLS` (STARTTLS required); both off by default | Optional username and password | SMTP Sender |
@@ -352,7 +352,7 @@ The script runs inside the server. Whatever it reaches through the script bridge
 
 ### CHANNEL: what it does
 
-A CHANNEL destination hands the message to another GalvaniFlow channel's CHANNEL source in memory, on the same server, without a network hop. With `waitForResponse` on, the destination's response is the target channel's response; otherwise it is `messageId=<n>` for the message the target created.
+A CHANNEL destination hands the message to another GalvaniGraph channel's CHANNEL source in memory, on the same server, without a network hop. With `waitForResponse` on, the destination's response is the target channel's response; otherwise it is `messageId=<n>` for the message the target created.
 
 The send is an ERROR when the target is not deployed, when the target stores the message with an ERROR status, or when a message has passed through 10 channel hops, which stops a routing loop.
 
@@ -396,7 +396,7 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 |---|---|---|
 | `port` | Yes | Port to listen on. |
 | `storageDir` | Yes | Directory received files are written to. |
-| `aeTitle` | No | This listener's AE title, at most 16 characters, `GALVANIFLOW` by default. Not checked against incoming associations. |
+| `aeTitle` | No | This listener's AE title, at most 16 characters, `GALVANIGRAPH` by default. Not checked against incoming associations. |
 | `minPoolSize` | No | Checked at deploy (at least 1) but not used by the current listener. |
 | `maxPoolSize` | No | Checked at deploy (not below `minPoolSize`) but not used by the current listener. |
 | `connectionTimeoutMs` | No | Connect, association and PDU timeout in milliseconds, 10000 by default. |
@@ -411,7 +411,7 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 | `host` | Yes | Remote SCP host. |
 | `port` | Yes | Remote SCP port. |
 | `calledAETitle` | No | The remote AE title, at most 16 characters, `PACS` by default. |
-| `callingAETitle` | No | This sender's AE title, at most 16 characters, `GALVANIFLOW` by default. |
+| `callingAETitle` | No | This sender's AE title, at most 16 characters, `GALVANIGRAPH` by default. |
 | `mode` | No | `single` or `multiple`. Read but not used by the current sender. |
 | `maxAssociations` | No | Read but not used by the current sender. |
 | `maxRetries` | No | Retries of a failed send. |

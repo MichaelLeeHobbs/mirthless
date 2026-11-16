@@ -6,7 +6,7 @@
 // `${message.encodedData}` the message itself. The template is filled once,
 // before the outbound content is stored, so a queued retry sends the same text.
 
-import { fillPlaceholders, hasPlaceholderText, recordLookup } from '@galvaniflow/core-util';
+import { fillPlaceholders, hasPlaceholderText, recordLookup } from '@galvanigraph/core-util';
 
 /** Values a template can name besides the maps. */
 export interface TemplateMessage {

@@ -1,6 +1,6 @@
 # 01 — Core Models
 
-> Domain types, Zod schemas, and branded types for GalvaniFlow.
+> Domain types, Zod schemas, and branded types for GalvaniGraph.
 
 ## Design Principles
 
@@ -132,7 +132,7 @@ interface MetadataColumnDefinition {
 
 ### Key Differences from Connect
 
-| Aspect | Connect | GalvaniFlow |
+| Aspect | Connect | GalvaniGraph |
 |---|---|---|
 | Mutability | All mutable | All `readonly` |
 | MetaDataId assignment | Auto-increment counter on Channel | Each connector has its own `ConnectorId`; `metaDataId` is assigned at deployment time |

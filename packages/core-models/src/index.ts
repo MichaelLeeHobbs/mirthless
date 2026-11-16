@@ -1,5 +1,5 @@
 // ===========================================
-// @galvaniflow/core-models
+// @galvanigraph/core-models
 // ===========================================
 // Shared TypeScript types, Zod schemas, and branded types.
 

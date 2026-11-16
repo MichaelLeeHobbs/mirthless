@@ -15,7 +15,7 @@ import {
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../sandbox-executor.js';
 import { createSandboxContext } from '../sandbox-context.js';
 import { createHl7Proxy } from '../../pipeline/data-type-handler.js';
-import { Hl7Message } from '@galvaniflow/core-util';
+import { Hl7Message } from '@galvanigraph/core-util';
 
 beforeEach(() => {
   clearScriptCache();

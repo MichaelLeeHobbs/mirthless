@@ -10,7 +10,7 @@ import { isServiceError } from '../../lib/service-error.js';
 
 // ----- Mock Dependencies -----
 
-vi.mock('@galvaniflow/connectors', () => ({
+vi.mock('@galvanigraph/connectors', () => ({
   createSourceConnector: vi.fn().mockReturnValue({
     setDispatcher: vi.fn(),
     onDeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
@@ -338,7 +338,7 @@ describe('EngineManager.deploy with a connector that cannot be built', () => {
     // The real factory, so the test covers what a deploy does with a non-object
     // tls. Which check refuses it (the TCP/MLLP property schema or the TLS reader)
     // is the factory's business; the deploy must fail with that error and keep no runtime.
-    const actual = await vi.importActual<typeof import('@galvaniflow/connectors')>('@galvaniflow/connectors');
+    const actual = await vi.importActual<typeof import('@galvanigraph/connectors')>('@galvanigraph/connectors');
     const props = { port: 6661, tls: 'abc' };
     let factoryError = '';
     try {
@@ -348,7 +348,7 @@ describe('EngineManager.deploy with a connector that cannot be built', () => {
     }
     expect(factoryError).toMatch(/tls/i);
 
-    const { createSourceConnector } = await import('@galvaniflow/connectors');
+    const { createSourceConnector } = await import('@galvanigraph/connectors');
     vi.mocked(createSourceConnector).mockImplementationOnce((type, p) => actual.createSourceConnector(type, p));
     expect(await deployError(makeChannel({ sourceConnectorProperties: props }))).toBe(factoryError);
   });

@@ -4,7 +4,7 @@
 // Handles HTTP requests for per-user preference CRUD.
 
 import type { Request, Response } from 'express';
-import type { UpsertPreferenceInput, BulkUpsertPreferencesInput } from '@galvaniflow/core-models';
+import type { UpsertPreferenceInput, BulkUpsertPreferencesInput } from '@galvanigraph/core-models';
 import { UserPreferenceService } from '../services/user-preference.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

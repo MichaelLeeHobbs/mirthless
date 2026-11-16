@@ -7,7 +7,7 @@ import { mapErrorToStatus, errorResponse } from '../../lib/controller-helpers.js
 
 const checker = vi.hoisted(() => ({ error: '' }));
 
-vi.mock('@galvaniflow/engine', async (importOriginal) => ({
+vi.mock('@galvanigraph/engine', async (importOriginal) => ({
   ...await importOriginal<Record<string, unknown>>(),
   checkScriptTypesBatch: async () => ({ ok: false, value: null, error: new Error(checker.error) }),
 }));

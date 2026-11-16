@@ -23,7 +23,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: michaelleehobbs/galvaniflow
+  IMAGE_PREFIX: michaelleehobbs/galvanigraph
 
 jobs:
   # Gate the release on the full CI suite passing for the tagged commit.
@@ -40,13 +40,13 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: galvaniflow_test
-          POSTGRES_USER: galvaniflow
-          POSTGRES_PASSWORD: galvaniflow_test
+          POSTGRES_DB: galvanigraph_test
+          POSTGRES_USER: galvanigraph
+          POSTGRES_PASSWORD: galvanigraph_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U galvaniflow -d galvaniflow_test"
+          --health-cmd "pg_isready -U galvanigraph -d galvanigraph_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
@@ -54,18 +54,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build server image
-        run: docker build -f docker/Dockerfile.server -t galvaniflow-server:smoke .
+        run: docker build -f docker/Dockerfile.server -t galvanigraph-server:smoke .
 
       # Migrates as the owner, then creates and grants the server's own role
       # and runs the seed and server as it (D-307).
       - name: Run server container (migrates + seeds on start)
         run: |
-          docker run -d --name galvaniflow-smoke --network host \
-            -e MIGRATION_DATABASE_URL=postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test \
-            -e DATABASE_URL=postgresql://galvaniflow_app:smoke_app_password@localhost:5432/galvaniflow_test \
+          docker run -d --name galvanigraph-smoke --network host \
+            -e MIGRATION_DATABASE_URL=postgresql://galvanigraph:galvanigraph_test@localhost:5432/galvanigraph_test \
+            -e DATABASE_URL=postgresql://galvanigraph_app:smoke_app_password@localhost:5432/galvanigraph_test \
             -e JWT_SECRET=ci-smoke-secret-that-is-at-least-32-characters \
             -e NODE_ENV=production \
-            galvaniflow-server:smoke
+            galvanigraph-server:smoke
 
       # /health/ready queries the database, so it proves the server's role works.
       - name: Wait for /health/ready
@@ -78,7 +78,7 @@ jobs:
             sleep 2
           done
           echo "::error::server did not become healthy"
-          docker logs galvaniflow-smoke
+          docker logs galvanigraph-smoke
           exit 1
 
       # /health/ready answers before the startup steps (job queue, then the
@@ -88,26 +88,26 @@ jobs:
       - name: Check the startup steps
         run: |
           for i in $(seq 1 30); do
-            if docker logs galvaniflow-smoke 2>&1 | grep -q -e 'Pruner scheduler' -e 'Startup step failed'; then
+            if docker logs galvanigraph-smoke 2>&1 | grep -q -e 'Pruner scheduler' -e 'Startup step failed'; then
               break
             fi
             sleep 2
           done
-          if docker logs galvaniflow-smoke 2>&1 | grep -q 'Startup step failed'; then
+          if docker logs galvanigraph-smoke 2>&1 | grep -q 'Startup step failed'; then
             echo "::error::a server startup step failed"
             exit 1
           fi
-          if ! docker logs galvaniflow-smoke 2>&1 | grep -q 'Pruner scheduler'; then
+          if ! docker logs galvanigraph-smoke 2>&1 | grep -q 'Pruner scheduler'; then
             echo "::error::the pruner scheduler never started"
             exit 1
           fi
 
       - name: Dump server logs
         if: always()
-        run: docker logs galvaniflow-smoke || true
+        run: docker logs galvanigraph-smoke || true
 
       - name: Build web image
-        run: docker build -f docker/Dockerfile.web -t galvaniflow-web:smoke .
+        run: docker build -f docker/Dockerfile.web -t galvanigraph-web:smoke .
 
   build-and-push:
     if: startsWith(github.ref, 'refs/tags/v')

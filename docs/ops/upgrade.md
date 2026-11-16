@@ -1,6 +1,6 @@
 # Upgrade Procedure
 
-GalvaniFlow applies schema changes through **Drizzle migrations**. The golden rule:
+GalvaniGraph applies schema changes through **Drizzle migrations**. The golden rule:
 
 > **Always back up the database, then run migrations, before starting the new server
 > version.** Never point a new binary at an un-migrated database and never point an old
@@ -28,8 +28,8 @@ so re-running is a no-op — safe and idempotent.
 
 The Docker stack uses two Postgres roles (D-307):
 
-- **Owner** (`POSTGRES_USER`, default `galvaniflow`): the superuser the Postgres image creates. It owns every table and runs only the migration step at container start.
-- **Server** (`POSTGRES_APP_USER`, default `galvaniflow_app`, password `POSTGRES_APP_PASSWORD`): the role the server connects as. It owns no application table, so it cannot alter, empty, drop or disable triggers on any of them, and a leaked connection string or an injected statement cannot either. The one thing it owns is the job queue's `pgboss` schema (below).
+- **Owner** (`POSTGRES_USER`, default `galvanigraph`): the superuser the Postgres image creates. It owns every table and runs only the migration step at container start.
+- **Server** (`POSTGRES_APP_USER`, default `galvanigraph_app`, password `POSTGRES_APP_PASSWORD`): the role the server connects as. It owns no application table, so it cannot alter, empty, drop or disable triggers on any of them, and a leaked connection string or an injected statement cannot either. The one thing it owns is the job queue's `pgboss` schema (below).
 
 On every start the migration step, as the owner, creates the server role if it is missing, sets its password from `POSTGRES_APP_PASSWORD`, and grants it exactly this (`packages/server/src/db/runtime-role.ts`):
 
@@ -55,16 +55,16 @@ An install created before this change runs the server as the superuser. After `g
 1. Back up, as for any upgrade.
 2. Add a new password to `.env`, next to `POSTGRES_PASSWORD`, letters and digits only: `POSTGRES_APP_PASSWORD=<openssl rand -hex 24>`. Remove any `DATABASE_URL=` line from `.env`; the compose file builds it.
 3. `docker compose -f docker/docker-compose.prod.yml up -d --build`.
-4. Check the server log for `[migrate] the server runs as "galvaniflow_app", which owns no application tables`, and that the server's connections use that role:
+4. Check the server log for `[migrate] the server runs as "galvanigraph_app", which owns no application tables`, and that the server's connections use that role:
 
    ```bash
-   docker exec -t galvaniflow-db-prod psql -U galvaniflow -d galvaniflow \
+   docker exec -t galvanigraph-db-prod psql -U galvanigraph -d galvanigraph \
      -c "SELECT DISTINCT usename FROM pg_stat_activity WHERE datname = current_database() AND backend_type = 'client backend' AND pid <> pg_backend_pid();"
    ```
 
 The application tables, and the partitions the old server created, stay owned by the owner; only the `pgboss` schema changes owner, and nothing is moved or rewritten. To go back to the previous version, check out its compose file: it connects as the owner again, and the unused role does no harm.
 
-**The empty `galvaniflow_test` database.** The production compose used to mount `docker/init-db`, so every production volume also got an empty `galvaniflow_test` database, meant only for the dev stack's tests. It no longer does. Nothing uses that database in production; once you have checked it is empty, you may drop it yourself (`DROP DATABASE galvaniflow_test;` as the owner). The upgrade leaves it alone.
+**The empty `galvanigraph_test` database.** The production compose used to mount `docker/init-db`, so every production volume also got an empty `galvanigraph_test` database, meant only for the dev stack's tests. It no longer does. Nothing uses that database in production; once you have checked it is empty, you may drop it yourself (`DROP DATABASE galvanigraph_test;` as the owner). The upgrade leaves it alone.
 
 **Running the image another way** (your own compose file, Kubernetes): set `MIGRATION_DATABASE_URL` to the owner's connection string and `DATABASE_URL` to the server role's. The container refuses to start without `MIGRATION_DATABASE_URL`, or when `DATABASE_URL` connects as a superuser or the owner.
 
@@ -370,7 +370,7 @@ WHERE connector_type IN ('KAFKA','AMQP') AND jsonb_typeof(properties->'tls') = '
 # 1. BACK UP FIRST (see docs/ops/backup-restore.md)
 #    First upgrade after the rename: the container is still mirthless-db-prod and
 #    the database and user are mirthless (see "Renamed from Mirthless" below).
-docker exec -t galvaniflow-db-prod pg_dump -U galvaniflow -d galvaniflow -F c > pre-upgrade.dump
+docker exec -t galvanigraph-db-prod pg_dump -U galvanigraph -d galvanigraph -F c > pre-upgrade.dump
 
 # 2. Pull the new code
 git pull                # there are no published images; the stack builds from source
@@ -387,10 +387,10 @@ Watch the server logs for `[migrate] migrations applied` before the startup bann
 
 ## Renamed from Mirthless
 
-The project was renamed from Mirthless to GalvaniFlow. Upgrading an install created under
+The project was renamed from Mirthless to GalvaniGraph. Upgrading an install created under
 the old name has these one-time effects.
 
-**Database name and user.** New installs default to database and user `galvaniflow`.
+**Database name and user.** New installs default to database and user `galvanigraph`.
 Postgres applies `POSTGRES_DB` / `POSTGRES_USER` only when it first creates the data
 volume, so an existing volume still holds database `mirthless` owned by user
 `mirthless`. Nothing in the code depends on the database name; keep using the old one:
@@ -398,7 +398,7 @@ volume, so an existing volume still holds database `mirthless` owned by user
 - **Docker prod stack:** set `POSTGRES_DB=mirthless` and `POSTGRES_USER=mirthless` in the
   same place you set `POSTGRES_PASSWORD`. `docker/docker-compose.prod.yml` builds the
   server's `DATABASE_URL` from these three, so leaving them unset points the server at a
-  `galvaniflow` database that does not exist in the old volume.
+  `galvanigraph` database that does not exist in the old volume.
 - **Local / non-Docker:** keep your existing `DATABASE_URL` in `.env`
   (`postgresql://mirthless:...@.../mirthless`). The dev compose (`pnpm docker:up`) keeps
   the same volume, so the old databases are still there; for `pnpm test:integration`,
@@ -407,18 +407,18 @@ volume, so an existing volume still holds database `mirthless` owned by user
 - The data volume keeps its name (`docker_postgres_data`; the compose project is named
   after the `docker/` folder), so no data moves. Only the containers are renamed:
   `mirthless-db-prod`, `mirthless-server` and `mirthless-web` become
-  `galvaniflow-db-prod`, `galvaniflow-server` and `galvaniflow-web` (dev: `mirthless-db`
-  becomes `galvaniflow-db`). Update any backup cron jobs or scripts that name a container.
+  `galvanigraph-db-prod`, `galvanigraph-server` and `galvanigraph-web` (dev: `mirthless-db`
+  becomes `galvanigraph-db`). Update any backup cron jobs or scripts that name a container.
 
 **Other changes:**
 
 - **CLI:** removed (D-280). Scripts call the REST API; see `docs/ops/api-automation.md`.
-- **Prometheus metrics** are renamed from `mirthless_*` to `galvaniflow_*` (for example
-  `galvaniflow_messages_processed_total`). Update dashboards, alert rules and recording
+- **Prometheus metrics** are renamed from `mirthless_*` to `galvanigraph_*` (for example
+  `galvanigraph_messages_processed_total`). Update dashboards, alert rules and recording
   rules.
 - **Web UI:** each user signs in once more after the upgrade (the browser stores the
   session under a new key).
-- **Wire defaults** change from `MIRTHLESS` to `GALVANIFLOW`: the DICOM source AE title
+- **Wire defaults** change from `MIRTHLESS` to `GALVANIGRAPH`: the DICOM source AE title
   and destination calling AE title for new connectors, MSH-3 in generated test HL7
   messages, and the control-ID prefix of the fallback ACK sent for unparseable HL7.
   Existing channels keep the AE titles saved in them. If a trading partner checks these
@@ -442,7 +442,7 @@ pnpm start          # or pnpm dev
 
 ## Downtime expectations
 
-GalvaniFlow is currently a **single-instance** deployment (no clustering yet — see the
+GalvaniGraph is currently a **single-instance** deployment (no clustering yet — see the
 ROADMAP). A schema migration therefore implies a short restart window:
 
 - **Low-downtime:** most migrations are additive (new tables/columns) and complete in

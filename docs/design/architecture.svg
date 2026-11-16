@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1812" width="1600" height="1812" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif">
-<title>GalvaniFlow architecture</title>
+<title>GalvaniGraph architecture</title>
 <defs>
 <marker id="h-dep" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
 <marker id="h-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#fb923c"/></marker>
@@ -7,7 +7,7 @@
 <marker id="h-api" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#38bdf8"/></marker>
 </defs>
 <rect x="0" y="0" width="1600" height="1812" fill="#0f172a"/>
-<text x="40" y="52" font-size="30" font-weight="700" fill="#e2e8f0">GalvaniFlow architecture</text>
+<text x="40" y="52" font-size="30" font-weight="700" fill="#e2e8f0">GalvaniGraph architecture</text>
 <text x="40" y="78" font-size="14" fill="#94a3b8">Node.js / TypeScript healthcare integration engine, spiritual successor to Mirth Connect. pnpm monorepo, 6 packages.</text>
 <line x1="1050" y1="40" x2="1096" y2="40" stroke="#64748b" stroke-width="2" marker-end="url(#h-dep)"/>
 <text x="1106" y="45" font-size="12" fill="#94a3b8">depends on (build order)</text>

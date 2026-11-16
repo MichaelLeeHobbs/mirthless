@@ -21,7 +21,7 @@ import {
   resetFactories,
   _testing,
 } from '../connection-test.service.js';
-import type { SftpClient, SftpConnectionOptions, SftpPathKind } from '@galvaniflow/connectors';
+import type { SftpClient, SftpConnectionOptions, SftpPathKind } from '@galvanigraph/connectors';
 
 // ----- TLS fixtures (self-signed CN=localhost pair; test-only) -----
 

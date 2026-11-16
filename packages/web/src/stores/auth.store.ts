@@ -32,7 +32,7 @@ interface AuthActions {
 
 type AuthStore = AuthState & AuthActions;
 
-const STORAGE_KEY = 'galvaniflow_auth';
+const STORAGE_KEY = 'galvanigraph_auth';
 
 function loadPersistedState(): Pick<AuthState, 'user' | 'accessToken' | 'isAuthenticated' | 'mustChangePassword'> {
   try {

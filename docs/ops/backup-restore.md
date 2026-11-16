@@ -1,6 +1,6 @@
 # Backup & Restore
 
-GalvaniFlow has **two independent backup layers**, and a complete disaster-recovery
+GalvaniGraph has **two independent backup layers**, and a complete disaster-recovery
 plan uses both:
 
 1. **Postgres database backup** (`pg_dump`) — the full source of truth: channels,
@@ -19,13 +19,13 @@ plan uses both:
 ## 1. Postgres Database Backup (full)
 
 This is the authoritative backup. The production stack runs Postgres 17 in the
-`galvaniflow-db-prod` container (`galvaniflow-db` in the dev compose), database `galvaniflow`,
-user `galvaniflow`, with data on the named volume `postgres_data`.
+`galvanigraph-db-prod` container (`galvanigraph-db` in the dev compose), database `galvanigraph`,
+user `galvanigraph`, with data on the named volume `postgres_data`.
 
-> **Installs created before the GalvaniFlow rename** keep the database and user
+> **Installs created before the GalvaniGraph rename** keep the database and user
 > `mirthless` (set as `POSTGRES_DB` / `POSTGRES_USER`, see [Upgrade](upgrade.md#renamed-from-mirthless)).
 > Use `-U mirthless -d mirthless` in the commands below. The container is still
-> `galvaniflow-db-prod` once the stack has been restarted on the new compose file;
+> `galvanigraph-db-prod` once the stack has been restarted on the new compose file;
 > before that it is `mirthless-db-prod`.
 
 ### Logical backup with `pg_dump` (recommended)
@@ -33,10 +33,10 @@ user `galvaniflow`, with data on the named volume `postgres_data`.
 Run a compressed custom-format dump against the running container:
 
 ```bash
-# Production compose: container name is galvaniflow-db-prod
-docker exec -t galvaniflow-db-prod \
-  pg_dump -U galvaniflow -d galvaniflow -F c \
-  > galvaniflow-$(date +%Y%m%d-%H%M%S).dump
+# Production compose: container name is galvanigraph-db-prod
+docker exec -t galvanigraph-db-prod \
+  pg_dump -U galvanigraph -d galvanigraph -F c \
+  > galvanigraph-$(date +%Y%m%d-%H%M%S).dump
 ```
 
 `-F c` (custom format) enables selective, parallel `pg_restore` and is smaller than
@@ -46,7 +46,7 @@ file.
 Automate it with a cron job on the host (example: nightly at 02:00, keep 14 days):
 
 ```cron
-0 2 * * * docker exec -t galvaniflow-db-prod pg_dump -U galvaniflow -d galvaniflow -F c > /backups/galvaniflow-$(date +\%Y\%m\%d).dump && find /backups -name 'galvaniflow-*.dump' -mtime +14 -delete
+0 2 * * * docker exec -t galvanigraph-db-prod pg_dump -U galvanigraph -d galvanigraph -F c > /backups/galvanigraph-$(date +\%Y\%m\%d).dump && find /backups -name 'galvanigraph-*.dump' -mtime +14 -delete
 ```
 
 ### Restore with `pg_restore`
@@ -59,22 +59,22 @@ writes during the restore.
 docker compose -f docker/docker-compose.prod.yml stop server web
 
 # Drop & recreate the database, then restore
-docker exec -t galvaniflow-db-prod psql -U galvaniflow -d postgres \
-  -c "DROP DATABASE IF EXISTS galvaniflow WITH (FORCE);" \
-  -c "CREATE DATABASE galvaniflow OWNER galvaniflow;"
+docker exec -t galvanigraph-db-prod psql -U galvanigraph -d postgres \
+  -c "DROP DATABASE IF EXISTS galvanigraph WITH (FORCE);" \
+  -c "CREATE DATABASE galvanigraph OWNER galvanigraph;"
 
-cat galvaniflow-20260712-020000.dump | \
-  docker exec -i galvaniflow-db-prod pg_restore -U galvaniflow -d galvaniflow --no-owner --no-privileges
+cat galvanigraph-20260712-020000.dump | \
+  docker exec -i galvanigraph-db-prod pg_restore -U galvanigraph -d galvanigraph --no-owner --no-privileges
 
 # Bring the app back up (entrypoint re-runs migrations idempotently)
 docker compose -f docker/docker-compose.prod.yml start server web
 ```
 
-`--no-privileges` leaves out the dump's grants to the server's role (`galvaniflow_app`,
+`--no-privileges` leaves out the dump's grants to the server's role (`galvanigraph_app`,
 see [Database roles](upgrade.md#database-roles)). When the server container starts, it
 creates that role if it is missing, grants it again, revokes the owner functions from
 `PUBLIC` and hands it the `pgboss` schema. Without the flag, a restore into a Postgres
-where the role does not exist yet reports `role "galvaniflow_app" does not exist` for
+where the role does not exist yet reports `role "galvanigraph_app" does not exist` for
 each grant and exits 1, though the data is restored.
 
 The dump captures the exact migrated schema, so restoring an older dump onto a newer
@@ -122,7 +122,7 @@ Both require authentication (JWT bearer). The `admin` role holds both permission
 ```bash
 curl -s https://your-host/api/v1/system/backup \
   -H "Authorization: Bearer $TOKEN" \
-  | jq '.data' > galvaniflow-config-$(date +%Y%m%d).json
+  | jq '.data' > galvanigraph-config-$(date +%Y%m%d).json
 ```
 
 The response is `{ "success": true, "data": { ... } }`. The `data` object
@@ -158,7 +158,7 @@ The response is `{ "success": true, "data": { ... } }`. The `data` object
 curl -s -X POST https://your-host/api/v1/system/backup \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "collisionMode": "SKIP", "backup": '"$(cat galvaniflow-config-20260712.json)"' }'
+  -d '{ "collisionMode": "SKIP", "backup": '"$(cat galvanigraph-config-20260712.json)"' }'
 ```
 
 `collisionMode`:

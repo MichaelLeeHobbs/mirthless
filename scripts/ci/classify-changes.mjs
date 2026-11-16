@@ -39,9 +39,9 @@ export const GATE_COMMAND = 'pnpm build && pnpm lint && pnpm test:coverage && pn
 
 /** The packages each lane exercises. A lane runs when one of these, or a dependency, changed. */
 const LANE_ROOTS = {
-  connectorIntegration: ['@galvaniflow/connectors'],
-  pgIntegration: ['@galvaniflow/server'],
-  e2e: ['@galvaniflow/server', '@galvaniflow/web'],
+  connectorIntegration: ['@galvanigraph/connectors'],
+  pgIntegration: ['@galvanigraph/server'],
+  e2e: ['@galvanigraph/server', '@galvanigraph/web'],
 };
 
 const E2E_PATH = /^(e2e\/|playwright\.[^/]+$)/;
@@ -235,9 +235,9 @@ function writeOutputs(result, file) {
     `e2e=${result.e2e}`,
     `docs=${result.docs}`,
     // One line per package: `<package dir> <file> <file>...`, read by the docs job.
-    'doc_tests<<GALVANIFLOW_EOF',
+    'doc_tests<<GALVANIGRAPH_EOF',
     ...result.docTests.map((t) => `${t.dir} ${t.files.join(' ')}`),
-    'GALVANIFLOW_EOF',
+    'GALVANIGRAPH_EOF',
   ];
   appendFileSync(file, `${lines.join('\n')}\n`);
 }

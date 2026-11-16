@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
-import { stderr, type Result } from '@galvaniflow/core-util';
+import { stderr, type Result } from '@galvanigraph/core-util';
 import {
   EmailReceiver,
   EMAIL_PROTOCOL,
@@ -744,7 +744,7 @@ describe('EmailReceiver', () => {
   });
 
   describe('dispatched keyword', () => {
-    it('sets the GalvaniFlow keyword and still recognises the pre-rename one', () => {
+    it('sets the GalvaniGraph keyword and still recognises the pre-rename one', () => {
       expect(DISPATCHED_KEYWORD).toBe('$GalvaniFlowDispatched');
       expect(LEGACY_DISPATCHED_KEYWORD).toBe('$MirthlessDispatched');
       expect(hasDispatchedKeyword(new Set([DISPATCHED_KEYWORD]))).toBe(true);

@@ -7,7 +7,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
@@ -35,7 +35,7 @@ type FilePostAction = typeof FILE_POST_ACTION[keyof typeof FILE_POST_ACTION];
  */
 const QUARANTINE_LEDGER = '.galvaniflow-quarantine.json';
 /**
- * Ledger name used before the GalvaniFlow rename. Still read (merged into the
+ * Ledger name used before the GalvaniGraph rename. Still read (merged into the
  * set) and never dispatched, but never written: the next persist carries its
  * entries into {@link QUARANTINE_LEDGER}.
  */

@@ -37,7 +37,7 @@ export function connectOptions(config: AmqpConnectionConfig): Options.Connect {
 }
 
 /** Name the broker shows for these connections (RabbitMQ management UI, `rabbitmqctl list_connections`). */
-export const AMQP_CONNECTION_NAME = 'galvaniflow';
+export const AMQP_CONNECTION_NAME = 'galvanigraph';
 
 /** Socket options: TLS checks stay on unless switched off. */
 export function socketOptions(config: AmqpConnectionConfig): SocketOptions {

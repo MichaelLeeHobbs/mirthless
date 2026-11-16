@@ -8,7 +8,7 @@
 // packages/connectors/src/__tests__/registry-types.test.ts.)
 
 import { describe, it, expect } from 'vitest';
-import { CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '@galvaniflow/core-models';
+import { CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '@galvanigraph/core-models';
 import { readRepoFile, headings, tables, brokenRelativeLinks } from '../../../test/markdown.js';
 
 const DOC = 'docs/user/connector-reference.md';

@@ -7,7 +7,7 @@
 // has none and reads as JavaScript (#200, D-296).
 
 import { type ReactNode } from 'react';
-import type { ScriptSurface } from '@galvaniflow/core-models';
+import type { ScriptSurface } from '@galvanigraph/core-models';
 import { ScriptEditor } from '../../editors/ScriptEditor.js';
 import { loadedScriptLanguage } from '../../../lib/script-language.js';
 import { getStr } from './connector-properties.js';

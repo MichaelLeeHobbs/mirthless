@@ -36,9 +36,9 @@ import {
   type ResponseSource,
   parseForSandbox,
   type DataTypeOptions,
-} from '@galvaniflow/engine';
+} from '@galvanigraph/engine';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { splitHl7Batch } from '@galvaniflow/core-util';
+import { splitHl7Batch } from '@galvanigraph/core-util';
 import { tryCatch, type Result } from 'stderr-lib';
 import {
   createSourceConnector,
@@ -49,8 +49,8 @@ import {
   type DispatchStatus,
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
-} from '@galvaniflow/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate } from '@galvaniflow/core-models';
+} from '@galvanigraph/connectors';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate } from '@galvanigraph/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';

@@ -3,7 +3,7 @@
 // ===========================================
 
 import { Router, type IRouter } from 'express';
-import { mirthImportSchema } from '@galvaniflow/core-models';
+import { mirthImportSchema } from '@galvanigraph/core-models';
 import { MirthImportController } from '../controllers/mirth-import.controller.js';
 import { largeJsonBody } from '../middleware/body-limit.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

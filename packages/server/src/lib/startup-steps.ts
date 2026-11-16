@@ -9,7 +9,7 @@
 
 import type { Logger } from 'pino';
 import { tryCatch, type Result } from 'stderr-lib';
-import type { CreateEventInput } from '@galvaniflow/core-models';
+import type { CreateEventInput } from '@galvanigraph/core-models';
 
 export const STARTUP_STEP = {
   QUEUE: 'queue',

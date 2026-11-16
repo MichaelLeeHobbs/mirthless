@@ -7,7 +7,7 @@ index da9ec5f..abadee1 100644
      }
      prepareRender(ctx) {
 -        this._viewDomNodeRect = getDomNodePagePosition(this._viewDomNode.domNode);
-+        // GalvaniFlow patch: viewport coordinates. Overflowing overlay widgets are
++        // GalvaniGraph patch: viewport coordinates. Overflowing overlay widgets are
 +        // position: fixed, so page coordinates put them one page scroll too low
 +        // (the suggestion documentation panel landed below the window).
 +        this._viewDomNodeRect = this._viewDomNode.domNode.getBoundingClientRect();
@@ -23,7 +23,7 @@ index 7ff8f73..036d1f9 100644
              const fullHeight = info.statusBarHeight + this._list.contentHeight + info.borderHeight;
              const minHeight = info.itemHeight + info.statusBarHeight;
 -            const editorBox = getDomNodePagePosition(this.editor.getDomNode());
-+            // GalvaniFlow patch: viewport coordinates, to match bodyBox (the viewport).
++            // GalvaniGraph patch: viewport coordinates, to match bodyBox (the viewport).
 +            // Page coordinates add the page's scroll, so on a scrolled page the list
 +            // thought there was no room below and opened upward over the editor.
 +            const editorBox = this.editor.getDomNode().getBoundingClientRect();

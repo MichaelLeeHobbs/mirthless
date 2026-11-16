@@ -110,7 +110,7 @@ describe('useScriptBodyTypeMarkers', () => {
     const v = visibleModel("return [msg.get('MSH.10')];");
     renderHook(() => { useScriptBodyTypeMarkers(v.editor, true); });
     const request = await runCheck();
-    expect(fake.state.hiddenModels[0]!.text).toBe("async function __galvaniflowScript() {\nreturn [msg.get('MSH.10')];\n}");
+    expect(fake.state.hiddenModels[0]!.text).toBe("async function __galvanigraphScript() {\nreturn [msg.get('MSH.10')];\n}");
     request.resolve([diagnostic("Cannot find name 'msg'.")]);
     await settle();
     expect(markerMessages().at(-1)).toEqual(["Cannot find name 'msg'."]);

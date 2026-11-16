@@ -41,10 +41,10 @@ async function recreateDatabase() {
     await client.end();
   }
   const env = { ...process.env, DATABASE_URL: url, JWT_SECRET: 'scenario-suite-jwt-secret-not-for-production-use' };
-  execFileSync('pnpm', ['--filter', '@galvaniflow/server', 'exec', 'drizzle-kit', 'migrate'], { env, stdio: 'inherit', shell });
+  execFileSync('pnpm', ['--filter', '@galvanigraph/server', 'exec', 'drizzle-kit', 'migrate'], { env, stdio: 'inherit', shell });
   // The seed exits non-zero after seeding when optional pieces need settings this
   // throwaway database lacks; the admin user and settings are what the suite needs.
-  spawnSync('pnpm', ['--filter', '@galvaniflow/server', 'exec', 'tsx', 'src/db/seeds/run-seed.ts'], { env, stdio: 'inherit', shell });
+  spawnSync('pnpm', ['--filter', '@galvanigraph/server', 'exec', 'tsx', 'src/db/seeds/run-seed.ts'], { env, stdio: 'inherit', shell });
 }
 
 if (reset) await recreateDatabase();

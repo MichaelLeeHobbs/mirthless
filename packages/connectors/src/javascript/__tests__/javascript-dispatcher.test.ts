@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { stderr } from '@galvaniflow/core-util';
+import { stderr } from '@galvanigraph/core-util';
 import type { ConnectorMessage } from '../../base.js';
 import { JavaScriptDispatcher, type JavaScriptDispatcherConfig, type DestScriptRunner } from '../javascript-dispatcher.js';
 

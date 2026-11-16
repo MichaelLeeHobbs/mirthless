@@ -15,7 +15,7 @@
 
 import { eq, and } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { CreateAlertInput, CreateDataSourceInput } from '@galvaniflow/core-models';
+import type { CreateAlertInput, CreateDataSourceInput } from '@galvanigraph/core-models';
 import * as schema from '../schema/index.js';
 import { isContentEncryptionConfigured } from '../../lib/content-crypto.js';
 import { AlertService } from '../../services/alert.service.js';
@@ -248,9 +248,9 @@ async function seedDataSource(db: Db): Promise<void> {
     driver: 'postgres',
     host: 'localhost',
     port: 5432,
-    database: 'galvaniflow',
-    user: 'galvaniflow',
-    password: 'galvaniflow_dev',
+    database: 'galvanigraph',
+    user: 'galvanigraph',
+    password: 'galvanigraph_dev',
     tls: false,
     readOnly: true,
     maxConnections: 5,
@@ -283,7 +283,7 @@ async function seedAlert(db: Db): Promise<void> {
     trigger: { type: 'CHANNEL_ERROR', errorTypes: ['ANY'], regex: null },
     channelIds: [],
     actions: [{ type: 'EMAIL', recipients: ['oncall@example.com'] }],
-    subjectTemplate: 'GalvaniFlow error on ${channelName}',
+    subjectTemplate: 'GalvaniGraph error on ${channelName}',
     bodyTemplate: 'A channel error occurred at ${timestamp}: ${errorMessage}',
     reAlertIntervalMs: null,
     maxAlerts: null,

@@ -7,7 +7,7 @@
 // invalidated on config change / delete and destroyed on shutdown.
 // See docs/design/11-datasources.md.
 
-import { ConnectionPool, type PoolConfig } from '@galvaniflow/connectors';
+import { ConnectionPool, type PoolConfig } from '@galvanigraph/connectors';
 
 /** Resolved data source (decrypted) needed to open a pool and run a query. */
 export interface PooledDataSource {

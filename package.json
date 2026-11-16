@@ -1,12 +1,12 @@
 {
-  "name": "galvaniflow",
+  "name": "galvanigraph",
   "private": true,
   "type": "module",
   "scripts": {
     "------------ Development ------------": "",
     "dev": "pnpm run --parallel dev",
-    "dev:server": "pnpm --filter @galvaniflow/server dev",
-    "dev:web": "pnpm --filter @galvaniflow/web dev",
+    "dev:server": "pnpm --filter @galvanigraph/server dev",
+    "dev:web": "pnpm --filter @galvanigraph/web dev",
 
     "------------ Build & Quality ------------": "",
     "build": "pnpm run -r build",
@@ -25,15 +25,15 @@
     "test:e2e:headed": "playwright test --headed",
     "shots": "node scripts/shots/shots.mjs",
     "test:scenarios": "node scripts/scenarios/run.mjs",
-    "test:integration": "pnpm --filter @galvaniflow/server exec vitest run --config vitest.integration.config.ts",
+    "test:integration": "pnpm --filter @galvanigraph/server exec vitest run --config vitest.integration.config.ts",
 
     "------------ Database ------------": "",
     "db:init": "node scripts/init-db.mjs",
-    "db:migrate": "pnpm --filter @galvaniflow/server db:migrate",
-    "db:seed": "pnpm --filter @galvaniflow/server db:seed",
-    "db:generate": "pnpm --filter @galvaniflow/server db:generate",
-    "db:check": "pnpm --filter @galvaniflow/server db:check",
-    "db:studio": "pnpm --filter @galvaniflow/server db:studio",
+    "db:migrate": "pnpm --filter @galvanigraph/server db:migrate",
+    "db:seed": "pnpm --filter @galvanigraph/server db:seed",
+    "db:generate": "pnpm --filter @galvanigraph/server db:generate",
+    "db:check": "pnpm --filter @galvanigraph/server db:check",
+    "db:studio": "pnpm --filter @galvanigraph/server db:studio",
 
     "------------ Infrastructure (Docker) ------------": "",
     "docker:up": "docker compose -f docker/docker-compose.yml up -d",

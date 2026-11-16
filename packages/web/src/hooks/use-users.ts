@@ -4,7 +4,7 @@
 // TanStack Query hooks for user CRUD operations.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateUserInput, UpdateUserInput } from '@galvaniflow/core-models';
+import type { CreateUserInput, UpdateUserInput } from '@galvanigraph/core-models';
 import { api, type UserSummary, type UserDetail } from '../api/client.js';
 
 // ----- Query Keys -----

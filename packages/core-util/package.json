@@ -1,5 +1,5 @@
 {
-  "name": "@galvaniflow/core-util",
+  "name": "@galvanigraph/core-util",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -22,7 +22,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@galvaniflow/core-models": "workspace:*",
+    "@galvanigraph/core-models": "workspace:*",
     "stderr-lib": "2.2.0",
     "zod": "4.6.7"
   },

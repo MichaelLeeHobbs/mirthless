@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { VmSandboxExecutor, type ExecutionResult } from '../sandbox-executor.js';
 import { createSandboxContext } from '../sandbox-context.js';
 import { createHl7Proxy } from '../../pipeline/data-type-handler.js';
-import { Hl7Message } from '@galvaniflow/core-util';
+import { Hl7Message } from '@galvanigraph/core-util';
 import type { BridgeDependencies } from '../bridge-functions.js';
 
 const HL7 = 'MSH|^~\\&|A|B|C|D|20260101||ADT^A01|1|P|2.5\rPID|1||111^^^MRN||DOE^JOHN';

@@ -1,7 +1,7 @@
 // ===========================================
-// @galvaniflow/core-util
+// @galvanigraph/core-util
 // ===========================================
-// Shared utilities for the GalvaniFlow platform.
+// Shared utilities for the GalvaniGraph platform.
 
 export * from './result.js';
 export * from './validation.js';

@@ -64,21 +64,21 @@ test.describe('Data Sources', () => {
     await expect(dialog.getByRole('heading', { name: 'Create Data Source' })).toBeVisible();
     await dialog.getByLabel('Name').fill(TEST_DS_NAME);
     await dialog.getByLabel('Host').fill('localhost');
-    await dialog.getByLabel('Database').fill('galvaniflow');
-    await dialog.getByLabel('User').fill('galvaniflow');
-    await dialog.getByLabel('Password').fill('galvaniflow_dev');
+    await dialog.getByLabel('Database').fill('galvanigraph');
+    await dialog.getByLabel('User').fill('galvanigraph');
+    await dialog.getByLabel('Password').fill('galvanigraph_dev');
     // Read-only is the default.
     await expect(dialog.getByLabel('Read-only (recommended)')).toBeChecked();
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
     await expect(dialog).toBeHidden({ timeout: 10_000 });
     const row = sourceRow(page, TEST_DS_NAME);
-    await expect(row.getByText('localhost:5432/galvaniflow', { exact: true })).toBeVisible();
+    await expect(row.getByText('localhost:5432/galvanigraph', { exact: true })).toBeVisible();
     await expect(row.getByText('Read-only', { exact: true })).toBeVisible();
 
     await expect.poll(async () => (await testDataSources()).length).toBe(1);
     const [stored] = await testDataSources();
-    expect(stored).toMatchObject({ host: 'localhost', port: 5432, database: 'galvaniflow', user: 'galvaniflow', readOnly: true });
+    expect(stored).toMatchObject({ host: 'localhost', port: 5432, database: 'galvanigraph', user: 'galvanigraph', readOnly: true });
     expect(stored).not.toHaveProperty('password');
   });
 
@@ -90,7 +90,7 @@ test.describe('Data Sources', () => {
     await expect(dialog.getByRole('heading', { name: 'Edit Data Source' })).toBeVisible();
     // The other fields load from the stored row; the password does not.
     await expect(dialog.getByLabel('Host')).toHaveValue('localhost');
-    await expect(dialog.getByLabel('User')).toHaveValue('galvaniflow');
+    await expect(dialog.getByLabel('User')).toHaveValue('galvanigraph');
     await expect(dialog.getByLabel('Password (leave blank to keep)')).toHaveValue('');
 
     await dialog.getByRole('button', { name: 'Cancel' }).click();
@@ -106,11 +106,11 @@ test.describe('Data Sources', () => {
     await dialog.getByLabel('Name').fill(INCOMPLETE_DS_NAME);
     await expect(create).toBeDisabled();
     await dialog.getByLabel('Host').fill('localhost');
-    await dialog.getByLabel('Database').fill('galvaniflow');
-    await dialog.getByLabel('User').fill('galvaniflow');
+    await dialog.getByLabel('Database').fill('galvanigraph');
+    await dialog.getByLabel('User').fill('galvanigraph');
     // Still disabled: a new data source needs a password.
     await expect(create).toBeDisabled();
-    await dialog.getByLabel('Password').fill('galvaniflow_dev');
+    await dialog.getByLabel('Password').fill('galvanigraph_dev');
     await expect(create).toBeEnabled();
 
     await dialog.getByRole('button', { name: 'Cancel' }).click();

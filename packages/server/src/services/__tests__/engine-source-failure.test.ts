@@ -24,7 +24,7 @@ const sourceMock = vi.hoisted(() => ({
   onUndeploy: vi.fn(),
 }));
 
-vi.mock('@galvaniflow/connectors', () => ({
+vi.mock('@galvanigraph/connectors', () => ({
   createSourceConnector: vi.fn().mockReturnValue(sourceMock),
   createDestinationConnector: vi.fn(),
   JavaScriptReceiver: vi.fn(),

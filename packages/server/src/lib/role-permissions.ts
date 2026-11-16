@@ -6,7 +6,7 @@
 // socket checks resolve a user's permissions from their role through here; the
 // user_permissions table is written by the seed but never read.
 
-import { USER_ROLE, type UserRole } from '@galvaniflow/core-models';
+import { USER_ROLE, type UserRole } from '@galvanigraph/core-models';
 import { defaultRoles } from '../db/seeds/roles.js';
 
 export interface PermissionRow {

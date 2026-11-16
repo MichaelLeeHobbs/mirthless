@@ -1,5 +1,5 @@
-import type { ApiResponse } from '@galvaniflow/core-models';
-import { isPlainObject } from '@galvaniflow/core-util';
+import type { ApiResponse } from '@galvanigraph/core-models';
+import { isPlainObject } from '@galvanigraph/core-util';
 import { useAuthStore, type AuthUser } from '../stores/auth.store.js';
 
 const BASE_URL = '/api/v1';

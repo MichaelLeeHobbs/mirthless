@@ -9,7 +9,7 @@ import type {
   UpdateAlertInput,
   AlertListQuery,
   PatchAlertEnabledInput,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { AlertService } from '../services/alert.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

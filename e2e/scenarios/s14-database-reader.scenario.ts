@@ -1,7 +1,7 @@
 // S14: a Database Reader polls a Postgres table and marks rows it has read.
 // Gap doc 12 (Database connector). The select/update pair is Mirth's
 // "run update statement after each message" mode; ${id} in the update refers to
-// the current row's column. Mirth hands the row to scripts as XML; GalvaniFlow
+// the current row's column. Mirth hands the row to scripts as XML; GalvaniGraph
 // reads rows as JSON objects, so the export keeps Mirth's XML data type and the
 // rewritten script reads msg.accession.
 

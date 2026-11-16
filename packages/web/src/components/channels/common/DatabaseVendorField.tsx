@@ -8,7 +8,7 @@
 import type { ReactNode } from 'react';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
-import { defaultDatabasePort } from '@galvaniflow/core-models';
+import { defaultDatabasePort } from '@galvanigraph/core-models';
 import { getStr } from './connector-properties.js';
 
 /** The core-models DATABASE_VENDORS with their names on screen; a test keeps the two lists equal. */

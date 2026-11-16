@@ -5,7 +5,7 @@
 // declarations the type checker uses, so the reference cannot drift from what
 // completion offers or what the engine provides.
 
-import { scriptDeclarations, templateDeclarations, type ScriptSurface, type TemplateSource } from '@galvaniflow/core-models';
+import { scriptDeclarations, templateDeclarations, type ScriptSurface, type TemplateSource } from '@galvanigraph/core-models';
 
 export type ReferenceGroup = 'Message' | 'Maps' | 'Functions' | 'Code templates';
 

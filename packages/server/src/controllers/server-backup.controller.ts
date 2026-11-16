@@ -4,7 +4,7 @@
 // Handles HTTP requests for server backup/restore.
 
 import type { Request, Response } from 'express';
-import type { BackupCollisionMode, ServerBackup } from '@galvaniflow/core-models';
+import type { BackupCollisionMode, ServerBackup } from '@galvanigraph/core-models';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { ServerBackupService } from '../services/server-backup.service.js';
 import logger from '../lib/logger.js';

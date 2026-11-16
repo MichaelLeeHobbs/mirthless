@@ -15,7 +15,7 @@ import { DATABASE_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
-import { defaultDatabasePort, DATABASE_UPDATE_MODES, DATABASE_ROW_FORMATS } from '@galvaniflow/core-models';
+import { defaultDatabasePort, DATABASE_UPDATE_MODES, DATABASE_ROW_FORMATS } from '@galvanigraph/core-models';
 import { DatabaseVendorField, databaseVendor } from '../common/DatabaseVendorField.js';
 
 export function DatabaseSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {

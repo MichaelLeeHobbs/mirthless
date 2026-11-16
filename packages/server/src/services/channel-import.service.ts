@@ -14,7 +14,7 @@ import {
   type ChannelExportEntry,
   type CollisionMode,
   type ImportResult,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
@@ -29,7 +29,7 @@ import {
   channelTransformers,
   transformerSteps,
 } from '../db/schema/index.js';
-import { isPlainObject } from '@galvaniflow/core-util';
+import { isPlainObject } from '@galvanigraph/core-util';
 
 /**
  * Exports mask connector credentials as REDACTED. Importing that marker verbatim

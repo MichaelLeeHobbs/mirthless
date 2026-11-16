@@ -55,8 +55,8 @@ vi.mock('../../db/schema/index.js', () => ({
   transformerSteps: { transformerId: 'transformerId' },
 }));
 
-import type { ChannelExportEntry } from '@galvaniflow/core-models';
-import { compileFilterRulesToScript } from '@galvaniflow/engine';
+import type { ChannelExportEntry } from '@galvanigraph/core-models';
+import { compileFilterRulesToScript } from '@galvanigraph/engine';
 import { MirthImportService, type MirthConvertResult } from '../mirth-import.service.js';
 import { validateConnectorProperties } from '../connector-validation.service.js';
 import { ChannelImportService } from '../channel-import.service.js';
@@ -553,14 +553,14 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
     const warning = result.value.warnings.find((w) => w.includes('Mirth-only constructs'));
     expect(warning).toContain('Channel "4x Listener"');
     expect(warning).toContain("E4X field access (msg['PID']...)");
-    // Mirth's E4X indexes count from 0 and GalvaniFlow paths from 1, so a straight port reads the wrong segment.
+    // Mirth's E4X indexes count from 0 and GalvaniGraph paths from 1, so a straight port reads the wrong segment.
     // Both sides name the same thing: field 5 of the second OBX (#198).
     expect(warning).toContain("[n] counts from 1, so Mirth's msg['OBX'][1]['OBX.5'] is msg.get('OBX[2].5')");
     expect(warning).toContain('Java map methods (channelMap.put)');
     expect(warning).not.toContain("'message' variable");
   });
 
-  it('does not warn about scripts written for GalvaniFlow', () => {
+  it('does not warn about scripts written for GalvaniGraph', () => {
     const native = (x: string): string => x
       .replace("return msg[&apos;MSH&apos;][&apos;MSH.9&apos;][&apos;MSH.9.2&apos;].toString() != &apos;A08&apos;;", "return msg.get(&apos;MSH.9.2&apos;) != &apos;A08&apos;;")
       .replace(/channelMap\.put\(&apos;(\w+)&apos;, ([^)]*)\)/g, '$c(&apos;$1&apos;, $2)');
@@ -998,7 +998,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       expect(convert('<afterProcessingAction>DELETE</afterProcessingAction><moveToFileName>left.over</moveToFileName>').warnings.some((w) => w.includes('left.over'))).toBe(false);
     });
 
-    it('says a Reader or Writer on Mirth\'s default charset read the server\'s default, and GalvaniFlow reads UTF-8', () => {
+    it('says a Reader or Writer on Mirth\'s default charset read the server\'s default, and GalvaniGraph reads UTF-8', () => {
       const result = convert('<charsetEncoding>DEFAULT_ENCODING</charsetEncoding>', '<outputPattern>a.txt</outputPattern><charsetEncoding>DEFAULT_ENCODING</charsetEncoding>');
       expect(result.warnings.filter((w) => w.includes('windows-1252'))).toHaveLength(2);
       expect(convert('<charsetEncoding>DEFAULT_ENCODING</charsetEncoding><binary>true</binary>').warnings.some((w) => w.includes('windows-1252'))).toBe(false);
@@ -1259,7 +1259,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
         expect(validateConnectorProperties('DICOM', 'destination', dest?.properties ?? {})).toMatchObject({ ok: true });
       });
 
-      it('writes the Sender\'s AE titles Mirth uses when they are blank, not GalvaniFlow\'s defaults', () => {
+      it('writes the Sender\'s AE titles Mirth uses when they are blank, not GalvaniGraph\'s defaults', () => {
         const blank = sender().replace('<applicationEntity>PACS_MAIN</applicationEntity>', '<applicationEntity></applicationEntity>').replace('<localApplicationEntity>HUB_SCU</localApplicationEntity>', '<localApplicationEntity></localApplicationEntity>');
         const dest = convertXml(dicom(listener('/data/dicom'), blank)).channels[0]?.destinations[0];
         expect(dest?.properties).toMatchObject({ calledAETitle: 'DCMRCV', callingAETitle: 'DCMSND' });
@@ -1370,7 +1370,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
         expect(warningsWith(result, 'prun')).toEqual([]);
       });
 
-      it('leaves pruning off, and says why, when Mirth keeps errored messages, which GalvaniFlow would prune', () => {
+      it('leaves pruning off, and says why, when Mirth keeps errored messages, which GalvaniGraph would prune', () => {
         const result = convertXml(pruning('<pruneMetaDataDays>30</pruneMetaDataDays><archiveEnabled>false</archiveEnabled><pruneErroredMessages>false</pruneErroredMessages>'));
         expect(result.channels[0]).toMatchObject({ pruningEnabled: false, pruningMaxAgeDays: 30 });
         const warning = warningsWith(result, 'prun');

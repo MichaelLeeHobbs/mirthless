@@ -1,7 +1,7 @@
 # ===========================================
-# Initialize GalvaniFlow Database (Windows)
+# Initialize GalvaniGraph Database (Windows)
 # ===========================================
-# Creates the galvaniflow database and user on a local PostgreSQL instance.
+# Creates the galvanigraph database and user on a local PostgreSQL instance.
 # Safe to run multiple times — uses IF NOT EXISTS / ON CONFLICT.
 #
 # Prerequisites:
@@ -19,15 +19,15 @@ param(
     [string]$PgPort     = "5432",
     [string]$PgUser     = "postgres",
     [string]$PgPassword = "postgres",
-    [string]$DbName     = "galvaniflow",
-    [string]$DbUser     = "galvaniflow",
-    [string]$DbPassword = "galvaniflow_dev"
+    [string]$DbName     = "galvanigraph",
+    [string]$DbUser     = "galvanigraph",
+    [string]$DbPassword = "galvanigraph_dev"
 )
 
 $ErrorActionPreference = "Stop"
 $env:PGPASSWORD = $PgPassword
 
-Write-Host "=== GalvaniFlow Database Setup ===" -ForegroundColor Cyan
+Write-Host "=== GalvaniGraph Database Setup ===" -ForegroundColor Cyan
 Write-Host "  Host:     ${PgHost}:${PgPort}"
 Write-Host "  Admin:    ${PgUser}"
 Write-Host "  Database: ${DbName}"

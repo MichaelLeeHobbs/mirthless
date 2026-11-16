@@ -1,7 +1,7 @@
 // S09: the target channel is chosen at run time.
 // Production pattern: Gov "Message Router" (Channel Writer to
 // ${destinationChannelId}) and channelUtils.routeJsonMsg (router.routeMessage
-// by channel name, which is routeMessage in GalvaniFlow).
+// by channel name, which is routeMessage in GalvaniGraph).
 
 import { expect } from '@playwright/test';
 import { serverBackup, tcpListener, channelReader, channelWriter, jsWriter, type ChannelSpec } from './support/mirth-xml.js';

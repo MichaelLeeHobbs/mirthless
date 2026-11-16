@@ -15,7 +15,7 @@ import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker.js?worker
 import { StandaloneServices } from 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices.js';
 import { IStorageService } from 'monaco-editor/esm/vs/platform/storage/common/storage.js';
 import { editorTheme, editorThemeName } from '../../styles/editor-theme.js';
-import { SCRIPT_COMPILER_OPTIONS } from '@galvaniflow/core-models';
+import { SCRIPT_COMPILER_OPTIONS } from '@galvanigraph/core-models';
 import { markSurfaceApplied, surfaceLibs, type SurfaceLibs } from './surface-state.js';
 
 self.MonacoEnvironment = {

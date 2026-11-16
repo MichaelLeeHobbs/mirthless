@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockSend = vi.hoisted(() => vi.fn());
 
-vi.mock('@galvaniflow/connectors', () => ({
+vi.mock('@galvanigraph/connectors', () => ({
   createSourceConnector: vi.fn().mockReturnValue({
     setDispatcher: vi.fn(),
     onDeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),

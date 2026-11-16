@@ -9,7 +9,7 @@
 import type { SftpClient, SftpFileInfo, SftpPathKind } from '../sftp/sftp-client.js';
 
 const LEDGER_NAME = '.galvaniflow-quarantine.json';
-/** Ledger name used before the GalvaniFlow rename. */
+/** Ledger name used before the GalvaniGraph rename. */
 const LEGACY_LEDGER_NAME = '.mirthless-quarantine.json';
 
 export interface RemoteFile {

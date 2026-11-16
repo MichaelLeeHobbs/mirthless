@@ -16,7 +16,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import FunctionsIcon from '@mui/icons-material/Functions';
 import SearchIcon from '@mui/icons-material/Search';
-import type { ScriptSurface, TemplateSource } from '@galvaniflow/core-models';
+import type { ScriptSurface, TemplateSource } from '@galvanigraph/core-models';
 import type { monaco } from './monaco.js';
 import { scriptReference, type ReferenceEntry } from './script-reference.js';
 import { EditorToolbarButton } from './EditorToolbarButton.js';

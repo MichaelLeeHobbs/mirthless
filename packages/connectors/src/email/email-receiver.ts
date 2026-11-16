@@ -5,7 +5,7 @@
 // dispatches each as a message, then applies
 // post-processing (delete, mark read, or move).
 
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
@@ -27,7 +27,7 @@ const IMAP_OP_TIMEOUT_MS = 30_000;
  */
 export const DISPATCHED_KEYWORD = '$GalvaniFlowDispatched';
 
-/** Keyword set before the GalvaniFlow rename. Still read as dispatched, never set. */
+/** Keyword set before the GalvaniGraph rename. Still read as dispatched, never set. */
 export const LEGACY_DISPATCHED_KEYWORD = '$MirthlessDispatched';
 
 /** True when the flags carry the current or the legacy dispatched keyword. */

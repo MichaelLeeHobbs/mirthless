@@ -10,9 +10,9 @@
 // is reported. Reads (getResource, collection find) work when the caller passes
 // them. Nothing is stored.
 
-import type { Result } from '@galvaniflow/core-util';
-import { tryCatch } from '@galvaniflow/core-util';
-import { templateDeclarations, type ScriptSurface, type ScriptTestResult, type TemplateSource } from '@galvaniflow/core-models';
+import type { Result } from '@galvanigraph/core-util';
+import { tryCatch } from '@galvanigraph/core-util';
+import { templateDeclarations, type ScriptSurface, type ScriptTestResult, type TemplateSource } from '@galvanigraph/core-models';
 import { compileScript, compileFilterRulesToScript, compileTransformerStepsToScript } from './script-compiler.js';
 import { VmSandboxExecutor } from './sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from './sandbox-context.js';

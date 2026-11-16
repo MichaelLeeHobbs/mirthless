@@ -14,7 +14,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import type { ScriptTestResult } from '@galvaniflow/core-models';
+import type { ScriptTestResult } from '@galvanigraph/core-models';
 import { TextEditor, type TextLanguage } from './TextEditor.js';
 import { useGenerateMessages } from '../../hooks/use-message-generator.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';

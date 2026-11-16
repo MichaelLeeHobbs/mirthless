@@ -2,7 +2,7 @@
 
 > Protocol adapters: interface, plugin architecture, and per-connector specifications.
 
-> **Status (2026-11): original design.** Kept for its reasoning; parts were built differently. What each connector does today: [connector reference](../user/connector-reference.md); what is missing: [What GalvaniFlow can do](../user/capabilities.md).
+> **Status (2026-11): original design.** Kept for its reasoning; parts were built differently. What each connector does today: [connector reference](../user/connector-reference.md); what is missing: [What GalvaniGraph can do](../user/capabilities.md).
 
 ## Connector Interface
 

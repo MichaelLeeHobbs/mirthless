@@ -12,7 +12,7 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import Grid from '@mui/material/Grid';
-import { USER_ROLE, type UserRole } from '@galvaniflow/core-models';
+import { USER_ROLE, type UserRole } from '@galvanigraph/core-models';
 import type { UserSummary } from '../../api/client.js';
 
 /** Menu label per role; the role list itself comes from core-models. */

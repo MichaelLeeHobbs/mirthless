@@ -3,7 +3,7 @@
 // match what the engine runs.
 
 import { describe, it, expect, afterAll, vi } from 'vitest';
-import { stopTypeChecker } from '@galvaniflow/engine';
+import { stopTypeChecker } from '@galvanigraph/engine';
 import {
   findTypeFailures, formatTypeFailures, typeScriptGlobalScripts, typeScriptScripts, MAX_LISTED_TYPE_ERRORS,
 } from '../script-type-gate.service.js';
