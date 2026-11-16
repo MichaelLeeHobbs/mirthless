@@ -15,21 +15,23 @@ export function getBoss(): PgBoss | null {
   return boss;
 }
 
+/** Start pg-boss. `getBoss()` returns it only once it has started, never a half-started one. */
 export async function startQueue(): Promise<PgBoss> {
   const ssl = buildDbSslConfig();
-  boss = new PgBoss({
+  const instance = new PgBoss({
     connectionString: config.DATABASE_URL,
     schema: 'pgboss',
     ...(ssl ? { ssl } : {}),
   });
 
-  boss.on('error', (err: Error) => {
+  instance.on('error', (err: Error) => {
     logger.error({ errMsg: err.message, stack: err.stack }, 'pgboss error');
   });
 
-  await boss.start();
+  await instance.start();
+  boss = instance;
   logger.info({ component: 'pgboss' }, 'pgboss started');
-  return boss;
+  return instance;
 }
 
 export async function stopQueue(): Promise<void> {

@@ -401,36 +401,40 @@ export class DeploymentService {
    * Channels with initialState STOPPED are deployed only.
    * Channels deploy after the channels they depend on. If the dependencies
    * can't be loaded, nothing is auto-deployed: a safe order can't be proven.
+   * Fails when the channels can't be listed or ordered, or when any channel
+   * failed to deploy (the others are still deployed), naming those channels.
    */
-  static async autoDeployChannels(): Promise<void> {
-    const listResult = await ChannelService.list({ page: 1, pageSize: 1000 });
-    if (!listResult.ok) {
-      logger.error({ errMsg: listResult.error.message, stack: listResult.error.stack }, 'Failed to list channels for auto-deploy');
-      return;
-    }
+  static async autoDeployChannels(): Promise<Result<void>> {
+    return tryCatch(async () => {
+      const listResult = await ChannelService.list({ page: 1, pageSize: 1000 });
+      if (!listResult.ok) throw listResult.error;
 
-    const allChannels = listResult.value.data;
-    const channels = await orderForDeploy(allChannels.filter((ch) => ch.enabled));
-    if (channels === null) {
-      return;
-    }
-    logger.info({
-      total: allChannels.length,
-      enabled: channels.length,
-      channels: channels.map((ch) => ({ id: ch.id, name: ch.name })),
-    }, 'Auto-deploying enabled channels');
-
-    for (const ch of channels) {
-      const deployResult = await DeploymentService.deploy(ch.id, undefined, { typeCheck: false });
-      if (!deployResult.ok) {
-        logger.error({ channelId: ch.id, channelName: ch.name, errMsg: deployResult.error.message }, 'Failed to auto-deploy channel');
-        continue;
+      const allChannels = listResult.value.data;
+      const channels = await orderForDeploy(allChannels.filter((ch) => ch.enabled));
+      if (channels === null) {
+        throw new ServiceError('INTERNAL', 'Channel dependencies could not be loaded, so no channel was redeployed');
       }
+      logger.info({
+        total: allChannels.length,
+        enabled: channels.length,
+        channels: channels.map((ch) => ({ id: ch.id, name: ch.name })),
+      }, 'Auto-deploying enabled channels');
 
-      // deploy() handles auto-start based on initialState — just log the result
-      const finalState = deployResult.value.state;
-      logger.info({ channelId: ch.id, channelName: ch.name, state: finalState }, 'Auto-deployed channel');
-    }
+      const failedNames: string[] = [];
+      for (const ch of channels) {
+        const deployResult = await DeploymentService.deploy(ch.id, undefined, { typeCheck: false });
+        if (!deployResult.ok) {
+          logger.error({ channelId: ch.id, channelName: ch.name, errMsg: deployResult.error.message }, 'Failed to auto-deploy channel');
+          failedNames.push(ch.name);
+          continue;
+        }
+        // deploy() handles auto-start based on initialState — just log the result
+        logger.info({ channelId: ch.id, channelName: ch.name, state: deployResult.value.state }, 'Auto-deployed channel');
+      }
+      if (failedNames.length > 0) {
+        throw new ServiceError('INTERNAL', `${failedNames.length} of ${channels.length} channels failed to redeploy: ${failedNames.join(', ')}`);
+      }
+    });
   }
 
   /**

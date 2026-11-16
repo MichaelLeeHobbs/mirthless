@@ -17,6 +17,9 @@ import { createShutdownHandler, undeployAll } from './lib/shutdown.js';
 import { dataSourcePoolManager } from './services/data-source-pool-manager.js';
 import { warnIfDefaultAdminPassword } from './lib/security-checks.js';
 import { installFatalHandlers } from './lib/fatal-handlers.js';
+import { runStartupSteps, startupStatus } from './lib/startup-steps.js';
+import { emitEvent } from './lib/event-emitter.js';
+import { tryCatch } from 'stderr-lib';
 
 const PORT = config.PORT;
 
@@ -33,16 +36,18 @@ initializeSocketIO(server);
 // Initialize log capture stream for server logs feature
 setLogCaptureStream(LogStreamService.createWritableStream());
 
-// Start pgboss job queue, pruner scheduler, then auto-deploy channels
-startQueue()
-  .then(() => PrunerSchedulerService.start())
-  .then(() => DeploymentService.autoDeployChannels())
-  .then(() => warnIfDefaultAdminPassword())
-  .catch((err: unknown) => {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    const stack = err instanceof Error ? err.stack : undefined;
-    logger.error({ errMsg, stack, phase: 'startup' }, 'Startup initialization failed');
-  });
+// Start the job queue (then the pruner scheduler) and redeploy channels. Each
+// step runs on its own: a failed one is logged, emitted as an event and shown
+// by the health endpoints, and does not skip the others (#259).
+void runStartupSteps({
+  logger,
+  emitEvent,
+  status: startupStatus,
+  startQueue: () => tryCatch(async () => { await startQueue(); }),
+  startPrunerScheduler: () => PrunerSchedulerService.start(),
+  redeployChannels: () => DeploymentService.autoDeployChannels(),
+});
+void warnIfDefaultAdminPassword();
 
 // Graceful shutdown — ordered cleanup with engine disposal before DB pool close
 const shutdown = createShutdownHandler({

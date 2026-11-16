@@ -14,8 +14,14 @@ excluded from HTTP request logging to avoid noise.
 | Endpoint | Method | Purpose | Response |
 |----------|--------|---------|----------|
 | `/health/live` | GET | **Liveness** — process is up. Never touches the DB. | `200 {"status":"ok"}` |
-| `/health/ready` | GET | **Readiness** — can serve traffic (DB reachable). | `200` when DB OK; `503 {"status":"unavailable"}` when not |
-| `/health` | GET | **Full health** — DB, engine channel counts, memory, uptime. | `200` when `status:"ok"`; `503` when `status:"degraded"` (DB down) |
+| `/health/ready` | GET | **Readiness** — can serve traffic (DB reachable). | `200` when DB OK (`status:"degraded"` when a startup step failed); `503 {"status":"unavailable"}` when the DB is not |
+| `/health` | GET | **Full health** — DB, engine channel counts, memory, uptime, failed startup steps. | `200` when `status:"ok"`; `503` when `status:"degraded"` (DB down or a startup step failed) |
+
+### Startup steps
+
+At startup the server starts the job queue (pg-boss), then the data pruner schedule, which needs the queue, and redeploys every enabled channel. Channel redeploy does not use the queue, so it runs alongside it, and one failed step never skips another. A step fails when it throws or reports an error; channel redeploy also fails when any channel could not be redeployed, naming those channels (the others are still deployed).
+
+A failed step is logged at ERROR (`Startup step failed`, with `step`), recorded as a `SERVER_STARTUP_STEP_FAILED` event (Events page), and reported by health: `/health/ready` answers `200` with `status:"degraded"` and `startup.failedSteps` naming the steps (`queue`, `pruner-scheduler`, `channel-redeploy`), and `/health/full` adds each step's error and time. Readiness stays `200` so an instance is not pulled out of a load balancer, which would hide the UI an operator needs to fix it (D-308); alert on `status:"degraded"` instead.
 
 `/health` (full) payload:
 
