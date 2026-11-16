@@ -10,8 +10,7 @@ import { login } from './fixtures/auth.js';
 
 /** Pick an option from one of the filter bar's selects and wait for the filtered list. */
 async function chooseFilter(page: Page, label: string, option: string, query: string): Promise<void> {
-  // The filter selects have a visible label but no programmatic one, so find the select by its form control.
-  const select = page.locator('.MuiFormControl-root', { has: page.getByText(label, { exact: true }) }).getByRole('combobox');
+  const select = page.getByRole('combobox', { name: label, exact: true });
   const filtered = page.waitForResponse((res) => res.url().includes('/api/v1/events?') && res.url().includes(query));
   await select.click();
   await page.getByRole('option', { name: option, exact: true }).click();

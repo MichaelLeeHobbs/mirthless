@@ -150,8 +150,8 @@ export function TemplateEditor({ template, onSave, onDelete, onClose, saving, re
           sx={{ flex: 1 }}
         />
         <FormControl size="small" sx={{ minWidth: 150 }}>
-          <InputLabel>Type</InputLabel>
-          <Select
+          <InputLabel id="template-type-label">Type</InputLabel>
+          <Select labelId="template-type-label"
             value={type}
             label="Type"
             disabled={readOnly}

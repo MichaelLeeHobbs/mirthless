@@ -57,8 +57,8 @@ export function MessageGeneratorPage(): ReactNode {
       <Paper sx={{ p: 2, mb: 3 }}>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
           <FormControl size="small" sx={{ minWidth: 240 }}>
-            <InputLabel>Message Type</InputLabel>
-            <Select
+            <InputLabel id="generator-message-type-label">Message Type</InputLabel>
+            <Select labelId="generator-message-type-label"
               value={messageType}
               label="Message Type"
               onChange={(e) => { setMessageType(e.target.value as GenerateMessagesInput['messageType']); }}

@@ -117,8 +117,8 @@ export function TrafficPage(): ReactNode {
           <Paper sx={{ p: 2, mb: 3 }}>
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               <FormControl sx={{ minWidth: 160 }}>
-                <InputLabel>Status</InputLabel>
-                <Select value={status} label="Status" size="small" onChange={(e) => { setStatus(e.target.value); setSearchOffset(0); }}>
+                <InputLabel id="traffic-status-label">Status</InputLabel>
+                <Select labelId="traffic-status-label" value={status} label="Status" size="small" onChange={(e) => { setStatus(e.target.value); setSearchOffset(0); }}>
                   <MenuItem value="">All</MenuItem>
                   {STATUS_OPTIONS.map((s) => (<MenuItem key={s} value={s}>{s}</MenuItem>))}
                 </Select>
