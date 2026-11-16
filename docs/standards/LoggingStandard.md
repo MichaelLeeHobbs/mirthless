@@ -29,6 +29,7 @@ authLog.warn({ userId, ip, reason: 'invalid_credentials' }, 'Login failed');
 - Field names **shall** be consistent across the codebase (e.g., always `errMsg`, never sometimes `error` and sometimes `err`)
 - Messages **shall** be static strings (searchable), context goes in the object (filterable)
 - No sensitive data in logs: no passwords, tokens, PII beyond identifiers. Mask or omit.
+- A request log carries the URL path and the names of its query parameters, never their values. Search terms travel in the query string and are often patient identifiers (an MRN, an accession number), so the request logger drops every value rather than redacting a list of known parameters.
 
 **Library**: Use Pino, Winston, or similar structured logger. Chronicler is an option for typed event-driven logging with built-in correlation management.
 
