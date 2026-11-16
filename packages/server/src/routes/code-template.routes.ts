@@ -12,14 +12,10 @@ import {
   codeTemplateUuidParamSchema,
 } from '@galvaniflow/core-models';
 import { CodeTemplateController } from '../controllers/code-template.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const router: IRouter = Router();
-
-// All code template routes require authentication
-router.use(authenticate);
 
 // ----- Libraries -----
 

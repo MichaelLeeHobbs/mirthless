@@ -134,4 +134,20 @@ describe('runScriptTest', () => {
     const result = await run({ kind: 'script', script: 'while (true) {}', timeoutMs: 200 });
     expect(result.outcome).toBe('error');
   });
+
+  it('says when the script is compiled, before it runs, so a worker can start its time limit there (#188)', async () => {
+    const order: string[] = [];
+    const onCompiled = vi.fn(() => { order.push('compiled'); });
+    const getResource = vi.fn(async () => { order.push('ran'); return 'x'; });
+    const result = await run({ kind: 'script', script: "await getResource('codes');", readers: { getResource }, onCompiled });
+    expect(result.error).toBeNull();
+    expect(order).toEqual(['compiled', 'ran']);
+  });
+
+  it('does not say a script that fails to compile is compiled', async () => {
+    const onCompiled = vi.fn();
+    const result = await run({ kind: 'script', script: 'function (', onCompiled });
+    expect(result.outcome).toBe('error');
+    expect(onCompiled).not.toHaveBeenCalled();
+  });
 });

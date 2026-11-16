@@ -50,7 +50,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@galvaniflow/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema } from '@galvaniflow/core-models';
+import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate } from '@galvaniflow/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
@@ -1289,6 +1289,8 @@ export class EngineManager {
         if (value) cleanScripts[key] = value;
       }
 
+      // Mirth's default ${DICOMMESSAGE} means the message itself, so it is no template.
+      const template = destinationTemplate(d.connectorType, d.properties);
       configs.push({
         metaDataId: d.metaDataId,
         name: d.name,
@@ -1296,7 +1298,7 @@ export class EngineManager {
         scripts: cleanScripts as DestinationScripts,
         queueMode: (d.queueMode ?? 'NEVER') as 'NEVER' | 'ON_FAILURE' | 'ALWAYS',
         waitForPrevious: d.waitForPrevious,
-        ...(typeof d.properties['template'] === 'string' ? { template: d.properties['template'] } : {}),
+        ...(template === undefined ? {} : { template }),
       });
     }
 
