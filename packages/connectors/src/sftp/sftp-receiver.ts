@@ -300,7 +300,7 @@ export class SftpReceiver implements SourceConnectorRuntime {
         if (!this.client) return null;
         let kind: SftpPathKind;
         try {
-          kind = await withTimeout(this.client.pathKind(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP exists');
+          kind = await withTimeout(this.client.pathKind(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP pathKind');
         } catch {
           return null;
         }
