@@ -12,9 +12,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
-import { useCertificates, useCreateCertificate, useDeleteCertificate } from '../use-certificates.js';
-import { useDataSources, useCreateDataSource, useUpdateDataSource } from '../use-datasources.js';
-import { useGlobalMap, useClearGlobalMap } from '../use-global-map.js';
+import { useCertificates, useCreateCertificate, useUpdateCertificate, useDeleteCertificate } from '../use-certificates.js';
+import { useDataSources, useCreateDataSource, useUpdateDataSource, useDeleteDataSource } from '../use-datasources.js';
+import { useGlobalMap, useUpsertGlobalMapEntry, useDeleteGlobalMapEntry, useClearGlobalMap } from '../use-global-map.js';
 
 const getMock = vi.fn();
 const writeMock = vi.fn();
@@ -59,38 +59,57 @@ describe('dialog mutations resolve when their request does, while the list reloa
     expect(getMock).toHaveBeenCalledTimes(2);
   });
 
-  it('deleting a certificate', async () => {
+  it('updating and deleting a certificate', async () => {
     stallListReloads();
-    const { result } = renderHook(() => ({ list: useCertificates(), remove: useDeleteCertificate() }), { wrapper });
+    const { result } = renderHook(
+      () => ({ list: useCertificates(), update: useUpdateCertificate(), remove: useDeleteCertificate() }),
+      { wrapper },
+    );
     await waitFor(() => { expect(result.current.list.isSuccess).toBe(true); });
 
+    await result.current.update.mutateAsync({ id: 'id-1', input: { name: 'c2' } } as never);
     await result.current.remove.mutateAsync('id-1');
 
+    expect(writeMock).toHaveBeenCalledWith('PUT', '/certificates/id-1', { name: 'c2' });
+    expect(writeMock).toHaveBeenCalledWith('DELETE', '/certificates/id-1');
     await waitFor(() => { expect(result.current.list.isFetching).toBe(true); });
   });
 
-  it('creating and updating a data source', async () => {
+  it('creating, updating and deleting a data source', async () => {
     stallListReloads();
     const { result } = renderHook(
-      () => ({ list: useDataSources(), create: useCreateDataSource(), update: useUpdateDataSource() }),
+      () => ({
+        list: useDataSources(), create: useCreateDataSource(), update: useUpdateDataSource(), remove: useDeleteDataSource(),
+      }),
       { wrapper },
     );
     await waitFor(() => { expect(result.current.list.isSuccess).toBe(true); });
 
     await result.current.create.mutateAsync({ name: 'd' } as never);
     await result.current.update.mutateAsync({ id: 'id-1', input: { name: 'd2' } } as never);
+    await result.current.remove.mutateAsync('id-1');
 
     expect(writeMock).toHaveBeenCalledWith('PUT', '/datasources/id-1', { name: 'd2' });
+    expect(writeMock).toHaveBeenCalledWith('DELETE', '/datasources/id-1');
     await waitFor(() => { expect(result.current.list.isFetching).toBe(true); });
   });
 
-  it('clearing the global map', async () => {
+  it('saving, deleting and clearing global map entries', async () => {
     stallListReloads();
-    const { result } = renderHook(() => ({ list: useGlobalMap(), clear: useClearGlobalMap() }), { wrapper });
+    const { result } = renderHook(
+      () => ({
+        list: useGlobalMap(), upsert: useUpsertGlobalMapEntry(), remove: useDeleteGlobalMapEntry(), clear: useClearGlobalMap(),
+      }),
+      { wrapper },
+    );
     await waitFor(() => { expect(result.current.list.isSuccess).toBe(true); });
 
+    await result.current.upsert.mutateAsync({ key: 'k', value: 'v' });
+    await result.current.remove.mutateAsync('k');
     await result.current.clear.mutateAsync();
 
+    expect(writeMock).toHaveBeenCalledWith('PUT', '/global-map/k', { value: 'v' });
+    expect(writeMock).toHaveBeenCalledWith('DELETE', '/global-map/k');
     expect(writeMock).toHaveBeenCalledWith('DELETE', '/global-map');
     await waitFor(() => { expect(result.current.list.isFetching).toBe(true); });
   });
