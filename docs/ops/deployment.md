@@ -1,4 +1,4 @@
-# Deploying GalvaniFlow
+# Deploying GalvaniGraph
 
 This guide covers a single-node production install with the Docker Compose stack in
 `docker/docker-compose.prod.yml`. Read [TLS & PHI-in-transit](tls-and-phi.md) and
@@ -22,7 +22,7 @@ version you run is the commit you have checked out. Tag or pin that commit.
    - `POSTGRES_PASSWORD`: required; compose refuses to start without it. The password of
      the superuser that owns the tables and runs migrations.
    - `POSTGRES_APP_PASSWORD`: required, and different. The server connects as its own role
-     (`galvaniflow_app`), which owns no application tables; the migration step creates it with this
+     (`galvanigraph_app`), which owns no application tables; the migration step creates it with this
      password. Use letters and digits only (`openssl rand -hex 24`) for both, as they go into
      connection URLs. See [Database roles](upgrade.md#database-roles).
    - `JWT_SECRET`: at least 32 random characters (`openssl rand -base64 48`).
@@ -92,15 +92,15 @@ Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside th
 
 - **Single node.** Run one `server` container. There is no clustering or HA failover; two
   servers against one database will both run every deployed channel.
-- **PostgreSQL only**, by design, for GalvaniFlow's own storage. The Database connector can
+- **PostgreSQL only**, by design, for GalvaniGraph's own storage. The Database connector can
   still talk to other databases.
 - **DICOM is beta.** It has no TLS support yet.
 - **Not built yet:** extracting attachments from inbound messages, custom metadata columns, multi-threaded
   destination queues, and FTP/SMB/S3/WebDAV file transports. The UI no longer offers them.
-- **Email source:** after processing an email, GalvaniFlow sets the IMAP keyword
-  `$GalvaniFlowDispatched` on it before the post-action (mark read, delete or move). An
-  email marked `$MirthlessDispatched` by a version from before the rename counts as
-  dispatched too. If the
+- **Email source:** after processing an email, GalvaniGraph sets the IMAP keyword
+  `$GalvaniGraphDispatched` on it before the post-action (mark read, delete or move). An
+  email marked `$GalvaniFlowDispatched` or `$MirthlessDispatched` by a version from
+  before a rename counts as dispatched too. If the
   post-action fails, later polls, restarts and redeploys retry only the post-action. To
   process such an email again, remove the keyword (both, if it has both). A mailbox that rejects custom keywords
   (a warning is logged once) can still reprocess an email after a restart if its post-action failed.

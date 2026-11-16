@@ -14,7 +14,7 @@ import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
-import type { GenerateMessagesInput } from '@galvaniflow/core-models';
+import type { GenerateMessagesInput } from '@galvanigraph/core-models';
 import { useGenerateMessages } from '../hooks/use-message-generator.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { TextEditor } from '../components/editors/TextEditor.js';

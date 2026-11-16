@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ----- Mock Dependencies -----
 
-vi.mock('@galvaniflow/engine', () => ({
+vi.mock('@galvanigraph/engine', () => ({
   ChannelRuntime: vi.fn(),
   VmSandboxExecutor: vi.fn().mockImplementation(function () { return { execute: vi.fn(), dispose: vi.fn() }; }),
   MessageProcessor: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock('@galvaniflow/engine', () => ({
   }),
 }));
 
-vi.mock('@galvaniflow/connectors', () => ({
+vi.mock('@galvanigraph/connectors', () => ({
   createSourceConnector: vi.fn(),
   createDestinationConnector: vi.fn(),
   JavaScriptReceiver: vi.fn(),

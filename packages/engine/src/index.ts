@@ -1,5 +1,5 @@
 // ===========================================
-// @galvaniflow/engine
+// @galvanigraph/engine
 // ===========================================
 // Message processing engine: channel runtime, routing, queuing, sandbox.
 

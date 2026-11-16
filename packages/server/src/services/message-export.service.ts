@@ -8,7 +8,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { sql } from 'drizzle-orm';
-import type { MessageExportQuery } from '@galvaniflow/core-models';
+import type { MessageExportQuery } from '@galvanigraph/core-models';
 import { db } from '../lib/db.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import { escapeCsvField } from '../lib/csv.js';

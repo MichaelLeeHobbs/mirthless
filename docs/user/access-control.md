@@ -1,6 +1,6 @@
 # Access control
 
-This page describes who can sign in to GalvaniFlow, how sessions work, how to cut someone off, what each of the four roles can do, which roles can run code on the server or take PHI and secrets out of it, what the audit log does not record, and which endpoints need no permission. It describes the code as it is today. For the operator's side (TLS, encryption at rest, backups), see the [HIPAA / security checklist](../ops/hipaa-security-checklist.md).
+This page describes who can sign in to GalvaniGraph, how sessions work, how to cut someone off, what each of the four roles can do, which roles can run code on the server or take PHI and secrets out of it, what the audit log does not record, and which endpoints need no permission. It describes the code as it is today. For the operator's side (TLS, encryption at rest, backups), see the [HIPAA / security checklist](../ops/hipaa-security-checklist.md).
 
 ## What is supported and what is not
 

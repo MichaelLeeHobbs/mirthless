@@ -4,7 +4,7 @@
 // Generates the OpenAPI spec object for Swagger UI.
 // Documents key API endpoints across 8 tag groups.
 
-import { SET_CHANNEL_GROUPS_MAX } from '@galvaniflow/core-models';
+import { SET_CHANNEL_GROUPS_MAX } from '@galvanigraph/core-models';
 
 /** OpenAPI spec type — minimal structural typing for the spec object. */
 interface OpenAPISpec {
@@ -62,14 +62,14 @@ const bearerSecurity = [{ bearerAuth: [] }];
 const noContent: Record<string, unknown> = { description: 'No content' };
 
 /**
- * Generates the complete OpenAPI 3.1 specification for the GalvaniFlow API.
+ * Generates the complete OpenAPI 3.1 specification for the GalvaniGraph API.
  * @returns The OpenAPI spec as a plain object.
  */
 export function generateOpenAPISpec(): OpenAPISpec {
   return {
     openapi: '3.1.0',
     info: {
-      title: 'GalvaniFlow API',
+      title: 'GalvaniGraph API',
       version: '0.1.0',
       description: 'Healthcare integration engine API — message routing and transformation for HL7v2, FHIR, DICOM, and more.',
       license: { name: 'MIT', url: 'https://opensource.org/licenses/MIT' },

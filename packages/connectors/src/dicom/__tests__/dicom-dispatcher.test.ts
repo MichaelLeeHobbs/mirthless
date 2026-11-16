@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { stderr } from '@galvaniflow/core-util';
+import { stderr } from '@galvanigraph/core-util';
 import type { ConnectorMessage } from '../../base.js';
 import {
   DicomDispatcher,
@@ -20,7 +20,7 @@ function makeConfig(overrides?: Partial<DicomDispatcherConfig>): DicomDispatcher
     host: '192.168.1.100',
     port: 104,
     calledAETitle: 'PACS',
-    callingAETitle: 'GALVANIFLOW',
+    callingAETitle: 'GALVANIGRAPH',
     mode: 'multiple',
     maxAssociations: 4,
     maxRetries: 3,

@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { Result } from '@galvaniflow/core-util';
+import type { Result } from '@galvanigraph/core-util';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import { DISPATCH_STATUS } from '../../base.js';
 import { KafkaReceiver, toRawMessage, type KafkaReceiverConfig } from '../kafka-receiver.js';
@@ -12,12 +12,12 @@ import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
 const config: KafkaReceiverConfig = {
   brokers: 'kafka:9092',
-  clientId: 'galvaniflow',
+  clientId: 'galvanigraph',
   saslMechanism: 'NONE',
   saslUsername: '',
   saslPassword: '',
   topic: 'adt',
-  groupId: 'galvaniflow-adt',
+  groupId: 'galvanigraph-adt',
   startFrom: 'EARLIEST',
 };
 

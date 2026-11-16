@@ -6,7 +6,7 @@ import { Router, type IRouter } from 'express';
 import {
   globalMapKeyParamSchema,
   upsertGlobalMapEntrySchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { GlobalMapController } from '../controllers/global-map.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

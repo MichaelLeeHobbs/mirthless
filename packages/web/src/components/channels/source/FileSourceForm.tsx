@@ -15,7 +15,7 @@ import { FILE_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { getStr, getNum, getBool, propertyUpdaters } from '../common/connector-properties.js';
 import { CHARSET_OPTIONS } from '../common/charset-options.js';
-import { FILE_SORT_ORDERS, FILE_POST_ACTIONS } from '@galvaniflow/core-models';
+import { FILE_SORT_ORDERS, FILE_POST_ACTIONS } from '@galvanigraph/core-models';
 
 export function FileSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);

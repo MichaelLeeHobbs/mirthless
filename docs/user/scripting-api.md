@@ -10,7 +10,7 @@ exposed** to your scripts, sourced from `packages/engine/src/sandbox/sandbox-exe
 > `return` becomes the script result (a filter returns a boolean; a transformer typically
 > mutates `msg`/`tmp` and the maps).
 >
-> Channel scripts are isolated on a best-effort basis. The sandbox blocks accidental and casual access to the host, but it is not a security boundary. Treat anyone who can create or edit a channel, code template or global script as able to run code on the GalvaniFlow server.
+> Channel scripts are isolated on a best-effort basis. The sandbox blocks accidental and casual access to the host, but it is not a security boundary. Treat anyone who can create or edit a channel, code template or global script as able to run code on the GalvaniGraph server.
 >
 > If you are coming from Mirth Connect or OIE: there, Rhino scripts have full Java access by design (`java.lang.Runtime.getRuntime().exec(...)` works). Here a script has no `require`, `process` or file system and reaches the network and databases only through the functions on this page. That is an improvement, not a guarantee. See [SECURITY.md](../../SECURITY.md).
 

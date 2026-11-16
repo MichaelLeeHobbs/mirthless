@@ -8,7 +8,7 @@ import {
   preferenceKeyParamSchema,
   upsertPreferenceSchema,
   bulkUpsertPreferencesSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { UserPreferenceController } from '../controllers/user-preference.controller.js';
 import { validate } from '../middleware/validate.middleware.js';
 

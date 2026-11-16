@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { Result } from '@galvaniflow/core-util';
+import type { Result } from '@galvanigraph/core-util';
 import type { RawMessage, DispatchResult } from '../../base.js';
 import { DISPATCH_STATUS } from '../../base.js';
 import { AmqpReceiver, toRawMessage, type AmqpReceiverConfig } from '../amqp-receiver.js';

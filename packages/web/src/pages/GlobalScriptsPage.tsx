@@ -10,7 +10,7 @@ import Box from '@mui/material/Box';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Button from '@mui/material/Button';
-import type { ScriptLanguageCode } from '@galvaniflow/core-models';
+import type { ScriptLanguageCode } from '@galvanigraph/core-models';
 import { ScriptEditor } from '../components/editors/ScriptEditor.js';
 import { NEW_CHANNEL_SCRIPT_LANGUAGES, loadedScriptLanguage } from '../lib/script-language.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';

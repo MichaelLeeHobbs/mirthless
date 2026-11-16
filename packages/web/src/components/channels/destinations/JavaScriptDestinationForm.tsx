@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Typography from '@mui/material/Typography';
-import { CODE_TEMPLATE_CONTEXT } from '@galvaniflow/core-models';
+import { CODE_TEMPLATE_CONTEXT } from '@galvanigraph/core-models';
 import type { DestConnectorFormProps } from './types.js';
 import { JAVASCRIPT_DEST_DEFAULTS } from './connector-defaults.js';
 import { ConnectorScriptEditor } from '../common/ConnectorScriptEditor.js';

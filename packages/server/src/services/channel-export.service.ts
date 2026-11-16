@@ -4,7 +4,7 @@
 // Exports channels as structured JSON for backup/migration.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { toScriptLanguage, type ChannelExport, type ChannelExportEntry } from '@galvaniflow/core-models';
+import { toScriptLanguage, type ChannelExport, type ChannelExportEntry } from '@galvanigraph/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { redactConnectorProperties } from '../lib/secret-redaction.js';
 import { ChannelService, type ChannelDetail } from './channel.service.js';

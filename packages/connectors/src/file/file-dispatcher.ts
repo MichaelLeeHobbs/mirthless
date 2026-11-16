@@ -8,7 +8,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { fillPlaceholders, placeholderNames, recordLookup, tryCatch, type Result } from '@galvaniflow/core-util';
+import { fillPlaceholders, placeholderNames, recordLookup, tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { createConnectorLogger, type ConnectorLogger } from '../logger.js';

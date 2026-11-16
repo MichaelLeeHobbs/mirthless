@@ -9,12 +9,12 @@
 //
 // TypeScript is loaded on first use, so the engine does not pay for it at start.
 
-import type { Result } from '@galvaniflow/core-util';
-import { tryCatch } from '@galvaniflow/core-util';
+import type { Result } from '@galvanigraph/core-util';
+import { tryCatch } from '@galvanigraph/core-util';
 import {
   SCRIPT_COMPILER_OPTIONS, scriptBodyPosition, scriptDeclarations, templateDeclarations,
   wrapScriptBody, type ScriptSurface, type TemplateSource,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 
 /** One type error in a script. */
 export interface ScriptTypeError {

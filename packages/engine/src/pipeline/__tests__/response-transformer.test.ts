@@ -4,7 +4,7 @@
 // Tests for the response transformer pipeline stage.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Result } from '@galvaniflow/core-util';
+import type { Result } from '@galvanigraph/core-util';
 import { MessageProcessor } from '../message-processor.js';
 import type {
   MessageStore,

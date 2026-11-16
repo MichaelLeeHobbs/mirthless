@@ -9,7 +9,7 @@ import type {
   SettingKeyParam,
   UpsertSettingInput,
   BulkUpsertSettingsInput,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { SettingsService } from '../services/settings.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

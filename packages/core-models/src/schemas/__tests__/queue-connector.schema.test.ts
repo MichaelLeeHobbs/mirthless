@@ -14,11 +14,11 @@ import { connectionTestSchema } from '../connection-test.schema.js';
 import { createDestinationConnectorSchema } from '../connector.schema.js';
 
 describe('kafkaSourcePropertiesSchema', () => {
-  const base = { brokers: 'kafka-1:9092, kafka-2:9093', topic: 'adt', groupId: 'galvaniflow-adt' };
+  const base = { brokers: 'kafka-1:9092, kafka-2:9093', topic: 'adt', groupId: 'galvanigraph-adt' };
 
   it('accepts a minimal source and applies defaults', () => {
     const parsed = kafkaSourcePropertiesSchema.parse(base);
-    expect(parsed.clientId).toBe('galvaniflow');
+    expect(parsed.clientId).toBe('galvanigraph');
     expect(parsed.startFrom).toBe('EARLIEST');
     expect(parsed.saslMechanism).toBe('NONE');
     expect(parsed.useTls).toBe(false);
@@ -121,7 +121,7 @@ describe('amqpDestinationPropertiesSchema', () => {
 // D-274: a key the schema does not list fails the deploy instead of being ignored.
 describe('Kafka and AMQP refuse keys they do not list', () => {
   const tls = { caCertId: '', clientCertId: '', rejectUnauthorized: true };
-  const KAFKA = { brokers: 'k:9092', clientId: 'galvaniflow', saslMechanism: 'NONE', saslUsername: '', saslPassword: '', useTls: false, tls };
+  const KAFKA = { brokers: 'k:9092', clientId: 'galvanigraph', saslMechanism: 'NONE', saslUsername: '', saslPassword: '', useTls: false, tls };
   const AMQP = { host: 'rabbit', port: 5672, vhost: '/', username: '', password: '', useTls: false, tls };
 
   // The editor's defaults since b49f662, required fields filled, plus the keys the engine reads from any connector.

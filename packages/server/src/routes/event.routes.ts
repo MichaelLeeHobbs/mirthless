@@ -7,7 +7,7 @@ import {
   eventListQuerySchema,
   eventIdParamSchema,
   purgeEventsSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { EventController } from '../controllers/event.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

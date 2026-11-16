@@ -10,7 +10,7 @@ import type {
   UpdateChannelInput,
   ChannelListQuery,
   PatchChannelEnabledInput,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { ChannelService } from '../services/channel.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { redactChannelDetail } from '../lib/secret-redaction.js';

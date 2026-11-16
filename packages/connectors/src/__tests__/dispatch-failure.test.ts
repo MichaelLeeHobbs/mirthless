@@ -5,7 +5,7 @@
 // message may be reported as handled.
 
 import { describe, it, expect } from 'vitest';
-import type { Result } from '@galvaniflow/core-util';
+import type { Result } from '@galvanigraph/core-util';
 import { dispatchFailure, DISPATCH_STATUS, type DispatchResult } from '../base.js';
 
 function ok(value: DispatchResult): Result<DispatchResult> {

@@ -32,7 +32,7 @@ export default defineConfig({
   // `vite preview` uses the dev server's /api and /socket.io proxy.
   webServer: [
     {
-      command: process.env.CI ? 'pnpm --filter @galvaniflow/server start' : 'pnpm dev:server',
+      command: process.env.CI ? 'pnpm --filter @galvanigraph/server start' : 'pnpm dev:server',
       url: 'http://localhost:3000/api/v1/health',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
@@ -44,7 +44,7 @@ export default defineConfig({
     },
     {
       command: process.env.CI
-        ? 'pnpm --filter @galvaniflow/web exec vite preview --port 5173 --strictPort'
+        ? 'pnpm --filter @galvanigraph/web exec vite preview --port 5173 --strictPort'
         : 'pnpm dev:web',
       url: 'http://localhost:5173',
       reuseExistingServer: !process.env.CI,

@@ -1,6 +1,6 @@
 # 16 — Connector Parity Execution Plan (phased)
 
-> **Status (2026-11): historical analysis.** Written 2026-07-15 and kept for its reasoning; its status claims are no longer kept current. What ships today, what is missing and the plan for each gap are in [What GalvaniFlow can do](../user/capabilities.md). Still in force: D-182.
+> **Status (2026-11): historical analysis.** Written 2026-07-15 and kept for its reasoning; its status claims are no longer kept current. What ships today, what is missing and the plan for each gap are in [What GalvaniGraph can do](../user/capabilities.md). Still in force: D-182.
 >
 > Turns the ranked gaps in [`12-connector-parity-gap-analysis.md`](./12-connector-parity-gap-analysis.md) into review-sized phases. Decisions locked in **D-182**.
 

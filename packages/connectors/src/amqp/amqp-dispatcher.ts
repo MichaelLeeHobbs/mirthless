@@ -7,7 +7,7 @@
 // filled per message (D-252). The connection opens on the first send and
 // reopens on the next send after it is lost.
 
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { fillVariables } from '../base.js';
 import { withTimeoutSignal } from '../timeout.js';

@@ -5,7 +5,7 @@
 // dispatches each row as a message, and optionally
 // executes an UPDATE to mark rows as processed.
 
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, MessageDispatcher, RawMessage } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { toPoolConfig, type DatabasePool, type TxQuery } from './connection-pool.js';

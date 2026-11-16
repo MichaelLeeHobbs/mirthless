@@ -31,35 +31,35 @@ export const httpRequestTotal = new Counter({
 
 /** Number of currently deployed channels */
 export const deployedChannelsGauge = new Gauge({
-  name: 'galvaniflow_deployed_channels',
+  name: 'galvanigraph_deployed_channels',
   help: 'Number of currently deployed channels',
   registers: [registry],
 });
 
 /** Number of currently started channels */
 export const startedChannelsGauge = new Gauge({
-  name: 'galvaniflow_started_channels',
+  name: 'galvanigraph_started_channels',
   help: 'Number of currently started channels',
   registers: [registry],
 });
 
 /** Total messages processed counter */
 export const messagesProcessedTotal = new Counter({
-  name: 'galvaniflow_messages_processed_total',
+  name: 'galvanigraph_messages_processed_total',
   help: 'Total number of messages processed',
   registers: [registry],
 });
 
 /** Database pool total connections */
 export const dbPoolTotal = new Gauge({
-  name: 'galvaniflow_db_pool_total',
+  name: 'galvanigraph_db_pool_total',
   help: 'Total number of database pool connections',
   registers: [registry],
 });
 
 /** Database pool idle connections */
 export const dbPoolIdle = new Gauge({
-  name: 'galvaniflow_db_pool_idle',
+  name: 'galvanigraph_db_pool_idle',
   help: 'Number of idle database pool connections',
   registers: [registry],
 });

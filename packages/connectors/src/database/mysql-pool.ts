@@ -5,7 +5,7 @@
 // can talk to a partner's MySQL as well as PostgreSQL.
 
 import mysql from 'mysql2/promise';
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { DatabasePool, PoolConfig, QueryResult, TxQuery } from './connection-pool.js';
 
 const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;

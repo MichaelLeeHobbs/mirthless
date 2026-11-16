@@ -4,8 +4,8 @@
 // Manages channel lifecycle: deploy → start → stop → undeploy.
 // Coordinates source connector, destination connectors, and pipeline.
 
-import { tryCatch, type Result } from '@galvaniflow/core-util';
-import type { CHANNEL_STATE } from '@galvaniflow/core-models';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
+import type { CHANNEL_STATE } from '@galvanigraph/core-models';
 
 // ----- Types -----
 

@@ -55,7 +55,7 @@ const mockCompileScript = vi.fn().mockResolvedValue({
   ok: true, value: { code: 'compiled-code' }, error: null,
 });
 
-vi.mock('@galvaniflow/engine', () => ({
+vi.mock('@galvanigraph/engine', () => ({
   ChannelRuntime: MockChannelRuntime,
   VmSandboxExecutor: MockVmSandboxExecutor,
   MessageProcessor: vi.fn().mockImplementation(function () {
@@ -116,7 +116,7 @@ const MockJavaScriptDispatcher = vi.fn().mockImplementation(function () {
 let _lastSourceConnector: unknown = null;
 let destConnectorsByCall: unknown[] = [];
 
-vi.mock('@galvaniflow/connectors', () => ({
+vi.mock('@galvanigraph/connectors', () => ({
   createSourceConnector: vi.fn().mockImplementation((type: string) => {
     if (type === 'JAVASCRIPT') {
       const instance = new (MockJavaScriptReceiver as unknown as new () => unknown)();
@@ -488,7 +488,7 @@ describe('EngineManager', () => {
       queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 5000, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false,
     });
     const templateGiven = async (template: string): Promise<unknown> => {
-      const { MessageProcessor } = await import('@galvaniflow/engine');
+      const { MessageProcessor } = await import('@galvanigraph/engine');
       const ctor = vi.mocked(MessageProcessor);
       ctor.mockClear();
       await new EngineManager('test-server').deploy(makeChannel({ destinations: [dicomDest(template)] }) as never);

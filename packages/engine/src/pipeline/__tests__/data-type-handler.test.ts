@@ -4,8 +4,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { parseForSandbox, serializeFromSandbox, serializeTransformed, isHl7MessageProxy, isX12MessageProxy, createHl7Proxy } from '../data-type-handler.js';
-import { Hl7Message } from '@galvaniflow/core-util';
-import { delimitedOptionsSchema } from '@galvaniflow/core-models';
+import { Hl7Message } from '@galvanigraph/core-util';
+import { delimitedOptionsSchema } from '@galvanigraph/core-models';
 
 describe('DELIMITED serialization', () => {
   const delimited = delimitedOptionsSchema.parse({ columnDelimiter: '|', columnNames: ['mrn', 'name'] });

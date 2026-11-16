@@ -13,7 +13,7 @@ import { FHIR_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { HeadersEditor, coerceHeaders } from '../../common/HeadersEditor.js';
 import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
-import { FHIR_METHODS, FHIR_AUTH_TYPES, FHIR_FORMATS } from '@galvaniflow/core-models';
+import { FHIR_METHODS, FHIR_AUTH_TYPES, FHIR_FORMATS } from '@galvanigraph/core-models';
 
 const RESOURCE_TYPES = [
   'Patient', 'Observation', 'Encounter', 'Condition',

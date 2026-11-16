@@ -13,7 +13,7 @@ import express, { type Express, type Request, type Response, type NextFunction, 
 import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { USER_ROLE, type Permission } from '@galvaniflow/core-models';
+import { USER_ROLE, type Permission } from '@galvanigraph/core-models';
 import { permissionNamesForRole } from '../../lib/role-permissions.js';
 import { authenticate } from '../../middleware/auth.middleware.js';
 import attachmentRoutes from '../attachment.routes.js';

@@ -64,7 +64,7 @@ vi.mock('@platformatic/kafka', async () => {
 
 const { subscribeKafka, createKafkaProducer, testKafkaConnection } = await import('../kafka-client.js');
 
-const connection = { brokers: 'k1:9092', clientId: 'galvaniflow', saslMechanism: 'NONE' as const, saslUsername: '', saslPassword: '' };
+const connection = { brokers: 'k1:9092', clientId: 'galvanigraph', saslMechanism: 'NONE' as const, saslUsername: '', saslPassword: '' };
 
 beforeEach(() => {
   lib.consumerOptions = [];

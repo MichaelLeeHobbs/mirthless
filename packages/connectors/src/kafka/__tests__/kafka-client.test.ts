@@ -21,7 +21,7 @@ describe('describeKafkaError', () => {
 
 const base: KafkaConnectionConfig = {
   brokers: 'k1:9092, k2:9093 ,',
-  clientId: 'galvaniflow',
+  clientId: 'galvanigraph',
   saslMechanism: 'NONE',
   saslUsername: '',
   saslPassword: '',
@@ -36,7 +36,7 @@ describe('parseBrokers', () => {
 
 describe('clientOptions', () => {
   it('connects in plaintext without SASL by default', () => {
-    expect(clientOptions(base)).toEqual({ clientId: 'galvaniflow', bootstrapBrokers: ['k1:9092', 'k2:9093'], timeout: 30_000 });
+    expect(clientOptions(base)).toEqual({ clientId: 'galvanigraph', bootstrapBrokers: ['k1:9092', 'k2:9093'], timeout: 30_000 });
   });
 
   it('passes SASL credentials for the chosen mechanism', () => {

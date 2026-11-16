@@ -4,7 +4,7 @@ Status: Michael approved the recommended option for all three on 2026-11-13, and
 
 ## S15: Database Writer to MySQL (weight 2, doc 12 rank 1)
 
-GalvaniFlow's database connectors speak PostgreSQL only (`pg`). Mirth's are JDBC and reach MySQL, SQL Server, Oracle and others; the production backup has no database channels, but doc 12 ranks this first for other sites. AGENTS.md's "PostgreSQL only" is about GalvaniFlow's own store, not what a connector may talk to.
+GalvaniGraph's database connectors speak PostgreSQL only (`pg`). Mirth's are JDBC and reach MySQL, SQL Server, Oracle and others; the production backup has no database channels, but doc 12 ranks this first for other sites. AGENTS.md's "PostgreSQL only" is about GalvaniGraph's own store, not what a connector may talk to.
 
 Options:
 
@@ -14,7 +14,7 @@ Options:
 
 ## S19: Delimited data (weight 2, doc 13 N2)
 
-`DELIMITED` is declared but passes through as a string, so a transformer cannot read a CSV by column. Mirth turns delimited text into XML rows; GalvaniFlow has no XML message model for scripts (D-244), so it needs its own shape.
+`DELIMITED` is declared but passes through as a string, so a transformer cannot read a CSV by column. Mirth turns delimited text into XML rows; GalvaniGraph has no XML message model for scripts (D-244), so it needs its own shape.
 
 Options:
 

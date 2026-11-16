@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ----- Mock Dependencies -----
 
-vi.mock('@galvaniflow/connectors', () => ({
+vi.mock('@galvanigraph/connectors', () => ({
   createSourceConnector: vi.fn().mockReturnValue({
     setDispatcher: vi.fn(),
     onDeploy: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),

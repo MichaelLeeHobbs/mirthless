@@ -10,7 +10,7 @@ import {
   channelListQuerySchema,
   patchChannelEnabledSchema,
   setChannelGroupsSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { ChannelController } from '../controllers/channel.controller.js';
 import { ChannelGroupController } from '../controllers/channel-group.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

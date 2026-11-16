@@ -4,7 +4,7 @@
 // Handles HTTP requests for channel group CRUD + member management.
 
 import type { Request, Response } from 'express';
-import type { CreateChannelGroupInput, UpdateChannelGroupInput, SetChannelGroupsInput } from '@galvaniflow/core-models';
+import type { CreateChannelGroupInput, UpdateChannelGroupInput, SetChannelGroupsInput } from '@galvanigraph/core-models';
 import { ChannelGroupService } from '../services/channel-group.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

@@ -2,7 +2,7 @@
 // Script language in the editor
 // ===========================================
 
-import { toScriptLanguage, type ScriptLanguageCode } from '@galvaniflow/core-models';
+import { toScriptLanguage, type ScriptLanguageCode } from '@galvanigraph/core-models';
 
 /** A script the user starts in the editor is TypeScript. */
 export const NEW_SCRIPT_LANGUAGE: ScriptLanguageCode = 'TYPESCRIPT';

@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
-import { ALERT_TEMPLATE_VARIABLES } from '@galvaniflow/core-models';
+import { ALERT_TEMPLATE_VARIABLES } from '@galvanigraph/core-models';
 import { darkTheme } from '../../../styles/theme.js';
 import { TemplatesSection, findUnknownVariables, type TemplateFormValues } from '../TemplatesSection.js';
 

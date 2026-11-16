@@ -4,7 +4,7 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod';
-import { channelRevisionParamsSchema } from '@galvaniflow/core-models';
+import { channelRevisionParamsSchema } from '@galvanigraph/core-models';
 import { ChannelRevisionController } from '../controllers/channel-revision.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

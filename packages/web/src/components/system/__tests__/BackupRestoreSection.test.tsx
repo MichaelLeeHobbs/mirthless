@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
-import type { ServerRestoreResult } from '@galvaniflow/core-models';
+import type { ServerRestoreResult } from '@galvanigraph/core-models';
 import { lightTheme } from '../../../styles/theme.js';
 
 const restore = vi.hoisted(() => ({ result: undefined as unknown }));

@@ -1,131 +1,130 @@
-# GalvaniFlow
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/wordmark-dark.svg">
+    <img alt="GalvaniGraph" src="assets/wordmark-light.svg" width="640">
+  </picture>
+</p>
 
-> A modern, open-source healthcare integration engine. Think Mirth Connect, but built from scratch for Node.js — no Java, no desktop client, no paywall tiers.
+<h3 align="center">GG, Mirth. It was a good game.</h3>
 
-**Status: Experimental** — This is a working prototype by a developer with ADD. It might become something great, or it might end up as a really well-architected pile of good intentions. Either way, the code is here and it's free.
+<p align="center">
+  The open-source healthcare integration engine for teams who are done paying rent on their interfaces.<br>
+  TypeScript end to end. Runs in a browser tab. MIT-licensed, so it stays free.
+</p>
 
-## Why?
+<p align="center">
+  <img alt="Mirth: GG" src="https://img.shields.io/badge/Mirth-GG-38bdf8?style=for-the-badge">
+  <img alt="Price: $0 a year" src="https://img.shields.io/badge/price-%240%20a%20year-2dd4bf?style=for-the-badge">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-98a4ba?style=for-the-badge">
+  <a href="https://github.com/MichaelLeeHobbs/mirthless/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/MichaelLeeHobbs/mirthless/actions/workflows/ci.yml/badge.svg"></a>
+</p>
 
-Mirth Connect (NextGen Connect) is the de facto standard for healthcare integration. It's also:
+---
 
-- **Java** — heavyweight, slow startup, JVM tuning required
-- **Swing desktop client** — it's 2026, why do I need a desktop app?
-- **Paywalled** — RBAC, MFA, channel history, cross-channel search? That'll be $$$ for the Gold tier
-- **Closed direction** — increasingly proprietary with each release
+## Game over
 
-GalvaniFlow keeps what works (channels, transformers, filters, the pipeline model) and rebuilds everything else for the modern era.
+In March 2025 NextGen closed the source of Mirth Connect. Version 4.5.2 was the last open release, and everything after it needs a commercial license.[^mirth] The features people actually wanted, like role-based access, the SSL Manager, cross-channel search and the FHIR connector, were already behind paid tiers before that.
 
-## What's Different
+That was the free option.
 
-- **TypeScript/Node.js** — not Java. Fast startup, npm ecosystem, familiar to web developers
-- **Web-based admin** — React + Material UI. No client install. Works on any device with a browser
-- **Everything is free** — RBAC, channel history, message search, alerting, certificate management (Mirth's paid SSL Manager) — all built-in, no tiers (MFA is on the roadmap, not yet shipped)
-- **Shared data for scripts** — Collections (a keyed record store), Data Sources (named database connections with encrypted passwords) and Resources, managed in the web UI. The global map is saved to the database, so it survives a restart. Mirth has no Collections or Data Sources, and its global map is lost on restart
-- **TypeScript in transformers** — write channel scripts in TypeScript with full Monaco editor + autocomplete
-- **13ms message processing** — batched CTE queries on native Postgres. Mirth does ~70ms for comparable workloads
-- **Real-time dashboard** — WebSocket-driven updates, not polling
+## And don't get us started on Rhapsody
 
-## Security model
+Fine. We'll start.
 
-Channel scripts are isolated on a best-effort basis. The sandbox blocks accidental and casual access to the host, but it is not a security boundary. Treat anyone who can create or edit a channel, code template or global script as able to run code on the GalvaniFlow server.
+Rhapsody's hosted engine lists on AWS Marketplace at **$50,000 a year** for one production license and five connections. Five. Corepoint, from the same company, lists at **$60,000**. Your sixth connection is a call to sales.[^rhapsody]
 
-In practice that means the admin, deployer and developer roles: limit them to people you would trust with a shell on the server. Scripts run in `node:vm` with no `require`, `process` or file system, and reach the network and databases only through the bridges the engine provides. This is an improvement on Mirth Connect and OIE, where Rhino scripts have full Java access by design, but it is not the isolation of a separate process. Process isolation per channel, opt-in and with a performance cost, could be added later for deployments whose script authors are not trusted; it is not built. Details: [SECURITY.md](SECURITY.md) and [`packages/engine/src/sandbox/README.md`](packages/engine/src/sandbox/README.md).
+GalvaniGraph lists at **$0** for as many connections as your server can carry. The source is in this repository, and it stays here.
 
-## Quick Start
+## GG at a glance
+
+| | GalvaniGraph | Mirth Connect 4.6 and later |
+|---|---|---|
+| Price | $0, MIT license | Commercial license |
+| Source code | Public, all of it | Closed since 4.6 |
+| Admin console | Any browser, phone included | Java desktop Administrator and its launcher |
+| Scripting | JavaScript or TypeScript in a Monaco editor with autocomplete | Rhino JavaScript and E4X |
+| Role-based access | Included, four roles | Paid tier |
+| Certificate manager | Included | Paid (SSL Manager) |
+| Search across channels | Included | Paid |
+| FHIR destination | Included | Paid |
+| Global map after a restart | Kept, saved to PostgreSQL | Gone |
+| Shared data for scripts | Collections, Data Sources, Resources | No equivalent |
+| Kafka and RabbitMQ | Source and destination | Not built in |
+| Script isolation | `node:vm`, no `require`, `process` or file system | Full Java access, by design |
+
+Thirteen connector types ship today: TCP/MLLP, HTTP, File, SFTP, Database, JavaScript, Channel, SMTP, Email, FHIR, DICOM, Kafka and AMQP. Mirth channel exports and server backups import directly, with a dry-run preview that tells you what will need attention before you commit.
+
+## What we don't have yet
+
+Here's something a vendor sales page won't do: list what's missing.
+
+- No single sign-on, LDAP or MFA. Mirth charges for these; we haven't built them.
+- No SQL Server or Oracle connector. PostgreSQL, MySQL and MariaDB work.
+- No clustering or failover. Run one node.
+- Mirth scripts that use E4X or Mirth's Java helper APIs need rewriting. The import preview names every construct it finds.
+
+The full list lives in [one page](docs/user/capabilities.md): every capability, its status, its limits, the issue that tracks the gap, and the test that proves it. A row that says **Yes** has a test in CI behind it.
+
+## Run it
 
 ```bash
 # Prerequisites: Node.js 24+, PostgreSQL 17, pnpm 12+
-
-# Clone and install
 git clone https://github.com/MichaelLeeHobbs/mirthless.git
 cd mirthless
 pnpm install
 
-# Set up database
 cp .env.example .env        # edit DATABASE_URL if needed
-pnpm db:init                # creates user + database
-pnpm db:migrate             # applies schema
-pnpm db:seed                # seeds admin user + 10 example channels
+pnpm db:init                # creates the user and database
+pnpm db:migrate             # applies the schema
+pnpm db:seed                # admin user and 10 example channels
 
-# Run
-pnpm dev                    # starts server (:3000) + web UI (:5173)
-
-# Login: admin / Admin123!
+pnpm dev                    # server on :3000, web UI on :5173
+# Sign in as admin / Admin123!, then change it
 ```
 
-### Docker (production)
+The ten seeded channels cover HL7 v2, JSON, XML, channel-to-channel routing, filtering and error handling. Send one a message and watch it move.
 
-The production stack (Postgres + server + nginx-served web) is defined in
-[`docker/docker-compose.prod.yml`](docker/docker-compose.prod.yml). The server image runs
-database migrations and an idempotent seed on start before booting. Migrations run as the
-Postgres superuser (`POSTGRES_PASSWORD`); the server itself connects as `galvaniflow_app`
-(`POSTGRES_APP_PASSWORD`), a role that owns no application tables. See
-[Database roles](docs/ops/upgrade.md#database-roles).
+For production, [`docker/docker-compose.prod.yml`](docker/docker-compose.prod.yml) runs Postgres, the server and nginx. Start with the [deployment guide](docs/ops/deployment.md).
 
-```bash
-cp .env.production.example .env   # set POSTGRES_PASSWORD, POSTGRES_APP_PASSWORD, JWT_SECRET, etc.
-docker compose -f docker/docker-compose.prod.yml up -d --build
-```
+## Security model
 
-The UI and API are served by nginx on port 80 of the host itself (`127.0.0.1`), because that
-port is plain HTTP. See [TLS & PHI in transit](docs/ops/tls-and-phi.md) for putting TLS in
-front of it, or set `WEB_BIND=0.0.0.0` in `.env` to try it from another machine. Interactive API docs (Swagger UI) are at
-**`/api-docs`** (served by the server at `:3000/api-docs`).
+Channel scripts run in `node:vm` with no `require`, `process` or file system, and reach the network and databases only through bridges the engine provides. That is a real step up from Mirth and its forks, where Rhino scripts get the whole JVM. It is still not a security boundary: treat anyone who can edit a channel, code template or global script as someone who can run code on the server, and give the admin, deployer and developer roles only to people you'd trust with a shell. Details in [SECURITY.md](SECURITY.md) and the [sandbox README](packages/engine/src/sandbox/README.md).
 
-### Documentation
+## Read more
 
-- [Quickstart: create your first channel](docs/user/quickstart-first-channel.md)
-- [What can GalvaniFlow do, and what is missing?](docs/user/capabilities.md) Every capability with its status, limits, plan and the tests that prove it, including what a Mirth channel imports as.
-- [Which connectors can receive, which can send, and what can each do?](docs/user/connector-reference.md#connectors-at-a-glance) Every connector type, its settings and limits.
-- [Who can do what? Users, roles, sign-in and cutting someone off](docs/user/access-control.md) The role and permission matrix, sessions, and what is not supported (SSO, MFA, per-channel access).
-- [Transformer scripting API](docs/user/scripting-api.md) — the sandbox surface for filters/transformers
+- [Your first channel](docs/user/quickstart-first-channel.md)
+- [What GalvaniGraph can do, and what it can't](docs/user/capabilities.md)
+- [Connector reference](docs/user/connector-reference.md)
+- [Users, roles and permissions](docs/user/access-control.md)
+- [Scripting API](docs/user/scripting-api.md)
+- [Operator guides](docs/ops/): deployment, backup and restore, upgrades, TLS, sizing and metrics
+- [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security policy](SECURITY.md)
 
-### Operations
+## Under the hood
 
-Running GalvaniFlow in production? See the operator guides in [`docs/ops/`](docs/ops/):
-
-- [Deployment](docs/ops/deployment.md) — first install, required settings, listener ports, known limitations
-- [Backup & restore](docs/ops/backup-restore.md) — Postgres `pg_dump`/`pg_restore` plus the config backup API
-- [Upgrade procedure](docs/ops/upgrade.md) — migrations, downtime, and rollback
-- [TLS & PHI-in-transit](docs/ops/tls-and-phi.md) — edge TLS, connector-level TLS, and how to check TLS is on
-- [Access control](docs/user/access-control.md) — roles and permissions, sessions, cutting off a user who left, and where PHI can leave
-- [Resource sizing & observability](docs/ops/resource-and-observability.md) — health, `/metrics`, logging, sizing
-- [Throughput benchmark](docs/ops/throughput-benchmark.md) — how to measure msgs/sec, with a baseline
-
-### Contributing & Security
-
-- [Contributing guide](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security policy](SECURITY.md)
-
-## Architecture
-
-![GalvaniFlow architecture: the six packages as layers, and the functional domains](docs/design/architecture.svg)
-
-The top half shows the packages as layers and what talks to them. The bottom half shows the functional domains, with badges for what Mirth Connect charges for, what it has no equivalent for, and what is planned.
+![GalvaniGraph architecture: the six packages as layers, and the functional domains](docs/design/architecture.svg)
 
 ```
 packages/
-├── core-models/     — TypeScript types, Zod schemas, branded types
-├── core-util/       — HL7v2 parser, utilities
-├── engine/          — Message pipeline, sandbox, channel runtime
-├── connectors/      — TCP/MLLP, HTTP, File, SFTP, Database, JS, Channel, SMTP, FHIR, DICOM, Email, Kafka, AMQP
-├── server/          — Express API (131 endpoints), auth, deployment
-└── web/             — React + MUI admin UI
+├── core-models/   TypeScript types, Zod schemas, branded types
+├── core-util/     HL7 v2 parser and shared helpers
+├── engine/        message pipeline, script sandbox, channel runtime
+├── connectors/    the 13 protocol adapters
+├── server/        Express REST API, auth, deployment
+└── web/           React and Material UI admin console
 ```
 
-**Stack:** Node.js, TypeScript (strict), Express, PostgreSQL, Drizzle ORM, React 18, Material UI 6, Vite, Vitest, pnpm workspaces
-
-## Current State
-
-This is a working system with about 2,500 unit tests plus real-Postgres integration and Playwright end-to-end suites. You can create channels, write transformers in TypeScript, deploy them, send messages, and watch them flow through the pipeline. The 10 seeded example channels demonstrate HL7v2, JSON, XML, channel-to-channel routing, filtering, error handling, and more.
-
-What works: channels, pipeline, sandbox, 13 connector types, RBAC, audit logging, message browser, code templates, alerts, groups, tags, dark mode. Scripts and CI use the REST API ([recipes](docs/ops/api-automation.md)).
-
-What's next: visual flow builder (think Node-RED for healthcare), plugin system, clustering. See [ROADMAP](docs/progress/ROADMAP.md).
+Node.js, strict TypeScript, Express, PostgreSQL, Drizzle, React, Material UI, Vite and Vitest. About 2,500 unit tests, plus integration suites against real Postgres and protocol servers, and Playwright end to end. Every one runs in CI.
 
 ## License
 
-MIT
+MIT. Take it. That's the point.
 
 ---
 
-*Built with an mass amounts of coffee, mass amounts of ADHD, and mass amounts of AI. Healthcare data deserves better tools.*
+<sub>Built on coffee, ADHD and AI, because healthcare data deserves better tools. GG.</sub>
+
+<sub>Mirth and Mirth Connect are trademarks of NextGen Healthcare. Rhapsody and Corepoint are trademarks of their owner. GalvaniGraph is an independent project with no affiliation to either.</sub>
+
+[^mirth]: NextGen Healthcare, [Mirth Connect downloads](https://www.nextgen.com/products-and-services/mirth-connect-downloads) and [A new era for Mirth Connect](https://www.nextgen.com/blog/industry-news/a-new-era-for-mirth-connect-by-nextgen-healthcare). Checked 2026-11-15.
+[^rhapsody]: AWS Marketplace list prices, 12-month contracts, checked 2026-11-15: [Rhapsody as a Service](https://aws.amazon.com/marketplace/pp/prodview-ox6d5ynatj5l2), $50,000 for "1 Production License with up to 5 comm points"; [Corepoint as a Service](https://aws.amazon.com/marketplace/pp/prodview-dto3okvvw5wzo), $60,000 for the same. Both pages say further licensing needs a private offer. On-premises pricing is by quote and not public.

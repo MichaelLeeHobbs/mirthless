@@ -6,7 +6,7 @@
 // channel imported without them fails on its first message.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { CODE_TEMPLATE_CONTEXTS } from '@galvaniflow/core-models';
+import { CODE_TEMPLATE_CONTEXTS } from '@galvanigraph/core-models';
 import { CodeTemplateService, type TemplateDetail } from './code-template.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
 

@@ -8,9 +8,9 @@
 
 import type { SftpClient, SftpFileInfo, SftpPathKind } from '../sftp/sftp-client.js';
 
-const LEDGER_NAME = '.galvaniflow-quarantine.json';
-/** Ledger name used before the GalvaniFlow rename. */
-const LEGACY_LEDGER_NAME = '.mirthless-quarantine.json';
+const LEDGER_NAME = '.galvanigraph-quarantine.json';
+/** Ledger names written under the product's earlier names (D-205, D-309). */
+export const LEGACY_LEDGER_NAMES: readonly string[] = ['.galvaniflow-quarantine.json', '.mirthless-quarantine.json'];
 
 export interface RemoteFile {
   size: number;
@@ -36,7 +36,8 @@ export interface MockFailures {
 export class RemoteState {
   readonly files = new Map<string, RemoteFile>();
   ledger: string | null = null;
-  legacyLedger: string | null = null;
+  /** Legacy ledgers present in the directory, by file name. */
+  readonly legacyLedgers = new Map<string, string>();
   readonly deleted: string[] = [];
   readonly renamed: Array<readonly [string, string]> = [];
   readonly mkdirs: string[] = [];
@@ -68,8 +69,8 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
       if (state.ledger !== null) {
         result.push({ name: LEDGER_NAME, size: state.ledger.length, modifyTime: 0, isFile: true });
       }
-      if (state.legacyLedger !== null) {
-        result.push({ name: LEGACY_LEDGER_NAME, size: state.legacyLedger.length, modifyTime: 0, isFile: true });
+      for (const [name, text] of state.legacyLedgers) {
+        result.push({ name, size: text.length, modifyTime: 0, isFile: true });
       }
       return result;
     },
@@ -80,9 +81,10 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
         if (state.ledger === null) throw new Error('no ledger');
         return Buffer.from(state.ledger, 'utf8');
       }
-      if (name === LEGACY_LEDGER_NAME) {
-        if (state.legacyLedger === null) throw new Error('no legacy ledger');
-        return Buffer.from(state.legacyLedger, 'utf8');
+      if (LEGACY_LEDGER_NAMES.includes(name)) {
+        const text = state.legacyLedgers.get(name);
+        if (text === undefined) throw new Error('no legacy ledger');
+        return Buffer.from(text, 'utf8');
       }
       const f = state.files.get(name);
       if (!f) throw new Error(`no such file: ${name}`);
@@ -96,8 +98,8 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
         state.ledger = data.toString('utf8');
         return;
       }
-      if (name === LEGACY_LEDGER_NAME) {
-        state.legacyLedger = data.toString('utf8');
+      if (LEGACY_LEDGER_NAMES.includes(name)) {
+        state.legacyLedgers.set(name, data.toString('utf8'));
         return;
       }
       state.files.set(name, { size: data.length, modifyTime: Date.now(), content: data.toString('utf8') });
@@ -126,7 +128,7 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
     async pathKind(remotePath: string): Promise<SftpPathKind> {
       const name = basename(remotePath);
       if (name === LEDGER_NAME) return state.ledger !== null ? 'file' : 'missing';
-      if (name === LEGACY_LEDGER_NAME) return state.legacyLedger !== null ? 'file' : 'missing';
+      if (LEGACY_LEDGER_NAMES.includes(name)) return state.legacyLedgers.has(name) ? 'file' : 'missing';
       return state.files.has(name) ? 'file' : 'missing';
     },
     async end(): Promise<void> {

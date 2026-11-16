@@ -4,7 +4,7 @@
 // POST / — test connector connectivity
 
 import { Router, type IRouter } from 'express';
-import { connectionTestSchema } from '@galvaniflow/core-models';
+import { connectionTestSchema } from '@galvanigraph/core-models';
 import { ConnectionTestController } from '../controllers/connection-test.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

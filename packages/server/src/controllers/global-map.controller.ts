@@ -4,7 +4,7 @@
 // Handles HTTP requests for global map key-value store CRUD.
 
 import type { Request, Response } from 'express';
-import type { UpsertGlobalMapEntryInput } from '@galvaniflow/core-models';
+import type { UpsertGlobalMapEntryInput } from '@galvanigraph/core-models';
 import { GlobalMapService } from '../services/global-map.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

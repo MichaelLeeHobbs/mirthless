@@ -1,6 +1,6 @@
 # 08 — Paid Plugin Analysis
 
-> Breakdown of NextGen Connect's commercial plugins and how GalvaniFlow handles each.
+> Breakdown of NextGen Connect's commercial plugins and how GalvaniGraph handles each.
 
 ## Context
 
@@ -22,25 +22,25 @@ As of v4.6 (2025), Connect transitioned from open-source to fully commercial/pro
 
 **What Connect charges for:** GUI for managing TLS certificates — create, import, export, track expiry, apply to connectors. Without it, users manage Java keystores via command-line `keytool`.
 
-**GalvaniFlow: Built-in (P1).** Per-connector TLS config is already in our design. We add a certificate management page in the web admin (upload certs, track expiry, test connections). Expiry warnings integrate with our alerting system. TLS is mandatory in healthcare — paywalling it is indefensible.
+**GalvaniGraph: Built-in (P1).** Per-connector TLS config is already in our design. We add a certificate management page in the web admin (upload certs, track expiry, test connections). Expiry warnings integrate with our alerting system. TLS is mandatory in healthcare — paywalling it is indefensible.
 
 ### RBAC (Role-Based Access Control)
 
 **What Connect charges for:** Granular role-based permissions. Open-source Connect has no authorization — every user is admin. Supports LDAP integration.
 
-**GalvaniFlow: Built-in (P1).** Already designed in `05-server-api.md` with 4 fixed roles (admin, deployer, developer, viewer). Permissions apply to every channel; channel-scoped permissions and LDAP/AD integration are not built. This is the #1 community complaint about Connect.
+**GalvaniGraph: Built-in (P1).** Already designed in `05-server-api.md` with 4 fixed roles (admin, deployer, developer, viewer). Permissions apply to every channel; channel-scoped permissions and LDAP/AD integration are not built. This is the #1 community complaint about Connect.
 
 ### Multi-Factor Authentication
 
 **What Connect charges for:** TOTP or Duo second factor. Has significant limitations — doesn't work with web dashboard or REST API basic auth.
 
-**GalvaniFlow: Not built.** MFA is planned (ROADMAP V4). The plan was TOTP in the login flow, so that the JWTs issued after it work everywhere.
+**GalvaniGraph: Not built.** MFA is planned (ROADMAP V4). The plan was TOTP in the login flow, so that the JWTs issued after it work everywhere.
 
 ### Cures Extension
 
 **What Connect charges for:** ONC certification compliance bundle (RBAC + MFA + SSL + FHIR packaged for regulatory checkbox). US-specific.
 
-**GalvaniFlow: Not a plugin — documentation.** RBAC, TLS and FHIR are built-in; MFA is not built yet (planned, ROADMAP V4). Once it ships, Cures compliance is a documentation/certification effort. We publish a compliance matrix against ONC 2015 Edition Cures Update criteria.
+**GalvaniGraph: Not a plugin — documentation.** RBAC, TLS and FHIR are built-in; MFA is not built yet (planned, ROADMAP V4). Once it ships, Cures compliance is a documentation/certification effort. We publish a compliance matrix against ONC 2015 Edition Cures Update criteria.
 
 ---
 
@@ -50,19 +50,19 @@ As of v4.6 (2025), Connect transitioned from open-source to fully commercial/pro
 
 **What Connect charges for:** Revision snapshots on channel changes, diff comparison, rollback. Without it, changes are destructive — previous version is gone.
 
-**GalvaniFlow: Built-in (P1).** Revision tracking with full config stored per revision. Monaco diff editor for side-by-side comparison (`06-web-admin.md` decision #5). Better than Connect's XML blob diffs — we show structured diffs of normalized data.
+**GalvaniGraph: Built-in (P1).** Revision tracking with full config stored per revision. Monaco diff editor for side-by-side comparison (`06-web-admin.md` decision #5). Better than Connect's XML blob diffs — we show structured diffs of normalized data.
 
 ### Message Generator
 
 **What Connect charges for:** Generate realistic HL7v2 test messages with pseudo-data from spec code tables. HL7 v2.1–2.6, configurable segments.
 
-**GalvaniFlow: Built-in tool (P2).** Web admin page for generating test messages. Since the HL7 parser is bundled in the sandbox, we can produce messages matching any HL7 v2 type with realistic random data. Extends naturally to other data types (FHIR, JSON) later.
+**GalvaniGraph: Built-in tool (P2).** Web admin page for generating test messages. Since the HL7 parser is bundled in the sandbox, we can produce messages matching any HL7 v2 type with realistic random data. Extends naturally to other data types (FHIR, JSON) later.
 
 ### Enhancement Bundle (Cross-Channel Message Search)
 
 **What Connect charges for:** Search messages across multiple channels in one unified view. Connect charges for this because their per-channel table architecture makes cross-channel queries genuinely hard.
 
-**GalvaniFlow: Built-in (P1) — free from our data model.** Single partitioned message table means cross-channel queries are just a `WHERE` clause change. Our architecture gives us this for free. No plugin needed.
+**GalvaniGraph: Built-in (P1) — free from our data model.** Single partitioned message table means cross-channel queries are just a `WHERE` clause change. Our architecture gives us this for free. No plugin needed.
 
 ---
 
@@ -72,7 +72,7 @@ As of v4.6 (2025), Connect transitioned from open-source to fully commercial/pro
 
 **What Connect charges for:** Threshold alerts, channel state alerts, escalation chains, on-call schedules, notification throttling. Open-source only has "error → email."
 
-**GalvaniFlow: Built-in with phased rollout.**
+**GalvaniGraph: Built-in with phased rollout.**
 - **P1:** Error alerts + threshold alerts (message count above/below threshold within time window)
 - **P2:** Channel state alerts (channel stopped for X minutes), escalation chains, on-call scheduling, throttling
 
@@ -82,7 +82,7 @@ Connect's "basic" alerting is so limited that "advanced" is really just "compete
 
 **What Connect charges for:** HA with automatic failover, message takeover, heartbeat monitoring, unified cluster management. Platinum-only (most expensive tier).
 
-**GalvaniFlow: Built-in (P3).** We already design for horizontal scaling (server_id columns, per-server statistics). Actual clustering implementation (heartbeat, leader election via Postgres advisory locks, message takeover) is built when scale demands it.
+**GalvaniGraph: Built-in (P3).** We already design for horizontal scaling (server_id columns, per-server statistics). Actual clustering implementation (heartbeat, leader election via Postgres advisory locks, message takeover) is built when scale demands it.
 
 ---
 
@@ -92,37 +92,37 @@ Connect's "basic" alerting is so limited that "advanced" is really just "compete
 
 **What Connect charges for:** Pre-built IHE connectors for HIE participation — PIX (patient identity), PDQ (demographics query), XDS.b (document sharing), XCA (cross-community access), XCPD (patient discovery). Includes SAML/WS-Security for eHealth Exchange compliance.
 
-**GalvaniFlow: Plugin (P3/P4).** `@galvaniflow/connector-ihe`. Specialized use case for large health systems. SOAP/WS-Security complexity is significant. Good test of our plugin API.
+**GalvaniGraph: Plugin (P3/P4).** `@galvanigraph/connector-ihe`. Specialized use case for large health systems. SOAP/WS-Security complexity is significant. Good test of our plugin API.
 
 ### Serial Connector
 
 **What Connect charges for:** RS-232 serial port communication with legacy lab instruments and medical devices.
 
-**GalvaniFlow: Plugin (P4).** `@galvaniflow/connector-serial`. Hardware-dependent, irrelevant in Docker/cloud. Most lab instruments moving to TCP. Low priority but validates the plugin system.
+**GalvaniGraph: Plugin (P4).** `@galvanigraph/connector-serial`. Hardware-dependent, irrelevant in Docker/cloud. Most lab instruments moving to TCP. Low priority but validates the plugin system.
 
 ### ASTM E1394 (Data Type)
 
 **What Connect charges for:** Parse/serialize ASTM E1394 messages from clinical lab analyzers (chemistry, hematology, blood gas).
 
-**GalvaniFlow: Plugin (P3).** `@galvaniflow/datatype-astm`. Validates that data types are pluggable in our plugin API.
+**GalvaniGraph: Plugin (P3).** `@galvanigraph/datatype-astm`. Validates that data types are pluggable in our plugin API.
 
 ### ASTM E1381 (Transmission Mode)
 
 **What Connect charges for:** ASTM E1381 framing protocol (ENQ/ACK/NAK handshaking, checksums) over TCP or serial. Paired with E1394.
 
-**GalvaniFlow: Plugin (P3).** `@galvaniflow/transmission-astm-e1381`. Validates that transmission modes are pluggable.
+**GalvaniGraph: Plugin (P3).** `@galvanigraph/transmission-astm-e1381`. Validates that transmission modes are pluggable.
 
 ### Secure Email (POP3/IMAP Receiver)
 
 **What Connect charges for:** POP3/IMAP source connector for receiving emails. Open-source only has SMTP sending.
 
-**GalvaniFlow: Built-in connector (P2).** `@galvaniflow/connector-email`. Uses `nodemailer` for sending, `imapflow` for receiving. Common in healthcare workflows (lab results, referrals, reports).
+**GalvaniGraph: Built-in connector (P2).** `@galvanigraph/connector-email`. Uses `nodemailer` for sending, `imapflow` for receiving. Common in healthcare workflows (lab results, referrals, reports).
 
 ---
 
 ## Summary
 
-| Feature | Connect | GalvaniFlow | Phase |
+| Feature | Connect | GalvaniGraph | Phase |
 |---|---|---|---|
 | TLS/Certificate Management | Paid (SSL Manager) | **Built-in** | P1 |
 | RBAC | Paid | **Built-in** | P1 |
@@ -138,4 +138,4 @@ Connect's "basic" alerting is so limited that "advanced" is really just "compete
 | IHE Profiles | Paid (Interop Suite) | **Plugin** | P3/P4 |
 | Serial Connector | Paid | **Plugin** | P4 |
 
-**Competitive positioning:** Most of what Connect charges for in their Gold tier ships as built-in open-source in GalvaniFlow; MFA is the exception (planned, ROADMAP V4, not built). The community frustration around paywalled essential features (RBAC, MFA, channel history, cross-channel search) is our biggest opportunity.
+**Competitive positioning:** Most of what Connect charges for in their Gold tier ships as built-in open-source in GalvaniGraph; MFA is the exception (planned, ROADMAP V4, not built). The community frustration around paywalled essential features (RBAC, MFA, channel history, cross-channel search) is our biggest opportunity.

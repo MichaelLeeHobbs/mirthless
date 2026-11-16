@@ -80,8 +80,8 @@ COPY docker/server-entrypoint.sh ./docker/server-entrypoint.sh
 RUN chmod +x ./docker/server-entrypoint.sh
 
 # Non-root user for security
-RUN addgroup -S galvaniflow && adduser -S galvaniflow -G galvaniflow
-USER galvaniflow
+RUN addgroup -S galvanigraph && adduser -S galvanigraph -G galvanigraph
+USER galvanigraph
 
 EXPOSE 3000
 

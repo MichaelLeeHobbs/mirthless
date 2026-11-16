@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ===========================================
-# Initialize GalvaniFlow Database (Linux/macOS)
+# Initialize GalvaniGraph Database (Linux/macOS)
 # ===========================================
-# Creates the galvaniflow database and user on a local PostgreSQL instance.
+# Creates the galvanigraph database and user on a local PostgreSQL instance.
 # Safe to run multiple times — uses IF NOT EXISTS / ON CONFLICT.
 #
 # Prerequisites:
@@ -19,9 +19,9 @@
 #   PGPORT       PostgreSQL port          (default: 5432)
 #   PGUSER       Superuser for setup      (default: postgres)
 #   PGPASSWORD   Superuser password       (default: postgres)
-#   DB_NAME      Database to create       (default: galvaniflow)
-#   DB_USER      App user to create       (default: galvaniflow)
-#   DB_PASSWORD  App user password        (default: galvaniflow_dev)
+#   DB_NAME      Database to create       (default: galvanigraph)
+#   DB_USER      App user to create       (default: galvanigraph)
+#   DB_PASSWORD  App user password        (default: galvanigraph_dev)
 
 set -euo pipefail
 
@@ -31,11 +31,11 @@ PGPORT="${PGPORT:-5432}"
 PGUSER="${PGUSER:-postgres}"
 export PGPASSWORD="${PGPASSWORD:-postgres}"
 
-DB_NAME="${DB_NAME:-galvaniflow}"
-DB_USER="${DB_USER:-galvaniflow}"
-DB_PASSWORD="${DB_PASSWORD:-galvaniflow_dev}"
+DB_NAME="${DB_NAME:-galvanigraph}"
+DB_USER="${DB_USER:-galvanigraph}"
+DB_PASSWORD="${DB_PASSWORD:-galvanigraph_dev}"
 
-echo "=== GalvaniFlow Database Setup ==="
+echo "=== GalvaniGraph Database Setup ==="
 echo "  Host:     ${PGHOST}:${PGPORT}"
 echo "  Admin:    ${PGUSER}"
 echo "  Database: ${DB_NAME}"

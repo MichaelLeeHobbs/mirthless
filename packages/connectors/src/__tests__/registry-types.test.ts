@@ -7,7 +7,7 @@
 // offer a connector the engine can't build.
 
 import { describe, it, expect } from 'vitest';
-import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '@galvaniflow/core-models';
+import { SOURCE_CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES } from '@galvanigraph/core-models';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
 
 /** The error a create call threw, or undefined. A factory may reject empty props; that still proves it exists. */

@@ -8,7 +8,7 @@
 // it was given and say it is checked when focused (#183). No Monaco import, so
 // it can be tested.
 
-import { scriptDeclarations, templateDeclarations, type ScriptSurface, type TemplateSource } from '@galvaniflow/core-models';
+import { scriptDeclarations, templateDeclarations, type ScriptSurface, type TemplateSource } from '@galvanigraph/core-models';
 
 /** The extra declaration files for one surface. */
 export interface SurfaceLibs {

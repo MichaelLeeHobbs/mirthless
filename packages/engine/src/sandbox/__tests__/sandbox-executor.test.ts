@@ -11,7 +11,7 @@ import {
 } from '../sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
 import { createHl7Proxy, createX12Proxy } from '../../pipeline/data-type-handler.js';
-import { Hl7Message, X12Message } from '@galvaniflow/core-util';
+import { Hl7Message, X12Message } from '@galvanigraph/core-util';
 
 // ----- Helpers -----
 

@@ -6,7 +6,7 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { desc } from 'drizzle-orm';
-import type { EventExportQuery } from '@galvaniflow/core-models';
+import type { EventExportQuery } from '@galvanigraph/core-models';
 import { db } from '../lib/db.js';
 import { escapeCsvField } from '../lib/csv.js';
 import { events } from '../db/schema/index.js';

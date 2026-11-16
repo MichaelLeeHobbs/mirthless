@@ -5,7 +5,7 @@
 // and fails when the channel runs. This test asks the sandbox itself.
 
 import { describe, it, expect } from 'vitest';
-import { scriptDeclarations } from '@galvaniflow/core-models';
+import { scriptDeclarations } from '@galvanigraph/core-models';
 import { VmSandboxExecutor } from '../sandbox-executor.js';
 import { createSandboxContext, type SandboxContext } from '../sandbox-context.js';
 import { compileScript } from '../script-compiler.js';

@@ -15,7 +15,7 @@ import type {
   ListRecordsQuery,
   RecordColumn,
   UpdateRecordInput,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitSuccessEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';

@@ -102,7 +102,7 @@ export const DICOM_DEST_DEFAULTS: Readonly<Record<string, unknown>> = {
   host: 'localhost',
   port: 104,
   calledAETitle: 'PACS',
-  callingAETitle: 'GALVANIFLOW',
+  callingAETitle: 'GALVANIGRAPH',
   mode: 'multiple',
   maxAssociations: 4,
   maxRetries: 3,

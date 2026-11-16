@@ -33,7 +33,7 @@ export const dicomSourceObjectSchema = z.strictObject({
   port: connectorPortSchema,
   /** Where received files are written before they are dispatched. */
   storageDir: requiredTextSchema,
-  aeTitle: aeTitle.default('GALVANIFLOW'),
+  aeTitle: aeTitle.default('GALVANIGRAPH'),
   minPoolSize: wholeNumberSchema(1).default(2),
   maxPoolSize: wholeNumberSchema(1).default(10),
   connectionTimeoutMs: dicomTimeout.default(10_000),
@@ -49,7 +49,7 @@ export const dicomDestinationObjectSchema = z.strictObject({
   host: requiredTextSchema,
   port: connectorPortSchema,
   calledAETitle: aeTitle.default('PACS'),
-  callingAETitle: aeTitle.default('GALVANIFLOW'),
+  callingAETitle: aeTitle.default('GALVANIGRAPH'),
   mode: z.enum(DICOM_SEND_MODES).default('multiple'),
   maxAssociations: wholeNumberSchema(0).default(4),
   maxRetries: wholeNumberSchema(0).default(3),

@@ -16,7 +16,7 @@ This is healthcare software. A bug gets a failing test first: write it, watch it
 | SQL, transactions, queues, pruning, partitions | `packages/server/test/integration/*.itest.ts` | Real Postgres. A mocked `db` cannot catch a wrong query, a bind limit or an aborted transaction |
 | An API route | `packages/server/src/routes/__tests__/` | Auth, permission, validation, response shape |
 | Engine pipeline, sandbox, runtime | `packages/engine/src/**/__tests__/` | Use the real `VmSandboxExecutor`; fake only the message store and the send function |
-| How the server wires the engine | `packages/server/src/services/__tests__/engine-*.test.ts` | Import the real `@galvaniflow/engine`; fake the database services and connectors |
+| How the server wires the engine | `packages/server/src/services/__tests__/engine-*.test.ts` | Import the real `@galvanigraph/engine`; fake the database services and connectors |
 | A connector | `packages/connectors/src/<type>/__tests__/` | Real sockets on localhost for protocol behaviour (framing, stop with an open connection) |
 | A protocol change end to end | `packages/connectors/src/__tests__/e2e/` | Real messages through a real pipeline |
 | A React component | `__tests__/<Name>.test.tsx` beside it | Testing Library; query by role and label |
@@ -37,7 +37,7 @@ This is healthcare software. A bug gets a failing test first: write it, watch it
 ## Run
 
 ```bash
-pnpm --filter @galvaniflow/engine test          # one package
+pnpm --filter @galvanigraph/engine test          # one package
 pnpm vitest run src/path/to/file.test.ts        # one file, from the package directory
 pnpm test:integration                           # needs DATABASE_URL pointing at a *_test database
 pnpm gate                                       # build, lint and every package's tests with coverage

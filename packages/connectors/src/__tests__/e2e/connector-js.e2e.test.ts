@@ -15,8 +15,8 @@ import {
   clearChannelRegistry,
   type ConnectorMessage,
 } from '../../index.js';
-import type { Result } from '@galvaniflow/core-util';
-import { VmSandboxExecutor, compileScript, DEFAULT_EXECUTION_OPTIONS, createSandboxContext } from '@galvaniflow/engine';
+import type { Result } from '@galvanigraph/core-util';
+import { VmSandboxExecutor, compileScript, DEFAULT_EXECUTION_OPTIONS, createSandboxContext } from '@galvanigraph/engine';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
 import { mllpSource, sendMllp } from './support/tcp-helpers.js';
 

@@ -7,7 +7,7 @@ import { Router, type IRouter } from 'express';
 import {
   attachmentListParamsSchema,
   attachmentGetParamsSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { AttachmentController } from '../controllers/attachment.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

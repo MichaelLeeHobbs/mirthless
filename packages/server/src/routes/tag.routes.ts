@@ -9,7 +9,7 @@ import {
   assignTagSchema,
   tagUuidParamSchema,
   tagChannelParamSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { TagController } from '../controllers/tag.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

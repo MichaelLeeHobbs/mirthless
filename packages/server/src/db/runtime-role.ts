@@ -69,11 +69,11 @@ export const PG_BOSS_SCHEMA = 'pgboss';
  * partitions) its own tables while the server runs, so it needs to own them;
  * the schema holds only the job queue (the pruner's cron job), and its owner can
  * change nothing outside it. Reads the role's name from the
- * `galvaniflow.runtime_role` setting so the name is never spliced into SQL.
+ * `galvanigraph.runtime_role` setting so the name is never spliced into SQL.
  */
 const PG_BOSS_SCHEMA_SQL = `DO $pgboss$
 DECLARE
-  app text := current_setting('galvaniflow.runtime_role');
+  app text := current_setting('galvanigraph.runtime_role');
   app_oid oid := (SELECT oid FROM pg_roles WHERE rolname = app);
   ns regnamespace := '${PG_BOSS_SCHEMA}'::regnamespace;
   ddl text;
@@ -175,7 +175,7 @@ export async function provisionRuntimeRole(owner: SqlClient, spec: RuntimeRole):
       if (!q.exists) await owner.query(`CREATE ROLE ${q.role} LOGIN`);
       if (spec.password.length > 0) await owner.query(`ALTER ROLE ${q.role} PASSWORD ${q.verifier}`);
       for (const statement of grantStatements(q.role, q.database)) await owner.query(statement);
-      await owner.query(`SELECT set_config('galvaniflow.runtime_role', $1::text, true)`, [spec.user]);
+      await owner.query(`SELECT set_config('galvanigraph.runtime_role', $1::text, true)`, [spec.user]);
       await owner.query(PG_BOSS_SCHEMA_SQL);
       await owner.query('COMMIT');
     } catch (err) {

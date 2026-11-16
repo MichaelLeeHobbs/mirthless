@@ -18,7 +18,7 @@ export interface AckOptions {
 let controlIdSequence = 0;
 
 /**
- * A new control id for a message GalvaniFlow sends, such as an ACK's MSH-10:
+ * A new control id for a message GalvaniGraph sends, such as an ACK's MSH-10:
  * `GF`, the millisecond clock (13 digits) and a 5-digit sequence, 20 characters
  * in all, the most MSH-10 holds. The sequence keeps ids made in the same
  * millisecond apart.

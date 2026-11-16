@@ -21,7 +21,7 @@ Mirthless is not a Mirth Connect clone. It's a **modern, open-source healthcare 
 
 The foundation. A single-server deployment that can replace Mirth Connect for common HL7v2/FHIR/HTTP integration workflows.
 
-What already ships is listed, with the tests that prove it, in [What GalvaniFlow can do](../user/capabilities.md). This roadmap lists only work still to do; each open item below is the plan of a row there (D-279).
+What already ships is listed, with the tests that prove it, in [What GalvaniGraph can do](../user/capabilities.md). This roadmap lists only work still to do; each open item below is the plan of a row there (D-279).
 
 ### Mirth migration suite
 
@@ -64,7 +64,7 @@ What already ships is listed, with the tests that prove it, in [What GalvaniFlow
 - [x] **[N6] Dependency-ordered deploy** (topological sort in `autoDeployChannels`) — 🔴 graph stored/validated but not applied; channel can start before its dependency.
 - [ ] **[N7] Destination-queue threading** (threadCount/groupBy/rotate) — 🔴 throughput/ordering at volume. Thread count and rotate controls removed from the UI until built; `waitForPrevious` chains now work (D-189).
 - [ ] **[N8] Pruner archiver + content/metadata-day split** — 🟡 `pruningArchiveEnabled` flag has no archiver (half-built); HIPAA retention.
-- [ ] **[N9] JS API breadth** — helpers GalvaniFlow's own API lacks (dates, attachments). Not a port of Mirth's userutil objects (D-244). 🟡
+- [ ] **[N9] JS API breadth** — helpers GalvaniGraph's own API lacks (dates, attachments). Not a port of Mirth's userutil objects (D-244). 🟡
 - [ ] **[N10] Per-connector connection monitoring** (Mirth dashboardstatus) + per-channel Prometheus labels — 🔴 ops triage visibility.
 - [ ] **[N11] Iterator transformer step** (+ XSLT / External Script) — 🟡 repeating-segment mapping UX.
 - [ ] **[N12] Code-template per-channel library scoping: editor control** — the engine, API, backup and Mirth import scope libraries to channels (2026-11-12, D-249); the Code Templates page cannot set the scope yet.

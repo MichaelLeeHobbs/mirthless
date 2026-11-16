@@ -178,7 +178,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
   if (!group) {
     [group] = await db.insert(schema.channelGroups).values({
       name: EXAMPLES_GROUP,
-      description: 'Example channels demonstrating GalvaniFlow features',
+      description: 'Example channels demonstrating GalvaniGraph features',
     }).returning({ id: schema.channelGroups.id });
     // eslint-disable-next-line no-console
     console.log(`  + Created "${EXAMPLES_GROUP}" group`);
@@ -302,7 +302,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
         '// Example: POST {"name":"John","age":30} → msg.name === "John"',
         '',
         "msg.processedAt = new Date().toISOString();",
-        "msg.processedBy = 'GalvaniFlow';",
+        "msg.processedBy = 'GalvaniGraph';",
       ].join('\n'),
     }]);
     return id;

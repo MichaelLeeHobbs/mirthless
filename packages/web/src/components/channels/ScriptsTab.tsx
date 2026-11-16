@@ -9,7 +9,7 @@ import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import type { ScriptLanguageCode } from '@galvaniflow/core-models';
+import type { ScriptLanguageCode } from '@galvanigraph/core-models';
 import { ScriptEditor } from '../editors/ScriptEditor.js';
 
 // Deploy and undeploy run without a message, so msg is not typed there.

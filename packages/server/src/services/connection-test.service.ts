@@ -21,8 +21,8 @@ import {
   amqpSourcePropertiesSchema,
   amqpDestinationPropertiesSchema,
   type ConnectionTestResult,
-} from '@galvaniflow/core-models';
-import { isReservedAddress, isReservedHostname } from '@galvaniflow/engine';
+} from '@galvanigraph/core-models';
+import { isReservedAddress, isReservedHostname } from '@galvanigraph/engine';
 import {
   testKafkaConnection,
   testAmqpConnection,
@@ -39,7 +39,7 @@ import {
   type SftpClientFactory,
   type SftpConnectionOptions,
   type SftpPathKind,
-} from '@galvaniflow/connectors';
+} from '@galvanigraph/connectors';
 import { ServiceError } from '../lib/service-error.js';
 import { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } from './connector-tls-resolver.js';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { upsertSettingSchema } from '@galvaniflow/core-models';
+import { upsertSettingSchema } from '@galvanigraph/core-models';
 import { fieldFor, groupSettings, isSecret, settingTypeForSave, validateSetting, SETTING_SECTIONS } from '../settings-catalog.js';
 
 // A row's stored type can be any string up to 20 characters; the save API takes

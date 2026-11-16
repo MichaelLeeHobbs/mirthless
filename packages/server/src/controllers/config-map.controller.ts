@@ -4,7 +4,7 @@
 // Handles HTTP requests for categorized configuration map CRUD.
 
 import type { Request, Response } from 'express';
-import type { UpsertConfigMapEntryInput, BulkUpsertConfigMapInput, ConfigMapQuery } from '@galvaniflow/core-models';
+import type { UpsertConfigMapEntryInput, BulkUpsertConfigMapInput, ConfigMapQuery } from '@galvanigraph/core-models';
 import { ConfigMapService } from '../services/config-map.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

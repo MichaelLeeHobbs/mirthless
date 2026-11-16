@@ -81,7 +81,7 @@ These rank high and we already answer them. They are the pitch, so they need to 
 ## Open decisions
 
 1. Kafka and AMQP connectors. Decided 2026-11-14 (D-261): build both as source and destination connectors; no broker of our own.
-2. Libraries in scripts. Expose a vetted set of npm packages to the sandbox, or keep everything behind GalvaniFlow's own helpers (SCR4)? Recommendation: helpers first, a short allow-list later.
+2. Libraries in scripts. Expose a vetted set of npm packages to the sandbox, or keep everything behind GalvaniGraph's own helpers (SCR4)? Recommendation: helpers first, a short allow-list later.
 3. Python in scripts (SCR11). Recorded as won't. Overrule it if you see demand the data doesn't show.
 4. Multi-tenancy (HA6) and a hosted offering (HA7). Both stay consider. Rhapsody's lockers are praised, but both are business-model choices.
 5. Low-code visual mapping (UI17). Reviewers love DTL-style mapping and also say no-code tools break down for complex logic (SB29). The v2.0 flow editor should compile to code and keep code as the escape hatch.

@@ -4,7 +4,7 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
-import { sendMessageInputSchema } from '@galvaniflow/core-models';
+import { sendMessageInputSchema } from '@galvanigraph/core-models';
 import { DeploymentController } from '../controllers/deployment.controller.js';
 import { largeJsonBody } from '../middleware/body-limit.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';

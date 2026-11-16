@@ -179,7 +179,7 @@ overrides:
   minimatch@10: '>=11.0.1 <12'
 
 patchedDependencies:
-  monaco-editor@0.55.1: 073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08
+  monaco-editor@0.55.1: 294d418a7d30f9cf34771f8a957eacef264958f156ad6c193f40dc0e21812101
 
 importers:
 
@@ -245,13 +245,13 @@ importers:
 
   packages/connectors:
     dependencies:
-      '@galvaniflow/core-models':
+      '@galvanigraph/core-models':
         specifier: workspace:*
         version: link:../core-models
-      '@galvaniflow/core-util':
+      '@galvanigraph/core-util':
         specifier: workspace:*
         version: link:../core-util
-      '@galvaniflow/engine':
+      '@galvanigraph/engine':
         specifier: workspace:*
         version: link:../engine
       '@platformatic/kafka':
@@ -334,7 +334,7 @@ importers:
 
   packages/core-util:
     dependencies:
-      '@galvaniflow/core-models':
+      '@galvanigraph/core-models':
         specifier: workspace:*
         version: link:../core-models
       stderr-lib:
@@ -362,10 +362,10 @@ importers:
 
   packages/engine:
     dependencies:
-      '@galvaniflow/core-models':
+      '@galvanigraph/core-models':
         specifier: workspace:*
         version: link:../core-models
-      '@galvaniflow/core-util':
+      '@galvanigraph/core-util':
         specifier: workspace:*
         version: link:../core-util
       esbuild:
@@ -396,16 +396,16 @@ importers:
 
   packages/server:
     dependencies:
-      '@galvaniflow/connectors':
+      '@galvanigraph/connectors':
         specifier: workspace:^
         version: link:../connectors
-      '@galvaniflow/core-models':
+      '@galvanigraph/core-models':
         specifier: workspace:*
         version: link:../core-models
-      '@galvaniflow/core-util':
+      '@galvanigraph/core-util':
         specifier: workspace:*
         version: link:../core-util
-      '@galvaniflow/engine':
+      '@galvanigraph/engine':
         specifier: workspace:^
         version: link:../engine
       '@prometheus-io/client':
@@ -535,15 +535,15 @@ importers:
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
-      '@galvaniflow/core-models':
+      '@galvanigraph/core-models':
         specifier: workspace:*
         version: link:../core-models
-      '@galvaniflow/core-util':
+      '@galvanigraph/core-util':
         specifier: workspace:*
         version: link:../core-util
       '@monaco-editor/react':
         specifier: ^4.7.0
-        version: 4.7.0(monaco-editor@0.55.1(patch_hash=073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 4.7.0(monaco-editor@0.55.1(patch_hash=294d418a7d30f9cf34771f8a957eacef264958f156ad6c193f40dc0e21812101))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@mui/icons-material':
         specifier: ^9.5.0
         version: 9.5.0(@mui/material@9.5.0(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1)(supports-color@7.2.0))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1)(supports-color@7.2.0))(@types/react@19.3.0)(react@19.3.1)(supports-color@7.2.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@types/react@19.3.0)(react@19.3.1)
@@ -555,7 +555,7 @@ importers:
         version: 5.107.1(@types/react@19.3.0)(react@19.3.1)
       monaco-editor:
         specifier: 0.55.1
-        version: 0.55.1(patch_hash=073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08)
+        version: 0.55.1(patch_hash=294d418a7d30f9cf34771f8a957eacef264958f156ad6c193f40dc0e21812101)
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -4948,10 +4948,10 @@ snapshots:
     dependencies:
       state-local: 1.0.7
 
-  '@monaco-editor/react@4.7.0(monaco-editor@0.55.1(patch_hash=073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@monaco-editor/react@4.7.0(monaco-editor@0.55.1(patch_hash=294d418a7d30f9cf34771f8a957eacef264958f156ad6c193f40dc0e21812101))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@monaco-editor/loader': 1.7.0
-      monaco-editor: 0.55.1(patch_hash=073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08)
+      monaco-editor: 0.55.1(patch_hash=294d418a7d30f9cf34771f8a957eacef264958f156ad6c193f40dc0e21812101)
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
 
@@ -6928,7 +6928,7 @@ snapshots:
     dependencies:
       obliterator: 2.0.5
 
-  monaco-editor@0.55.1(patch_hash=073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08):
+  monaco-editor@0.55.1(patch_hash=294d418a7d30f9cf34771f8a957eacef264958f156ad6c193f40dc0e21812101):
     dependencies:
       dompurify: 3.4.17
       marked: 14.0.0

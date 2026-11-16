@@ -1,5 +1,5 @@
 {
-  "_comment": "Migration scenario suite. Weight: 3 = most production integrations need it, 2 = common, 1 = occasional. Channels are imported from Mirth 4.5 exports; their scripts are written in GalvaniFlow's scripting API, as an operator rewrites them when moving (D-244: no E4X or Mirth script APIs). Frozen once approved; changing it resets the baseline.",
+  "_comment": "Migration scenario suite. Weight: 3 = most production integrations need it, 2 = common, 1 = occasional. Channels are imported from Mirth 4.5 exports; their scripts are written in GalvaniGraph's scripting API, as an operator rewrites them when moving (D-244: no E4X or Mirth script APIs). Frozen once approved; changing it resets the baseline.",
   "scenarios": [
     { "id": "S01", "weight": 3, "source": "prod: 10000 HL7 LISTENER", "title": "MLLP listener returns the ACK its postprocessor builds" },
     { "id": "S02", "weight": 3, "source": "prod: listener -> HL7 ROUTER lanes", "title": "Lane router sends each message type to one lane through queued Channel Writers" },

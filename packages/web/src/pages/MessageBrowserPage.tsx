@@ -18,7 +18,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChannel } from '../hooks/use-channels.js';
-import { SOCKET_EVENT } from '@galvaniflow/core-models';
+import { SOCKET_EVENT } from '@galvanigraph/core-models';
 import { useMessageSearch, MESSAGE_KEYS, type MessageSearchParams } from '../hooks/use-messages.js';
 import { useThrottledSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
 import { MessageSearchBar } from '../components/messages/MessageSearchBar.js';

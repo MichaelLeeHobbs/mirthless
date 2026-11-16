@@ -27,7 +27,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { ChannelFormData } from '../../pages/ChannelEditorPage.js';
 import type { AdvancedFormValues } from './AdvancedTab.js';
 import { useChannelGroups, useGroupMemberships, useSetChannelGroups } from '../../hooks/use-channel-groups.js';
-import { SOURCE_CONNECTOR_TYPES } from '@galvaniflow/core-models';
+import { SOURCE_CONNECTOR_TYPES } from '@galvanigraph/core-models';
 import { useNotification } from '../../stores/notification.store.js';
 import { errorMessage } from '../../lib/error-message.js';
 import { isSameGroupSet, multiGroupNote } from '../../lib/group-membership.js';

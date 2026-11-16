@@ -52,7 +52,7 @@ export function quietWsProxyResets(logger: Logger): Logger {
  */
 export function quietWsProxyResetsPlugin(): Plugin {
   return {
-    name: 'galvaniflow:quiet-ws-proxy-resets',
+    name: 'galvanigraph:quiet-ws-proxy-resets',
     configResolved(config): void {
       quietWsProxyResets(config.logger);
     },

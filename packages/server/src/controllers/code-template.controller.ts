@@ -10,7 +10,7 @@ import type {
   CreateCodeTemplateInput,
   UpdateCodeTemplateInput,
   CodeTemplateListQuery,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { CodeTemplateService } from '../services/code-template.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';

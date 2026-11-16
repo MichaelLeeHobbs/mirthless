@@ -1,5 +1,5 @@
 {
-  "name": "@galvaniflow/engine",
+  "name": "@galvanigraph/engine",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -22,8 +22,8 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@galvaniflow/core-models": "workspace:*",
-    "@galvaniflow/core-util": "workspace:*",
+    "@galvanigraph/core-models": "workspace:*",
+    "@galvanigraph/core-util": "workspace:*",
     "esbuild": "^0.28.2",
     "fast-xml-parser": "^5.12.0",
     "typescript": "6.0.3"

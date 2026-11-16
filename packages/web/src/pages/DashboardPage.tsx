@@ -30,7 +30,7 @@ import { useAllChannelStatistics, STATS_KEYS, type ChannelStatisticsSummary } fr
 import { useAllDeploymentStatuses, DEPLOYMENT_KEYS, type ChannelStatus } from '../hooks/use-deployment.js';
 import { useTags, useTagAssignments, type TagSummary, type TagAssignment } from '../hooks/use-tags.js';
 import { useChannelGroups, useGroupMemberships, type ChannelGroupSummary, type GroupMembership } from '../hooks/use-channel-groups.js';
-import { SOCKET_EVENT } from '@galvaniflow/core-models';
+import { SOCKET_EVENT } from '@galvanigraph/core-models';
 import { useSocketEvent, useSocketRoom, useThrottledSocketEvent } from '../hooks/use-socket.js';
 import { SummaryCards } from '../components/dashboard/SummaryCards.js';
 import { NeedsAttention } from '../components/dashboard/NeedsAttention.js';

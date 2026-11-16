@@ -23,7 +23,7 @@ export interface ConnectorLogger {
 // ----- Root logger -----
 
 const rootLogger: Logger = pino({
-  name: '@galvaniflow/connectors',
+  name: '@galvanigraph/connectors',
   level: process.env['LOG_LEVEL'] ?? 'info',
 });
 
@@ -36,4 +36,4 @@ export function createConnectorLogger(connector: string): ConnectorLogger {
 }
 
 /** Loggable record for a caught value; connectors log errors through this. */
-export { errorInfo } from '@galvaniflow/core-util';
+export { errorInfo } from '@galvanigraph/core-util';

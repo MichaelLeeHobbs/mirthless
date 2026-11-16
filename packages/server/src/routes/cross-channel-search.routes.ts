@@ -3,7 +3,7 @@
 // ===========================================
 
 import { Router, type IRouter } from 'express';
-import { crossChannelSearchQuerySchema } from '@galvaniflow/core-models';
+import { crossChannelSearchQuerySchema } from '@galvanigraph/core-models';
 import { CrossChannelSearchController } from '../controllers/cross-channel-search.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

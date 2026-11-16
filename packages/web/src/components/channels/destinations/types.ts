@@ -2,7 +2,7 @@
 // Destination Connector Form Types
 // ===========================================
 
-import type { ScriptLanguageCode } from '@galvaniflow/core-models';
+import type { ScriptLanguageCode } from '@galvanigraph/core-models';
 import type { FilterFormValues, TransformerFormValues } from '../source/types.js';
 
 /** A single destination in the form state. */

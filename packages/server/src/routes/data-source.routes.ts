@@ -8,7 +8,7 @@ import {
   updateDataSourceSchema,
   testDataSourceSchema,
   dataSourceUuidParamSchema,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { DataSourceController } from '../controllers/data-source.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';

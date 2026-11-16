@@ -69,19 +69,19 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: galvaniflow_test
-          POSTGRES_USER: galvaniflow
-          POSTGRES_PASSWORD: galvaniflow_test
+          POSTGRES_DB: galvanigraph_test
+          POSTGRES_USER: galvanigraph
+          POSTGRES_PASSWORD: galvanigraph_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U galvaniflow -d galvaniflow_test"
+          --health-cmd "pg_isready -U galvanigraph -d galvanigraph_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test
+      DATABASE_URL: postgresql://galvanigraph:galvanigraph_test@localhost:5432/galvanigraph_test
       JWT_SECRET: ci-test-secret-that-is-at-least-32-characters-long
       NODE_ENV: test
       LOG_LEVEL: error
@@ -126,7 +126,7 @@ jobs:
       # `pnpm db:migrate` would run tsc again first.
       - name: Run database migrations
         if: needs.changes.outputs.pg_integration == 'true'
-        run: pnpm --filter @galvaniflow/server exec drizzle-kit migrate
+        run: pnpm --filter @galvanigraph/server exec drizzle-kit migrate
 
       # data-source.itest.ts stores encrypted credentials, so it needs a
       # content key. Test-only value (64 hex chars), scoped to this step.
@@ -157,20 +157,20 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: galvaniflow_test
-          POSTGRES_USER: galvaniflow
-          POSTGRES_PASSWORD: galvaniflow_test
+          POSTGRES_DB: galvanigraph_test
+          POSTGRES_USER: galvanigraph
+          POSTGRES_PASSWORD: galvanigraph_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U galvaniflow -d galvaniflow_test"
+          --health-cmd "pg_isready -U galvanigraph -d galvanigraph_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
 
     env:
       CONNECTOR_ITEST_REQUIRED: '1'
-      DATABASE_URL: postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test
+      DATABASE_URL: postgresql://galvanigraph:galvanigraph_test@localhost:5432/galvanigraph_test
       SFTP_TEST_HOST: localhost
       SMTP_TEST_HOST: localhost
       KAFKA_TEST_BROKERS: localhost:19092
@@ -197,7 +197,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build connectors and their dependencies
-        run: pnpm --filter "@galvaniflow/connectors..." build
+        run: pnpm --filter "@galvanigraph/connectors..." build
 
       # SFTP and GreenMail have no healthcheck; their ports open once they serve.
       - name: Wait for SFTP and mail
@@ -207,7 +207,7 @@ jobs:
           done
 
       - name: Connector integration tests (real services)
-        run: pnpm --filter @galvaniflow/connectors test:integration
+        run: pnpm --filter @galvanigraph/connectors test:integration
 
       - name: Test service logs
         if: failure()
@@ -222,19 +222,19 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: galvaniflow_test
-          POSTGRES_USER: galvaniflow
-          POSTGRES_PASSWORD: galvaniflow_test
+          POSTGRES_DB: galvanigraph_test
+          POSTGRES_USER: galvanigraph
+          POSTGRES_PASSWORD: galvanigraph_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U galvaniflow -d galvaniflow_test"
+          --health-cmd "pg_isready -U galvanigraph -d galvanigraph_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://galvaniflow:galvaniflow_test@localhost:5432/galvaniflow_test
+      DATABASE_URL: postgresql://galvanigraph:galvanigraph_test@localhost:5432/galvanigraph_test
       JWT_SECRET: ci-test-secret-that-is-at-least-32-characters-long
       NODE_ENV: test
       LOG_LEVEL: error
@@ -275,7 +275,7 @@ jobs:
       # would run tsc again first).
       - name: Migrate and seed database
         run: |
-          pnpm --filter @galvaniflow/server exec drizzle-kit migrate
+          pnpm --filter @galvanigraph/server exec drizzle-kit migrate
           pnpm db:seed
 
       - name: Install Playwright browser

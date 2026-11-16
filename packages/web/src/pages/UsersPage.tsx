@@ -33,7 +33,7 @@ import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
-import type { UserRole } from '@galvaniflow/core-models';
+import type { UserRole } from '@galvanigraph/core-models';
 import type { UserSummary } from '../api/client.js';
 
 /** The fields of an edited user that differ from the stored ones, as an update request. */
@@ -241,7 +241,7 @@ export function UsersPage(): ReactNode {
                     dense
                     icon={<PeopleIcon />}
                     title="No users yet"
-                    description="Create an operator account to grant access to GalvaniFlow."
+                    description="Create an operator account to grant access to GalvaniGraph."
                   />
                 </TableCell>
               </TableRow>

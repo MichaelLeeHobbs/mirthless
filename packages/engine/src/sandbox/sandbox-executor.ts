@@ -35,8 +35,8 @@
 import * as vm from 'node:vm';
 import { randomUUID } from 'node:crypto';
 import { types } from 'node:util';
-import type { Result } from '@galvaniflow/core-util';
-import { tryCatch } from '@galvaniflow/core-util';
+import type { Result } from '@galvanigraph/core-util';
+import { tryCatch } from '@galvanigraph/core-util';
 import type { SandboxContext, LogEntry } from './sandbox-context.js';
 import { createBridgeFunctions, type BridgeDependencies, type BridgeFunctions, type Hl7MessageProxy, type HttpFetchOptions, type CollectionScalar, type CollectionStoreOptions, type CollectionFindOptions, type CollectionUpdateChanges } from './bridge-functions.js';
 import { isHl7MessageProxy, isX12MessageProxy, type X12MessageProxy } from '../pipeline/data-type-handler.js';

@@ -13,7 +13,7 @@ import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { parseHeaderLines } from '@galvaniflow/core-models';
+import { parseHeaderLines } from '@galvanigraph/core-models';
 
 interface HeadersEditorProps {
   readonly value: Record<string, string>;

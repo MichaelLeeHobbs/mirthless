@@ -4,11 +4,11 @@ Instructions for AI coding agents (Claude Code, Codex and others) working in thi
 
 ## Project Overview
 
-**GalvaniFlow** — A modern, open-source healthcare integration engine built from scratch in Node.js/TypeScript. Spiritual successor to NextGen Connect (Mirth Connect), redesigned natively for the Node.js ecosystem.
+**GalvaniGraph** — A modern, open-source healthcare integration engine built from scratch in Node.js/TypeScript. Spiritual successor to NextGen Connect (Mirth Connect), redesigned natively for the Node.js ecosystem.
 
-> The project is named GalvaniFlow (formerly Mirthless). The name is centralized in the package.json `name` field.
+> The project is named GalvaniGraph (formerly GalvaniFlow, and before that Mirthless; D-309, D-205). The name is centralized in the package.json `name` field. Markers that guard against reprocessing keep the old names readable: see D-309 before renaming anything a running install has already written.
 
-GalvaniFlow is a message routing and transformation engine for healthcare systems. Core concepts:
+GalvaniGraph is a message routing and transformation engine for healthcare systems. Core concepts:
 
 - **Channels** — message processing pipelines with a source connector (inbound) and destination connectors (outbound)
 - **Connectors** — protocol adapters: TCP/MLLP (HL7), HTTP/REST, File, SFTP, Database, DICOM, FHIR, SMTP, Email, JavaScript, Kafka, AMQP (RabbitMQ)
@@ -45,10 +45,10 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `compileScript` and `compileErrorMessages` in `engine/src/sandbox/script-compiler.ts`: compile a user script the way deploy does, and turn its errors into `Line N: <text>` on the script's own lines. Script validation uses both.
   - `wrapScriptBody` and `scriptBodyPosition` in `core-models/src/scripting/script-check.ts`: a script as the body of the function the engine runs it in, and a position in that wrapped text back on the script's own lines. The compiler, the deploy type check and the editor's type check use both (D-297).
   - `toPoolConfig` in `connectors/src/database/connection-pool.ts`: a database connector's pool config from its connection fields.
-  - `QuarantineLedger` and `dispatchQuarantined` in `connectors/src/quarantine-ledger.ts`: the quarantine set, its sidecar ledger and the dispatch-then-quarantine step, for any polling file source. The source supplies only the storage.
+  - `QuarantineLedger` and `dispatchQuarantined` in `connectors/src/quarantine-ledger.ts`: the quarantine set, its sidecar ledger and the dispatch-then-quarantine step, for any polling file source. The source supplies only the storage. The ledger file names, current and pre-rename, are `QUARANTINE_LEDGER_NAMES` and `isQuarantineLedgerName` in the same file.
   - `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`: connect a polling receiver's remote client, or close it, under a timeout.
   - `redirectMessage` in `connectors/src/redirect.ts`: the ERROR text for a 3xx answer, which the HTTP and FHIR destinations never follow.
-  - `createNodemailerTransport` in `connectors/src/smtp/smtp-dispatcher.ts` (exported from `@galvaniflow/connectors`): builds a nodemailer transport for the SMTP connector and the server's own mail. SMTP Test Connection (`connection-test.service.ts`) builds its options with `buildNodemailerOptions` from the same file, so it logs in as the connector does.
+  - `createNodemailerTransport` in `connectors/src/smtp/smtp-dispatcher.ts` (exported from `@galvanigraph/connectors`): builds a nodemailer transport for the SMTP connector and the server's own mail. SMTP Test Connection (`connection-test.service.ts`) builds its options with `buildNodemailerOptions` from the same file, so it logs in as the connector does.
   - `unescapeControlChars` (typed `\n`, `\r`, `\t`, `\\` to the characters) and `isSecretSetting` (which settings hold secrets) in `core-util`. The web depends on core-util.
   - `fillPlaceholders`, `recordLookup` and `placeholderNames` in `core-util/src/placeholders.ts`: every `${name}` template (D-275). A template with built-in names looks those up first and passes the rest to it.
   - `formatTimestampWith` in `web/src/lib/format.ts`: the missing/unparseable rule for any time on screen, with the screen's own view of a valid time (D-278).
@@ -108,9 +108,9 @@ Run what matches the files you touched. `pnpm gate` runs build, lint and every p
 | A multi-step UI flow | `pnpm test:e2e` (needs Postgres, migrated and seeded) | Add or extend a spec in `e2e/`. Spec files run in parallel against one database, so a spec uses rows with names of its own and puts back any server-wide setting it changes (D-289). A step waits on a condition (`await expect(...)`), never a fixed sleep or an `if (await x.isVisible())` guard; lint fails both (D-293) |
 | `packages/server/src/db/schema` | `pnpm db:generate`, commit the migration | `pnpm test:integration` against Postgres |
 | SQL, queues, pruning, partitions | `pnpm test:integration` | |
-| Engine pipeline or a connector | The package's tests (`pnpm --filter @galvaniflow/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes. For a connector, `pnpm --filter @galvaniflow/connectors test:integration` with the compose `test` profile up (CI job `connector-integration` runs it, D-273) |
-| A connector's type, direction or properties | `pnpm --filter @galvaniflow/server test` (the docs guards) | Update `docs/user/connector-reference.md`; for a new connector, work through "Adding a connector" below |
-| A role, a permission, or the permission a route checks | `pnpm --filter @galvaniflow/server test` (the access guard and `role-access.test.ts`) | Update `docs/user/access-control.md`; add a PHI or destructive endpoint to `ENDPOINTS` in `role-access.test.ts` |
+| Engine pipeline or a connector | The package's tests (`pnpm --filter @galvanigraph/engine test`) | A real-message E2E suite in `packages/connectors/src/__tests__/e2e/` for protocol changes. For a connector, `pnpm --filter @galvanigraph/connectors test:integration` with the compose `test` profile up (CI job `connector-integration` runs it, D-273) |
+| A connector's type, direction or properties | `pnpm --filter @galvanigraph/server test` (the docs guards) | Update `docs/user/connector-reference.md`; for a new connector, work through "Adding a connector" below |
+| A role, a permission, or the permission a route checks | `pnpm --filter @galvanigraph/server test` (the access guard and `role-access.test.ts`) | Update `docs/user/access-control.md`; add a PHI or destructive endpoint to `ENDPOINTS` in `role-access.test.ts` |
 | Throughput or memory | `pnpm soak` (see `docs/ops/soak-test.md`) | Compare with the recorded baseline |
 | The Mirth importer, or behaviour a migrated channel relies on | `pnpm test:scenarios` (needs Postgres and the test containers, see `docs/testing/migration-scenarios.md`) | Compare the score with the last recorded one; nothing that passed may fail |
 | `.github/workflows/ci.yml` or `scripts/ci/` | `pnpm test:ci` | Update `docs/ops/ci.md` when what runs changes |
@@ -155,7 +155,7 @@ The server number is low because the controllers, `engine.ts` and several servic
 pnpm test                             # Run all tests
 pnpm test:coverage                    # Run with coverage report
 pnpm vitest run src/path/to/file.test.ts  # Single test file
-pnpm --filter @galvaniflow/engine test  # Test a specific package
+pnpm --filter @galvanigraph/engine test  # Test a specific package
 ```
 
 ### What To Test
@@ -204,8 +204,8 @@ pnpm shots                            # Screenshot web pages against a fake API 
 pnpm test:scenarios                   # Mirth migration scenario suite and score (needs SCENARIO_DATABASE_URL)
 
 # Single package
-pnpm --filter @galvaniflow/server dev
-pnpm --filter @galvaniflow/engine test
+pnpm --filter @galvanigraph/server dev
+pnpm --filter @galvanigraph/engine test
 
 # Single test file
 pnpm vitest run src/path/to/file.test.ts
@@ -384,7 +384,7 @@ All packages extend the base tsconfig with these strict settings:
 ## Module Structure
 
 ```
-galvaniflow/             — repository root (the GitHub repository is still named mirthless)
+galvanigraph/             — repository root (the GitHub repository is still named mirthless)
 ├── packages/
 │   ├── core-models/     — Shared TS types, Zod schemas, branded types
 │   ├── core-util/       — Shared utilities (HL7 parsing, serialization, date helpers)

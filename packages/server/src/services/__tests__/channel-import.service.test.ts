@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ChannelExportEntry } from '@galvaniflow/core-models';
+import type { ChannelExportEntry } from '@galvanigraph/core-models';
 
 // Mock database and dependencies
 vi.mock('../../lib/db.js', () => ({

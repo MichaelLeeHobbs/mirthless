@@ -6,7 +6,7 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
-import { scriptTestRunSchema } from '@galvaniflow/core-models';
+import { scriptTestRunSchema } from '@galvanigraph/core-models';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 import { ScriptValidationController } from '../controllers/script-validation.controller.js';

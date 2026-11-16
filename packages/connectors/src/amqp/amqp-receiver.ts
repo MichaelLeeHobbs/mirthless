@@ -17,13 +17,13 @@
 // a fatal error, which stops the channel. An operator fixes the cause and
 // starts it again.
 
-import { tryCatch, type Result } from '@galvaniflow/core-util';
+import { tryCatch, type Result } from '@galvanigraph/core-util';
 import type { SourceConnectorRuntime, SourceFatalHandler, MessageDispatcher, RawMessage, DispatchResult } from '../base.js';
 import { dispatchFailure } from '../base.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 import { withTimeout } from '../timeout.js';
 import { assertCharsetAvailable, decodePayload, INVALID_UTF8_MESSAGE } from '../encoding.js';
-import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvaniflow/core-models';
+import { DEFAULT_MAX_STORE_ATTEMPTS, type QueueCharset } from '@galvanigraph/core-models';
 import { consumeAmqp, type AmqpConnectionConfig, type AmqpConsume, type AmqpConsumer, type AmqpDelivery } from './amqp-client.js';
 
 /** Wait before reconnecting, and before returning a message the pipeline could not take. */

@@ -18,11 +18,11 @@ import {
   MessageProcessor,
   ChannelRuntime,
   DEFAULT_EXECUTION_OPTIONS,
-} from '@galvaniflow/engine';
+} from '@galvanigraph/engine';
 import type {
   PipelineConfig,
   ChannelRuntimeConfig,
-} from '@galvaniflow/engine';
+} from '@galvanigraph/engine';
 import { createInMemoryStore, toDispatchResult } from './support/e2e-harness.js';
 import { mllpSource, mllpDestination, sendMllp } from './support/tcp-helpers.js';
 

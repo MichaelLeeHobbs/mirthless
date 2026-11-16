@@ -1,7 +1,7 @@
 // S08: a JavaScript Writer reports its outcome.
 // Production pattern: "Propelyx Orders" writer, which returns
 // ResponseFactory.getSentResponse / getErrorResponse after calling an API.
-// Rewritten for GalvaniFlow (D-244): a returned value is the SENT response and
+// Rewritten for GalvaniGraph (D-244): a returned value is the SENT response and
 // a thrown error makes the destination ERROR with that text.
 
 import { expect } from '@playwright/test';

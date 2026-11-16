@@ -14,8 +14,8 @@ import type {
   ServerRestoreResult,
   SettingType,
   ScriptLanguageCode,
-} from '@galvaniflow/core-models';
-import { DEFAULT_STORED_SCRIPT_LANGUAGE } from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
+import { DEFAULT_STORED_SCRIPT_LANGUAGE } from '@galvanigraph/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { ChannelExportService } from './channel-export.service.js';
@@ -32,7 +32,7 @@ import { ChannelGroupService } from './channel-group.service.js';
 import { TagService } from './tag.service.js';
 import { GlobalMapService } from './global-map.service.js';
 import { ConfigMapService } from './config-map.service.js';
-import { alertTriggerSchema, alertActionInputSchema, type AlertTriggerInput, type AlertActionInput } from '@galvaniflow/core-models';
+import { alertTriggerSchema, alertActionInputSchema, type AlertTriggerInput, type AlertActionInput } from '@galvanigraph/core-models';
 import {
   channelDependencies,
   channelGroupMembers,

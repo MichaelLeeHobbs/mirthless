@@ -1,7 +1,7 @@
 // ===========================================
 // Mirth Connect XML Import Service
 // ===========================================
-// Converts Mirth Connect XML channel exports to GalvaniFlow JSON format,
+// Converts Mirth Connect XML channel exports to GalvaniGraph JSON format,
 // then delegates to ChannelImportService for persistence.
 
 import { tryCatch, type Result } from 'stderr-lib';
@@ -15,7 +15,7 @@ import {
   type ImportResult,
   type SourceConnectorType,
   type DestinationConnectorType,
-} from '@galvaniflow/core-models';
+} from '@galvanigraph/core-models';
 import { ChannelImportService } from './channel-import.service.js';
 import type { AuditContext } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
@@ -23,8 +23,8 @@ import {
   extractCodeTemplateLibraries, importCodeTemplateLibraries,
   type CodeTemplateImportCounts, type MirthCodeTemplateLibrary,
 } from './mirth-code-templates.js';
-import { isPlainObject, unescapeControlChars } from '@galvaniflow/core-util';
-import { DATABASE_VENDOR, unknownPlaceholders } from '@galvaniflow/connectors';
+import { isPlainObject, unescapeControlChars } from '@galvanigraph/core-util';
+import { DATABASE_VENDOR, unknownPlaceholders } from '@galvanigraph/connectors';
 
 // ----- Types -----
 
@@ -92,7 +92,7 @@ function createParser(): XMLParser {
 // ----- Service -----
 
 export class MirthImportService {
-  /** Convert Mirth Connect XML to GalvaniFlow channel entries. */
+  /** Convert Mirth Connect XML to GalvaniGraph channel entries. */
   static convertXml(xml: string): Result<MirthConvertResult> {
     return tryCatch(() => {
       // Reject a DOCTYPE outright — Mirth exports never carry one, and it is the
@@ -151,11 +151,11 @@ export class MirthImportService {
         };
       }
 
-      // Map RENAME to CREATE_NEW (GalvaniFlow collision mode)
-      const galvaniflowCollisionMode = collisionMode === 'RENAME' ? 'CREATE_NEW' as const : collisionMode;
+      // Map RENAME to CREATE_NEW (GalvaniGraph collision mode)
+      const galvanigraphCollisionMode = collisionMode === 'RENAME' ? 'CREATE_NEW' as const : collisionMode;
       const importResult = await ChannelImportService.importChannels(
         convertResult.value.channels,
-        galvaniflowCollisionMode,
+        galvanigraphCollisionMode,
         context,
       );
       if (!importResult.ok) throw importResult.error;
@@ -284,7 +284,7 @@ function convertChannel(
   const response = mapResponseVariable(sourceConnector, destinations, name, warnings);
   const sourceConnectorProperties = withSourceResponseMode(sourceConnectorResult, response.responseMode);
 
-  // Data types. GalvaniFlow's Database Reader hands each row over as a JSON
+  // Data types. GalvaniGraph's Database Reader hands each row over as a JSON
   // object, where Mirth's hands it over as XML, so such a channel reads JSON.
   const mirthInbound = extractDataType(sourceConnector, 'inbound') ?? 'HL7V2';
   const inboundDataType = sourceConnectorResult.type === 'DATABASE' ? 'JSON' : mirthInbound;
@@ -360,7 +360,7 @@ function pruneDays(settings: Record<string, unknown>, key: string): number | nul
 /**
  * Mirth 3.5+ keeps a channel's pruning in `exportData/metadata/pruningSettings`
  * (earlier exports, in the channel properties): `pruneMetaDataDays` prunes
- * whole messages, `pruneContentDays` only their content. GalvaniFlow prunes
+ * whole messages, `pruneContentDays` only their content. GalvaniGraph prunes
  * whole messages, errored ones included, and archives nothing, so the
  * preview says where the two differ.
  */
@@ -373,13 +373,13 @@ function convertPruning(mirthChannel: Record<string, unknown>, props: Record<str
   const prune = messageDays !== null && getBoolean(settings, 'pruneErroredMessages', false);
   const differences: string[] = [];
   if (contentDays !== null && (messageDays === null || contentDays < messageDays)) {
-    differences.push(`Mirth removes message content after ${String(contentDays)} days; GalvaniFlow prunes whole messages only, so content is kept ${prune ? `until ${String(messageDays)} days` : 'until pruning is turned on'}`);
+    differences.push(`Mirth removes message content after ${String(contentDays)} days; GalvaniGraph prunes whole messages only, so content is kept ${prune ? `until ${String(messageDays)} days` : 'until pruning is turned on'}`);
   }
   if (messageDays !== null && !prune) {
-    differences.push(`Mirth prunes after ${String(messageDays)} days but keeps errored messages; GalvaniFlow would prune errored messages too, so pruning is left off`);
+    differences.push(`Mirth prunes after ${String(messageDays)} days but keeps errored messages; GalvaniGraph would prune errored messages too, so pruning is left off`);
   }
   if (prune && getBoolean(settings, 'archiveEnabled', true)) {
-    differences.push('Mirth archives messages before pruning them; GalvaniFlow does not archive');
+    differences.push('Mirth archives messages before pruning them; GalvaniGraph does not archive');
   }
   if (differences.length > 0) warnings.push(`Channel "${channelName}": its pruning differs here: ${differences.join('; ')}`);
   return { pruningEnabled: prune, pruningMaxAgeDays: messageDays, pruningArchiveEnabled: false };
@@ -517,7 +517,7 @@ function fileReaderIgnoreDot(propsNode: Record<string, unknown>): Record<string,
 const REMOTE_HOST = /^([^:/]+)(?::(\d+))?(\/.*)?$/;
 
 /**
- * A Mirth File Reader or Writer with the SFTP scheme runs on GalvaniFlow's SFTP
+ * A Mirth File Reader or Writer with the SFTP scheme runs on GalvaniGraph's SFTP
  * connector. Other remote schemes (FTP, SMB, S3, WebDAV) have no connector
  * here; the import warns and keeps the channel, which then fails to deploy.
  * Null for a local File connector.
@@ -602,7 +602,7 @@ function mirthCharset(propsNode: Record<string, unknown>): Record<string, unknow
   return { charset: parsed.success ? parsed.data : name };
 }
 
-/** Mirth's names for the two values a GalvaniFlow output file name can use. */
+/** Mirth's names for the two values a GalvaniGraph output file name can use. */
 const MIRTH_FILENAME_VALUES: ReadonlyArray<readonly [RegExp, string]> = [
   [/\$\{message\.messageId\}/g, '${messageId}'],
   [/\$\{SYSTIME\}/g, '${timestamp}'],
@@ -685,7 +685,7 @@ function fileConnectorWarnings(propsNode: Record<string, unknown>, properties: R
 
 /**
  * A File connector's charset and binary settings that do not carry: Mirth's
- * server default charset, a charset GalvaniFlow lacks, and, on SFTP, binary
+ * server default charset, a charset GalvaniGraph lacks, and, on SFTP, binary
  * files and a Writer charset other than UTF-8 (the SFTP Writer writes UTF-8).
  */
 function fileEncodingWarnings(propsNode: Record<string, unknown>, properties: Record<string, unknown>, prefix: string): string[] {
@@ -693,11 +693,11 @@ function fileEncodingWarnings(propsNode: Record<string, unknown>, properties: Re
   const binary = getBoolean(propsNode, 'binary', false);
   const mirthName = getString(propsNode, 'charsetEncoding')?.trim() ?? '';
   if (!binary && mirthName === 'DEFAULT_ENCODING') {
-    warnings.push(`${prefix} used the Mirth server's default charset (often windows-1252 on Windows before Java 18); GalvaniFlow reads and writes UTF-8 unless a charset is set`);
+    warnings.push(`${prefix} used the Mirth server's default charset (often windows-1252 on Windows before Java 18); GalvaniGraph reads and writes UTF-8 unless a charset is set`);
   }
   const charset = properties['charset'];
   if (typeof charset === 'string' && !charsetSchema.safeParse(charset).success) {
-    warnings.push(`${prefix} reads and writes ${charset}, which GalvaniFlow does not have (UTF-8, ISO-8859-1, US-ASCII and UTF-16LE only); it will not deploy until the charset is changed`);
+    warnings.push(`${prefix} reads and writes ${charset}, which GalvaniGraph does not have (UTF-8, ISO-8859-1, US-ASCII and UTF-16LE only); it will not deploy until the charset is changed`);
   }
   if (fileScheme(propsNode) !== 'SFTP') return warnings;
   if (binary) warnings.push(`${prefix} reads or writes files as binary in Mirth; the SFTP connector handles text only`);
@@ -716,25 +716,25 @@ function fileEncodingWarnings(propsNode: Record<string, unknown>, properties: Re
 function fileReaderWarnings(propsNode: Record<string, unknown>, prefix: string): string[] {
   const warnings: string[] = [];
   const regex = getBoolean(propsNode, 'regex', false);
-  if (regex) warnings.push(`${prefix}'s file filter is a regular expression, and GalvaniFlow reads it as a glob (* and ?); rewrite it before deploying`);
+  if (regex) warnings.push(`${prefix}'s file filter is a regular expression, and GalvaniGraph reads it as a glob (* and ?); rewrite it before deploying`);
   if (!regex && (getString(propsNode, 'fileFilter') ?? '').includes(',')) {
-    warnings.push(`${prefix}'s file filter is a comma-separated list, which Mirth splits; GalvaniFlow reads it as one glob, so it matches nothing until it is one pattern`);
+    warnings.push(`${prefix}'s file filter is a comma-separated list, which Mirth splits; GalvaniGraph reads it as one glob, so it matches nothing until it is one pattern`);
   }
-  if (getBoolean(propsNode, 'directoryRecursion', false)) warnings.push(`${prefix} also reads subfolders in Mirth; GalvaniFlow reads only the folder itself`);
+  if (getBoolean(propsNode, 'directoryRecursion', false)) warnings.push(`${prefix} also reads subfolders in Mirth; GalvaniGraph reads only the folder itself`);
   const minimum = getNumber(propsNode, 'fileSizeMinimum', 0);
   const maximum = getString(propsNode, 'fileSizeMaximum') ?? '';
   if (minimum > 0 || (maximum.trim() !== '' && !getBoolean(propsNode, 'ignoreFileSizeMaximum', true))) {
-    warnings.push(`${prefix} skips files outside a file size range in Mirth; GalvaniFlow reads files of every size`);
+    warnings.push(`${prefix} skips files outside a file size range in Mirth; GalvaniGraph reads files of every size`);
   }
   const rename = getString(propsNode, 'moveToFileName');
   if (rename && mirthAction(propsNode) === 'MOVE') {
     warnings.push((getString(propsNode, 'moveToDirectory') ?? '').trim() === ''
-      ? `${prefix} renames each file in place to "${rename}" in Mirth; GalvaniFlow cannot rename, so it will not deploy until a move-to folder is set or the action is changed`
-      : `${prefix} renames the files it moves to "${rename}" in Mirth; GalvaniFlow keeps their names`);
+      ? `${prefix} renames each file in place to "${rename}" in Mirth; GalvaniGraph cannot rename, so it will not deploy until a move-to folder is set or the action is changed`
+      : `${prefix} renames the files it moves to "${rename}" in Mirth; GalvaniGraph keeps their names`);
   }
   for (const key of ['errorReadingAction', 'errorResponseAction'] as const) {
     if ((getString(propsNode, key) ?? '').toUpperCase() === 'MOVE') {
-      warnings.push(`${prefix} moves a file whose ${key === 'errorReadingAction' ? 'reading' : 'message'} fails to an error folder in Mirth; GalvaniFlow does not move it`);
+      warnings.push(`${prefix} moves a file whose ${key === 'errorReadingAction' ? 'reading' : 'message'} fails to an error folder in Mirth; GalvaniGraph does not move it`);
     }
   }
   return warnings;
@@ -746,10 +746,10 @@ function fileWriterWarnings(propsNode: Record<string, unknown>, properties: Reco
   const pattern = properties['outputPattern'] ?? properties['fileNameTemplate'];
   const unknown = typeof pattern === 'string' ? unknownPlaceholders(pattern) : [];
   if (unknown.length > 0) {
-    warnings.push(`${prefix}'s file name uses ${unknown.map((n) => '${' + n + '}').join(', ')}, which GalvaniFlow cannot fill (only \${messageId} and \${timestamp}); it will not deploy unless it names a configuration map entry`);
+    warnings.push(`${prefix}'s file name uses ${unknown.map((n) => '${' + n + '}').join(', ')}, which GalvaniGraph cannot fill (only \${messageId} and \${timestamp}); it will not deploy unless it names a configuration map entry`);
   }
   if (failsOnExistingFile(propsNode)) {
-    warnings.push(`${prefix} fails in Mirth when its file already exists; GalvaniFlow has no such check and would overwrite the file`);
+    warnings.push(`${prefix} fails in Mirth when its file already exists; GalvaniGraph has no such check and would overwrite the file`);
   }
   return warnings;
 }
@@ -802,7 +802,7 @@ function pollingInterval(propsNode: Record<string, unknown>): Record<string, unk
 }
 
 /**
- * A preview warning for Mirth polling GalvaniFlow cannot follow: once a day
+ * A preview warning for Mirth polling GalvaniGraph cannot follow: once a day
  * (TIME), on cron expressions (CRON), or at an interval limited to some days
  * or hours (the advanced settings). Null for plain interval polling.
  */
@@ -811,7 +811,7 @@ function pollingWarning(propsNode: Record<string, unknown>, channelName: string)
   if (!poll) return null;
   const type = mirthPollingType(poll);
   const prefix = `Channel "${channelName}": the source polls`;
-  const fallback = "; GalvaniFlow polls only at an interval, so it imported with the connector's default interval. Set its polling interval before deploying";
+  const fallback = "; GalvaniGraph polls only at an interval, so it imported with the connector's default interval. Set its polling interval before deploying";
   if (type === 'TIME') {
     const at = (key: string): string => String(getNumber(poll, key, 0)).padStart(2, '0');
     return `${prefix} once a day at ${at('pollingHour')}:${at('pollingMinute')} in Mirth${fallback}`;
@@ -822,7 +822,7 @@ function pollingWarning(propsNode: Record<string, unknown>, channelName: string)
     return `${prefix} on the cron schedule ${expressions.map((e) => `"${e}"`).join(', ')} in Mirth${fallback}`;
   }
   return limitedPolling(getNestedRecord(poll, 'pollConnectorPropertiesAdvanced'))
-    ? `${prefix} only on some days or hours in Mirth (its advanced polling settings); GalvaniFlow polls at its interval all day, every day`
+    ? `${prefix} only on some days or hours in Mirth (its advanced polling settings); GalvaniGraph polls at its interval all day, every day`
     : null;
 }
 
@@ -962,10 +962,10 @@ function httpSenderProperties(propsNode: Record<string, unknown>): Record<string
   return result;
 }
 
-/** A preview warning for an HTTP Sender with Digest credentials, which GalvaniFlow's HTTP destination cannot send; null otherwise. */
+/** A preview warning for an HTTP Sender with Digest credentials, which GalvaniGraph's HTTP destination cannot send; null otherwise. */
 function httpDigestWarning(propsNode: Record<string, unknown>, connector: string, channelName: string): string | null {
   if (!getBoolean(propsNode, 'useAuthentication', false) || getString(propsNode, 'authenticationType') !== 'Digest') return null;
-  return `Channel "${channelName}": the ${connector} uses Digest authentication, which GalvaniFlow does not have; its credentials were dropped, so requests go without them. Build the Authorization header in a JavaScript writer`;
+  return `Channel "${channelName}": the ${connector} uses Digest authentication, which GalvaniGraph does not have; its credentials were dropped, so requests go without them. Build the Authorization header in a JavaScript writer`;
 }
 
 /** A Mirth SMTP Sender's server, credentials, addresses, subject and body. */
@@ -1043,7 +1043,7 @@ function dicomWarnings(propsNode: Record<string, unknown>, direction: 'source' |
   const prefix = `Channel "${channelName}": the ${connector}`;
   const warnings: string[] = [];
   if ((getString(propsNode, 'tls') ?? 'notls') !== 'notls') {
-    warnings.push(`${prefix} uses TLS in Mirth; GalvaniFlow's DICOM connector has no TLS, so it will not deploy rather than send in plaintext. Tunnel the link and import it with TLS off`);
+    warnings.push(`${prefix} uses TLS in Mirth; GalvaniGraph's DICOM connector has no TLS, so it will not deploy rather than send in plaintext. Tunnel the link and import it with TLS off`);
   }
   if (direction === 'source') {
     warnings.push(`${prefix}'s messages are a file path here (the stored object's file), not the DICOM object; scripts read its tags from the source map`);
@@ -1056,7 +1056,7 @@ function dicomWarnings(propsNode: Record<string, unknown>, direction: 'source' |
     ...(getString(propsNode, 'username') || getString(propsNode, 'passcode') ? ['user identity'] : []),
     ...(getBoolean(propsNode, 'stgcmt', false) ? ['storage commitment'] : []),
   ];
-  if (dropped.length > 0) warnings.push(`${prefix} uses ${dropped.join(', ')}, which GalvaniFlow's DICOM connector does not have; dropped`);
+  if (dropped.length > 0) warnings.push(`${prefix} uses ${dropped.join(', ')}, which GalvaniGraph's DICOM connector does not have; dropped`);
   return warnings;
 }
 
@@ -1069,7 +1069,7 @@ const SQLSERVER_URL = /^jdbc:sqlserver:\/\/([^:;/]+)(?::(\d+|\$\{[^}]+\}))?/i;
 /** The database a SQL Server URL names in its `;databaseName=` (or `;database=`) property. */
 const SQLSERVER_DATABASE = /;(?:databaseName|database)=([^;]+)/i;
 
-/** The vendors GalvaniFlow's Database Reader and Writer can connect to. */
+/** The vendors GalvaniGraph's Database Reader and Writer can connect to. */
 const RUNNABLE_DB_VENDORS: ReadonlySet<string> = new Set(Object.values(DATABASE_VENDOR));
 
 /**
@@ -1101,8 +1101,8 @@ const MULTI_HOST_URL = /^jdbc:[\w:]+\/\/[^/?;]*,/i;
 function unreadableUrl(url: string): string | null {
   if (!/^jdbc:/i.test(url) && url.includes('${')) return `URL is the reference ${url}, whose database type, host, port and database the import cannot read`;
   const mode = MYSQL_MULTI_HOST_MODE.exec(url)?.[1]?.toLowerCase();
-  if (mode) return `URL uses MySQL's ${mode} mode over several hosts, which GalvaniFlow does not have`;
-  if (MULTI_HOST_URL.test(url)) return 'URL lists several hosts, and GalvaniFlow connects to one';
+  if (mode) return `URL uses MySQL's ${mode} mode over several hosts, which GalvaniGraph does not have`;
+  if (MULTI_HOST_URL.test(url)) return 'URL lists several hosts, and GalvaniGraph connects to one';
   if (url.includes('${') && !JDBC_URL.test(url) && !SQLSERVER_URL.test(url)) {
     // Name only the references: the rest of a URL can carry credentials.
     return `URL uses ${(url.match(/\$\{[^}]+\}/g) ?? []).join(', ')} where the import needs a host and a database, so it cannot read them`;
@@ -1123,10 +1123,10 @@ function databaseWarnings(propsNode: Record<string, unknown>, vendor: unknown, c
     warnings.push(`Channel "${channelName}": the ${connector}'s ${unreadable}; fill in the database type, host, port and database by hand before deploying`);
   }
   if (typeof vendor === 'string' && !RUNNABLE_DB_VENDORS.has(vendor)) {
-    warnings.push(`Channel "${channelName}": the ${connector} uses ${vendor}, which GalvaniFlow cannot connect to (PostgreSQL and MySQL/MariaDB only); it will not deploy`);
+    warnings.push(`Channel "${channelName}": the ${connector} uses ${vendor}, which GalvaniGraph cannot connect to (PostgreSQL and MySQL/MariaDB only); it will not deploy`);
   }
   if (getBoolean(propsNode, 'useScript', false)) {
-    warnings.push(`Channel "${channelName}": the ${connector} uses Mirth's JavaScript mode, which GalvaniFlow does not have; its script was copied into the SQL query field and will fail as SQL. Rewrite it as SQL or use a JavaScript connector`);
+    warnings.push(`Channel "${channelName}": the ${connector} uses Mirth's JavaScript mode, which GalvaniGraph does not have; its script was copied into the SQL query field and will fail as SQL. Rewrite it as SQL or use a JavaScript connector`);
   }
   return warnings;
 }
@@ -1135,7 +1135,7 @@ function databaseWarnings(propsNode: Record<string, unknown>, vendor: unknown, c
 const DB_UPDATE_MODE: Readonly<Record<string, string>> = { '1': 'NEVER', '2': 'ALWAYS', '3': 'ON_SUCCESS' };
 
 /**
- * Mirth's Database Reader/Writer take a JDBC URL; GalvaniFlow's take a vendor,
+ * Mirth's Database Reader/Writer take a JDBC URL; GalvaniGraph's take a vendor,
  * host, port and database. The vendor is the URL's scheme (MariaDB speaks
  * MySQL's protocol); one with no driver here (sqlserver, oracle) is kept, so
  * the channel refuses to deploy and says which, and the preview warns about it
@@ -1598,13 +1598,13 @@ function extractDataTypeProperties(transformer: Record<string, unknown>, key: st
   return result;
 }
 
-/** GalvaniFlow's name for a Mirth data type: Mirth calls X12 "EDI/X12". */
+/** GalvaniGraph's name for a Mirth data type: Mirth calls X12 "EDI/X12". */
 function mirthDataType(name: string | null): string | null {
   return name === 'EDI/X12' ? 'X12' : name;
 }
 
 /**
- * Add GalvaniFlow's `delimited` settings (see delimitedOptionsSchema) to a
+ * Add GalvaniGraph's `delimited` settings (see delimitedOptionsSchema) to a
  * Delimited transformer's properties, read from Mirth's serializationProperties.
  * Mirth's own properties stay as they are, for export back.
  */
@@ -1672,7 +1672,7 @@ const CHANNEL_SCRIPTS = [
 /**
  * Channel scripts, without the ones Mirth puts in every new channel and that
  * do nothing: `return;`, and the preprocessor's `return message;` (Mirth's
- * name for the raw message, which GalvaniFlow does not have).
+ * name for the raw message, which GalvaniGraph does not have).
  */
 function convertScripts(mirthChannel: Record<string, unknown>): ChannelExportEntry['scripts'] {
   const scripts: ChannelExportEntry['scripts'] = [];
@@ -1689,7 +1689,7 @@ function isMirthDefaultScript(script: string): boolean {
 }
 
 /**
- * Mirth script constructs GalvaniFlow does not run (D-244), with what to use
+ * Mirth script constructs GalvaniGraph does not run (D-244), with what to use
  * instead. The import keeps scripts as written and lists these so the
  * operator knows what to rewrite.
  */
@@ -1700,7 +1700,7 @@ const MIRTH_ONLY_CONSTRUCTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(?:Packages|java|javax|org\.apache|com\.mirth)\./, 'Java classes: use JavaScript built-ins'],
   [/\b(?:channelMap|connectorMap|responseMap|globalMap|globalChannelMap|sourceMap|configurationMap)\.(?:put|get|containsKey|remove)\s*\(/, 'Java map methods (channelMap.put): use $c(key, value) or channelMap[key]'],
   [/\bconnectorMessage\.get\w+\s*\(/, 'connectorMessage.getRawData(): use rawData'],
-  [/\b(?:ResponseFactory|DateUtil|FileUtil|SerializerFactory|ACKGenerator|ChannelUtil|AttachmentUtil|stringUtils|router)\./, 'Mirth user API objects: use the GalvaniFlow scripting API'],
+  [/\b(?:ResponseFactory|DateUtil|FileUtil|SerializerFactory|ACKGenerator|ChannelUtil|AttachmentUtil|stringUtils|router)\./, 'Mirth user API objects: use the GalvaniGraph scripting API'],
   [/\b(?:return|String\()\s*message\b/, "Mirth's 'message' variable: use rawData"],
 ];
 

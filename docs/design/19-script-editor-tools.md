@@ -37,7 +37,7 @@ Prior art: Pipedream code steps and Airtable scripting both embed Monaco [19][20
 
 No product read offered a breakpoint debugger; Iguana's per-line values fill that role [21].
 
-## Ranked shortlist for GalvaniFlow
+## Ranked shortlist for GalvaniGraph
 
 1. **Run the script against a sample message**: show the result, `logger` output and errors as editor problems. Medium (a dry-run endpoint on the sandbox, no message stored, audited because the sample can be PHI). **Built 2026-11-15 (D-286)**, except showing a script error as an editor problem: it shows in the result panel.
 2. **Saved test messages per channel or script, with expected output**: regression checks instead of clicking. Medium.

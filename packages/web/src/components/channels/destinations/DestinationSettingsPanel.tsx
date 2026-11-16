@@ -11,7 +11,7 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import { DESTINATION_CONNECTOR_TYPES, type DestinationConnectorType } from '@galvaniflow/core-models';
+import { DESTINATION_CONNECTOR_TYPES, type DestinationConnectorType } from '@galvanigraph/core-models';
 import type { DestinationFormValues } from './types.js';
 import { getDestDefaultProperties } from './connector-defaults.js';
 import { DestinationConnectorSettings } from './DestinationConnectorSettings.js';
