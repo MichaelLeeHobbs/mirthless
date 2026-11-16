@@ -25,7 +25,7 @@
     "@galvanigraph/core-models": "workspace:*",
     "@galvanigraph/core-util": "workspace:*",
     "esbuild": "^0.28.2",
-    "fast-xml-parser": "^5.12.0",
+    "fast-xml-parser": "^5.12.1",
     "typescript": "6.0.3"
   },
   "devDependencies": {
