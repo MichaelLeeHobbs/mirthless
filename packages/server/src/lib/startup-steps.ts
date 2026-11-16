@@ -59,9 +59,11 @@ export interface StartupDeps {
 }
 
 /**
- * How long a step may run before it is reported failed. Generous: redeploying
- * many channels takes a while. The step keeps running; if it finishes later,
- * its failure is cleared (or replaced by its real error).
+ * How long the queue or the pruner scheduler may take to start before it is
+ * reported failed. The step keeps running; if it finishes later, its failure
+ * is cleared (or replaced by its real error). Channel redeploy has no timeout:
+ * a large install takes as long as it takes, and it reports each channel that
+ * fails on its own.
  */
 export const STARTUP_STEP_TIMEOUT_MS = 60_000;
 
@@ -69,17 +71,17 @@ export const STARTUP_STEP_TIMEOUT_MS = 60_000;
  * Run every startup step. The queue and channel redeploy run side by side;
  * the pruner scheduler runs once the queue has started, and is reported as
  * failed when the queue failed or has not started in time. A step that fails,
- * throws or overruns STARTUP_STEP_TIMEOUT_MS is logged at ERROR, emitted as a
- * SERVER_STARTUP_STEP_FAILED event and recorded in `deps.status`. Resolves
- * when every step has settled; never rejects.
+ * throws, or (queue and pruner only) overruns STARTUP_STEP_TIMEOUT_MS is
+ * logged at ERROR, emitted as a SERVER_STARTUP_STEP_FAILED event and recorded
+ * in `deps.status`. Resolves when every step has settled; never rejects.
  */
 export async function runStartupSteps(deps: StartupDeps): Promise<void> {
   const queueThenPruner = async (): Promise<void> => {
-    const queueOk = await runStep(deps, STARTUP_STEP.QUEUE, deps.startQueue, () => {
-      reportFailure(deps, STARTUP_STEP.PRUNER_SCHEDULER, new Error('Not started: the job queue has not started'));
+    const queueOk = await runStep(deps, STARTUP_STEP.QUEUE, deps.startQueue, {
+      onTimeout: () => { reportFailure(deps, STARTUP_STEP.PRUNER_SCHEDULER, new Error('Not started: the job queue has not started')); },
     });
     if (queueOk) {
-      await runStep(deps, STARTUP_STEP.PRUNER_SCHEDULER, deps.startPrunerScheduler);
+      await runStep(deps, STARTUP_STEP.PRUNER_SCHEDULER, deps.startPrunerScheduler, {});
       return;
     }
     reportFailure(deps, STARTUP_STEP.PRUNER_SCHEDULER, new Error('Not started: the job queue did not start'));
@@ -92,20 +94,21 @@ export async function runStartupSteps(deps: StartupDeps): Promise<void> {
 
 /**
  * Run one step; true when it succeeded. A thrown error counts as a failure.
- * Past the timeout the step is reported failed (and `onTimeout` runs) while
- * it keeps running; a late success clears the failure and is logged at WARN.
+ * With `timeout`, past STARTUP_STEP_TIMEOUT_MS the step is reported failed
+ * (and `timeout.onTimeout` runs) while it keeps running; a late success
+ * clears the failure and is logged at WARN.
  */
 async function runStep(
   deps: StartupDeps,
   step: StartupStepName,
   run: () => Promise<Result<void>>,
-  onTimeout?: () => void,
+  timeout?: { readonly onTimeout?: () => void },
 ): Promise<boolean> {
   let timedOut = false;
-  const timer = setTimeout(() => {
+  const timer = timeout === undefined ? undefined : setTimeout(() => {
     timedOut = true;
     reportFailure(deps, step, new Error(`Did not finish within ${String(STARTUP_STEP_TIMEOUT_MS / 1000)} s; still running`));
-    onTimeout?.();
+    timeout.onTimeout?.();
   }, STARTUP_STEP_TIMEOUT_MS);
   const outcome = await tryCatch(run);
   clearTimeout(timer);
