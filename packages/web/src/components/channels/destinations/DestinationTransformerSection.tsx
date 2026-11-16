@@ -18,6 +18,7 @@ import type { TransformerFormValues, TransformerStepFormValues } from '../source
 import { createDefaultTransformerStep } from '../source/types.js';
 import { TransformerStepEditor } from '../source/TransformerStepEditor.js';
 import { earlierStepNames } from '../../editors/surface-state.js';
+import { useListKeys } from '../../../hooks/use-list-keys.js';
 
 const DATA_TYPES = [
   { value: 'RAW', label: 'Raw' },
@@ -46,9 +47,12 @@ export function DestinationTransformerSection({ transformer, onChange }: Destina
     onChange({ ...transformer, steps: updated });
   }, [transformer, onChange]);
 
+  const { keys, remove: removeKey, swap: swapKeys } = useListKeys(transformer.steps.length);
+
   const handleRemove = useCallback((index: number): void => {
+    removeKey(index);
     onChange({ ...transformer, steps: transformer.steps.filter((_, i) => i !== index) });
-  }, [transformer, onChange]);
+  }, [transformer, onChange, removeKey]);
 
   const handleMoveUp = useCallback((index: number): void => {
     if (index <= 0) return;
@@ -56,8 +60,9 @@ export function DestinationTransformerSection({ transformer, onChange }: Destina
     const temp = updated[index - 1]!;
     updated[index - 1] = updated[index]!;
     updated[index] = temp;
+    swapKeys(index - 1, index);
     onChange({ ...transformer, steps: updated });
-  }, [transformer, onChange]);
+  }, [transformer, onChange, swapKeys]);
 
   const handleMoveDown = useCallback((index: number): void => {
     if (index >= transformer.steps.length - 1) return;
@@ -65,8 +70,9 @@ export function DestinationTransformerSection({ transformer, onChange }: Destina
     const temp = updated[index + 1]!;
     updated[index + 1] = updated[index]!;
     updated[index] = temp;
+    swapKeys(index, index + 1);
     onChange({ ...transformer, steps: updated });
-  }, [transformer, onChange]);
+  }, [transformer, onChange, swapKeys]);
 
   return (
     <Accordion disableGutters>
@@ -94,7 +100,7 @@ export function DestinationTransformerSection({ transformer, onChange }: Destina
           <Box sx={{ mb: 2 }}>
             {transformer.steps.map((step, index) => (
               <TransformerStepEditor
-                key={index}
+                key={keys[index]}
                 stage="destination"
                 earlierNames={earlierStepNames(transformer.steps, index)}
                 step={step}
