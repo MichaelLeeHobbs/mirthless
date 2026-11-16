@@ -878,16 +878,27 @@ export function generateOpenAPISpec(): OpenAPISpec {
             { name: 'format', in: 'query', schema: { type: 'string', enum: ['csv', 'json'] }, description: 'Export format' },
             { name: 'startDate', in: 'query', schema: { type: 'string', format: 'date-time' }, description: 'Start of date range' },
             { name: 'endDate', in: 'query', schema: { type: 'string', format: 'date-time' }, description: 'End of date range' },
+            { name: 'reason', in: 'query', required: true, schema: { type: 'string', minLength: 3, maxLength: 500 }, description: 'Why the export is taken (one line). Recorded in the audit log and written into the file.' },
           ],
           responses: {
             '200': {
-              description: 'Exported events',
+              description: 'Exported events. A CSV starts with "# " header lines; JSON wraps the rows. Both name the audit record and the reason (D-318).',
               content: {
-                'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Event' } } },
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      export: { type: 'object', description: 'server, exportedBy, exportedAt, auditRecordId, reason' },
+                      events: { type: 'array', items: { $ref: '#/components/schemas/Event' } },
+                    },
+                  },
+                },
                 'text/csv': { schema: { type: 'string' } },
               },
             },
+            '400': openApiErrorResponse('Missing or invalid reason'),
             '401': openApiErrorResponse('Not authenticated'),
+            '503': openApiErrorResponse('AUDIT_UNAVAILABLE: the export could not be recorded, so nothing was exported'),
           },
         },
       },

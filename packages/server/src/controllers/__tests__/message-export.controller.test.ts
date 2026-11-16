@@ -69,8 +69,8 @@ describe('MessageExportController.exportMessages', () => {
     await MessageExportController.exportMessages(makeReq({ format: 'csv', includeContent: false, reason: 'Quarterly review' }), res);
 
     const body = String(vi.mocked(res.send).mock.calls[0]?.[0]);
-    expect(body).toMatch(/^# GalvaniGraph export\n/);
-    expect(body).toContain('# audit record: 41\n# reason: Quarterly review\nCSV_BODY');
+    expect(body).toMatch(/^# GalvaniGraph export\r\n/);
+    expect(body).toContain('# audit record: 41\r\n# reason: Quarterly review\r\nCSV_BODY');
   });
 
   it('wraps the JSON rows with the export header', async () => {

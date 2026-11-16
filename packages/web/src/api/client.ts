@@ -127,7 +127,8 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
   if (!response.ok && response.status !== 401) {
     try {
       const errorJson = (await response.json()) as ApiResponse<T>;
-      if (!errorJson.success) noticeAuditUnavailable(errorJson.error.code);
+      // A body without the usual error object still keeps the server's message.
+      if (!errorJson.success) noticeAuditUnavailable((errorJson as { error?: { code?: string } }).error?.code);
       return errorJson;
     } catch {
       return {

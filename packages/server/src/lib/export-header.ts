@@ -7,6 +7,7 @@
 
 import os from 'node:os';
 import type { Request } from 'express';
+import { escapeCsvField } from './csv.js';
 
 export interface ExportHeader {
   readonly product: 'GalvaniGraph';
@@ -38,7 +39,13 @@ export function wrapJsonExport(header: ExportHeader, key: string, rowsJson: stri
   return `{\n  "export": ${JSON.stringify(header)},\n  ${JSON.stringify(key)}: ${rowsJson}\n}\n`;
 }
 
-/** The header as CSV comment lines, each starting `# `, ending in a newline. */
+/**
+ * The header as CSV lines, each starting `# ` and each one escaped CSV field,
+ * so a spreadsheet that does not skip `#` lines shows each as a single cell:
+ * a comma or quote in a value cannot add a column or swallow the rows below,
+ * and the line never starts with a formula character. Lines end with CRLF,
+ * as the data rows do.
+ */
 export function csvHeaderLines(header: ExportHeader): string {
   const lines = [
     `${header.product} export`,
@@ -49,5 +56,5 @@ export function csvHeaderLines(header: ExportHeader): string {
     `reason: ${header.reason}`,
   ];
   // The reason is one line by schema; a username or host name never has a newline either.
-  return lines.map((l) => `# ${l.replace(/[\r\n]+/g, ' ')}\n`).join('');
+  return lines.map((l) => `${escapeCsvField(`# ${l.replace(/[\r\n]+/g, ' ')}`)}\r\n`).join('');
 }

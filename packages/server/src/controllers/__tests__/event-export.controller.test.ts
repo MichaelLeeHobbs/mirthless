@@ -36,8 +36,8 @@ describe('EventExportController.exportEvents', () => {
     expect(recordExportOrRefuse).toHaveBeenCalledWith(expect.anything(), res, {
       action: 'EVENTS_EXPORTED', attributes: { reason: 'Incident 42', filters: { format: 'csv', maxRows: 100 } },
     });
-    expect(body(res)).toMatch(/^# GalvaniGraph export\n/);
-    expect(body(res)).toContain('# audit record: 9\n# reason: Incident 42\nid,name');
+    expect(body(res)).toMatch(/^# GalvaniGraph export\r\n/);
+    expect(body(res)).toContain('# audit record: 9\r\n# reason: Incident 42\r\nid,name');
   });
 
   it('wraps a JSON export with the header', async () => {
