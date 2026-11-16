@@ -226,8 +226,8 @@ describe('VmSandboxExecutor', () => {
       const result = await slow.execute(script, makeContext(), { timeout: 50, signal: new AbortController().signal });
 
       expect(result.ok).toBe(false);
-      // V8 adds "after Nms" when its own timer stops the script first, as it can on a loaded machine (#125).
-      expect(result.ok ? '' : result.error.message).toMatch(/^Script execution timed out/);
+      // Whichever timer stops it, the error names the script's own limit (#125, #188).
+      expect(result.ok ? '' : result.error.message).toBe('Script execution timed out after 50ms');
       // The 50ms limit's timer was set before the 400ms one, so it always fires first: the run
       // ended without waiting for the IO. Checking this, not the elapsed time, keeps the test off the clock.
       expect(answered).toBe(false);
