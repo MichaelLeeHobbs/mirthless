@@ -28,7 +28,7 @@ class FakeWorker extends EventEmitter {
 
 vi.mock('node:worker_threads', () => ({ Worker: FakeWorker }));
 
-const { checkScriptTypesBatch, stopTypeChecker } = await import('../script-type-checker.js');
+const { checkScriptTypesBatch, stopTypeChecker, TYPE_CHECK_QUEUE_LIMIT } = await import('../script-type-checker.js');
 
 const HL7 = { dataType: 'HL7V2', templateContext: 'SOURCE_FILTER_TRANSFORMER' } as const;
 let n = 0;
@@ -110,6 +110,41 @@ describe('checkScriptTypesBatch queueing', () => {
     const result = await queued;
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toBe('The type checker failed: boom');
+  });
+
+  // #228: a batch's cache hits were read back from the cache after its misses
+  // were answered, by which time other checks could have evicted them.
+  it('answers a cached script even when it is evicted while the batch waits', async () => {
+    const cached = freshJob();
+    const prime = checkScriptTypesBatch([cached], []);
+    FakeWorker.instances[0]!.answer(0);
+    await prime;
+    // A batch large enough to evict every older entry runs first; ours waits behind it.
+    const flood = checkScriptTypesBatch(Array.from({ length: 500 }, freshJob), []);
+    const ours = checkScriptTypesBatch([cached, freshJob()], []);
+    const w = FakeWorker.instances[0]!;
+    w.answer(1);
+    await flood;
+    w.answer(2);
+    expect(await ours).toMatchObject({ ok: true, value: [[], []] });
+  });
+
+  it('answers every job of a batch larger than the cache', async () => {
+    const big = checkScriptTypesBatch(Array.from({ length: 501 }, freshJob), []);
+    FakeWorker.instances[0]!.answer(0);
+    const result = await big;
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.every((errors) => Array.isArray(errors))).toBe(true);
+  });
+
+  it('refuses a check when too many are already waiting, instead of queueing without end', async () => {
+    const inFlight = checkScriptTypesBatch([freshJob()], []);
+    const waiting = Array.from({ length: TYPE_CHECK_QUEUE_LIMIT }, () => checkScriptTypesBatch([freshJob()], []));
+    const refused = await checkScriptTypesBatch([freshJob()], []);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error.message).toBe(`The type checker is busy: ${String(TYPE_CHECK_QUEUE_LIMIT)} checks are waiting. Try again shortly.`);
+    await stopTypeChecker();
+    await Promise.all([inFlight, ...waiting]);
   });
 
   it('fails the queued checks when stopped', async () => {

@@ -38,6 +38,12 @@ export type TypeCheckReply =
 /** Default time limit for one batch: generous, since a cold worker loads TypeScript first. */
 export const TYPE_CHECK_TIMEOUT_MS = 30_000;
 const CACHE_LIMIT = 500;
+/**
+ * Checks that may wait for the worker. Each is a deploy or a save; past this
+ * many, a new one is refused at once rather than waiting behind all of them
+ * and timing out, and the queue cannot grow without end (#228).
+ */
+export const TYPE_CHECK_QUEUE_LIMIT = 100;
 /** Heap limit of the type-check worker. */
 const TYPE_CHECK_HEAP_MB = 512;
 
@@ -136,6 +142,12 @@ function getWorker(): Worker {
 function ask(jobs: readonly TypeCheckJob[], templates: readonly TemplateSource[], timeoutMs: number): Promise<TypeCheckReply> {
   nextId += 1;
   const request: TypeCheckRequest = { id: nextId, jobs, templates };
+  if (queue.length >= TYPE_CHECK_QUEUE_LIMIT) {
+    return Promise.resolve({
+      id: request.id, ok: false,
+      error: `The type checker is busy: ${String(queue.length)} checks are waiting. Try again shortly.`,
+    });
+  }
   return new Promise((resolve) => {
     queue.push({ request, timeoutMs, resolve });
     sendNext();
@@ -153,13 +165,20 @@ export async function checkScriptTypesBatch(
 ): Promise<Result<ReadonlyArray<readonly ScriptTypeError[]>>> {
   return tryCatch(async () => {
     const keys = jobs.map((j) => cacheKey(j, templates));
-    const misses = jobs.flatMap((job, i) => (cache.has(keys[i]!) ? [] : [{ job, key: keys[i]! }]));
+    // Read the hits now: while the misses wait for the worker, other checks can
+    // evict them (#228). The answers come from these and the reply, not the cache.
+    const results = keys.map((k) => cache.get(k));
+    const misses = jobs.flatMap((job, i) => (results[i] === undefined ? [{ job, index: i }] : []));
     if (misses.length > 0) {
       const reply = await ask(misses.map((m) => m.job), templates, options.timeoutMs ?? TYPE_CHECK_TIMEOUT_MS);
       if (!reply.ok) throw new Error(reply.error);
-      misses.forEach((m, i) => { remember(m.key, reply.results[i]!); });
+      misses.forEach((m, i) => {
+        const errors = reply.results[i]!;
+        results[m.index] = errors;
+        remember(keys[m.index]!, errors);
+      });
     }
-    return keys.map((k) => cache.get(k)!);
+    return results.map((r) => r!);
   });
 }
 
