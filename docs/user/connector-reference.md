@@ -512,11 +512,11 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 | `resourceType` | No | Resource type in the URL. Defaults to `Patient`, so set it for any other resource. |
 | `method` | No | `POST` (create) or `PUT` (update). `PUT` needs an `id` in the resource, and an id outside the FHIR id rules is refused. |
 | `authType` | No | `NONE` (default), `BASIC`, `BEARER` or `API_KEY`. Each type other than `NONE` refuses to deploy without its credentials below. |
-| `authUsername` | For `BASIC` | Basic username. |
-| `authPassword` | For `BASIC` | Basic password. |
-| `authToken` | For `BEARER` | Bearer token. |
-| `authHeaderName` | For `API_KEY` | Header that carries the API key. |
-| `authApiKey` | For `API_KEY` | API key value. |
+| `authUsername` | No | Basic username. Required for `BASIC`. |
+| `authPassword` | No | Basic password. Required for `BASIC`. |
+| `authToken` | No | Bearer token. Required for `BEARER`. |
+| `authHeaderName` | No | Header that carries the API key. Required for `API_KEY`. |
+| `authApiKey` | No | API key value. Required for `API_KEY`. |
 | `format` | No | `json` (default) or `xml`. |
 | `timeout` | No | Milliseconds before the send is an ERROR, a whole number from 1 to 2147483647. Defaults to 30000. |
 | `headers` | No | Extra request headers, as a name-to-value map. Text saved by the old editor is read as `Name: value` lines. |
