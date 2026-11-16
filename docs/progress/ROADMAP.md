@@ -21,40 +21,7 @@ Mirthless is not a Mirth Connect clone. It's a **modern, open-source healthcare 
 
 The foundation. A single-server deployment that can replace Mirth Connect for common HL7v2/FHIR/HTTP integration workflows.
 
-### Core Pipeline (done)
-- [x] 8-stage message pipeline (preprocess → filter → transform → route → postprocess)
-- [x] Response modes (before/after transformer, after destinations, postprocessor, specific destination)
-- [x] Destination routing control via `destinationSet`
-- [x] Batch processing (delimiter/regex/JavaScript split)
-- [x] Recovery manager (reprocess after crash)
-- [x] Pipeline timing instrumentation (`LOG_LEVEL=debug`)
-- [x] correlationId for cross-channel tracing
-- [x] Script error handling (ERROR status, not silent skip)
-- [x] Performance: 13ms message processing on native Postgres
-
-### Sandbox & Scripting (done)
-- [x] VM-based sandbox (node:vm) with strict mode IIFE wrapping
-- [x] TypeScript support via esbuild transpilation
-- [x] HL7v2 bridge functions (parseHL7, createACK)
-- [x] I/O bridges implemented in the sandbox (httpFetch, dbQuery, routeMessage, getResource, getCollection)
-- [x] **All IO bridges wired** end-to-end into the production engine (`engine.ts`): getCollection, getResource, httpFetch, routeMessage (hop-depth loop guard), and **dbQuery** via named **Data Sources** (`docs/design/11-datasources.md`, D-178 — encrypted creds, read-only default, statement timeout + row cap, Postgres v1)
-- [x] Map system (channelMap, connectorMap, globalMap, configMap, responseMap, sourceMap)
-- [x] Map shortcuts ($, $c, $co, $r, $g, $gc, $s, $cfg — Mirth-compatible, D-191)
-- [x] Code template injection (FUNCTION type prepended to scripts)
-- [x] Per-channel script timeout (1-300s configurable)
-
-### Connectors (done)
-- [x] TCP/MLLP (source + destination) — HL7v2 over TCP
-- [x] HTTP (source + destination) — REST with configurable methods/headers
-- [x] File (source + destination) — local filesystem polling with post-action
-- [x] Database (source + destination) — parameterized SQL, connection pooling
-- [x] JavaScript (source + destination) — user scripts in sandbox
-- [x] Channel (source + destination) — in-memory inter-channel routing
-- [x] SMTP (destination) — email with template substitution
-- [x] FHIR (destination) — R4 REST client
-- [x] DICOM (source + destination) — C-STORE via dcmtk.js
-- [x] Email/IMAP (source) — folder polling with filters
-- [x] Kafka and AMQP/RabbitMQ (source + destination) — acknowledged after store, at least once (D-265, D-266)
+What already ships is listed, with the tests that prove it, in [What GalvaniFlow can do](../user/capabilities.md). This roadmap lists only work still to do; each open item below is the plan of a row there (D-279).
 
 ### Mirth migration suite
 
@@ -112,7 +79,7 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
 > Full analysis + pursue/consider/partner/non-goal calls: [`docs/design/14-beyond-mirth-competitive-gaps.md`](../design/14-beyond-mirth-competitive-gaps.md).
 > These are **platform expansions beyond Mirth** (Mirth lacks most of them too), NOT parity gaps. A strategy menu, not a defect list — act only after the doc 12/13 blockers clear. Top PURSUE picks:
 
-- [ ] **[B1] Silent-interface / SLA / heartbeat alerting** — 🟢 "no message in N min" (✅ NO_MESSAGES trigger, D-192) + throughput/queue-depth thresholds (open). Deadliest failure mode; alert engine currently fires only on CHANNEL_ERROR.
+- [ ] **[B1] Silent-interface / SLA / heartbeat alerting** — 🟢 "no message in N min" (✅ NO_MESSAGES trigger, D-192) + throughput/queue-depth thresholds (open). Deadliest failure mode.
 - [ ] **[B2] HA / clustering / automatic failover** — 🟢 genuine production gap; multi-node today duplicates inbound on singleton sources.
 - [ ] **[B3] Keyed partitioning / per-key ordering + scale** — 🟢 per-patient order + horizontal scale; the real fix for doc 13 N7 (dead threadCount/groupBy).
 - [ ] **[B4] End-to-end lineage + OpenTelemetry tracing** — 🟢 cross-channel message journeys.
@@ -154,31 +121,6 @@ The foundation. A single-server deployment that can replace Mirth Connect for co
   - [x] The real-broker suite (`connector-queue.itest.ts`) is skipped in CI, and TLS has not been run against a real broker — CI job `connector-integration` runs every connector `*.itest.ts` and fails on a missing service; AMQPS runs against RabbitMQ (D-274, gh-88)
   - [ ] Kafka over TLS has not been run against a real broker (only AMQPS has)
 - [ ] **[DECIDE]** npm packages in the sandbox? (doc 18, open decisions)
-
-### API & Auth (done)
-- [x] 131 REST endpoints across 37 route files
-- [x] JWT + refresh tokens + session management
-- [x] RBAC with 4 roles (admin, deployer, developer, viewer)
-- [x] Audit logging (fire-and-forget events)
-- [x] Channel export/import (JSON format)
-- [x] Mirth Connect XML import
-- [x] Server backup/restore
-- [x] Data pruning with cron scheduling (pg-boss)
-
-### Web UI (done)
-- [x] Dashboard with grouped channels, summary cards, tag filtering
-- [x] Channel editor (Channel Settings, Source, Destinations, Scripts)
-- [x] Message browser with search, filters, content tabs
-- [x] Code template library editor (Monaco)
-- [x] Alerts with trigger/action configuration
-- [x] All admin pages (users, settings, events, system info, etc.)
-- [x] Dark/light theme, keyboard shortcuts, breadcrumbs
-- [x] WebSocket-driven real-time updates (60s polling fallback)
-- [x] Group CRUD (create, rename, delete, assign via dashboard + editor)
-- [x] Send Message dialog (fire-and-forget)
-
-### CLI (removed)
-- [x] ~~Commander-based CLI~~ removed 2026-11-15 (D-280). Scripts use the REST API (`docs/ops/api-automation.md`); break-glass admin recovery is #141.
 
 ### Remaining for v1.0
 - [x] ~~Data type serialization — XML/JSON/HL7v2 parsed `msg` object in sandbox~~
@@ -279,7 +221,6 @@ Multi-server clustering and enterprise deployment models.
 
 Ideas that may become relevant. Not committed to any timeline.
 
-- [ ] SFTP connector
 - [ ] WebSocket source connector (bidirectional streaming)
 - [ ] Serial connector (legacy lab instruments)
 - [ ] IHE profiles (PIX, PDQ, XDS) as plugins
@@ -318,8 +259,7 @@ Ideas that may become relevant. Not committed to any timeline.
 - A changed XML message loses the line break after its `<?xml ...?>` declaration (the document is otherwise written as it arrived)
 - A message interrupted by a server stop and run again is counted as received twice, once per row in the message browser (D-233)
 - A queued delivery that finishes before the pipeline finalizes its message keeps its content until the pruner, even with "remove content on completion" on (safe side of a race)
-- Database connectors are PostgreSQL only
-- `POST /scripts/validate` compiles every script as an async function body, but deploy embeds filter rules in a synchronous function, so a filter rule using `await` validates and then fails to deploy ("await can only be used inside an async function"). No web or CLI caller uses the endpoint today; fix it (validate takes the script's kind and compiles a filter rule the way deploy does) before anything does. Found in the PR #101 review.
+- `POST /scripts/validate` compiles every script as an async function body, but deploy embeds filter rules in a synchronous function, so a filter rule using `await` validates and then fails to deploy ("await can only be used inside an async function"). No web caller uses the endpoint today; fix it (validate takes the script's kind and compiles a filter rule the way deploy does) before anything does. Found in the PR #101 review.
 
 ---
 

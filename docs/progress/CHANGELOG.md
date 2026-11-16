@@ -8,6 +8,13 @@
 - **`docs/ops/api-automation.md`:** `curl` recipes for log in, export, import and redeploy. Redeploy returns once the channel is in its final state and fails when it can't start, so a CI job doesn't need to poll.
 - Not done here: API tokens (#144) and the break-glass admin reset (#141). Until #144, the recipes log in with a password, which won't work for an account with MFA.
 
+## 2026-11-15 — Old status copies cut down, docs slice 4 (branch `docs/status-cutdown`)
+
+Slice 4 of the docs restructure (#116): with the capabilities page as the one home for status (D-279), the copies that drifted are cut back.
+
+- **ROADMAP:** the six "(done)" lists (Core Pipeline, Sandbox, Connectors, API & Auth, Web UI, CLI) are replaced by one link to the capabilities page, which lists what ships with its proof. Removed stale lines: SFTP as a someday idea (it ships) and "Database connectors are PostgreSQL only" (MySQL ships). `[B1]` no longer says the alert engine fires only on CHANNEL_ERROR.
+- **Design docs:** status banners in the house form on 03 and 05 ("original design") and on 09, 12, 13, 14 and 16 ("historical analysis", replacing "Draft for review"), each pointing at the page that is current, with D-182 named where it still binds. Local paths to the OIE source are gone from docs 12 and 13.
+
 ## 2026-11-15 — Capabilities page, docs slice 3 (branch `docs/capabilities`)
 
 Slice 3 of the docs restructure (#116): one page that shows what GalvaniFlow does and what it doesn't, so users can check before they commit and maintainers can see the gaps (D-279).

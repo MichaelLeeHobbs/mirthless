@@ -2,6 +2,8 @@
 
 > Comprehensive analysis: what Mirth Connect does, what we match, what we skip, what we add, and where we go beyond.
 
+> **Status (2026-11): historical analysis.** Written 2026-03 and kept for its reasoning; its status claims are no longer kept current. What ships today, what is missing and the plan for each gap are in [What GalvaniFlow can do](../user/capabilities.md).
+
 ## Part 1: Core Mirth Connect Features We Must Match
 
 These are the table-stakes features that any Mirth Connect replacement must have. Without them, no healthcare org will consider switching.
