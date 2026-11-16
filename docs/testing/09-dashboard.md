@@ -95,3 +95,5 @@
 | 38 | Group bulk lifecycle | Group menu → "Start all" | Only applicable (STOPPED) channels start; toast summarizes count | |
 | 39 | Drag to regroup | Drag a channel's handle onto another group header | Row moves to that group and persists; drop target highlights while hovering | |
 | 40 | Drag to Ungrouped | Drag a channel onto the Ungrouped section header | Channel's group membership is removed | |
+| 41 | Failed drag | Block `PUT /api/v1/channels/*/groups` in devtools, drag a channel to another group | Error toast; the row goes back to its old group and is still there after a reload | |
+| 42 | No regroup without channels:write | Sign in as a viewer | No drag handle on channel rows; no Change Group in the channel right-click menu | |
