@@ -79,6 +79,22 @@ export async function loadServerModules() {
 
 export type ServerModules = Awaited<ReturnType<typeof loadServerModules>>;
 
+/**
+ * Insert a bare channel row with this id. `create_channel_partitions` refuses an
+ * id with no channel, so a suite that makes partitions directly needs one.
+ * Remove it with `deleteTestChannel`.
+ */
+export async function insertTestChannel(mods: ServerModules, id: string): Promise<void> {
+  await mods.db.execute(mods.sql`
+    INSERT INTO channels (id, name, inbound_data_type, outbound_data_type, source_connector_type, source_connector_properties)
+    VALUES (${id}, ${`itest-${id}`}, 'RAW', 'RAW', 'CHANNEL', '{}'::jsonb)`);
+}
+
+/** Delete a channel row made by `insertTestChannel`. */
+export async function deleteTestChannel(mods: ServerModules, id: string): Promise<void> {
+  await mods.db.execute(mods.sql`DELETE FROM channels WHERE id = ${id}`);
+}
+
 /** Minimal structural view of a stderr-lib Result for unwrapping in tests. */
 type ResultLike<T> =
   | { readonly ok: true; readonly value: T }

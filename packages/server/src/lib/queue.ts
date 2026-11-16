@@ -2,10 +2,13 @@
 // Job Queue (pgboss)
 // ===========================================
 // PostgreSQL-backed job queue using pgboss.
-// Creates its own 'pgboss' schema — no Drizzle migration needed.
+// Migration 0016 creates the 'pgboss' schema and pg-boss creates its tables in
+// it. In the Docker stack the server's database role owns that schema (D-307):
+// pg-boss creates, migrates and maintains its tables while the server runs.
 
 import { PgBoss } from 'pg-boss';
 import { config } from '../config/index.js';
+import { PG_BOSS_SCHEMA } from '../db/runtime-role.js';
 import { buildDbSslConfig } from './db.js';
 import logger from './logger.js';
 
@@ -20,7 +23,10 @@ export async function startQueue(): Promise<PgBoss> {
   const ssl = buildDbSslConfig();
   const instance = new PgBoss({
     connectionString: config.DATABASE_URL,
-    schema: 'pgboss',
+    schema: PG_BOSS_SCHEMA,
+    // Migration 0016 creates the schema; creating it here would need CREATE on
+    // the database, which the server's role does not have (D-307).
+    createSchema: false,
     ...(ssl ? { ssl } : {}),
   });
 
