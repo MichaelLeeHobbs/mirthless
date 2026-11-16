@@ -41,11 +41,28 @@ const CACHE_LIMIT = 500;
 /** Heap limit of the type-check worker. */
 const TYPE_CHECK_HEAP_MB = 512;
 
+/** A request waiting its turn. */
+interface Queued {
+  readonly request: TypeCheckRequest;
+  readonly timeoutMs: number;
+  readonly resolve: (reply: TypeCheckReply) => void;
+}
+
+/** The one request the worker is working on. */
+interface InFlight {
+  readonly queued: Queued;
+  readonly worker: Worker;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
 const cache = new Map<string, readonly ScriptTypeError[]>();
 let worker: Worker | undefined;
 let nextId = 0;
-/** Requests waiting for a reply, with the worker each was sent to. */
-const pending = new Map<number, { readonly worker: Worker; readonly settle: (reply: TypeCheckReply) => void }>();
+// The worker gets one request at a time, so a request's time limit counts only
+// its own work, and a request that overruns or crashes the worker fails alone:
+// the ones queued behind it go to a fresh worker (#183).
+const queue: Queued[] = [];
+let inFlight: InFlight | undefined;
 
 function cacheKey(job: TypeCheckJob, templates: readonly TemplateSource[]): string {
   return createHash('sha256')
@@ -61,13 +78,40 @@ function remember(key: string, errors: readonly ScriptTypeError[]): void {
   if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
 }
 
-/** Fail the requests sent to one worker; requests already on its replacement are not its to fail. */
-function failRequestsOf(target: Worker, error: string): void {
-  for (const [id, entry] of pending) {
-    if (entry.worker !== target) continue;
-    pending.delete(id);
-    entry.settle({ id, ok: false, error });
-  }
+/** Settle the request in flight, if `reply` is its answer, and send the next one. */
+function finish(reply: TypeCheckReply): void {
+  const current = inFlight;
+  if (current?.queued.request.id !== reply.id) return;
+  clearTimeout(current.timer);
+  inFlight = undefined;
+  current.queued.resolve(reply);
+  sendNext();
+}
+
+/**
+ * A worker failed or stopped: the request it was working on fails, and the
+ * next one goes to a fresh worker. Nothing to do for a worker already replaced.
+ */
+function workerLost(target: Worker, error: string): void {
+  if (worker === target) worker = undefined;
+  if (inFlight?.worker === target) finish({ id: inFlight.queued.request.id, ok: false, error });
+}
+
+function sendNext(): void {
+  if (inFlight) return;
+  const next = queue.shift();
+  if (!next) return;
+  const target = getWorker();
+  const { id } = next.request;
+  const timer = setTimeout(() => {
+    // A check that overran may be stuck: stop its worker; the next check gets a fresh one.
+    // Settle it before stopping the worker, whose exit would otherwise report it as stopped.
+    if (worker === target) worker = undefined;
+    finish({ id, ok: false, error: `Type-checking took longer than ${String(next.timeoutMs)} ms and was stopped.` });
+    void target.terminate();
+  }, next.timeoutMs);
+  inFlight = { queued: next, worker: target, timer };
+  target.postMessage(next.request);
 }
 
 function getWorker(): Worker {
@@ -82,34 +126,19 @@ function getWorker(): Worker {
   });
   // Idle checks must not keep the process alive.
   started.unref();
-  started.on('message', (reply: TypeCheckReply) => {
-    const entry = pending.get(reply.id);
-    pending.delete(reply.id);
-    entry?.settle(reply);
-  });
-  started.on('error', (err) => { failRequestsOf(started, `The type checker failed: ${err.message}`); });
-  started.on('exit', () => {
-    if (worker === started) worker = undefined;
-    failRequestsOf(started, 'The type checker stopped.');
-  });
+  started.on('message', (reply: TypeCheckReply) => { finish(reply); });
+  started.on('error', (err) => { workerLost(started, `The type checker failed: ${err.message}`); });
+  started.on('exit', () => { workerLost(started, 'The type checker stopped.'); });
   worker = started;
   return started;
 }
 
 function ask(jobs: readonly TypeCheckJob[], templates: readonly TemplateSource[], timeoutMs: number): Promise<TypeCheckReply> {
   nextId += 1;
-  const id = nextId;
-  const target = getWorker();
+  const request: TypeCheckRequest = { id: nextId, jobs, templates };
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      pending.delete(id);
-      // A check that overran may be stuck: start the next one on a fresh worker.
-      if (worker === target) worker = undefined;
-      void target.terminate();
-      resolve({ id, ok: false, error: `Type-checking took longer than ${String(timeoutMs)} ms and was stopped.` });
-    }, timeoutMs);
-    pending.set(id, { worker: target, settle: (reply) => { clearTimeout(timer); resolve(reply); } });
-    target.postMessage({ id, jobs, templates } satisfies TypeCheckRequest);
+    queue.push({ request, timeoutMs, resolve });
+    sendNext();
   });
 }
 
@@ -134,8 +163,9 @@ export async function checkScriptTypesBatch(
   });
 }
 
-/** Stop the worker (tests, shutdown). The next check starts a new one. */
+/** Stop the worker (tests, shutdown), failing every check not yet answered. The next check starts a new one. */
 export async function stopTypeChecker(): Promise<void> {
+  for (const queued of queue.splice(0)) queued.resolve({ id: queued.request.id, ok: false, error: 'The type checker stopped.' });
   const current = worker;
   worker = undefined;
   if (current) await current.terminate();
