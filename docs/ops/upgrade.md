@@ -15,6 +15,7 @@ GalvaniFlow applies schema changes through **Drizzle migrations**. The golden ru
   schema. It then runs an idempotent seed unless `SEED_ON_START=false`. The seed creates the admin user,
   roles, permissions and default settings only; demo channels and data are seeded only when
   `SEED_DEMO_DATA=true`.
+- **Roles:** a user's permissions come from their role in code at every request, so an upgrade that changes a role applies to existing users at once. Check the matrix in [Access control](../user/access-control.md#role-and-permission-matrix) after upgrading.
 - **Local / non-Docker:** run `pnpm db:migrate` yourself before `pnpm start` /
   `pnpm dev`.
 

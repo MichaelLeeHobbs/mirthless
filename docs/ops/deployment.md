@@ -46,6 +46,8 @@ The seed creates the admin user, roles, permissions and default settings only. E
 channels and demo data are added only with `SEED_DEMO_DATA=true`; leave it off for
 anything that will carry real data.
 
+Before you create accounts for other people, read [Access control](../user/access-control.md): what each role can do, how sessions end, and what access control cannot limit.
+
 ## Listener ports
 
 Source connectors (TCP/MLLP, DICOM, HTTP sources) open their own ports inside the

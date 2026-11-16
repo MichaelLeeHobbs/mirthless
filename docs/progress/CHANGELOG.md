@@ -8,6 +8,16 @@
 - **`docs/ops/api-automation.md`:** `curl` recipes for log in, export, import and redeploy. Redeploy returns once the channel is in its final state and fails when it can't start, so a CI job doesn't need to poll.
 - Not done here: API tokens (#144) and the break-glass admin reset (#141). Until #144, the recipes log in with a password, which won't work for an account with MFA.
 
+## 2026-11-15 — Access control page, docs slice 2 (branch `docs/access-control`)
+
+Slice 2 of the docs restructure (#116): one page that tells an admin who can do what, and what the product does not support.
+
+- **`docs/user/access-control.md`.** Supported and unsupported (no SSO, LDAP, MFA, API tokens, custom roles or per-channel access); signing in, lockout and rate limits with their conditions; sessions and token lifetimes; cutting someone off; the role and permission matrix with what each permission also allows; who can run code on the server; where PHI and secrets can leave; what is not audited; and the endpoints with no permission check.
+- **Guards.** `packages/server/src/__tests__/docs/access-control.test.ts` fails when the matrix and the role seed disagree. `packages/server/src/routes/__tests__/role-access.test.ts` calls 22 PHI and destructive endpoints over HTTP as every role and checks each gets 200 or 403 as the matrix says. Every permission being used somewhere stays with main's `route-permissions.test.ts`.
+- **HIPAA checklist** no longer says every route is permission-checked; it names the exceptions and links the page. Deployment and upgrade runbooks and the README link it.
+- **Corrected:** `scripting-api.md` promised script `logger` output in the message browser and server logs; it is discarded (#164). Two code comments said permissions are stored per user.
+- **Found on the way:** #164 (script logger output discarded).
+
 ## 2026-11-15 — Reinvention decisions 1 to 4, batch 4 (branch `batch-2026-11-15-reinvention-4`)
 
 Michael took the report's defaults for the four decisions, with one change to decision 3 after the agent found the literal default would turn TCP/MLLP TLS off:

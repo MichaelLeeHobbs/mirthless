@@ -87,8 +87,7 @@ These match Mirth Connect's shortcuts, so ported scripts read the same maps. Bef
 
 ## Logging
 
-`logger` writes structured log entries attached to the message; they appear in the
-message browser and server logs.
+`logger` is available to every script, but its output is not shown or stored anywhere yet: the entries are collected and then discarded ([#164](https://github.com/MichaelLeeHobbs/mirthless/issues/164)). To see a value while debugging, put it in the channel map or in the message content.
 
 ```js
 logger.info('message');
