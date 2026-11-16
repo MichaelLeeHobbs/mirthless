@@ -1,7 +1,7 @@
 // ===========================================
 // Runtime database role — real Postgres integration
 // ===========================================
-// The production server connects as a role that owns no tables (#232, D-307).
+// The production server connects as a role that owns no application tables (#232, D-307).
 // This suite builds that setup in a throwaway database: it applies the real
 // migrations as the owner (DATABASE_URL's user), provisions a runtime role with
 // the same code the server image's entrypoint runs, then connects as that role
@@ -19,15 +19,18 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { describeIntegration } from './_setup.js';
-import { checkRuntimeRole, provisionRuntimeRole } from '../../src/db/runtime-role.js';
+import { PgBoss } from 'pg-boss';
+import { checkRuntimeRole, PG_BOSS_SCHEMA, provisionRuntimeRole } from '../../src/db/runtime-role.js';
 
 const SERVER_DIR = fileURLToPath(new URL('../../', import.meta.url));
 const MIGRATIONS = fileURLToPath(new URL('../../src/db/migrations', import.meta.url));
 const SUFFIX = randomUUID().replace(/-/g, '').slice(0, 12);
 const DB_NAME = `gf_roles_${SUFFIX}_test`;
+const FRESH_DB_NAME = `gf_roles_${SUFFIX}_fresh_test`;
 const ROLE = `gf_app_${SUFFIX}`;
 const ROLE_PASSWORD = `pw_${randomUUID()}`;
 const INSUFFICIENT_PRIVILEGE = '42501';
+const OLD_QUEUE = 'itest-before-split';
 
 function urlFor(database: string, user?: string, password?: string): string {
   const url = new URL(process.env.DATABASE_URL ?? '');
@@ -45,6 +48,28 @@ async function failureCode(client: pg.Client, text: string): Promise<string | un
     return (err as { code?: string }).code;
   }
   return undefined;
+}
+
+/**
+ * Start pg-boss on `connectionString`, run `work`, stop it; fail on any pg-boss
+ * error event. `createSchema: false` is how lib/queue.ts starts it now; the
+ * server before the split started it with pg-boss's default, true.
+ */
+async function withBoss(
+  connectionString: string,
+  work: (boss: PgBoss) => Promise<void>,
+  createSchema = false,
+): Promise<void> {
+  const boss = new PgBoss({ connectionString, schema: PG_BOSS_SCHEMA, createSchema, supervise: false, schedule: false });
+  const errors: Error[] = [];
+  boss.on('error', (err: Error) => { errors.push(err); });
+  await boss.start();
+  try {
+    await work(boss);
+  } finally {
+    await boss.stop({ graceful: false });
+  }
+  expect(errors.map((e) => e.message)).toEqual([]);
 }
 
 function runSeedAs(databaseUrl: string): Promise<{ readonly code: number | null; readonly output: string }> {
@@ -71,20 +96,32 @@ describeIntegration('Runtime database role (real Postgres)', () => {
   let owner: pg.Client;
   let runtime: pg.Client;
 
-  beforeAll(async () => {
-    admin = new pg.Client({ connectionString: process.env.DATABASE_URL });
-    await admin.connect();
-    await admin.query(`CREATE DATABASE "${DB_NAME}"`);
-
-    const ownerPool = new pg.Pool({ connectionString: urlFor(DB_NAME) });
+  /** Create `database`, apply the migrations as the owner, and return an owner client on it. */
+  async function migratedDatabase(database: string): Promise<pg.Client> {
+    await admin.query(`CREATE DATABASE "${database}"`);
+    const ownerPool = new pg.Pool({ connectionString: urlFor(database) });
     try {
       await migrate(drizzle(ownerPool), { migrationsFolder: MIGRATIONS });
     } finally {
       await ownerPool.end();
     }
+    const client = new pg.Client({ connectionString: urlFor(database) });
+    await client.connect();
+    return client;
+  }
 
-    owner = new pg.Client({ connectionString: urlFor(DB_NAME) });
-    await owner.connect();
+  beforeAll(async () => {
+    admin = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await admin.connect();
+    owner = await migratedDatabase(DB_NAME);
+
+    // An install from before the split: the server ran as the owner, so pg-boss
+    // created its tables and queued a job as the owner.
+    await withBoss(urlFor(DB_NAME), async (boss) => {
+      await boss.createQueue(OLD_QUEUE);
+      await boss.send(OLD_QUEUE, { from: 'owner' });
+    }, true);
+
     const provisioned = await provisionRuntimeRole(owner, { user: ROLE, password: ROLE_PASSWORD });
     expect(provisioned.ok, provisioned.ok ? '' : provisioned.error.message).toBe(true);
 
@@ -97,10 +134,28 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     await owner?.end();
     if (admin) {
       await admin.query(`DROP DATABASE IF EXISTS "${DB_NAME}" WITH (FORCE)`);
+      await admin.query(`DROP DATABASE IF EXISTS "${FRESH_DB_NAME}" WITH (FORCE)`);
       await admin.query(`DROP ROLE IF EXISTS "${ROLE}"`);
       await admin.end();
     }
   });
+
+  it('on a new install, pg-boss creates its tables as the runtime role in the schema it was given', async () => {
+    const fresh = await migratedDatabase(FRESH_DB_NAME);
+    try {
+      const provisioned = await provisionRuntimeRole(fresh, { user: ROLE, password: ROLE_PASSWORD });
+      expect(provisioned.ok, provisioned.ok ? '' : provisioned.error.message).toBe(true);
+    } finally {
+      await fresh.end();
+    }
+
+    await withBoss(urlFor(FRESH_DB_NAME, ROLE, ROLE_PASSWORD), async (boss) => {
+      await boss.createQueue('itest-fresh');
+      await boss.send('itest-fresh', { from: 'runtime' });
+      const [job] = await boss.fetch('itest-fresh');
+      expect(job?.data).toEqual({ from: 'runtime' });
+    });
+  }, 120_000);
 
   it('passes the startup check: not a superuser and without the table owner rights', async () => {
     const check = await checkRuntimeRole(runtime);
@@ -179,6 +234,30 @@ describeIntegration('Runtime database role (real Postgres)', () => {
 
     expect(await failureCode(runtime, `ALTER TABLE "${partition}" ADD COLUMN itest_col integer`)).toBe(INSUFFICIENT_PRIVILEGE);
     expect(await failureCode(runtime, `DROP TABLE "${partition}"`)).toBe(INSUFFICIENT_PRIVILEGE);
+  });
+
+  it('takes over the pg-boss schema the owner created, and pg-boss runs as the runtime role', async () => {
+    const foreign = await owner.query<{ name: string }>(
+      `SELECT c.relname AS name FROM pg_class c WHERE c.relnamespace = $1::regnamespace AND c.relowner <> $2::regrole
+       UNION ALL SELECT p.proname FROM pg_proc p WHERE p.pronamespace = $1::regnamespace AND p.proowner <> $2::regrole
+       UNION ALL SELECT t.typname FROM pg_type t WHERE t.typnamespace = $1::regnamespace AND t.typowner <> $2::regrole
+       UNION ALL SELECT n.nspname FROM pg_namespace n WHERE n.oid = $1::regnamespace AND n.nspowner <> $2::regrole`,
+      [PG_BOSS_SCHEMA, ROLE],
+    );
+    expect(foreign.rows.map((r) => r.name)).toEqual([]);
+
+    await withBoss(urlFor(DB_NAME, ROLE, ROLE_PASSWORD), async (boss) => {
+      // The job the owner queued before the split is still there.
+      const [old] = await boss.fetch(OLD_QUEUE);
+      expect(old?.data).toEqual({ from: 'owner' });
+      await boss.complete(OLD_QUEUE, old?.id ?? '');
+
+      // What the pruner scheduler does at startup, and a maintenance pass (REINDEX included).
+      await boss.createQueue('itest-after-split');
+      await boss.schedule('itest-after-split', '0 3 * * *', {});
+      await boss.send('itest-after-split', { from: 'runtime' });
+      await boss.supervise();
+    });
   });
 
   it('runs the seed (admin user, roles, settings, demo channels and messages) as the runtime role', async () => {

@@ -1,8 +1,10 @@
+-- Database objects the server needs to run as its own role (#232, D-307).
+--
 -- ===========================================================================
--- Create a channel's message partitions through an owner function (D-307)
+-- Create a channel's message partitions through an owner function
 -- ===========================================================================
 -- Postgres lets only the owner of a partitioned table add a partition to it.
--- The server runs as a role that owns no tables (#232), so it cannot run
+-- The server runs as a role that owns no application tables (#232), so it cannot run
 -- CREATE TABLE ... PARTITION OF itself. This function runs as its owner, the
 -- role that runs migrations and owns the message tables, and can do only one
 -- thing: add the six per-channel partitions for one channel id.
@@ -35,4 +37,12 @@ BEGIN
   END LOOP;
 END;
 $$;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.create_channel_partitions(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.create_channel_partitions(uuid) FROM PUBLIC;--> statement-breakpoint
+-- ===========================================================================
+-- The job queue's schema exists before the server starts (D-307)
+-- ===========================================================================
+-- pg-boss (lib/queue.ts) used to create its schema itself, which needs CREATE on
+-- the database. The server's role does not get that: the migration creates the
+-- schema, the server image's entrypoint hands it to the server's role, and
+-- pg-boss runs with createSchema: false and creates its tables inside it.
+CREATE SCHEMA IF NOT EXISTS pgboss;

@@ -1,7 +1,7 @@
 // ===========================================
 // Runtime Database Role
 // ===========================================
-// The server connects to Postgres as a role that owns no tables (D-307). The
+// The server connects to Postgres as a role that owns no application tables (D-307). The
 // owner (the role that runs migrations) creates that role and grants it what the
 // server needs; the server image's entrypoint (docker/migrate.mjs) calls this
 // module after migrating. It imports nothing from the app, so the entrypoint can
@@ -49,6 +49,45 @@ function grantStatements(role: string, database: string): readonly string[] {
   ];
 }
 
+/** The schema pg-boss (lib/queue.ts) keeps its job queue in. Migration 0016 creates it. */
+export const PG_BOSS_SCHEMA = 'pgboss';
+
+/**
+ * Hand the runtime role the pg-boss schema and every table, sequence, function
+ * and type in it (on an install whose server ran as the owner, pg-boss created
+ * them as the owner). pg-boss creates, migrates and maintains (REINDEX,
+ * partitions) its own tables while the server runs, so it needs to own them;
+ * the schema holds only the job queue (the pruner's cron job), and its owner can
+ * change nothing outside it. Reads the role's name from the
+ * `galvaniflow.runtime_role` setting so the name is never spliced into SQL.
+ */
+const PG_BOSS_SCHEMA_SQL = `DO $pgboss$
+DECLARE
+  app text := current_setting('galvaniflow.runtime_role');
+  ns regnamespace := '${PG_BOSS_SCHEMA}'::regnamespace;
+  ddl text;
+BEGIN
+  EXECUTE format('ALTER SCHEMA ${PG_BOSS_SCHEMA} OWNER TO %I', app);
+  FOR ddl IN
+    SELECT format('ALTER TABLE %s OWNER TO %I', c.oid::regclass, app) FROM pg_class c
+     WHERE c.relnamespace = ns AND c.relkind IN ('r', 'p') AND c.relowner <> app::regrole
+    UNION ALL
+    SELECT format('ALTER SEQUENCE %s OWNER TO %I', c.oid::regclass, app) FROM pg_class c
+     WHERE c.relnamespace = ns AND c.relkind = 'S' AND c.relowner <> app::regrole
+       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_class'::regclass
+                         AND d.objid = c.oid AND d.deptype IN ('a', 'i'))
+    UNION ALL
+    SELECT format('ALTER ROUTINE %s OWNER TO %I', p.oid::regprocedure, app) FROM pg_proc p
+     WHERE p.pronamespace = ns AND p.proowner <> app::regrole
+    UNION ALL
+    SELECT format('ALTER TYPE %s OWNER TO %I', t.oid::regtype, app) FROM pg_type t
+     WHERE t.typnamespace = ns AND t.typtype IN ('e', 'd') AND t.typowner <> app::regrole
+  LOOP
+    EXECUTE ddl;
+  END LOOP;
+END
+$pgboss$`;
+
 interface Quoted {
   readonly role: string;
   readonly password: string;
@@ -78,8 +117,8 @@ async function quote(owner: SqlClient, spec: RuntimeRole): Promise<Quoted> {
 }
 
 /**
- * Create the runtime role if it is missing, set its password, and grant it the
- * server's privileges, in one transaction. Run as the role that owns the tables,
+ * Create the runtime role if it is missing, set its password, grant it the
+ * server's privileges and give it the pg-boss schema, in one transaction. Run as the role that owns the tables,
  * after migrating. Refuses a role that is the owner itself or has superuser,
  * CREATEROLE, CREATEDB, REPLICATION or BYPASSRLS, rather than weakening it.
  */
@@ -98,6 +137,8 @@ export async function provisionRuntimeRole(owner: SqlClient, spec: RuntimeRole):
       if (!q.exists) await owner.query(`CREATE ROLE ${q.role} LOGIN`);
       if (spec.password.length > 0) await owner.query(`ALTER ROLE ${q.role} PASSWORD ${q.password}`);
       for (const statement of grantStatements(q.role, q.database)) await owner.query(statement);
+      await owner.query(`SELECT set_config('galvaniflow.runtime_role', $1::text, true)`, [spec.user]);
+      await owner.query(PG_BOSS_SCHEMA_SQL);
       await owner.query('COMMIT');
     } catch (err) {
       await owner.query('ROLLBACK');
@@ -124,7 +165,7 @@ export async function checkRuntimeRole(runtime: SqlClient): Promise<Result<void>
     if (!row) throw new Error('Could not read the current role from pg_roles');
     if (row.superuser || row.owner_rights) {
       const why = row.superuser ? 'a superuser' : 'the owner of the application tables';
-      throw new Error(`DATABASE_URL connects as "${row.name}", which is ${why}. The server must run as a role that owns no tables; see ${DOC}`);
+      throw new Error(`DATABASE_URL connects as "${row.name}", which is ${why}. The server must run as a role that owns no application tables; see ${DOC}`);
     }
   });
 }

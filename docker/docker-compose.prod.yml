@@ -34,7 +34,7 @@ services:
       - ../.env
     environment:
       # Two database roles (D-307, docs/ops/upgrade.md#database-roles). The
-      # server connects as POSTGRES_APP_USER, which owns no tables and holds only
+      # server connects as POSTGRES_APP_USER, which owns no application tables and holds only
       # the grants it needs. POSTGRES_USER, the superuser that owns the tables,
       # runs the migrations at container start and creates and grants the app
       # role; the entrypoint then drops its credentials before the server starts.

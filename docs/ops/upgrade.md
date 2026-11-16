@@ -29,7 +29,7 @@ so re-running is a no-op — safe and idempotent.
 The Docker stack uses two Postgres roles (D-307):
 
 - **Owner** (`POSTGRES_USER`, default `galvaniflow`): the superuser the Postgres image creates. It owns every table and runs only the migration step at container start.
-- **Server** (`POSTGRES_APP_USER`, default `galvaniflow_app`, password `POSTGRES_APP_PASSWORD`): the role the server connects as. It owns no tables, so it cannot alter, empty, drop or disable triggers on any of them, and a leaked connection string or an injected statement cannot either.
+- **Server** (`POSTGRES_APP_USER`, default `galvaniflow_app`, password `POSTGRES_APP_PASSWORD`): the role the server connects as. It owns no application table, so it cannot alter, empty, drop or disable triggers on any of them, and a leaked connection string or an injected statement cannot either. The one thing it owns is the job queue's `pgboss` schema (below).
 
 On every start the migration step, as the owner, creates the server role if it is missing, sets its password from `POSTGRES_APP_PASSWORD`, and grants it exactly this (`packages/server/src/db/runtime-role.ts`):
 
@@ -41,8 +41,9 @@ On every start the migration step, as the owner, creates the server role if it i
 | `USAGE` on every sequence in `public` | `nextval()` for the serial ids |
 | `EXECUTE` on `create_channel_partitions(uuid)` | Only a table's owner may add a partition to it. This owner function (migration 0016) creates a new channel's six message partitions, and nothing else |
 | Default privileges for tables and sequences the owner creates later | The partitions that function creates, and the next migration's tables, get the same grants at once |
+| Ownership of schema `pgboss` and everything in it | The job queue (pg-boss, which runs the scheduled data pruner) creates, migrates and maintains its own tables while the server runs. Migration 0016 creates the schema, so the role needs no `CREATE` on the database. The schema holds no PHI, and owning it gives no rights outside it. On an install whose server ran as the owner, the step hands over the tables pg-boss made, jobs included |
 
-Nothing grants `TRUNCATE`, `REFERENCES`, `TRIGGER` or `CREATE`. The step revokes table and sequence grants before granting, so the list above is the whole of what the role holds on them. Then it connects as the server role and stops the container if that role is a superuser or has the owner's rights (for example `POSTGRES_APP_USER` set to the owner's name). Change `POSTGRES_APP_PASSWORD` and restart to rotate the password.
+Nothing grants `TRUNCATE`, `REFERENCES`, `TRIGGER` or `CREATE` on `public`. The step revokes table and sequence grants before granting, so the list above is the whole of what the role holds on them. Then it connects as the server role and stops the container if that role is a superuser or has the owner's rights (for example `POSTGRES_APP_USER` set to the owner's name). Change `POSTGRES_APP_PASSWORD` and restart to rotate the password.
 
 ### Upgrading an install from before the split
 
@@ -51,14 +52,14 @@ An install created before this change runs the server as the superuser. After `g
 1. Back up, as for any upgrade.
 2. Add a new password to `.env`, next to `POSTGRES_PASSWORD`, letters and digits only: `POSTGRES_APP_PASSWORD=<openssl rand -hex 24>`. Remove any `DATABASE_URL=` line from `.env`; the compose file builds it.
 3. `docker compose -f docker/docker-compose.prod.yml up -d --build`.
-4. Check the server log for `[migrate] the server runs as "galvaniflow_app", which owns no tables`, and that the server's connections use that role:
+4. Check the server log for `[migrate] the server runs as "galvaniflow_app", which owns no application tables`, and that the server's connections use that role:
 
    ```bash
    docker exec -t galvaniflow-db-prod psql -U galvaniflow -d galvaniflow \
      -c "SELECT DISTINCT usename FROM pg_stat_activity WHERE datname = current_database() AND backend_type = 'client backend' AND pid <> pg_backend_pid();"
    ```
 
-The tables, and the partitions the old server created, stay owned by the owner; nothing is moved or rewritten. To go back to the previous version, check out its compose file: it connects as the owner again, and the unused role does no harm.
+The application tables, and the partitions the old server created, stay owned by the owner; only the `pgboss` schema changes owner, and nothing is moved or rewritten. To go back to the previous version, check out its compose file: it connects as the owner again, and the unused role does no harm.
 
 **Running the image another way** (your own compose file, Kubernetes): set `MIGRATION_DATABASE_URL` to the owner's connection string and `DATABASE_URL` to the server role's. The container refuses to start without `MIGRATION_DATABASE_URL`, or when `DATABASE_URL` connects as a superuser or the owner.
 

@@ -7,7 +7,7 @@
 //
 // Two database roles (D-307): MIGRATION_DATABASE_URL is the role that owns the
 // tables, and runs the migrations. DATABASE_URL is the server's own role, which
-// owns no tables. After migrating, the owner creates the server's role if it is
+// owns no application tables. After migrating, the owner creates the server's role if it is
 // missing, sets its password from DATABASE_URL and grants it what the server
 // needs (packages/server/src/db/runtime-role.ts). Then the server's connection is
 // checked: it must not be a superuser or have the owner's rights.
@@ -89,4 +89,4 @@ failOn(
   await withClient(migrationUrl, (owner) => provisionRuntimeRole(owner, role.value)),
 );
 failOn('checking the server role', await withClient(databaseUrl, (runtime) => checkRuntimeRole(runtime)));
-console.log(`[migrate] the server runs as "${role.value.user}", which owns no tables`);
+console.log(`[migrate] the server runs as "${role.value.user}", which owns no application tables`);

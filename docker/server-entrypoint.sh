@@ -4,7 +4,7 @@
 # ===========================================
 # Runs DB migrations as the table owner (MIGRATION_DATABASE_URL), which also
 # grants the server's own role (DATABASE_URL) what it needs and checks that role
-# owns no tables (D-307). Then it drops the owner's credentials from the
+# owns no application tables (D-307). Then it drops the owner's credentials from the
 # environment, runs the idempotent seed and execs the server, both as the
 # server's role.
 # Fail-loud: any migration or role error aborts startup (set -e). The seed is

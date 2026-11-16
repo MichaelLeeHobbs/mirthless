@@ -42,6 +42,7 @@ describe('provisionRuntimeRole', () => {
     expect(statements).toContain('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO galvaniflow_app');
     expect(statements).toContain('REVOKE UPDATE ON TABLE public.events FROM galvaniflow_app');
     expect(statements).toContain('GRANT EXECUTE ON FUNCTION public.create_channel_partitions(uuid) TO galvaniflow_app');
+    expect(statements.at(-2)).toMatch(/^DO \$pgboss\$/);
     expect(statements.at(-1)).toBe('COMMIT');
     expect(statements.some((s) => /TRUNCATE|REFERENCES|TRIGGER|CREATE ON SCHEMA/.test(s) && s.startsWith('GRANT'))).toBe(false);
   });

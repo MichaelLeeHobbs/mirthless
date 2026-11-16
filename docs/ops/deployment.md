@@ -22,7 +22,7 @@ version you run is the commit you have checked out. Tag or pin that commit.
    - `POSTGRES_PASSWORD`: required; compose refuses to start without it. The password of
      the superuser that owns the tables and runs migrations.
    - `POSTGRES_APP_PASSWORD`: required, and different. The server connects as its own role
-     (`galvaniflow_app`), which owns no tables; the migration step creates it with this
+     (`galvaniflow_app`), which owns no application tables; the migration step creates it with this
      password. Use letters and digits only (`openssl rand -hex 24`) for both, as they go into
      connection URLs. See [Database roles](upgrade.md#database-roles).
    - `JWT_SECRET`: at least 32 random characters (`openssl rand -base64 48`).
