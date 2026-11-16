@@ -1,10 +1,18 @@
 import type { ApiResponse } from '@galvaniflow/core-models';
-import { useAuthStore } from '../stores/auth.store.js';
+import { isPlainObject } from '@galvaniflow/core-util';
+import { useAuthStore, type AuthUser } from '../stores/auth.store.js';
 
 const BASE_URL = '/api/v1';
 
+/** What a refresh gives back: the new token and the user as they are now. */
+interface RefreshResult {
+  readonly accessToken: string;
+  /** Null when the answer carries no usable user; the stored one is kept. */
+  readonly user: { readonly profile: AuthUser; readonly mustChangePassword: boolean } | null;
+}
+
 /** Mutex to prevent concurrent token refresh attempts */
-let refreshPromise: Promise<string | null> | null = null;
+let refreshPromise: Promise<RefreshResult | null> | null = null;
 
 interface FetchOptions {
   readonly method?: string;
@@ -13,8 +21,17 @@ interface FetchOptions {
   readonly signal?: AbortSignal;
 }
 
-/** Attempt to refresh the access token using the refresh endpoint */
-async function refreshAccessToken(): Promise<string | null> {
+/** The user in a refresh answer, or null when it is missing or malformed. */
+function readRefreshedUser(value: unknown): RefreshResult['user'] {
+  if (!isPlainObject(value)) return null;
+  const { id, username, email, role, permissions, mustChangePassword } = value;
+  if (typeof id !== 'string' || typeof username !== 'string' || typeof email !== 'string' || typeof role !== 'string') return null;
+  if (!Array.isArray(permissions) || !permissions.every((p): p is string => typeof p === 'string')) return null;
+  return { profile: { id, username, email, role, permissions }, mustChangePassword: mustChangePassword === true };
+}
+
+/** Attempt to refresh the session using the refresh endpoint */
+async function refreshSession(): Promise<RefreshResult | null> {
   try {
     const response = await fetch(`${BASE_URL}/auth/refresh`, {
       method: 'POST',
@@ -27,21 +44,25 @@ async function refreshAccessToken(): Promise<string | null> {
     }
 
     const json: unknown = await response.json();
-    if (
-      typeof json === 'object' &&
-      json !== null &&
-      'success' in json &&
-      (json as { success: boolean }).success &&
-      'data' in json
-    ) {
-      const data = (json as { data: unknown }).data;
-      if (typeof data === 'object' && data !== null && 'accessToken' in data) {
-        return (data as { accessToken: string }).accessToken;
-      }
-    }
-    return null;
+    if (!isPlainObject(json) || json['success'] !== true || !isPlainObject(json['data'])) return null;
+    const { accessToken, user } = json['data'];
+    if (typeof accessToken !== 'string') return null;
+    return { accessToken, user: readRefreshedUser(user) };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Store a refreshed session. The refresh carries the user's current role and
+ * permissions, so a role change shows in the UI at the next refresh (#219).
+ */
+function applyRefresh(refreshed: RefreshResult): void {
+  const store = useAuthStore.getState();
+  if (refreshed.user) {
+    store.setAuth(refreshed.user.profile, refreshed.accessToken, refreshed.user.mustChangePassword);
+  } else {
+    store.setAccessToken(refreshed.accessToken);
   }
 }
 
@@ -83,16 +104,16 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
   // Handle 401 — attempt token refresh with mutex
   if (response.status === 401 && token) {
     if (!refreshPromise) {
-      refreshPromise = refreshAccessToken().finally(() => {
+      refreshPromise = refreshSession().finally(() => {
         refreshPromise = null;
       });
     }
 
-    const newToken = await refreshPromise;
+    const refreshed = await refreshPromise;
 
-    if (newToken) {
-      useAuthStore.getState().setAccessToken(newToken);
-      response = await makeRequest(newToken);
+    if (refreshed) {
+      applyRefresh(refreshed);
+      response = await makeRequest(refreshed.accessToken);
     } else {
       useAuthStore.getState().clearAuth();
       return {

@@ -7,6 +7,7 @@
 import { transform } from 'esbuild';
 import type { Result } from '@galvaniflow/core-util';
 import { tryCatch } from '@galvaniflow/core-util';
+import { SCRIPT_BODY_OPEN, scriptBodyPosition, wrapScriptBody } from '@galvaniflow/core-models';
 import type { CompiledScript } from './sandbox-executor.js';
 
 // ----- Compile Options -----
@@ -50,8 +51,6 @@ function remember(key: string, compiled: CompiledScript): void {
   if (!oldest.done) scriptCache.delete(oldest.value);
 }
 
-const WRAPPER_OPEN = 'async function __galvaniflowScript() {';
-
 /**
  * The compiled function's body: the lines between the wrapper's first line
  * and its closing brace, plus the inline source map comment if there is one.
@@ -60,7 +59,7 @@ const WRAPPER_OPEN = 'async function __galvaniflowScript() {';
 function unwrapBody(output: string): string {
   const lines = output.split('\n');
   const close = lines.lastIndexOf('}');
-  if (!(lines[0] ?? '').startsWith(WRAPPER_OPEN) || close < 1) {
+  if (!(lines[0] ?? '').startsWith(SCRIPT_BODY_OPEN) || close < 1) {
     throw new Error('Script compiler produced output it could not unwrap');
   }
   const trailer = lines.slice(close + 1).filter((l) => l.startsWith('//# sourceMappingURL='));
@@ -92,7 +91,7 @@ export async function compileScript(
     // A script is a function body (the executor runs it inside one), so it is
     // compiled as one: on its own, a top-level await makes esbuild read it as a
     // module, where the script's top-level return is a syntax error.
-    const result = await transform(`${WRAPPER_OPEN}\n${code}\n}`, transformOptions);
+    const result = await transform(wrapScriptBody(code), transformOptions);
     const body = unwrapBody(result.code);
 
     const compiled: CompiledScript = result.map
@@ -124,11 +123,9 @@ function compileMessages(error: unknown): ReadonlyArray<CompileMessage> | null {
 export function compileErrorMessages(error: unknown, code: string): readonly string[] {
   const messages = compileMessages(error);
   if (messages === null) return [error instanceof Error ? error.message : 'Unknown syntax error'];
-  const lastLine = code.split('\n').length;
   return messages.map((m) => {
     if (!m.location) return m.text;
-    // The wrapper's opening line comes before line 1 of the script.
-    const line = Math.min(Math.max(m.location.line - 1, 1), lastLine);
+    const { line } = scriptBodyPosition(code, m.location.line, 1);
     return `Line ${String(line)}: ${m.text}`;
   });
 }
