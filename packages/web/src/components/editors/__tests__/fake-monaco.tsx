@@ -41,7 +41,8 @@ export class FakeCodeEditor {
     onDidChangeContent: (listener: () => void): Disposable => listen(this.content, listener),
   };
 
-  constructor(initial: string, readonly label: string) {
+  /** The editor's aria label, which follows the host's options, as Monaco's does. */
+  constructor(initial: string, public label: string) {
     this.text = initial;
   }
 
@@ -151,6 +152,7 @@ function FakeEditor({ defaultValue = '', onChange, onMount, options }: FakeEdito
   const [editor] = useState(() => new FakeCodeEditor(defaultValue, options?.ariaLabel ?? ''));
   const latest = useRef({ onChange, onMount });
   latest.current = { onChange, onMount };
+  editor.label = options?.ariaLabel ?? '';
   useEffect(() => {
     FakeCodeEditor.mounted.push(editor);
     const sub = editor.onDidChangeModelContent(() => { latest.current.onChange?.(editor.getValue()); });
