@@ -196,7 +196,7 @@ All of these rules live in `services/grant.service.ts`. It is the only writer of
 - **Dedupe:** a 15-minute in-memory LRU, capped at 100K entries, keyed by principal, route, channel and either the message id or the filters including the page.
   - It runs after the guard and never caches responses.
   - Exports, attachment downloads and backups are never deduped.
-  - A list hit still records any new message ids: always for keys, and at most once a minute per entry for browsers.
+  - A list hit still records any new message ids, at once (D-317 changed "at most once a minute per entry for browsers": rows shown between two records went unrecorded).
   - A principal's entries are dropped when their grants hash changes.
   - The dedupe rules are guardian round 2.
 - **Best effort:**
@@ -205,7 +205,7 @@ All of these rules live in `services/grant.service.ts`. It is the only writer of
   - alert sends.
 
   System info counts best-effort records that were lost.
-- **Searches record:** the term (unhashed), the filters, the total and the first 100 ids.
+- **Searches record:** the term (unhashed), the filters, the total and every id the page returned (D-317; pages are at most 200 rows).
 - **Exports:** a reason is required. The exported ids are recorded, and the file carries a header naming the server, exporter, time, audit row id and reason. Backup downloads warn that the file holds credentials and PHI. Config-map values aren't redacted, because a restore would blank them.
 
 ### 7. API keys (#144, slimmed)

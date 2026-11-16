@@ -19,11 +19,10 @@ vi.mock('../../lib/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
+const recordReadOrRefuse = vi.fn();
+vi.mock('../../lib/audited-read.js', () => ({ recordReadOrRefuse }));
 
 const { MessageExportController } = await import('../message-export.controller.js');
-const { emitEvent } = await import('../../lib/event-emitter.js');
-const mockEmit = vi.mocked(emitEvent);
 
 function makeRes(): Response {
   return {
@@ -46,18 +45,32 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockService.toCsv.mockReturnValue('CSV_BODY');
   mockService.toJson.mockReturnValue('JSON_BODY');
+  recordReadOrRefuse.mockResolvedValue(true);
 });
 
 describe('MessageExportController.exportMessages', () => {
-  it('emits a MESSAGES_EXPORTED audit event with user + IP + channel', async () => {
+  it('records MESSAGES_EXPORTED with every exported id, never deduped, before the file', async () => {
     mockService.collect.mockResolvedValue({ ok: true, value: okData, error: null });
     const res = makeRes();
 
     await MessageExportController.exportMessages(makeReq({ format: 'csv', includeContent: false }), res);
 
-    expect(mockEmit).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'MESSAGES_EXPORTED', userId: 'user-5', ipAddress: '10.0.0.5', channelId: 'ch-1' }),
-    );
+    expect(recordReadOrRefuse).toHaveBeenCalledWith(expect.anything(), res, {
+      action: 'MESSAGES_EXPORTED', channelId: 'ch-1',
+      attributes: { format: 'csv', exported: 1, total: 1, truncated: false, includeContent: false, messageIds: [1] },
+    });
+    expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.send).mock.invocationCallOrder[0] ?? 0);
+  });
+
+  it('sends no file when the export cannot be recorded', async () => {
+    mockService.collect.mockResolvedValue({ ok: true, value: okData, error: null });
+    recordReadOrRefuse.mockResolvedValueOnce(false);
+    const res = makeRes();
+
+    await MessageExportController.exportMessages(makeReq({ format: 'csv', includeContent: false }), res);
+
+    expect(res.send).not.toHaveBeenCalled();
+    expect(res.setHeader).not.toHaveBeenCalled();
   });
 
   it('returns a CSV body with attachment + truncation headers', async () => {
@@ -90,7 +103,7 @@ describe('MessageExportController.exportMessages', () => {
 
     await MessageExportController.exportMessages(makeReq({ format: 'csv', includeContent: false }), res);
 
-    expect(mockEmit).not.toHaveBeenCalled();
+    expect(recordReadOrRefuse).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
   });
 });

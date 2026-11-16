@@ -4,9 +4,10 @@
 // Handles HTTP requests for message attachment queries.
 
 import type { Request, Response } from 'express';
+import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { AttachmentService } from '../services/attachment.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
-import { emitEvent } from '../lib/event-emitter.js';
+import { recordReadOrRefuse } from '../lib/audited-read.js';
 import logger from '../lib/logger.js';
 
 export class AttachmentController {
@@ -37,13 +38,11 @@ export class AttachmentController {
       return;
     }
 
-    // HIPAA audit: attachment content is PHI.
-    emitEvent({
-      level: 'INFO', name: 'ATTACHMENT_DOWNLOADED', outcome: 'SUCCESS',
-      userId: req.user?.id ?? null, channelId,
-      serverId: null, ipAddress: req.ip ?? null,
-      attributes: { messageId, attachmentId },
+    // Attachment content is PHI: recorded before it is sent, every time.
+    const recorded = await recordReadOrRefuse(req, res, {
+      action: AUDIT_ACTION.ATTACHMENT_DOWNLOADED, channelId, attributes: { messageId, attachmentId },
     });
+    if (!recorded) return;
 
     res.json({ success: true, data: result.value });
   }

@@ -8,7 +8,8 @@ import type { Request, Response } from 'express';
 const mockService = { listByMessage: vi.fn(), getById: vi.fn() };
 
 vi.mock('../../services/attachment.service.js', () => ({ AttachmentService: mockService }));
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
+const recordReadOrRefuse = vi.fn();
+vi.mock('../../lib/audited-read.js', () => ({ recordReadOrRefuse }));
 vi.mock('../../lib/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
@@ -29,6 +30,44 @@ function makeReq(): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  recordReadOrRefuse.mockResolvedValue(true);
+});
+
+describe('AttachmentController.getById', () => {
+  const req = (): Request => ({
+    params: { id: 'ch-1', msgId: '5', attachmentId: 'a1' }, user: { id: 'u1' },
+  }) as unknown as Request;
+
+  it('records ATTACHMENT_DOWNLOADED, every time, before sending the attachment', async () => {
+    mockService.getById.mockResolvedValue({ ok: true, value: { id: 'a1', content: 'x' }, error: null });
+    const res = makeRes();
+
+    await AttachmentController.getById(req(), res);
+
+    expect(recordReadOrRefuse).toHaveBeenCalledWith(expect.anything(), res, {
+      action: 'ATTACHMENT_DOWNLOADED', channelId: 'ch-1', attributes: { messageId: 5, attachmentId: 'a1' },
+    });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: 'a1', content: 'x' } });
+    expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.json).mock.invocationCallOrder[0] ?? 0);
+  });
+
+  it('sends nothing when the download cannot be recorded', async () => {
+    mockService.getById.mockResolvedValue({ ok: true, value: { id: 'a1', content: 'x' }, error: null });
+    recordReadOrRefuse.mockResolvedValueOnce(false);
+    const res = makeRes();
+
+    await AttachmentController.getById(req(), res);
+
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('records nothing when the attachment is not found', async () => {
+    mockService.getById.mockResolvedValue({ ok: false, value: null, error: new ServiceError('NOT_FOUND', 'no attachment') });
+
+    await AttachmentController.getById(req(), makeRes());
+
+    expect(recordReadOrRefuse).not.toHaveBeenCalled();
+  });
 });
 
 describe('AttachmentController.list', () => {
