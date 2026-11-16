@@ -8,10 +8,11 @@ on:
   # Allow other workflows (e.g. docker-build on a tag) to gate on CI passing.
   workflow_call:
 
-# Which jobs run is decided by the `changes` job (scripts/ci/classify-changes.mjs,
-# rules at the top of that file). It fails toward running: a path it has no rule
-# for, a tag, or any error runs everything. `ci-ok` is the one check branch
-# protection requires, since a skipped job never reports.
+# Which jobs a pull request runs is decided by the `changes` job
+# (scripts/ci/classify-changes.mjs, rules at the top of that file). A push to
+# main, a tag, a path with no rule and any error run everything. `ci-ok` is the
+# one check branch protection should require (main has none configured yet),
+# since a skipped job never reports.
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -25,16 +26,39 @@ jobs:
       docs: ${{ steps.classify.outputs.docs }}
       doc_tests: ${{ steps.classify.outputs.doc_tests }}
     steps:
-      # Full history: a push compares with the commit before it, which may be
-      # several commits back.
+      # Full history, so the merge base with main is always present.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      # Plain Node on the runner: the classifier has no dependencies.
+      # A pull request that changes CI itself runs everything without asking the
+      # classifier, so one that breaks the classifier still runs the tests that
+      # catch it. classify-changes.test.mjs checks the echo list covers every
+      # output above. Plain Node on the runner: the classifier has no dependencies.
       - name: Classify changed files
         id: classify
-        run: node scripts/ci/classify-changes.mjs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          ci_changed=""
+          if [ -n "$BASE_SHA" ]; then
+            base=$(git merge-base "$BASE_SHA" HEAD) && ci_changed=$(git diff --name-only "$base" HEAD -- .github/workflows scripts/ci) || ci_changed="(no merge base)"
+          fi
+          if [ -n "$ci_changed" ]; then
+            echo "CI itself changed, running everything: $ci_changed"
+            {
+              echo full=true
+              echo gate=true
+              echo test_filter=-r
+              echo pg_integration=true
+              echo connector_integration=true
+              echo e2e=true
+              echo docs=false
+              echo doc_tests=
+            } >> "$GITHUB_OUTPUT"
+          else
+            node scripts/ci/classify-changes.mjs
+          fi
 
   build-lint-test:
     needs: changes
@@ -281,14 +305,20 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # DOC_TESTS has one line per package: `<name> <file> <file>...`.
+      # DOC_TESTS has one line per package: `<package dir> <file> <file>...`.
+      # vitest treats each file as a filter and the server passes with no tests,
+      # so a missing file is checked here instead of passing green.
       - name: Tests that read the changed files
         env:
           DOC_TESTS: ${{ needs.changes.outputs.doc_tests }}
         run: |
-          while read -r pkg files; do
-            [ -n "$pkg" ] || continue
-            pnpm --filter "$pkg" exec vitest run $files
+          while read -r dir rest; do
+            [ -n "$dir" ] || continue
+            read -ra files <<< "$rest"
+            for file in "${files[@]}"; do
+              [ -f "$dir/$file" ] || { echo "::error::$dir/$file not found"; exit 1; }
+            done
+            pnpm --filter "./$dir" exec vitest run "${files[@]}"
           done <<< "$DOC_TESTS"
 
   # The one required check. Passes when every job passed or was skipped; fails

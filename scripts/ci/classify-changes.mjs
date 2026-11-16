@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // CI change classifier (#177). The `changes` job in .github/workflows/ci.yml
-// runs this to decide which jobs a pull request or push needs. It fails toward
-// running: anything it cannot classify, and any error, selects everything.
+// runs this to decide which jobs a pull request needs, by its diff from the
+// merge base. Every other event (a push to main, a tag) runs everything. It
+// fails toward running: anything it cannot classify, and any error, selects
+// everything. The workflow does not call it at all when a pull request
+// changes .github/workflows or scripts/ci, so it never judges its own edits.
 //
 //   node scripts/ci/classify-changes.mjs            # CI: reads GITHUB_* env, writes GITHUB_OUTPUT
 //   node scripts/ci/classify-changes.mjs <base-sha> # locally: print what a diff from <base-sha> runs
@@ -176,41 +179,38 @@ export function classify({ changed, packages, testSources }) {
   };
 }
 
-/** Test files grouped by package name, with paths relative to the package. */
+/** Test files grouped by package, with the package's directory and paths relative to it. */
 function groupByPackage(tests, packages) {
   const out = new Map();
   for (const { path } of tests) {
     const [, dir, rest] = /^packages\/([^/]+)\/(.*)$/.exec(path);
     const name = packages.get(dir)?.name;
     if (!name) continue;
-    out.set(name, [...(out.get(name) ?? []), rest]);
+    const entry = out.get(name) ?? { pkg: name, dir: `packages/${dir}`, files: [] };
+    entry.files.push(rest);
+    out.set(name, entry);
   }
-  return [...out].sort(([a], [b]) => a.localeCompare(b)).map(([pkg, files]) => ({ pkg, files: files.sort() }));
+  return [...out.values()].sort((a, b) => a.pkg.localeCompare(b.pkg)).map((e) => ({ ...e, files: e.files.sort() }));
 }
 
 function git(root, args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-/** The commit to diff against, or null when there is none to trust. */
-function findBase(root, env, argv) {
+/**
+ * The commit to diff against, or null to run everything. Only a pull request
+ * narrows. A push to main runs everything: nobody waits on it, it is the
+ * backstop for what two green pull requests break together, and a force push
+ * would otherwise hide the commits it replaced.
+ * @param {string} root repository root
+ * @param {Record<string, string | undefined>} env GITHUB_* variables
+ * @param {string[]} argv a base given on the command line wins
+ */
+export function findBase(root, env, argv) {
   if (argv[0]) return argv[0];
-  if ((env.GITHUB_REF ?? '').startsWith('refs/tags/')) return null;
-  const event = env.GITHUB_EVENT_PATH ? JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')) : {};
-  if (env.GITHUB_EVENT_NAME === 'pull_request') return git(root, ['merge-base', event.pull_request.base.sha, 'HEAD']);
-  if (env.GITHUB_EVENT_NAME === 'push') {
-    const before = event.before ?? '';
-    if (/^[0-9a-f]{40}$/.test(before) && !/^0+$/.test(before)) {
-      try {
-        git(root, ['merge-base', '--is-ancestor', before, 'HEAD']);
-        return before;
-      } catch {
-        // A force push leaves `before` off this history: compare with the parent.
-      }
-    }
-    return git(root, ['rev-parse', 'HEAD^']);
-  }
-  return null;
+  if (env.GITHUB_EVENT_NAME !== 'pull_request' || !env.GITHUB_EVENT_PATH) return null;
+  const event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8'));
+  return git(root, ['merge-base', event.pull_request.base.sha, 'HEAD']);
 }
 
 function decide(root, env, argv) {
@@ -234,9 +234,9 @@ function writeOutputs(result, file) {
     `connector_integration=${result.connectorIntegration}`,
     `e2e=${result.e2e}`,
     `docs=${result.docs}`,
-    // One line per package: `<name> <file> <file>...`, read by the docs job.
+    // One line per package: `<package dir> <file> <file>...`, read by the docs job.
     'doc_tests<<GALVANIFLOW_EOF',
-    ...result.docTests.map((t) => `${t.pkg} ${t.files.join(' ')}`),
+    ...result.docTests.map((t) => `${t.dir} ${t.files.join(' ')}`),
     'GALVANIFLOW_EOF',
   ];
   appendFileSync(file, `${lines.join('\n')}\n`);

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { classify, findReaders, readWorkspace, readWorkspaceTestSources, CI_JOBS, GATE_COMMAND } from './classify-changes.mjs';
+import { classify, findBase, findReaders, readWorkspace, readWorkspaceTestSources, CI_JOBS, GATE_COMMAND } from './classify-changes.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -110,12 +110,12 @@ test('the test filter names each package to test', () => {
 test('docs job runs only the doc tests outside the packages the gate tests', () => {
   const docsOnly = run(['docs/user/connector-reference.md']);
   assert.deepEqual(docsOnly.docTests, [
-    { pkg: '@galvaniflow/core-models', files: ['src/schemas/__tests__/connector-reference-docs.test.ts'] },
-    { pkg: '@galvaniflow/server', files: ['src/__tests__/docs/connector-reference.test.ts'] },
+    { pkg: '@galvaniflow/core-models', dir: 'packages/core-models', files: ['src/schemas/__tests__/connector-reference-docs.test.ts'] },
+    { pkg: '@galvaniflow/server', dir: 'packages/server', files: ['src/__tests__/docs/connector-reference.test.ts'] },
   ]);
   const withServer = run(['docs/user/connector-reference.md', 'packages/server/src/app.ts']);
   assert.deepEqual(withServer.docTests, [
-    { pkg: '@galvaniflow/core-models', files: ['src/schemas/__tests__/connector-reference-docs.test.ts'] },
+    { pkg: '@galvaniflow/core-models', dir: 'packages/core-models', files: ['src/schemas/__tests__/connector-reference-docs.test.ts'] },
   ]);
 });
 
@@ -208,7 +208,50 @@ test('every job but changes and ci-ok is gated on a changes output', () => {
   }
 });
 
-test('the CI gate step runs what pnpm gate runs', () => {
+/** The `run: |` lines of the step named `name` in job `job`. */
+function stepRun(job, name) {
+  const lines = (ciJobs().get(job) ?? '').split('\n');
+  const at = lines.findIndex((l) => l.trim() === `- name: ${name}`);
+  const run = lines.findIndex((l, i) => i > at && l.trim() === 'run: |');
+  assert.ok(at >= 0 && run > at, `${job} has no "${name}" step with a run block`);
+  const indent = /^\s*/.exec(lines[run + 1] ?? '')?.[0] ?? '';
+  const out = [];
+  for (const line of lines.slice(run + 1)) {
+    if (line.trim() !== '' && !line.startsWith(indent)) break;
+    out.push(line.slice(indent.length));
+  }
+  return out.filter((l) => l.trim() !== '');
+}
+
+test('the CI gate step runs what pnpm gate runs, with only the test filter added', () => {
   const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
   assert.equal(pkg.scripts.gate, GATE_COMMAND);
+  const expected = GATE_COMMAND.split(' && ').map((c) => (c === 'pnpm test:coverage' ? 'pnpm $TEST_FILTER run test:coverage' : c));
+  assert.deepEqual(stepRun('build-lint-test', 'Gate (build, lint, test with coverage)'), expected);
+});
+
+/** The `changes` job's output names. */
+function changesOutputs() {
+  const body = ciJobs().get('changes') ?? '';
+  const block = /\n {4}outputs:\n((?: {6}.+\n)+)/.exec(`\n${body}`)?.[1] ?? '';
+  return [...block.matchAll(/^ {6}([a-z0-9_]+):/gm)].map((m) => m[1]).sort();
+}
+
+test('a change to CI itself runs everything without asking the classifier', () => {
+  const run = stepRun('changes', 'Classify changed files').join('\n');
+  assert.match(run, /-- \.github\/workflows scripts\/ci/);
+  // The fixed full-run outputs must cover every output, or a new job's flag stays empty and the job skips.
+  const written = [...run.matchAll(/echo ([a-z0-9_]+)=/g)].map((m) => m[1]).sort();
+  assert.deepEqual(written, changesOutputs());
+  assert.match(run, /echo full=true/);
+  assert.match(run, /echo docs=false/);
+});
+
+test('only a pull request is narrowed: pushes, tags, dispatch and merge queues run everything', () => {
+  const at = (env) => findBase('.', env, []);
+  assert.equal(at({ GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main' }), null);
+  assert.equal(at({ GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/tags/v1.0.0' }), null);
+  assert.equal(at({ GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/main' }), null);
+  assert.equal(at({ GITHUB_EVENT_NAME: 'merge_group', GITHUB_REF: 'refs/heads/gh-readonly-queue/main/x' }), null);
+  assert.equal(at({}), null);
 });
