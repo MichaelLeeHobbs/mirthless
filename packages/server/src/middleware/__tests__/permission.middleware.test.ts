@@ -2,7 +2,7 @@
 // Permission Middleware Tests
 // ===========================================
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 import type { Request, Response } from 'express';
 
 const emitEvent = vi.fn();
@@ -51,15 +51,17 @@ function recorded(): Record<string, unknown> {
   return (emitEvent.mock.calls[0]?.[0] as { attributes: Record<string, unknown> }).attributes;
 }
 
-// Each test starts in a fresh minute, so refusals from one test never coalesce with another's.
-let clock = Date.UTC(2026, 10, 16, 9, 0, 0);
-beforeEach(() => {
+// One fake clock for the file. Each test starts ten minutes on, after the sweep
+// has written and forgotten every window, so no test sees another's refusals.
+beforeAll(() => {
   vi.useFakeTimers();
-  clock += 10 * 60_000;
-  vi.setSystemTime(clock);
+  vi.setSystemTime(Date.UTC(2026, 10, 16, 9, 0, 0));
+});
+beforeEach(() => {
+  vi.advanceTimersByTime(10 * 60_000);
   emitEvent.mockReset();
 });
-afterEach(() => { vi.useRealTimers(); });
+afterAll(() => { vi.useRealTimers(); });
 
 describe('requirePermission', () => {
   it('returns 401 with structured error when unauthenticated', () => {
@@ -170,7 +172,7 @@ describe('deny', () => {
     expect((emitEvent.mock.calls[0]?.[0] as { userId: unknown }).userId).toBe('u9');
   });
 
-  it('records one refusal per caller, route and reason a minute, and counts the rest in the next record', () => {
+  it('records one refusal per caller, route and reason a minute, and writes the held-back count when the minute ends', () => {
     const req = makeReq({ userId: 'u1', route: '/:id' });
     deny(req, makeRes(), DENY_REASON.NO_PERMISSION);
     vi.advanceTimersByTime(30_000);
@@ -181,8 +183,40 @@ describe('deny', () => {
     vi.advanceTimersByTime(31_000);
     deny(req, makeRes(), DENY_REASON.NO_PERMISSION);
 
+    const repeats = emitEvent.mock.calls.map((c) => (c[0] as { attributes: Record<string, unknown> }).attributes['repeatsSinceLast']);
+    // The opening record, the two held back in its minute, then the next minute's opening record.
+    expect(repeats).toEqual([0, 2, 0]);
+  });
+
+  it('writes the repeats of a window nobody refused again after, once the window has closed', () => {
+    const req = makeReq({ userId: 'u-quiet', route: '/:id' });
+    deny(req, makeRes(), DENY_REASON.NO_PERMISSION);
+    deny(req, makeRes(), DENY_REASON.NO_PERMISSION);
+    deny(req, makeRes(), DENY_REASON.NO_PERMISSION);
+
+    vi.advanceTimersByTime(2 * 60_000);
+
     expect(emitEvent).toHaveBeenCalledTimes(2);
-    expect((emitEvent.mock.calls[1]?.[0] as { attributes: Record<string, unknown> }).attributes['repeatsSinceLast']).toBe(2);
+    expect(emitEvent.mock.calls[1]?.[0]).toMatchObject({
+      name: 'ACCESS_DENIED', userId: 'u-quiet', ipAddress: '10.0.0.7',
+      attributes: { route: '/api/v1/channels/:id', reason: 'no_permission', repeatsSinceLast: 2, requestId: null },
+    });
+  });
+
+  it('writes nothing more for a window with no repeats', () => {
+    deny(makeReq({ userId: 'u-once', route: '/' }), makeRes(), DENY_REASON.NO_PERMISSION);
+    vi.advanceTimersByTime(3 * 60_000);
+
+    expect(emitEvent).toHaveBeenCalledOnce();
+  });
+
+  it('records the mount path in lower case, so changing the URL case does not open a new window', () => {
+    const shout = { ...makeReq({ userId: 'u-case', route: '/:id' }), baseUrl: '/api/v1/CHANNELS' } as unknown as Request;
+    const mixed = { ...makeReq({ userId: 'u-case', route: '/:id' }), baseUrl: '/api/v1/Channels' } as unknown as Request;
+    deny(shout, makeRes(), DENY_REASON.NO_PERMISSION);
+    deny(mixed, makeRes(), DENY_REASON.NO_PERMISSION);
+
+    expect(recorded()['route']).toBe('/api/v1/channels/:id');
   });
 
   it('records a different caller, route, method or reason separately within the minute', () => {

@@ -39,58 +39,91 @@ const REFUSALS: Readonly<Record<DenyReason, readonly [ServiceErrorCode, string]>
 // ----- Coalescing -----
 // One record per caller, route and reason a minute. The keys are bounded by the
 // users, the route templates and the reasons, never by the URL a caller sends:
-// every anonymous refusal before routing shares one key per reason.
+// every anonymous refusal before routing shares one key per reason. A sweep
+// each minute writes the refusals a closed window held back, so a burst that
+// stops is still counted, and forgets the window.
 
 const WINDOW_MS = 60_000;
 const MAX_WINDOWS = 10_000;
 
+/** What a refusal record says, apart from its request id and repeat count. */
+interface Refusal {
+  readonly userId: string | null;
+  readonly ipAddress: string | null;
+  readonly method: string;
+  readonly route: string | null;
+  readonly reason: DenyReason;
+  readonly status: number;
+}
+
 interface Window {
   readonly start: number;
+  readonly refusal: Refusal;
   repeats: number;
 }
 
 const windows = new Map<string, Window>();
+let sweeper: ReturnType<typeof setInterval> | undefined;
 
-/**
- * Open a new window for `key` and return how many refusals the last one
- * dropped, or undefined while the current window is open.
- */
-function openWindow(key: string, now: number): number | undefined {
+function writeRefusal(refusal: Refusal, requestId: string | null, repeatsSinceLast: number): void {
+  const { userId, ipAddress, ...rest } = refusal;
+  emitEvent({
+    level: 'WARN', name: EVENT_NAME.ACCESS_DENIED, outcome: 'FAILURE',
+    userId, channelId: null, serverId: null, ipAddress,
+    attributes: { ...rest, principal: userId === null ? 'anonymous' : 'user', requestId, repeatsSinceLast },
+  });
+}
+
+/** Write what each closed window held back (all of them with `all`), then forget it. */
+function sweep(now: number, all = false): void {
+  for (const [key, w] of windows) {
+    if (!all && now - w.start < WINDOW_MS) continue;
+    windows.delete(key);
+    try {
+      if (w.repeats > 0) writeRefusal(w.refusal, null, w.repeats);
+    } catch (err: unknown) {
+      logger.warn({ ...errorInfo(err), reason: w.refusal.reason }, 'Failed to record refused requests');
+    }
+  }
+  if (windows.size === 0 && sweeper !== undefined) {
+    clearInterval(sweeper);
+    sweeper = undefined;
+  }
+}
+
+/** True when `refusal` opens a window and should be written now; false while one is open. */
+function openWindow(key: string, refusal: Refusal, now: number): boolean {
   const open = windows.get(key);
   if (open && now - open.start < WINDOW_MS) {
     open.repeats += 1;
-    return undefined;
+    return false;
   }
-  if (!open && windows.size >= MAX_WINDOWS) {
-    for (const [k, w] of windows) if (now - w.start >= WINDOW_MS) windows.delete(k);
-    // Still full: every key refused within the minute. Start over rather than grow.
-    if (windows.size >= MAX_WINDOWS) windows.clear();
-  }
-  windows.set(key, { start: now, repeats: 0 });
-  return open?.repeats ?? 0;
+  if (open) sweep(now);
+  // Full: every key was refused within the minute. Write what is held and start over rather than grow.
+  if (windows.size >= MAX_WINDOWS) sweep(now, true);
+  windows.set(key, { start: now, refusal, repeats: 0 });
+  sweeper ??= setInterval(() => { sweep(Date.now()); }, WINDOW_MS).unref();
+  return true;
 }
 
-/** The route template (`/api/v1/channels/:id`), or null before routing. Never the URL. */
+/**
+ * The route template (`/api/v1/channels/:id`), or null before routing. Never
+ * the URL. Express matches mount paths in any case and keeps the caller's, so
+ * the mount path is lower-cased: every mount in routes/index.ts is lower case.
+ */
 function routeTemplate(req: Request): string | null {
   const path: unknown = (req.route as { path?: unknown } | undefined)?.path;
   if (typeof path !== 'string') return null;
+  const base = req.baseUrl.toLowerCase();
   // A router's own '/' is the mount path itself: /api/v1/users, not /api/v1/users/.
-  return path === '/' && req.baseUrl !== '' ? req.baseUrl : `${req.baseUrl}${path}`;
+  return path === '/' && base !== '' ? base : `${base}${path}`;
 }
 
 function recordRefusal(req: Request, reason: DenyReason, status: number, userId: string | undefined): void {
   const route = routeTemplate(req);
-  const repeatsSinceLast = openWindow(`${userId ?? '-'}|${req.method} ${route ?? '-'}|${reason}`, Date.now());
-  if (repeatsSinceLast === undefined) return;
-  emitEvent({
-    level: 'WARN', name: EVENT_NAME.ACCESS_DENIED, outcome: 'FAILURE',
-    userId: userId ?? null, channelId: null, serverId: null, ipAddress: req.ip ?? null,
-    attributes: {
-      method: req.method, route, reason, status,
-      principal: userId === undefined ? 'anonymous' : 'user',
-      requestId: req.id ?? null, repeatsSinceLast,
-    },
-  });
+  const refusal: Refusal = { userId: userId ?? null, ipAddress: req.ip ?? null, method: req.method, route, reason, status };
+  if (!openWindow(`${userId ?? '-'}|${req.method} ${route ?? '-'}|${reason}`, refusal, Date.now())) return;
+  writeRefusal(refusal, req.id === undefined ? null : String(req.id), 0);
 }
 
 /**

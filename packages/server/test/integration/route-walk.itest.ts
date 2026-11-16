@@ -184,10 +184,16 @@ describeIntegration('route walk per principal (real authenticate)', () => {
     expect(wrong).toEqual([]);
   }, 120_000);
 
-  /** ACCESS_DENIED records for one user, as route and reason. Recording is fire-and-forget, so callers poll. */
+  /**
+   * The ACCESS_DENIED records that open a window for one user, as route and
+   * reason. A run that crosses a minute also gets the sweep's held-back counts
+   * (repeatsSinceLast above 0), which these checks leave out. Recording is
+   * fire-and-forget, so callers poll.
+   */
   async function refusalsOf(userId: string): Promise<readonly string[]> {
     const { rows } = await pool.query<{ attributes: { method: string; route: string | null; reason: string } }>(
-      `SELECT attributes FROM events WHERE name = 'ACCESS_DENIED' AND user_id = $1`, [userId],
+      `SELECT attributes FROM events WHERE name = 'ACCESS_DENIED' AND user_id = $1
+         AND (attributes->>'repeatsSinceLast')::int = 0`, [userId],
     );
     return rows.map((r) => `${r.attributes.method} ${r.attributes.route ?? '(before routing)'} ${r.attributes.reason}`).sort();
   }
