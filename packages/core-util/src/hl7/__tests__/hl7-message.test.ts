@@ -442,6 +442,43 @@ describe('Hl7Message escaping', () => {
   });
 });
 
+describe('Hl7Message getText hex escapes by MSH-18 (#194)', () => {
+  const withCharset = (msh18: string, nte: string): Hl7Message =>
+    Hl7Message.parse(`MSH|^~\\&|A|B|C|D|2026||ORU^R01|1|P|2.5.1||||||${msh18}\rNTE|1||${nte}`);
+
+  it('decodes as UTF-8 when MSH-18 says UNICODE UTF-8', () => {
+    expect(withCharset('UNICODE UTF-8', 'caf\\XC3A9\\').getText('NTE.3')).toBe('café');
+  });
+
+  it('accepts the UTF-8 spellings senders use, in any case', () => {
+    for (const msh18 of ['unicode utf-8', 'UTF-8', 'utf8', 'UNICODE UTF-8~8859/1']) {
+      expect(withCharset(msh18, 'caf\\XC3A9\\').getText('NTE.3')).toBe('café');
+    }
+  });
+
+  it('reads 0x80 to 0x9F as Windows-1252 when MSH-18 is absent, ASCII or 8859/1', () => {
+    for (const msh18 of ['', 'ASCII', '8859/1']) {
+      expect(withCharset(msh18, '\\X93\\q\\X94\\').getText('NTE.3')).toBe('“q”');
+    }
+  });
+
+  it('reads the bytes of a UTF-8 message without MSH-18 one per character, as before', () => {
+    expect(withCharset('', 'caf\\XC3A9\\').getText('NTE.3')).toBe('cafÃ©');
+  });
+
+  it('follows MSH-18 when a script changes it', () => {
+    const msg = withCharset('', 'caf\\XC3A9\\');
+    msg.set('MSH.18', 'UNICODE UTF-8');
+    expect(msg.getText('NTE.3')).toBe('café');
+  });
+
+  it('round-trips non-ASCII text through setText and getText unchanged', () => {
+    const msg = withCharset('UNICODE UTF-8', '');
+    msg.setText('NTE.3', 'café “q”|’');
+    expect(Hl7Message.parse(msg.toString()).getText('NTE.3')).toBe('café “q”|’');
+  });
+});
+
 describe('Hl7Message MSH-2', () => {
   it('keeps the truncation character of HL7 2.7 and later', () => {
     const raw = 'MSH|^~\\&#|APP|FAC|||20260101||ADT^A01|C1|P|2.7\rPID|1';

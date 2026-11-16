@@ -118,6 +118,8 @@ The returned object exposes:
 | `getSegmentCount(name)` | Number of segments with the given name. |
 | `getSegmentString(name, index?)` | Raw string of the Nth segment (default first). |
 
+`getText` decodes a hex escape (`\X..\`) as bytes in the character set MSH-18 names when you call it. When MSH-18 is `UNICODE UTF-8` (or `UTF-8`, `UTF8`, in any case), the bytes are UTF-8: `caf\XC3A9\` is `café`, and bytes that are not valid UTF-8 become the replacement character `�`. Otherwise (no MSH-18, `ASCII`, `8859/1` or any other value), each byte is one character: 0x80 to 0x9F are read as Windows-1252, so `\X93\q\X94\` is `“q”`, and every other byte as Latin-1, so `\XE9\` is `é`. Windows-1252 leaves 0x81, 0x8D, 0x8F, 0x90 and 0x9D undefined; those stay as the C1 control characters with the same number. Escapes next to each other (`\XC3\\XA9\`) are decoded as one run of bytes. `setText` writes non-ASCII characters as they are, not as hex escapes.
+
 Every number in a path counts from 1, as in the HL7 spec: `PID.3[2]` is the 2nd repetition and `OBX[2]` the 2nd OBX segment. Mirth's E4X indexes count from 0, so when porting a script, Mirth's `[n]` becomes `[n+1]`: `msg['PID']['PID.3'][1]` is `msg.getRaw('PID.3[2]')`, and `msg['OBX'][1]['OBX.5']` is `msg.get('OBX[2].5')`.
 
 ### `createACK(originalRaw, ackCode, textMessage?)`
