@@ -214,9 +214,11 @@ describe('validateConnectorProperties', () => {
     });
 
     // The Mirth importer wrote url, driver and a reader's SELECT as query until 2026-11-12 (#227).
-    it('deploys a Database Reader the Mirth importer wrote before 2026-11-12 once its host and database are filled in', () => {
+    it('deploys a Database Reader the Mirth importer wrote before 2026-11-12 once its host, database and select query are filled in', () => {
       const imported = { url: 'jdbc:postgresql://db/lab', driver: 'org.postgresql.Driver', query: 'SELECT 1', host: 'db', database: 'lab' };
-      expect(validateConnectorProperties('DATABASE', 'source', imported)).toMatchObject({ ok: true });
+      expect(validateConnectorProperties('DATABASE', 'source', { ...imported, selectQuery: 'SELECT 2' })).toMatchObject({ ok: true });
+      // The old query alone is not a select query: that reader never deployed and must not start now.
+      expect(validateConnectorProperties('DATABASE', 'source', imported)).toMatchObject({ ok: false, error: { message: expect.stringContaining('selectQuery') } });
     });
 
     it('rejects a DATABASE source that would update rows with no update query', () => {

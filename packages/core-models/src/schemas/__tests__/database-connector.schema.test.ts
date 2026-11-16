@@ -126,19 +126,23 @@ describe('databaseDestinationPropertiesSchema', () => {
 describe('a Database Reader the Mirth importer wrote before 2026-11-12 (#227)', () => {
   const imported = { url: 'jdbc:postgresql://db/orders', driver: 'org.postgresql.Driver', query: 'SELECT id FROM o', host: 'db', database: 'orders' };
 
-  it('reads the old query as the select query when the user left that empty, and drops url and driver', () => {
-    const parsed = databaseSourcePropertiesSchema.parse({ ...imported, selectQuery: '' });
-    expect(parsed.selectQuery).toBe('SELECT id FROM o');
+  it('keeps a reader the user finished deploying, dropping url, driver and the old query', () => {
+    const parsed = databaseSourcePropertiesSchema.parse({ ...imported, selectQuery: 'SELECT * FROM o WHERE sent = false' });
+    expect(parsed.selectQuery).toBe('SELECT * FROM o WHERE sent = false');
     expect(parsed).not.toHaveProperty('url');
     expect(parsed).not.toHaveProperty('driver');
     expect(parsed).not.toHaveProperty('query');
-    expect(databaseSourcePropertiesSchema.parse(imported).selectQuery).toBe('SELECT id FROM o');
   });
 
-  it('keeps a select query the user filled in, dropping the old query', () => {
-    const parsed = databaseSourcePropertiesSchema.parse({ ...imported, selectQuery: 'SELECT * FROM o WHERE sent = false' });
-    expect(parsed.selectQuery).toBe('SELECT * FROM o WHERE sent = false');
-    expect(parsed).not.toHaveProperty('query');
+  // Such a reader never deployed. Using the old query would start it at server start with a SELECT
+  // nobody sees and no update query, so every poll would read the same rows again.
+  it('does not turn the old query into a select query for a reader that never had one', () => {
+    for (const props of [imported, { ...imported, selectQuery: '' }]) {
+      const result = databaseSourcePropertiesSchema.safeParse(props);
+      expect(result.success).toBe(false);
+      if (result.success) continue;
+      expect(result.error.issues.map((i) => i.path.join('.'))).toContain('selectQuery');
+    }
   });
 
   // DATABASE_DEST_DEFAULTS from 7793c71 (2026-03) until 73d0a87 (2026-11) added `tls`, with the required fields filled.

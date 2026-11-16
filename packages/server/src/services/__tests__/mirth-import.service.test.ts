@@ -841,6 +841,13 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       expect(writerProps(url)).not.toHaveProperty('host');
     });
 
+    it('warns when a ${...} reference stands for the whole location, which the import cannot split (#227)', () => {
+      const warnings = databaseWarnings(convert(withWriter(writer('jdbc:postgresql://${DB_LOCATION}'))));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('${DB_LOCATION}');
+      expect(databaseWarnings(convert(withWriter(writer('jdbc:postgresql://${DB_HOST}:${DB_PORT}/lab'))))).toEqual([]);
+    });
+
     it('does not put the URL itself in a multi-host warning, which can carry credentials', () => {
       const warnings = databaseWarnings(convert(withWriter(writer('jdbc:mysql://h1,h2/lab?password=s3cret'))));
       expect(warnings.join(' ')).not.toContain('s3cret');
@@ -1160,6 +1167,16 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       expect(channel?.destinations[0]?.connectorType).toBe('FILE');
       expect(channel?.destinations[0]?.properties['directory']).toBeUndefined();
       expect(validateConnectorProperties('FILE', 'destination', channel?.destinations[0]?.properties ?? {})).toMatchObject({ ok: false });
+    });
+
+    it('does not carry a remote Reader\'s move to a folder on the partner\'s server as a local move', () => {
+      const moving = reader('FTP', 'no').replace('<afterProcessingAction>DELETE</afterProcessingAction><moveToDirectory></moveToDirectory>', '<afterProcessingAction>MOVE</afterProcessingAction><moveToDirectory>/out/done</moveToDirectory>');
+      const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml')
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, moving));
+      if (!result.ok) throw result.error;
+      const props = result.value.channels[0]?.sourceConnectorProperties ?? {};
+      expect(props['moveToDirectory']).toBeUndefined();
+      expect(props['postAction']).not.toBe('MOVE');
     });
   });
 
