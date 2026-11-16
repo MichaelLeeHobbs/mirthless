@@ -3,7 +3,7 @@
 // ===========================================
 // Verifies the config-driven multi-attachment editor (rank-9): add/remove rows
 // and field edits write the { filename, mimeType, content } shape into
-// props.attachments that the registry's readSmtpAttachments consumes.
+// props.attachments that the SMTP schema in core-models accepts.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';

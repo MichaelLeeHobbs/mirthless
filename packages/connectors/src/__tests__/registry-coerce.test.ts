@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { num, readSmtpAttachments, readStringRecord, readBasicAuth, readFraming, databaseTarget } from '../registry.js';
+import { num, readStringRecord, readBasicAuth, readFraming, databaseTarget } from '../registry.js';
 
 describe('registry databaseTarget()', () => {
   it('is PostgreSQL on 5432 by default, MySQL on 3306, and keeps a port that is set', () => {
@@ -72,43 +72,5 @@ describe('registry num() coercion', () => {
   ];
   it.each(rows)('reads %s as the expected number', (_label, value, expected) => {
     expect(num({ v: value }, 'v', 99)).toBe(expected);
-  });
-});
-
-describe('registry readSmtpAttachments()', () => {
-  it('returns an empty array for non-array input', () => {
-    expect(readSmtpAttachments(undefined)).toEqual([]);
-    expect(readSmtpAttachments(null)).toEqual([]);
-    expect(readSmtpAttachments('nope')).toEqual([]);
-    expect(readSmtpAttachments({})).toEqual([]);
-  });
-
-  it('maps valid entries, carrying mimeType only when a string', () => {
-    const result = readSmtpAttachments([
-      { filename: 'a.txt', content: 'x' },
-      { filename: 'b.txt', content: 'y', mimeType: 'text/csv' },
-    ]);
-    expect(result).toEqual([
-      { filename: 'a.txt', content: 'x' },
-      { filename: 'b.txt', content: 'y', mimeType: 'text/csv' },
-    ]);
-  });
-
-  it('skips malformed entries (missing/non-string filename or content, or non-object)', () => {
-    const result = readSmtpAttachments([
-      null,
-      'string',
-      { filename: 'ok.txt', content: 'keep' },
-      { filename: 123, content: 'bad-name' },
-      { filename: 'bad-content.txt', content: 456 },
-      { content: 'no-filename' },
-      { filename: 'no-content.txt' },
-    ]);
-    expect(result).toEqual([{ filename: 'ok.txt', content: 'keep' }]);
-  });
-
-  it('drops a non-string mimeType but keeps the entry', () => {
-    const result = readSmtpAttachments([{ filename: 'a.txt', content: 'x', mimeType: 42 }]);
-    expect(result).toEqual([{ filename: 'a.txt', content: 'x' }]);
   });
 });
