@@ -976,12 +976,35 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       expect(source('<afterProcessingAction>Shred</afterProcessingAction>')['postAction']).toBe('NONE');
     });
 
-    it('keeps the file in place, as Mirth does, for a Move with no move-to folder, and warns about a rename only on a Move', () => {
-      const blank = convert('<afterProcessingAction>MOVE</afterProcessingAction><moveToDirectory></moveToDirectory><moveToFileName>${originalFilename}.done</moveToFileName>');
+    it('keeps the file in place, as Mirth does, for a Move with no move-to folder and no new name', () => {
+      const blank = convert('<afterProcessingAction>MOVE</afterProcessingAction><moveToDirectory></moveToDirectory><moveToFileName></moveToFileName>');
       expect(blank.channels[0]?.sourceConnectorProperties['postAction']).toBe('NONE');
       expect(validateConnectorProperties('FILE', 'source', blank.channels[0]?.sourceConnectorProperties ?? {})).toMatchObject({ ok: true });
-      expect(blank.warnings.some((w) => w.includes('${originalFilename}.done'))).toBe(true);
+    });
+
+    it('keeps a rename in place as a Move the deploy refuses until a folder is set, since leaving the file would read it again every poll', () => {
+      const rename = convert('<afterProcessingAction>MOVE</afterProcessingAction><moveToDirectory></moveToDirectory><moveToFileName>${originalFilename}.done</moveToFileName>');
+      expect(rename.channels[0]?.sourceConnectorProperties['postAction']).toBe('MOVE');
+      expect(validateConnectorProperties('FILE', 'source', rename.channels[0]?.sourceConnectorProperties ?? {})).toMatchObject({ ok: false, error: { message: expect.stringContaining('moveToDirectory') } });
+      const warning = rename.warnings.find((w) => w.includes('${originalFilename}.done'));
+      expect(warning).toContain('will not deploy');
       expect(convert('<afterProcessingAction>DELETE</afterProcessingAction><moveToFileName>left.over</moveToFileName>').warnings.some((w) => w.includes('left.over'))).toBe(false);
+    });
+
+    it('says a Reader or Writer on Mirth\'s default charset read the server\'s default, and GalvaniFlow reads UTF-8', () => {
+      const result = convert('<charsetEncoding>DEFAULT_ENCODING</charsetEncoding>', '<outputPattern>a.txt</outputPattern><charsetEncoding>DEFAULT_ENCODING</charsetEncoding>');
+      expect(result.warnings.filter((w) => w.includes('windows-1252'))).toHaveLength(2);
+      expect(convert('<charsetEncoding>DEFAULT_ENCODING</charsetEncoding><binary>true</binary>').warnings.some((w) => w.includes('windows-1252'))).toBe(false);
+      expect(convert('<charsetEncoding>UTF-8</charsetEncoding>').warnings.some((w) => w.includes('windows-1252'))).toBe(false);
+    });
+
+    it('reads an empty scheme as the file scheme', () => {
+      const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml').replace(
+        /<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/,
+        '<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme></scheme><host>/data/in</host></properties><transformer',
+      ));
+      if (!result.ok) throw result.error;
+      expect(result.value.channels[0]?.sourceConnectorProperties['directory']).toBe('/data/in');
     });
 
     it('says a file name value that cannot be filled stops the deploy unless it names a configuration map entry', () => {
@@ -1038,7 +1061,8 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
 
     it('says nothing about Mirth\'s default Reader settings', () => {
       const defaults = '<regex>false</regex><directoryRecursion>false</directoryRecursion><afterProcessingAction>NONE</afterProcessingAction><moveToDirectory></moveToDirectory><moveToFileName></moveToFileName><errorReadingAction>NONE</errorReadingAction><errorResponseAction>AFTER_PROCESSING</errorResponseAction><errorMoveToDirectory></errorMoveToDirectory><errorMoveToFileName></errorMoveToFileName><checkFileAge>true</checkFileAge><fileAge>1000</fileAge><fileSizeMinimum>0</fileSizeMinimum><fileSizeMaximum></fileSizeMaximum><ignoreFileSizeMaximum>true</ignoreFileSizeMaximum><sortBy>date</sortBy><binary>false</binary><charsetEncoding>DEFAULT_ENCODING</charsetEncoding>';
-      expect(convert(defaults).warnings.filter((w) => w.includes('File Reader'))).toEqual([]);
+      // Only the server-default charset is worth a word (see the DEFAULT_ENCODING test).
+      expect(convert(defaults).warnings.filter((w) => w.includes('File Reader') && !w.includes('windows-1252'))).toEqual([]);
     });
 
     it('warns that a comma-separated file filter, which Mirth splits, is one glob here', () => {
@@ -1078,6 +1102,30 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
         connectorType: 'SFTP',
         properties: { host: 'sftp.partner.org', remoteDirectory: '/in', fileNameTemplate: '${messageId}.hl7', appendMode: false, strictHostKey: false },
       });
+    });
+
+    const sftp = (readerExtra: string, writerExtra: string): MirthConvertResult => {
+      const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml')
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader('SFTP', 'no').replace('</properties><transformer', `${readerExtra}</properties><transformer`))
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer.replace(/<outputAppend>false<\/outputAppend>/, '').replace('</properties>', `${writerExtra}</properties>`)));
+      if (!result.ok) throw result.error;
+      return result.value;
+    };
+
+    it('carries an SFTP Reader\'s charset, and warns about a Writer charset or binary files the SFTP connector cannot handle', () => {
+      const result = sftp('<charsetEncoding>ISO-8859-1</charsetEncoding><binary>true</binary>', '<outputAppend>true</outputAppend><charsetEncoding>ISO-8859-1</charsetEncoding>');
+      expect(result.channels[0]?.sourceConnectorProperties['charset']).toBe('latin1');
+      expect(result.warnings.some((w) => w.includes('SFTP Writer writes UTF-8 only'))).toBe(true);
+      expect(result.warnings.some((w) => w.includes('File Reader') && w.includes('binary'))).toBe(true);
+      const plain = sftp('<charsetEncoding>UTF-8</charsetEncoding>', '<outputAppend>true</outputAppend><charsetEncoding>UTF-8</charsetEncoding>');
+      expect(plain.warnings.some((w) => w.includes('UTF-8 only') || w.includes('binary'))).toBe(false);
+    });
+
+    it('imports the channel disabled when an SFTP Writer must fail rather than overwrite an existing file', () => {
+      const result = sftp('', '<outputAppend>false</outputAppend><errorOnExists>true</errorOnExists>');
+      expect(result.channels[0]?.destinations[0]?.connectorType).toBe('SFTP');
+      expect(result.channels[0]?.enabled).toBe(false);
+      expect(result.warnings.some((w) => w.includes('already exists'))).toBe(true);
     });
 
     it('keeps host key checking on, and says the key must be entered', () => {
