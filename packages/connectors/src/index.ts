@@ -51,6 +51,7 @@ export {
   FileDispatcher,
   matchGlob,
   resolveOutputFilename,
+  unknownPlaceholders,
   FILE_SORT_BY,
   FILE_POST_ACTION,
   type FileReceiverConfig,

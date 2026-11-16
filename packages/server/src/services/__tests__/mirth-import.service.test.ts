@@ -869,12 +869,79 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
 
     expect(channel.sourceConnectorType).toBe('FILE');
     expect(channel.sourceConnectorProperties).toEqual({
-      directory: '/data/in', fileFilter: '*.hl7', moveToDirectory: '/data/done', pollingIntervalMs: 2000, processBatch: true,
+      directory: '/data/in', fileFilter: '*.hl7', postAction: 'MOVE', moveToDirectory: '/data/done',
+      sortBy: 'DATE', checkFileAge: true, fileAgeMs: 1000, binary: false, pollingIntervalMs: 2000, processBatch: true,
     });
-    expect(channel.destinations[0]).toMatchObject({ connectorType: 'FILE', properties: { directory: '/data/out' } });
+    expect(channel.destinations[0]).toMatchObject({
+      connectorType: 'FILE',
+      properties: { directory: '/data/out', outputPattern: '${messageId}.hl7', appendMode: false, binary: false },
+    });
     // Every key the importer writes is one the FILE schemas accept, so the channel deploys as imported.
     expect(validateConnectorProperties('FILE', 'source', channel.sourceConnectorProperties)).toMatchObject({ ok: true });
     expect(validateConnectorProperties('FILE', 'destination', channel.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
+  });
+
+  describe('a local File Reader\'s after-processing action and a File Writer\'s file name (#178)', () => {
+    const reader = (inner: string): string => `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0"><scheme>FILE</scheme><host>/data/in</host><fileFilter>*.hl7</fileFilter>${inner}</properties><transformer`;
+    const writer = (inner: string): string => `<properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="4.5.0"><scheme>FILE</scheme><host>/data/out</host>${inner}</properties>`;
+    const convert = (readerInner: string, writerInner = ''): MirthConvertResult => {
+      const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml')
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, reader(readerInner))
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer(writerInner)));
+      if (!result.ok) throw result.error;
+      return result.value;
+    };
+    const source = (readerInner: string): Record<string, unknown> => convert(readerInner).channels[0]?.sourceConnectorProperties ?? {};
+    const dest = (writerInner: string): Record<string, unknown> => convert('', writerInner).channels[0]?.destinations[0]?.properties ?? {};
+
+    it.each([
+      ['NONE', 'NONE'],
+      ['DELETE', 'DELETE'],
+      ['MOVE', 'MOVE'],
+    ])('maps afterProcessingAction %s to postAction %s', (action, postAction) => {
+      expect(source(`<afterProcessingAction>${action}</afterProcessingAction><moveToDirectory>/data/done</moveToDirectory>`)['postAction']).toBe(postAction);
+    });
+
+    it('leaves files in place when the export names no action, as Mirth does, instead of the FILE default DELETE', () => {
+      expect(source('')['postAction']).toBe('NONE');
+      expect(validateConnectorProperties('FILE', 'source', source(''))).toMatchObject({ ok: true });
+    });
+
+    it('carries the File Writer\'s append setting, Mirth\'s default (append) when absent', () => {
+      expect(dest('<outputPattern>out.hl7</outputPattern><outputAppend>true</outputAppend>')).toMatchObject({ outputPattern: 'out.hl7', appendMode: true });
+      expect(dest('<outputPattern>out.hl7</outputPattern>')['appendMode']).toBe(true);
+    });
+
+    it('turns Mirth\'s message id and system time placeholders into the ones the File Writer fills', () => {
+      expect(dest('<outputPattern>${message.messageId}_${SYSTIME}.hl7</outputPattern><outputAppend>false</outputAppend>')['outputPattern']).toBe('${messageId}_${timestamp}.hl7');
+    });
+
+    it('keeps the FILE default name when Mirth\'s output pattern is blank', () => {
+      expect(dest('<outputPattern></outputPattern>')['outputPattern']).toBeUndefined();
+    });
+
+    it('carries the File Writer\'s template as the destination template', () => {
+      expect(dest('<outputPattern>a.txt</outputPattern><template>${accession}</template>')['template']).toBe('${accession}');
+      expect(dest('<outputPattern>a.txt</outputPattern><template>${message.encodedData}</template>')['template']).toBeUndefined();
+    });
+
+    it('warns, naming the channel and destination, when the output pattern uses a value the File Writer cannot fill', () => {
+      const result = convert('', '<outputPattern>${originalFilename}.hl7</outputPattern>');
+      expect(result.channels[0]?.destinations[0]?.properties['outputPattern']).toBe('${originalFilename}.hl7');
+      const warning = result.warnings.find((w) => w.includes('${originalFilename}'));
+      expect(warning).toContain('Channel "4x Listener"');
+      expect(warning).toContain('"Try then queue"');
+    });
+
+    it('warns when the Reader\'s file filter is a regular expression, which the FILE source reads as a glob', () => {
+      expect(convert('<regex>true</regex>').warnings.some((w) => w.includes('regular expression'))).toBe(true);
+      expect(convert('<regex>false</regex>').warnings.some((w) => w.includes('regular expression'))).toBe(false);
+    });
+
+    it('warns when Mirth renames the files it moves, which the FILE source does not', () => {
+      const result = convert('<afterProcessingAction>MOVE</afterProcessingAction><moveToDirectory>/d</moveToDirectory><moveToFileName>${originalFilename}.done</moveToFileName>');
+      expect(result.warnings.some((w) => w.includes('${originalFilename}.done'))).toBe(true);
+    });
   });
 
   describe('a File connector with a remote scheme', () => {
