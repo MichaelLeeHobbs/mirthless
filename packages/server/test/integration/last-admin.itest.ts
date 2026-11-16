@@ -95,6 +95,8 @@ describeIntegration('UserService last enabled admin (real Postgres)', () => {
       const results = await Promise.all([UserService.deleteUser(a, b), UserService.deleteUser(b, a)]);
 
       expect(results.filter((r) => r.ok), `round ${String(i)}: exactly one removal succeeds`).toHaveLength(1);
+      const refused = results.find((r) => !r.ok);
+      expect(refused && !refused.ok ? (refused.error as { code?: string }).code : undefined).toBe('CONFLICT');
       expect(await enabledAdminCount()).toBe(1);
       await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [[a, b]]);
       created.length = 0;

@@ -6,7 +6,7 @@
 
 import bcrypt from 'bcryptjs';
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, ne, asc } from 'drizzle-orm';
+import { eq, and, ne, or, asc } from 'drizzle-orm';
 import type { CreateUserInput, UpdateUserInput } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -24,23 +24,34 @@ async function revokeSessions(tx: DbExecutor, userId: string): Promise<void> {
   await tx.delete(sessions).where(eq(sessions.userId, userId));
 }
 
+/** A user being changed, read under lock, and how many other enabled admins there are. */
+interface LockedTarget {
+  readonly role: string;
+  readonly otherEnabledAdmins: number;
+}
+
 /**
- * Refuse a change that would leave no enabled admin other than `id`. Call it in
- * the transaction that writes the change: it locks every enabled admin row, in
- * id order so concurrent callers queue rather than deadlock. A second change
- * waits for the first to commit, and Postgres then re-reads the locked rows, so
- * an admin the first change disabled or demoted no longer counts (#218).
+ * Lock the target user and every enabled admin in one statement, in id order,
+ * so concurrent callers queue rather than deadlock, and read the target's role
+ * under that lock. Call it in the transaction that writes the change. A second
+ * change waits for the first to commit, and Postgres then re-reads the locked
+ * rows, so an admin the first change disabled or demoted no longer counts
+ * (#218). FOR NO KEY UPDATE still serialises these callers but does not block
+ * inserts whose foreign keys point at the rows (sessions, events).
  */
-async function assertAnotherEnabledAdmin(tx: DbExecutor, id: string, message: string): Promise<void> {
-  const admins = await tx
-    .select({ id: users.id })
+async function lockTargetAndAdmins(tx: DbExecutor, id: string): Promise<LockedTarget> {
+  const rows = await tx
+    .select({ id: users.id, role: users.role, enabled: users.enabled })
     .from(users)
-    .where(and(eq(users.role, 'admin'), eq(users.enabled, true)))
+    .where(or(eq(users.id, id), and(eq(users.role, 'admin'), eq(users.enabled, true))))
     .orderBy(asc(users.id))
-    .for('update');
-  if (!admins.some((admin) => admin.id !== id)) {
-    throw new ServiceError('CONFLICT', message);
+    .for('no key update');
+  const target = rows.find((row) => row.id === id);
+  if (!target) {
+    throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
   }
+  const otherEnabledAdmins = rows.filter((row) => row.id !== id && row.role === 'admin' && row.enabled).length;
+  return { role: target.role, otherEnabledAdmins };
 }
 
 /** The columns an update request changes, plus the update time. */
@@ -206,33 +217,22 @@ export class UserService {
   /** Update user fields. Admin-only. Cannot change own role. */
   static async updateUser(id: string, input: UpdateUserInput, actorId: string, context?: AuditContext): Promise<Result<UserDetail>> {
     return tryCatch(async () => {
-      // Fetch existing
-      const [existing] = await db
-        .select({ id: users.id, role: users.role })
-        .from(users)
-        .where(eq(users.id, id));
-
-      if (!existing) {
-        throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
-      }
-
-      // Cannot change own role
-      if (id === actorId && input.role !== undefined && input.role !== existing.role) {
-        throw new ServiceError('SELF_ACTION', 'Cannot change your own role');
-      }
-
-      const updates = userUpdates(input);
-      const roleChanged = input.role !== undefined && input.role !== existing.role;
       const beingDisabled = input.enabled === false;
-      const removesAdmin = existing.role === 'admin' && (beingDisabled || (roleChanged && input.role !== 'admin'));
 
-      await db.transaction(async (tx) => {
+      const oldRole = await db.transaction(async (tx) => {
+        const existing = await lockTargetAndAdmins(tx, id);
+        const roleChanged = input.role !== undefined && input.role !== existing.role;
+
+        if (id === actorId && roleChanged) {
+          throw new ServiceError('SELF_ACTION', 'Cannot change your own role');
+        }
         // Disabling (or demoting) the last enabled admin would lock everyone out.
-        if (removesAdmin) {
-          await assertAnotherEnabledAdmin(tx, id, 'Cannot disable or demote the last enabled admin user');
+        const removesAdmin = existing.role === 'admin' && (beingDisabled || (roleChanged && input.role !== 'admin'));
+        if (removesAdmin && existing.otherEnabledAdmins === 0) {
+          throw new ServiceError('CONFLICT', 'Cannot disable or demote the last enabled admin user');
         }
 
-        await tx.update(users).set(updates).where(eq(users.id, id));
+        await tx.update(users).set(userUpdates(input)).where(eq(users.id, id));
 
         // Permissions are resolved live from the role at request time (single
         // source of truth), so a role change needs no permission re-sync here.
@@ -242,7 +242,9 @@ export class UserService {
         if (beingDisabled) {
           await revokeSessions(tx, id);
         }
+        return existing.role;
       });
+      const roleChanged = input.role !== undefined && input.role !== oldRole;
 
       // Fetch and return updated user
       const result = await this.getUser(id);
@@ -257,7 +259,7 @@ export class UserService {
         serverId: null, ipAddress: context?.ipAddress ?? null,
         attributes: {
           updatedUserId: id,
-          ...(roleChanged ? { oldRole: existing.role, newRole: input.role } : {}),
+          ...(roleChanged ? { oldRole, newRole: input.role } : {}),
           ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
         },
       });
@@ -273,19 +275,11 @@ export class UserService {
         throw new ServiceError('SELF_ACTION', 'Cannot delete your own account');
       }
 
-      const [user] = await db
-        .select({ id: users.id, role: users.role })
-        .from(users)
-        .where(eq(users.id, id));
-
-      if (!user) {
-        throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
-      }
-
       await db.transaction(async (tx) => {
+        const user = await lockTargetAndAdmins(tx, id);
         // Cannot remove the last ENABLED admin: a disabled admin row does not count.
-        if (user.role === 'admin') {
-          await assertAnotherEnabledAdmin(tx, id, 'Cannot delete the last enabled admin user');
+        if (user.role === 'admin' && user.otherEnabledAdmins === 0) {
+          throw new ServiceError('CONFLICT', 'Cannot delete the last enabled admin user');
         }
 
         await tx
