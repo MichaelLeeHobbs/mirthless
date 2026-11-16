@@ -79,6 +79,9 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     return (result.rows[0] as { n: number }).n;
   }
 
+  /** The error the stand-in `create_channel_partitions` raises. */
+  const REFUSED_MARKER = 'itest: partitions refused';
+
   /**
    * Run `body` while migration 0016's `create_channel_partitions` raises, then
    * put the real function back (its definition, read from the catalog).
@@ -87,8 +90,12 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     const { db, sql } = mods;
     const def = await db.execute(sql`SELECT pg_get_functiondef('public.create_channel_partitions(uuid)'::regprocedure) AS def`);
     const original = (def.rows[0] as { def: string }).def;
+    // A run that crashed before its `finally` would leave the stub in place;
+    // never "restore" that as if it were the real function.
+    expect(original).toContain('SECURITY DEFINER');
+    expect(original).not.toContain(REFUSED_MARKER);
     await db.execute(sql.raw(
-      "CREATE OR REPLACE FUNCTION public.create_channel_partitions(p_channel_id uuid) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'itest: partitions refused'; END; $$",
+      `CREATE OR REPLACE FUNCTION public.create_channel_partitions(p_channel_id uuid) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION '${REFUSED_MARKER}'; END; $$`,
     ));
     try {
       await body();
