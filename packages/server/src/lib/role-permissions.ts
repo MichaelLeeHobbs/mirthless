@@ -1,10 +1,10 @@
 // ===========================================
 // Role → Permission Resolution
 // ===========================================
-// Single source of truth mapping a user's role to the concrete
-// (resource, action) permission rows stored in the user_permissions table.
-// Derived from `defaultRoles` (db/seeds/roles.ts) so the seed and the runtime
-// user-management path can never drift apart.
+// Single source of truth mapping a user's role to its (resource, action)
+// permissions, derived from `defaultRoles` (db/seeds/roles.ts). Requests and
+// socket checks resolve a user's permissions from their role through here; the
+// user_permissions table is written by the seed but never read.
 
 import { USER_ROLE, type UserRole } from '@galvaniflow/core-models';
 import { defaultRoles } from '../db/seeds/roles.js';
