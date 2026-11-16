@@ -82,6 +82,7 @@ vi.mock('../code-template.service.js', () => ({
 vi.setConfig({ testTimeout: 60_000 });
 
 const { GlobalScriptService } = await import('../global-script.service.js');
+const { isServiceError } = await import('../../lib/service-error.js');
 
 // ----- Fixtures -----
 
@@ -215,6 +216,30 @@ describe('GlobalScriptService', () => {
       expect(mockInsert).toHaveBeenCalled();
     });
 
+    // #228: a never-saved script reads as TypeScript and the save type-checked
+    // it as TypeScript, but the insert stored JavaScript when the request left
+    // the language out.
+    it('stores a never-saved script sent without a language as TypeScript, the language it was checked in', async () => {
+      pushFromResponse([]);
+      pushFromResponse([]);
+      pushFromResponse([{ scriptType: 'PREPROCESSOR', script: 'return msg;', language: 'TYPESCRIPT' }]);
+
+      const result = await GlobalScriptService.update({ preprocessor: 'return msg;' });
+
+      expect(result.ok).toBe(true);
+      expect(mockInsertValues).toHaveBeenCalledWith({ scriptType: 'PREPROCESSOR', script: 'return msg;', language: 'TYPESCRIPT' });
+    });
+
+    it('stores the language the request gives for a never-saved script', async () => {
+      pushFromResponse([]);
+      pushFromResponse([]);
+      pushFromResponse([]);
+
+      await GlobalScriptService.update({ preprocessor: 'return msg;', languages: { preprocessor: 'JAVASCRIPT' } });
+
+      expect(mockInsertValues).toHaveBeenCalledWith({ scriptType: 'PREPROCESSOR', script: 'return msg;', language: 'JAVASCRIPT' });
+    });
+
     it('skips undefined fields', async () => {
       // No fields → goes straight to final fetch
       pushFromResponse([]);
@@ -258,6 +283,8 @@ describe('GlobalScriptService', () => {
       if (result.ok) return;
       expect(result.error.message).toContain('The global scripts were not saved: a TypeScript global script has type errors.');
       expect(result.error.message).toContain("- Global deploy script, line 1: Type 'string' is not assignable to type 'number'.");
+      // Backup restore tells this refusal from a checker failure by its code (#228).
+      expect(isServiceError(result.error, 'INVALID_INPUT')).toBe(true);
       expect(mockUpdate).not.toHaveBeenCalled();
       expect(mockInsert).not.toHaveBeenCalled();
     });
