@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RawMessage, DispatchResult } from '../../base.js';
-import type { Result } from '@galvaniflow/core-util';
+import { stderr, type Result } from '@galvaniflow/core-util';
 import { FileReceiver, matchGlob, FILE_SORT_BY, FILE_POST_ACTION, type FileReceiverConfig } from '../file-receiver.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 
@@ -470,7 +470,7 @@ describe('FileReceiver', () => {
       const failDispatcher = async (): Promise<Result<DispatchResult>> => ({
         ok: false as const,
         value: null,
-        error: { name: 'Error', code: 'DISPATCH_FAILED', message: 'dispatch failed' },
+        error: stderr({ name: 'Error', code: 'DISPATCH_FAILED', message: 'dispatch failed' }),
       });
 
       receiver = new FileReceiver(makeConfig({ postAction: FILE_POST_ACTION.DELETE }));

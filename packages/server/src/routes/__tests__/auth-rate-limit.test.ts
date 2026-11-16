@@ -37,13 +37,13 @@ interface RouteLayer {
 }
 
 interface MiddlewareLayer {
-  readonly handle: (...args: readonly unknown[]) => unknown;
+  readonly handle: unknown;
   readonly name: string;
 }
 
 /** Get the middleware stack for a specific route + method. */
 function getRouteMiddleware(path: string, method: string): readonly MiddlewareLayer[] {
-  const layers = router.stack as readonly RouteLayer[];
+  const layers = router.stack as unknown as readonly RouteLayer[];
   for (const layer of layers) {
     if (layer.route?.path === path && layer.route.methods[method]) {
       return layer.route.stack;

@@ -17,7 +17,7 @@ function makeConnection(): {
 
 let connection = makeConnection();
 const pool = { getConnection: vi.fn(), end: vi.fn() };
-const createPool = vi.fn(() => pool);
+const createPool = vi.fn((_options: object) => pool);
 
 vi.mock('mysql2/promise', () => ({ default: { createPool } }));
 

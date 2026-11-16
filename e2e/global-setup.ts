@@ -42,7 +42,8 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
   const browser = await chromium.launch();
   try {
-    const page = await browser.newPage({ baseURL: config.projects[0]?.use.baseURL });
+    const baseURL = config.projects[0]?.use.baseURL;
+    const page = await browser.newPage(baseURL !== undefined ? { baseURL } : {});
     await page.goto('/login');
     await page.getByLabel('Username').fill(ADMIN_USER.username);
     await page.getByLabel('Password').fill(ADMIN_USER.password);

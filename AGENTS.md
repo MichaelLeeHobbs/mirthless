@@ -193,8 +193,9 @@ pnpm dev                              # Run all packages in dev mode
 pnpm dev:server                       # Run only server
 pnpm dev:web                          # Run only web UI
 pnpm build                            # Build all packages
-pnpm lint                             # ESLint across all packages and e2e/ (--max-warnings 0)
+pnpm lint                             # ESLint across all packages and e2e/ (--max-warnings 0), then typecheck:tests
 pnpm lint:fix                         # ESLint with auto-fix
+pnpm typecheck:tests                  # Type-check test files, configs and e2e/ (each package's tsconfig.test.json; needs pnpm build)
 pnpm gate                             # build + lint + tests with coverage (what CI runs)
 pnpm test                             # Run all tests
 pnpm test:coverage                    # Run with coverage

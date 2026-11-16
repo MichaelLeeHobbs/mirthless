@@ -1,0 +1,19 @@
+{
+  "//": "Type-checks the test files and configs that the build tsconfig.json leaves out (#242). pnpm lint runs it.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": [
+    "src/**/*",
+    "*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

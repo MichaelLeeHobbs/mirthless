@@ -18,7 +18,6 @@ import { randomUUID } from 'node:crypto';
 import { Admin } from '@platformatic/kafka';
 import { connect as amqpConnect, type ChannelModel } from 'amqplib';
 import {
-  TcpMllpReceiver,
   KafkaReceiver,
   KafkaDispatcher,
   AmqpReceiver,
@@ -37,7 +36,7 @@ import {
   type DeployedChannel,
   type InMemoryStore,
 } from '../support/e2e-harness.js';
-import { sendMllp } from '../support/tcp-helpers.js';
+import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { describeKafka, requireKafka, describeAmqp, requireAmqp, describeAmqpTls, requireAmqpTls } from './gates.js';
 
 const RUN = randomUUID().slice(0, 8);
@@ -114,7 +113,7 @@ describeKafka('Kafka connectors (real broker)', () => {
     const producer = await deployChannel({
       channelId: '00000000-0000-0000-0000-kafkae2e000a',
       dataType: 'RAW',
-      source: new TcpMllpReceiver({ host: '127.0.0.1', port: 17761, maxConnections: 5 }),
+      source: mllpSource(17761, { maxConnections: 5 }),
       transformer: "$c('site', 'north'); $c('patientId', 'P42'); return msg;",
       destinations: [{
         metaDataId: 1,
@@ -280,7 +279,7 @@ describeAmqp('AMQP connectors (real RabbitMQ)', () => {
     const producer = await deployChannel({
       channelId: '00000000-0000-0000-0000-amqpe2e0000a',
       dataType: 'RAW',
-      source: new TcpMllpReceiver({ host: '127.0.0.1', port: 17762, maxConnections: 5 }),
+      source: mllpSource(17762, { maxConnections: 5 }),
       transformer: "$c('event', 'a01'); $c('patientId', 'P42'); return msg;",
       destinations: [{
         metaDataId: 1,

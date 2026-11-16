@@ -210,6 +210,7 @@ describe('UserService', () => {
         username: 'jsmith',
         email: 'new@test.com',
         password: 'password123',
+        role: 'viewer',
       });
 
       expect(result.ok).toBe(false);
@@ -225,6 +226,7 @@ describe('UserService', () => {
         username: 'newuser',
         email: 'jsmith@test.com',
         password: 'password123',
+        role: 'viewer',
       });
 
       expect(result.ok).toBe(false);

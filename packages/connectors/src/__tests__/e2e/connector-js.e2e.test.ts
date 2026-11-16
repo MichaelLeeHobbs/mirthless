@@ -12,14 +12,13 @@ import { describe, it, expect, afterEach } from 'vitest';
 import {
   JavaScriptReceiver,
   JavaScriptDispatcher,
-  TcpMllpReceiver,
   clearChannelRegistry,
   type ConnectorMessage,
 } from '../../index.js';
 import type { Result } from '@galvaniflow/core-util';
 import { VmSandboxExecutor, compileScript, DEFAULT_EXECUTION_OPTIONS, createSandboxContext } from '@galvaniflow/engine';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from './support/e2e-harness.js';
-import { sendMllp } from './support/tcp-helpers.js';
+import { mllpSource, sendMllp } from './support/tcp-helpers.js';
 
 let deployed: DeployedChannel[] = [];
 const sandbox = new VmSandboxExecutor();
@@ -86,7 +85,7 @@ describe('JavaScript destination connector (a script transforms the message)', (
     const channel = await deployChannel({
       channelId: '00000000-0000-0000-0000-connjs0dst01',
       dataType: 'RAW',
-      source: new TcpMllpReceiver({ host: '127.0.0.1', port: 17721, maxConnections: 10 }),
+      source: mllpSource(17721, { maxConnections: 10 }),
       destinations: [{ metaDataId: 1, name: 'JS Dest', connector: dispatcher }],
     });
     deployed.push(channel);

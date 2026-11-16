@@ -20,7 +20,10 @@ vi.mock('../../middleware/auth.middleware.js', async () => {
   return {
     authenticate: (req: Request, _res: Response, next: NextFunction): void => {
       calls.authenticate++;
-      (req as Request & { user: unknown }).user = { id: 'u1', role: 'admin', permissions: permissionNamesForRole('admin') };
+      req.user = {
+        id: 'u1', username: 'admin', email: 'admin@test.local', role: 'admin', isActive: true,
+        permissions: permissionNamesForRole('admin'), mustChangePassword: false,
+      };
       next();
     },
   };
@@ -40,7 +43,7 @@ let base: string;
 beforeAll(async () => {
   const app = express();
   app.use('/api/v1', routes);
-  await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
+  await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
   base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}/api/v1`;
 });
 

@@ -31,6 +31,7 @@ import type {
   DestinationResponse,
   CompiledScript,
   CodeTemplateData,
+  ProcessedMessage,
 } from '@galvaniflow/engine';
 import type {
   SourceConnectorRuntime,
@@ -44,6 +45,19 @@ import type { Result } from '@galvaniflow/core-util';
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value, error: null } as Result<T>;
+}
+
+/**
+ * The pipeline's result as the source connector's dispatch result: SENT maps
+ * to PROCESSED, as the server engine maps it.
+ */
+export function toDispatchResult(result: Result<ProcessedMessage>): Awaited<ReturnType<ChannelRuntimeConfig['onMessage']>> {
+  if (!result.ok) return result;
+  const { messageId, status, response } = result.value;
+  const dispatchStatus = status === 'FILTERED' ? 'FILTERED' : status === 'ERROR' ? 'ERROR' : 'PROCESSED';
+  return ok(response !== undefined
+    ? { messageId, status: dispatchStatus, response }
+    : { messageId, status: dispatchStatus });
 }
 
 // ----- In-memory message store -----
@@ -74,7 +88,14 @@ export interface StoredStatRow {
   errored: number;
 }
 
+export interface StoredMessageRow {
+  readonly channelId: string;
+  readonly messageId: number;
+  processed: boolean;
+}
+
 export interface InMemoryStore extends MessageStore {
+  readonly messages: readonly StoredMessageRow[];
   readonly contents: readonly StoredContentRow[];
   readonly connectorMessages: readonly StoredConnectorMessageRow[];
   readonly stats: readonly StoredStatRow[];
@@ -87,12 +108,13 @@ export interface InMemoryStore extends MessageStore {
 /** Build a fresh in-memory store fully satisfying the MessageStore contract. */
 export function createInMemoryStore(): InMemoryStore {
   let nextMessageId = 1;
-  const messages: { channelId: string; messageId: number; processed: boolean }[] = [];
+  const messages: StoredMessageRow[] = [];
   const connectorMessages: StoredConnectorMessageRow[] = [];
   const contents: StoredContentRow[] = [];
   const stats: StoredStatRow[] = [];
 
   return {
+    messages,
     contents,
     connectorMessages,
     stats,
@@ -305,20 +327,10 @@ export async function deployChannel(spec: ChannelSpec): Promise<DeployedChannel>
     channelId: spec.channelId,
     source: spec.source,
     destinations,
-    onMessage: async (raw) => {
-      const result = await processor.processMessage(
-        { rawContent: raw.content, sourceMap: raw.sourceMap },
-        AbortSignal.timeout(30_000),
-      );
-      if (!result.ok) return result;
-      // Map the pipeline's SENT success status to the source-dispatch PROCESSED
-      // status the runtime/source connectors expect (same as production engine).
-      const { messageId, status, response } = result.value;
-      const dispatchStatus = status === 'FILTERED' ? 'FILTERED' : status === 'ERROR' ? 'ERROR' : 'PROCESSED';
-      return ok(response !== undefined
-        ? { messageId, status: dispatchStatus, response }
-        : { messageId, status: dispatchStatus });
-    },
+    onMessage: async (raw) => toDispatchResult(await processor.processMessage(
+      { rawContent: raw.content, sourceMap: raw.sourceMap },
+      AbortSignal.timeout(30_000),
+    )),
   };
 
   const deployResult = await runtime.deploy(runtimeConfig);
