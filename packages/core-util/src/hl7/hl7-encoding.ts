@@ -51,7 +51,7 @@ function escapeRegex(char: string): string {
  * segment (three-character ID then the field separator) or is blank, because
  * some senders put raw line feeds inside free-text fields.
  */
-export function splitSegments(text: string, enc: Hl7Encoding): string[] {
+export function splitSegments(text: string, enc: Pick<Hl7Encoding, 'fieldSep'>): string[] {
   const sep = escapeRegex(enc.fieldSep);
   const boundary = new RegExp(`\\r\\n?|\\n(?=[A-Z][A-Z0-9]{2}(?:${sep}|[\\r\\n]|$)|[\\r\\n])`);
   return text.replace(/[\r\n]+$/, '').split(boundary).filter((line) => line.trim() !== '');
