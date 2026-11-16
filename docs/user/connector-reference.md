@@ -119,12 +119,12 @@ The destination verifies the server certificate against `tls.caCertId` or the No
 |---|---|---|
 | `port` | Yes | Port to listen on. |
 | `host` | No | Interface to bind. Defaults to `0.0.0.0`. |
-| `path` | No | Path to accept, `/` by default. |
+| `path` | No | Path to accept, `/` by default. Must start with `/`. |
 | `matchSubpaths` | No | `true` also accepts any path below `path` (`/api` takes `/api/report`, not `/apix`). API or Mirth import only. |
-| `method` | No | The one method accepted, `POST` by default. |
+| `method` | No | The one method accepted: `GET`, `POST` (default), `PUT`, `PATCH` or `DELETE`, in any case. |
 | `responseContentType` | No | Content-Type of the reply. |
-| `responseStatusCode` | No | Status for an accepted message. |
-| `errorStatusCode` | No | Status when the pipeline fails. |
+| `responseStatusCode` | No | Status for an accepted message, 100 to 599; `200` by default. |
+| `errorStatusCode` | No | Status when the pipeline fails, 100 to 599; `500` by default. |
 | `maxBodyBytes` | No | Largest request body; a larger one gets 413. |
 | `auth.type` | No | `BASIC` or `TOKEN`. With no `auth` object, anyone who can reach the port can post. API only. |
 | `auth.username` | No | Expected Basic username. |
@@ -140,12 +140,12 @@ The destination verifies the server certificate against `tls.caCertId` or the No
 | Property | Required | Notes |
 |---|---|---|
 | `url` | Yes | Target URL. May use `${name}` message variables. |
-| `method` | No | HTTP method, `POST` by default. |
-| `headers` | No | Name and value pairs; values may use `${name}`. |
+| `method` | No | `GET`, `POST` (default), `PUT`, `PATCH` or `DELETE`, in any case. |
+| `headers` | No | Name and value pairs; values may use `${name}`. Text saved by older editors is read as `Name: value` lines. |
 | `parameters` | No | Query parameters added to the URL; values may use `${name}`. API or Mirth import only. |
 | `basicAuth` | No | Object with `username` and `password`; sent only when the username is set. API or Mirth import only. |
 | `contentType` | No | Content-Type of the request body. |
-| `responseTimeout` | No | Milliseconds before the send is an ERROR. |
+| `responseTimeout` | No | Milliseconds before the send is an ERROR, at least 1; `30000` by default. |
 | `scheme` | No | `HTTPS` always uses TLS with the certificates below, whatever the URL says. |
 | `tls.caCertId` | No | CA used to verify the server. The Node trust store when empty. |
 | `tls.clientCertId` | No | Client certificate with a private key, for mutual TLS. |

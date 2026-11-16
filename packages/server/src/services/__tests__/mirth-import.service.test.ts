@@ -57,6 +57,7 @@ vi.mock('../../db/schema/index.js', () => ({
 
 import type { ChannelExportEntry } from '@galvaniflow/core-models';
 import { MirthImportService, type MirthConvertResult } from '../mirth-import.service.js';
+import { validateConnectorProperties } from '../connector-validation.service.js';
 import { ChannelImportService } from '../channel-import.service.js';
 import { CodeTemplateService } from '../code-template.service.js';
 
@@ -667,6 +668,16 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       host: '0.0.0.0', port: 8081, path: '/', matchSubpaths: true, responseContentType: 'application/json',
     });
     expect(convert4x(swap('api', '202')).sourceConnectorProperties).toMatchObject({ path: '/api', responseStatusCode: 202 });
+    // Every key the importer writes is one the HTTP schema accepts, so the channel deploys.
+    const batch = convert4x((x) => swap('api', '202')(x).replace('<contextPath>', '<sourceConnectorProperties version="4.5.0"><processBatch>true</processBatch></sourceConnectorProperties><contextPath>'));
+    expect(batch.sourceConnectorProperties['processBatch']).toBe(true);
+    expect(validateConnectorProperties('HTTP', 'source', batch.sourceConnectorProperties)).toMatchObject({ ok: true });
+  });
+
+  it('keeps an HTTP Listener\'s ${...} port for the deploy to resolve', () => {
+    const listener = '<properties class="com.mirth.connect.connectors.http.HttpReceiverProperties" version="4.5.0"><listenerConnectorProperties version="4.5.0"><host>0.0.0.0</host><port>${HTTP_PORT}</port></listenerConnectorProperties><contextPath>/</contextPath></properties><transformer';
+    const channel = convert4x((x) => x.replace(/<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/, listener));
+    expect(channel.sourceConnectorProperties['port']).toBe('${HTTP_PORT}');
   });
 
   it('carries a TCP Sender\'s template and keeps a ${...} port for the deploy to resolve', () => {
@@ -837,6 +848,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       url: 'http://api/orders/${accession}', method: 'PUT', headers: { 'X-Source': 'HUB, LAB' }, parameters: { site: '${site}' },
       contentType: 'application/json', basicAuth: { username: 'mirth', password: 's3cret' }, template: '{"a":"${accession}"}',
     });
+    expect(validateConnectorProperties('HTTP', 'destination', channel.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
     expect(channel.destinations[1]?.properties).toEqual({
       host: 'mail', port: 25, to: '${email}', from: 'reports@example.com', subject: '${subject}', bodyTemplate: 'Ready',
       contentType: 'text/html', requireTLS: true, authUser: 'u', authPass: 'p',
