@@ -55,18 +55,20 @@ export class ServerBackupService {
    * it is recorded in the audit log with its SHA-256 before it is returned,
    * and refused (AUDIT_UNAVAILABLE) when the record cannot be written (D-312).
    */
-  static async exportBackup(context?: AuditContext): Promise<Result<ServerBackup>> {
+  static async exportBackup(reason: string, context?: AuditContext): Promise<Result<{ readonly backup: ServerBackup; readonly auditRecordId: number }>> {
     const result = await ServerBackupService.buildBackup();
     if (!result.ok) return result;
-    // The hash of the file as the web saves it: the response parsed and written
-    // with two-space indents (packages/web/src/hooks/use-backup.ts).
+    // The hash of the file as the web saves it, less its exportInfo header
+    // (written first, so removing it leaves the rest as hashed): the response
+    // parsed and written with two-space indents (web/src/hooks/use-backup.ts).
     const sha256 = createHash('sha256').update(JSON.stringify(result.value, null, 2)).digest('hex');
     const recorded = await AuditService.recordOrRefuse({
       action: AUDIT_ACTION.SERVER_BACKUP_EXPORTED, outcome: 'SUCCESS',
       userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null,
-      attributes: { channels: result.value.channels.length, sha256 },
+      attributes: { channels: result.value.channels.length, sha256, reason },
     });
-    return recorded.ok ? result : recorded;
+    if (!recorded.ok) return recorded;
+    return { ok: true, value: { backup: result.value, auditRecordId: recorded.value }, error: null };
   }
 
   private static async buildBackup(): Promise<Result<ServerBackup>> {

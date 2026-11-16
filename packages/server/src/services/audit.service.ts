@@ -54,15 +54,18 @@ type AuditWriter = Pick<typeof db, 'insert'>;
 /** The transaction a recordInTx caller passes. */
 export type AuditTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-async function insertRow(writer: AuditWriter, input: AuditRecordInput): Promise<void> {
-  await writer.insert(auditLog).values({
+/** Insert one row and return its id. */
+async function insertRow(writer: AuditWriter, input: AuditRecordInput): Promise<number> {
+  const [row] = await writer.insert(auditLog).values({
     action: input.action,
     outcome: input.outcome,
     userId: input.userId ?? null,
     channelId: input.channelId ?? null,
     ipAddress: input.ipAddress ?? null,
     attributes: input.attributes ?? null,
-  });
+  }).returning({ id: auditLog.id });
+  if (!row) throw new Error('The audit insert returned no row');
+  return row.id;
 }
 
 function whereFor(query: AuditListQuery): ReturnType<typeof and> {
@@ -88,10 +91,10 @@ export class AuditService {
   }
 
   /**
-   * Write one row, or fail with AUDIT_UNAVAILABLE (503) so the caller refuses
-   * its request. The write may take AUDIT_WRITE_TIMEOUT_MS.
+   * Write one row and return its id, or fail with AUDIT_UNAVAILABLE (503) so
+   * the caller refuses its request. The write may take AUDIT_WRITE_TIMEOUT_MS.
    */
-  static async recordOrRefuse(input: AuditRecordInput): Promise<Result<void>> {
+  static async recordOrRefuse(input: AuditRecordInput): Promise<Result<number>> {
     return tryCatch(async () => {
       // statement_timeout bounds the INSERT on the server; the race bounds the
       // wait for a pool connection and a link that goes silent. A write that
@@ -103,12 +106,12 @@ export class AuditService {
       const written = await tryCatch(async () => {
         const write = db.transaction(async (tx) => {
           await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${String(AUDIT_WRITE_TIMEOUT_MS)}`));
-          await insertRow(tx, input);
+          return insertRow(tx, input);
         });
         // When the timer wins, the write may still fail later; nothing awaits it then.
         void write.catch(() => undefined);
         try {
-          await Promise.race([write, timedOut]);
+          return await Promise.race([write, timedOut]);
         } finally {
           clearTimeout(timer);
         }
@@ -117,6 +120,7 @@ export class AuditService {
         logger.error({ ...errorInfo(written.error), action: input.action }, 'Audit record failed; refusing the request');
         throw new ServiceError('AUDIT_UNAVAILABLE', 'The audit log could not record this request, so it was refused. Try again, and tell an administrator if it keeps happening.');
       }
+      return written.value;
     });
   }
 

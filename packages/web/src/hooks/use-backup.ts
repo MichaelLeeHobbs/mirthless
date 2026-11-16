@@ -17,10 +17,11 @@ interface RestoreInput {
 // ----- Hooks -----
 
 /** Download server backup as JSON blob. */
-export function useBackup(): ReturnType<typeof useMutation<Blob, Error>> {
+export function useBackup(): ReturnType<typeof useMutation<Blob, Error, string>> {
   return useMutation({
-    mutationFn: async () => {
-      const result = await api.get<unknown>('/system/backup');
+    /** `reason`: why the backup is taken, recorded in the audit log and the file's exportInfo. */
+    mutationFn: async (reason: string) => {
+      const result = await api.get<unknown>(`/system/backup?reason=${encodeURIComponent(reason)}`);
       if (!result.success) throw new Error(result.error.message);
       // The server records the SHA-256 of exactly this text in the audit log
       // (server-backup.service.ts): keep the two-space indent in step with it.

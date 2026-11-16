@@ -53,14 +53,14 @@ describe('buildSearchQuery', () => {
 
 describe('buildExportQuery exact output', () => {
   it('serialises every filter after the format', () => {
-    expect(buildExportQuery('json', ALL_FILTERS)).toBe(`format=json&${ALL_FILTERS_QUERY}`);
+    expect(buildExportQuery('json', ALL_FILTERS, 'Audit request')).toBe(`format=json&${ALL_FILTERS_QUERY}&reason=Audit%20request`);
   });
 
   it('sends only the format when no filter is set', () => {
-    expect(buildExportQuery('csv', BLANK_FILTERS)).toBe('format=csv');
+    expect(buildExportQuery('csv', BLANK_FILTERS, 'x')).toBe('format=csv&reason=x');
   });
 
   it('sends only the filters that are set', () => {
-    expect(buildExportQuery('csv', PARTIAL_FILTERS)).toBe('format=csv&status=QUEUED&messageId=7');
+    expect(buildExportQuery('csv', PARTIAL_FILTERS, 'x')).toBe('format=csv&status=QUEUED&messageId=7&reason=x');
   });
 });

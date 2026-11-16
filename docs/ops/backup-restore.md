@@ -121,13 +121,16 @@ Both require authentication (JWT bearer). The `admin` role holds both permission
 ### Export
 
 ```bash
-curl -s https://your-host/api/v1/system/backup \
+curl -s -G https://your-host/api/v1/system/backup \
+  --data-urlencode "reason=Nightly configuration backup" \
   -H "Authorization: Bearer $TOKEN" \
   | jq '.data' > galvanigraph-config-$(date +%Y%m%d).json
 ```
 
+The `reason` is required (one line, 3 to 500 characters): it is recorded in the audit log with the download, which is refused with 503 `AUDIT_UNAVAILABLE` when it cannot be recorded (D-318).
+
 The response is `{ "success": true, "data": { ... } }`. The `data` object
-(`version: 1`) contains:
+(`version: 1`) starts with `exportInfo`, naming the server, who downloaded it, when, the audit record and the reason; restore ignores it. The rest contains:
 
 - `channels`, `channelDependencies`, `channelGroups`, `groupMemberships`
 - `codeTemplateLibraries`, `codeTemplates`, `globalScripts`

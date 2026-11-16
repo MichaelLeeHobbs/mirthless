@@ -41,6 +41,7 @@ import { useEventExport } from '../hooks/use-event-export.js';
 import { EventFilterBar, type EventFilters } from '../components/events/EventFilterBar.js';
 import { EventDetailPanel } from '../components/events/EventDetailPanel.js';
 import { AccessRecords } from '../components/events/AccessRecords.js';
+import { isValidReason } from '../components/common/ConfirmDialog.js';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import { StatusChip } from '../components/common/StatusChip.js';
@@ -62,6 +63,7 @@ export function EventsPage(): ReactNode {
   const [purgeDays, setPurgeDays] = useState('90');
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
+  const [exportReason, setExportReason] = useState('');
 
   const queryParams = {
     page: page + 1,
@@ -87,11 +89,13 @@ export function EventsPage(): ReactNode {
   const handleExport = (): void => {
     void exportEvents({
       format: exportFormat,
+      reason: exportReason.trim(),
       ...(filters.level !== '' ? { level: filters.level } : {}),
       ...(filters.name !== '' ? { name: filters.name } : {}),
       ...(filters.outcome !== '' ? { outcome: filters.outcome } : {}),
     });
     setExportDialogOpen(false);
+    setExportReason('');
   };
 
   const handlePurge = (): void => {
@@ -256,8 +260,14 @@ export function EventsPage(): ReactNode {
         <DialogTitle>Export Events</DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ mb: 2 }}>
-            Export audit events to a file. Current filters will be applied to the export.
+            Export events to a file. Current filters will be applied to the export. The export is recorded in the audit log with your reason, and the file names that record.
           </DialogContentText>
+          <TextField
+            fullWidth required size="small" sx={{ mb: 2 }}
+            label="Reason for this export" value={exportReason}
+            onChange={(e) => { setExportReason(e.target.value.replace(/[\r\n]+/g, ' ')); }}
+            slotProps={{ htmlInput: { maxLength: 500 } }}
+          />
           <FormControl fullWidth size="small">
             <InputLabel id="event-export-format-label">Format</InputLabel>
             <Select labelId="event-export-format-label"
@@ -272,7 +282,7 @@ export function EventsPage(): ReactNode {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => { setExportDialogOpen(false); }}>Cancel</Button>
-          <Button onClick={handleExport} disabled={isExporting}>
+          <Button onClick={handleExport} disabled={isExporting || !isValidReason(exportReason)}>
             {isExporting ? 'Exporting...' : 'Export'}
           </Button>
         </DialogActions>

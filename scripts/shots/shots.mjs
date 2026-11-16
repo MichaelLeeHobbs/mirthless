@@ -59,6 +59,10 @@ const PAGES = {
   system: '/system',
   'system-logs': '/system/logs',
   'system-pruner': '/system/pruner',
+  // Each export and the backup ask for a reason first (D-318).
+  'backup-reason': { url: '/system/backup', click: 'Download Backup' },
+  'message-export-reason': { url: '/channels/c1/messages', click: ['Export', 'Export as CSV'] },
+  'events-export-reason': { url: '/events', click: 'Export' },
   tags: '/tags',
   'alert-editor': '/alerts/a1',
   'alert-templates': { url: '/alerts/a1', keys: 'End' },

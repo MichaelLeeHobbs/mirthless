@@ -171,12 +171,20 @@ export function MessageBrowserPage(): ReactNode {
 
   const clearChecked = useCallback(() => { setCheckedIds(new Set()); }, []);
 
-  const handleExport = useCallback((format: ExportFormat) => {
+  // Choosing a format asks for the reason first (D-312); the export runs on confirm.
+  const [pendingExport, setPendingExport] = useState<ExportFormat | null>(null);
+  const chooseExport = useCallback((format: ExportFormat) => {
     setExportAnchor(null);
+    setPendingExport(format);
+  }, []);
+
+  const handleExport = useCallback((format: ExportFormat, reason: string) => {
+    setPendingExport(null);
     void exportMessages({
       channelId,
       channelName: channel?.name ?? 'channel',
       format,
+      reason,
       filters: {
         ...(statuses.length > 0 ? { status: statuses } : {}),
         ...(receivedFrom.length > 0 ? { receivedFrom: new Date(receivedFrom).toISOString() } : {}),
@@ -196,6 +204,17 @@ export function MessageBrowserPage(): ReactNode {
 
   return (
     <Box>
+      <ConfirmDialog
+        open={pendingExport !== null}
+        title="Export messages"
+        message="The export holds message metadata, and content when it is included. It is recorded in the audit log with your reason and every exported message id, and the file names that record."
+        confirmLabel="Export"
+        severity="info"
+        reasonLabel="Reason for this export"
+        isPending={isExporting}
+        onConfirm={(reason) => { if (pendingExport !== null) handleExport(pendingExport, reason ?? ''); }}
+        onCancel={() => { setPendingExport(null); }}
+      />
       <PageHeader
         title={channel ? `${channel.name} messages` : 'Messages'}
         description="Search, inspect, reprocess and export what this channel received."
@@ -214,8 +233,8 @@ export function MessageBrowserPage(): ReactNode {
           anchorEl={exportAnchor}
           onClose={() => { setExportAnchor(null); }}
         >
-          <MenuItem onClick={() => { handleExport('csv'); }}>Export as CSV</MenuItem>
-          <MenuItem onClick={() => { handleExport('json'); }}>Export as JSON</MenuItem>
+          <MenuItem onClick={() => { chooseExport('csv'); }}>Export as CSV</MenuItem>
+          <MenuItem onClick={() => { chooseExport('json'); }}>Export as JSON</MenuItem>
         </Menu>
         {selectedMessageId !== null ? (
           <>

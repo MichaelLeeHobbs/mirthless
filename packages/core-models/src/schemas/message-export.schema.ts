@@ -4,6 +4,7 @@
 // Query params for GET /channels/:id/messages/export.
 
 import { z } from 'zod/v4';
+import { exportReasonSchema } from './audit.schema.js';
 
 const STATUS_VALUES = ['RECEIVED', 'FILTERED', 'TRANSFORMED', 'SENT', 'QUEUED', 'ERROR', 'PENDING'] as const;
 
@@ -30,6 +31,8 @@ export const messageExportQuerySchema = z.object({
   includeContent: z
     .preprocess((v) => v === 'true' || v === true || v === '1', z.boolean())
     .default(false),
+  /** Why the export is taken: recorded in the audit log and the file's header. */
+  reason: exportReasonSchema,
 });
 
 export type MessageExportQuery = z.infer<typeof messageExportQuerySchema>;

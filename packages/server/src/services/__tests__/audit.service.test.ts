@@ -8,12 +8,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 
-const values = vi.fn();
+const returning = vi.fn();
+const values = vi.fn(() => ({ returning }));
 const txExecute = vi.fn();
 const insert = vi.fn(() => ({ values }));
 const tx = { execute: txExecute, insert };
 const transaction = vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
-const dbInsertValues = vi.fn();
+const dbInsertValues = vi.fn(() => ({ returning }));
 const db = { transaction, insert: vi.fn(() => ({ values: dbInsertValues })) };
 
 vi.mock('../../lib/db.js', () => ({ db }));
@@ -29,16 +30,15 @@ const INPUT = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  values.mockResolvedValue(undefined);
+  returning.mockResolvedValue([{ id: 41 }]);
   txExecute.mockResolvedValue(undefined);
-  dbInsertValues.mockResolvedValue(undefined);
 });
 
 describe('AuditService.recordOrRefuse', () => {
   it('writes the row in a transaction capped by a statement timeout', async () => {
     const result = await AuditService.recordOrRefuse(INPUT);
 
-    expect(result.ok).toBe(true);
+    expect(result).toMatchObject({ ok: true, value: 41 });
     const timeout = new PgDialect().sqlToQuery(txExecute.mock.calls[0]![0] as SQL);
     expect(timeout.sql).toBe(`SET LOCAL statement_timeout = ${String(AUDIT_WRITE_TIMEOUT_MS)}`);
     expect(values).toHaveBeenCalledWith({
@@ -48,7 +48,7 @@ describe('AuditService.recordOrRefuse', () => {
   });
 
   it('refuses with AUDIT_UNAVAILABLE when the row cannot be written, and logs why', async () => {
-    values.mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
+    returning.mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
 
     const result = await AuditService.recordOrRefuse(INPUT);
 
@@ -96,7 +96,7 @@ describe('AuditService.record', () => {
   });
 
   it('returns the failure instead of throwing', async () => {
-    dbInsertValues.mockRejectedValueOnce(new Error('disk full'));
+    returning.mockRejectedValueOnce(new Error('disk full'));
 
     expect((await AuditService.record(INPUT)).ok).toBe(false);
   });

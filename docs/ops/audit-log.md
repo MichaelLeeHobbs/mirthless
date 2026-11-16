@@ -32,6 +32,12 @@ A detached table loses the row trigger it took from `audit_log`, which is why th
 
 Then restart the server, or wait a day, so it makes the months ahead.
 
+## Tracing an exported file
+
+Every message export, event export and backup carries a header naming the audit record that recorded it: `# audit record: N` in a CSV, `"export": { "auditRecordId": N }` in JSON, `"exportInfo": { "auditRecordId": N }` in a backup. Look the record up under Events, Access records, or with `GET /api/v1/audit/N`. It names who exported, from which address, why, and the message ids exported.
+
+A backup's record also holds the SHA-256 of the file as the Backup page saved it, without its `exportInfo` block (the block names the record, so it cannot be inside the hash). To check a backup file: remove the `exportInfo` key, write the rest as JSON with two-space indents, and hash that.
+
 ## Retention
 
 The `audit.retention_years` setting (Settings, Audit log) says how many years are kept. It is never less than 6: a lower value, or a missing or unreadable one, counts as 6.

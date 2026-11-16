@@ -11,7 +11,7 @@ vi.mock('../../services/audit.service.js', () => ({ AuditService: { recordOrRefu
 const emitAuditEvent = vi.fn();
 vi.mock('../event-emitter.js', () => ({ emitAuditEvent }));
 
-const { recordReadOrRefuse, recordReadBestEffort } = await import('../audited-read.js');
+const { recordReadOrRefuse, recordReadBestEffort, recordExportOrRefuse } = await import('../audited-read.js');
 
 function makeRes(): Response & { statusCode?: number; body?: unknown } {
   const res = {} as Response & { statusCode?: number; body?: unknown };
@@ -88,6 +88,25 @@ describe('recordReadOrRefuse', () => {
     expect(recorded[0]).toEqual(page);
     // The new id is recorded at once, on the very next read.
     expect(recorded[1]).toEqual([200]);
+  });
+});
+
+describe('recordExportOrRefuse', () => {
+  it('records the export every time and returns the audit row id for the file header', async () => {
+    recordOrRefuse.mockResolvedValue({ ok: true, value: 77 });
+    const read = { action: 'MESSAGES_EXPORTED', channelId: 'c1', attributes: { reason: 'Review' } };
+
+    expect(await recordExportOrRefuse(req('u-x'), makeRes(), read)).toBe(77);
+    expect(await recordExportOrRefuse(req('u-x'), makeRes(), read)).toBe(77);
+    expect(recordOrRefuse).toHaveBeenCalledTimes(2);
+  });
+
+  it('answers 503 and returns null when the export cannot be recorded', async () => {
+    recordOrRefuse.mockResolvedValueOnce({ ok: false, error: UNAVAILABLE });
+    const res = makeRes();
+
+    expect(await recordExportOrRefuse(req('u-y'), res, { action: 'MESSAGES_EXPORTED', attributes: {} })).toBeNull();
+    expect(res.statusCode).toBe(503);
   });
 });
 
