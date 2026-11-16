@@ -20,6 +20,12 @@ import { smtpDestinationObjectSchema } from '../smtp-connector.schema.js';
 import { dicomSourceObjectSchema, dicomDestinationObjectSchema } from '../dicom-connector.schema.js';
 import { emailSourceObjectSchema } from '../email-connector.schema.js';
 import { sftpSourceObjectSchema, sftpDestinationObjectSchema } from '../sftp-connector.schema.js';
+import {
+  kafkaSourceObjectSchema,
+  kafkaDestinationObjectSchema,
+  amqpSourcePropertiesSchema,
+  amqpDestinationPropertiesSchema,
+} from '../queue-connector.schema.js';
 
 const DOC = readFileSync(new URL('../../../../../docs/user/connector-reference.md', import.meta.url), 'utf-8');
 
@@ -63,6 +69,10 @@ const SCHEMAS = [
   ['EMAIL as a source', 'source', emailSourceObjectSchema.shape],
   ['SFTP as a source', 'source', sftpSourceObjectSchema.shape],
   ['SFTP as a destination', 'destination', sftpDestinationObjectSchema.shape],
+  ['KAFKA as a source', 'source', kafkaSourceObjectSchema.shape],
+  ['KAFKA as a destination', 'destination', kafkaDestinationObjectSchema.shape],
+  ['AMQP as a source', 'source', amqpSourcePropertiesSchema.shape],
+  ['AMQP as a destination', 'destination', amqpDestinationPropertiesSchema.shape],
 ] as const;
 
 describe('docs/user/connector-reference.md property tables', () => {

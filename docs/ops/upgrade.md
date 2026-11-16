@@ -281,6 +281,27 @@ WHERE connector_type = 'SFTP'
                 'fileNameTemplate','appendMode','template');
 ```
 
+**KAFKA** and **AMQP** come last. They have had a core-models schema since they shipped, but it dropped a key it did not list instead of refusing it; now it refuses it, like every other type. Their forms have saved the same keys since they reached `main` on 2026-11-15, and the importer never creates them, so channels saved by the editor keep deploying. Nothing in the database is rewritten. The Kafka destination's record key has always been `messageKey` on `main`; a channel saved with `key` on the pre-release branch now fails and needs it renamed.
+
+A KAFKA or AMQP channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. `key`, `prefetch` or `persistent`, or a key inside `tls` other than `caCertId`, `clientCertId` and `rejectUnauthorized` (such as pasted PEM). Before, such a key was dropped without a word.
+- an AMQP `port` or a `maxStoreAttempts` of `true`, or with a fraction. Before, `true` was read as 1.
+
+```sql
+SELECT id, name, source_connector_type, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE (source_connector_type = 'KAFKA'
+       AND k NOT IN ('brokers','clientId','useTls','tls','saslMechanism','saslUsername','saslPassword','topic','groupId',
+                     'startFrom','charset','maxStoreAttempts','processBatch'))
+   OR (source_connector_type = 'AMQP'
+       AND k NOT IN ('host','port','vhost','username','password','useTls','tls','queue','charset','maxStoreAttempts','processBatch'));
+SELECT channel_id, name, connector_type, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE (connector_type = 'KAFKA'
+       AND k NOT IN ('brokers','clientId','useTls','tls','saslMechanism','saslUsername','saslPassword','topic','messageKey','headers','template'))
+   OR (connector_type = 'AMQP'
+       AND k NOT IN ('host','port','vhost','username','password','useTls','tls','exchange','routingKey','headers','contentType','template'));
+```
+
 ## Standard upgrade (Docker)
 
 ```bash
