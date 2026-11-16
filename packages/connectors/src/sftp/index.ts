@@ -24,4 +24,5 @@ export {
   type SftpClientFactory,
   type SftpConnectionOptions,
   type SftpFileInfo,
+  type SftpPathKind,
 } from './sftp-client.js';

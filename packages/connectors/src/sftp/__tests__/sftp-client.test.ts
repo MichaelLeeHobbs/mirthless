@@ -7,6 +7,7 @@ import {
   validateAuth,
   makeHostVerifier,
   buildConnectOptions,
+  toPathKind,
   type SftpConnectionOptions,
 } from '../sftp-client.js';
 
@@ -65,6 +66,21 @@ describe('makeHostVerifier', () => {
   it('rejects everything when strict is on but no hostKey is configured', () => {
     const verifier = makeHostVerifier(makeOptions({ strictHostKey: true, hostKey: undefined }));
     expect(verifier!(Buffer.from('any-key'))).toBe(false);
+  });
+});
+
+describe('toPathKind', () => {
+  const neverCalled = async (): Promise<boolean> => { throw new Error('a non-link must not be followed'); };
+
+  it('maps ssh2-sftp-client exists() types to a directory, a file or missing', async () => {
+    expect(await toPathKind('d', neverCalled)).toBe('directory');
+    expect(await toPathKind('-', neverCalled)).toBe('file');
+    expect(await toPathKind(false, neverCalled)).toBe('missing');
+  });
+
+  it('follows a link, so a link to a directory is a directory and a link to a file is a file', async () => {
+    expect(await toPathKind('l', async () => true)).toBe('directory');
+    expect(await toPathKind('l', async () => false)).toBe('file');
   });
 });
 
