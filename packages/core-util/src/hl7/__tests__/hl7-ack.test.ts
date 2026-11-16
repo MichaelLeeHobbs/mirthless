@@ -88,6 +88,29 @@ describe('createAck', () => {
     expect(err.get('ERR.4')).toBe('E');
   });
 
+  it('puts the error code in ERR-1 for a v2.3 or v2.4 sender, which has no ERR-3 or ERR-4', () => {
+    for (const version of ['2.3', '2.3.1', '2.4']) {
+      const original = Hl7Message.parse(ADT_A01.replace('|P|2.5.1', `|P|${version}`));
+      const ackStr = createAck(original, { ackCode: 'AE', errorCode: '207' });
+      expect(ackStr.split('\r')[2]).toBe('ERR|^^^207');
+      const ack = Hl7Message.parse(ackStr);
+      expect(ack.get('ERR.1.4')).toBe('207');
+      expect(ack.get('MSH.12')).toBe(version);
+    }
+  });
+
+  it('uses ERR-3 and ERR-4 from v2.5 on, and when the version is missing or unreadable', () => {
+    for (const version of ['2.5', '2.6', '2.8', '', 'X']) {
+      const original = Hl7Message.parse(ADT_A01.replace('|P|2.5.1', `|P|${version}`));
+      expect(createAck(original, { ackCode: 'AE', errorCode: '207' }).split('\r')[2]).toBe('ERR|||207^^HL70357|E');
+    }
+  });
+
+  it('echoes the whole inbound MSH-12, every component of the version id', () => {
+    const original = Hl7Message.parse(ADT_A01.replace('|P|2.5.1', '|P|2.5.1^USA'));
+    expect(parseAck(createAck(original, { ackCode: 'AA' })).getRaw('MSH.12')).toBe('2.5.1^USA');
+  });
+
   it('names the message structure in MSH-9.3 (#187)', () => {
     const ack = parseAck(createAck(Hl7Message.parse(ADT_A01), { ackCode: 'AA' }));
     expect(ack.getRaw('MSH.9')).toBe('ACK^A01^ACK');
