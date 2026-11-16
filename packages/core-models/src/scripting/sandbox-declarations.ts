@@ -309,6 +309,11 @@ export interface ScriptSurface {
   /** True for source filters and transformers, which can choose destinations. */
   readonly destinationSet?: boolean | undefined;
   /**
+   * True for a JavaScript destination's script, which the engine also gives the
+   * channel's id and name and the connector message it is sending.
+   */
+  readonly connectorMessage?: boolean | undefined;
+  /**
    * The code template context (CODE_TEMPLATE_CONTEXT) the script runs in. The
    * engine prepends FUNCTION templates enabled for that context, so the script
    * can call them. Omit for a script that sees no templates.
@@ -318,7 +323,7 @@ export interface ScriptSurface {
 
 /** A stable key for a surface, so callers can skip re-registering the same one. */
 export function scriptSurfaceKey(surface: ScriptSurface): string {
-  return `${surface.message === false ? 'nomsg' : surface.dataType ?? '-'}|${surface.destinationSet === true ? 'ds' : '-'}|${surface.templateContext ?? '-'}`;
+  return `${surface.message === false ? 'nomsg' : surface.dataType ?? '-'}|${surface.destinationSet === true ? 'ds' : '-'}|${surface.connectorMessage === true ? 'cm' : '-'}|${surface.templateContext ?? '-'}`;
 }
 
 /** The parts of a code template that decide whether and how a script sees it. */
@@ -348,12 +353,34 @@ export function templateDeclarations(templates: readonly TemplateSource[], surfa
     .join('\n');
 }
 
-/** Deploy and undeploy scripts run outside the message pipeline, with the channel's identity. */
+/**
+ * Scripts the engine runs outside the pipeline stages get the channel's
+ * identity: deploy, undeploy, and the JavaScript source and destination scripts.
+ */
 const CHANNEL_IDENTITY = `
-/** The id of the channel this script is deploying or undeploying. */
+/** The id of the channel this script runs for. */
 declare var channelId: string;
-/** The name of the channel this script is deploying or undeploying. */
+/** The name of the channel this script runs for. */
 declare var channelName: string;
+`;
+
+/** What a JavaScript destination's script gets beyond msg (the engine's ConnectorMessage). */
+const CONNECTOR_MESSAGE = `${CHANNEL_IDENTITY}
+/** The message this destination is sending. */
+interface ConnectorMessage {
+  readonly channelId: string;
+  readonly messageId: number;
+  /** The destination's metadata id (1 for the first destination). */
+  readonly metaDataId: number;
+  /** The message as this destination sends it, after its transformer. */
+  readonly content: string;
+  readonly dataType: string;
+  readonly correlationId?: string;
+  /** What scripts put in the message's maps, as this destination saw them. */
+  readonly variables?: Readonly<Record<string, unknown>>;
+}
+/** The message this destination is sending. */
+declare var connectorMessage: ConnectorMessage;
 `;
 
 /** The TypeScript declarations a script sees on this surface. */
@@ -373,5 +400,7 @@ declare var msg: ${message.type};
 /** The outbound message being built. ${message.doc} */
 declare var tmp: ${message.type};
 `;
-  return SANDBOX_BASE + messageVars + (surface.destinationSet === true ? DESTINATION_SET : '');
+  return SANDBOX_BASE + messageVars
+    + (surface.destinationSet === true ? DESTINATION_SET : '')
+    + (surface.connectorMessage === true ? CONNECTOR_MESSAGE : '');
 }
