@@ -46,7 +46,7 @@ Two risks to weigh:
 | Here's what we don't have yet. | Trust; links to capabilities.md |
 | TypeScript end to end. | Developer audience |
 
-Cut lines that can't carry a source. The current README's "13ms message processing, Mirth does ~70ms" is one: 13 ms is one transformer message on a dev machine (D-112), our own benchmark measures 30 to 55 ms median with a sandbox script ([throughput-benchmark.md](../ops/throughput-benchmark.md)), and nothing in the repository measures Mirth. The draft README drops it. Performance comes back as a headline only after a side-by-side benchmark we publish with its method.
+Hold lines until they have a published source. The current README's "13ms message processing, Mirth does ~70ms" is one. The 13 ms is real, measured with PostgreSQL running natively on Windows (D-112), because Postgres in Docker on Windows runs some queries far slower than it should. But nothing in the repository yet measures Mirth on the same setup, so the line comes out of the README until the benchmark below is published. Then it comes back as a headline, with the method linked.
 
 ## Claim rules
 
@@ -97,7 +97,7 @@ Don't send traffic to a front door that sticks. Before any public push:
 
 - A migration guide, "Leaving Mirth": export, import preview, the script rewrites the preview names, cut-over. This is the page that turns interest into installs.
 - One short post per shipped feature that Mirth charges for, each with the GG card.
-- A published, reproducible benchmark against Mirth 4.5.2 on the same hardware. Only then use a speed headline.
+- A published, reproducible benchmark. Each engine runs in Docker on the same Linux server, with PostgreSQL in its own container, one engine at a time. GalvaniGraph, OIE and Mirth Connect get the same channels, the same message corpus and the same Postgres settings. Publish the compose files, the channels and the load script so anyone can rerun it. Use Mirth 4.5.2 and OIE, both open source. Read the Mirth 4.6 license before benchmarking 4.6, because commercial licenses often forbid publishing benchmarks. Only then use a speed headline.
 
 ## Measuring it
 
