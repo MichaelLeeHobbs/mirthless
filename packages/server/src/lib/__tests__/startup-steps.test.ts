@@ -6,13 +6,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Logger } from 'pino';
-import type { Result } from 'stderr-lib';
+import { StdError, type Result } from 'stderr-lib';
 import { runStartupSteps, StartupStatus, STARTUP_STEP, STARTUP_STEP_TIMEOUT_MS, type StartupDeps } from '../startup-steps.js';
 
 const OK: Result<void> = { ok: true, value: undefined, error: null };
 
 function failed(message: string): Result<void> {
-  return { ok: false, value: null, error: new Error(message) };
+  return { ok: false, value: null, error: new StdError(message) };
 }
 
 interface Harness {
