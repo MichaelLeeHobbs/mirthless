@@ -80,4 +80,21 @@ describe('urlWithoutQueryValues', () => {
   it('drops values that are percent-encoded or empty', () => {
     expect(urlWithoutQueryValues('/m?contentSearch=Doe%2C%20Jane&empty=')).toBe('/m?contentSearch&empty');
   });
+
+  it('hides a bare token with no "=", which may be the value itself', () => {
+    expect(urlWithoutQueryValues('/m?MRN123456')).toBe('/m?<redacted>');
+    expect(urlWithoutQueryValues('/m?limit=25&MRN123456')).toBe('/m?limit&<redacted>');
+  });
+
+  it('hides a name that decodes to anything but a plain parameter name', () => {
+    expect(urlWithoutQueryValues('/m?n%3DMRN99=1')).toBe('/m?<redacted>');
+    expect(urlWithoutQueryValues('/m?Doe%2C%20Jane=1')).toBe('/m?<redacted>');
+    expect(urlWithoutQueryValues('/m?123=1')).toBe('/m?<redacted>');
+    expect(urlWithoutQueryValues(`/m?${'a'.repeat(65)}=1`)).toBe('/m?<redacted>');
+    expect(urlWithoutQueryValues('/m?bad%E0%A4%A=1')).toBe('/m?<redacted>');
+  });
+
+  it('logs an allowed name percent-encoded', () => {
+    expect(urlWithoutQueryValues('/m?filter[status]=SENT&a.b-c_d=1')).toBe('/m?filter%5Bstatus%5D&a.b-c_d');
+  });
 });

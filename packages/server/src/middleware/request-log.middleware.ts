@@ -15,6 +15,28 @@ const pinoHttp = require('pino-http') as typeof import('pino-http').default;
 
 const UNLOGGED_PATHS: ReadonlySet<string> = new Set(['/health', '/health/live', '/health/ready', '/metrics']);
 
+/** A query parameter name worth logging: what the API's own parameters look like. */
+const LOGGABLE_NAME = /^[A-Za-z][\w.[\]-]{0,63}$/;
+const HIDDEN_NAME = '<redacted>';
+
+/**
+ * How one `name=value` part of a query string is logged: its name,
+ * percent-encoded, or a placeholder when the part has no `=` (a bare token may
+ * be the value itself, `?MRN123456`) or the name decodes to anything but a
+ * plain parameter name.
+ */
+function loggedName(part: string): string {
+  const eq = part.indexOf('=');
+  if (eq === -1) { return HIDDEN_NAME; }
+  let name: string;
+  try {
+    name = decodeURIComponent(part.slice(0, eq).replace(/\+/g, ' '));
+  } catch {
+    return HIDDEN_NAME;
+  }
+  return LOGGABLE_NAME.test(name) ? encodeURIComponent(name) : HIDDEN_NAME;
+}
+
 /**
  * A request URL reduced to its path and the names of its query parameters,
  * each once: `/messages?contentSearch=123&limit=25` becomes
@@ -24,7 +46,8 @@ const UNLOGGED_PATHS: ReadonlySet<string> = new Set(['/health', '/health/live', 
 export function urlWithoutQueryValues(url: string): string {
   const q = url.indexOf('?');
   if (q === -1) { return url; }
-  const names = [...new Set(new URLSearchParams(url.slice(q + 1)).keys())];
+  const parts = url.slice(q + 1).split('&').filter((part) => part.length > 0);
+  const names = [...new Set(parts.map(loggedName))];
   return names.length > 0 ? `${url.slice(0, q)}?${names.join('&')}` : url.slice(0, q);
 }
 
