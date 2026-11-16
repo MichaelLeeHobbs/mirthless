@@ -56,6 +56,7 @@ vi.mock('../../db/schema/index.js', () => ({
 }));
 
 import type { ChannelExportEntry } from '@galvaniflow/core-models';
+import { compileFilterRulesToScript } from '@galvaniflow/engine';
 import { MirthImportService, type MirthConvertResult } from '../mirth-import.service.js';
 import { validateConnectorProperties } from '../connector-validation.service.js';
 import { ChannelImportService } from '../channel-import.service.js';
@@ -357,18 +358,18 @@ describe('MirthImportService.convertXml', () => {
     expect(result.value.channels[0]?.description).toBeNull();
   });
 
-  it('reads Mirth Delimited settings into delimited options and says how scripts read rows', () => {
+  it('reads Mirth Delimited settings into delimited options, warning only about fixed widths and Mirth-style row access', () => {
     const ser = (widths: string): string => `<serializationProperties class="com.mirth.connect.plugins.datatypes.delimited.DelimitedSerializationProperties">
       <columnDelimiter>\\t</columnDelimiter><recordDelimiter>\\r\\n</recordDelimiter><columnWidths>${widths}</columnWidths>
       <quoteToken>'</quoteToken><escapeWithDoubleQuote>false</escapeWithDoubleQuote><quoteEscapeToken>\\\\</quoteEscapeToken>
       <columnNames>mrn, family ,given</columnNames><ignoreCR>false</ignoreCR></serializationProperties>`;
-    const xml = (widths: string): string => `<channel>
+    const xml = (widths: string, script = ''): string => `<channel>
       <id>test-delimited</id>
       <name>Census</name>
       <enabled>true</enabled>
       <sourceConnector>
         <properties class="com.mirth.connect.connectors.js.JavaScriptReceiverProperties"></properties>
-        <transformer><inboundDataType>DELIMITED</inboundDataType><outboundDataType>HL7V2</outboundDataType>
+        <transformer><elements>${script === '' ? '' : `<com.mirth.connect.plugins.javascriptstep.JavaScriptStep><name>Map</name><sequenceNumber>0</sequenceNumber><enabled>true</enabled><script>${script}</script></com.mirth.connect.plugins.javascriptstep.JavaScriptStep>`}</elements><inboundDataType>DELIMITED</inboundDataType><outboundDataType>HL7V2</outboundDataType>
           <inboundProperties class="com.mirth.connect.plugins.datatypes.delimited.DelimitedDataTypeProperties">${ser(widths)}</inboundProperties>
         </transformer>
       </sourceConnector>
@@ -383,11 +384,15 @@ describe('MirthImportService.convertXml', () => {
       columnDelimiter: '\t', recordDelimiter: '\r\n', quote: "'", quoteEscape: '\\',
       escapeWithDoubleQuote: false, ignoreCR: false, columnNames: ['mrn', 'family', 'given'],
     });
-    expect(result.value.warnings.join('\n')).toContain('read msg[0].column');
-    expect(result.value.warnings.join('\n')).not.toContain('fixed-width');
+    // Nothing to say about a channel whose scripts do not read rows Mirth's way (#171).
+    expect(result.value.warnings).toEqual([]);
 
     const fixed = MirthImportService.convertXml(xml('5,10'));
     expect(fixed.ok && fixed.value.warnings.join('\n')).toContain('fixed-width columns are not supported');
+    expect(fixed.ok && fixed.value.warnings.join('\n')).not.toContain('read msg[0].column');
+
+    const rowAccess = MirthImportService.convertXml(xml('', "var mrn = msg[&apos;row&apos;][&apos;mrn&apos;].toString();"));
+    expect(rowAccess.ok && rowAccess.value.warnings.join('\n')).toContain('read msg[0].column');
   });
 
   it('imports Mirth EDI/X12 as the X12 data type, on the channel and its transformers', () => {
@@ -977,6 +982,207 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
 
     it('warns that a scheme with no connector here will not deploy', () => {
       expect(convert('FTP').warnings.some((w) => w.includes('FTP file scheme is not supported'))).toBe(true);
+    });
+  });
+
+  describe('settings the import used to drop without a word (#171)', () => {
+    const SOURCE = /<properties class="com\.mirth\.connect\.connectors\.tcp\.TcpReceiverProperties"[\s\S]*?<\/properties>\s*<transformer/;
+    const FIRST_DEST = /<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/;
+    const convertXml = (edit: (x: string) => string): MirthConvertResult => {
+      const result = MirthImportService.convertXml(edit(loadFixture('mirth-4x-channel.xml')));
+      if (!result.ok) throw result.error;
+      return result.value;
+    };
+    const warningsWith = (result: MirthConvertResult, needle: string): string[] => result.warnings.filter((w) => w.includes(needle));
+
+    describe('DICOM Listener and Sender', () => {
+      const listener = (dest: string, tls = 'notls'): string => `<properties class="com.mirth.connect.connectors.dimse.DICOMReceiverProperties" version="4.5.0"><pluginProperties/><listenerConnectorProperties version="4.5.0"><host>0.0.0.0</host><port>11104</port></listenerConnectorProperties><sourceConnectorProperties version="4.5.0"><responseVariable>None</responseVariable></sourceConnectorProperties><soCloseDelay>50</soCloseDelay><releaseTo>5</releaseTo><requestTo>5</requestTo><idleTo>60</idleTo><reaper>10</reaper><rspDelay>0</rspDelay><pdv1>false</pdv1><sndpdulen>16</sndpdulen><rcvpdulen>16</rcvpdulen><async>0</async><bigEndian>false</bigEndian><bufSize>1</bufSize><defts>false</defts><dest>${dest}</dest><nativeData>false</nativeData><sorcvbuf>0</sorcvbuf><sosndbuf>0</sosndbuf><tcpDelay>true</tcpDelay><keyPW></keyPW><keyStore></keyStore><keyStorePW></keyStorePW><noClientAuth>true</noClientAuth><nossl2>true</nossl2><tls>${tls}</tls><trustStore></trustStore><trustStorePW></trustStorePW><applicationEntity>HUB_SCP</applicationEntity><localHost></localHost><localPort></localPort><localApplicationEntity></localApplicationEntity></properties><transformer`;
+      const sender = (extra = ''): string => `<properties class="com.mirth.connect.connectors.dimse.DICOMDispatcherProperties" version="4.5.0"><pluginProperties/><host>pacs.example.org</host><port>11112</port><template>\${DICOMMESSAGE}</template><acceptTo>5000</acceptTo><async>0</async><bufSize>1</bufSize><connectTo>0</connectTo><priority>med</priority><passcode></passcode><pdv1>false</pdv1><rcvpdulen>16</rcvpdulen><reaper>10</reaper><releaseTo>5</releaseTo><rspTo>60</rspTo><shutdownDelay>1000</shutdownDelay><sndpdulen>16</sndpdulen><soCloseDelay>50</soCloseDelay><sorcvbuf>0</sorcvbuf><sosndbuf>0</sosndbuf><stgcmt>false</stgcmt><tcpDelay>true</tcpDelay><ts1>false</ts1><uidnegrsp>false</uidnegrsp><username></username><applicationEntity>PACS_MAIN</applicationEntity><keyPW></keyPW><keyStore></keyStore><keyStorePW></keyStorePW><noClientAuth>true</noClientAuth><nossl2>true</nossl2><tls>notls</tls><trustStore></trustStore><trustStorePW></trustStorePW><localHost></localHost><localPort></localPort><localApplicationEntity>HUB_SCU</localApplicationEntity>${extra}</properties>`;
+      const dicom = (src: string, dst: string) => (x: string): string => x
+        .replace(SOURCE, src)
+        .replace('<transportName>TCP Listener</transportName>', '<transportName>DICOM Listener</transportName>')
+        .replace(FIRST_DEST, dst);
+
+      it('carries the Listener\'s port, AE title and storage folder, keeping stored files as Mirth does', () => {
+        const result = convertXml(dicom(listener('/data/dicom'), sender()));
+        const channel = result.channels[0];
+        expect(channel?.sourceConnectorType).toBe('DICOM');
+        expect(channel?.sourceConnectorProperties).toEqual({ port: 11104, storageDir: '/data/dicom', postAction: 'NONE', aeTitle: 'HUB_SCP' });
+        expect(validateConnectorProperties('DICOM', 'source', channel?.sourceConnectorProperties ?? {})).toMatchObject({ ok: true });
+        // The class names DICOM, so nothing says it falls back to JavaScript.
+        expect(warningsWith(result, 'JAVASCRIPT')).toEqual([]);
+      });
+
+      it('carries the Sender\'s host, port and both AE titles', () => {
+        const dest = convertXml(dicom(listener('/data/dicom'), sender())).channels[0]?.destinations[0];
+        expect(dest?.connectorType).toBe('DICOM');
+        expect(dest?.properties).toEqual({ host: 'pacs.example.org', port: 11112, calledAETitle: 'PACS_MAIN', callingAETitle: 'HUB_SCU' });
+        expect(validateConnectorProperties('DICOM', 'destination', dest?.properties ?? {})).toMatchObject({ ok: true });
+      });
+
+      it('says messages are file paths here, and that a Listener with no storage folder needs one', () => {
+        const result = convertXml(dicom(listener(''), sender()));
+        expect(result.channels[0]?.sourceConnectorProperties['storageDir']).toBeUndefined();
+        expect(warningsWith(result, 'storageDir')).toHaveLength(1);
+        expect(warningsWith(result, 'file path')).toHaveLength(1);
+      });
+
+      it('warns that TLS, user identity and storage commitment do not carry', () => {
+        const result = convertXml(dicom(listener('/d', 'aes'), sender().replace('<stgcmt>false</stgcmt>', '<stgcmt>true</stgcmt>').replace('<username></username>', '<username>svc</username>')));
+        expect(warningsWith(result, 'TLS')).toHaveLength(1);
+        const sending = warningsWith(result, 'DICOM Sender "Try then queue"').join(' ');
+        expect(sending).toContain('user identity');
+        expect(sending).toContain('storage commitment');
+      });
+    });
+
+    describe('polling schedules', () => {
+      const poll = (inner: string): string => `<properties class="com.mirth.connect.connectors.js.JavaScriptReceiverProperties" version="4.5.0"><pluginProperties/><pollConnectorProperties version="4.5.0">${inner}</pollConnectorProperties><script>return 1;</script></properties><transformer`;
+      const advanced = (weekly: string, inactive: string, allDay: string): string => `<pollConnectorPropertiesAdvanced><weekly>${weekly}</weekly><inactiveDays>${inactive}</inactiveDays><dayOfMonth>1</dayOfMonth><allDay>${allDay}</allDay><startingHour>8</startingHour><startingMinute>0</startingMinute><endingHour>17</endingHour><endingMinute>0</endingMinute></pollConnectorPropertiesAdvanced>`;
+      const days = (sunday: string): string => `<boolean>false</boolean><boolean>${sunday}</boolean>${'<boolean>false</boolean>'.repeat(6)}`;
+      const reader = (inner: string): MirthConvertResult => convertXml((x) => x
+        .replace(SOURCE, poll(inner))
+        .replace('<transportName>TCP Listener</transportName>', '<transportName>JavaScript Reader</transportName>'));
+
+      it('warns, naming the channel and the time, that a time-of-day schedule becomes an interval', () => {
+        const warnings = warningsWith(reader('<pollingType>TIME</pollingType><pollingFrequency>5000</pollingFrequency><pollingHour>2</pollingHour><pollingMinute>5</pollingMinute>'), 'interval');
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('Channel "4x Listener"');
+        expect(warnings[0]).toContain('02:05');
+      });
+
+      it('warns with the cron expressions that a cron schedule becomes an interval', () => {
+        const result = reader('<pollingType>CRON</pollingType><cronJobs><cronProperty><description>nightly</description><expression>0 30 1 * * ?</expression></cronProperty></cronJobs>');
+        expect(warningsWith(result, '0 30 1 * * ?')).toHaveLength(1);
+      });
+
+      it('warns when interval polling was limited to some days or hours', () => {
+        const base = '<pollingType>INTERVAL</pollingType><pollingFrequency>5000</pollingFrequency>';
+        expect(warningsWith(reader(base + advanced('true', days('false'), 'true')), 'days or hours')).toEqual([]);
+        expect(warningsWith(reader(base + advanced('true', days('true'), 'true')), 'days or hours')).toHaveLength(1);
+        expect(warningsWith(reader(base + advanced('true', days('false'), 'false')), 'days or hours')).toHaveLength(1);
+        expect(warningsWith(reader(base + advanced('false', days('false'), 'true')), 'days or hours')).toHaveLength(1);
+      });
+
+      it('says nothing about plain interval polling', () => {
+        expect(warningsWith(reader('<pollingType>INTERVAL</pollingType><pollingFrequency>5000</pollingFrequency>'), 'poll')).toEqual([]);
+      });
+    });
+
+    describe('pruning', () => {
+      const pruning = (settings: string) => (x: string): string => x.replace('</properties>\n</channel>', `</properties>\n  <exportData><metadata><enabled>true</enabled><pruningSettings>${settings}</pruningSettings></metadata></exportData>\n</channel>`);
+
+      it('reads the age from exportData/metadata/pruningSettings, where Mirth 3.5+ keeps it', () => {
+        const result = convertXml(pruning('<pruneMetaDataDays>30</pruneMetaDataDays><archiveEnabled>false</archiveEnabled><pruneErroredMessages>true</pruneErroredMessages>'));
+        expect(result.channels[0]).toMatchObject({ pruningEnabled: true, pruningMaxAgeDays: 30, pruningArchiveEnabled: false });
+        expect(warningsWith(result, 'prun')).toEqual([]);
+      });
+
+      it('reads the age from the channel properties of a pre-3.5 export', () => {
+        const old = convertXml((x) => x.replace('<initialState>STARTED</initialState>', '<initialState>STARTED</initialState><pruneMetaDataDays>14</pruneMetaDataDays><archiveEnabled>false</archiveEnabled><pruneErroredMessages>true</pruneErroredMessages>'));
+        expect(old.channels[0]).toMatchObject({ pruningEnabled: true, pruningMaxAgeDays: 14 });
+      });
+
+      it('leaves pruning off when Mirth keeps messages for good', () => {
+        const result = convertXml(pruning('<archiveEnabled>true</archiveEnabled><pruneErroredMessages>false</pruneErroredMessages>'));
+        expect(result.channels[0]).toMatchObject({ pruningEnabled: false, pruningMaxAgeDays: null });
+        expect(warningsWith(result, 'prun')).toEqual([]);
+      });
+
+      it('warns that errored messages are pruned and nothing is archived here', () => {
+        const warning = warningsWith(convertXml(pruning('<pruneMetaDataDays>30</pruneMetaDataDays><archiveEnabled>true</archiveEnabled><pruneErroredMessages>false</pruneErroredMessages>')), 'prun');
+        expect(warning).toHaveLength(1);
+        expect(warning[0]).toContain('errored');
+        expect(warning[0]).toContain('archive');
+      });
+
+      it('warns that content-only pruning keeps the content until the whole message is pruned', () => {
+        const contentOnly = convertXml(pruning('<pruneContentDays>7</pruneContentDays><archiveEnabled>false</archiveEnabled><pruneErroredMessages>true</pruneErroredMessages>'));
+        expect(contentOnly.channels[0]?.pruningEnabled).toBe(false);
+        expect(warningsWith(contentOnly, 'content after 7 days')).toHaveLength(1);
+        const both = convertXml(pruning('<pruneMetaDataDays>90</pruneMetaDataDays><pruneContentDays>7</pruneContentDays><archiveEnabled>false</archiveEnabled><pruneErroredMessages>true</pruneErroredMessages>'));
+        expect(both.channels[0]?.pruningMaxAgeDays).toBe(90);
+        expect(warningsWith(both, 'content after 7 days')).toHaveLength(1);
+      });
+    });
+
+    describe('Rule Builder filter rules', () => {
+      const ruleBuilder = (field: string, condition: string, values: string): string => `<filter version="4.5.0">
+        <elements>
+          <com.mirth.connect.plugins.rulebuilder.RuleBuilderRule version="4.5.0">
+            <name>Only orders</name>
+            <sequenceNumber>0</sequenceNumber>
+            <enabled>true</enabled>
+            <operator>NONE</operator>
+            <field>${field}</field>
+            <condition>${condition}</condition>
+            <values>${values}</values>
+          </com.mirth.connect.plugins.rulebuilder.RuleBuilderRule>
+        </elements>
+      </filter>`;
+      const rule = (field: string, condition: string, values: string): MirthConvertResult => convertXml((x) => x.replace(/<filter version="4\.5\.0">[\s\S]*?<\/filter>/, ruleBuilder(field, condition, values)));
+      const sourceRule = (result: MirthConvertResult): Record<string, unknown> | undefined => result.channels[0]?.filters.find((f) => (f.metaDataId ?? null) === null)?.rules[0];
+      const HL7_FIELD = 'msg[&apos;MSH&apos;][&apos;MSH.9&apos;][&apos;MSH.9.1&apos;].toString()';
+
+      it.each([
+        ['EQUALS', 'EQUALS'],
+        ['NOT_EQUAL', 'NOT_EQUALS'],
+        ['CONTAINS', 'CONTAINS'],
+        ['NOT_CONTAIN', 'NOT_CONTAINS'],
+      ])('turns an HL7 field compared with quoted text (%s) into a Rule Builder rule the engine runs (%s)', (condition, mapped) => {
+        const result = rule(HL7_FIELD, condition, '<string>&quot;ORM&quot;</string><string>&apos;OML&apos;</string>');
+        expect(sourceRule(result)).toMatchObject({ type: 'RULE_BUILDER', field: 'MSH.9.1', condition: mapped, values: ['ORM', 'OML'] });
+        expect(warningsWith(result, 'Rule Builder')).toEqual([]);
+      });
+
+      it('maps Mirth\'s EXISTS and NOT_EXIST, which take no values', () => {
+        expect(sourceRule(rule(HL7_FIELD, 'EXISTS', ''))).toMatchObject({ type: 'RULE_BUILDER', condition: 'EXISTS', values: [] });
+        expect(sourceRule(rule(HL7_FIELD, 'NOT_EXIST', ''))).toMatchObject({ type: 'RULE_BUILDER', condition: 'NOT_EXISTS' });
+      });
+
+      it('builds the JavaScript Mirth would run when a value is an expression, and the script check names what to rewrite', () => {
+        const result = rule(HL7_FIELD, 'EQUALS', '<string>$(&apos;expected&apos;)</string>');
+        expect(sourceRule(result)).toMatchObject({
+          type: 'JAVASCRIPT',
+          script: "if(msg['MSH']['MSH.9']['MSH.9.1'].toString() == $('expected')) {\n\treturn true;\n}\nreturn false;",
+        });
+        expect(warningsWith(result, 'Mirth-only constructs')).toHaveLength(1);
+      });
+
+      it('gives the engine rules it compiles, and refuses only the one it cannot read', () => {
+        const compiled = (result: MirthConvertResult): boolean => {
+          const imported = result.channels[0]?.filters.find((f) => (f.metaDataId ?? null) === null)?.rules ?? [];
+          return compileFilterRulesToScript(imported.map((r) => ({ ...r, enabled: r.enabled ?? true, operator: r.operator ?? 'AND', type: r.type ?? 'JAVASCRIPT', script: r.script ?? null }))).ok;
+        };
+        expect(compiled(rule(HL7_FIELD, 'EQUALS', '<string>&quot;ORM&quot;</string>'))).toBe(true);
+        expect(compiled(rule(HL7_FIELD, 'NOT_EXIST', ''))).toBe(true);
+        expect(compiled(rule(HL7_FIELD, 'EQUALS', '<string>$(&apos;expected&apos;)</string>'))).toBe(true);
+        expect(compiled(rule('', 'EQUALS', '<string>&quot;ORM&quot;</string>'))).toBe(false);
+      });
+
+      it('keeps the script an older Rule Builder rule carries in place of a field', () => {
+        const legacy = convertXml((x) => x.replace(/<filter version="4\.5\.0">[\s\S]*?<\/filter>/, '<filter><rules><rule><sequenceNumber>0</sequenceNumber><name>Old</name><type>Rule Builder</type><script>return msg.get(&apos;MSH.9.1&apos;) == &apos;ORM&apos;;</script><operator>NONE</operator></rule></rules></filter>'));
+        expect(sourceRule(legacy)).toMatchObject({ type: 'JAVASCRIPT', script: "return msg.get('MSH.9.1') == 'ORM';" });
+      });
+
+      it('keeps a rule it cannot read as a Rule Builder rule the deploy refuses, and warns', () => {
+        const result = rule('', 'EQUALS', '<string>&quot;ORM&quot;</string>');
+        expect(sourceRule(result)).toMatchObject({ type: 'RULE_BUILDER', field: '' });
+        const warning = warningsWith(result, 'Rule Builder');
+        expect(warning).toHaveLength(1);
+        expect(warning[0]).toContain('"Only orders"');
+      });
+    });
+
+    it('warns that an HTTP Sender\'s Digest credentials are dropped', () => {
+      const http = (type: string): string => `<properties class="com.mirth.connect.connectors.http.HttpDispatcherProperties" version="4.5.0"><host>http://api/orders</host><method>post</method><useAuthentication>true</useAuthentication><authenticationType>${type}</authenticationType><usePreemptiveAuthentication>false</usePreemptiveAuthentication><username>mirth</username><password>s3cret</password></properties>`;
+      const digest = convertXml((x) => x.replace(FIRST_DEST, http('Digest')));
+      expect(digest.channels[0]?.destinations[0]?.properties['basicAuth']).toBeUndefined();
+      const warning = warningsWith(digest, 'Digest');
+      expect(warning).toHaveLength(1);
+      expect(warning[0]).toContain('HTTP Sender "Try then queue"');
+      expect(warning[0]).not.toContain('s3cret');
+      expect(warningsWith(convertXml((x) => x.replace(FIRST_DEST, http('Basic'))), 'Digest')).toEqual([]);
     });
   });
 
