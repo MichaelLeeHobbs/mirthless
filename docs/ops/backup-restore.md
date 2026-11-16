@@ -64,18 +64,18 @@ docker exec -t galvaniflow-db-prod psql -U galvaniflow -d postgres \
   -c "CREATE DATABASE galvaniflow OWNER galvaniflow;"
 
 cat galvaniflow-20260712-020000.dump | \
-  docker exec -i galvaniflow-db-prod pg_restore -U galvaniflow -d galvaniflow --no-owner
+  docker exec -i galvaniflow-db-prod pg_restore -U galvaniflow -d galvaniflow --no-owner --no-privileges
 
 # Bring the app back up (entrypoint re-runs migrations idempotently)
 docker compose -f docker/docker-compose.prod.yml start server web
 ```
 
-The dump also holds the grants to the server's role (`galvaniflow_app`, see
-[Database roles](upgrade.md#database-roles)). Restoring into a new Postgres where that
-role does not exist yet, `pg_restore` reports `role "galvaniflow_app" does not exist` for
-each of those grants, ends with `errors ignored on restore: N` and exits 1, and restores
-everything else. Those are the only errors to expect: the server container creates the
-role, grants it again and hands it the `pgboss` schema when it starts.
+`--no-privileges` leaves out the dump's grants to the server's role (`galvaniflow_app`,
+see [Database roles](upgrade.md#database-roles)). When the server container starts, it
+creates that role if it is missing, grants it again, revokes the owner functions from
+`PUBLIC` and hands it the `pgboss` schema. Without the flag, a restore into a Postgres
+where the role does not exist yet reports `role "galvaniflow_app" does not exist` for
+each grant and exits 1, though the data is restored.
 
 The dump captures the exact migrated schema, so restoring an older dump onto a newer
 binary may require the pending migrations to run — the server container runs migrations

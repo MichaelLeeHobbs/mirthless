@@ -29,6 +29,9 @@ const DB_NAME = `gf_roles_${SUFFIX}_test`;
 const FRESH_DB_NAME = `gf_roles_${SUFFIX}_fresh_test`;
 const ROLE = `gf_app_${SUFFIX}`;
 const ROLE_PASSWORD = `pw_${randomUUID()}`;
+// A name that needs quoting (upper case, a hyphen), as POSTGRES_APP_USER may be.
+const MIXED_ROLE = `GF_Mixed-${SUFFIX}`;
+const SUPER_ROLE = `gf_super_${SUFFIX}`;
 const INSUFFICIENT_PRIVILEGE = '42501';
 const OLD_QUEUE = 'itest-before-split';
 
@@ -136,20 +139,46 @@ describeIntegration('Runtime database role (real Postgres)', () => {
       await admin.query(`DROP DATABASE IF EXISTS "${DB_NAME}" WITH (FORCE)`);
       await admin.query(`DROP DATABASE IF EXISTS "${FRESH_DB_NAME}" WITH (FORCE)`);
       await admin.query(`DROP ROLE IF EXISTS "${ROLE}"`);
+      await admin.query(`DROP ROLE IF EXISTS "${MIXED_ROLE}"`);
+      await admin.query(`DROP ROLE IF EXISTS "${SUPER_ROLE}"`);
       await admin.end();
     }
   });
 
-  it('on a new install, pg-boss creates its tables as the runtime role in the schema it was given', async () => {
+  /** Insert a channel row as `client` and return its id; the partition function wants one. */
+  async function newChannel(client: pg.Client): Promise<string> {
+    const id = randomUUID();
+    await client.query(
+      `INSERT INTO channels (id, name, inbound_data_type, outbound_data_type, source_connector_type, source_connector_properties)
+       VALUES ($1, $2, 'RAW', 'RAW', 'CHANNEL', '{}'::jsonb)`,
+      [id, `role-itest-${id}`],
+    );
+    return id;
+  }
+
+  /** Make the runtime role a member of `role` (as `grant` says), run `check`, and take the membership back. */
+  async function asMemberOf(role: string, grant: string, check: () => Promise<void>): Promise<void> {
+    await admin.query(`GRANT "${role}" TO "${ROLE}" ${grant}`);
+    try {
+      await check();
+    } finally {
+      await admin.query(`REVOKE "${role}" FROM "${ROLE}"`);
+    }
+  }
+
+  it('on a new install, pg-boss creates its tables as a runtime role whose name needs quoting', async () => {
     const fresh = await migratedDatabase(FRESH_DB_NAME);
     try {
-      const provisioned = await provisionRuntimeRole(fresh, { user: ROLE, password: ROLE_PASSWORD });
+      const provisioned = await provisionRuntimeRole(fresh, { user: MIXED_ROLE, password: ROLE_PASSWORD });
       expect(provisioned.ok, provisioned.ok ? '' : provisioned.error.message).toBe(true);
+      // Again, now that the schema is the role's: the ownership checks compare its oid.
+      const again = await provisionRuntimeRole(fresh, { user: MIXED_ROLE, password: ROLE_PASSWORD });
+      expect(again.ok, again.ok ? '' : again.error.message).toBe(true);
     } finally {
       await fresh.end();
     }
 
-    await withBoss(urlFor(FRESH_DB_NAME, ROLE, ROLE_PASSWORD), async (boss) => {
+    await withBoss(urlFor(FRESH_DB_NAME, MIXED_ROLE, ROLE_PASSWORD), async (boss) => {
       await boss.createQueue('itest-fresh');
       await boss.send('itest-fresh', { from: 'runtime' });
       const [job] = await boss.fetch('itest-fresh');
@@ -167,6 +196,33 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     expect(check.ok).toBe(false);
   });
 
+  it('refuses a runtime role that can SET ROLE to the owner without inheriting its rights', async () => {
+    const ownerName = (await owner.query<{ name: string }>('SELECT current_user AS name')).rows[0]?.name ?? '';
+    await asMemberOf(ownerName, 'WITH INHERIT FALSE, SET TRUE', async () => {
+      expect((await checkRuntimeRole(runtime)).ok).toBe(false);
+      expect((await provisionRuntimeRole(owner, { user: ROLE, password: ROLE_PASSWORD })).ok).toBe(false);
+    });
+  });
+
+  it('refuses a runtime role that is a member of a superuser role', async () => {
+    await admin.query(`CREATE ROLE "${SUPER_ROLE}" SUPERUSER NOLOGIN`);
+    await asMemberOf(SUPER_ROLE, '', async () => {
+      expect((await checkRuntimeRole(runtime)).ok).toBe(false);
+      expect((await provisionRuntimeRole(owner, { user: ROLE, password: ROLE_PASSWORD })).ok).toBe(false);
+    });
+  });
+
+  it('refuses a runtime role that is a member of the server file and program roles', async () => {
+    for (const role of ['pg_read_server_files', 'pg_write_server_files', 'pg_execute_server_program']) {
+      await asMemberOf(role, '', async () => {
+        expect((await checkRuntimeRole(runtime)).ok, role).toBe(false);
+        expect((await provisionRuntimeRole(owner, { user: ROLE, password: ROLE_PASSWORD })).ok, role).toBe(false);
+      });
+    }
+    // With the memberships gone, both pass again.
+    expect((await checkRuntimeRole(runtime)).ok).toBe(true);
+  });
+
   it('refuses to provision the owner itself as the runtime role', async () => {
     const ownerName = (await owner.query<{ name: string }>('SELECT current_user AS name')).rows[0]?.name ?? '';
     const result = await provisionRuntimeRole(owner, { user: ownerName, password: 'x' });
@@ -182,12 +238,7 @@ describeIntegration('Runtime database role (real Postgres)', () => {
   });
 
   it('creates a channel\'s message partitions and stores, reads and deletes a message', async () => {
-    const channelId = randomUUID();
-    await runtime.query(
-      `INSERT INTO channels (id, name, inbound_data_type, outbound_data_type, source_connector_type, source_connector_properties)
-       VALUES ($1, $2, 'RAW', 'RAW', 'CHANNEL', '{}'::jsonb)`,
-      [channelId, `role-itest-${SUFFIX}`],
-    );
+    const channelId = await newChannel(runtime);
     await runtime.query('SELECT create_channel_partitions($1::uuid)', [channelId]);
     // Idempotent, as channel import may ask for the partitions of an existing channel.
     await runtime.query('SELECT create_channel_partitions($1::uuid)', [channelId]);
@@ -204,16 +255,35 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     expect(deleted.rowCount).toBe(1);
   });
 
-  it('appends, reads and purges audit events but cannot rewrite one', async () => {
+  it('refuses to create partitions for a channel id with no channel', async () => {
+    expect(await failureCode(runtime, `SELECT create_channel_partitions('${randomUUID()}'::uuid)`)).toBe('23503');
+  });
+
+  it('appends and reads audit events but cannot rewrite or delete one', async () => {
     const name = `ROLE_ITEST_${SUFFIX}`;
     await runtime.query(`INSERT INTO events (level, name, outcome) VALUES ('INFO', $1, 'SUCCESS')`, [name]);
     const read = await runtime.query('SELECT 1 FROM events WHERE name = $1', [name]);
     expect(read.rowCount).toBe(1);
 
     expect(await failureCode(runtime, `UPDATE events SET outcome = 'FAILURE' WHERE name = '${name}'`)).toBe(INSUFFICIENT_PRIVILEGE);
+    expect(await failureCode(runtime, `DELETE FROM events WHERE name = '${name}'`)).toBe(INSUFFICIENT_PRIVILEGE);
+  });
 
-    const purged = await runtime.query('DELETE FROM events WHERE name = $1', [name]);
-    expect(purged.rowCount).toBe(1);
+  it('purges events through purge_events, which keeps anything younger than the minimum age', async () => {
+    const old = `ROLE_ITEST_OLD_${SUFFIX}`;
+    const recent = `ROLE_ITEST_RECENT_${SUFFIX}`;
+    await runtime.query(
+      `INSERT INTO events (level, name, outcome, created_at)
+       VALUES ('INFO', $1, 'SUCCESS', now() - interval '3 days'), ('INFO', $2, 'SUCCESS', now() - interval '12 hours')`,
+      [old, recent],
+    );
+
+    expect(await failureCode(runtime, 'SELECT purge_events(0)')).toBe('22023');
+    const purged = await runtime.query<{ deleted: string }>('SELECT purge_events(1) AS deleted');
+    expect(Number(purged.rows[0]?.deleted)).toBeGreaterThanOrEqual(1);
+
+    const left = await runtime.query<{ name: string }>('SELECT name FROM events WHERE name IN ($1, $2)', [old, recent]);
+    expect(left.rows.map((r) => r.name)).toEqual([recent]);
   });
 
   it('cannot alter, truncate or drop an application table, or create one', async () => {
@@ -225,10 +295,11 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     expect(await failureCode(runtime, 'DROP TABLE messages_default')).toBe(INSUFFICIENT_PRIVILEGE);
     expect(await failureCode(runtime, 'CREATE TABLE itest_scratch (id integer)')).toBe(INSUFFICIENT_PRIVILEGE);
     expect(await failureCode(runtime, 'DROP FUNCTION create_channel_partitions(uuid)')).toBe(INSUFFICIENT_PRIVILEGE);
+    expect(await failureCode(runtime, 'DROP FUNCTION purge_events(integer)')).toBe(INSUFFICIENT_PRIVILEGE);
   });
 
   it('cannot alter or drop a partition the server created for a channel', async () => {
-    const channelId = randomUUID();
+    const channelId = await newChannel(runtime);
     await runtime.query('SELECT create_channel_partitions($1::uuid)', [channelId]);
     const partition = `messages_p_${channelId.replace(/-/g, '_')}`;
 
@@ -285,7 +356,7 @@ describeIntegration('Runtime database role (real Postgres)', () => {
       const user = await pool.query<{ name: string }>('SELECT current_user AS name');
       expect(user.rows[0]?.name).toBe(ROLE);
 
-      const channelId = randomUUID();
+      const channelId = await newChannel(runtime);
       const created = await PartitionManagerService.createPartitions(channelId);
       expect(created.ok, created.ok ? '' : created.error.message).toBe(true);
       const exists = await PartitionManagerService.partitionExists(channelId);

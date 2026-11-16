@@ -37,13 +37,16 @@ On every start the migration step, as the owner, creates the server role if it i
 |---|---|
 | `CONNECT` on the database, `USAGE` on schema `public` | To log in and see the tables |
 | `SELECT, INSERT, UPDATE, DELETE` on every table in `public` | Channels, users, settings, messages and the rest; `DELETE` is for the data pruner, deleting messages, sessions, map entries and the like |
-| No `UPDATE` on `events` | The audit trail is appended and read, and purged by **Purge Old Events** on the Events page (`DELETE`), but never rewritten |
+| Only `SELECT, INSERT` on `events` | The audit trail is appended and read, never rewritten or deleted row by row |
+| `EXECUTE` on `purge_events(integer)` | **Purge Old Events** on the Events page. This owner function (migration 0016) deletes only events at least one day old, the minimum the API allows, so a stolen connection cannot erase recent events |
 | `USAGE` on every sequence in `public` | `nextval()` for the serial ids |
-| `EXECUTE` on `create_channel_partitions(uuid)` | Only a table's owner may add a partition to it. This owner function (migration 0016) creates a new channel's six message partitions, and nothing else |
+| `EXECUTE` on `create_channel_partitions(uuid)` | Only a table's owner may add a partition to it. This owner function (migration 0016) creates the six message partitions of a channel that exists, and nothing else |
 | Default privileges for tables and sequences the owner creates later | The partitions that function creates, and the next migration's tables, get the same grants at once |
 | Ownership of schema `pgboss` and everything in it | The job queue (pg-boss, which runs the scheduled data pruner) creates, migrates and maintains its own tables while the server runs. Migration 0016 creates the schema, so the role needs no `CREATE` on the database. The schema holds no PHI, and owning it gives no rights outside it. On an install whose server ran as the owner, the step hands over the tables pg-boss made, jobs included |
 
-Nothing grants `TRUNCATE`, `REFERENCES`, `TRIGGER` or `CREATE` on `public`. The step revokes table and sequence grants before granting, so the list above is the whole of what the role holds on them. Then it connects as the server role and stops the container if that role is a superuser or has the owner's rights (for example `POSTGRES_APP_USER` set to the owner's name). Change `POSTGRES_APP_PASSWORD` and restart to rotate the password.
+Nothing grants `TRUNCATE`, `REFERENCES`, `TRIGGER` or `CREATE` on `public`. The step revokes table and sequence grants before granting, so the list above is the whole of what the role holds on them, and revokes `EXECUTE` on the two owner functions from `PUBLIC` again in case a restore dropped that. It sets the password as a SCRAM-SHA-256 verifier computed in the container, so the password itself never reaches Postgres or its logs.
+
+The container stops instead of starting when the server role is the owner (`POSTGRES_APP_USER` set to the owner's name), has superuser, CREATEROLE, CREATEDB, REPLICATION or BYPASSRLS, or is a member of any role (a member can `SET ROLE` to it even without inheriting its rights, for example to the owner, a superuser role or `pg_read_server_files`), and when `POSTGRES_APP_PASSWORD` equals `POSTGRES_PASSWORD`. After granting, it connects as the server role and checks the same again. Change `POSTGRES_APP_PASSWORD` and restart to rotate the password.
 
 ### Upgrading an install from before the split
 
@@ -60,6 +63,8 @@ An install created before this change runs the server as the superuser. After `g
    ```
 
 The application tables, and the partitions the old server created, stay owned by the owner; only the `pgboss` schema changes owner, and nothing is moved or rewritten. To go back to the previous version, check out its compose file: it connects as the owner again, and the unused role does no harm.
+
+**The empty `galvaniflow_test` database.** The production compose used to mount `docker/init-db`, so every production volume also got an empty `galvaniflow_test` database, meant only for the dev stack's tests. It no longer does. Nothing uses that database in production; once you have checked it is empty, you may drop it yourself (`DROP DATABASE galvaniflow_test;` as the owner). The upgrade leaves it alone.
 
 **Running the image another way** (your own compose file, Kubernetes): set `MIGRATION_DATABASE_URL` to the owner's connection string and `DATABASE_URL` to the server role's. The container refuses to start without `MIGRATION_DATABASE_URL`, or when `DATABASE_URL` connects as a superuser or the owner.
 

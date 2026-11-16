@@ -84,6 +84,12 @@ try {
 
 const role = runtimeRoleFromUrl(databaseUrl);
 failOn('reading the server role from DATABASE_URL', role);
+const ownerRole = runtimeRoleFromUrl(migrationUrl);
+failOn('reading the owner from MIGRATION_DATABASE_URL', ownerRole);
+if (role.value.password.length > 0 && role.value.password === ownerRole.value.password) {
+  console.error(`[migrate] the server role and the owner have the same password. Give POSTGRES_APP_PASSWORD its own value; see ${ROLES_DOC}`);
+  process.exit(1);
+}
 failOn(
   `granting the server role "${role.value.user}"`,
   await withClient(migrationUrl, (owner) => provisionRuntimeRole(owner, role.value)),
