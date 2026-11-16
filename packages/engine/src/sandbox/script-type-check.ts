@@ -24,6 +24,17 @@ export interface ScriptTypeError {
   readonly message: string;
   /** TypeScript diagnostic code, e.g. 2322. */
   readonly code: number;
+  /** True when the code does not parse; false for a type error. */
+  readonly syntax: boolean;
+}
+
+/**
+ * A script that does not parse gets its syntax errors only: type errors in
+ * code that does not parse are noise. Apply it to one script's errors (or one
+ * part's, for scripts checked joined).
+ */
+export function onlySyntaxWhileBroken(errors: readonly ScriptTypeError[]): readonly ScriptTypeError[] {
+  return errors.some((e) => e.syntax) ? errors.filter((e) => e.syntax) : errors;
 }
 
 const SCRIPT_FILE = '/script.ts';
@@ -75,16 +86,18 @@ export async function checkScriptTypes(
     const source = program.getSourceFile(SCRIPT_FILE);
     // Errors inside the declaration files (a template's own mistakes) are not
     // this script's: templates are checked when they are saved.
-    // A script that does not parse gets its syntax errors only: type errors in
-    // code that does not parse are noise.
+    // Both kinds are returned, marked: a caller checking several parts joined
+    // (transformer steps) must not let one part's syntax error hide another
+    // part's type errors, so the "syntax errors only while it does not parse"
+    // rule is applied per part by the caller (onlySyntaxWhileBroken).
     const relevant = (d: import('typescript').Diagnostic): boolean => !IGNORED_SCRIPT_DIAGNOSTICS.includes(d.code);
-    const syntax = program.getSyntacticDiagnostics(source).filter(relevant);
-    const diagnostics = syntax.length > 0 ? syntax : program.getSemanticDiagnostics(source).filter(relevant);
-    return diagnostics
-      .map((d): ScriptTypeError => {
-        const pos = d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start) : { line: 0, character: 0 };
-        return { line: pos.line + 1, column: pos.character + 1, message: ts.flattenDiagnosticMessageText(d.messageText, ' '), code: d.code };
-      })
-      .sort((a, b) => a.line - b.line || a.column - b.column);
+    const toError = (syntax: boolean) => (d: import('typescript').Diagnostic): ScriptTypeError => {
+      const pos = d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start) : { line: 0, character: 0 };
+      return { line: pos.line + 1, column: pos.character + 1, message: ts.flattenDiagnosticMessageText(d.messageText, ' '), code: d.code, syntax };
+    };
+    return [
+      ...program.getSyntacticDiagnostics(source).filter(relevant).map(toError(true)),
+      ...program.getSemanticDiagnostics(source).filter(relevant).map(toError(false)),
+    ].sort((a, b) => a.line - b.line || a.column - b.column);
   });
 }

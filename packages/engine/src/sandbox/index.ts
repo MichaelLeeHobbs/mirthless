@@ -16,7 +16,7 @@ export { runScriptTest } from './script-test-run.js';
 export type { IsolatedTestInput, IsolationLimits } from './script-test-isolated.js';
 export { runScriptTestIsolated } from './script-test-isolated.js';
 export type { ScriptTypeError } from './script-type-check.js';
-export { checkScriptTypes } from './script-type-check.js';
+export { checkScriptTypes, onlySyntaxWhileBroken } from './script-type-check.js';
 export type { TypeCheckJob } from './script-type-checker.js';
 export { checkScriptTypesBatch, stopTypeChecker } from './script-type-checker.js';
 export type { CodeTemplateData } from './template-injector.js';

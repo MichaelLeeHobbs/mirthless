@@ -38,6 +38,8 @@ export type TypeCheckReply =
 /** Default time limit for one batch: generous, since a cold worker loads TypeScript first. */
 export const TYPE_CHECK_TIMEOUT_MS = 30_000;
 const CACHE_LIMIT = 500;
+/** Heap limit of the type-check worker. */
+const TYPE_CHECK_HEAP_MB = 512;
 
 const cache = new Map<string, readonly ScriptTypeError[]>();
 let worker: Worker | undefined;
@@ -71,7 +73,13 @@ function failRequestsOf(target: Worker, error: string): void {
 function getWorker(): Worker {
   if (worker) return worker;
   const entry = workerEntry(import.meta.url, 'script-type-worker');
-  const started = new Worker(entry.url, { execArgv: entry.execArgv });
+  const started = new Worker(entry.url, {
+    execArgv: entry.execArgv,
+    // It needs none of the server's environment (database URL, JWT secret).
+    env: entry.env,
+    // TypeScript with its lib files fits comfortably; a runaway check is stopped, not the engine.
+    resourceLimits: { maxOldGenerationSizeMb: TYPE_CHECK_HEAP_MB },
+  });
   // Idle checks must not keep the process alive.
   started.unref();
   started.on('message', (reply: TypeCheckReply) => {

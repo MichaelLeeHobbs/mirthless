@@ -7,7 +7,7 @@
 
 import { parentPort, workerData } from 'node:worker_threads';
 import { runScriptTest, type ScriptTestInput, type ScriptTestReaders } from './script-test-run.js';
-import type { WorkerReply, WorkerRequest, WorkerStart } from './script-test-isolated.js';
+import { MAX_TEST_READS, tooManyReads, type WorkerReply, type WorkerRequest, type WorkerStart } from './script-test-isolated.js';
 
 if (!parentPort) throw new Error('script-test-worker must run in a worker thread');
 const port = parentPort;
@@ -26,6 +26,8 @@ port.on('message', (reply: WorkerReply) => {
 });
 
 function ask(call: 'getResource' | 'collectionFind', args: readonly unknown[]): Promise<unknown> {
+  // Each read is a database query on the main thread: a loop must not flood it.
+  if (nextId >= MAX_TEST_READS) return Promise.reject(new Error(tooManyReads()));
   nextId += 1;
   const id = nextId;
   return new Promise((resolve, reject) => {
@@ -46,6 +48,8 @@ const readers: ScriptTestReaders = {
 };
 
 const input: ScriptTestInput = { ...start.input, readers };
+// The main thread measures memory growth from here, not from the worker's start-up.
+port.postMessage({ type: 'started' } satisfies WorkerRequest);
 const result = await runScriptTest(input);
 const done: WorkerRequest = result.ok
   ? { type: 'done', result: result.value }

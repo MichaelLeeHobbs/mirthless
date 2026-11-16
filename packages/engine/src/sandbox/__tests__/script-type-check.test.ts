@@ -2,7 +2,7 @@
 // settings, errors reported at the line the user wrote.
 
 import { describe, it, expect } from 'vitest';
-import { checkScriptTypes } from '../script-type-check.js';
+import { checkScriptTypes, onlySyntaxWhileBroken } from '../script-type-check.js';
 
 const HL7_FILTER = { dataType: 'HL7V2', destinationSet: true, templateContext: 'SOURCE_FILTER_TRANSFORMER' } as const;
 const getPatientName = {
@@ -30,9 +30,13 @@ describe('checkScriptTypes', () => {
     ]);
   });
 
-  it('reports a syntax error too', async () => {
-    const found = await errors('function normalize(value {\n  return value;\n}');
-    expect(found[0]).toMatch(/^1:\d+ ',' expected\.$/);
+  it('reports a syntax error too, marked as one, and keeps only those while the script does not parse', async () => {
+    const result = await checkScriptTypes('function normalize(value {\n  return value;\n}', HL7_FILTER, []);
+    if (!result.ok) throw result.error;
+    expect(result.value.some((e) => e.syntax && /^',' expected\.$/.test(e.message))).toBe(true);
+    const shown = onlySyntaxWhileBroken(result.value);
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.every((e) => e.syntax)).toBe(true);
   });
 
   it('sees code templates enabled for the context, with their return types', async () => {

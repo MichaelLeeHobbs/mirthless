@@ -15,7 +15,7 @@
 // them, so a step can use what an earlier step declared. Checks run off the
 // main thread and are cached (checkScriptTypesBatch).
 
-import { checkScriptTypesBatch, type ScriptTypeError } from '@galvaniflow/engine';
+import { checkScriptTypesBatch, onlySyntaxWhileBroken, type ScriptTypeError } from '@galvaniflow/engine';
 import { CODE_TEMPLATE_CONTEXT, type ScriptSurface, type TemplateSource } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import type { ChannelDetail } from './channel.service.js';
@@ -160,7 +160,11 @@ function attribute(script: TypedScript, errors: readonly ScriptTypeError[]): Scr
     list.push({ ...error, line: error.line - segment.startLine + 1 });
     byLabel.set(segment.label, list);
   }
-  return [...byLabel].map(([label, list]) => ({ label, errors: list }));
+  // Per part: a JavaScript step that TypeScript cannot parse (esbuild can, e.g.
+  // `010`) must not hide a TypeScript step's type errors.
+  return [...byLabel]
+    .map(([label, list]) => ({ label, errors: onlySyntaxWhileBroken(list) }))
+    .filter((f) => f.errors.length > 0);
 }
 
 /** Type-check scripts off the main thread and name each error by the part the user wrote. */

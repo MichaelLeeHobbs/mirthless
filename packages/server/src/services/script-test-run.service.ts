@@ -22,6 +22,8 @@ import { createCollectionBridge, createResourceBridge } from '../engine.js';
 export const TEST_RUN_TIMEOUT_MS = 5_000;
 /** Heap limit of the worker a test run runs in. */
 export const TEST_RUN_HEAP_MB = 64;
+/** How far the process's memory may grow during a test run (typed arrays are outside the heap limit). */
+export const TEST_RUN_MEMORY_GROWTH_MB = 256;
 
 interface ChannelScope {
   readonly templates: readonly TemplateSource[];
@@ -83,7 +85,7 @@ export class ScriptTestRunService {
               destinations: scope.destinations,
             },
             { getResource: createResourceBridge(), collectionFind: collections.find },
-            { timeoutMs: scope.timeoutMs, maxOldGenerationSizeMb: TEST_RUN_HEAP_MB },
+            { timeoutMs: scope.timeoutMs, maxOldGenerationSizeMb: TEST_RUN_HEAP_MB, maxMemoryGrowthMb: TEST_RUN_MEMORY_GROWTH_MB },
           );
           return result;
         } finally {

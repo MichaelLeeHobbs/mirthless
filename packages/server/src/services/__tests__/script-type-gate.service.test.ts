@@ -97,6 +97,21 @@ describe('transformer steps are checked as the engine runs them: joined', () => 
     expect(typeScriptScripts(channel(sourceTransformer([step('Loose', 'x', 'JAVASCRIPT')])))).toEqual([]);
   });
 
+  it("still reports a TypeScript step's type error when a JavaScript step has a TypeScript-only syntax error", async () => {
+    // `010` is fine for esbuild (the engine runs it) but a syntax error to TypeScript;
+    // it must not hide the TypeScript step's errors.
+    const c = channel(sourceTransformer([step('Legacy', 'var x = 010;', 'JAVASCRIPT'), step('Typed', 'const n: number = "a";')]));
+    const failures = await findTypeFailures(typeScriptScripts(c), []);
+    expect(failures.map((f) => f.label)).toEqual(['Source transformer step "Typed"']);
+  });
+
+  it('reports only syntax errors for a TypeScript script that does not parse', async () => {
+    const c = channel({ scripts: [{ id: '1', scriptType: 'DEPLOY', script: 'const n: number = "a";\nif (x {', language: 'TYPESCRIPT' }] } as Partial<ChannelDetail>);
+    const failures = await findTypeFailures(typeScriptScripts(c), []);
+    // Line 1's type error is noise while line 2 does not parse: only line 2 is reported.
+    expect(new Set(failures[0]!.errors.map((e) => e.line))).toEqual(new Set([2]));
+  });
+
   it('leaves out disabled steps, as the engine does', async () => {
     const c = channel(sourceTransformer([step('Off', 'const pid = 1;', 'TYPESCRIPT', false), step('Uses', 'logger.info(pid);')]));
     const failures = await findTypeFailures(typeScriptScripts(c), []);
@@ -125,7 +140,7 @@ describe('typeScriptGlobalScripts', () => {
 
 describe('formatTypeFailures', () => {
   it('names the channel, each script and line, and says how to proceed', () => {
-    const text = formatTypeFailures('ADT', [{ label: 'Channel deploy script', errors: [{ line: 3, column: 1, code: 2304, message: "Cannot find name 'x'." }] }]);
+    const text = formatTypeFailures('ADT', [{ label: 'Channel deploy script', errors: [{ line: 3, column: 1, code: 2304, message: "Cannot find name 'x'.", syntax: false }] }]);
     expect(text).toBe([
       '"ADT" was not deployed: a TypeScript script has type errors. Fix them, or switch the script to JavaScript to deploy without type checks.',
       "- Channel deploy script, line 3: Cannot find name 'x'.",
@@ -133,7 +148,7 @@ describe('formatTypeFailures', () => {
   });
 
   it('lists at most the first errors and counts the rest', () => {
-    const errors = Array.from({ length: MAX_LISTED_TYPE_ERRORS + 3 }, (_, i) => ({ line: i + 1, column: 1, code: 2304, message: 'x' }));
+    const errors = Array.from({ length: MAX_LISTED_TYPE_ERRORS + 3 }, (_, i) => ({ line: i + 1, column: 1, code: 2304, message: 'x', syntax: false }));
     const text = formatTypeFailures('ADT', [{ label: 'A', errors }, { label: 'B', errors: [errors[0]!] }]);
     expect(text.split('\n')).toHaveLength(1 + MAX_LISTED_TYPE_ERRORS + 1);
     expect(text).toContain('2 TypeScript scripts have type errors');
