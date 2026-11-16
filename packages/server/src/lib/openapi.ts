@@ -4,6 +4,8 @@
 // Generates the OpenAPI spec object for Swagger UI.
 // Documents key API endpoints across 8 tag groups.
 
+import { SET_CHANNEL_GROUPS_MAX } from '@galvaniflow/core-models';
+
 /** OpenAPI spec type — minimal structural typing for the spec object. */
 interface OpenAPISpec {
   readonly openapi: string;
@@ -126,10 +128,11 @@ export function generateOpenAPISpec(): OpenAPISpec {
           summary: 'Refresh access token using refresh cookie',
           operationId: 'authRefresh',
           responses: {
-            '200': successResponse('Token refreshed', {
+            '200': successResponse('Token refreshed, with the user and their current permissions', {
               type: 'object',
               properties: {
                 accessToken: { type: 'string' },
+                user: { $ref: '#/components/schemas/User' },
               },
             }),
             '401': openApiErrorResponse('Invalid or expired refresh token'),
@@ -303,6 +306,45 @@ export function generateOpenAPISpec(): OpenAPISpec {
             '200': successResponse('Channel enabled state updated', { $ref: '#/components/schemas/Channel' }),
             '401': openApiErrorResponse('Not authenticated'),
             '404': openApiErrorResponse('Channel not found'),
+          },
+        },
+      },
+      '/channels/{id}/groups': {
+        put: {
+          tags: ['Channels'],
+          summary: 'Set the groups a channel belongs to',
+          description: 'Replaces every group membership the channel has with the listed groups, in one transaction. An empty list takes the channel out of every group. Needs channels:write.',
+          operationId: 'channelSetGroups',
+          security: bearerSecurity,
+          parameters: [
+            { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['groupIds'],
+                  properties: {
+                    groupIds: { type: 'array', uniqueItems: true, maxItems: SET_CHANNEL_GROUPS_MAX, items: { type: 'string', format: 'uuid' } },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': successResponse('Channel groups set', {
+              type: 'object',
+              properties: {
+                channelId: { type: 'string', format: 'uuid' },
+                groupIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+              },
+            }),
+            '400': openApiErrorResponse('Validation error'),
+            '401': openApiErrorResponse('Not authenticated'),
+            '403': openApiErrorResponse('Missing channels:write'),
+            '404': openApiErrorResponse('Channel or group not found'),
           },
         },
       },

@@ -16,9 +16,13 @@ function resetSelectState(): void {
   selectResponses = [];
 }
 
-function pushResponse(value: unknown, opts?: { orderable?: boolean }): void {
+function pushResponse(value: unknown, opts?: { orderable?: boolean; locked?: boolean }): void {
   const orderable = opts?.orderable ?? false;
   selectResponses.push(() => {
+    // The last-admin check: select ... order by id ... for update.
+    if (opts?.locked) {
+      return { orderBy: vi.fn(() => ({ for: vi.fn().mockResolvedValue(value) })) };
+    }
     if (orderable) {
       return Object.assign(Promise.resolve(value), {
         orderBy: vi.fn().mockResolvedValue(value),
@@ -78,6 +82,7 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
   ne: vi.fn((_col: unknown, val: unknown) => ({ type: 'ne', val })),
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
+  or: vi.fn((...args: unknown[]) => ({ type: 'or', args })),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
 }));
 
@@ -230,8 +235,8 @@ describe('UserService', () => {
 
   describe('updateUser', () => {
     it('updates user fields', async () => {
-      // Existing user check
-      pushResponse([{ id: USER_ID, role: 'developer' }]);
+      // Target and enabled admins, read under lock
+      pushResponse([{ id: USER_ID, role: 'developer', enabled: true }], { locked: true });
       // getUser for return (after update)
       pushResponse([makeUser({ email: 'updated@test.com' })]);
 
@@ -243,7 +248,7 @@ describe('UserService', () => {
     });
 
     it('returns NOT_FOUND for missing user', async () => {
-      pushResponse([]);
+      pushResponse([{ id: ADMIN_ID, role: 'admin', enabled: true }], { locked: true }); // only admins came back
 
       const result = await UserService.updateUser('nonexistent', { email: 'x@y.com' }, ADMIN_ID);
 
@@ -252,8 +257,42 @@ describe('UserService', () => {
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
     });
 
+    it('returns CONFLICT and writes nothing when demoting the last enabled admin', async () => {
+      pushResponse([{ id: ADMIN_ID, role: 'admin', enabled: true }], { locked: true }); // Only this admin is enabled
+
+      const result = await UserService.updateUser(ADMIN_ID, { role: 'viewer' }, OTHER_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it('disables an admin when another enabled admin exists, and revokes their sessions', async () => {
+      pushResponse([
+        { id: ADMIN_ID, role: 'admin', enabled: true },
+        { id: OTHER_ID, role: 'admin', enabled: true },
+      ], { locked: true }); // Another enabled admin
+      pushResponse([makeUser({ id: ADMIN_ID, role: 'admin', enabled: false })]); // getUser
+
+      const result = await UserService.updateUser(ADMIN_ID, { enabled: false }, OTHER_ID);
+
+      expect(result.ok).toBe(true);
+      expect(mockDeleteWhere).toHaveBeenCalled();
+    });
+
+    it('decides from the role read under lock, not an earlier read', async () => {
+      // The target was demoted by a concurrent request before this one got the lock.
+      pushResponse([{ id: ADMIN_ID, role: 'viewer', enabled: true }], { locked: true });
+      pushResponse([makeUser({ id: ADMIN_ID, role: 'viewer', enabled: false })]); // getUser
+
+      const result = await UserService.updateUser(ADMIN_ID, { enabled: false }, OTHER_ID);
+
+      expect(result.ok).toBe(true); // disabling a viewer needs no other admin
+    });
+
     it('returns SELF_ACTION when changing own role', async () => {
-      pushResponse([{ id: ADMIN_ID, role: 'admin' }]);
+      pushResponse([{ id: ADMIN_ID, role: 'admin', enabled: true }], { locked: true });
 
       const result = await UserService.updateUser(ADMIN_ID, { role: 'developer' }, ADMIN_ID);
 
@@ -265,7 +304,7 @@ describe('UserService', () => {
 
   describe('deleteUser', () => {
     it('soft-deletes user', async () => {
-      pushResponse([{ id: USER_ID, role: 'developer' }]);
+      pushResponse([{ id: USER_ID, role: 'developer', enabled: true }], { locked: true });
 
       const result = await UserService.deleteUser(USER_ID, ADMIN_ID);
 
@@ -282,8 +321,7 @@ describe('UserService', () => {
     });
 
     it('returns CONFLICT when deleting the last enabled admin', async () => {
-      pushResponse([{ id: ADMIN_ID, role: 'admin' }]); // User lookup
-      pushResponse([]); // No OTHER enabled admins
+      pushResponse([{ id: ADMIN_ID, role: 'admin', enabled: true }], { locked: true }); // Only this admin is enabled
 
       const result = await UserService.deleteUser(ADMIN_ID, OTHER_ID);
 
@@ -293,8 +331,10 @@ describe('UserService', () => {
     });
 
     it('allows deleting an admin when another enabled admin exists', async () => {
-      pushResponse([{ id: ADMIN_ID, role: 'admin' }]); // User lookup
-      pushResponse([{ id: OTHER_ID }]); // Another enabled admin exists
+      pushResponse([
+        { id: ADMIN_ID, role: 'admin', enabled: true },
+        { id: OTHER_ID, role: 'admin', enabled: true },
+      ], { locked: true }); // Another enabled admin exists
 
       const result = await UserService.deleteUser(ADMIN_ID, OTHER_ID);
 
@@ -302,7 +342,7 @@ describe('UserService', () => {
     });
 
     it('returns NOT_FOUND for missing user', async () => {
-      pushResponse([]);
+      pushResponse([], { locked: true });
 
       const result = await UserService.deleteUser('nonexistent', ADMIN_ID);
 
@@ -377,7 +417,7 @@ describe('UserService', () => {
     });
 
     it('does NOT re-sync a permission snapshot when a role changes (resolved live from the new role)', async () => {
-      pushResponse([{ id: USER_ID, role: 'developer' }]); // existing
+      pushResponse([{ id: USER_ID, role: 'developer', enabled: true }], { locked: true }); // existing, under lock
       pushResponse([makeUser({ role: 'viewer' })]);        // getUser after update
 
       const result = await UserService.updateUser(USER_ID, { role: 'viewer' }, ADMIN_ID);
@@ -393,7 +433,7 @@ describe('UserService', () => {
   // ----- Session revocation on disable (finding 10) -----
   describe('session revocation', () => {
     it('revokes sessions when a user is disabled via update', async () => {
-      pushResponse([{ id: USER_ID, role: 'developer' }]);
+      pushResponse([{ id: USER_ID, role: 'developer', enabled: true }], { locked: true });
       pushResponse([makeUser({ enabled: false })]);
 
       const result = await UserService.updateUser(USER_ID, { enabled: false }, ADMIN_ID);
@@ -403,7 +443,7 @@ describe('UserService', () => {
     });
 
     it('revokes sessions when a user is soft-deleted', async () => {
-      pushResponse([{ id: USER_ID, role: 'developer' }]);
+      pushResponse([{ id: USER_ID, role: 'developer', enabled: true }], { locked: true });
 
       const result = await UserService.deleteUser(USER_ID, ADMIN_ID);
 

@@ -22,8 +22,9 @@ import { usePermissions } from '../../hooks/use-permissions.js';
 import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
 import {
-  settledProblems, useCursor, useEditorTheme, useExternalValue, useProblems, useStaleTypeMarkers, useSuggestRoom,
+  settledProblems, useCursor, useEditorTheme, useExternalValue, useProblems, useSuggestRoom,
 } from './editor-hooks.js';
+import { useScriptBodyTypeMarkers } from './script-body-check.js';
 import { appliedSurfaceKey, onSurfaceApplied, surfaceLibs } from './surface-state.js';
 import { EditorToolbarButton } from './EditorToolbarButton.js';
 import { ProblemStatus } from './ProblemStatus.js';
@@ -175,7 +176,7 @@ export function ScriptEditor({
     [surface, templates, earlierKey],
   );
   const stale = useSyncExternalStore(onSurfaceApplied, () => appliedSurfaceKey() !== libs.key);
-  useStaleTypeMarkers(editor, stale);
+  useScriptBodyTypeMarkers(editor, language === 'TYPESCRIPT' && !stale);
   useEffect(() => {
     if (!editor) return undefined;
     const apply = (): void => { applyScriptSurface(libs); };

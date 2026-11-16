@@ -43,7 +43,6 @@ import { ScriptDataTypeContext, ScriptTestSampleContext } from '../components/ed
 import { PageHeader } from '../components/common/PageHeader.js';
 import { ChannelHealth } from '../components/channels/ChannelHealth.js';
 import Chip from '@mui/material/Chip';
-// ChannelGroupChips now rendered inside SummaryTab
 
 // ----- Form Data Type -----
 
