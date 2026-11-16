@@ -60,17 +60,13 @@ const TABLE = [
   { changed: ['packages/server/src/app.ts'], jobs: ['e2e', 'gate', 'pg'], test: ['@galvaniflow/server'] },
   { changed: ['packages/connectors/src/registry.ts'], jobs: EVERYTHING, test: ['@galvaniflow/connectors', '@galvaniflow/server'] },
   { changed: ['packages/engine/src/index.ts'], jobs: EVERYTHING, test: ['@galvaniflow/connectors', '@galvaniflow/engine', '@galvaniflow/server'] },
-  { changed: ['packages/cli/src/index.ts'], jobs: ['gate'], test: ['@galvaniflow/cli'] },
   {
     changed: ['packages/core-util/src/index.ts'],
     jobs: EVERYTHING,
     test: ['@galvaniflow/connectors', '@galvaniflow/core-util', '@galvaniflow/engine', '@galvaniflow/server', '@galvaniflow/web'],
   },
-  {
-    changed: ['packages/core-models/src/index.ts'],
-    jobs: EVERYTHING,
-    test: ['@galvaniflow/cli', '@galvaniflow/connectors', '@galvaniflow/core-models', '@galvaniflow/core-util', '@galvaniflow/engine', '@galvaniflow/server', '@galvaniflow/web'],
-  },
+  // Every workspace package depends on core-models.
+  { changed: ['packages/core-models/src/index.ts'], jobs: EVERYTHING, test: [...packages.values()].map((p) => p.name).sort() },
   // E2E specs alone run only the e2e job.
   { changed: ['e2e/auth.spec.ts'], jobs: ['e2e'] },
   { changed: ['playwright.config.ts'], jobs: ['e2e'] },
@@ -149,7 +145,7 @@ test('a test that reads repo paths through readRepoFile runs whenever the gate d
   };
   const sources = [...testSources, reader];
   const files = (changed) => classify({ changed, packages, testSources: sources }).docTests.flatMap((t) => t.files);
-  for (const changed of [['packages/web/src/lib/format.test.ts'], ['e2e/auth.spec.ts'], ['docs/progress/CHANGELOG.md'], ['packages/cli/src/index.ts']]) {
+  for (const changed of [['packages/web/src/lib/format.test.ts'], ['e2e/auth.spec.ts'], ['docs/progress/CHANGELOG.md']]) {
     assert.ok(files(changed).includes('src/__tests__/docs/capabilities.test.ts'), `${changed} should run the capabilities guard`);
   }
   assert.ok(!files(['packages/server/src/app.ts']).includes('src/__tests__/docs/capabilities.test.ts'), 'the gate runs it with the server');

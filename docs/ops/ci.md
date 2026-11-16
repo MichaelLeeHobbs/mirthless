@@ -1,6 +1,6 @@
 # What CI runs
 
-`.github/workflows/ci.yml` runs on every pull request to `main` and every push to `main`. On a pull request, its first job, `changes`, looks at which files changed and picks the jobs the change needs. The rules live in one script, [`scripts/ci/classify-changes.mjs`](../../scripts/ci/classify-changes.mjs), with table tests beside it that `pnpm gate` runs (`pnpm test:ci`). Why it works this way: D-280 in [`DECISIONS.md`](../progress/DECISIONS.md).
+`.github/workflows/ci.yml` runs on every pull request to `main` and every push to `main`. On a pull request, its first job, `changes`, looks at which files changed and picks the jobs the change needs. The rules live in one script, [`scripts/ci/classify-changes.mjs`](../../scripts/ci/classify-changes.mjs), with table tests beside it that `pnpm gate` runs (`pnpm test:ci`). Why it works this way: D-288 in [`DECISIONS.md`](../progress/DECISIONS.md).
 
 A pull request is compared with its merge base on `main`.
 
@@ -10,7 +10,6 @@ A pull request is compared with its merge base on `main`.
 | `packages/server` | Gate (server tests), Postgres integration, e2e |
 | `packages/connectors` | Gate (connectors and server tests), connector integration, Postgres integration, e2e |
 | `packages/engine`, `core-util`, `core-models` | Gate (the package and everything that depends on it), both integration lanes, e2e |
-| `packages/cli` | Gate (cli tests) |
 | `e2e/**`, `playwright.*` | e2e |
 | `docs/**`, top-level `*.md`, `.claude/**`, `.github/ISSUE_TEMPLATE/**`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/dependabot.yml`, `LICENSE` | `docs`: the unit tests whose source names a changed file, such as the guards on `docs/user/connector-reference.md`. Nothing else. |
 | `.github/workflows/**`, `scripts/ci/**` | Everything, decided in the workflow without running the classifier, so a pull request that breaks the classifier still runs its tests |
