@@ -94,7 +94,7 @@ export class GlobalScriptService {
    * Update global scripts (upserts only provided fields). A script that does
    * not compile is refused, and so is a TypeScript script with type errors:
    * global scripts run for every channel, so they are not left to fail each
-   * channel's deploy (D-283).
+   * channel's deploy (D-285).
    */
   static async update(
     input: UpdateGlobalScriptsInput,

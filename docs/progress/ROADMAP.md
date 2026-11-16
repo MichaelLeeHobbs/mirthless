@@ -153,7 +153,7 @@ Make writing transformers and debugging channels a joy, not a chore.
 - [ ] **Visual pipeline builder** — React Flow drag-drop editor as alternative to tree-table
 - [ ] **In-browser script debugging** — V8 Inspector Protocol + Monaco breakpoints
 - [ ] **Hot reload for scripts** — edit transformer, see result on next message without redeploy
-- [ ] **Test harness in editor** — send test message and see pipeline trace inline. One script at a time is done (D-284); a whole-pipeline trace, saved test messages with expected output, and the other tools ranked in `docs/design/19-script-editor-tools.md` are not
+- [ ] **Test harness in editor** — send test message and see pipeline trace inline. One script at a time is done (D-286); a whole-pipeline trace, saved test messages with expected output, and the other tools ranked in `docs/design/19-script-editor-tools.md` are not
 - [ ] **Message generator** — create realistic HL7v2/FHIR/JSON test data from templates
 - [ ] **Channel diff viewer** — side-by-side revision comparison with Monaco diff editor
 

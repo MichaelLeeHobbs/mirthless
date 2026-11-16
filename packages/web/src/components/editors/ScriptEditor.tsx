@@ -127,8 +127,8 @@ export function ScriptEditor({
   const permissions = usePermissions();
   const testRun = useScriptTestRun();
   const [testOpen, setTestOpen] = useState(false);
-  // A test run runs code on the server now, so it needs the deploy permission (D-284).
-  const canTest = testKind !== undefined && testSample !== undefined && !readOnly && permissions.has('channels:deploy');
+  // A test run needs the permission to write channel scripts, as the server checks (D-286).
+  const canTest = testKind !== undefined && testSample !== undefined && !readOnly && permissions.has('channels:write');
   const runTest = (): void => {
     if (!canTest) return;
     setTestOpen(true);

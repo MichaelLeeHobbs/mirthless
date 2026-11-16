@@ -75,10 +75,10 @@ describe('ScriptEditor test run button', () => {
   const signIn = (permissions: readonly string[]): void => {
     useAuthStore.setState({ user: { id: 'u1', username: 't', email: 't@x.com', role: 'deployer', permissions }, accessToken: 'tok', isAuthenticated: true });
   };
-  beforeEach(() => { signIn([PERMISSION.CHANNELS_WRITE, PERMISSION.CHANNELS_DEPLOY]); });
+  beforeEach(() => { signIn([PERMISSION.CHANNELS_WRITE]); });
 
-  it('is absent for a user who cannot deploy, since a test run runs code now', () => {
-    signIn([PERMISSION.CHANNELS_WRITE]);
+  it('is absent for a user who cannot write channel scripts, as the server would refuse the run', () => {
+    signIn([PERMISSION.CHANNELS_READ]);
     wrap(
       <ScriptTestSampleContext.Provider value={sample}>
         <ScriptEditor value="return true;" onChange={vi.fn()} testKind="filter" />

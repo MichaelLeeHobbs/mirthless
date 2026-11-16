@@ -29,12 +29,12 @@ router.post(
   ScriptValidationController.validate,
 );
 
-// Runs user code on the server now (in a worker, no side effects). Until test
-// runs, a developer's code ran only after a deployer deployed it, so running
-// code needs the deploy permission too (D-284).
+// Runs user code on the server on demand. Writing channel scripts is enough
+// (developers too, Michael's call, D-286): the run is in a worker with resource
+// limits, one at a time, rate-limited, audited, and its bridges are dry.
 router.post(
   '/test-run',
-  requirePermission('channels:deploy'),
+  requirePermission('channels:write'),
   testRunRateLimiter,
   validate({ body: scriptTestRunSchema }),
   ScriptValidationController.testRun,
