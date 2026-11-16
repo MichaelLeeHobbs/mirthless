@@ -5,7 +5,6 @@
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { StatisticsController } from '../controllers/statistics.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
@@ -14,8 +13,6 @@ const uuidParamsSchema = z.object({
 });
 
 const router: IRouter = Router();
-
-router.use(authenticate);
 
 // All channels summary (must come before /:id to avoid route conflict)
 router.get(

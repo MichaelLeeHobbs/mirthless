@@ -6,15 +6,12 @@ import { Router, type IRouter } from 'express';
 import { z } from 'zod';
 import { channelRevisionParamsSchema } from '@galvaniflow/core-models';
 import { ChannelRevisionController } from '../controllers/channel-revision.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const uuidParam = z.object({ id: z.string().uuid() });
 
 const router: IRouter = Router();
-
-router.use(authenticate);
 
 router.get(
   '/:id/revisions',
