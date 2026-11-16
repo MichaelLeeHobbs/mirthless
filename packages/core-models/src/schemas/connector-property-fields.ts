@@ -25,6 +25,9 @@ export const connectorPortSchema = z.preprocess(
   }).int().min(1).max(65_535),
 );
 
+/** Text with something other than whitespace in it, kept as given. */
+export const requiredTextSchema = z.string().refine((value) => value.trim() !== '', { message: 'required' });
+
 /** A whole number of at least `min` (and at most `max` when given), digits as text accepted. */
 export function wholeNumberSchema(min: number, max = Number.MAX_SAFE_INTEGER): z.ZodType<number, unknown> {
   return z.preprocess(digitsToNumber, z.number().int().min(min).max(max));

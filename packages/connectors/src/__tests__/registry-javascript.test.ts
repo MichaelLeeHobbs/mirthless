@@ -2,11 +2,12 @@
 // Registry: JAVASCRIPT properties parsed by the core-models schema
 // ===========================================
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
+import type { JavaScriptReceiver } from '../javascript/javascript-receiver.js';
 
 describe('registry JAVASCRIPT factories', () => {
-  // JAVASCRIPT_SOURCE_DEFAULTS and JAVASCRIPT_DEST_DEFAULTS from 45fad27 (2026-02), then with scriptLanguage (1586daf), a script filled.
+  // JAVASCRIPT_SOURCE_DEFAULTS and JAVASCRIPT_DEST_DEFAULTS from 45fad27 (2026-03), then with scriptLanguage (1586daf), a script filled.
   it('build from the properties the editor saves', () => {
     expect(() => createSourceConnector('JAVASCRIPT', { script: 'return 1;', pollingIntervalMs: 5000 })).not.toThrow();
     expect(() => createSourceConnector('JAVASCRIPT', { script: 'return 1;', scriptLanguage: 'TYPESCRIPT', pollingIntervalMs: 5000 })).not.toThrow();
@@ -34,6 +35,24 @@ describe('registry JAVASCRIPT factories', () => {
 
   it('refuse a polling interval the receiver would refuse, naming the key', () => {
     expect(() => createSourceConnector('JAVASCRIPT', { script: 'return 1;', pollingIntervalMs: 50 })).toThrow(/pollingIntervalMs/);
+  });
+
+  it('pass the parsed polling interval to the receiver', async () => {
+    vi.useFakeTimers();
+    try {
+      const receiver = createSourceConnector('JAVASCRIPT', { script: 'return 1;', pollingIntervalMs: '200' }) as JavaScriptReceiver;
+      const runner = vi.fn(async () => ({ ok: true as const, value: null, error: null }));
+      receiver.setScriptRunner(runner);
+      receiver.setDispatcher(vi.fn());
+      expect((await receiver.onStart()).ok).toBe(true);
+      await vi.advanceTimersByTimeAsync(199);
+      expect(runner).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(runner).toHaveBeenCalledTimes(1);
+      await receiver.onStop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('refuse a missing script, naming the key', () => {

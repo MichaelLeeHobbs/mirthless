@@ -18,7 +18,7 @@ describe('javascriptSourcePropertiesSchema', () => {
     expect(javascriptSourcePropertiesSchema.parse(all)).toEqual({ ...all, pollingIntervalMs: 100 });
   });
 
-  // JAVASCRIPT_SOURCE_DEFAULTS from 45fad27 (2026-02) and 1586daf (2026-11-15, scriptLanguage), with a script.
+  // JAVASCRIPT_SOURCE_DEFAULTS from 45fad27 (2026-03) and 1586daf (2026-11-15, scriptLanguage), with a script.
   it.each([
     [{ script: 'return 1;', pollingIntervalMs: 5000 }],
     [{ script: 'return 1;', scriptLanguage: 'JAVASCRIPT', pollingIntervalMs: 5000 }],
@@ -33,6 +33,12 @@ describe('javascriptSourcePropertiesSchema', () => {
       sourceConnectorProperties: { responseVariable: 'None', processBatch: 'true' }, script: "return 'tick';",
     };
     expect(javascriptSourcePropertiesSchema.parse(imported)).toEqual({ script: "return 'tick';", pollingIntervalMs: 5000 });
+  });
+
+  // A Mirth 3.0.x export names the response settings responseConnectorProperties (renamed in 3.1).
+  it('drops the Mirth 3.0 response settings the old importer copied', () => {
+    const imported = { pollConnectorProperties: { pollingFrequency: '500' }, responseConnectorProperties: { responseVariable: 'None' }, script: 'return 1;' };
+    expect(javascriptSourcePropertiesSchema.parse(imported)).toEqual({ script: 'return 1;', pollingIntervalMs: 5000 });
   });
 
   it.each([
@@ -67,7 +73,7 @@ describe('javascriptSourcePropertiesSchema', () => {
 });
 
 describe('javascriptDestinationPropertiesSchema', () => {
-  // JAVASCRIPT_DEST_DEFAULTS from 45fad27 (2026-02) and 1586daf (2026-11-15), with a script.
+  // JAVASCRIPT_DEST_DEFAULTS from 45fad27 (2026-03) and 1586daf (2026-11-15), with a script.
   it.each([
     [{ script: 'return msg;' }],
     [{ script: 'return msg;', scriptLanguage: 'TYPESCRIPT' }],
@@ -78,6 +84,12 @@ describe('javascriptDestinationPropertiesSchema', () => {
 
   it('drops the Mirth keys the old importer copied and nothing read', () => {
     const imported = { pluginProperties: '', destinationConnectorProperties: { queueEnabled: 'false' }, script: 'return msg;' };
+    expect(javascriptDestinationPropertiesSchema.parse(imported)).toEqual({ script: 'return msg;' });
+  });
+
+  // A Mirth 3.0.x export names the queue settings queueConnectorProperties (renamed in 3.1).
+  it('drops the Mirth 3.0 queue settings the old importer copied', () => {
+    const imported = { queueConnectorProperties: { queueEnabled: 'false' }, script: 'return msg;' };
     expect(javascriptDestinationPropertiesSchema.parse(imported)).toEqual({ script: 'return msg;' });
   });
 

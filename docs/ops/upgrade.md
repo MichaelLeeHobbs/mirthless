@@ -140,9 +140,9 @@ WHERE connector_type = 'FILE'
   AND k NOT IN ('directory','outputPattern','charset','binary','tempFileEnabled','appendMode','template');
 ```
 
-**JAVASCRIPT** is the fifth. Channels saved by this app's own editor keep deploying: the JavaScript Reader and Writer forms have saved `script` (and the reader `pollingIntervalMs`) since 2026-02, plus `scriptLanguage` since 2026-11-15. Until 2026-11-13 the Mirth importer copied all of a JavaScript Reader's or Writer's Mirth properties into the channel: `pluginProperties`, `pollConnectorProperties` and `sourceConnectorProperties` on a reader, `pluginProperties` and `destinationConnectorProperties` on a writer. Nothing read them, and the schema drops them, so those channels keep deploying and still poll every 5000 ms. Import such a channel again to get Mirth's polling interval and Process Batch setting, which the importer now maps. Nothing in the database is rewritten.
+**JAVASCRIPT** is the fifth. Channels saved by this app's own editor keep deploying: the JavaScript Reader and Writer forms have saved `script` (and the reader `pollingIntervalMs`) since 2026-03, plus `scriptLanguage` since 2026-11-15. Until 2026-11-13 the Mirth importer copied all of a JavaScript Reader's or Writer's Mirth properties into the channel: `pluginProperties`, `pollConnectorProperties` and `sourceConnectorProperties` on a reader, `pluginProperties` and `destinationConnectorProperties` on a writer, or `responseConnectorProperties` and `queueConnectorProperties` from a Mirth 3.0 export. Nothing read them, and the schema drops them, so those channels keep deploying and still poll every 5000 ms. Import such a channel again to get Mirth's polling interval and Process Batch setting, which the importer now maps. Nothing in the database is rewritten.
 
-A connector that the importer could not map (an unknown Mirth connector, or a send-only one used as a source) is imported as JAVASCRIPT with a warning. It has no `script`, so it never deployed, and still doesn't. Until 2026-11-13 it also carried the other connector's Mirth properties, which are now refused as well; replace the connector in the editor.
+The importer brings in a connector it has no mapping for as JAVASCRIPT with a warning, and since 2026-11-15 also a connector used in a direction it cannot run in (e.g. SMTP as a source, EMAIL as a destination). Such a stand-in has no `script`, so it never deployed, and still doesn't. An unmapped connector imported before 2026-11-13 also carries the other connector's Mirth properties, which are now refused as well; replace the connector in the editor.
 
 A JAVASCRIPT channel now fails to deploy when it has:
 
@@ -158,10 +158,10 @@ Before upgrading, list the keys the schema would refuse:
 SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
 WHERE source_connector_type = 'JAVASCRIPT'
   AND k NOT IN ('script','scriptLanguage','pollingIntervalMs','processBatch',
-                'pluginProperties','pollConnectorProperties','sourceConnectorProperties');
+                'pluginProperties','pollConnectorProperties','sourceConnectorProperties','responseConnectorProperties');
 SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
 WHERE connector_type = 'JAVASCRIPT'
-  AND k NOT IN ('script','scriptLanguage','template','pluginProperties','destinationConnectorProperties');
+  AND k NOT IN ('script','scriptLanguage','template','pluginProperties','destinationConnectorProperties','queueConnectorProperties');
 ```
 
 ## Standard upgrade (Docker)

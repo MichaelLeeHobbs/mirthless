@@ -463,7 +463,7 @@ describe('validateConnectorProperties', () => {
   });
 
   describe('JAVASCRIPT', () => {
-    // JAVASCRIPT_SOURCE_DEFAULTS and JAVASCRIPT_DEST_DEFAULTS from 45fad27 (2026-02), then with scriptLanguage (1586daf), a script filled.
+    // JAVASCRIPT_SOURCE_DEFAULTS and JAVASCRIPT_DEST_DEFAULTS from 45fad27 (2026-03), then with scriptLanguage (1586daf), a script filled.
     it('accepts JAVASCRIPT channels the editor saved', () => {
       expect(validateConnectorProperties('JAVASCRIPT', 'source', { script: 'return 1;', pollingIntervalMs: 5000 }).ok).toBe(true);
       expect(validateConnectorProperties('JAVASCRIPT', 'source', { script: 'return 1;', scriptLanguage: 'TYPESCRIPT', pollingIntervalMs: 5000 }).ok).toBe(true);
@@ -479,6 +479,11 @@ describe('validateConnectorProperties', () => {
       expect(validateConnectorProperties('JAVASCRIPT', 'destination', {
         pluginProperties: '', destinationConnectorProperties: { queueEnabled: 'false' }, script: 'return msg;',
       }).ok).toBe(true);
+      // A Mirth 3.0.x export's names for the response and queue groups.
+      expect(validateConnectorProperties('JAVASCRIPT', 'source', {
+        pollConnectorProperties: { pollingFrequency: '500' }, responseConnectorProperties: { responseVariable: 'None' }, script: 'return 1;',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('JAVASCRIPT', 'destination', { queueConnectorProperties: { queueEnabled: 'false' }, script: 'return msg;' }).ok).toBe(true);
     });
 
     it.each([
