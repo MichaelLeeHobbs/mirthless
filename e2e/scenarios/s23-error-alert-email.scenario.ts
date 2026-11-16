@@ -37,6 +37,6 @@ scenario('S23 destination error triggers an alert email naming the channel', asy
   await api.undeploy(ids[NAME]!);
   await api.deployAndStart(ids[NAME]!);
 
-  await sendMllp(PORT, 'MSH|^~\\&|EHR|S23|VNS|V|20261110120000||ADT^A01|S23|P|2.5\rPID|||MRN23');
+  await sendMllp(PORT, 'MSH|^~\\&|EHR|S23|HUB|V|20261110120000||ADT^A01|S23|P|2.5\rPID|||MRN23');
   await expect.poll(async () => (await mailSubjects(NAME)).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
 });

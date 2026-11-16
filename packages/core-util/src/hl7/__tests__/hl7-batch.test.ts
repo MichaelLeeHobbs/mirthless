@@ -5,8 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import { splitHl7Batch } from '../hl7-batch.js';
 
-const MSG1 = 'MSH|^~\\&|LAB|A|VNS|V|20261110||ORU^R01|1|P|2.5\rPID|||MRN1';
-const MSG2 = 'MSH|^~\\&|LAB|A|VNS|V|20261110||ORU^R01|2|P|2.5\rPID|||MRN2\rOBX|1|NM|GLU||90';
+const MSG1 = 'MSH|^~\\&|LAB|A|HUB|V|20261110||ORU^R01|1|P|2.5\rPID|||MRN1';
+const MSG2 = 'MSH|^~\\&|LAB|A|HUB|V|20261110||ORU^R01|2|P|2.5\rPID|||MRN2\rOBX|1|NM|GLU||90';
 
 describe('splitHl7Batch', () => {
   it('gives one message per MSH with the segments that follow it', () => {

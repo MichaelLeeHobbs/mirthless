@@ -14,7 +14,7 @@ export const filterRuleInputSchema = z.object({
   operator: z.enum(FILTER_OPERATORS).default('AND'),
   type: z.enum(FILTER_RULE_TYPES),
   script: z.string().nullable().default(null),
-  /** The language of `script`. Create stores JavaScript when it is left out; update requires it with a script (D-291). */
+  /** The language of `script`. Create stores JavaScript when it is left out; update requires it with a script (D-292). */
   language: scriptLanguageSchema.optional(),
   // Rule builder fields (null for JavaScript type)
   field: z.string().max(255).nullable().default(null),

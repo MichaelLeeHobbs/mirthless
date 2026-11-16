@@ -16,8 +16,8 @@ scenario('S05 JSON report is sent as an ORU to the configuration-map host', asyn
   const sink = new MllpSink(SINK);
   await sink.listen();
   try {
-    await api.setConfig('vns', 'MIRTH_SENDER_HOST', '127.0.0.1');
-    await api.setConfig('vns', 'MIRTH_SENDER_PORT', String(SINK));
+    await api.setConfig('site', 'MIRTH_SENDER_HOST', '127.0.0.1');
+    await api.setConfig('site', 'MIRTH_SENDER_PORT', String(SINK));
     await api.importAndDeploy(channelExport({
       id: mirthId(5),
       name: 'S05 Report Processor',
@@ -31,7 +31,7 @@ scenario('S05 JSON report is sent as an ORU to the configuration-map host', asyn
           name: 'reportGenerator',
           script: [
             'var r = msg;',
-            "var oru = ['MSH|^~\\\\&|VNS|VNS|' + r.site + '|' + r.site + '|20261110120000||ORU^R01|' + r.accession + '|P|2.3',",
+            "var oru = ['MSH|^~\\\\&|HUB|HUB|' + r.site + '|' + r.site + '|20261110120000||ORU^R01|' + r.accession + '|P|2.3',",
             "  'PID|||' + r.mrn,",
             "  'OBR|1|' + r.accession + '||' + r.procedure,",
             "  'OBX|1|TX|IMP||' + r.impression].join('\\r');",

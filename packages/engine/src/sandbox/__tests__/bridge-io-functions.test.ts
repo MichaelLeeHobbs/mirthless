@@ -269,7 +269,7 @@ describe('Bridge IO Functions', () => {
       mockStore.mockResolvedValue({ id: 'r1', fields: { a: '1' }, payload: 'p', expireAt: null, createdAt: '2026-07-13T00:00:00.000Z' });
 
       const script = makeScript(
-        'return await getCollection("orders").store({ accessionNumber: "A1", institutionName: "Valor" }, "ORDER-MSG", { ttlSeconds: 3600 });',
+        'return await getCollection("orders").store({ accessionNumber: "A1", institutionName: "North" }, "ORDER-MSG", { ttlSeconds: 3600 });',
       );
       const result = await executor.execute(script, makeContext(), makeOptions());
 
@@ -277,7 +277,7 @@ describe('Bridge IO Functions', () => {
       if (!result.ok) return;
       expect(mockStore).toHaveBeenCalledWith(
         'orders',
-        { accessionNumber: 'A1', institutionName: 'Valor' },
+        { accessionNumber: 'A1', institutionName: 'North' },
         'ORDER-MSG',
         { ttlSeconds: 3600 },
       );

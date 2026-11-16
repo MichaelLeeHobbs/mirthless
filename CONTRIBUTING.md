@@ -98,9 +98,7 @@ We follow the **mission-critical-ts** standard strictly. Full rules live in
 
 ## Progress Docs
 
-If your change is substantial, add an entry to
-[`docs/progress/CHANGELOG.md`](docs/progress/CHANGELOG.md), and record any non-obvious
-design decision in [`docs/progress/DECISIONS.md`](docs/progress/DECISIONS.md).
+Say in the pull request description what changed, what you checked and what you left out. Record any non-obvious design decision in [`docs/progress/DECISIONS.md`](docs/progress/DECISIONS.md) with the next `D-NNN` number; if another branch took that number first, renumber yours.
 
 ## Code of Conduct
 

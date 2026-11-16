@@ -72,7 +72,7 @@ const TABLE = [
   { changed: ['playwright.config.ts'], jobs: ['e2e'] },
   // Docs: only the tests that read the changed file.
   { changed: ['docs/user/connector-reference.md'], jobs: ['docs'] },
-  { changed: ['docs/progress/CHANGELOG.md'], jobs: [] },
+  { changed: ['docs/ops/soak-test.md'], jobs: [] },
   { changed: ['AGENTS.md', 'README.md'], jobs: [] },
   { changed: ['.claude/skills/create-ui/SKILL.md'], jobs: [] },
   { changed: ['.github/ISSUE_TEMPLATE/bug_report.md', '.github/PULL_REQUEST_TEMPLATE.md'], jobs: [] },
@@ -145,7 +145,7 @@ test('a test that reads repo paths through readRepoFile runs whenever the gate d
   };
   const sources = [...testSources, reader];
   const files = (changed) => classify({ changed, packages, testSources: sources }).docTests.flatMap((t) => t.files);
-  for (const changed of [['packages/web/src/lib/format.test.ts'], ['e2e/auth.spec.ts'], ['docs/progress/CHANGELOG.md']]) {
+  for (const changed of [['packages/web/src/lib/format.test.ts'], ['e2e/auth.spec.ts'], ['docs/ops/soak-test.md']]) {
     assert.ok(files(changed).includes('src/__tests__/docs/capabilities.test.ts'), `${changed} should run the capabilities guard`);
   }
   assert.ok(!files(['packages/server/src/app.ts']).includes('src/__tests__/docs/capabilities.test.ts'), 'the gate runs it with the server');

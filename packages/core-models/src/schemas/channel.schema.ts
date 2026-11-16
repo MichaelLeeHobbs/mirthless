@@ -50,7 +50,7 @@ export const destinationInputSchema = z.object({
   waitForPrevious: z.boolean().default(false),
   /** Optional per-destination response transformer script (JS/TS source). */
   responseTransformer: z.string().nullish(),
-  /** The language of `responseTransformer`. Create stores JavaScript when it is left out; update requires it with a script (D-291). */
+  /** The language of `responseTransformer`. Create stores JavaScript when it is left out; update requires it with a script (D-292). */
   responseTransformerLanguage: scriptLanguageSchema.optional(),
 });
 
@@ -68,7 +68,7 @@ export type MetadataColumnInput = z.infer<typeof metadataColumnInputSchema>;
 
 /**
  * The language of each channel script. One left out is JavaScript on create
- * and keeps its stored language on update (D-291).
+ * and keeps its stored language on update (D-292).
  */
 export const channelScriptLanguagesSchema = z.object({
   deploy: scriptLanguageSchema.optional(),
@@ -147,7 +147,7 @@ const updateChannelBaseSchema = createChannelSchema.partial().extend({
  * position, with no id to find the stored row by, so it cannot keep a stored
  * language the request leaves out. Defaulting it would silently turn a
  * TypeScript script into JavaScript and switch off its deploy type check, so
- * an update must give the language of every script it sends (D-291).
+ * an update must give the language of every script it sends (D-292).
  */
 export const updateChannelSchema = updateChannelBaseSchema.superRefine((input, ctx) => {
   for (const s of updateScripts(input)) {

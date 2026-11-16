@@ -126,7 +126,7 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     const afterTs = unwrap(await ChannelService.getById(created1.id));
     expect(afterTs.scripts.find((s) => s.scriptType === 'DEPLOY')).toMatchObject({ script: 'logger.info("up");', language: 'TYPESCRIPT' });
 
-    // A language the request leaves out keeps the stored one, so the script stays type-checked (D-291).
+    // A language the request leaves out keeps the stored one, so the script stays type-checked (D-292).
     const kept = unwrap(await ChannelService.update(created1.id, updateChannelSchema.parse({
       revision: updated.revision, scripts: { deploy: 'logger.info("still ts");' },
     })));

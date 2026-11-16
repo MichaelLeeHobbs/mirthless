@@ -1,7 +1,7 @@
 // ===========================================
 // Command Palette
 // ===========================================
-// Ctrl+K (Cmd+K) "Jump to" box, like VS Code's and MedFusion's: type a few
+// Ctrl+K (Cmd+K) "Jump to" box, like VS Code's: type a few
 // letters of a page, a channel, a collection or an action and press Enter. Everything it
 // offers is permission-gated the same way as the sidebar.
 

@@ -31,7 +31,7 @@ scenario('S14 Database Reader turns new rows into HL7 and marks them sent', asyn
         inbound: 'XML',
         steps: [{
           name: 'To ORM',
-          script: "$c('hl7', 'MSH|^~\\\\&|DB|S14|VNS|VNS|20261110120000||ORM^O01|' + msg.accession + '|P|2.3\\rORC|NW|' + msg.accession);",
+          script: "$c('hl7', 'MSH|^~\\\\&|DB|S14|HUB|HUB|20261110120000||ORM^O01|' + msg.accession + '|P|2.3\\rORC|NW|' + msg.accession);",
         }],
       },
       destinations: [{ name: 'RIS', ...tcpSender('127.0.0.1', String(SINK), undefined, '${hl7}') }],

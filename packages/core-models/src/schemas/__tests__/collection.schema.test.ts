@@ -78,7 +78,7 @@ describe('updateCollectionSchema', () => {
 describe('storeRecordSchema', () => {
   it('accepts fields + payload', () => {
     const result = storeRecordSchema.safeParse({
-      fields: { accessionNumber: 'A1', institutionName: 'Valor', orderControl: 'NW' },
+      fields: { accessionNumber: 'A1', institutionName: 'North', orderControl: 'NW' },
       payload: 'MSH|...',
     });
     expect(result.success).toBe(true);
@@ -134,7 +134,7 @@ describe('findRecordsSchema', () => {
 
   it('accepts a match plus a scalar and array filter (multiple fields)', () => {
     const result = findRecordsSchema.safeParse({
-      match: { accessionNumber: 'A1', institutionName: 'Valor' },
+      match: { accessionNumber: 'A1', institutionName: 'North' },
       filter: { orderControl: ['XO', 'NW', 'SC'], messageCode: 'ORM' },
       latest: true,
     });
