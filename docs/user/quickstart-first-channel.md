@@ -86,7 +86,7 @@ You can also point any HL7 sending application at `localhost:6661`.
 
 1. Open **Message Browser** for the channel (or the dashboard **Messages** view).
 2. You should see one message with a **RECEIVED → TRANSFORMED → SENT** progression.
-   The dashboard updates in real time over WebSocket.
+   The dashboard updates live over WebSocket, within a few seconds of a change.
 3. Check the output directory — a file named after the message ID should contain the
    HL7 payload.
 4. Open the message to inspect its content at each pipeline stage, the maps, and any

@@ -12,3 +12,4 @@ export * from './delimited.js';
 export * from './x12.js';
 export * from './secret-setting.js';
 export * from './placeholders.js';
+export * from './throttle.js';

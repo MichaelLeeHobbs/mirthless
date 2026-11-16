@@ -72,7 +72,7 @@ afterEach(() => {
 
 describe('defaults', () => {
   // Filling only the required fields, the schema must return the defaults unchanged:
-  // same keys (it strips unknown ones) and the same default values.
+  // same keys (it refuses unknown ones) and the same default values.
   it.each([
     ['Kafka source', kafkaSourcePropertiesSchema, KAFKA_SOURCE_DEFAULTS, { brokers: 'k:9092', topic: 't', groupId: 'g' }],
     ['Kafka destination', kafkaDestinationPropertiesSchema, KAFKA_DEST_DEFAULTS, { brokers: 'k:9092', topic: 't' }],

@@ -24,7 +24,7 @@ vi.mock('../../hooks/use-channels.js', () => ({ useChannel: () => ({ data: { nam
 vi.mock('../../hooks/use-messages.js', () => ({
   useMessageSearch: () => ({ data: { items: [], total: 0, limit: 25, offset: 0 }, isLoading: false, error: null, refetch: vi.fn() }),
 }));
-vi.mock('../../hooks/use-socket.js', () => ({ useSocketEvent: vi.fn(), useSocketRoom: vi.fn() }));
+vi.mock('../../hooks/use-socket.js', () => ({ useSocketEvent: vi.fn(), useSocketRoom: vi.fn(), useThrottledSocketEvent: vi.fn() }));
 vi.mock('../../hooks/use-message-actions.js', () => ({ useReprocessMessage: idle, useBulkDeleteMessages: idle }));
 vi.mock('../../hooks/use-message-export.js', () => ({ useMessageExport: () => ({ exportMessages: vi.fn(), isExporting: false }) }));
 vi.mock('../../hooks/use-cross-channel-search.js', () => ({
