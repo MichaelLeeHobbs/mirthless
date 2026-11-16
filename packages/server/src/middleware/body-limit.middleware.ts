@@ -10,7 +10,7 @@
 import express, { type RequestHandler } from 'express';
 
 const DEFAULT_LIMIT = '1mb';
-/** Backups, channel imports and messages with embedded documents. */
+/** Backups, channel imports and messages with embedded documents. docker/nginx/default.conf caps bodies just above this. */
 const LARGE_LIMIT = '50mb';
 /** A username and a password. */
 const AUTH_LIMIT = '4kb';

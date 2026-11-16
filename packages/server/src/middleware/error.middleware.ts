@@ -20,18 +20,19 @@ const BAD_REQUEST = { code: 'BAD_REQUEST', message: 'The request body could not 
  * JSON parser refused. These are http-errors with `expose` set; anything else
  * is a server fault.
  */
-function clientErrorStatus(err: unknown): number | undefined {
+function clientError(err: unknown): { readonly status: number; readonly type: string | undefined } | undefined {
   if (!(err instanceof Error)) return undefined;
-  const { status, expose } = err as Error & { status?: unknown; expose?: unknown };
+  const { status, expose, type } = err as Error & { status?: unknown; expose?: unknown; type?: unknown };
   if (typeof status !== 'number' || status < 400 || status > 499 || expose !== true) return undefined;
-  return status;
+  // body-parser's `type` (entity.too.large, entity.parse.failed) names the cause without quoting the body.
+  return { status, type: typeof type === 'string' ? type : undefined };
 }
 
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
-  const clientStatus = clientErrorStatus(err);
-  if (clientStatus !== undefined) {
-    logger.warn({ status: clientStatus, path: req.path, method: req.method }, 'Request body refused');
-    res.status(clientStatus).json({ success: false, error: CLIENT_ERRORS[clientStatus] ?? BAD_REQUEST });
+  const refused = clientError(err);
+  if (refused !== undefined) {
+    logger.warn({ status: refused.status, type: refused.type, path: req.path, method: req.method }, 'Request body refused');
+    res.status(refused.status).json({ success: false, error: CLIENT_ERRORS[refused.status] ?? BAD_REQUEST });
     return;
   }
 
