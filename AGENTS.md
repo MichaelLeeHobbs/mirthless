@@ -46,6 +46,7 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `toPoolConfig` in `connectors/src/database/connection-pool.ts`: a database connector's pool config from its connection fields.
   - `QuarantineLedger` and `dispatchQuarantined` in `connectors/src/quarantine-ledger.ts`: the quarantine set, its sidecar ledger and the dispatch-then-quarantine step, for any polling file source. The source supplies only the storage.
   - `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`: connect a polling receiver's remote client, or close it, under a timeout.
+  - `redirectMessage` in `connectors/src/redirect.ts`: the ERROR text for a 3xx answer, which the HTTP and FHIR destinations never follow.
   - `createNodemailerTransport` in `connectors/src/smtp/smtp-dispatcher.ts` (exported from `@galvaniflow/connectors`): builds a nodemailer transport for the SMTP connector and the server's own mail. SMTP Test Connection (`connection-test.service.ts`) still builds its own; see #92.
   - `unescapeControlChars` (typed `\n`, `\r`, `\t`, `\\` to the characters) and `isSecretSetting` (which settings hold secrets) in `core-util`. The web depends on core-util.
   - `fillPlaceholders`, `recordLookup` and `placeholderNames` in `core-util/src/placeholders.ts`: every `${name}` template (D-275). A template with built-in names looks those up first and passes the rest to it.

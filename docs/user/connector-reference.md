@@ -498,9 +498,7 @@ It sends one email per message. The subject, body and attachment fields may use 
 
 FHIR can only send; it cannot receive messages. There is no FHIR source.
 
-It posts the message content as-is to a FHIR R4 server: POST to `<baseUrl>/<resourceType>`, or PUT to `<baseUrl>/<resourceType>/<id>` with the id read from the resource. The message must already be a FHIR resource in the configured format. An HL7 v2 message sent here is posted unchanged and the server rejects it; write a transformer that builds the resource first. A 2xx response is SENT, anything else an ERROR.
-
-Unlike the HTTP destination, FHIR follows redirects. A 301, 302 or 303 turns the POST into a GET with no body, so a 200 from that GET is recorded as SENT although nothing was created ([#163](https://github.com/MichaelLeeHobbs/mirthless/issues/163)). Point `baseUrl` at the server's final address, not one that redirects.
+It posts the message content as-is to a FHIR R4 server: POST to `<baseUrl>/<resourceType>`, or PUT to `<baseUrl>/<resourceType>/<id>` with the id read from the resource. The message must already be a FHIR resource in the configured format. An HL7 v2 message sent here is posted unchanged and the server rejects it; write a transformer that builds the resource first. A 2xx response is SENT. A 3xx is an ERROR naming the redirect target, because redirects are not followed: following one would turn the POST into a GET with no body, and nothing would be created. Any other status is an ERROR.
 
 ### FHIR security
 
@@ -510,7 +508,7 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 
 | Property | Required | Notes |
 |---|---|---|
-| `baseUrl` | Yes | FHIR server base URL, an absolute URL. Use the final address: redirects are followed (see what it does). |
+| `baseUrl` | Yes | FHIR server base URL, an absolute URL. Use the final address: a redirect is an ERROR. |
 | `resourceType` | No | Resource type in the URL. Defaults to `Patient`, so set it for any other resource. |
 | `method` | No | `POST` (create) or `PUT` (update). `PUT` needs an `id` in the resource, and an id outside the FHIR id rules is refused. |
 | `authType` | No | `NONE` (default), `BASIC`, `BEARER` or `API_KEY`. Each type other than `NONE` refuses to deploy without its credentials below. |
@@ -528,7 +526,6 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 - No FHIR source connector.
 - No HL7 v2 to FHIR mapping; the message must already be a FHIR resource.
 - No client certificate (mutual TLS) support.
-- Redirects are followed, and a redirected POST can be recorded as SENT with nothing created ([#163](https://github.com/MichaelLeeHobbs/mirthless/issues/163)).
 
 ## KAFKA
 
