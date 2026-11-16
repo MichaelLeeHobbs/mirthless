@@ -22,9 +22,9 @@ Every property below is the key the connector reads from the channel's saved pro
 | [KAFKA](#kafka) | Yes | Yes | Kafka topics | `useTls` with a CA and client certificate from the certificate store | SASL PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512, or client certificate | none |
 | [AMQP](#amqp) | Yes | Yes | AMQP 0-9-1 brokers such as RabbitMQ | `useTls` with a CA and client certificate from the certificate store | Broker username and password, or client certificate | none |
 
-The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`; their delivery guarantees are in D-266. The TCP_MLLP property schemas are in `packages/core-models/src/schemas/tcp-mllp-connector.schema.ts`.
+Each type's property schemas are in `packages/core-models/src/schemas/<type>-connector.schema.ts` (Kafka and AMQP share `queue-connector.schema.ts`; their delivery guarantees are in D-266).
 
-A connector's properties are checked when the channel deploys. TCP_MLLP rejects a key its table below does not list, so a misspelled key fails the deploy instead of being ignored. The exceptions are five keys the editor saved before 2026-07, which are dropped (see `docs/ops/upgrade.md`). A test (`packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`) fails when a TCP_MLLP table and its schema list different keys.
+A connector's properties are checked when the channel deploys. Every type rejects a key its table below does not list, or a value of the wrong type, so a misspelled key fails the deploy instead of being ignored. The exceptions are keys this app's own editor or Mirth importer once saved and nothing reads, which are dropped, and old value spellings, which are mapped; `docs/ops/upgrade.md` lists them per type. A test (`packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`) fails when a table and its schema list different keys.
 
 ## Keys on every connector
 
@@ -231,14 +231,14 @@ Setting `strictHostKey` to false turns the check off and lets anyone who can int
 | `privateKey` | No | Private key, PEM or OpenSSH text. |
 | `passphrase` | No | Passphrase for an encrypted `privateKey`. |
 | `remoteDirectory` | Yes | Remote directory to poll. |
-| `filePattern` | No | Glob for the files to read, `*` by default. |
-| `pollingIntervalMs` | No | Milliseconds between polls, at least 100. |
+| `filePattern` | No | Glob for the files to read, `*` by default. An empty pattern refuses to deploy. |
+| `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 100 to 2147483647. Defaults to 5000. |
 | `afterProcessing` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes the remote file after the pipeline accepts it. |
 | `moveToDirectory` | No | Remote directory for `MOVE`, created if missing. Required when `afterProcessing` is `MOVE`. |
 | `minFileAgeMs` | No | Skip files younger than this, so a file still being uploaded is not read. |
 | `strictHostKey` | No | On by default. See security. |
 | `hostKey` | Yes | Server's base64 public key. Deploy requires it while `strictHostKey` is on; only `strictHostKey` false lets it be empty. |
-| `charset` | No | Character set to decode the file. One Node cannot decode refuses to deploy. |
+| `charset` | No | Character set to decode the file: `utf-8` (default), `latin1`, `ascii` or `utf16le`, in any case; `UTF-8`, `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. Any other name refuses to deploy. |
 
 ### SFTP as a destination
 
@@ -251,7 +251,7 @@ Setting `strictHostKey` to false turns the check off and lets anyone who can int
 | `privateKey` | No | Private key, PEM or OpenSSH text. |
 | `passphrase` | No | Passphrase for an encrypted `privateKey`. |
 | `remoteDirectory` | Yes | Remote directory to write to; created if missing. |
-| `fileNameTemplate` | No | File name. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. |
+| `fileNameTemplate` | No | File name, `${messageId}.dat` by default. Only `${messageId}` and `${timestamp}` are filled; any other placeholder, or an empty name, refuses to deploy. |
 | `appendMode` | No | `true` appends to the remote file instead of replacing it. |
 | `strictHostKey` | No | On by default. See security. |
 | `hostKey` | Yes | Server's base64 public key. Deploy requires it while `strictHostKey` is on; only `strictHostKey` false lets it be empty. |
@@ -384,7 +384,7 @@ The destination is a storage SCU. The message content must be the path of a DICO
 
 ### DICOM security
 
-DICOM traffic is not encrypted: neither direction supports TLS. The source accepts every association whatever the calling and called AE titles, so anyone who can reach the port can store files. Keep DICOM on a trusted network or a VPN.
+DICOM traffic is not encrypted: neither direction supports TLS. The source accepts every association whatever the calling and called AE titles, so anyone who can reach the port can store files. Keep DICOM on a trusted network or a VPN. A DICOM connector imported from Mirth with TLS on (Mirth's `tls` other than `notls`) refuses to deploy rather than run in plaintext; remove `tls` only if plaintext is acceptable on that network.
 
 ### DICOM as a source
 
@@ -392,10 +392,10 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 |---|---|---|
 | `port` | Yes | Port to listen on. |
 | `storageDir` | Yes | Directory received files are written to. |
-| `aeTitle` | No | This listener's AE title. Not checked against incoming associations. |
+| `aeTitle` | No | This listener's AE title, at most 16 characters, `GALVANIFLOW` by default. Not checked against incoming associations. |
 | `minPoolSize` | No | Checked at deploy (at least 1) but not used by the current listener. |
 | `maxPoolSize` | No | Checked at deploy (not below `minPoolSize`) but not used by the current listener. |
-| `connectionTimeoutMs` | No | Connect, association and PDU timeout in milliseconds. |
+| `connectionTimeoutMs` | No | Connect, association and PDU timeout in milliseconds, 10000 by default. |
 | `dispatchMode` | No | `PER_FILE` (default) or `PER_ASSOCIATION`. |
 | `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The message holds only the file path, and the default deletes the file once the pipeline accepts it, so a queued destination or a later reprocess has no file to read. Use `MOVE` or `NONE` if anything reads the file afterwards. |
 | `moveToDirectory` | No | Where `MOVE` puts files. Required when `postAction` is `MOVE`. |
@@ -406,8 +406,8 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 |---|---|---|
 | `host` | Yes | Remote SCP host. |
 | `port` | Yes | Remote SCP port. |
-| `calledAETitle` | No | The remote AE title, `PACS` by default. |
-| `callingAETitle` | No | This sender's AE title. |
+| `calledAETitle` | No | The remote AE title, at most 16 characters, `PACS` by default. |
+| `callingAETitle` | No | This sender's AE title, at most 16 characters, `GALVANIFLOW` by default. |
 | `mode` | No | `single` or `multiple`. Read but not used by the current sender. |
 | `maxAssociations` | No | Read but not used by the current sender. |
 | `maxRetries` | No | Retries of a failed send. |
@@ -437,15 +437,15 @@ It polls an IMAP mailbox folder for unread messages and sends each message body,
 | Property | Required | Notes |
 |---|---|---|
 | `host` | Yes | IMAP server. |
-| `port` | Yes | IMAP port. |
+| `port` | No | IMAP port, 993 by default. |
 | `secure` | No | On by default: IMAP over TLS. |
 | `username` | Yes | Mailbox user. |
 | `password` | Yes | Mailbox password. |
 | `protocol` | No | `IMAP`. `POP3` refuses to deploy. |
-| `folder` | No | Folder to read, `INBOX` by default. |
-| `pollingIntervalMs` | No | Milliseconds between polls. |
+| `folder` | No | Folder to read, `INBOX` by default. An empty folder refuses to deploy. |
+| `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 1000 to 2147483647. Defaults to 60000. |
 | `postAction` | No | `MARK_READ` (default), `DELETE` or `MOVE`. |
-| `moveToFolder` | No | Folder for `MOVE`. |
+| `moveToFolder` | No | Folder for `MOVE`. Required when `postAction` is `MOVE`. |
 | `subjectFilter` | No | Only read emails whose subject contains this text, ignoring case. |
 | `includeAttachments` | No | Read but not used: attachments are never read, whatever this says. |
 

@@ -9,13 +9,10 @@ import {
   attachmentGetParamsSchema,
 } from '@galvaniflow/core-models';
 import { AttachmentController } from '../controllers/attachment.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const router: IRouter = Router();
-
-router.use(authenticate);
 
 router.get(
   '/:id/messages/:msgId/attachments',

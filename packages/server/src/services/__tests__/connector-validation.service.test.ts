@@ -26,6 +26,24 @@ describe('validateConnectorProperties: Kafka and AMQP', () => {
   it('rejects an AMQP source with no queue', () => {
     expect(validateConnectorProperties('AMQP', 'source', { host: 'rabbit' }).ok).toBe(false);
   });
+
+  // D-274: an unlisted key fails the deploy instead of being dropped.
+  it.each([
+    ['KAFKA', 'source', { brokers: 'k:9092', topic: 't', groupId: 'g', fromBeginning: true }, 'fromBeginning'],
+    ['KAFKA', 'destination', { brokers: 'k:9092', topic: 't', key: '${id}' }, 'key'],
+    ['AMQP', 'source', { host: 'rabbit', queue: 'q', prefetch: 10 }, 'prefetch'],
+    ['AMQP', 'destination', { host: 'rabbit', routingKey: 'q', tls: { caCertId: '', ca: 'PEM' } }, 'ca'],
+  ] as const)('rejects a %s %s with an unlisted key, naming it', (type, mode, props, key) => {
+    const result = validateConnectorProperties(type, mode, props);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain(key);
+  });
+
+  it('accepts the keys the engine reads from any connector', () => {
+    expect(validateConnectorProperties('KAFKA', 'source', { brokers: 'k:9092', topic: 't', groupId: 'g', processBatch: true }).ok).toBe(true);
+    expect(validateConnectorProperties('AMQP', 'destination', { host: 'rabbit', routingKey: 'q', template: '${message.encodedData}' }).ok).toBe(true);
+  });
 });
 
 // ----- Source Connectors -----
@@ -207,10 +225,18 @@ describe('validateConnectorProperties', () => {
     });
 
     it('rejects a DATABASE key it does not know, naming it', () => {
-      const result = validateConnectorProperties('DATABASE', 'source', { host: 'db', database: 'lab', selectQuery: 'SELECT 1', url: 'jdbc:postgresql://db/lab' });
+      const result = validateConnectorProperties('DATABASE', 'source', { host: 'db', database: 'lab', selectQuery: 'SELECT 1', connectionString: 'jdbc:postgresql://db/lab' });
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.message).toContain('url');
+      expect(result.error.message).toContain('connectionString');
+    });
+
+    // The Mirth importer wrote url, driver and a reader's SELECT as query until 2026-11-12 (#227).
+    it('deploys a Database Reader the Mirth importer wrote before 2026-11-12 once its host, database and select query are filled in', () => {
+      const imported = { url: 'jdbc:postgresql://db/lab', driver: 'org.postgresql.Driver', query: 'SELECT 1', host: 'db', database: 'lab' };
+      expect(validateConnectorProperties('DATABASE', 'source', { ...imported, selectQuery: 'SELECT 2' })).toMatchObject({ ok: true });
+      // The old query alone is not a select query: that reader never deployed and must not start now.
+      expect(validateConnectorProperties('DATABASE', 'source', imported)).toMatchObject({ ok: false, error: { message: expect.stringContaining('selectQuery') } });
     });
 
     it('rejects a DATABASE source that would update rows with no update query', () => {
@@ -589,6 +615,64 @@ describe('validateConnectorProperties', () => {
 
     it.each(['username', 'remoteDirectory'])('rejects an SFTP destination with an empty %s', (key) => {
       expect(validateConnectorProperties('SFTP', 'destination', { ...SFTP_DEST, [key]: '' }).ok).toBe(false);
+    });
+
+    it.each([
+      ['source', { ...SFTP_SOURCE, fileFilter: '*.hl7' }, 'fileFilter'],
+      ['source', { ...SFTP_SOURCE, charset: 'base64' }, 'charset'],
+      ['source', { ...SFTP_SOURCE, pollingIntervalMs: 50 }, 'pollingIntervalMs'],
+      ['destination', { ...SFTP_DEST, appendMode: 'true' }, 'appendMode'],
+      ['destination', { ...SFTP_DEST, fileNameTemplate: '' }, 'fileNameTemplate'],
+    ] as const)('rejects an SFTP %s with %j, naming %s', (mode, props, key) => {
+      const result = validateConnectorProperties('SFTP', mode, props);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain(key);
+    });
+  });
+
+  describe('DICOM and EMAIL', () => {
+    // The editor's defaults since 2026-03 (AE titles MIRTHLESS until 02b022a), the required fields filled.
+    const DICOM_SOURCE = {
+      port: 4242, storageDir: '/dicom', aeTitle: 'MIRTHLESS', minPoolSize: 2, maxPoolSize: 10, connectionTimeoutMs: 10000,
+      dispatchMode: 'PER_FILE', postAction: 'DELETE', moveToDirectory: '',
+    };
+    const DICOM_DEST = {
+      host: 'localhost', port: 104, calledAETitle: 'PACS', callingAETitle: 'MIRTHLESS', mode: 'multiple', maxAssociations: 4,
+      maxRetries: 3, retryDelayMs: 1000, timeoutMs: 30000,
+    };
+    const EMAIL = {
+      host: 'imap.example', port: 993, secure: true, username: 'lab', password: 'p', protocol: 'IMAP', folder: 'INBOX',
+      pollingIntervalMs: 60000, postAction: 'MARK_READ', moveToFolder: '', subjectFilter: '', includeAttachments: false,
+    };
+
+    it('accepts what the editor saves and what the importer copies from a Mirth DICOM connector', () => {
+      expect(validateConnectorProperties('DICOM', 'source', DICOM_SOURCE).ok).toBe(true);
+      expect(validateConnectorProperties('DICOM', 'destination', DICOM_DEST).ok).toBe(true);
+      expect(validateConnectorProperties('EMAIL', 'source', EMAIL).ok).toBe(true);
+      expect(validateConnectorProperties('DICOM', 'source', {
+        ...DICOM_SOURCE, pluginProperties: '', listenerConnectorProperties: { port: '104' }, dest: '/mirth', applicationEntity: 'MIRTH', tls: 'notls',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('DICOM', 'destination', {
+        pluginProperties: '', destinationConnectorProperties: {}, host: 'pacs', port: '104', applicationEntity: 'PACS1', template: '${DICOMMESSAGE}', stgcmt: 'false',
+      }).ok).toBe(true);
+    });
+
+    it.each([
+      ['DICOM', 'source', { ...DICOM_SOURCE, aeTitle: 'SEVENTEEN_CHARS_X' }, 'aeTitle'],
+      ['DICOM', 'source', { ...DICOM_SOURCE, minPoolSize: 5, maxPoolSize: 4 }, 'maxPoolSize'],
+      ['DICOM', 'source', { ...DICOM_SOURCE, dispatchMode: 'PER_STUDY' }, 'dispatchMode'],
+      ['DICOM', 'destination', { ...DICOM_DEST, mode: 'pooled' }, 'mode'],
+      ['DICOM', 'destination', { ...DICOM_DEST, aet: 'X' }, 'aet'],
+      ['EMAIL', 'source', { ...EMAIL, protocol: 'POP3' }, 'protocol'],
+      ['EMAIL', 'source', { ...EMAIL, pollingIntervalMs: 500 }, 'pollingIntervalMs'],
+      ['EMAIL', 'source', { ...EMAIL, postAction: 'MOVE' }, 'moveToFolder'],
+      ['EMAIL', 'source', { ...EMAIL, secure: 'false' }, 'secure'],
+    ] as const)('rejects a %s %s with %j, naming %s', (type, mode, props, key) => {
+      const result = validateConnectorProperties(type, mode, props);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain(key);
     });
   });
 

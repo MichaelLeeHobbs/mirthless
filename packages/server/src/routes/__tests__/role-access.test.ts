@@ -15,6 +15,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { USER_ROLE, type Permission } from '@galvaniflow/core-models';
 import { permissionNamesForRole } from '../../lib/role-permissions.js';
+import { authenticate } from '../../middleware/auth.middleware.js';
 import attachmentRoutes from '../attachment.routes.js';
 import deploymentRoutes from '../deployment.routes.js';
 import messageReprocessRoutes from '../message-reprocess.routes.js';
@@ -137,6 +138,8 @@ let base: string;
 
 function buildApp(): Express {
   const app = express();
+  // routes/index.ts authenticates once in front of every router.
+  app.use(authenticate);
   app.use(express.json());
   for (const [path, , router] of MOUNTS) app.use(path, router);
   return app;

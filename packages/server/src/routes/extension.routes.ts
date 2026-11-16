@@ -6,15 +6,12 @@ import { Router, type IRouter } from 'express';
 import { z } from 'zod';
 import { setExtensionEnabledSchema } from '@galvaniflow/core-models';
 import { ExtensionController } from '../controllers/extension.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const idParam = z.object({ id: z.string().min(1) });
 
 const router: IRouter = Router();
-
-router.use(authenticate);
 
 router.get(
   '/',

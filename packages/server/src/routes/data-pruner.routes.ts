@@ -5,7 +5,6 @@
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { DataPrunerController } from '../controllers/data-pruner.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
@@ -18,8 +17,6 @@ const pruneChannelBodySchema = z.object({
 });
 
 const router: IRouter = Router();
-
-router.use(authenticate);
 
 // Statistics must come before /:channelId to avoid route conflict
 router.get(
