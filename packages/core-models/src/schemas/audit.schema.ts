@@ -23,7 +23,8 @@ export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];
 
 /** GET /audit query filters. `action` is a comma-separated list. */
 export const auditListQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
+  // A deeper page is a huge OFFSET; filter by date instead.
+  page: z.coerce.number().int().positive().max(10_000).default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(25),
   action: z.string().optional(),
   outcome: z.enum(['SUCCESS', 'FAILURE']).optional(),

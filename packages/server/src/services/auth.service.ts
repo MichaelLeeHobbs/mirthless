@@ -29,6 +29,9 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/** The longest username (users.username is varchar(100)). */
+const MAX_USERNAME_LENGTH = 100;
+
 /** Audit-log a rejected login. Every rejection is recorded, including unknown usernames. */
 function auditLoginFailure(
   username: string,
@@ -39,7 +42,9 @@ function auditLoginFailure(
   emitAuditEvent({
     action: AUDIT_ACTION.USER_LOGIN_FAILED, outcome: 'FAILURE', userId,
     ipAddress: metadata?.ipAddress ?? null,
-    attributes: { username, reason },
+    // The audit log keeps this for years and nothing can remove it: never more
+    // than a username can be, whatever was typed.
+    attributes: { username: username.slice(0, MAX_USERNAME_LENGTH), reason },
   });
 }
 

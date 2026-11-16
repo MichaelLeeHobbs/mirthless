@@ -47,6 +47,13 @@ describe('AuthService.login audit', () => {
     expectFailureAudit(null, 'unknown_user');
   });
 
+  it('records at most 100 characters of the typed username, the longest a username can be', async () => {
+    selectResult = [];
+    await AuthService.login('x'.repeat(5000), 'pw', META);
+    const attrs = vi.mocked(emitEvent).mock.calls[0]?.[0]?.attributes as { username: string } | undefined;
+    expect(attrs?.username).toHaveLength(100);
+  });
+
   it('does a password comparison for an unknown username, so timing does not reveal which accounts exist', async () => {
     selectResult = [];
     const bcrypt = (await import('bcryptjs')).default;

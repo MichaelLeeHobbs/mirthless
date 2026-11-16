@@ -93,11 +93,25 @@ export class AuditService {
    */
   static async recordOrRefuse(input: AuditRecordInput): Promise<Result<void>> {
     return tryCatch(async () => {
+      // statement_timeout bounds the INSERT on the server; the race bounds the
+      // wait for a pool connection and a link that goes silent. A write that
+      // lands after the race is lost only to the caller: its row still commits.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => { reject(new Error(`Audit write took longer than ${String(AUDIT_WRITE_TIMEOUT_MS)} ms`)); }, AUDIT_WRITE_TIMEOUT_MS);
+      });
       const written = await tryCatch(async () => {
-        await db.transaction(async (tx) => {
+        const write = db.transaction(async (tx) => {
           await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${String(AUDIT_WRITE_TIMEOUT_MS)}`));
           await insertRow(tx, input);
         });
+        // When the timer wins, the write may still fail later; nothing awaits it then.
+        void write.catch(() => undefined);
+        try {
+          await Promise.race([write, timedOut]);
+        } finally {
+          clearTimeout(timer);
+        }
       });
       if (!written.ok) {
         logger.error({ ...errorInfo(written.error), action: input.action }, 'Audit record failed; refusing the request');

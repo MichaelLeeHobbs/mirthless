@@ -57,6 +57,19 @@ describe('AuditService.recordOrRefuse', () => {
     expect(logError).toHaveBeenCalledWith(expect.objectContaining({ action: 'USER_LOGIN', errMsg: 'canceling statement due to statement timeout' }), expect.any(String));
   });
 
+  it('refuses after the timeout even when the database never answers (no free connection, a silent link)', async () => {
+    vi.useFakeTimers();
+    try {
+      transaction.mockImplementationOnce(() => new Promise(() => undefined));
+      const pending = AuditService.recordOrRefuse(INPUT);
+      await vi.advanceTimersByTimeAsync(AUDIT_WRITE_TIMEOUT_MS);
+
+      expect((await pending).error).toMatchObject({ code: 'AUDIT_UNAVAILABLE' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('refuses when the transaction cannot even start', async () => {
     transaction.mockRejectedValueOnce(new Error('connection refused'));
 

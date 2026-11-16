@@ -193,21 +193,27 @@ export class EventService {
   /**
    * Purge events at least N days old (N >= 1). Admin-only. The server's database
    * role cannot delete events itself (D-307), so this calls the owner function
-   * `purge_events`, which refuses N below 1. The purge is recorded in the
-   * protected audit log first, and refused when it cannot be (D-312).
+   * `purge_events`, which refuses N below 1. The purge and its record in the
+   * protected audit log share one transaction (D-312): when the record cannot
+   * be written the purge rolls back, and a purge that fails is not recorded
+   * as done.
    */
   static async purge(olderThanDays: number, actor?: { userId?: string | null; ipAddress?: string | null }): Promise<Result<{ deleted: number }>> {
-    return tryCatch(async () => {
-      const recorded = await AuditService.recordOrRefuse({
-        action: AUDIT_ACTION.EVENTS_PURGED, outcome: 'SUCCESS',
-        userId: actor?.userId ?? null, ipAddress: actor?.ipAddress ?? null,
-        attributes: { olderThanDays },
-      });
-      if (!recorded.ok) throw recorded.error;
-      const purged = await db.execute<{ deleted: string | number }>(
+    return tryCatch(async () => db.transaction(async (tx) => {
+      const purged = await tx.execute<{ deleted: string | number }>(
         sql`SELECT public.purge_events(${olderThanDays}::integer) AS deleted`,
       );
-      return { deleted: Number(purged.rows[0]?.deleted ?? 0) };
-    });
+      const deleted = Number(purged.rows[0]?.deleted ?? 0);
+      try {
+        await AuditService.recordInTx(tx, {
+          action: AUDIT_ACTION.EVENTS_PURGED, outcome: 'SUCCESS',
+          userId: actor?.userId ?? null, ipAddress: actor?.ipAddress ?? null,
+          attributes: { olderThanDays, deleted },
+        });
+      } catch {
+        throw new ServiceError('AUDIT_UNAVAILABLE', 'The audit log could not record this purge, so nothing was purged.');
+      }
+      return { deleted };
+    }));
   }
 }

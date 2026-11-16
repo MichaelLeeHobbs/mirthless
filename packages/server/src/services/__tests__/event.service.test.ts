@@ -69,11 +69,15 @@ const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 const mockDelete = vi.fn();
 const mockExecute = vi.fn();
 
+const TX = { execute: mockExecute };
+const mockTransaction = vi.fn(async (fn: (tx: typeof TX) => Promise<unknown>) => fn(TX));
+
 const mockDb = {
   select: mockSelect,
   insert: mockInsert,
   delete: mockDelete,
   execute: mockExecute,
+  transaction: mockTransaction,
 };
 
 vi.mock('../../lib/db.js', () => ({
@@ -92,9 +96,9 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn(),
 }));
 
-// The audit writer has its own tests (audit.service.test.ts); here only the order and the refusal matter.
-const recordOrRefuse = vi.fn();
-vi.mock('../audit.service.js', () => ({ AuditService: { recordOrRefuse } }));
+// The audit writer has its own tests (audit.service.test.ts); here only the transaction and the refusal matter.
+const recordInTx = vi.fn();
+vi.mock('../audit.service.js', () => ({ AuditService: { recordInTx } }));
 
 const { EventService } = await import('../event.service.js');
 const { sql } = await import('drizzle-orm');
@@ -124,8 +128,9 @@ function makeEventRow(overrides?: Partial<Record<string, unknown>>): Record<stri
 // ----- Tests -----
 
 beforeEach(() => {
-  recordOrRefuse.mockReset();
-  recordOrRefuse.mockResolvedValue({ ok: true, value: undefined });
+  recordInTx.mockReset();
+  recordInTx.mockResolvedValue(undefined);
+  mockTransaction.mockClear();
   resetSelectState();
   vi.clearAllMocks();
 });
@@ -414,26 +419,35 @@ describe('EventService', () => {
       expect(result.ok).toBe(false);
     });
 
-    it('records the purge in the audit log before it runs, with who asked', async () => {
+    it('records the purge and its count in the audit log, in the purge\'s own transaction', async () => {
       mockExecute.mockResolvedValueOnce({ rows: [{ deleted: 2 }] });
 
       await EventService.purge(30, { userId: 'u-1', ipAddress: '10.0.0.9' });
 
-      expect(recordOrRefuse).toHaveBeenCalledWith({
-        action: 'EVENTS_PURGED', outcome: 'SUCCESS', userId: 'u-1', ipAddress: '10.0.0.9', attributes: { olderThanDays: 30 },
+      expect(mockTransaction).toHaveBeenCalledOnce();
+      expect(recordInTx).toHaveBeenCalledWith(TX, {
+        action: 'EVENTS_PURGED', outcome: 'SUCCESS', userId: 'u-1', ipAddress: '10.0.0.9', attributes: { olderThanDays: 30, deleted: 2 },
       });
-      expect(recordOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(mockExecute.mock.invocationCallOrder[0] ?? 0);
       expect(mockInsert).not.toHaveBeenCalled();
     });
 
-    it('refuses the purge, deleting nothing, when the audit log cannot record it', async () => {
-      recordOrRefuse.mockResolvedValueOnce({ ok: false, error: Object.assign(new Error('audit down'), { name: 'ServiceError', code: 'AUDIT_UNAVAILABLE' }) });
+    it('fails with AUDIT_UNAVAILABLE, rolling the purge back, when the audit log cannot record it', async () => {
+      mockExecute.mockResolvedValueOnce({ rows: [{ deleted: 2 }] });
+      recordInTx.mockRejectedValueOnce(new Error('audit down'));
 
       const result = await EventService.purge(30);
 
       expect(result.ok).toBe(false);
       expect(result.error).toMatchObject({ code: 'AUDIT_UNAVAILABLE' });
-      expect(mockExecute).not.toHaveBeenCalled();
+      // The transaction callback threw, so Postgres rolls the purge back.
+      await expect(mockTransaction.mock.results[0]?.value).rejects.toThrow();
+    });
+
+    it('records nothing when the purge itself fails', async () => {
+      mockExecute.mockRejectedValueOnce(new Error('canceling statement due to lock timeout'));
+
+      expect((await EventService.purge(30)).ok).toBe(false);
+      expect(recordInTx).not.toHaveBeenCalled();
     });
   });
 });
