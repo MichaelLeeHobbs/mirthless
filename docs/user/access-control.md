@@ -10,7 +10,7 @@ This page describes who can sign in to GalvaniFlow, how sessions work, how to cu
 | SSO (OIDC, SAML) | No | |
 | LDAP or Active Directory | No | |
 | Multi-factor authentication | No | |
-| API tokens or service accounts | No | Every API caller signs in as a user. The CLI signs in with a username and password and keeps only the access token, which expires like any other. |
+| API tokens or service accounts | No | Every API caller, scripts and CI jobs included, signs in as a user with a password and gets the same short-lived access token. API keys are planned ([#144](https://github.com/MichaelLeeHobbs/mirthless/issues/144)). |
 | Custom roles | No | Four fixed roles: admin, deployer, developer, viewer. A user's permissions come from their role in code at every request, not from the database. |
 | Per-channel access | No | Every permission covers every channel. The `user_permissions` table, including its `scope` column, is written by the seed for the first admin but nothing reads it, so editing it restricts nobody ([#94](https://github.com/MichaelLeeHobbs/mirthless/issues/94)). |
 | Idle session timeout | No | An open browser tab keeps refreshing its session. |
