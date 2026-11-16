@@ -2,6 +2,7 @@ export * from './alert.schema.js';
 export * from './channel-export.schema.js';
 export * from './channel.schema.js';
 export * from './event.schema.js';
+export * from './audit.schema.js';
 export * from './code-template.schema.js';
 export * from './connector.schema.js';
 export * from './filter.schema.js';

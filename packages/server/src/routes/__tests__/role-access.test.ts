@@ -29,6 +29,7 @@ import { ServerBackupController } from '../../controllers/server-backup.controll
 import { LogController } from '../../controllers/log.controller.js';
 import { CollectionController } from '../../controllers/collection.controller.js';
 import { CodeTemplateController } from '../../controllers/code-template.controller.js';
+import { AuditController } from '../../controllers/audit.controller.js';
 
 interface Endpoint extends ApiRoute {
   /** The permission docs/user/access-control.md says guards it. */
@@ -64,6 +65,8 @@ const ENDPOINTS: readonly Endpoint[] = [
   { method: 'PUT', path: '/api/v1/settings/bulk', permission: 'settings:write', handler: SettingsController.bulkUpsert },
   { method: 'DELETE', path: '/api/v1/events', permission: 'settings:write', handler: EventController.purge },
   { method: 'GET', path: '/api/v1/events/export', permission: 'events:read', handler: EventExportController.exportEvents },
+  { method: 'GET', path: '/api/v1/audit', permission: 'audit:read', handler: AuditController.list },
+  { method: 'GET', path: '/api/v1/audit/:id', permission: 'audit:read', handler: AuditController.getById },
   { method: 'GET', path: '/api/v1/system/backup', permission: 'system:backup', handler: ServerBackupController.exportBackup },
   { method: 'POST', path: '/api/v1/system/backup', permission: 'system:restore', handler: ServerBackupController.restoreBackup },
   { method: 'GET', path: '/api/v1/system/logs', permission: 'system:info', handler: LogController.getEntries },

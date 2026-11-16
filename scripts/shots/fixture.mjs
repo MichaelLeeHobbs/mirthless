@@ -170,9 +170,19 @@ const alerts = [
 }));
 
 const events = Array.from({ length: 12 }, (_, i) => ({
-  id: 900 - i, level: ['INFORMATION', 'WARNING', 'ERROR'][i % 3], name: ['USER_LOGIN', 'CHANNEL_DEPLOYED', 'MESSAGE_ERROR', 'SETTINGS_CHANGED', 'ACCESS_DENIED'][i % 5],
-  outcome: i % 3 === 2 || i % 5 === 4 ? 'FAILURE' : 'SUCCESS', userId: i % 2 ? 'u1' : null, channelId: i % 4 === 1 ? 'c1' : null,
+  id: 900 - i, level: ['INFORMATION', 'WARNING', 'ERROR'][i % 3], name: ['CHANNEL_CREATED', 'CHANNEL_DEPLOYED', 'MESSAGE_ERROR', 'SETTINGS_CHANGED', 'TAG_UPDATED'][i % 5],
+  outcome: i % 3 === 2 ? 'FAILURE' : 'SUCCESS', userId: i % 2 ? 'u1' : null, channelId: i % 4 === 1 ? 'c1' : null,
   ipAddress: '10.0.4.12', createdAt: ago(i * 11),
+}));
+
+const auditRows = [
+  ['USER_LOGIN', 'SUCCESS', 'u1', { username: 'kpatel' }],
+  ['ACCESS_DENIED', 'FAILURE', 'u2', { method: 'GET', route: '/api/v1/channels/:id/messages', reason: 'no_permission', status: 403, principal: 'user', repeatsSinceLast: 0 }],
+  ['USER_LOGIN_FAILED', 'FAILURE', null, { username: 'admin', reason: 'invalid_password' }],
+  ['EVENTS_PURGED', 'SUCCESS', 'u1', { olderThanDays: 90 }],
+  ['USER_LOGOUT', 'SUCCESS', 'u2', {}],
+].map(([action, outcome, userId, attributes], i) => ({
+  id: 500 - i, occurredAt: ago(i * 7), action, outcome, userId, channelId: null, ipAddress: '10.0.4.12', attributes,
 }));
 
 const settings = [
@@ -271,6 +281,7 @@ export function route(pathname, search) {
   if (p === '/users') return users;
   if (p === '/alerts') return page(alerts);
   if (p === '/events') return page(events);
+  if (p === '/audit') return page(auditRows);
   if (p === '/settings') return settings;
   if (p === '/system') return systemInfo;
   if (p === '/system/logs') return { entries: logs, total: logs.length };

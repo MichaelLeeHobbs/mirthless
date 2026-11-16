@@ -23,6 +23,8 @@ export const SERVICE_ERRORS = {
   CONFIG_ERROR: 'CONFIG_ERROR',
   /** A dependency is busy or failed for now (the type checker); the same request can succeed later. */
   UNAVAILABLE: 'UNAVAILABLE',
+  /** The audit log could not record a fail-closed read, so it was refused (D-312). */
+  AUDIT_UNAVAILABLE: 'AUDIT_UNAVAILABLE',
   INTERNAL: 'INTERNAL',
 } as const;
 

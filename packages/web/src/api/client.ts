@@ -277,6 +277,30 @@ export interface EventListResult {
   };
 }
 
+// ----- Audit Types -----
+
+/** One row of the protected audit log (GET /audit, audit:read). */
+export interface AuditEntry {
+  readonly id: number;
+  readonly occurredAt: string;
+  readonly action: string;
+  readonly outcome: string;
+  readonly userId: string | null;
+  readonly channelId: string | null;
+  readonly ipAddress: string | null;
+  readonly attributes: Record<string, unknown> | null;
+}
+
+export interface AuditListResult {
+  readonly data: readonly AuditEntry[];
+  readonly pagination: {
+    readonly page: number;
+    readonly pageSize: number;
+    readonly total: number;
+    readonly totalPages: number;
+  };
+}
+
 // ----- Setting Types -----
 
 export interface SettingDetail {

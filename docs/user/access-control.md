@@ -108,6 +108,7 @@ None of these actions changes a secret the person knew. Rotate them yourself: da
 | `system:info` | Yes | Yes | No | No | Also reads the server log and the live log stream, `/metrics` and `/health/full`. Error text in the log, from scripts and connectors, can hold PHI. |
 | `system:backup` | Yes | No | No | No | The backup holds every channel's scripts, the global and configuration map values, resources, and every user's name and email address. Secret settings and secret connector fields are masked. |
 | `system:restore` | Yes | No | No | No | Overwrites channels, code templates and global scripts from a file, so it runs code at the next deploy. Also restores settings and both maps. |
+| `audit:read` | Yes | No | No | No | Reads the protected audit log (`GET /api/v1/audit`): sign-ins and failed sign-ins with client addresses, refused requests and purges. |
 
 ## Who can run code on the server
 
@@ -148,7 +149,7 @@ Roles with a scope of channel groups arrive with [#265](https://github.com/Micha
 
 > Scope limits what a person or key can see and change through GalvaniGraph's screens and API. Message reads, searches and exports, and the reads listed under "What is recorded", are recorded in an audit log that the product can't change or delete; each entry there says whether the read is refused when it can't be recorded or recorded on a best-effort basis. Reads under "What is not audited" aren't. Scope is not a boundary for code: anyone who can change or deploy channel code, code templates or global scripts, or restore a backup, can reach every channel's messages and credentials through that code, and that reach is not recorded. A database owner can still alter the audit log.
 
-The audit log is the `audit_log` table. The server's database role may only add rows to it and read them, and triggers refuse changes and deletions even from the table's owner. Only the owner can drop a month of it. The owner function for that, `drop_expired_audit_partitions`, drops no month younger than the retention setting (at least six years), but an owner can still drop a partition by hand. The [audit log runbook](../ops/audit-log.md) covers retention and the partitions. Until [#264](https://github.com/MichaelLeeHobbs/mirthless/issues/264)'s next slice moves records there, the server still writes its audit events to the `events` table.
+The audit log is the `audit_log` table. The server's database role may only add rows to it and read them, and triggers refuse changes and deletions even from the table's owner. Only the owner can drop a month of it. The owner function for that, `drop_expired_audit_partitions`, drops no month younger than the retention setting (at least six years), but an owner can still drop a partition by hand. The [audit log runbook](../ops/audit-log.md) covers retention and the partitions. Only `audit:read`, held by admin, reads it; the Events page shows it under Access records. It holds sign-ins, sign-outs and failed sign-ins, refused requests and event purges. The other audit events in this page are still written to the `events` table until the rest of [#264](https://github.com/MichaelLeeHobbs/mirthless/issues/264) moves them.
 
 ## What is not audited
 
@@ -166,13 +167,13 @@ These write no audit event:
 - Resetting channel statistics and unlocking an account. Enabling or disabling an extension writes a `SETTINGS_CHANGED` event with no user or client address.
 - Token refreshes.
 
-**Refused requests.** A request the API refuses for its credential or its permission writes an `ACCESS_DENIED` event (level WARN, outcome FAILURE). It records the method, the route template (`/api/v1/channels/:id`, never the URL or query string), the reason, the status, the user when known, the client address and the request id; never the body or the token. The reasons are `no_credentials`, `bad_token`, `user_not_found` and `session_revoked` (401), and `account_disabled`, `password_change_required` and `no_permission` (403). A refusal of the credential happens before the request is routed, so it carries no route. The first refusal for a user (or an anonymous caller), method, route and reason writes an event, and further ones in the next minute are counted rather than written: when the minute ends, one more event carries their number in `repeatsSinceLast`. The route's mount path is recorded in lower case, so changing the case of a URL does not open a new minute. Until the protected audit log ships ([#264](https://github.com/MichaelLeeHobbs/mirthless/issues/264)), these events can be purged like any other.
+**Refused requests.** A request the API refuses for its credential or its permission writes an `ACCESS_DENIED` row to the audit log (outcome FAILURE). It records the method, the route template (`/api/v1/channels/:id`, never the URL or query string), the reason, the status, the user when known, the client address and the request id; never the body or the token. The reasons are `no_credentials`, `bad_token`, `user_not_found` and `session_revoked` (401), and `account_disabled`, `password_change_required` and `no_permission` (403). A refusal of the credential happens before the request is routed, so it carries no route. The first refusal for a user (or an anonymous caller), method, route and reason writes an event, and further ones in the next minute are counted rather than written: when the minute ends, one more event carries their number in `repeatsSinceLast`. The route's mount path is recorded in lower case, so changing the case of a URL does not open a new minute.
 
-Audit events are written in the background. If the database write fails, the server logs a warning and the event is lost; the action itself still succeeds.
+Sign-ins, sign-outs, failed sign-ins and refused requests are written to the audit log in the background, as are the events in the `events` table. If a write fails, the server logs a warning and the record is lost; the action itself still succeeds.
 
-An admin (`settings:write`) can purge audit events older than any number of days down to 1 (`DELETE /api/v1/events?olderThanDays=N`). The purge itself is recorded as `EVENTS_PURGED`. The message pruner does not delete events.
+An admin (`settings:write`) can purge events from the `events` table older than any number of days down to 1 (`DELETE /api/v1/events?olderThanDays=N`). The purge is first recorded in the audit log as `EVENTS_PURGED`, and refused with 503 `AUDIT_UNAVAILABLE` when that record cannot be written. A purge never touches the audit log, and the message pruner does not delete events.
 
-Every role, viewer included, holds `events:read` and can read and export the whole audit log.
+Every role, viewer included, holds `events:read` and can read and export the `events` table. Only `audit:read` reads the audit log.
 
 ## Endpoints any signed-in user, or anyone, can call
 

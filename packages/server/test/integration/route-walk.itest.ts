@@ -15,7 +15,7 @@
 //   any request (POST /admin/prune prunes every channel), so it is not called.
 //
 // Refusals are recorded once a minute per caller, route and reason (#158); the
-// last tests read those records back from the events table.
+// last tests read those records back from audit_log.
 
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
@@ -115,7 +115,7 @@ describeIntegration('route walk per principal (real authenticate)', () => {
     if (running) await new Promise<void>((resolve) => { running.close(() => { resolve(); }); });
     const ids = [...callers.values()].map((c) => c.id);
     if (ids.length > 0) {
-      await pool.query(`DELETE FROM events WHERE name = 'ACCESS_DENIED' AND user_id = ANY($1::uuid[])`, [ids]);
+      // Their ACCESS_DENIED rows stay: audit_log refuses deletes, and has no key to users.
       await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [ids]);
     }
     await pool?.end();
@@ -192,7 +192,7 @@ describeIntegration('route walk per principal (real authenticate)', () => {
    */
   async function refusalsOf(userId: string): Promise<readonly string[]> {
     const { rows } = await pool.query<{ attributes: { method: string; route: string | null; reason: string } }>(
-      `SELECT attributes FROM events WHERE name = 'ACCESS_DENIED' AND user_id = $1
+      `SELECT attributes FROM audit_log WHERE action = 'ACCESS_DENIED' AND user_id = $1
          AND (attributes->>'repeatsSinceLast')::int = 0`, [userId],
     );
     return rows.map((r) => `${r.attributes.method} ${r.attributes.route ?? '(before routing)'} ${r.attributes.reason}`).sort();

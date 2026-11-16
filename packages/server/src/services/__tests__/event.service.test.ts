@@ -92,6 +92,10 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn(),
 }));
 
+// The audit writer has its own tests (audit.service.test.ts); here only the order and the refusal matter.
+const recordOrRefuse = vi.fn();
+vi.mock('../audit.service.js', () => ({ AuditService: { recordOrRefuse } }));
+
 const { EventService } = await import('../event.service.js');
 const { sql } = await import('drizzle-orm');
 
@@ -120,6 +124,8 @@ function makeEventRow(overrides?: Partial<Record<string, unknown>>): Record<stri
 // ----- Tests -----
 
 beforeEach(() => {
+  recordOrRefuse.mockReset();
+  recordOrRefuse.mockResolvedValue({ ok: true, value: undefined });
   resetSelectState();
   vi.clearAllMocks();
 });
@@ -406,6 +412,28 @@ describe('EventService', () => {
       const result = await EventService.purge(0);
 
       expect(result.ok).toBe(false);
+    });
+
+    it('records the purge in the audit log before it runs, with who asked', async () => {
+      mockExecute.mockResolvedValueOnce({ rows: [{ deleted: 2 }] });
+
+      await EventService.purge(30, { userId: 'u-1', ipAddress: '10.0.0.9' });
+
+      expect(recordOrRefuse).toHaveBeenCalledWith({
+        action: 'EVENTS_PURGED', outcome: 'SUCCESS', userId: 'u-1', ipAddress: '10.0.0.9', attributes: { olderThanDays: 30 },
+      });
+      expect(recordOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(mockExecute.mock.invocationCallOrder[0] ?? 0);
+      expect(mockInsert).not.toHaveBeenCalled();
+    });
+
+    it('refuses the purge, deleting nothing, when the audit log cannot record it', async () => {
+      recordOrRefuse.mockResolvedValueOnce({ ok: false, error: Object.assign(new Error('audit down'), { name: 'ServiceError', code: 'AUDIT_UNAVAILABLE' }) });
+
+      const result = await EventService.purge(30);
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatchObject({ code: 'AUDIT_UNAVAILABLE' });
+      expect(mockExecute).not.toHaveBeenCalled();
     });
   });
 });

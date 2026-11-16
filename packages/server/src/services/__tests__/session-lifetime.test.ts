@@ -33,7 +33,7 @@ const mockDb = {
   })),
 };
 vi.mock('../../lib/db.js', () => ({ db: mockDb, default: mockDb }));
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
+vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn(), emitAuditEvent: vi.fn() }));
 
 const { AuthService } = await import('../auth.service.js');
 const { signRefreshToken } = await import('../../lib/jwt.js');

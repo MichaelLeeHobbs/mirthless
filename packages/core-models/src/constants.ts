@@ -338,6 +338,9 @@ export const PERMISSIONS = {
   SYSTEM_INFO: 'system:info',
   SYSTEM_BACKUP: 'system:backup',
   SYSTEM_RESTORE: 'system:restore',
+
+  /** Read the protected audit log (D-312): PHI reads, grant changes, sign-ins, refusals. Admin only. */
+  AUDIT_READ: 'audit:read',
 } as const;
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 

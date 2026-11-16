@@ -13,7 +13,8 @@ import { users, sessions } from '../db/schema/index.js';
 import { permissionNamesForRole } from '../lib/role-permissions.js';
 import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { signAccessToken, signRefreshToken, tokenExpiresAt, verifyRefreshToken } from '../lib/jwt.js';
-import { emitEvent } from '../lib/event-emitter.js';
+import { emitAuditEvent } from '../lib/event-emitter.js';
+import { AUDIT_ACTION } from '@galvanigraph/core-models';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
@@ -35,9 +36,8 @@ function auditLoginFailure(
   reason: string,
   metadata: SessionMetadata | undefined,
 ): void {
-  emitEvent({
-    level: 'WARN', name: 'USER_LOGIN_FAILED', outcome: 'FAILURE',
-    userId, channelId: null, serverId: null,
+  emitAuditEvent({
+    action: AUDIT_ACTION.USER_LOGIN_FAILED, outcome: 'FAILURE', userId,
     ipAddress: metadata?.ipAddress ?? null,
     attributes: { username, reason },
   });
@@ -183,9 +183,8 @@ export class AuthService {
       // Create session and tokens
       const tokens = await this.createTokens(user.id, metadata);
 
-      emitEvent({
-        level: 'INFO', name: 'USER_LOGIN', outcome: 'SUCCESS',
-        userId: user.id, channelId: null, serverId: null,
+      emitAuditEvent({
+        action: AUDIT_ACTION.USER_LOGIN, outcome: 'SUCCESS', userId: user.id,
         ipAddress: metadata?.ipAddress ?? null,
         attributes: { username: user.username },
       });
@@ -238,10 +237,7 @@ export class AuthService {
   static async logout(sessionId: string, userId: string | null, ipAddress: string | null): Promise<Result<void>> {
     return tryCatch(async () => {
       await db.delete(sessions).where(eq(sessions.id, sessionId));
-      emitEvent({
-        level: 'INFO', name: 'USER_LOGOUT', outcome: 'SUCCESS',
-        userId, channelId: null, serverId: null, ipAddress, attributes: {},
-      });
+      emitAuditEvent({ action: AUDIT_ACTION.USER_LOGOUT, outcome: 'SUCCESS', userId, ipAddress, attributes: {} });
     });
   }
 

@@ -6,6 +6,7 @@
 
 import type { CreateEventInput } from '@galvanigraph/core-models';
 import { EventService } from '../services/event.service.js';
+import { AuditService, type AuditRecordInput } from '../services/audit.service.js';
 import logger from './logger.js';
 
 /** Audit context passed from controllers. */
@@ -25,6 +26,21 @@ export function emitEvent(input: CreateEventInput): void {
     }
   }).catch((err: unknown) => {
     logger.warn({ errMsg: err instanceof Error ? err.message : String(err), event: input.name }, 'Failed to emit event');
+  });
+}
+
+/**
+ * Write an audit_log row, best effort (D-312): a failure is logged at WARN and
+ * never reaches the caller. For records whose loss must refuse the request,
+ * use AuditService.recordOrRefuse instead.
+ */
+export function emitAuditEvent(input: AuditRecordInput): void {
+  AuditService.record(input).then((result) => {
+    if (!result.ok) {
+      logger.warn({ errMsg: result.error.message, action: input.action }, 'Failed to write audit record');
+    }
+  }).catch((err: unknown) => {
+    logger.warn({ errMsg: err instanceof Error ? err.message : String(err), action: input.action }, 'Failed to write audit record');
   });
 }
 

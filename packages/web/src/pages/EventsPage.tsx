@@ -40,6 +40,9 @@ import { PERMISSION } from '../lib/permissions.js';
 import { useEventExport } from '../hooks/use-event-export.js';
 import { EventFilterBar, type EventFilters } from '../components/events/EventFilterBar.js';
 import { EventDetailPanel } from '../components/events/EventDetailPanel.js';
+import { AccessRecords } from '../components/events/AccessRecords.js';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
 import { StatusChip } from '../components/common/StatusChip.js';
 import { eventLevelLevel, eventOutcomeLevel } from '../lib/status.js';
 import { formatTimestamp, humanize } from '../lib/format.js';
@@ -72,6 +75,9 @@ export function EventsPage(): ReactNode {
   const purgeEvents = usePurgeEvents();
   const { has } = usePermissions();
   const canPurge = has(PERMISSION.SETTINGS_WRITE);
+  const canReadAudit = has(PERMISSION.AUDIT_READ);
+  const [tab, setTab] = useState(0);
+  const onEvents = tab === 0 || !canReadAudit;
   const { isExporting, error: exportError, exportEvents } = useEventExport();
 
   const handleToggleExpand = (event: EventSummary): void => {
@@ -102,7 +108,7 @@ export function EventsPage(): ReactNode {
         title="Events"
         description="Browse the audit log of system and user activity."
         isFetching={isFetching && !isLoading}
-        actions={
+        actions={onEvents ? (
           <>
             <Tooltip title="Export events">
               <Button
@@ -127,9 +133,18 @@ export function EventsPage(): ReactNode {
               </Tooltip>
             ) : null}
           </>
-        }
+        ) : undefined}
       />
 
+      {canReadAudit ? (
+        <Tabs value={tab} onChange={(_e, v: number) => { setTab(v); }} sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+          <Tab label="Events" />
+          <Tab label="Access records" />
+        </Tabs>
+      ) : null}
+
+      {!onEvents ? <AccessRecords /> : (
+      <>
       {/* Filters */}
       <EventFilterBar filters={filters} onFilterChange={setFilters} />
 
@@ -233,6 +248,8 @@ export function EventsPage(): ReactNode {
           />
         ) : null}
       </TableContainer>
+      </>
+      )}
 
       {/* Export Dialog */}
       <Dialog open={exportDialogOpen} onClose={() => { setExportDialogOpen(false); }}>
