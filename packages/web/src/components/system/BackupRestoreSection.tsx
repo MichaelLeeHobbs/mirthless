@@ -169,8 +169,8 @@ export function BackupRestoreSection(): ReactNode {
             File: {fileName}
           </Typography>
           <FormControl fullWidth sx={{ mt: 1 }}>
-            <InputLabel>Collision Mode</InputLabel>
-            <Select
+            <InputLabel id="restore-collision-mode-label">Collision Mode</InputLabel>
+            <Select labelId="restore-collision-mode-label"
               value={collisionMode}
               label="Collision Mode"
               onChange={(e: SelectChangeEvent) => setCollisionMode(e.target.value as 'SKIP' | 'OVERWRITE')}

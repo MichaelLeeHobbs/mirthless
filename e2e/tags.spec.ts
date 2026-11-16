@@ -1,48 +1,47 @@
 // ===========================================
 // Tags E2E Tests
 // ===========================================
+// Creates, edits and deletes a tag of this spec's own from the Tags page.
 
-import { test, expect, request } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { login } from './fixtures/auth.js';
-import { ADMIN_USER } from './fixtures/test-data.js';
+import { adminApi, deleteOk, getData } from './fixtures/api.js';
 
-const API_BASE = 'http://localhost:3000/api/v1';
 const TEST_TAG_NAME = 'E2E Test Tag';
+const UPDATED_TAG_NAME = `${TEST_TAG_NAME} Updated`;
+const TEST_TAG_COLOR = '#1976d2';
+
+let api: APIRequestContext;
+
+/** The table row whose tag chip reads exactly this name. */
+function tagRow(page: Page, name: string): Locator {
+  return page.getByRole('row').filter({ has: page.getByText(name, { exact: true }) });
+}
+
+async function tagNames(): Promise<string[]> {
+  const tags = await getData<Array<{ name: string }>>(api, '/tags');
+  return tags.map((t) => t.name);
+}
+
+/** Remove every tag this spec made, from this run or an interrupted one. */
+async function removeTestTags(): Promise<void> {
+  const tags = await getData<Array<{ id: string; name: string }>>(api, '/tags');
+  for (const tag of tags) {
+    if (tag.name.startsWith(TEST_TAG_NAME)) await deleteOk(api, `/tags/${tag.id}`);
+  }
+}
 
 test.describe('Tags', () => {
-  // Clean up stale test data from previous runs
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeAll(async () => {
-    const ctx = await request.newContext({ baseURL: API_BASE });
-    try {
-      const loginRes = await ctx.post('/auth/login', {
-        data: { username: ADMIN_USER.username, password: ADMIN_USER.password },
-      });
-      if (!loginRes.ok()) return;
+    api = await adminApi();
+    await removeTestTags();
+  });
 
-      const loginBody = await loginRes.json() as { success: boolean; data: { accessToken: string } };
-      if (!loginBody.data?.accessToken) return;
-      const token = loginBody.data.accessToken;
-
-      const tagsRes = await ctx.get('/tags', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (tagsRes.ok()) {
-        const tagsBody = await tagsRes.json() as {
-          success: boolean;
-          data: Array<{ id: string; name: string }>;
-        };
-        const tags = Array.isArray(tagsBody.data) ? tagsBody.data : [];
-        for (const tag of tags) {
-          if (tag.name.startsWith(TEST_TAG_NAME)) {
-            await ctx.delete(`/tags/${tag.id}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-          }
-        }
-      }
-    } finally {
-      await ctx.dispose();
-    }
+  test.afterAll(async () => {
+    await removeTestTags();
+    await api?.dispose();
   });
 
   test.beforeEach(async ({ page }) => {
@@ -52,106 +51,62 @@ test.describe('Tags', () => {
   test('navigate to tags page', async ({ page }) => {
     await page.goto('/tags');
     await expect(page.getByRole('heading', { level: 1, name: 'Tags' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Create Tag' })).toBeEnabled();
   });
 
   test('create a new tag', async ({ page }) => {
     await page.goto('/tags');
-    await expect(page.getByRole('heading', { level: 1, name: 'Tags' })).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('button', { name: 'Create Tag' }).click();
 
-    // Click the New / Create button
-    await page.getByRole('button', { name: /new|create/i }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create Tag' });
+    await dialog.getByLabel('Name').fill(TEST_TAG_NAME);
+    await dialog.getByLabel('Color').fill(TEST_TAG_COLOR);
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
-    // Fill in the tag name
-    const nameField = page.getByLabel('Name');
-    await expect(nameField).toBeVisible({ timeout: 10_000 });
-    await nameField.fill(TEST_TAG_NAME);
-
-    // If a color picker is present, interact with it (defensive — may use a hex input)
-    const colorInput = page.locator('input[type="color"], input[placeholder*="#"], input[value^="#"]').first();
-    if (await colorInput.isVisible()) {
-      await colorInput.fill('#1976d2');
-    }
-
-    // Submit
-    await page.getByRole('button', { name: /create|save/i }).click();
-
-    // Tag should appear in the list
-    await expect(page.getByText(TEST_TAG_NAME)).toBeVisible({ timeout: 10_000 });
+    await expect(dialog).toBeHidden();
+    await expect(tagRow(page, TEST_TAG_NAME)).toContainText(TEST_TAG_COLOR);
   });
 
   test('new tag appears in list', async ({ page }) => {
     await page.goto('/tags');
-    await page.waitForTimeout(1_000);
-
-    const table = page.locator('table');
-    const emptyText = page.getByText(/no.*tag|no data/i);
-    const hasTable = await table.isVisible();
-    const hasEmpty = await emptyText.isVisible();
-    expect(hasTable || hasEmpty).toBeTruthy();
+    const row = tagRow(page, TEST_TAG_NAME);
+    await expect(row).toContainText(TEST_TAG_COLOR, { timeout: 10_000 });
+    // A new tag is on no channels yet.
+    await expect(row.getByRole('cell').nth(2)).toHaveText('0');
   });
 
   test('edit tag name', async ({ page }) => {
     await page.goto('/tags');
-    await page.waitForTimeout(1_000);
+    await tagRow(page, TEST_TAG_NAME).getByRole('button', { name: 'Edit tag' }).click();
 
-    const tagRow = page.locator('table tbody tr', { hasText: TEST_TAG_NAME }).first();
-    if (await tagRow.isVisible()) {
-      const editBtn = tagRow.getByRole('button', { name: /edit/i });
-      if (await editBtn.isVisible()) {
-        await editBtn.click();
+    const dialog = page.getByRole('dialog', { name: 'Edit Tag' });
+    await expect(dialog.getByLabel('Name')).toHaveValue(TEST_TAG_NAME);
+    await dialog.getByLabel('Name').fill(UPDATED_TAG_NAME);
+    await dialog.getByRole('button', { name: 'Update' }).click();
 
-        const nameField = page.getByLabel('Name');
-        await expect(nameField).toBeVisible({ timeout: 10_000 });
-        await nameField.clear();
-        await nameField.fill(TEST_TAG_NAME + ' Updated');
-
-        await page.getByRole('dialog').getByRole('button', { name: 'Update' }).click();
-        await page.waitForTimeout(1_000);
-
-        await expect(page.getByText(TEST_TAG_NAME + ' Updated')).toBeVisible({ timeout: 10_000 });
-      }
-    }
+    await expect(dialog).toBeHidden();
+    await expect(tagRow(page, UPDATED_TAG_NAME)).toContainText(TEST_TAG_COLOR);
+    await expect(tagRow(page, TEST_TAG_NAME)).toHaveCount(0);
   });
 
   test('delete tag with confirmation', async ({ page }) => {
     await page.goto('/tags');
-    await page.waitForTimeout(1_000);
+    await tagRow(page, UPDATED_TAG_NAME).getByRole('button', { name: 'Delete tag' }).click();
 
-    page.on('dialog', async (dialog) => {
-      await dialog.accept();
-    });
+    const confirm = page.getByRole('dialog', { name: 'Delete Tag' });
+    await expect(confirm).toContainText(UPDATED_TAG_NAME);
+    await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
 
-    const tagRow = page
-      .locator('table tbody tr')
-      .filter({ hasText: /E2E Test Tag/ })
-      .first();
-
-    if (await tagRow.isVisible()) {
-      const deleteBtn = tagRow.getByRole('button', { name: /delete/i });
-      if (await deleteBtn.isVisible()) {
-        await deleteBtn.click();
-        await page.waitForTimeout(1_000);
-
-        // Confirm in MUI dialog if present
-        const confirmBtn = page.getByRole('button', { name: /confirm|yes|delete/i });
-        if (await confirmBtn.isVisible()) {
-          await confirmBtn.click();
-          await page.waitForTimeout(1_000);
-        }
-
-        await expect(page.getByText(TEST_TAG_NAME + ' Updated')).not.toBeVisible({ timeout: 10_000 });
-      }
-    }
+    await expect(confirm).toBeHidden();
+    await expect(tagRow(page, UPDATED_TAG_NAME)).toHaveCount(0);
+    await expect.poll(tagNames).not.toContain(UPDATED_TAG_NAME);
   });
 
   test('empty state shown when no tags', async ({ page }) => {
+    // Other specs may have tags of their own, so the list is stubbed empty.
+    await page.route('**/api/v1/tags', (route) => route.fulfill({ json: { success: true, data: [] } }));
     await page.goto('/tags');
-    await page.waitForTimeout(1_000);
-
-    const table = page.locator('table');
-    const emptyIndicator = page.getByText(/no.*tag|no data|empty/i);
-    const hasTable = await table.isVisible();
-    const hasEmpty = await emptyIndicator.isVisible();
-    expect(hasTable || hasEmpty).toBeTruthy();
+    await expect(page.getByRole('heading', { name: 'No tags yet' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Create a tag to organize and filter your channels.')).toBeVisible();
   });
 });

@@ -115,8 +115,8 @@ export function MessageSearchBar({
         sx={{ width: { xs: '100%', sm: 180 } }}
       />
       <FormControl size="small" sx={{ width: 160 }}>
-        <InputLabel>Status</InputLabel>
-        <Select
+        <InputLabel id="message-search-status-label">Status</InputLabel>
+        <Select labelId="message-search-status-label"
           multiple
           value={statuses as string[]}
           onChange={handleStatusChange}
@@ -132,8 +132,8 @@ export function MessageSearchBar({
         </Select>
       </FormControl>
       <FormControl size="small" sx={{ width: 140 }}>
-        <InputLabel>Connector</InputLabel>
-        <Select
+        <InputLabel id="message-search-connector-label">Connector</InputLabel>
+        <Select labelId="message-search-connector-label"
           value={metaDataId}
           onChange={(e) => onMetaDataIdChange(e.target.value)}
           label="Connector"

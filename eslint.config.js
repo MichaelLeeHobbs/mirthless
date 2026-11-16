@@ -91,6 +91,11 @@ export default tseslint.config(
           selector: 'Property[key.name="fontFamily"] > Literal',
           message: 'No inline font stacks. Use FONT_FAMILY_MONO from styles/tokens.ts, or the theme typography.',
         },
+        {
+          // Without the pair, a screen reader (and getByLabel) names the Select by its value, not its label.
+          selector: 'JSXOpeningElement[name.name="InputLabel"]:not(:has(JSXAttribute[name.name="id"]))',
+          message: 'Give the InputLabel an id and its Select a matching labelId, so the select is named by its label.',
+        },
         ...sharedHelperSelectors,
       ],
       'no-restricted-globals': [
@@ -120,6 +125,27 @@ export default tseslint.config(
           message: 'Use ScriptEditor, TextEditor or CodeDiffEditor from components/editors.',
         }],
       }],
+    },
+  },
+  // Playwright specs (#182, D-293). isVisible() and isHidden() answer at once without
+  // waiting, so `if (await x.isVisible())` skips the test's steps when the page
+  // is slow and still passes. A fixed sleep is slow when the page is fast and
+  // flaky when it is slow. Wait on the condition with expect() instead.
+  {
+    files: ['e2e/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'CallExpression[callee.property.name="waitForTimeout"]',
+          message: 'No fixed sleeps. Wait on the condition: await expect(locator).toBeVisible(), toHaveText(), page.waitForResponse(), expect.poll().',
+        },
+        {
+          selector: 'CallExpression[callee.property.name=/^is(Visible|Hidden)$/]',
+          message: 'isVisible()/isHidden() do not wait. Assert with await expect(locator).toBeVisible() (or toBeHidden(), or a.or(b) for either of two states).',
+        },
+        ...sharedHelperSelectors,
+      ],
     },
   },
   // JSX accessibility rules (only for web package)
