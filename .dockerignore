@@ -1,3 +1,7 @@
+# A pattern without **/ matches only at the root. The Dockerfiles copy whole
+# package folders (COPY packages/<name>/), so anything a checkout leaves inside
+# a package needs **/ to stay out of the image (#137).
+
 # Dependencies (every package's, not only the root's: a host install would
 # overwrite the container's own pnpm links when packages/<name>/ is copied)
 **/node_modules/
@@ -13,7 +17,7 @@
 reference/
 
 # Test & coverage artifacts
-coverage/
+**/coverage/
 **/*.test.ts
 **/*.spec.ts
 
@@ -23,9 +27,9 @@ docs/
 # GitHub
 .github/
 
-# Environment files (secrets)
-.env
-.env.*
+# Environment files (secrets). The server also reads packages/server/.env.
+**/.env
+**/.env.*
 !.env.example
 
 # Editor & OS
@@ -37,7 +41,7 @@ docs/
 Thumbs.db
 
 # Build artifacts (rebuilt in Docker)
-packages/*/dist/
+**/dist/
 
 # E2E tests
 e2e/
