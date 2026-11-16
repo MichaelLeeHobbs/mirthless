@@ -364,7 +364,7 @@ const testHttp: Tester = async (mode, props) => {
 /**
  * File tester — verifies path exists and is readable/writable. A path outside
  * FILE_CONNECTOR_ROOTS is refused before it is touched, so the button cannot
- * tell anyone what exists elsewhere on the server (D-314).
+ * tell anyone what exists elsewhere on the server (D-315).
  */
 const testFile: Tester = async (mode, props) => {
   const directory = requireString(props, 'directory');

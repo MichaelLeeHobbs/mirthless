@@ -67,7 +67,7 @@ export interface FileReceiverConfig {
   readonly moveToDirectory: string;
   /** Leave names starting with `.` alone, as a Mirth File Reader does by default. */
   readonly ignoreDot: boolean;
-  /** Where the directory and move-to directory may be (FILE_CONNECTOR_ROOTS, D-314). */
+  /** Where the directory and move-to directory may be (FILE_CONNECTOR_ROOTS, D-315). */
   readonly roots: FileRoots;
 }
 

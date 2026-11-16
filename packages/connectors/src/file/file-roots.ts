@@ -4,7 +4,7 @@
 // Where the File source and File destination may read and write. A channel
 // author picks the directory, so without a limit a deployer could read the
 // server's .env through a File source or overwrite its code through a File
-// destination (GHSA-r434-hwqg-cvcw, D-314). The operator lists the allowed
+// destination (GHSA-r434-hwqg-cvcw, D-315). The operator lists the allowed
 // directories in FILE_CONNECTOR_ROOTS; the server adds its own directories to
 // the denied list. Paths are compared after symlinks are resolved.
 

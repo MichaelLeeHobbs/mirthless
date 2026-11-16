@@ -23,7 +23,7 @@ export interface FileDispatcherConfig {
   readonly binary: boolean;
   readonly tempFileEnabled: boolean;
   readonly appendMode: boolean;
-  /** Where the directory and each written file may be (FILE_CONNECTOR_ROOTS, D-314). */
+  /** Where the directory and each written file may be (FILE_CONNECTOR_ROOTS, D-315). */
   readonly roots: FileRoots;
 }
 
