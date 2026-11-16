@@ -11,7 +11,7 @@
 
 import { z } from 'zod/v4';
 import {
-  wholeNumberSchema,
+  pollingIntervalSchema,
   requiredTextSchema,
   withoutKeys,
   sourceCommonProperties,
@@ -28,7 +28,7 @@ export const javascriptSourceObjectSchema = z.strictObject({
   script: requiredTextSchema,
   scriptLanguage,
   /** The receiver refuses to poll more often than every 100 ms. */
-  pollingIntervalMs: wholeNumberSchema(100).default(5_000),
+  pollingIntervalMs: pollingIntervalSchema(100, 5_000),
   ...sourceCommonProperties,
 });
 

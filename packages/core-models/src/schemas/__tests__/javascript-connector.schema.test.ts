@@ -48,6 +48,7 @@ describe('javascriptSourcePropertiesSchema', () => {
     ['scriptLanguage', 'typescript'],
     ['scriptLanguage', 'PYTHON'],
     ['pollingIntervalMs', 99],
+    ['pollingIntervalMs', 2_147_483_648],
     ['pollingIntervalMs', 1.5],
     ['processBatch', 'true'],
   ])('rejects %s = %j, naming the key', (key, value) => {

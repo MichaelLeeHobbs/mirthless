@@ -45,6 +45,7 @@ describe('databaseSourcePropertiesSchema', () => {
     ['port', 70_000],
     ['updateMode', 'SOMETIMES'],
     ['pollingIntervalMs', 99],
+    ['pollingIntervalMs', 2_147_483_648],
     ['rowFormat', 'XML'],
     ['tls', 'true'],
     ['tls', { ca: 'x' }],

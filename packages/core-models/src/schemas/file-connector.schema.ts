@@ -12,6 +12,7 @@
 import { z } from 'zod/v4';
 import {
   wholeNumberSchema,
+  pollingIntervalSchema,
   requiredTextSchema,
   charsetSchema,
   sourceCommonProperties,
@@ -30,7 +31,7 @@ export const fileSourceObjectSchema = z.strictObject({
   /** Glob (`*`, `?`) for the files to read. */
   fileFilter: requiredTextSchema.default('*'),
   /** The receiver refuses to poll more often than every 100 ms. */
-  pollingIntervalMs: wholeNumberSchema(100).default(5_000),
+  pollingIntervalMs: pollingIntervalSchema(100, 5_000),
   sortBy: z.enum(FILE_SORT_ORDERS).default('NAME'),
   charset: charsetSchema,
   /** Read the file as base64 instead of text. */
