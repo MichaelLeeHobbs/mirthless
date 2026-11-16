@@ -11,14 +11,10 @@ import {
   userIdParamSchema,
 } from '@galvaniflow/core-models';
 import { UserController } from '../controllers/user.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const router: IRouter = Router();
-
-// All user routes require authentication
-router.use(authenticate);
 
 // Self-service password change — every authenticated user must be able to change
 // their OWN password without the users:write permission. Registered BEFORE the

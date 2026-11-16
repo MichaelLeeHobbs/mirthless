@@ -23,6 +23,7 @@ vi.mock('../../middleware/validate.middleware.js', () => ({
 }));
 
 const { authRateLimiter, refreshRateLimiter } = await import('../../middleware/rate-limit.middleware.js');
+const { authJsonBody } = await import('../../middleware/body-limit.middleware.js');
 const router = (await import('../auth.routes.js')).default;
 
 // ----- Helpers -----
@@ -58,6 +59,12 @@ describe('Auth Rate Limiting', () => {
     const stack = getRouteMiddleware('/login', 'post');
     const hasLimiter = stack.some((mw) => mw.handle === authRateLimiter);
     expect(hasLimiter).toBe(true);
+  });
+
+  it('reads the login body only after the login rate limiter (#157)', () => {
+    const handles = getRouteMiddleware('/login', 'post').map((mw) => mw.handle);
+    expect(handles.indexOf(authJsonBody)).toBeGreaterThan(handles.indexOf(authRateLimiter));
+    expect(handles.indexOf(authRateLimiter)).toBe(0);
   });
 
   it('applies the separate refreshRateLimiter, not the login limiter, to POST /refresh', () => {
