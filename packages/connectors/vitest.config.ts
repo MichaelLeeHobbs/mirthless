@@ -6,6 +6,10 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     passWithNoTests: true,
+    // The same budget as engine and server (D-290): the e2e suites deploy channels that
+    // compile scripts and move messages over real sockets, which takes seconds on a loaded
+    // machine (#213). A hung test still fails, just later.
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
