@@ -8,7 +8,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
 import { eq } from 'drizzle-orm';
 import { PERMISSIONS, type Permission } from '@galvaniflow/core-models';
-import { createThrottle, type Throttle } from '@galvaniflow/core-util';
+import { createThrottle, errorInfo, type Throttle } from '@galvaniflow/core-util';
 import { config } from '../config/index.js';
 import { db } from './db.js';
 import { users } from '../db/schema/index.js';
@@ -267,13 +267,25 @@ export function emitToRoomCoalesced(room: string, event: string, data: unknown):
   if (!entry) {
     const created: CoalescedEmit = {
       data,
-      throttle: createThrottle(() => { emitToRoom(room, event, created.data); }, LIVE_EVENT_COALESCE_MS),
+      throttle: createThrottle(() => { emitQuietly(room, event, created.data); }, LIVE_EVENT_COALESCE_MS),
     };
     coalescedEmits.set(key, created);
     entry = created;
   }
   entry.data = data;
   entry.throttle.call();
+}
+
+/**
+ * Emit and log a failure instead of throwing it. A trailing emit runs in a
+ * timer, where a throw would reach uncaughtException and stop the server.
+ */
+function emitQuietly(room: string, event: string, data: unknown): void {
+  try {
+    emitToRoom(room, event, data);
+  } catch (err) {
+    logger.error(errorInfo(err), `Coalesced emit of ${event} to ${room} failed`);
+  }
 }
 
 /** Drop every pending coalesced emit. */
@@ -308,6 +320,8 @@ export async function shutdownSocketIO(): Promise<void> {
       io!.close(() => resolve());
     });
     io = null;
+    // Events kept arriving while close was pending and may have armed new windows.
+    cancelCoalescedEmits();
     logger.info({ component: 'socketio' }, 'Socket.IO shut down');
   }
 }

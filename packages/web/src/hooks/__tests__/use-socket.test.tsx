@@ -130,6 +130,20 @@ describe('useThrottledSocketEvent', () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
+  it('drops a run pending for the previous scope when the scope changes', () => {
+    const handler = vi.fn();
+    const { rerender } = renderHook(({ scope }) => { useThrottledSocketEvent('message:new', handler, scope); }, { initialProps: { scope: 'channel-a' } });
+
+    fire('message:new', 3);
+    rerender({ scope: 'channel-b' });
+    act(() => { vi.advanceTimersByTime(LIVE_REFRESH_INTERVAL_MS * 2); });
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    // The new scope starts with no open window.
+    fire('message:new', 1);
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
   it('drops the pending run and stops listening on unmount', () => {
     const handler = vi.fn();
     const { unmount } = renderHook(() => { useThrottledSocketEvent('stats:update', handler); });

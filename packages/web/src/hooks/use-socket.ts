@@ -108,14 +108,15 @@ export const LIVE_REFRESH_INTERVAL_MS = 2_000;
  * most once per LIVE_REFRESH_INTERVAL_MS. The first event runs it at once; later
  * events in the window run it once when the window ends, so the last change is
  * always shown. The event payload is not passed on. A pending run is dropped on
- * unmount.
+ * unmount and when `scope` changes, so a run due for one channel does not fire
+ * for the next one the page shows.
  */
-export function useThrottledSocketEvent(event: string, handler: () => void): void {
+export function useThrottledSocketEvent(event: string, handler: () => void, scope = ''): void {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
   const [throttle] = useState(() => createThrottle(() => { handlerRef.current(); }, LIVE_REFRESH_INTERVAL_MS));
 
-  useEffect(() => () => { throttle.cancel(); }, [throttle]);
+  useEffect(() => () => { throttle.cancel(); }, [throttle, scope]);
   useSocketEvent(event, throttle.call);
 }
 

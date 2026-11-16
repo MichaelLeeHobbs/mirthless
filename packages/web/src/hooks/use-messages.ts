@@ -144,7 +144,7 @@ export function useDeleteMessage(): ReturnType<typeof useMutation<void, Error, {
     },
     onSuccess: async (_data, variables) => {
       await queryClient.invalidateQueries({
-        queryKey: [...MESSAGE_KEYS.all, 'search', variables.channelId],
+        queryKey: MESSAGE_KEYS.channelSearches(variables.channelId),
       });
     },
   });
