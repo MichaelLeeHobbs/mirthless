@@ -546,6 +546,7 @@ function sftpReaderProperties(propsNode: Record<string, unknown>): Record<string
     filePattern: getString(propsNode, 'fileFilter') ?? '*',
     afterProcessing: afterProcessingAction(propsNode),
     moveToDirectory: getString(propsNode, 'moveToDirectory') ?? '',
+    ...mirthCharset(propsNode),
   };
 }
 
@@ -564,14 +565,17 @@ function mirthAction(propsNode: Record<string, unknown>): string {
 
 /**
  * What a Mirth File Reader does with a file it has read: NONE (Mirth's default,
- * the file stays), MOVE or DELETE. A Move with no move-to folder leaves the
- * file where it is in Mirth, so it is NONE here, as is a value this importer
- * does not know. The FILE and SFTP sources delete by default, so the action is
- * always written out.
+ * the file stays), MOVE or DELETE. A Move with neither a folder nor a new name
+ * leaves the file where it is in Mirth, so it is NONE here, as is a value this
+ * importer does not know. A Move that only renames the file in place stays
+ * MOVE with no folder, which the deploy refuses: left in place unrenamed, the
+ * file would be read again on every poll. The FILE and SFTP sources delete by
+ * default, so the action is always written out.
  */
 function afterProcessingAction(propsNode: Record<string, unknown>): 'NONE' | 'MOVE' | 'DELETE' {
   const action = mirthAction(propsNode);
-  if (action === 'MOVE') return (getString(propsNode, 'moveToDirectory') ?? '').trim() === '' ? 'NONE' : 'MOVE';
+  const blank = (key: string): boolean => (getString(propsNode, key) ?? '').trim() === '';
+  if (action === 'MOVE') return blank('moveToDirectory') && blank('moveToFileName') ? 'NONE' : 'MOVE';
   return action === 'DELETE' ? 'DELETE' : 'NONE';
 }
 
@@ -640,7 +644,7 @@ function fileWriterProperties(propsNode: Record<string, unknown>): Record<string
 
 /** A Mirth File connector's scheme, upper case; FILE when absent. */
 function fileScheme(propsNode: Record<string, unknown>): string {
-  return (getString(propsNode, 'scheme') ?? 'FILE').toUpperCase();
+  return ((getString(propsNode, 'scheme') ?? '').trim() || 'FILE').toUpperCase();
 }
 
 /**
@@ -661,10 +665,30 @@ function failsOnExistingFile(propsNode: Record<string, unknown>): boolean {
 /** Preview warnings for File (and SFTP) settings that do not carry, Reader and Writer alike. */
 function fileConnectorWarnings(propsNode: Record<string, unknown>, properties: Record<string, unknown>, connector: string, channelName: string): string[] {
   const prefix = `Channel "${channelName}": the ${connector}`;
-  const warnings = [...fileReaderWarnings(propsNode, prefix), ...fileWriterWarnings(propsNode, properties, prefix)];
+  return [...fileReaderWarnings(propsNode, prefix), ...fileWriterWarnings(propsNode, properties, prefix), ...fileEncodingWarnings(propsNode, properties, prefix)];
+}
+
+/**
+ * A File connector's charset and binary settings that do not carry: Mirth's
+ * server default charset, a charset GalvaniFlow lacks, and, on SFTP, binary
+ * files and a Writer charset other than UTF-8 (the SFTP Writer writes UTF-8).
+ */
+function fileEncodingWarnings(propsNode: Record<string, unknown>, properties: Record<string, unknown>, prefix: string): string[] {
+  const warnings: string[] = [];
+  const binary = getBoolean(propsNode, 'binary', false);
+  const mirthName = getString(propsNode, 'charsetEncoding')?.trim() ?? '';
+  if (!binary && mirthName === 'DEFAULT_ENCODING') {
+    warnings.push(`${prefix} used the Mirth server's default charset (often windows-1252 on Windows before Java 18); GalvaniFlow reads and writes UTF-8 unless a charset is set`);
+  }
   const charset = properties['charset'];
   if (typeof charset === 'string' && !charsetSchema.safeParse(charset).success) {
     warnings.push(`${prefix} reads and writes ${charset}, which GalvaniFlow does not have (UTF-8, ISO-8859-1, US-ASCII and UTF-16LE only); it will not deploy until the charset is changed`);
+  }
+  if (fileScheme(propsNode) !== 'SFTP') return warnings;
+  if (binary) warnings.push(`${prefix} reads or writes files as binary in Mirth; the SFTP connector handles text only`);
+  const writerCharset = mirthCharset(propsNode)['charset'];
+  if (!('afterProcessing' in properties) && writerCharset !== undefined && writerCharset !== 'utf-8') {
+    warnings.push(`${prefix} writes ${mirthName} in Mirth; the SFTP Writer writes UTF-8 only`);
   }
   return warnings;
 }
@@ -688,7 +712,11 @@ function fileReaderWarnings(propsNode: Record<string, unknown>, prefix: string):
     warnings.push(`${prefix} skips files outside a file size range in Mirth; GalvaniFlow reads files of every size`);
   }
   const rename = getString(propsNode, 'moveToFileName');
-  if (rename && mirthAction(propsNode) === 'MOVE') warnings.push(`${prefix} renames the files it moves to "${rename}" in Mirth; GalvaniFlow keeps their names`);
+  if (rename && mirthAction(propsNode) === 'MOVE') {
+    warnings.push((getString(propsNode, 'moveToDirectory') ?? '').trim() === ''
+      ? `${prefix} renames each file in place to "${rename}" in Mirth; GalvaniFlow cannot rename, so it will not deploy until a move-to folder is set or the action is changed`
+      : `${prefix} renames the files it moves to "${rename}" in Mirth; GalvaniFlow keeps their names`);
+  }
   for (const key of ['errorReadingAction', 'errorResponseAction'] as const) {
     if ((getString(propsNode, key) ?? '').toUpperCase() === 'MOVE') {
       warnings.push(`${prefix} moves a file whose ${key === 'errorReadingAction' ? 'reading' : 'message'} fails to an error folder in Mirth; GalvaniFlow does not move it`);
