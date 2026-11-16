@@ -48,7 +48,12 @@ export class Api {
     expect(res.ok(), `admin login failed: ${String(res.status())}`).toBeTruthy();
     const { accessToken } = (await res.json() as Envelope<{ accessToken: string }>).data;
     await loginCtx.dispose();
-    const ctx = await request.newContext({ extraHTTPHeaders: { Authorization: `Bearer ${accessToken}` } });
+    // The client lives for a whole scenario and sits idle while it waits on messages.
+    // Playwright reuses a kept-alive socket the server may be closing as the request
+    // goes out, which fails with ECONNRESET (#126, #203), so each request gets its own.
+    const ctx = await request.newContext({
+      extraHTTPHeaders: { Authorization: `Bearer ${accessToken}`, Connection: 'close' },
+    });
     return new Api(ctx);
   }
 
