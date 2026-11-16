@@ -2,7 +2,7 @@
 // Summary tab: Channel Group dropdown (#223)
 // ===========================================
 // Changing the group is one server call, so a failure cannot leave the channel
-// in no group.
+// in no group. Only a user with channels:write can change it.
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
@@ -15,11 +15,16 @@ import type { AdvancedFormValues } from '../AdvancedTab.js';
 
 const setGroups = vi.fn();
 const notify = vi.fn();
+let permissions = new Set<string>();
+let memberships: Array<{ channelGroupId: string; channelId: string }> = [];
 
 vi.mock('../../../hooks/use-channel-groups.js', () => ({
   useChannelGroups: () => ({ data: [{ id: 'g1', name: 'Lab' }, { id: 'g2', name: 'Radiology' }], isLoading: false }),
-  useGroupMemberships: () => ({ data: [{ channelGroupId: 'g1', channelId: 'ch-1' }], isLoading: false }),
+  useGroupMemberships: () => ({ data: memberships, isLoading: false }),
   useSetChannelGroups: () => ({ mutateAsync: setGroups }),
+}));
+vi.mock('../../../hooks/use-permissions.js', () => ({
+  usePermissions: () => ({ has: (p: string) => permissions.has(p) }),
 }));
 vi.mock('../../../stores/notification.store.js', () => ({
   useNotification: () => ({ notify }),
@@ -47,8 +52,16 @@ function Harness(): ReactNode {
   );
 }
 
+function renderTab(): void {
+  render(<ThemeProvider theme={darkTheme}><Harness /></ThemeProvider>);
+}
+
+function groupField(): HTMLElement {
+  return screen.getByRole('combobox', { name: 'Channel Group' });
+}
+
 function choose(groupName: string): void {
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Channel Group' }));
+  fireEvent.mouseDown(groupField());
   fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: groupName }));
 }
 
@@ -56,12 +69,14 @@ beforeEach(() => {
   setGroups.mockReset();
   setGroups.mockResolvedValue(undefined);
   notify.mockClear();
-  render(<ThemeProvider theme={darkTheme}><Harness /></ThemeProvider>);
+  permissions = new Set(['channels:read', 'channels:write']);
+  memberships = [{ channelGroupId: 'g1', channelId: 'ch-1' }];
 });
 afterEach(() => { cleanup(); });
 
 describe('SummaryTab channel group', () => {
   it('moves the channel with one call naming only the new group', async () => {
+    renderTab();
     choose('Radiology');
     await waitFor(() => { expect(notify).toHaveBeenCalledWith('Channel group updated', 'success'); });
     expect(setGroups).toHaveBeenCalledTimes(1);
@@ -69,13 +84,27 @@ describe('SummaryTab channel group', () => {
   });
 
   it('takes the channel out of every group when None is chosen', async () => {
+    renderTab();
     choose('None');
     await waitFor(() => { expect(setGroups).toHaveBeenCalledWith({ channelId: 'ch-1', groupIds: [] }); });
   });
 
   it('reports a failed change', async () => {
     setGroups.mockRejectedValue(new Error('Channel group not found: g2'));
+    renderTab();
     choose('Radiology');
     await waitFor(() => { expect(notify).toHaveBeenCalledWith('Channel group not found: g2', 'error'); });
+  });
+
+  it('is read-only without channels:write', () => {
+    permissions = new Set(['channels:read']);
+    renderTab();
+    expect(groupField().getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('names every group a channel in several belongs to', () => {
+    memberships = [{ channelGroupId: 'g1', channelId: 'ch-1' }, { channelGroupId: 'g2', channelId: 'ch-1' }];
+    renderTab();
+    expect(screen.getByText('In 2 groups: Lab, Radiology. Saving keeps only the group you choose.')).toBeTruthy();
   });
 });

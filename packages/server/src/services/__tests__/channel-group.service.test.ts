@@ -100,13 +100,12 @@ const txInsertValues = vi.fn().mockImplementation(async () => {
   if (txState.insertError) throw txState.insertError;
 });
 const txDeleteWhere = vi.fn().mockImplementation(() => ({ returning: vi.fn().mockImplementation(async () => txState.removed) }));
-const txFor = vi.fn().mockImplementation(async () => txState.channel);
+// The channel lookup locks FOR NO KEY UPDATE, the group lookup FOR KEY SHARE.
+const txFor = vi.fn().mockImplementation(async (strength: string) => (strength === 'key share' ? txState.groups : txState.channel));
+const txWhere = vi.fn().mockReturnValue({ for: txFor });
 const mockTx = {
   select: vi.fn().mockImplementation(() => ({
-    from: vi.fn().mockReturnValue({
-      // The channel lookup ends in .for('update'); the group lookup is awaited directly.
-      where: vi.fn().mockImplementation(() => Object.assign(Promise.resolve(txState.groups), { for: txFor })),
-    }),
+    from: vi.fn().mockReturnValue({ where: txWhere }),
   })),
   delete: vi.fn().mockReturnValue({ where: txDeleteWhere }),
   insert: vi.fn().mockReturnValue({ values: txInsertValues }),
@@ -132,13 +131,11 @@ vi.mock('drizzle-orm', () => ({
   count: vi.fn(() => 'count_agg'),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
   inArray: vi.fn((_col: unknown, vals: unknown) => ({ type: 'inArray', vals })),
+  isNull: vi.fn((col: unknown) => ({ type: 'isNull', col })),
 }));
 
-const { emitSuccessEvent } = vi.hoisted(() => ({ emitSuccessEvent: vi.fn() }));
-vi.mock('../../lib/event-emitter.js', () => ({
-  emitEvent: vi.fn(),
-  emitSuccessEvent,
-}));
+const { emitEvent } = vi.hoisted(() => ({ emitEvent: vi.fn() }));
+vi.mock('../../lib/event-emitter.js', () => ({ emitEvent }));
 
 const { ChannelGroupService } = await import('../channel-group.service.js');
 
@@ -381,7 +378,9 @@ describe('ChannelGroupService', () => {
       if (!result.ok) return;
       expect(result.value).toEqual({ channelId: CHANNEL_ID, groupIds: [GROUP_ID, GROUP_2] });
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(txFor).toHaveBeenCalledWith('update');
+      // The channel row is locked without blocking inserts that reference it; the groups so none is deleted meanwhile.
+      expect(txFor).toHaveBeenCalledWith('no key update');
+      expect(txFor).toHaveBeenCalledWith('key share');
       expect(txDeleteWhere).toHaveBeenCalledTimes(1);
       expect(txInsertValues).toHaveBeenCalledWith([
         { channelGroupId: GROUP_ID, channelId: CHANNEL_ID },
@@ -398,9 +397,21 @@ describe('ChannelGroupService', () => {
 
       await ChannelGroupService.setChannelGroups(CHANNEL_ID, [GROUP_ID], { userId: 'u1', ipAddress: '10.0.0.1' });
 
-      expect(emitSuccessEvent).toHaveBeenCalledWith('CHANNEL_GROUP_UPDATED', { userId: 'u1', ipAddress: '10.0.0.1' }, {
-        action: 'setChannelGroups', channelId: CHANNEL_ID, groupIds: [GROUP_ID], previousGroupIds: [GROUP_2],
+      expect(emitEvent).toHaveBeenCalledWith({
+        level: 'INFO', name: 'CHANNEL_GROUP_UPDATED', outcome: 'SUCCESS',
+        userId: 'u1', channelId: CHANNEL_ID, serverId: null, ipAddress: '10.0.0.1',
+        attributes: { action: 'setChannelGroups', groupIds: [GROUP_ID], previousGroupIds: [GROUP_2] },
       });
+    });
+
+    it('looks the channel up only among channels that are not deleted', async () => {
+      const { isNull } = await import('drizzle-orm');
+      txState.groups = [{ id: GROUP_ID }];
+
+      await ChannelGroupService.setChannelGroups(CHANNEL_ID, [GROUP_ID]);
+
+      expect(isNull).toHaveBeenCalledTimes(1);
+      expect(txWhere.mock.calls[0]?.[0]).toMatchObject({ type: 'and', args: [{ type: 'eq', val: CHANNEL_ID }, { type: 'isNull' }] });
     });
 
     it('with an empty list removes every membership and inserts nothing', async () => {
@@ -434,7 +445,7 @@ describe('ChannelGroupService', () => {
       expect(result.error.message).toContain(CHANNEL_ID);
       expect(txDeleteWhere).not.toHaveBeenCalled();
       expect(txInsertValues).not.toHaveBeenCalled();
-      expect(emitSuccessEvent).not.toHaveBeenCalled();
+      expect(emitEvent).not.toHaveBeenCalled();
     });
 
     it('returns NOT_FOUND naming each unknown group and changes nothing', async () => {
@@ -447,7 +458,7 @@ describe('ChannelGroupService', () => {
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
       expect(result.error.message).toBe(`Channel group not found: ${GROUP_2}`);
       expect(txDeleteWhere).not.toHaveBeenCalled();
-      expect(emitSuccessEvent).not.toHaveBeenCalled();
+      expect(emitEvent).not.toHaveBeenCalled();
     });
 
     it('returns the error and audits nothing when the insert fails', async () => {
@@ -459,7 +470,7 @@ describe('ChannelGroupService', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.message).toContain('foreign key');
-      expect(emitSuccessEvent).not.toHaveBeenCalled();
+      expect(emitEvent).not.toHaveBeenCalled();
     });
   });
 });

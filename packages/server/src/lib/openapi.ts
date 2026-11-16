@@ -4,6 +4,8 @@
 // Generates the OpenAPI spec object for Swagger UI.
 // Documents key API endpoints across 8 tag groups.
 
+import { SET_CHANNEL_GROUPS_MAX } from '@galvaniflow/core-models';
+
 /** OpenAPI spec type — minimal structural typing for the spec object. */
 interface OpenAPISpec {
   readonly openapi: string;
@@ -324,7 +326,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
                   type: 'object',
                   required: ['groupIds'],
                   properties: {
-                    groupIds: { type: 'array', uniqueItems: true, items: { type: 'string', format: 'uuid' } },
+                    groupIds: { type: 'array', uniqueItems: true, maxItems: SET_CHANNEL_GROUPS_MAX, items: { type: 'string', format: 'uuid' } },
                   },
                 },
               },

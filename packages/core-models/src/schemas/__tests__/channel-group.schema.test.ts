@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { setChannelGroupsSchema } from '../channel-group.schema.js';
+import { setChannelGroupsSchema, SET_CHANNEL_GROUPS_MAX } from '../channel-group.schema.js';
 
 const G1 = '6f1c2a4e-8b3d-4c7a-9e21-0a5b7c9d1e2f';
 const G2 = '0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a';
@@ -23,6 +23,26 @@ describe('setChannelGroupsSchema', () => {
 
   it('rejects an id that is not a uuid', () => {
     expect(setChannelGroupsSchema.safeParse({ groupIds: ['not-a-uuid'] }).success).toBe(false);
+  });
+
+  it('lowercases the ids', () => {
+    const result = setChannelGroupsSchema.safeParse({ groupIds: [G1.toUpperCase()] });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.groupIds).toEqual([G1]);
+  });
+
+  it('rejects the same group written in upper and lower case', () => {
+    const result = setChannelGroupsSchema.safeParse({ groupIds: [G1, G1.toUpperCase()] });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toContain('must not repeat');
+  });
+
+  it(`rejects more than ${String(SET_CHANNEL_GROUPS_MAX)} groups`, () => {
+    const ids = Array.from({ length: SET_CHANNEL_GROUPS_MAX + 1 }, (_v, i) => `${i.toString(16).padStart(8, '0')}-8b3d-4c7a-9e21-0a5b7c9d1e2f`);
+    expect(setChannelGroupsSchema.safeParse({ groupIds: ids }).success).toBe(false);
+    expect(setChannelGroupsSchema.safeParse({ groupIds: ids.slice(1) }).success).toBe(true);
   });
 
   it('rejects the same group twice', () => {
