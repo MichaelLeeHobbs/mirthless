@@ -13,10 +13,13 @@ import type { ScriptTestInput, ScriptTestReaders, ScriptTestResult } from './scr
 import { workerEntry } from './worker-entry.js';
 
 /** The test-run input that crosses into the worker: everything but the readers. */
-export type IsolatedTestInput = Omit<ScriptTestInput, 'readers' | 'timeoutMs'>;
+export type IsolatedTestInput = Omit<ScriptTestInput, 'readers' | 'timeoutMs' | 'onCompiled'>;
 
 export interface IsolationLimits {
-  /** Wall-clock time for the whole run; the worker is terminated after it. */
+  /**
+   * Wall-clock time the script may run, as the pipeline gives a script. The
+   * worker's start-up is not counted (it has WORKER_START_LIMIT_MS of its own).
+   */
   readonly timeoutMs: number;
   /** Heap limit for the worker. */
   readonly maxOldGenerationSizeMb: number;
@@ -33,6 +36,19 @@ export interface IsolationLimits {
 export const MAX_TEST_READS = 100;
 /** How often the main thread samples the process's memory during a run. */
 const MEMORY_SAMPLE_MS = 20;
+/**
+ * How long a worker may take to start (load its modules, parse the sample and
+ * compile the script) before the run is given up. Start-up is the engine's cost,
+ * not the script's, and on a busy machine it can take seconds (esbuild starts a
+ * process of its own), so it is not charged to the script's time limit (#188).
+ */
+export const WORKER_START_LIMIT_MS = 30_000;
+/**
+ * How long after its time limit a started worker is terminated. The sandbox's
+ * own limit stops a script first; this covers building the sandbox's globals,
+ * which is not counted against that limit, and a script the sandbox fails to stop.
+ */
+const STOP_GRACE_MS = 5_000;
 
 /** What the worker starts with. */
 export interface WorkerStart {
@@ -40,7 +56,7 @@ export interface WorkerStart {
   readonly readers: ReadonlyArray<'getResource' | 'collectionFind'>;
 }
 
-/** Worker to main thread. */
+/** Worker to main thread. `started`: the script is compiled and about to run. */
 export type WorkerRequest =
   | { readonly type: 'started' }
   | { readonly type: 'read'; readonly id: number; readonly call: 'getResource' | 'collectionFind'; readonly args: readonly unknown[] }
@@ -102,6 +118,8 @@ export function runScriptTestIsolated(
       // A terminated worker's queued messages are dropped, not answered.
       if (settled) return;
       if (message.type === 'started') {
+        clearTimeout(timer);
+        timer = setTimeout(() => { fail(`The script was stopped after ${String(limits.timeoutMs)} ms.`); }, limits.timeoutMs + STOP_GRACE_MS);
         watchMemory();
       } else if (message.type === 'read') {
         // The worker refuses reads past MAX_TEST_READS before asking; the script
@@ -123,7 +141,10 @@ export function runScriptTestIsolated(
       resolve(result);
     };
     const fail = (text: string): void => { finish(errorResult(text, Date.now() - started)); };
-    const timer = setTimeout(() => { fail(`The script was stopped after ${String(limits.timeoutMs)} ms.`); }, limits.timeoutMs + 1_000);
+    // Until the worker says it has started, only the start-up limit runs.
+    let timer = setTimeout(() => {
+      fail(`The test run could not start within ${String(WORKER_START_LIMIT_MS / 1000)} s. The server may be busy; try again.`);
+    }, WORKER_START_LIMIT_MS);
     // Baseline once the worker has started, so its own start-up is not counted.
     const watchMemory = (): void => {
       const baseline = process.memoryUsage.rss();

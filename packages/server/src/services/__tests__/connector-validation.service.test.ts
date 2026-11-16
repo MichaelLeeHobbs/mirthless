@@ -317,7 +317,7 @@ describe('validateConnectorProperties', () => {
 
     it('accepts valid SMTP destination properties', () => {
       const result = validateConnectorProperties('SMTP', 'destination', {
-        host: 'smtp.example.com', port: 587, to: 'admin@example.com',
+        host: 'smtp.example.com', port: 587, from: 'lab@example.com', to: 'admin@example.com',
       });
       expect(result.ok).toBe(true);
     });
@@ -501,6 +501,41 @@ describe('validateConnectorProperties', () => {
     });
   });
 
+  describe('CHANNEL, FHIR and SMTP', () => {
+    // The editor's defaults with the required fields filled, and the keys the old importer copied.
+    it('accepts channels the editor saved and the importer wrote', () => {
+      expect(validateConnectorProperties('CHANNEL', 'source', { channelId: 'c1', pluginProperties: '', sourceConnectorProperties: {} }).ok).toBe(true);
+      expect(validateConnectorProperties('CHANNEL', 'destination', {
+        targetChannelId: 'c2', waitForResponse: false, pluginProperties: '', destinationConnectorProperties: {}, channelId: 'c2', channelTemplate: 'x', mapVariables: '',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('FHIR', 'destination', {
+        baseUrl: 'https://f/r4', resourceType: 'Patient', method: 'POST', authType: 'NONE', authUsername: '', authPassword: '', authToken: '',
+        authHeaderName: '', authApiKey: '', format: 'json', timeout: 30000, headers: 'X-Site: LAB',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('SMTP', 'destination', {
+        host: 'mail', port: '25', secure: false, requireTLS: false, authUser: '', authPass: '', from: 'a@x', to: 'b@x', cc: '', bcc: '', subject: '',
+        bodyTemplate: '${msg}', contentType: 'text/plain', attachContent: false, attachments: [{ filename: '', mimeType: '', content: '' }],
+      }).ok).toBe(true);
+    });
+
+    it.each([
+      ['CHANNEL', 'destination', { targetChannelId: 'c2', waitForResponse: 'true' }, 'waitForResponse'],
+      ['CHANNEL', 'destination', { targetChannelId: 'c2', waitForReply: true }, 'waitForReply'],
+      ['FHIR', 'destination', { baseUrl: 'not a url' }, 'baseUrl'],
+      ['FHIR', 'destination', { baseUrl: 'https://f/r4', authType: 'BASIC', authUsername: 'u' }, 'authPassword'],
+      ['FHIR', 'destination', { baseUrl: 'https://f/r4', authType: 'OAUTH' }, 'authType'],
+      ['FHIR', 'destination', { baseUrl: 'https://f/r4', timeout: 0 }, 'timeout'],
+      ['SMTP', 'destination', { host: 'mail', to: 'b@x' }, 'from'],
+      ['SMTP', 'destination', { host: 'mail', from: 'a@x', to: 'b@x', user: 'u' }, 'user'],
+      ['SMTP', 'destination', { host: 'mail', from: 'a@x', to: 'b@x', attachments: [{ filename: 'a.txt' }] }, 'attachments'],
+    ] as const)('rejects a %s %s with %j, naming %s', (type, direction, props, key) => {
+      const result = validateConnectorProperties(type, direction, props);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain(key);
+    });
+  });
+
   describe('SFTP', () => {
     // As the SFTP source and destination forms save them (web connector-defaults), filled in.
     const SFTP_SOURCE = {
@@ -565,6 +600,64 @@ describe('validateConnectorProperties', () => {
 
     it.each(['username', 'remoteDirectory'])('rejects an SFTP destination with an empty %s', (key) => {
       expect(validateConnectorProperties('SFTP', 'destination', { ...SFTP_DEST, [key]: '' }).ok).toBe(false);
+    });
+
+    it.each([
+      ['source', { ...SFTP_SOURCE, fileFilter: '*.hl7' }, 'fileFilter'],
+      ['source', { ...SFTP_SOURCE, charset: 'base64' }, 'charset'],
+      ['source', { ...SFTP_SOURCE, pollingIntervalMs: 50 }, 'pollingIntervalMs'],
+      ['destination', { ...SFTP_DEST, appendMode: 'true' }, 'appendMode'],
+      ['destination', { ...SFTP_DEST, fileNameTemplate: '' }, 'fileNameTemplate'],
+    ] as const)('rejects an SFTP %s with %j, naming %s', (mode, props, key) => {
+      const result = validateConnectorProperties('SFTP', mode, props);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain(key);
+    });
+  });
+
+  describe('DICOM and EMAIL', () => {
+    // The editor's defaults since 2026-03 (AE titles MIRTHLESS until 02b022a), the required fields filled.
+    const DICOM_SOURCE = {
+      port: 4242, storageDir: '/dicom', aeTitle: 'MIRTHLESS', minPoolSize: 2, maxPoolSize: 10, connectionTimeoutMs: 10000,
+      dispatchMode: 'PER_FILE', postAction: 'DELETE', moveToDirectory: '',
+    };
+    const DICOM_DEST = {
+      host: 'localhost', port: 104, calledAETitle: 'PACS', callingAETitle: 'MIRTHLESS', mode: 'multiple', maxAssociations: 4,
+      maxRetries: 3, retryDelayMs: 1000, timeoutMs: 30000,
+    };
+    const EMAIL = {
+      host: 'imap.example', port: 993, secure: true, username: 'lab', password: 'p', protocol: 'IMAP', folder: 'INBOX',
+      pollingIntervalMs: 60000, postAction: 'MARK_READ', moveToFolder: '', subjectFilter: '', includeAttachments: false,
+    };
+
+    it('accepts what the editor saves and what the importer copies from a Mirth DICOM connector', () => {
+      expect(validateConnectorProperties('DICOM', 'source', DICOM_SOURCE).ok).toBe(true);
+      expect(validateConnectorProperties('DICOM', 'destination', DICOM_DEST).ok).toBe(true);
+      expect(validateConnectorProperties('EMAIL', 'source', EMAIL).ok).toBe(true);
+      expect(validateConnectorProperties('DICOM', 'source', {
+        ...DICOM_SOURCE, pluginProperties: '', listenerConnectorProperties: { port: '104' }, dest: '/mirth', applicationEntity: 'MIRTH', tls: 'notls',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('DICOM', 'destination', {
+        pluginProperties: '', destinationConnectorProperties: {}, host: 'pacs', port: '104', applicationEntity: 'PACS1', template: '${DICOMMESSAGE}', stgcmt: 'false',
+      }).ok).toBe(true);
+    });
+
+    it.each([
+      ['DICOM', 'source', { ...DICOM_SOURCE, aeTitle: 'SEVENTEEN_CHARS_X' }, 'aeTitle'],
+      ['DICOM', 'source', { ...DICOM_SOURCE, minPoolSize: 5, maxPoolSize: 4 }, 'maxPoolSize'],
+      ['DICOM', 'source', { ...DICOM_SOURCE, dispatchMode: 'PER_STUDY' }, 'dispatchMode'],
+      ['DICOM', 'destination', { ...DICOM_DEST, mode: 'pooled' }, 'mode'],
+      ['DICOM', 'destination', { ...DICOM_DEST, aet: 'X' }, 'aet'],
+      ['EMAIL', 'source', { ...EMAIL, protocol: 'POP3' }, 'protocol'],
+      ['EMAIL', 'source', { ...EMAIL, pollingIntervalMs: 500 }, 'pollingIntervalMs'],
+      ['EMAIL', 'source', { ...EMAIL, postAction: 'MOVE' }, 'moveToFolder'],
+      ['EMAIL', 'source', { ...EMAIL, secure: 'false' }, 'secure'],
+    ] as const)('rejects a %s %s with %j, naming %s', (type, mode, props, key) => {
+      const result = validateConnectorProperties(type, mode, props);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain(key);
     });
   });
 

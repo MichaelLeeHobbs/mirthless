@@ -8,13 +8,10 @@ import {
   upsertGlobalMapEntrySchema,
 } from '@galvaniflow/core-models';
 import { GlobalMapController } from '../controllers/global-map.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const router: IRouter = Router();
-
-router.use(authenticate);
 
 router.get(
   '/',

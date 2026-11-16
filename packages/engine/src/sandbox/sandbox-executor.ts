@@ -398,20 +398,27 @@ globalThis.__build = function (hostDispatch, payload) {
     if (out === errToken) { throw new Error(hostDispatch('err.take')); }
     return out;
   }
-  // IO bridges: the host returns a ticket id synchronously and later settles it by
-  // running __settle() in this context. Awaiting a sandbox-realm promise keeps every
-  // continuation on this context's microtask queue, which only drains inside a
-  // timed runInContext call, so post-await code is bounded by the script timeout.
+  // IO bridges: the host returns a ticket id synchronously and later settles the
+  // tickets that are ready, all at once, by running __settle() in this context.
+  // Awaiting a sandbox-realm promise keeps every continuation on this context's
+  // microtask queue, which only drains inside a timed runInContext call, so
+  // post-await code is bounded by the script timeout.
   var pendingIo = {};
   function io() {
     var id = dispatch.apply(null, arguments);
     return new Promise(function (resolve) { pendingIo[id] = resolve; });
   }
+  // One result at a time: many large results in one string could pass V8's
+  // string limit. An empty string means none is left.
   Object.defineProperty(globalThis, '__settle', { value: function () {
-    var t = JSON.parse(dispatch('io.next'));
-    var resolve = pendingIo[t[0]];
-    delete pendingIo[t[0]];
-    if (resolve) { resolve(t[1]); }
+    for (;;) {
+      var next = dispatch('io.next');
+      if (next === '') { return; }
+      var t = JSON.parse(next);
+      var resolve = pendingIo[t[0]];
+      delete pendingIo[t[0]];
+      if (resolve) { resolve(t[1]); }
+    }
   } });
   Object.defineProperty(globalThis, '__watch', { value: function (p) {
     p.then(
@@ -646,18 +653,33 @@ function restore(state: HostBridgeState, c: Collected): unknown {
 function toHostError(e: unknown): Error {
   if (e instanceof Error) return e;
   if (typeof e === 'string') return new Error(e);
-  if (e !== null && typeof e === 'object' && !types.isProxy(e)) {
-    const message = Object.getOwnPropertyDescriptor(e, 'message')?.value as unknown;
-    if (typeof message === 'string') return new Error(message);
-  }
-  return new Error('Script failed');
+  const message = ownString(e, 'message');
+  return new Error(message ?? 'Script failed');
 }
 
-/** Resolve a promise, rejecting early if the abort signal fires (async wall-clock timeout). */
-function awaitWithSignal<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+/** An own string data property of a sandbox-realm object, read without running any of its code. */
+function ownString(e: unknown, key: string): string | undefined {
+  if (e === null || typeof e !== 'object' || types.isProxy(e)) return undefined;
+  const value = Object.getOwnPropertyDescriptor(e, key)?.value as unknown;
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** A run's wall-clock time limit: when it ends, and how long it was. */
+interface TimeLimit {
+  readonly deadline: number;
+  readonly ms: number;
+}
+
+/** The error for a run stopped by its time limit. It names the whole limit. */
+function timedOut(limit: TimeLimit): Error {
+  return new Error(`Script execution timed out after ${String(limit.ms)}ms`);
+}
+
+/** Resolve a promise, rejecting early with `aborted()` if the abort signal fires (async wall-clock timeout). */
+function awaitWithSignal<T>(p: Promise<T>, signal: AbortSignal, aborted: () => Error): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    if (signal.aborted) { reject(new Error('Script execution timed out')); return; }
-    const onAbort = (): void => reject(new Error('Script execution timed out'));
+    if (signal.aborted) { reject(aborted()); return; }
+    const onAbort = (): void => reject(aborted());
     signal.addEventListener('abort', onAbort, { once: true });
     p.then(
       (v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
@@ -669,24 +691,41 @@ function awaitWithSignal<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
 /**
  * Drives one async script run. The vm context uses `microtaskMode: 'afterEvaluate'`,
  * so sandbox microtasks only run inside a timed `runInContext` call: the initial
- * evaluation, or a `__settle()` call made when an IO bridge completes. Code after an
+ * evaluation, or a `__settle()` call made when IO bridges complete. Code after an
  * `await` is therefore bounded by the timeout and cannot block the host event loop,
  * and once the run is finished no further sandbox code is ever resumed.
+ *
+ * Every timed call starts and joins a watchdog thread, which on a busy machine
+ * waits to be scheduled. So the IO results that are ready are settled together in
+ * one call on the next turn of the event loop, not in one call each: a script
+ * with hundreds of reads must not spend its time limit entering the sandbox (#188).
  */
 class AsyncRun {
   private readonly ioResults: Array<[number, string]> = [];
   private nextTicket = 1;
   private finished = false;
+  private settleScheduled = false;
   private resolveDone!: () => void;
   private rejectDone!: (e: unknown) => void;
   readonly done = new Promise<void>((resolve, reject) => { this.resolveDone = resolve; this.rejectDone = reject; });
 
-  constructor(private readonly contextObj: vm.Context, private readonly deadline: number) {}
+  /** The script's time limit, from `start`. No IO can complete before the script has started. */
+  private limit: TimeLimit = { deadline: 0, ms: 0 };
+
+  constructor(private readonly contextObj: vm.Context) {}
+
+  /** Start the script's time limit; IO results are settled within it. */
+  start(limit: TimeLimit): void {
+    this.limit = limit;
+  }
 
   /** Wrap the host dispatch so IO bridge promises become ticket ids settled in-context. */
   wrap(dispatch: (op: string, ...args: unknown[]) => unknown): (op: string, ...args: unknown[]) => unknown {
     return (op: string, ...args: unknown[]): unknown => {
-      if (op === 'io.next') return JSON.stringify(this.ioResults.shift() ?? [0, '']);
+      if (op === 'io.next') {
+        const next = this.ioResults.shift();
+        return next === undefined ? '' : JSON.stringify(next);
+      }
       if (op === 'io.done') { this.finish(args[0] === true ? undefined : new Error(String(args[1])), args[0] === true); return undefined; }
       const out = dispatch(op, ...args);
       if (!(out instanceof Promise)) return out;
@@ -707,26 +746,52 @@ class AsyncRun {
   private settle(ticket: number, json: string): void {
     if (this.finished) return;
     this.ioResults.push([ticket, json]);
+    if (this.settleScheduled) return;
+    this.settleScheduled = true;
+    setImmediate(() => { this.settleReady(); });
+  }
+
+  private settleReady(): void {
+    this.settleScheduled = false;
+    if (this.finished) return;
     try {
-      vm.runInContext('__settle()', this.contextObj, { timeout: Math.max(1, this.deadline - Date.now()) });
+      runTimed('__settle()', this.contextObj, this.limit);
     } catch (e) {
-      this.finish(toHostError(e), false);
+      this.finish(e, false);
     }
   }
 }
 
-/** Run code in the sandbox context under a time limit; anything thrown becomes a host Error. */
-function runTimed(code: string, contextObj: vm.Context, timeout: number): unknown {
+/** True for the error node:vm throws when a call's own timeout stops it (made in the sandbox's realm). */
+function isVmTimeout(e: unknown): boolean {
+  return ownString(e, 'code') === 'ERR_SCRIPT_EXECUTION_TIMEOUT';
+}
+
+/**
+ * Run code in the sandbox context with what is left of the run's time limit;
+ * anything thrown becomes a host Error. A timeout names the whole limit, not the
+ * few milliseconds this call had left.
+ */
+function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit, minimumMs = 0): unknown {
+  const left = Math.max(minimumMs, limit.deadline - Date.now());
+  if (left <= 0) throw timedOut(limit);
   try {
-    return vm.runInContext(code, contextObj, { timeout: Math.max(1, timeout) }) as unknown;
+    return vm.runInContext(code, contextObj, { timeout: left }) as unknown;
   } catch (e) {
-    throw toHostError(e);
+    throw isVmTimeout(e) ? timedOut(limit) : toHostError(e);
   }
 }
 
+/**
+ * The least time collecting a result gets. A script that finished inside its
+ * limit is not reported as timed out because the host reached the collection a
+ * moment late; a 1 ms watchdog could fire on a busy machine from scheduling alone.
+ */
+const COLLECT_MIN_MS = 50;
+
 /** Serialise the script's result inside the sandbox (still under the deadline) and parse it on the host. */
-function collect(contextObj: vm.Context, deadline: number): CollectedResult {
-  const out = runTimed('__collect()', contextObj, deadline - Date.now());
+function collect(contextObj: vm.Context, limit: TimeLimit): CollectedResult {
+  const out = runTimed('__collect()', contextObj, limit, COLLECT_MIN_MS);
   if (typeof out !== 'string') throw new Error('Script result could not be read');
   const parsed = JSON.parse(out) as CollectedResult;
   if (parsed.err !== undefined) throw new Error(parsed.err);
@@ -756,11 +821,7 @@ export class VmSandboxExecutor implements SandboxExecutor {
     options: ExecutionOptions,
   ): Promise<Result<ExecutionResult>> {
     return tryCatch(async () => {
-      // Each script gets its own wall-clock limit. A caller's signal can cancel
-      // it sooner, but can never let it run longer than `timeout`.
-      const limit = AbortSignal.timeout(options.timeout);
-      const signal = options.signal ? AbortSignal.any([options.signal, limit]) : limit;
-      if (signal.aborted) {
+      if (options.signal?.aborted) {
         throw new Error('Execution aborted before start');
       }
 
@@ -781,29 +842,39 @@ export class VmSandboxExecutor implements SandboxExecutor {
         this.deps?.httpFetch || this.deps?.dbQuery || this.deps?.routeMessage || this.deps?.getResource || this.deps?.collections,
       );
       const contextObj: Record<string, unknown> = vm.createContext({}, { microtaskMode: 'afterEvaluate' });
-      const deadline = Date.now() + options.timeout;
-      const run = new AsyncRun(contextObj, deadline);
+      const run = new AsyncRun(contextObj);
       contextObj['__dispatch'] = makeNonThrowingDispatch(run.wrap(dispatch), errToken);
       contextObj['__payloadJson'] = JSON.stringify(payload);
-      vm.runInContext(BOOTSTRAP_SRC, contextObj, { timeout: options.timeout });
-      vm.runInContext(INVOKE_SRC, contextObj, { timeout: options.timeout });
+      // Building the sandbox's globals is the engine's work, not the script's: it
+      // has a limit of its own, and the script's limit starts when the script does,
+      // so one execute can take the setup time plus the limit (D-300).
+      const setup: TimeLimit = { deadline: Date.now() + options.timeout, ms: options.timeout };
+      runTimed(BOOTSTRAP_SRC, contextObj, setup);
+      runTimed(INVOKE_SRC, contextObj, setup);
+
+      // Each script gets its own wall-clock limit. A caller's signal can cancel
+      // it sooner, but can never let it run longer than `timeout`.
+      const limit: TimeLimit = { deadline: Date.now() + options.timeout, ms: options.timeout };
+      const expiry = AbortSignal.timeout(options.timeout);
+      const signal = options.signal ? AbortSignal.any([options.signal, expiry]) : expiry;
+      run.start(limit);
 
       const wrappedCode = hasAsyncBridges
         ? `'use strict'; __watch((async function() {\n${script.code}\n})());`
         : `'use strict'; __run(function() {\n${script.code}\n});`;
 
       try {
-        runTimed(wrappedCode, contextObj, options.timeout);
+        runTimed(wrappedCode, contextObj, limit);
         if (state.failure !== undefined) throw new Error(state.failure);
         if (hasAsyncBridges) {
           // Wait for the script to settle, enforcing the wall-clock timeout via the signal.
-          await awaitWithSignal(run.done, signal);
+          await awaitWithSignal(run.done, signal, () => (expiry.aborted ? timedOut(limit) : new Error('Script execution timed out')));
         }
       } finally {
         run.finish(undefined, true);
       }
 
-      const collected = collect(contextObj, deadline);
+      const collected = collect(contextObj, limit);
       return {
         returnValue: restore(state, collected.r),
         msg: restore(state, collected.m),

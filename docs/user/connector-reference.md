@@ -234,15 +234,15 @@ Setting `strictHostKey` to false turns the check off and lets anyone who can int
 | `privateKey` | No | Private key, PEM or OpenSSH text. |
 | `passphrase` | No | Passphrase for an encrypted `privateKey`. |
 | `remoteDirectory` | Yes | Remote directory to poll. |
-| `filePattern` | No | Glob for the files to read, `*` by default. Case-sensitive, as for FILE: `*.hl7` does not match `A.HL7`. |
+| `filePattern` | No | Glob for the files to read, `*` by default. An empty pattern refuses to deploy. Case-sensitive, as for FILE: `*.hl7` does not match `A.HL7`. |
 | `ignoreDot` | No | On by default: names starting with `.` are never read or deleted, as in Mirth. `false` reads them. |
-| `pollingIntervalMs` | No | Milliseconds between polls, at least 100. |
+| `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 100 to 2147483647. Defaults to 5000. |
 | `afterProcessing` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes the remote file after the pipeline accepts it. |
 | `moveToDirectory` | No | Remote directory for `MOVE`, created if missing. Required when `afterProcessing` is `MOVE`. |
 | `minFileAgeMs` | No | Skip files younger than this, so a file still being uploaded is not read. |
 | `strictHostKey` | No | On by default. See security. |
 | `hostKey` | Yes | Server's base64 public key. Deploy requires it while `strictHostKey` is on; only `strictHostKey` false lets it be empty. |
-| `charset` | No | Character set to decode the file. One Node cannot decode refuses to deploy. |
+| `charset` | No | Character set to decode the file: `utf-8` (default), `latin1`, `ascii` or `utf16le`, in any case; `UTF-8`, `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. Any other name refuses to deploy. |
 
 ### SFTP as a destination
 
@@ -255,7 +255,7 @@ Setting `strictHostKey` to false turns the check off and lets anyone who can int
 | `privateKey` | No | Private key, PEM or OpenSSH text. |
 | `passphrase` | No | Passphrase for an encrypted `privateKey`. |
 | `remoteDirectory` | Yes | Remote directory to write to; created if missing. |
-| `fileNameTemplate` | No | File name. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. |
+| `fileNameTemplate` | No | File name, `${messageId}.dat` by default. Only `${messageId}` and `${timestamp}` are filled; any other placeholder, or an empty name, refuses to deploy. |
 | `appendMode` | No | `true` appends to the remote file instead of replacing it. |
 | `strictHostKey` | No | On by default. See security. |
 | `hostKey` | Yes | Server's base64 public key. Deploy requires it while `strictHostKey` is on; only `strictHostKey` false lets it be empty. |
@@ -388,7 +388,7 @@ The destination is a storage SCU. The message content must be the path of a DICO
 
 ### DICOM security
 
-DICOM traffic is not encrypted: neither direction supports TLS. The source accepts every association whatever the calling and called AE titles, so anyone who can reach the port can store files. Keep DICOM on a trusted network or a VPN.
+DICOM traffic is not encrypted: neither direction supports TLS. The source accepts every association whatever the calling and called AE titles, so anyone who can reach the port can store files. Keep DICOM on a trusted network or a VPN. A DICOM connector imported from Mirth with TLS on (Mirth's `tls` other than `notls`) refuses to deploy rather than run in plaintext; remove `tls` only if plaintext is acceptable on that network.
 
 ### DICOM as a source
 
@@ -396,10 +396,10 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 |---|---|---|
 | `port` | Yes | Port to listen on. |
 | `storageDir` | Yes | Directory received files are written to. |
-| `aeTitle` | No | This listener's AE title. Not checked against incoming associations. |
+| `aeTitle` | No | This listener's AE title, at most 16 characters, `GALVANIFLOW` by default. Not checked against incoming associations. |
 | `minPoolSize` | No | Checked at deploy (at least 1) but not used by the current listener. |
 | `maxPoolSize` | No | Checked at deploy (not below `minPoolSize`) but not used by the current listener. |
-| `connectionTimeoutMs` | No | Connect, association and PDU timeout in milliseconds. |
+| `connectionTimeoutMs` | No | Connect, association and PDU timeout in milliseconds, 10000 by default. |
 | `dispatchMode` | No | `PER_FILE` (default) or `PER_ASSOCIATION`. |
 | `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The message holds only the file path, and the default deletes the file once the pipeline accepts it, so a queued destination or a later reprocess has no file to read. Use `MOVE` or `NONE` if anything reads the file afterwards. |
 | `moveToDirectory` | No | Where `MOVE` puts files. Required when `postAction` is `MOVE`. |
@@ -410,8 +410,8 @@ DICOM traffic is not encrypted: neither direction supports TLS. The source accep
 |---|---|---|
 | `host` | Yes | Remote SCP host. |
 | `port` | Yes | Remote SCP port. |
-| `calledAETitle` | No | The remote AE title, `PACS` by default. |
-| `callingAETitle` | No | This sender's AE title. |
+| `calledAETitle` | No | The remote AE title, at most 16 characters, `PACS` by default. |
+| `callingAETitle` | No | This sender's AE title, at most 16 characters, `GALVANIFLOW` by default. |
 | `mode` | No | `single` or `multiple`. Read but not used by the current sender. |
 | `maxAssociations` | No | Read but not used by the current sender. |
 | `maxRetries` | No | Retries of a failed send. |
@@ -441,15 +441,15 @@ It polls an IMAP mailbox folder for unread messages and sends each message body,
 | Property | Required | Notes |
 |---|---|---|
 | `host` | Yes | IMAP server. |
-| `port` | Yes | IMAP port. |
+| `port` | No | IMAP port, 993 by default. |
 | `secure` | No | On by default: IMAP over TLS. |
 | `username` | Yes | Mailbox user. |
 | `password` | Yes | Mailbox password. |
 | `protocol` | No | `IMAP`. `POP3` refuses to deploy. |
-| `folder` | No | Folder to read, `INBOX` by default. |
-| `pollingIntervalMs` | No | Milliseconds between polls. |
+| `folder` | No | Folder to read, `INBOX` by default. An empty folder refuses to deploy. |
+| `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 1000 to 2147483647. Defaults to 60000. |
 | `postAction` | No | `MARK_READ` (default), `DELETE` or `MOVE`. |
-| `moveToFolder` | No | Folder for `MOVE`. |
+| `moveToFolder` | No | Folder for `MOVE`. Required when `postAction` is `MOVE`. |
 | `subjectFilter` | No | Only read emails whose subject contains this text, ignoring case. |
 | `includeAttachments` | No | Read but not used: attachments are never read, whatever this says. |
 
@@ -476,20 +476,20 @@ It sends one email per message. The subject, body and attachment fields may use 
 | Property | Required | Notes |
 |---|---|---|
 | `host` | Yes | SMTP server. |
-| `port` | Yes | SMTP port. |
+| `port` | No | SMTP port, 1 to 65535. Defaults to 587. |
 | `secure` | No | `true` for implicit TLS. Off by default. |
 | `requireTLS` | No | `true` to require STARTTLS. Off by default. |
 | `authUser` | No | Username; with none set, the server is used as an anonymous relay. |
 | `authPass` | No | Password for `authUser`. |
-| `from` | No | Sender address. |
+| `from` | Yes | Sender address. |
 | `to` | Yes | Recipients. |
 | `cc` | No | Copy recipients. |
 | `bcc` | No | Blind copy recipients. |
 | `subject` | No | Subject; may use `${name}` variables. |
 | `bodyTemplate` | No | Body, `${msg}` by default. |
-| `contentType` | No | `text/plain` or `text/html`. |
+| `contentType` | No | `text/plain` (default) or `text/html`. |
 | `attachContent` | No | `true` also attaches the message content as a file. |
-| `attachments` | No | List of `filename`, `content` and optional `mimeType`; filename and content may use variables. Entries without a filename or content are skipped. |
+| `attachments` | No | List of `filename`, `content` and optional `mimeType`, all text; filename and content may use variables. An entry with a missing or non-text field, or another key, refuses to deploy. A row left blank in the editor is sent as an empty attachment, so remove rows you do not use. |
 
 ### SMTP limits
 
@@ -512,18 +512,18 @@ An `https://` base URL uses TLS with the Node trust store. There is no certifica
 
 | Property | Required | Notes |
 |---|---|---|
-| `baseUrl` | Yes | FHIR server base URL. Use the final address: a redirect is an ERROR. |
+| `baseUrl` | Yes | FHIR server base URL, an absolute URL. Use the final address: a redirect is an ERROR. |
 | `resourceType` | No | Resource type in the URL. Defaults to `Patient`, so set it for any other resource. |
 | `method` | No | `POST` (create) or `PUT` (update). `PUT` needs an `id` in the resource, and an id outside the FHIR id rules is refused. |
-| `authType` | No | `NONE`, `BASIC`, `BEARER` or `API_KEY`. |
-| `authUsername` | No | Basic username. |
-| `authPassword` | No | Basic password. |
-| `authToken` | No | Bearer token. |
-| `authHeaderName` | No | Header that carries the API key. |
-| `authApiKey` | No | API key value. |
-| `format` | No | `json` or `xml`. |
-| `timeout` | No | Milliseconds before the send is an ERROR. |
-| `headers` | No | Extra request headers. |
+| `authType` | No | `NONE` (default), `BASIC`, `BEARER` or `API_KEY`. Each type other than `NONE` refuses to deploy without its credentials below. |
+| `authUsername` | No | Basic username. Required for `BASIC`. |
+| `authPassword` | No | Basic password. Required for `BASIC`. |
+| `authToken` | No | Bearer token. Required for `BEARER`. |
+| `authHeaderName` | No | Header that carries the API key. Required for `API_KEY`. |
+| `authApiKey` | No | API key value. Required for `API_KEY`. |
+| `format` | No | `json` (default) or `xml`. |
+| `timeout` | No | Milliseconds before the send is an ERROR, a whole number from 1 to 2147483647. Defaults to 30000. |
+| `headers` | No | Extra request headers, as a name-to-value map. Text saved by the old editor is read as `Name: value` lines. |
 
 ### FHIR limits
 

@@ -69,6 +69,15 @@ Result: `logger.info.constructor`, `({}).constructor.constructor`,
 present, user scripts may `await`; the executor additionally races the resulting
 promise against the abort signal for an async wall-clock timeout.
 
+The script's code, its IO settles and the collection of its result share one
+deadline that starts when the script does. Building the sandbox's globals is not
+counted against it (it has a limit of its own), so one execution can take the
+setup time plus the limit. Collecting the result always gets at least 50 ms, so a
+script that finished in time is not reported as timed out. IO results that are
+ready are settled together in one timed call, one result at a time inside it,
+because each timed call starts a watchdog thread that a busy machine is slow to
+schedule (D-300). A timeout always names the whole limit.
+
 ## Notes / limitations
 
 - There is **no** `memoryLimit` knob — `node:vm` cannot enforce one, so it was
