@@ -178,6 +178,9 @@ overrides:
   dcmjs@0.50: '>=0.52.0 <0.53'
   minimatch@10: '>=11.0.1 <12'
 
+patchedDependencies:
+  monaco-editor@0.55.1: 073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08
+
 importers:
 
   .:
@@ -371,6 +374,9 @@ importers:
       fast-xml-parser:
         specifier: '>=5.12.0 <6'
         version: 5.12.0
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
     devDependencies:
       '@types/node':
         specifier: 24.19.2
@@ -381,9 +387,9 @@ importers:
       rimraf:
         specifier: 6.1.4
         version: 6.1.4
-      typescript:
-        specifier: 6.0.3
-        version: 6.0.3
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
       vitest:
         specifier: 5.1.0
         version: 5.1.0(@opentelemetry/api@1.9.0)(@types/node@24.19.2)(@vitest/coverage-v8@5.1.0)(jsdom@31.0.0)(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.0))
@@ -537,7 +543,7 @@ importers:
         version: link:../core-util
       '@monaco-editor/react':
         specifier: ^4.7.0
-        version: 4.7.0(monaco-editor@0.55.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 4.7.0(monaco-editor@0.55.1(patch_hash=073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@mui/icons-material':
         specifier: ^9.5.0
         version: 9.5.0(@mui/material@9.5.0(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1)(supports-color@7.2.0))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1)(supports-color@7.2.0))(@types/react@19.3.0)(react@19.3.1)(supports-color@7.2.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@types/react@19.3.0)(react@19.3.1)
@@ -547,6 +553,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.107.1
         version: 5.107.1(@types/react@19.3.0)(react@19.3.1)
+      monaco-editor:
+        specifier: 0.55.1
+        version: 0.55.1(patch_hash=073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08)
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -4939,10 +4948,10 @@ snapshots:
     dependencies:
       state-local: 1.0.7
 
-  '@monaco-editor/react@4.7.0(monaco-editor@0.55.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@monaco-editor/react@4.7.0(monaco-editor@0.55.1(patch_hash=073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@monaco-editor/loader': 1.7.0
-      monaco-editor: 0.55.1
+      monaco-editor: 0.55.1(patch_hash=073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08)
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
 
@@ -6919,7 +6928,7 @@ snapshots:
     dependencies:
       obliterator: 2.0.5
 
-  monaco-editor@0.55.1:
+  monaco-editor@0.55.1(patch_hash=073fdaee166ed45f7b5b0250d2407c778b3d4469a5e0519c92e30f0710883b08):
     dependencies:
       dompurify: 3.4.17
       marked: 14.0.0

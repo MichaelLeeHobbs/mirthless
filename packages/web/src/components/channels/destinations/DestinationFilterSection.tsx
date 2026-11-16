@@ -80,6 +80,7 @@ export function DestinationFilterSection({ filter, onChange }: DestinationFilter
             {filter.rules.map((rule, index) => (
               <FilterRuleEditor
                 key={index}
+                stage="destination"
                 rule={rule}
                 index={index}
                 total={filter.rules.length}

@@ -424,7 +424,7 @@ The original NextGen Connect source is at `reference/connect/` for architecture 
 | [`docs/progress/ROADMAP.md`](docs/progress/ROADMAP.md) | What's planned, not started | Check off items as they ship, add new items as they emerge |
 | [`docs/progress/DECISIONS.md`](docs/progress/DECISIONS.md) | Why we chose X over Y | Add whenever a non-obvious architectural or design choice is made |
 
-**Do NOT duplicate what git tracks.** These docs capture what git cannot: plans and rationale. What was built, what was checked and what was left out go in the pull request description, not a log file (D-290).
+**Do NOT duplicate what git tracks.** These docs capture what git cannot: plans and rationale. What was built, what was checked and what was left out go in the pull request description, not a log file (D-291).
 
 Add a decision at the end of `DECISIONS.md` with the next `D-NNN` number. Git merges the file with `merge=union`, so two branches that add a decision both keep theirs, and a test in `pnpm gate` (`packages/server/src/__tests__/docs/decisions.test.ts`) fails when two decisions share a number. The branch that merges second renumbers its decision and every place that cites it.
 

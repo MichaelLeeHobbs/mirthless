@@ -2,5 +2,5 @@
 * text=auto eol=lf
 
 # Append-only list: branches that each add a decision keep both instead of
-# conflicting. A duplicate D-NNN number fails the decisions docs guard (D-290).
+# conflicting. A duplicate D-NNN number fails the decisions docs guard (D-291).
 docs/progress/DECISIONS.md merge=union

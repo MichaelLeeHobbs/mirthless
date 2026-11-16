@@ -10,7 +10,6 @@ import {
   compileFilterRulesToScript,
   compileTransformerStepsToScript,
   type FilterRuleInput,
-  SCRIPT_CACHE_LIMIT,
   scriptCacheSize,
 } from '../script-compiler.js';
 import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../sandbox-executor.js';
@@ -461,18 +460,7 @@ describe('script cache', () => {
     expect(scriptCacheSize()).toBe(1);
   });
 
-  it('stops growing at its limit, dropping the oldest entries', async () => {
-    clearScriptCache();
-    for (let i = 0; i < SCRIPT_CACHE_LIMIT + 5; i++) {
-      await compileScript(`return ${String(i)};`, { sourcemap: false });
-    }
-    expect(scriptCacheSize()).toBe(SCRIPT_CACHE_LIMIT);
-
-    // The newest is still cached; the oldest was dropped and compiles afresh.
-    const newest = await compileScript(`return ${String(SCRIPT_CACHE_LIMIT + 4)};`, { sourcemap: false });
-    expect(scriptCacheSize()).toBe(SCRIPT_CACHE_LIMIT);
-    expect(newest.ok).toBe(true);
-  }, 30_000);
+  // The limit itself is tested in script-cache-limit.test.ts, with esbuild stubbed out.
 });
 
 describe('compiled filter rules insist on a boolean', () => {

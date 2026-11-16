@@ -8,10 +8,11 @@
 //
 // This file lives at the package root (NOT under src/) on purpose: including it
 // in the engine's own tsconfig would leak `msg`, `logger`, etc. into the engine
-// source as globals. It is consumed only by script-authoring tooling — a
-// tsconfig that lists it, or the Monaco editor. The web admin ships an identical
-// surface as a string (packages/web/src/lib/sandbox-types.ts) for Monaco; keep
-// the two in sync when the sandbox API changes.
+// source as globals. It is consumed only by script-authoring tooling: a
+// tsconfig that lists it. The web editor and the deploy check use the same
+// surface built as a string in core-models (scripting/sandbox-declarations.ts),
+// which also types msg and tmp by data type; keep the two in sync when the
+// sandbox API changes (sandbox-types-consistency.test.ts checks the names).
 
 /** HL7 message proxy returned by parseHL7(). Path-based access to HL7 fields. */
 interface Hl7MessageProxy {
@@ -33,22 +34,35 @@ interface Hl7MessageProxy {
   getSegmentString(name: string, index?: number): string | undefined;
 }
 
-/** Logger for sandbox scripts. */
+/** Logger for sandbox scripts. Any value is logged as text (String(value)). */
 interface SandboxLogger {
-  info(message: string): void;
-  warn(message: string): void;
-  error(message: string): void;
-  debug(message: string): void;
+  info(message: unknown): void;
+  warn(message: unknown): void;
+  error(message: unknown): void;
+  debug(message: unknown): void;
 }
 
 // ----- Global Variables -----
 
 /** Current message being processed. Type depends on inbound data type. */
 declare var msg: unknown;
-/** Temporary working map. Persists across pipeline stages within a single message. */
-declare var tmp: Record<string, unknown>;
-/** Original inbound raw data string. */
+/** The outbound message being built. Type depends on the data type. */
+declare var tmp: unknown;
+/** Destinations this message goes to. Source filter and transformer only. */
+declare var destinationSet: {
+  removeAll(): void;
+  remove(destinations: string | number | ReadonlyArray<string | number>): void;
+  removeAllExcept(destinations: string | number | ReadonlyArray<string | number>): void;
+  add(destinations: string | number | ReadonlyArray<string | number>): void;
+  contains(destination: string | number): boolean;
+  getConnectorNames(): string[];
+};
+/** Original inbound raw data string. Empty in deploy and undeploy scripts. */
 declare var rawData: string;
+/** The channel's id. Deploy, undeploy and JavaScript connector scripts only. */
+declare var channelId: string;
+/** The channel's name. Deploy, undeploy and JavaScript connector scripts only. */
+declare var channelName: string;
 /** Source system metadata. Propagates through the pipeline. */
 declare var sourceMap: Record<string, unknown>;
 /** Channel-scoped persistent state. Cleared on channel redeploy. */
@@ -146,7 +160,14 @@ declare function httpFetch(
 ): Promise<HttpFetchResult>;
 
 /** Route a raw message into another deployed, started channel by name. */
-declare function routeMessage(channelName: string, rawData: string): Promise<{ success: boolean; response?: string }>;
+declare function routeMessage(channelName: string, rawData: string): Promise<{
+  success: boolean;
+  /** The id the target channel gave the message. */
+  messageId?: number;
+  /** True when the target channel's source filter rejected the message. */
+  filtered?: boolean;
+  response?: string;
+}>;
 
 /** Run a parameterized query against a named Data Source. Use params ($1, $2, …). */
 declare function dbQuery(

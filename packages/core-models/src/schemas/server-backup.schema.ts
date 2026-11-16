@@ -5,6 +5,7 @@
 
 import { z } from 'zod/v4';
 import { channelExportEntrySchema } from './channel-export.schema.js';
+import { updateGlobalScriptsSchema } from './global-script.schema.js';
 
 // ----- Collision Mode -----
 
@@ -89,6 +90,8 @@ const backupGlobalScriptsSchema = z.object({
   undeploy: z.string(),
   preprocessor: z.string(),
   postprocessor: z.string(),
+  // Optional: backups taken before languages were stored restore as JavaScript.
+  languages: updateGlobalScriptsSchema.shape.languages,
 });
 
 const backupResourceSchema = z.object({

@@ -73,3 +73,13 @@ describe('channelImportSchema connector types', () => {
     expect(message).toContain('EMAIL');
   });
 });
+
+describe('channelImportSchema script languages', () => {
+  it('reads an unknown language as JavaScript, as stored rows do, instead of refusing the whole file', () => {
+    const channel = { ...entry('TCP_MLLP', []), scripts: [{ scriptType: 'DEPLOY', script: 'x', language: 'PYTHON' }, { scriptType: 'UNDEPLOY', script: 'y', language: 'TYPESCRIPT' }, { scriptType: 'PREPROCESSOR', script: 'z' }] };
+    const result = channelImportSchema.safeParse(importFile([channel]));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.channels[0]!.scripts.map((s) => s.language)).toEqual(['JAVASCRIPT', 'TYPESCRIPT', undefined]);
+  });
+});

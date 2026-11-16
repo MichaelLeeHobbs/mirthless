@@ -9,20 +9,26 @@ import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import type { ScriptLanguageCode } from '@galvaniflow/core-models';
 import { ScriptEditor } from '../editors/ScriptEditor.js';
 
+// Deploy and undeploy run without a message, so msg is not typed there.
 const SCRIPT_SECTIONS = [
-  { key: 'deploy', label: 'Deploy Script', description: 'Runs when the channel is deployed' },
-  { key: 'undeploy', label: 'Undeploy Script', description: 'Runs when the channel is undeployed' },
-  { key: 'preprocessor', label: 'Preprocessor', description: 'Runs before each message enters the channel' },
-  { key: 'postprocessor', label: 'Postprocessor', description: 'Runs after all destinations have processed' },
+  { key: 'deploy', label: 'Deploy Script', description: 'Runs when the channel is deployed', surface: { message: false, templateContext: 'CHANNEL_DEPLOY' } },
+  { key: 'undeploy', label: 'Undeploy Script', description: 'Runs when the channel is undeployed', surface: { message: false, templateContext: 'CHANNEL_UNDEPLOY' } },
+  { key: 'preprocessor', label: 'Preprocessor', description: 'Runs before each message enters the channel', surface: { templateContext: 'CHANNEL_PREPROCESSOR' } },
+  { key: 'postprocessor', label: 'Postprocessor', description: 'Runs after all destinations have processed', surface: { templateContext: 'CHANNEL_POSTPROCESSOR' } },
 ] as const;
 
-interface ScriptsFormValues {
+type ScriptKey = typeof SCRIPT_SECTIONS[number]['key'];
+
+export interface ScriptsFormValues {
   deploy: string;
   undeploy: string;
   preprocessor: string;
   postprocessor: string;
+  /** The language each script is written in. */
+  languages: Record<ScriptKey, ScriptLanguageCode>;
 }
 
 interface ScriptsTabProps {
@@ -31,8 +37,11 @@ interface ScriptsTabProps {
 }
 
 export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
-  const handleScriptChange = (key: keyof ScriptsFormValues, value: string | undefined): void => {
+  const handleScriptChange = (key: ScriptKey, value: string | undefined): void => {
     onChange({ ...scripts, [key]: value ?? '' });
+  };
+  const handleLanguageChange = (key: ScriptKey, language: ScriptLanguageCode): void => {
+    onChange({ ...scripts, languages: { ...scripts.languages, [key]: language } });
   };
 
   return (
@@ -47,11 +56,17 @@ export function ScriptsTab({ scripts, onChange }: ScriptsTabProps): ReactNode {
               {section.description}
             </Typography>
           </AccordionSummary>
-          <AccordionDetails sx={{ p: 0 }}>
+          <AccordionDetails sx={{ px: { xs: 1, sm: 2 }, pt: 0, pb: 2 }}>
             <ScriptEditor
-              height="250px"
+              height="auto"
+              label={section.label}
+              showLabel={false}
+              surface={section.surface}
+              testKind="script"
               value={scripts[section.key]}
               onChange={(value) => { handleScriptChange(section.key, value); }}
+              language={scripts.languages[section.key]}
+              onLanguageChange={(language) => { handleLanguageChange(section.key, language); }}
               showLanguageToggle
             />
           </AccordionDetails>

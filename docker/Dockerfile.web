@@ -7,6 +7,8 @@ WORKDIR /app
 # Stage 2: Install dependencies
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# pnpm-workspace.yaml names dependency patches; install fails without them.
+COPY patches/ patches/
 COPY packages/core-models/package.json packages/core-models/
 COPY packages/core-util/package.json packages/core-util/
 COPY packages/web/package.json packages/web/

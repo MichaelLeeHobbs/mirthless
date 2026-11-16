@@ -11,10 +11,8 @@ import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import { DiffEditor } from '@monaco-editor/react';
 import { useChannelRevision } from '../../hooks/use-channel-revisions.js';
-import { useUiStore } from '../../stores/ui.store.js';
+import { CodeDiffEditor } from '../editors/CodeDiffEditor.js';
 
 interface Props {
   readonly channelId: string;
@@ -28,7 +26,6 @@ interface Props {
 export function RevisionDiffView({ channelId, leftRev, rightRev, open, onBack, onClose }: Props): ReactNode {
   const { data: leftData, isLoading: leftLoading } = useChannelRevision(channelId, leftRev);
   const { data: rightData, isLoading: rightLoading } = useChannelRevision(channelId, rightRev);
-  const themeMode = useUiStore((state) => state.themeMode);
 
   const isLoading = leftLoading || rightLoading;
 
@@ -40,39 +37,20 @@ export function RevisionDiffView({ channelId, leftRev, rightRev, open, onBack, o
       <DialogTitle>
         Compare Revisions: {String(leftRev)} vs {String(rightRev)}
       </DialogTitle>
-      <DialogContent sx={{ p: 0 }}>
+      <DialogContent>
         {isLoading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
             <CircularProgress />
           </Box>
         ) : (
-          <Box sx={{ height: '70vh' }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', px: 2, py: 1, bgcolor: 'action.hover' }}>
-              <Typography variant="body2" sx={{
-                color: 'text.secondary'
-              }}>
-                Revision {String(leftRev)}
-              </Typography>
-              <Typography variant="body2" sx={{
-                color: 'text.secondary'
-              }}>
-                Revision {String(rightRev)}
-              </Typography>
-            </Box>
-            <DiffEditor
-              height="calc(70vh - 40px)"
-              language="json"
-              original={leftText}
-              modified={rightText}
-              theme={themeMode === 'dark' ? 'vs-dark' : 'light'}
-              options={{
-                readOnly: true,
-                renderSideBySide: true,
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-              }}
-            />
-          </Box>
+          <CodeDiffEditor
+            label={`Revision ${String(leftRev)} compared with revision ${String(rightRev)}`}
+            originalLabel={`Revision ${String(leftRev)}`}
+            modifiedLabel={`Revision ${String(rightRev)}`}
+            original={leftText}
+            modified={rightText}
+            height="62vh"
+          />
         )}
       </DialogContent>
       <DialogActions>

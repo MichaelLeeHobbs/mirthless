@@ -5,22 +5,16 @@
 // Used by both source and destination transformer sections.
 
 import { type ReactNode, type ChangeEvent } from 'react';
-import Accordion from '@mui/material/Accordion';
-import AccordionSummary from '@mui/material/AccordionSummary';
-import AccordionDetails from '@mui/material/AccordionDetails';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
-import IconButton from '@mui/material/IconButton';
-import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import DeleteIcon from '@mui/icons-material/Delete';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { ScriptEditor } from '../../editors/ScriptEditor.js';
+import { ItemOrderActions } from './ItemOrderActions.js';
+import { ItemCard } from './ItemCard.js';
+import { FILTER_TRANSFORMER_SURFACE, type ScriptStage } from '../../editors/script-context.js';
 import type { TransformerStepFormValues } from './types.js';
 
 interface TransformerStepEditorProps {
@@ -31,9 +25,12 @@ interface TransformerStepEditorProps {
   readonly onRemove: () => void;
   readonly onMoveUp: () => void;
   readonly onMoveDown: () => void;
+  /** Source steps can choose destinations; the stage also picks the code templates offered. */
+  readonly stage?: ScriptStage;
 }
 
 export function TransformerStepEditor({
+  stage = 'source',
   step,
   index,
   total,
@@ -44,37 +41,17 @@ export function TransformerStepEditor({
 }: TransformerStepEditorProps): ReactNode {
   const title = step.name || `Step ${String(index + 1)}`;
   const typeLabel =
-    step.type === 'JAVASCRIPT' ? 'JavaScript' :
+    step.type === 'JAVASCRIPT' ? `Script · ${step.language === 'TYPESCRIPT' ? 'TypeScript' : 'JavaScript'}` :
     step.type === 'MAPPER' ? 'Mapper' : 'Message Builder';
 
-  return (
-    <Accordion disableGutters>
-      <AccordionSummary
-        expandIcon={<ExpandMoreIcon />}
-        sx={{ '& .MuiAccordionSummary-content': { alignItems: 'center', gap: 1 } }}
-      >
-        <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>{title}</Typography>
-        <Typography
-          variant="caption"
-          sx={{
-            color: 'text.secondary',
-            mr: 1
-          }}>
-          {typeLabel}
-        </Typography>
-        {!step.enabled ? (
-          <Typography
-            variant="caption"
-            sx={{
-              color: 'warning.main',
-              mr: 1
-            }}>
-            Disabled
-          </Typography>
-        ) : null}
-      </AccordionSummary>
-      <AccordionDetails>
-        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+  const summary = (
+    <>
+      {typeLabel}
+      {!step.enabled ? <Box component="span" sx={{ color: 'warning.main', ml: 1 }}>Disabled</Box> : null}
+    </>
+  );
+  const settings = (
+        <>
           <TextField
             label="Name"
             value={step.name}
@@ -92,7 +69,8 @@ export function TransformerStepEditor({
             size="small"
             sx={{ minWidth: 170 }}
           >
-            <MenuItem value="JAVASCRIPT">JavaScript</MenuItem>
+            {/* JAVASCRIPT is the stored name for any script step, JavaScript or TypeScript. */}
+            <MenuItem value="JAVASCRIPT">Script</MenuItem>
             {/* The engine cannot run Mapper steps, so it is only listed for a step that already is one. */}
             {step.type === 'MAPPER' ? <MenuItem value="MAPPER">Mapper (not supported)</MenuItem> : null}
             <MenuItem value="MESSAGE_BUILDER">Message Builder</MenuItem>
@@ -107,17 +85,28 @@ export function TransformerStepEditor({
             }
             label="Enabled"
           />
-        </Box>
+          <ItemOrderActions noun="step" index={index} total={total} onMoveUp={onMoveUp} onMoveDown={onMoveDown} onRemove={onRemove} />
+        </>
+  );
+
+  return (
+    <ItemCard title={title} summary={summary} settings={settings}>
 
         {step.type === 'MAPPER' && step.enabled ? (
           <Alert severity="error" sx={{ mb: 2 }}>
             The engine cannot run Mapper steps, and the channel will not deploy while this step is enabled.
-            Change the type to JavaScript and write the mapping as a script, or disable the step.
+            Change the type to Script and write the mapping as code, or disable the step.
           </Alert>
         ) : null}
         {step.type === 'JAVASCRIPT' || step.type === 'MESSAGE_BUILDER' ? (
           <ScriptEditor
-            height="200px"
+            height="auto"
+            showLabel={false}
+            label={`${step.name || 'Step'} script`}
+            surface={FILTER_TRANSFORMER_SURFACE[stage]}
+            testKind="transformer"
+            language={step.language}
+            onLanguageChange={(language) => { onChange({ language }); }}
             value={step.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
             showLanguageToggle
@@ -161,19 +150,6 @@ export function TransformerStepEditor({
             </TextField>
           </Box>
         )}
-
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 0.5 }}>
-          <IconButton size="small" onClick={onMoveUp} disabled={index === 0} title="Move up">
-            <ArrowUpwardIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={onMoveDown} disabled={index === total - 1} title="Move down">
-            <ArrowDownwardIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={onRemove} title="Remove step">
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      </AccordionDetails>
-    </Accordion>
+    </ItemCard>
   );
 }

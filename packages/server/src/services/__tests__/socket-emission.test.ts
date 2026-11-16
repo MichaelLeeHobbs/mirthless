@@ -63,6 +63,19 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
+// Deploy type-checks TypeScript scripts with these; they read the database.
+vi.mock('../global-script.service.js', () => ({
+  GlobalScriptService: {
+    getAll: vi.fn().mockResolvedValue({
+      ok: true, error: null,
+      value: { deploy: '', undeploy: '', preprocessor: '', postprocessor: '', languages: { deploy: 'JAVASCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' } },
+    }),
+  },
+}));
+vi.mock('../code-template.service.js', () => ({
+  CodeTemplateService: { listTemplatesForChannel: vi.fn().mockResolvedValue({ ok: true, value: [], error: null }) },
+}));
+
 // ----- Mock DB (for MessageService) -----
 
 const mockInsertValues = vi.fn().mockResolvedValue(undefined);
@@ -108,6 +121,8 @@ const CHANNEL_DETAIL = {
   inboundDataType: 'HL7V2',
   destinations: [],
   scripts: [],
+  filters: [],
+  transformers: [],
 };
 
 function ok<T>(value: T): Result<T> {

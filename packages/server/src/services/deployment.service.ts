@@ -17,6 +17,29 @@ import { configLookup, resolveConfigReferences } from '../lib/config-references.
 import { getEngine } from '../engine.js';
 import type { DeployedChannel, SourceDispatchOutcome } from '../engine.js';
 import logger from '../lib/logger.js';
+import { CodeTemplateService } from './code-template.service.js';
+import { assertScriptsTypeCheck } from './script-type-gate.service.js';
+
+/**
+ * Refuse a channel whose TypeScript scripts have type errors. Runs before
+ * anything is torn down, so a refused redeploy leaves the channel running.
+ * Results are cached, so a redeploy's second check costs nothing.
+ */
+async function typeCheckChannel(channel: ChannelDetail): Promise<void> {
+  const templates = await CodeTemplateService.listTemplatesForChannel(channel.id);
+  if (!templates.ok) throw templates.error;
+  await assertScriptsTypeCheck(channel, templates.value);
+}
+
+/** Options for a deploy. */
+export interface DeployOptions {
+  /**
+   * Refuse a channel with TypeScript type errors (default true). The startup
+   * auto-deploy turns it off and does not check at all: a channel that was
+   * running must come back after a restart, and the check would only cost time.
+   */
+  readonly typeCheck?: boolean;
+}
 
 // ----- Types -----
 
@@ -63,7 +86,7 @@ async function withConfigReferences(channel: ChannelDetail): Promise<ChannelDeta
 
 export class DeploymentService {
   /** Deploy a channel (loads config and initializes connectors). */
-  static async deploy(channelId: string, context?: AuditContext): Promise<Result<ChannelStatus>> {
+  static async deploy(channelId: string, context?: AuditContext, options: DeployOptions = {}): Promise<Result<ChannelStatus>> {
     return tryCatch(async () => {
       const channelResult = await ChannelService.getById(channelId);
       if (!channelResult.ok) {
@@ -104,6 +127,8 @@ export class DeploymentService {
           );
         }
       }
+
+      if (options.typeCheck !== false) await typeCheckChannel(channel);
 
       await engine.deploy(deployChannel);
 
@@ -184,6 +209,7 @@ export class DeploymentService {
         const saved = await ChannelService.getById(channelId);
         if (!saved.ok) throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
         await engine.checkScripts(saved.value);
+        await typeCheckChannel(saved.value);
 
         if (priorState === 'STARTED' || priorState === 'PAUSED') {
           const stopResult = await DeploymentService.stop(channelId, context);
@@ -395,7 +421,7 @@ export class DeploymentService {
     }, 'Auto-deploying enabled channels');
 
     for (const ch of channels) {
-      const deployResult = await DeploymentService.deploy(ch.id);
+      const deployResult = await DeploymentService.deploy(ch.id, undefined, { typeCheck: false });
       if (!deployResult.ok) {
         logger.error({ channelId: ch.id, channelName: ch.name, errMsg: deployResult.error.message }, 'Failed to auto-deploy channel');
         continue;

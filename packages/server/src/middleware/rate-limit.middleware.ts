@@ -3,7 +3,7 @@
 // ===========================================
 // Protects against brute force attacks.
 
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 // ===========================================
 // Auth Rate Limiter
@@ -40,6 +40,25 @@ export const refreshRateLimiter = rateLimit({
   message: {
     success: false,
     error: { code: 'RATE_LIMITED', message: 'Too many token refreshes. Please slow down.' },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ===========================================
+// Script Test Run Rate Limiter
+// ===========================================
+// A test run starts a worker and runs user code for up to 5 seconds, and runs
+// one at a time per server, so a burst of Run clicks should slow down rather
+// than queue. Counted per signed-in user (IP when there is none).
+
+export const testRunRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: isProduction ? 30 : 1000,
+  keyGenerator: (req) => (req as { user?: { id?: string } }).user?.id ?? ipKeyGenerator(req.ip ?? ''),
+  message: {
+    success: false,
+    error: { code: 'RATE_LIMITED', message: 'Too many test runs. Wait a minute and try again.' },
   },
   standardHeaders: true,
   legacyHeaders: false,

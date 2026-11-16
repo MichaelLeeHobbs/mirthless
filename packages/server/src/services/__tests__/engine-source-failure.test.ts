@@ -116,6 +116,9 @@ beforeEach(() => {
   alertOnSourceErrors();
 });
 
+/** Generous, so a loaded machine cannot fail a wait that would succeed (#125). */
+const WAIT = { timeout: 10_000 };
+
 describe('EngineManager source failure', () => {
   it('stops the channel, records an ERROR event and raises a SOURCE_CONNECTOR alert', async () => {
     const engine = new EngineManager('test-server');
@@ -126,14 +129,14 @@ describe('EngineManager source failure', () => {
 
     source.fatal?.(new Error('Kafka source stopped: the channel could not store the record at offset 7 after 5 attempts'));
 
-    await vi.waitFor(() => { expect(deployed.runtime.getState()).toBe('STOPPED'); });
+    await vi.waitFor(() => { expect(deployed.runtime.getState()).toBe('STOPPED'); }, WAIT);
     expect(sourceMock.onStop).toHaveBeenCalledTimes(1);
     expect(events.emitEvent).toHaveBeenCalledWith(expect.objectContaining({
       level: 'ERROR', name: 'CHANNEL_STOPPED', outcome: 'FAILURE', channelId: CHANNEL_ID,
       attributes: expect.objectContaining({ reason: 'SOURCE_FAILED', error: expect.stringContaining('offset 7') }),
     }));
     expect(events.emitToAll).toHaveBeenCalledWith('channel:state', { channelId: CHANNEL_ID, state: 'STOPPED' });
-    await vi.waitFor(() => { expect(alerts.sendMail).toHaveBeenCalledTimes(1); });
+    await vi.waitFor(() => { expect(alerts.sendMail).toHaveBeenCalledTimes(1); }, WAIT);
     expect(alerts.sendMail.mock.calls[0]?.[2]).toContain('offset 7');
     await engine.dispose();
   });

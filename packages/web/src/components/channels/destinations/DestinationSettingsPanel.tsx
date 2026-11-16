@@ -91,7 +91,7 @@ export function DestinationSettingsPanel({ destination, onChange }: DestinationS
         sx={{ mb: 2, display: 'block' }}
       />
 
-      <Divider sx={{ my: 3 }} />
+      <Divider sx={{ my: 2 }} />
 
       {/* Connector-specific settings */}
       <DestinationConnectorSettings
@@ -100,31 +100,27 @@ export function DestinationSettingsPanel({ destination, onChange }: DestinationS
         onChange={(properties) => { onChange({ properties }); }}
       />
 
-      <Divider sx={{ my: 3 }} />
+      <Divider sx={{ my: 2 }} />
 
-      {/* Filter settings */}
-      <DestinationFilterSection
-        filter={destination.filter}
-        onChange={(filter) => { onChange({ filter }); }}
-      />
+      {/* Filter, transformer and response transformer are bordered cards: a gap separates them, not a divider. */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <DestinationFilterSection
+          filter={destination.filter}
+          onChange={(filter) => { onChange({ filter }); }}
+        />
+        <DestinationTransformerSection
+          transformer={destination.transformer}
+          onChange={(transformer) => { onChange({ transformer }); }}
+        />
+        <ResponseTransformerSection
+          value={destination.responseTransformer}
+          onChange={(responseTransformer) => { onChange({ responseTransformer }); }}
+          language={destination.responseTransformerLanguage}
+          onLanguageChange={(responseTransformerLanguage) => { onChange({ responseTransformerLanguage }); }}
+        />
+      </Box>
 
-      <Divider sx={{ my: 3 }} />
-
-      {/* Transformer settings */}
-      <DestinationTransformerSection
-        transformer={destination.transformer}
-        onChange={(transformer) => { onChange({ transformer }); }}
-      />
-
-      <Divider sx={{ my: 3 }} />
-
-      {/* Response transformer (single script) */}
-      <ResponseTransformerSection
-        value={destination.responseTransformer}
-        onChange={(responseTransformer) => { onChange({ responseTransformer }); }}
-      />
-
-      <Divider sx={{ my: 3 }} />
+      <Divider sx={{ my: 2 }} />
 
       {/* Queue settings */}
       <QueueSettingsSection destination={destination} onChange={onChange} />

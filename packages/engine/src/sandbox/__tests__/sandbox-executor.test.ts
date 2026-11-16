@@ -215,17 +215,22 @@ describe('VmSandboxExecutor', () => {
 
   describe('per-script time limit', () => {
     it('stops a script waiting on slow IO at its own timeout, even when the caller passes a longer-lived signal', async () => {
+      let answered = false;
       const slow = new VmSandboxExecutor({
-        httpFetch: () => new Promise((resolve) => { setTimeout(() => { resolve({ status: 200, headers: {}, body: 'late' }); }, 400); }),
+        httpFetch: () => new Promise((resolve) => {
+          setTimeout(() => { answered = true; resolve({ status: 200, headers: {}, body: 'late' }); }, 400);
+        }),
       });
       const script = makeScript("await httpFetch('https://example.com'); return 'finished';");
-      const started = Date.now();
 
       const result = await slow.execute(script, makeContext(), { timeout: 50, signal: new AbortController().signal });
 
       expect(result.ok).toBe(false);
-      expect(result.ok ? '' : result.error.message).toBe('Script execution timed out');
-      expect(Date.now() - started).toBeLessThan(300);
+      // V8 adds "after Nms" when its own timer stops the script first, as it can on a loaded machine (#125).
+      expect(result.ok ? '' : result.error.message).toMatch(/^Script execution timed out/);
+      // The 50ms limit's timer was set before the 400ms one, so it always fires first: the run
+      // ended without waiting for the IO. Checking this, not the elapsed time, keeps the test off the clock.
+      expect(answered).toBe(false);
     });
 
     it('still stops when the caller cancels first', async () => {

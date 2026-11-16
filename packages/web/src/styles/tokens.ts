@@ -133,3 +133,37 @@ const light: ModeColors = {
 export function colorsForMode(mode: PaletteMode): ModeColors {
   return mode === 'dark' ? dark : light;
 }
+
+/**
+ * Syntax colours for the code editor. Hues stay clear of the status colours
+ * (green, amber, red) so a squiggle or marker is never mistaken for syntax.
+ */
+export interface SyntaxColors {
+  readonly keyword: string;
+  readonly string: string;
+  readonly number: string;
+  readonly comment: string;
+  readonly type: string;
+  readonly func: string;
+  readonly regexp: string;
+  /** HL7 segment names (MSH, PID). */
+  readonly segment: string;
+  /** HL7 delimiters (| ^ ~ \ &). */
+  readonly delimiter: string;
+}
+
+const SYNTAX: Readonly<Record<PaletteMode, SyntaxColors>> = {
+  dark: {
+    keyword: '#c4b5fd', string: '#5eead4', number: '#fdba74', comment: '#7c89a3', type: '#7dd3fc',
+    func: '#a5b4fc', regexp: '#f9a8d4', segment: '#7dd3fc', delimiter: '#7c89a3',
+  },
+  light: {
+    keyword: '#6d28d9', string: '#0f766e', number: '#c2410c', comment: '#64748b', type: '#0369a1',
+    func: '#4338ca', regexp: '#be185d', segment: '#0369a1', delimiter: '#94a3b8',
+  },
+};
+
+/** Syntax colours for a palette mode. */
+export function syntaxForMode(mode: PaletteMode): SyntaxColors {
+  return SYNTAX[mode];
+}

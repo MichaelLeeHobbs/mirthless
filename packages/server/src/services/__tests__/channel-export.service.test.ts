@@ -132,8 +132,30 @@ describe('ChannelExportService.exportChannel', () => {
     if (result.ok) {
       const exported = result.value.channels[0];
       expect(exported?.scripts).toHaveLength(2);
-      expect(exported?.scripts[0]).toEqual({ scriptType: 'DEPLOY', script: '' });
+      // A script stored before languages existed exports as JavaScript.
+      expect(exported?.scripts[0]).toEqual({ scriptType: 'DEPLOY', script: '', language: 'JAVASCRIPT' });
     }
+  });
+
+  it('exports each script language and the destination response transformer, so import keeps them', async () => {
+    const detail = makeChannelDetail();
+    const withTs = {
+      ...detail,
+      scripts: [{ id: 's', scriptType: 'PREPROCESSOR', script: 'return rawData;', language: 'TYPESCRIPT' }],
+      destinations: detail.destinations.map((d) => ({
+        ...d, responseTransformer: 'return msg;', responseTransformerLanguage: 'TYPESCRIPT',
+      })),
+    };
+    mockGetById.mockResolvedValue({ ok: true, value: withTs as never, error: null });
+
+    const result = await ChannelExportService.exportChannel('ch-001');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const exported = result.value.channels[0];
+    expect(exported?.scripts[0]?.language).toBe('TYPESCRIPT');
+    expect(exported?.destinations[0]?.responseTransformer).toBe('return msg;');
+    expect(exported?.destinations[0]?.responseTransformerLanguage).toBe('TYPESCRIPT');
   });
 
   it('includes destinations in export', async () => {

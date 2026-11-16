@@ -31,15 +31,15 @@ export function SourceTab({
         onChange={onPropertiesChange}
       />
 
-      <Divider sx={{ my: 3 }} />
+      <Divider sx={{ my: 2 }} />
 
-      <SourceFilterSection filter={sourceFilter} onChange={onSourceFilterChange} />
+      {/* Filter and transformer are bordered cards: a gap separates them, not a divider. */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <SourceFilterSection filter={sourceFilter} onChange={onSourceFilterChange} />
+        <SourceTransformerSection transformer={sourceTransformer} onChange={onSourceTransformerChange} />
+      </Box>
 
-      <Divider sx={{ my: 3 }} />
-
-      <SourceTransformerSection transformer={sourceTransformer} onChange={onSourceTransformerChange} />
-
-      <Divider sx={{ my: 3 }} />
+      <Divider sx={{ my: 2 }} />
 
       <ResponseSettingsSection control={control} errors={errors} />
     </Box>

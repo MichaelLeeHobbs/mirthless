@@ -6,7 +6,7 @@
 // WebSocket events for instant cache invalidation.
 // Supports tag filtering and grouped view toggle.
 
-import { useState, useMemo, useCallback, type ReactNode } from 'react';
+import { lazy, Suspense, useState, useMemo, useCallback, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Skeleton from '@mui/material/Skeleton';
 import Button from '@mui/material/Button';
@@ -37,7 +37,9 @@ import { ChannelStatusTable } from '../components/dashboard/ChannelStatusTable.j
 import { TagFilter } from '../components/dashboard/TagFilter.js';
 import { GroupedChannelTable } from '../components/dashboard/GroupedChannelTable.js';
 import { BulkActionsToolbar } from '../components/dashboard/BulkActionsToolbar.js';
-import { SendMessageDialog } from '../components/common/SendMessageDialog.js';
+// The dialog's message editor is Monaco (several MB). The dashboard is the first
+// page after sign-in, so the dialog loads only when someone opens it.
+const SendMessageDialog = lazy(async () => ({ default: (await import('../components/common/SendMessageDialog.js')).SendMessageDialog }));
 import { CreateGroupDialog } from '../components/dashboard/CreateGroupDialog.js';
 import { ColumnsButton } from '../components/dashboard/ColumnsButton.js';
 import { useChannelSelection } from '../hooks/use-channel-selection.js';
@@ -281,12 +283,14 @@ export function DashboardPage(): ReactNode {
       )}
       <BulkActionsToolbar selectedIds={selection.selectedIds} onClear={selection.clearAll} />
       {sendMessageTarget ? (
-        <SendMessageDialog
-          open
-          onClose={() => { setSendMessageTarget(null); }}
-          channelId={sendMessageTarget.id}
-          channelName={sendMessageTarget.name}
-        />
+        <Suspense fallback={null}>
+          <SendMessageDialog
+            open
+            onClose={() => { setSendMessageTarget(null); }}
+            channelId={sendMessageTarget.id}
+            channelName={sendMessageTarget.name}
+          />
+        </Suspense>
       ) : null}
       <CreateGroupDialog
         open={createGroupOpen}

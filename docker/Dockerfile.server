@@ -7,6 +7,8 @@ WORKDIR /app
 # Stage 2: Install dependencies
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# pnpm-workspace.yaml names dependency patches; install fails without them.
+COPY patches/ patches/
 COPY packages/core-models/package.json packages/core-models/
 COPY packages/core-util/package.json packages/core-util/
 COPY packages/engine/package.json packages/engine/
@@ -31,6 +33,8 @@ RUN pnpm run -r build
 # is intentionally absent from the runtime layer.
 FROM base AS prod-deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# pnpm-workspace.yaml names dependency patches; install fails without them.
+COPY patches/ patches/
 COPY packages/core-models/package.json packages/core-models/
 COPY packages/core-util/package.json packages/core-util/
 COPY packages/engine/package.json packages/engine/
