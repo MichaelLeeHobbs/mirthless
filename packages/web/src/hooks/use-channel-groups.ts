@@ -118,6 +118,30 @@ export function useDeleteChannelGroup(): ReturnType<typeof useMutation<void, Err
   });
 }
 
+/** The input to {@link useSetChannelGroups}: the channel and every group it should belong to. */
+export interface SetChannelGroupsVars {
+  readonly channelId: string;
+  readonly groupIds: readonly string[];
+}
+
+/**
+ * Replace a channel's group memberships in one server call, which the server
+ * runs in one transaction: either every change lands or none does (#223).
+ */
+export function useSetChannelGroups(): ReturnType<typeof useMutation<void, Error, SetChannelGroupsVars>> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ channelId, groupIds }: SetChannelGroupsVars) => {
+      const result = await api.put<unknown>(`/channels/${channelId}/groups`, { groupIds });
+      if (!result.success) throw new Error(result.error.message);
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: GROUP_KEYS.all });
+    },
+  });
+}
+
 export function useAddGroupMember(): ReturnType<typeof useMutation<void, Error, { groupId: string; channelId: string }>> {
   const queryClient = useQueryClient();
 

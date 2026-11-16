@@ -50,13 +50,16 @@ import type { TagSummary } from '../../hooks/use-tags.js';
 import { TagChips } from '../common/TagChips.js';
 import type { ChannelGroupSummary } from '../../hooks/use-channel-groups.js';
 import type { GroupMembership } from '../../hooks/use-channel-groups.js';
-import { useUpdateChannelGroup, useDeleteChannelGroup, useAddGroupMember, useRemoveGroupMember } from '../../hooks/use-channel-groups.js';
+import { useUpdateChannelGroup, useDeleteChannelGroup, useSetChannelGroups } from '../../hooks/use-channel-groups.js';
 import { useDeploymentAction } from '../../hooks/use-deployment.js';
+import { usePermissions } from '../../hooks/use-permissions.js';
+import { PERMISSION } from '../../lib/permissions.js';
 import { ChannelContextMenu } from '../common/ChannelContextMenu.js';
 import { AssignGroupDialog } from '../common/AssignGroupDialog.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
 import { useContextMenu } from '../../hooks/use-context-menu.js';
 import { useNotification } from '../../stores/notification.store.js';
+import { errorMessage } from '../../lib/error-message.js';
 import { ChannelStateChip, StatusDot } from '../common/StatusChip.js';
 import { channelStateLevel } from '../../lib/status.js';
 import { DASHBOARD_COLUMNS, DEFAULT_VISIBLE_COLUMNS, type DashboardColumnId } from '../../lib/dashboard-columns.js';
@@ -113,20 +116,26 @@ function sumTotals(channels: readonly ChannelRow[]): { received: number; filtere
   return { received, filtered, sent, errored, queued };
 }
 
-/** A channel row that can be dragged (by its handle) into another group. */
-function DraggableChannelRow({ channelId, fromGroupId, onContextMenu, children }: {
+/**
+ * A channel row that can be dragged (by its handle) into another group. The
+ * handle shows only when `canDrag`, for a user who may change groups.
+ */
+function DraggableChannelRow({ channelId, fromGroupId, canDrag, onContextMenu, children }: {
   readonly channelId: string;
   readonly fromGroupId: string;
+  readonly canDrag: boolean;
   readonly onContextMenu: (e: React.MouseEvent) => void;
   readonly children: ReactNode;
 }): ReactNode {
-  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: channelId, data: { fromGroupId } });
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: channelId, data: { fromGroupId }, disabled: !canDrag });
   return (
     <TableRow ref={setNodeRef} hover onContextMenu={onContextMenu} sx={{ opacity: isDragging ? 0.4 : 1 }}>
       <TableCell width={40} sx={{ px: 0.5 }}>
-        <IconButton size="small" aria-label="Drag to change group" {...listeners} {...attributes} sx={{ cursor: 'grab', touchAction: 'none' }}>
-          <DragIndicatorIcon fontSize="small" sx={{ color: 'text.disabled' }} />
-        </IconButton>
+        {canDrag ? (
+          <IconButton size="small" aria-label="Drag to change group" {...listeners} {...attributes} sx={{ cursor: 'grab', touchAction: 'none' }}>
+            <DragIndicatorIcon fontSize="small" sx={{ color: 'text.disabled' }} />
+          </IconButton>
+        ) : null}
       </TableCell>
       {children}
     </TableRow>
@@ -173,8 +182,8 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
   const deployAction = useDeploymentAction();
 
   // --- Drag-to-regroup ---
-  const addMember = useAddGroupMember();
-  const removeMember = useRemoveGroupMember();
+  const canChangeGroups = usePermissions().has(PERMISSION.CHANNELS_WRITE);
+  const setChannelGroups = useSetChannelGroups();
   const [dragOverride, setDragOverride] = useState<ReadonlyMap<string, string | null>>(new Map());
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -301,20 +310,17 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     next.set(channelId, targetGroupId);
     setDragOverride(next);
 
+    // One call replaces every membership the channel has (a channel has one group
+    // in the UI, D-126), so a failure leaves it where it was, never in no group.
     void (async () => {
       try {
-        if (fromGroupId !== '__ungrouped__') {
-          await removeMember.mutateAsync({ groupId: fromGroupId, channelId });
-        }
-        if (targetGroupId !== null) {
-          await addMember.mutateAsync({ groupId: targetGroupId, channelId });
-        }
+        await setChannelGroups.mutateAsync({ channelId, groupIds: targetGroupId === null ? [] : [targetGroupId] });
       } catch (err) {
         setDragOverride(prevOverride);
-        notify(err instanceof Error ? err.message : 'Failed to move channel', 'error');
+        notify(errorMessage(err, 'Failed to move channel'), 'error');
       }
     })();
-  }, [dragOverride, removeMember, addMember, notify]);
+  }, [dragOverride, setChannelGroups, notify]);
 
   const toggleGroup = (groupId: string): void => {
     setCollapsed((prev) => {
@@ -473,6 +479,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                         key={row.channelId}
                         channelId={row.channelId}
                         fromGroupId={section.groupId}
+                        canDrag={canChangeGroups}
                         onContextMenu={(e) => handleContextMenu(e, row)}
                       >
                         <TableCell width={40}>
