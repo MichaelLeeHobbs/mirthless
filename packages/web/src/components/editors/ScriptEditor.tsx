@@ -168,9 +168,12 @@ export function ScriptEditor({
     return () => { action.dispose(); };
   }, [editor, canTest]);
 
-  // The type service holds one set of globals; this editor's surface applies on
-  // mount and whenever it takes focus. While another editor's is applied, this
-  // one shows syntax errors only and says types are checked when focused.
+  // The type service holds one set of globals; this editor's surface applies
+  // whenever it takes focus, and when it changes while this editor has focus or
+  // no editor has (on mount). While another editor's is applied, this one shows
+  // syntax errors only and says types are checked when focused. Applying on
+  // every change made a step whose earlier names changed as the focused step
+  // was typed in take the surface away from it (#228).
   const earlierKey = (earlierNames ?? []).join(',');
   const libs = useMemo(
     () => surfaceLibs(surface, templates ?? [], earlierKey === '' ? [] : earlierKey.split(',')),
@@ -181,7 +184,7 @@ export function ScriptEditor({
   useEffect(() => {
     if (!editor) return undefined;
     const apply = (): void => { applyScriptSurface(libs); };
-    apply();
+    if (editor.hasTextFocus() || !monaco.editor.getEditors().some((e) => e.hasTextFocus())) apply();
     const focus = editor.onDidFocusEditorText(apply);
     return () => { focus.dispose(); };
   }, [editor, libs]);
