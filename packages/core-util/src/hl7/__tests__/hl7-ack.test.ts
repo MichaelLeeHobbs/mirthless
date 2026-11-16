@@ -82,9 +82,15 @@ describe('createAck', () => {
 
     const segments = ackStr.split('\r');
     expect(segments).toHaveLength(3);
-    const errParts = segments[2]!.split('|');
-    expect(errParts[0]).toBe('ERR');
-    expect(errParts[1]).toBe('207');
+    const err = Hl7Message.parse(ackStr);
+    expect(err.getRaw('ERR.1')).toBeUndefined();
+    expect(err.getRaw('ERR.3')).toBe('207^^HL70357');
+    expect(err.get('ERR.4')).toBe('E');
+  });
+
+  it('names the message structure in MSH-9.3 (#187)', () => {
+    const ack = parseAck(createAck(Hl7Message.parse(ADT_A01), { ackCode: 'AA' }));
+    expect(ack.getRaw('MSH.9')).toBe('ACK^A01^ACK');
   });
 
   it('preserves encoding characters from original', () => {
@@ -130,7 +136,7 @@ describe('createAck text escaping', () => {
 
   it('escapes delimiters in the ERR code', () => {
     const ack = createAck(Hl7Message.parse(ORIGINAL), { ackCode: 'AR', errorCode: 'x|y' });
-    expect(ack.split('\r')[2]).toBe('ERR|x\\F\\y');
+    expect(ack.split('\r')[2]).toBe('ERR|||x\\F\\y^^HL70357|E');
   });
 });
 

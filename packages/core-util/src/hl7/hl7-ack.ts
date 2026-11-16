@@ -11,6 +11,7 @@ import { escapeValue } from './hl7-encoding.js';
 export interface AckOptions {
   readonly ackCode: 'AA' | 'AE' | 'AR';
   readonly textMessage?: string;
+  /** An HL7 table 0357 error code (`207` application internal error), written to ERR-3 on AE/AR. */
   readonly errorCode?: string;
 }
 
@@ -56,7 +57,7 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
     sendFac,
     timestamp,
     '',
-    `ACK${enc.componentSep}${original.get('MSH.9.2') ?? ''}`,
+    ['ACK', original.get('MSH.9.2') ?? '', 'ACK'].join(enc.componentSep),
     newControlId(),
     original.getRaw('MSH.11') ?? 'P',
     version,
@@ -76,10 +77,11 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
 
   const segments = [msh, msa];
 
-  // Build ERR segment if error
+  // ERR-3 holds the code (CWE, table 0357) and ERR-4 the severity. ERR-1 is
+  // kept by v2.5 only for backward compatibility, so it stays empty.
   if ((options.ackCode === 'AE' || options.ackCode === 'AR') && options.errorCode) {
-    const err = ['ERR', escapeValue(options.errorCode, enc)].join(enc.fieldSep);
-    segments.push(err);
+    const code = [escapeValue(options.errorCode, enc), '', 'HL70357'].join(enc.componentSep);
+    segments.push(['ERR', '', '', code, 'E'].join(enc.fieldSep));
   }
 
   return segments.join(enc.segmentSep);

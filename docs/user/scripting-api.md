@@ -120,7 +120,10 @@ The returned object exposes:
 
 ### `createACK(originalRaw, ackCode, textMessage?)`
 Builds an HL7 ACK for the original message. `ackCode` is the acknowledgment code
-(e.g. `AA`, `AE`, `AR`); `textMessage` is optional.
+(e.g. `AA`, `AE`, `AR`); `textMessage` is optional and goes in MSA-3. The ACK swaps the
+sending and receiving application and facility, stamps MSH-7 with the UTC offset
+(`20261115143000-0500`), sets MSH-9 to `ACK^<trigger>^ACK`, gives itself a new control id in
+MSH-10 and echoes the original MSH-10 whole in MSA-2.
 
 ```js
 const ack = createACK(rawData, 'AA');
