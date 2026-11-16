@@ -616,9 +616,14 @@ const FILE_SORT_ORDER: Readonly<Record<string, string>> = { name: 'NAME', date: 
 /** A local Mirth File Reader: directory, filter, after-processing action, order and file age. */
 function fileReaderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = { postAction: afterProcessingAction(propsNode), ...localDirectory(propsNode) };
-  for (const [from, to] of [['fileFilter', 'fileFilter'], ['moveToDirectory', 'moveToDirectory']] as const) {
-    const value = getString(propsNode, from);
-    if (value) result[to] = value;
+  const filter = getString(propsNode, 'fileFilter');
+  if (filter) result['fileFilter'] = filter;
+  const moveTo = getString(propsNode, 'moveToDirectory');
+  // On a remote scheme with no connector here, the move-to folder is on the partner's server: no local move.
+  if (fileScheme(propsNode) !== 'FILE') {
+    if (result['postAction'] === 'MOVE') result['postAction'] = 'NONE';
+  } else if (moveTo) {
+    result['moveToDirectory'] = moveTo;
   }
   const sortBy = FILE_SORT_ORDER[getString(propsNode, 'sortBy') ?? ''];
   if (sortBy) result['sortBy'] = sortBy;
@@ -1078,6 +1083,10 @@ function unreadableUrl(url: string): string | null {
   const mode = MYSQL_MULTI_HOST_MODE.exec(url)?.[1]?.toLowerCase();
   if (mode) return `URL uses MySQL's ${mode} mode over several hosts, which GalvaniFlow does not have`;
   if (MULTI_HOST_URL.test(url)) return 'URL lists several hosts, and GalvaniFlow connects to one';
+  if (url.includes('${') && !JDBC_URL.test(url) && !SQLSERVER_URL.test(url)) {
+    // Name only the references: the rest of a URL can carry credentials.
+    return `URL uses ${(url.match(/\$\{[^}]+\}/g) ?? []).join(', ')} where the import needs a host and a database, so it cannot read them`;
+  }
   return null;
 }
 

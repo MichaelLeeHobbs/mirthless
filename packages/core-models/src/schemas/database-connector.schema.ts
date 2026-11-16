@@ -82,18 +82,16 @@ export const databaseDestinationObjectSchema = z.strictObject({
  */
 const MIRTH_IMPORT_KEYS: ReadonlySet<string> = new Set(['url', 'driver']);
 
-/** A source's props with the old importer keys dropped, and its `query` (the importer's SELECT) as `selectQuery` when that is empty. */
-function withoutImportedSourceKeys(value: unknown): unknown {
-  const props = withoutKeys(value, MIRTH_IMPORT_KEYS);
-  if (typeof props !== 'object' || props === null || Array.isArray(props) || !('query' in props)) return props;
-  const { query, ...rest } = props as Record<string, unknown>;
-  const select = rest['selectQuery'];
-  const selectEmpty = typeof select !== 'string' || select.trim() === '';
-  return selectEmpty && typeof query === 'string' ? { ...rest, selectQuery: query } : rest;
-}
+/**
+ * A source also drops the importer's `query` (its SELECT). It is never read as
+ * the select query: a reader with only that never deployed, and starting it
+ * now would run a SELECT nobody sees, with no update query, re-reading the
+ * same rows every poll. It still refuses, naming `selectQuery`.
+ */
+const MIRTH_IMPORT_SOURCE_KEYS: ReadonlySet<string> = new Set([...MIRTH_IMPORT_KEYS, 'query']);
 
 /** The source schema, needing an update query whenever the update mode runs one. */
-export const databaseSourcePropertiesSchema = z.preprocess(withoutImportedSourceKeys, databaseSourceObjectSchema.superRefine((props, ctx) => {
+export const databaseSourcePropertiesSchema = z.preprocess((value) => withoutKeys(value, MIRTH_IMPORT_SOURCE_KEYS), databaseSourceObjectSchema.superRefine((props, ctx) => {
   if (props.updateMode !== 'NEVER' && props.updateQuery.trim() === '') {
     ctx.addIssue({ code: 'custom', path: ['updateQuery'], message: `required when updateMode is ${props.updateMode}` });
   }
