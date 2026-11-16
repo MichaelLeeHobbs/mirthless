@@ -16,9 +16,13 @@ function resetSelectState(): void {
   selectResponses = [];
 }
 
-function pushResponse(value: unknown, opts?: { orderable?: boolean }): void {
+function pushResponse(value: unknown, opts?: { orderable?: boolean; locked?: boolean }): void {
   const orderable = opts?.orderable ?? false;
   selectResponses.push(() => {
+    // The last-admin check: select ... order by id ... for update.
+    if (opts?.locked) {
+      return { orderBy: vi.fn(() => ({ for: vi.fn().mockResolvedValue(value) })) };
+    }
     if (orderable) {
       return Object.assign(Promise.resolve(value), {
         orderBy: vi.fn().mockResolvedValue(value),
@@ -252,6 +256,29 @@ describe('UserService', () => {
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
     });
 
+    it('returns CONFLICT and writes nothing when demoting the last enabled admin', async () => {
+      pushResponse([{ id: ADMIN_ID, role: 'admin' }]); // Existing user
+      pushResponse([{ id: ADMIN_ID }], { locked: true }); // Only this admin is enabled
+
+      const result = await UserService.updateUser(ADMIN_ID, { role: 'viewer' }, OTHER_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it('disables an admin when another enabled admin exists, and revokes their sessions', async () => {
+      pushResponse([{ id: ADMIN_ID, role: 'admin' }]); // Existing user
+      pushResponse([{ id: ADMIN_ID }, { id: OTHER_ID }], { locked: true }); // Another enabled admin
+      pushResponse([makeUser({ id: ADMIN_ID, role: 'admin', enabled: false })]); // getUser
+
+      const result = await UserService.updateUser(ADMIN_ID, { enabled: false }, OTHER_ID);
+
+      expect(result.ok).toBe(true);
+      expect(mockDeleteWhere).toHaveBeenCalled();
+    });
+
     it('returns SELF_ACTION when changing own role', async () => {
       pushResponse([{ id: ADMIN_ID, role: 'admin' }]);
 
@@ -283,7 +310,7 @@ describe('UserService', () => {
 
     it('returns CONFLICT when deleting the last enabled admin', async () => {
       pushResponse([{ id: ADMIN_ID, role: 'admin' }]); // User lookup
-      pushResponse([]); // No OTHER enabled admins
+      pushResponse([{ id: ADMIN_ID }], { locked: true }); // Only this admin is enabled
 
       const result = await UserService.deleteUser(ADMIN_ID, OTHER_ID);
 
@@ -294,7 +321,7 @@ describe('UserService', () => {
 
     it('allows deleting an admin when another enabled admin exists', async () => {
       pushResponse([{ id: ADMIN_ID, role: 'admin' }]); // User lookup
-      pushResponse([{ id: OTHER_ID }]); // Another enabled admin exists
+      pushResponse([{ id: ADMIN_ID }, { id: OTHER_ID }], { locked: true }); // Another enabled admin exists
 
       const result = await UserService.deleteUser(ADMIN_ID, OTHER_ID);
 
