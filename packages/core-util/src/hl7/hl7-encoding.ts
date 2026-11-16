@@ -105,18 +105,35 @@ const WINDOWS_1252_80_9F: readonly number[] = [
   0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178,
 ];
 
-/** Non-fatal, so a malformed byte run becomes U+FFFD; `ignoreBOM` keeps an escaped BOM as U+FEFF. */
-const UTF8_DECODER = new TextDecoder('utf-8', { ignoreBOM: true });
+/** Fatal, so a run that is not valid UTF-8 is refused rather than turned into U+FFFD; `ignoreBOM` keeps an escaped BOM as U+FEFF. */
+const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /**
  * The charset for `\X..\` escapes from MSH-18 (HL7 table 0211). `UNICODE
- * UTF-8` (also `UTF-8` or `UTF8`, in any case) is UTF-8. Anything else,
- * including no MSH-18, `ASCII` and `8859/1`, is read as Windows-1252, as
- * browsers read a `latin1` label.
+ * UTF-8` is UTF-8, in any case and ignoring spaces, `_` and `-`, so
+ * `Unicode_UTF8`, `UTF-8` and `UTF 8` are too. Anything else, including no
+ * MSH-18, `ASCII` and `8859/1`, is read as Windows-1252, as browsers read a
+ * `latin1` label.
  */
 export function hexEscapeCharset(msh18: string | undefined): HexEscapeCharset {
   const name = (msh18 ?? '').toUpperCase().replace(/[\s_-]/g, '');
   return name === 'UNICODEUTF8' || name === 'UTF8' ? 'utf-8' : 'windows-1252';
+}
+
+/** One character per byte: 0x80 to 0x9F as Windows-1252, every other byte as Latin-1. */
+function decodeWindows1252(bytes: readonly number[]): string {
+  return bytes.map((b) => String.fromCharCode(WINDOWS_1252_80_9F[b - 0x80] ?? b)).join('');
+}
+
+/** The run as UTF-8, or undefined when its bytes are not valid UTF-8. */
+function decodeUtf8(bytes: readonly number[]): string | undefined {
+  try {
+    return UTF8_DECODER.decode(Uint8Array.from(bytes));
+  } catch {
+    // A fatal TextDecoder reports invalid bytes only by throwing a TypeError;
+    // the caller then reads the run byte by byte, so no byte is lost.
+    return undefined;
+  }
 }
 
 /** Decode the bytes of a run of `\X..\` escapes (`\XC3\\XA9\` is the bytes C3 A9). */
@@ -127,8 +144,8 @@ function decodeHexRun(run: string, escapeChar: string, charset: HexEscapeCharset
       bytes.push(parseInt(piece.substring(i, i + 2), 16));
     }
   }
-  if (charset === 'utf-8') return UTF8_DECODER.decode(Uint8Array.from(bytes));
-  return bytes.map((b) => String.fromCharCode(WINDOWS_1252_80_9F[b - 0x80] ?? b)).join('');
+  const utf8 = charset === 'utf-8' ? decodeUtf8(bytes) : undefined;
+  return utf8 ?? decodeWindows1252(bytes);
 }
 
 /**
@@ -141,17 +158,19 @@ function decodeHexRun(run: string, escapeChar: string, charset: HexEscapeCharset
  *
  * Adjacent `\X..\` escapes are decoded as one byte run in `charset` (see
  * {@link HexEscapeCharset}), so a UTF-8 character split across two escapes
- * still decodes. Under UTF-8, bytes that are not valid UTF-8 become U+FFFD.
+ * still decodes. Under UTF-8, a run whose bytes are not valid UTF-8 (a lone
+ * Latin-1 byte such as `\XE9\`) is read byte by byte as Windows-1252 instead.
  */
 export function unescapeValue(value: string, enc: Hl7Encoding, charset: HexEscapeCharset = 'windows-1252'): string {
   const e = escapeRegex(enc.escapeChar);
   const single: Readonly<Record<string, string>> = {
     E: enc.escapeChar, F: enc.fieldSep, S: enc.componentSep, T: enc.subComponentSep, R: enc.repetitionSep,
   };
-  const pattern = new RegExp(`${e}([EFSTR])${e}|((?:${e}X(?:[0-9A-Fa-f]{2})+${e})+)`, 'g');
-  return value.replace(pattern, (match, code: string | undefined, run: string | undefined) => {
+  const pattern = new RegExp(`${e}([EFSTR])${e}|(?:${e}X(?:[0-9A-Fa-f]{2})+${e})+`, 'g');
+  return value.replace(pattern, (match: string, code: string | undefined) => {
+    // The second alternative is the only other way to match, so a match without a code is a hex run.
     if (code !== undefined) return single[code] ?? match;
-    return run === undefined ? match : decodeHexRun(run, enc.escapeChar, charset);
+    return decodeHexRun(match, enc.escapeChar, charset);
   });
 }
 
