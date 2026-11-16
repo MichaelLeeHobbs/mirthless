@@ -10,7 +10,7 @@ import { CodeTemplateService } from './code-template.service.js';
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq } from 'drizzle-orm';
 import type { ScriptLanguageCode, UpdateGlobalScriptsInput } from '@galvaniflow/core-models';
-import { DEFAULT_STORED_SCRIPT_LANGUAGE, GLOBAL_SCRIPT_TYPE, toScriptLanguage } from '@galvaniflow/core-models';
+import { GLOBAL_SCRIPT_TYPE, toScriptLanguage } from '@galvaniflow/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { globalScripts } from '../db/schema/index.js';
@@ -36,9 +36,15 @@ const ENTRIES: ReadonlyArray<{ readonly key: string; readonly field: GlobalScrip
 ];
 
 /**
- * Read every global script, with empty strings for missing rows. A script never
- * saved has no row and starts in TypeScript, as the editor starts every new
- * script; a saved one keeps its language even when empty (#183).
+ * The language of a script never saved (no row): TypeScript, as the editor
+ * starts every new script. A save that leaves the language out keeps it, so the
+ * first save stores it too, the language the script was type-checked in (#228).
+ */
+const NEVER_SAVED_LANGUAGE: ScriptLanguageCode = 'TYPESCRIPT';
+
+/**
+ * Read every global script, with empty strings for missing rows. A saved
+ * script keeps its language even when empty (#183).
  */
 async function readAll(): Promise<GlobalScriptsData> {
   const rows = await db.select().from(globalScripts);
@@ -46,7 +52,7 @@ async function readAll(): Promise<GlobalScriptsData> {
   const script = (key: string): string => byType.get(key)?.script ?? '';
   const language = (key: string): ScriptLanguageCode => {
     const row = byType.get(key);
-    return row ? toScriptLanguage(row.language) : 'TYPESCRIPT';
+    return row ? toScriptLanguage(row.language) : NEVER_SAVED_LANGUAGE;
   };
   return {
     deploy: script(GLOBAL_SCRIPT_TYPE.DEPLOY),
@@ -137,7 +143,7 @@ export class GlobalScriptService {
         } else {
           await db
             .insert(globalScripts)
-            .values({ scriptType: entry.key, script: value ?? '', language: language ?? DEFAULT_STORED_SCRIPT_LANGUAGE });
+            .values({ scriptType: entry.key, script: value ?? '', language: language ?? NEVER_SAVED_LANGUAGE });
         }
       }
 
