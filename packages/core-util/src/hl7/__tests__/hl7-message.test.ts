@@ -37,9 +37,21 @@ describe('Hl7Message.parse', () => {
     expect(() => Hl7Message.parse('PID|1||12345')).toThrow('must start with MSH');
   });
 
-  it('throws for an MSH-2 that is not four or five distinct characters', () => {
-    expect(() => Hl7Message.parse('MSH|^~\\|SND|SF|RCV|RF|20260101||ADT^A01|C1|P|2.5\rPID|1||A&B'))
+  it('throws for an MSH-2 that is not three to five distinct characters', () => {
+    expect(() => Hl7Message.parse('MSH|^~|SND|SF|RCV|RF|20260101||ADT^A01|C1|P|2.5\rPID|1||A&B'))
       .toThrow('Invalid MSH-2 encoding characters');
+    expect(() => Hl7Message.parse('MSH|^^\\&|SND|SF|RCV|RF|20260101||ADT^A01|C1|P|2.5'))
+      .toThrow('Invalid MSH-2 encoding characters');
+  });
+
+  it('reads a message whose MSH-2 has no subcomponent character as it did before #187, keeping & literal', () => {
+    const raw = 'MSH|^~\\|SND|SF|RCV|RF|20260101||ADT^A01|C1|P|2.3\rPID|1||123^^^MRN~456^^^SSN||SMITH & SONS^ANN';
+    const msg = Hl7Message.parse(raw);
+    expect(msg.get('MSH.10')).toBe('C1');
+    expect(msg.getRaw('MSH.2')).toBe('^~\\');
+    expect(msg.get('PID.3[2].4')).toBe('SSN');
+    expect(msg.get('PID.5.1')).toBe('SMITH & SONS');
+    expect(msg.toString()).toBe(raw);
   });
 
   it('throws for empty input', () => {

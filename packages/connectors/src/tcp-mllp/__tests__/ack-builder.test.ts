@@ -32,9 +32,15 @@ describe('buildAck', () => {
   });
 
   it('answers a message with an invalid MSH-2 with the fallback ACK, not one built from misread delimiters', () => {
-    const ack = buildAck('MSH|^~\\|SEND|FAC|RECV|RFAC|20240101||ADT^A01|CTRL42|P|2.5.1', 'AE');
+    const ack = buildAck('MSH|^~|SEND|FAC|RECV|RFAC|20240101||ADT^A01|CTRL42|P|2.5.1', 'AE');
     expect(ack).toMatch(/^MSH\|\^~\\&\|\|\|\|\|/);
     expect(ack).toContain('MSA|AE|GF');
+  });
+
+  it('acknowledges a sender whose MSH-2 has no subcomponent character with its own encoding characters', () => {
+    const ack = buildAck('MSH|^~\\|SEND|FAC|RECV|RFAC|20240101||ADT^A01|CTRL42|P|2.3', 'AA');
+    expect(ack.startsWith('MSH|^~\\|RECV|RFAC|SEND|FAC|')).toBe(true);
+    expect(ack.split('\r')[1]).toBe('MSA|AA|CTRL42');
   });
 
   it('includes MSA-3 diagnostic text when provided', () => {

@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { detectEncoding, escapeValue, unescapeValue, type Hl7Encoding } from '../hl7-encoding.js';
+import { detectEncoding, encodingCharsString, escapeValue, unescapeValue, type Hl7Encoding } from '../hl7-encoding.js';
 
 // ----- Helpers -----
 
@@ -47,9 +47,19 @@ describe('detectEncoding', () => {
     expect(() => detectEncoding('')).toThrow('Invalid MSH segment');
   });
 
-  it('refuses an MSH-2 with fewer than four characters rather than reading the field separator as one (#187)', () => {
-    expect(() => detectEncoding('MSH|^~\\|A|B')).toThrow('Invalid MSH-2 encoding characters');
+  it('refuses an MSH-2 with fewer than three characters rather than reading the field separator as one (#187)', () => {
+    expect(() => detectEncoding('MSH|^~|A|B')).toThrow('Invalid MSH-2 encoding characters');
     expect(() => detectEncoding('MSH||A')).toThrow('Invalid MSH-2 encoding characters');
+  });
+
+  it('accepts a three-character MSH-2 with no subcomponent separator, as Mirth reads it', () => {
+    // Some legacy senders omit the fourth character. Nothing inside a field may then be
+    // split at subcomponent level, so the separator is the field separator, which a
+    // field never contains.
+    const enc = detectEncoding('MSH|^~\\|A|B');
+    expect(enc.escapeChar).toBe('\\');
+    expect(enc.subComponentSep).toBe('|');
+    expect(encodingCharsString(enc)).toBe('^~\\');
   });
 
   it('refuses an MSH-2 with more than five characters', () => {

@@ -6,7 +6,7 @@
 
 import { Hl7Message } from './hl7-message.js';
 import { formatTimestamp } from './hl7-timestamp.js';
-import { escapeValue } from './hl7-encoding.js';
+import { encodingCharsString, escapeValue } from './hl7-encoding.js';
 
 export interface AckOptions {
   readonly ackCode: 'AA' | 'AE' | 'AR';
@@ -50,7 +50,8 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
   // Build MSH segment (swap sender/receiver)
   const msh = [
     'MSH',
-    `${enc.componentSep}${enc.repetitionSep}${enc.escapeChar}${enc.subComponentSep}`,
+    // The sender's encoding characters as it sent them (3, 4 or 5), so it reads the ACK with its own rules.
+    original.getRaw('MSH.2') ?? encodingCharsString(enc),
     recvApp,
     recvFac,
     sendApp,
