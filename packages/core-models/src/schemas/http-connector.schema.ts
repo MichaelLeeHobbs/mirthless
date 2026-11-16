@@ -57,6 +57,12 @@ const statusCode = wholeNumberSchema(100, 599);
 /** Name-to-text pairs whose values may use `${name}`. */
 const textMap = z.record(z.string(), z.string());
 
+/**
+ * Request headers as a name-to-value map. Old HTTP and FHIR forms saved them
+ * as `Name: value` lines, read here the way the editor shows them.
+ */
+export const headerMapSchema = z.preprocess((value) => (typeof value === 'string' ? parseHeaderLines(value) : value), textMap);
+
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const httpSourceObjectSchema = z.strictObject({
   host: z.string().default('0.0.0.0'),
@@ -90,7 +96,7 @@ export const httpDestinationObjectSchema = z.strictObject({
   url: z.string().trim().min(1),
   method,
   /** Text from the 2026-03 to 2026-07 editor is read as `Name: value` lines, as the editor shows it. */
-  headers: z.preprocess((value) => (typeof value === 'string' ? parseHeaderLines(value) : value), textMap).default({}),
+  headers: headerMapSchema.default({}),
   parameters: textMap.optional(),
   basicAuth: z.strictObject({ username: z.string(), password: z.string() }).optional(),
   contentType: z.string().default('text/plain'),

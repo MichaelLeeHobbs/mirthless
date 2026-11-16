@@ -31,6 +31,7 @@ import {
   DATABASE_VENDOR,
   createPool,
   createSsh2SftpClient,
+  buildNodemailerOptions,
   validateAuth,
   type DatabasePool,
   type DatabaseVendor,
@@ -417,14 +418,16 @@ const testSmtp: Tester = async (_mode, props) => {
 
   const start = performance.now();
 
+  // The options the connector sends mail with, from the same keys.
   const transport = smtpTransportFactory({
-    host,
-    port,
-    secure: props['secure'] === true,
+    ...buildNodemailerOptions({
+      host,
+      port,
+      secure: props['secure'] === true,
+      requireTLS: props['requireTLS'] === true,
+      auth: { user: optionalString(props, 'authUser') ?? '', pass: optionalString(props, 'authPass') ?? '' },
+    }),
     connectionTimeout: TEST_TIMEOUT_MS,
-    ...(typeof props['user'] === 'string'
-      ? { auth: { user: props['user'], pass: props['password'] } }
-      : {}),
   });
 
   try {

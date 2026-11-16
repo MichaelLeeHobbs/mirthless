@@ -2,8 +2,10 @@
 // endless loop or a memory blow-up must cost the worker, never the engine's
 // main thread (listeners, queues and the API share it).
 
-import { describe, it, expect, vi } from 'vitest';
-import { runScriptTestIsolated, MAX_TEST_READS, tooManyReads, type IsolatedTestInput, type IsolationLimits } from '../script-test-isolated.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  runScriptTestIsolated, MAX_TEST_READS, WORKER_START_LIMIT_MS, tooManyReads, type IsolatedTestInput, type IsolationLimits,
+} from '../script-test-isolated.js';
 import type { ScriptTestResult } from '../script-test-run.js';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -18,13 +20,16 @@ async function run(overrides: Partial<IsolatedTestInput>, readers = {}, limits: 
       ...overrides,
     },
     readers,
-    { timeoutMs: 1_000, maxOldGenerationSizeMb: 32, maxMemoryGrowthMb: 256, ...limits },
+    // Scripts meant to finish get the Test button's own 5 s limit: on a busy machine
+    // every timed entry into the sandbox costs tens of milliseconds (#188).
+    { timeoutMs: 5_000, maxOldGenerationSizeMb: 32, maxMemoryGrowthMb: 256, ...limits },
   );
 }
 
 describe('runScriptTestIsolated', () => {
   it('returns the same result as a test run on the main thread', async () => {
     const result = await run({ kind: 'transformer', script: "msg.set('PID.5.1', 'SMITH'); logger.info('done');" });
+    expect(result.error).toBeNull();
     expect(result.outcome).toBe('completed');
     expect(result.output?.split('\r')[1]).toBe('PID|1||4821193^^^HOSP^MR||SMITH^AVERY');
     expect(result.logs).toEqual([{ level: 'INFO', message: 'done' }]);
@@ -33,13 +38,36 @@ describe('runScriptTestIsolated', () => {
   it('stops an endless loop without blocking the main thread', async () => {
     let ticks = 0;
     const timer = setInterval(() => { ticks += 1; }, 50);
-    const result = await run({ kind: 'script', script: 'while (true) {}' });
+    const result = await run({ kind: 'script', script: 'while (true) {}' }, {}, { timeoutMs: 1_000 });
     clearInterval(timer);
     expect(result.outcome).toBe('error');
     // The sandbox's own timeout usually stops it inside the worker; the worker is killed if not.
     expect(result.error).toMatch(/timed out after 1000 ?ms|stopped after 1000 ms/);
     // The loop ran for about a second; the main thread kept running meanwhile.
     expect(ticks).toBeGreaterThan(5);
+  });
+
+  describe('on a machine too busy to start the worker in time (#188)', () => {
+    // Only the main thread's timeouts are faked; the worker's clock is real.
+    beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("does not count the worker's start-up against the script's time limit", async () => {
+      const pending = run({ kind: 'transformer', script: "logger.info('done');" }, {}, { timeoutMs: 5_000 });
+      // Far past the 5 s limit and its grace before the worker has even started.
+      vi.advanceTimersByTime(20_000);
+      const result = await pending;
+      expect(result.error).toBeNull();
+      expect(result.outcome).toBe('completed');
+    });
+
+    it('gives up on a worker that does not start at all, and says why', async () => {
+      const pending = run({ kind: 'transformer', script: "logger.info('done');" }, {}, { timeoutMs: 5_000 });
+      vi.advanceTimersByTime(WORKER_START_LIMIT_MS);
+      const result = await pending;
+      expect(result.outcome).toBe('error');
+      expect(result.error).toBe(`The test run could not start within ${String(WORKER_START_LIMIT_MS / 1000)} s. The server may be busy; try again.`);
+    });
   });
 
   it('reports a script that runs out of memory as an error, and the process lives on', async () => {
@@ -73,6 +101,9 @@ describe('runScriptTestIsolated', () => {
       'logger.info((refused[0] as PromiseRejectedResult).reason.message);',
     ].join('\n');
     const result = await run({ kind: 'script', script }, { getResource }, { timeoutMs: 5_000 });
+    // First, so a run stopped by its time limit shows as a timeout, not as missing logs.
+    expect(result.error).toBeNull();
+    expect(result.outcome).toBe('completed');
     expect(getResource).toHaveBeenCalledTimes(MAX_TEST_READS);
     // The rest are refused in the worker, never reaching the main thread, and the script is told why.
     expect(result.logs).toEqual([
@@ -84,6 +115,8 @@ describe('runScriptTestIsolated', () => {
   it('answers the script\'s reads with the caller\'s readers, on the main thread', async () => {
     const getResource = vi.fn(async (name: string) => `table:${name}`);
     const result = await run({ kind: 'script', script: "logger.info(await getResource('codes'));" }, { getResource });
+    expect(result.error).toBeNull();
+    expect(result.outcome).toBe('completed');
     expect(getResource).toHaveBeenCalledWith('codes');
     expect(result.logs).toEqual([{ level: 'INFO', message: 'table:codes' }]);
   });
@@ -91,6 +124,7 @@ describe('runScriptTestIsolated', () => {
   it("passes a reader's failure back to the script as an error it can catch", async () => {
     const getResource = vi.fn(async () => { throw new Error('resource store is down'); });
     const result = await run({ kind: 'script', script: "try { await getResource('codes'); } catch (e) { logger.info('caught: ' + (e as Error).message); }" }, { getResource });
+    expect(result.error).toBeNull();
     expect(result.outcome).toBe('completed');
     expect(result.logs).toEqual([{ level: 'INFO', message: 'caught: resource store is down' }]);
   });

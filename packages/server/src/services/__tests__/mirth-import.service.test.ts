@@ -662,6 +662,9 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer));
     expect(channel.sourceConnectorType).toBe('CHANNEL');
     expect(channel.destinations[0]).toMatchObject({ connectorType: 'CHANNEL', properties: { targetChannelId: '5c000200-0000-4000-8000-000000000001' } });
+    expect(validateConnectorProperties('CHANNEL', 'destination', channel.destinations[0]?.properties ?? {})).toMatchObject({ ok: true });
+    // Deploy sets the reader's channelId before validating.
+    expect(validateConnectorProperties('CHANNEL', 'source', { ...channel.sourceConnectorProperties, channelId: channel.id })).toMatchObject({ ok: true });
   });
 
   it('maps an HTTP Listener to serve every path under its context path with its response settings', () => {
@@ -872,6 +875,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       host: 'mail', port: 25, to: '${email}', from: 'reports@example.com', subject: '${subject}', bodyTemplate: 'Ready',
       contentType: 'text/html', requireTLS: true, authUser: 'u', authPass: 'p',
     });
+    expect(validateConnectorProperties('SMTP', 'destination', channel.destinations[1]?.properties ?? {})).toMatchObject({ ok: true });
   });
 
   it('maps a local File Reader and Writer to keys the FILE schemas accept', () => {

@@ -497,6 +497,31 @@ describe('ConnectionTestService', () => {
       expect(result.error.message).toContain('host');
     });
 
+    // The SMTP form, the importer and the connector name the login authUser/authPass.
+    it('logs in with authUser and authPass and honours requireTLS, as the connector does', async () => {
+      const seen: unknown[] = [];
+      setSmtpTransportFactory((options) => {
+        seen.push(options);
+        return { verify: mockTransportVerify, close: mockTransportClose };
+      });
+      mockTransportVerify.mockResolvedValueOnce(true);
+      await ConnectionTestService.testConnection('SMTP', 'DESTINATION', {
+        host: 'smtp.example.com', port: 587, requireTLS: true, authUser: 'lab', authPass: 's3cret',
+      });
+      expect(seen[0]).toMatchObject({ requireTLS: true, auth: { user: 'lab', pass: 's3cret' } });
+    });
+
+    it('tests an anonymous relay when no authUser is set', async () => {
+      const seen: unknown[] = [];
+      setSmtpTransportFactory((options) => {
+        seen.push(options);
+        return { verify: mockTransportVerify, close: mockTransportClose };
+      });
+      mockTransportVerify.mockResolvedValueOnce(true);
+      await ConnectionTestService.testConnection('SMTP', 'DESTINATION', { host: 'smtp.example.com', port: 587, authUser: '', authPass: '' });
+      expect(seen[0]).not.toHaveProperty('auth');
+    });
+
     it('always calls transport.close in finally block', async () => {
       mockTransportVerify.mockResolvedValueOnce(true);
 
