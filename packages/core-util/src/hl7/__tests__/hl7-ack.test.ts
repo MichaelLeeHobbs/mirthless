@@ -48,6 +48,12 @@ describe('createAck', () => {
     expect(msaParts[2]).toBe('MSG001');
   });
 
+  it('echoes the whole inbound MSH-10 in MSA-2, not just its first component (#187)', () => {
+    const original = Hl7Message.parse('MSH|^~\\&|S|SF|R|RF|20260101||ADT^A01|ID^X\\T\\Y|P|2.5.1');
+    const ack = Hl7Message.parse(createAck(original, { ackCode: 'AA' }));
+    expect(ack.getRaw('MSA.2')).toBe('ID^X\\T\\Y');
+  });
+
   it('includes text message in MSA for AE ack', () => {
     const original = Hl7Message.parse(ADT_A01);
     const ackStr = createAck(original, { ackCode: 'AE', textMessage: 'Validation failed' });

@@ -26,7 +26,8 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
   const sendFac = original.getRaw('MSH.4') ?? '';
   const recvApp = original.getRaw('MSH.5') ?? '';
   const recvFac = original.getRaw('MSH.6') ?? '';
-  const controlId = original.get('MSH.10') ?? '';
+  // MSA-2 echoes MSH-10 exactly as it was sent, every component and escape included.
+  const controlId = original.getRaw('MSH.10') ?? '';
   const version = original.get('MSH.12') ?? '2.5.1';
 
   const timestamp = formatTimestamp(new Date());

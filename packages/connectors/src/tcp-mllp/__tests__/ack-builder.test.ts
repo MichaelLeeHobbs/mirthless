@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { buildAck, classifyAckResponse } from '../ack-builder.js';
+import { buildAck, classifyAckResponse, controlIdOf } from '../ack-builder.js';
 
 const VALID_HL7 = 'MSH|^~\\&|SEND|FAC|RECV|RFAC|20240101||ADT^A01|CTRL42|P|2.5.1';
 
@@ -103,6 +103,17 @@ describe('classifyAckResponse control id check', () => {
     expect(result.accepted).toBe(false);
     expect(result.errorMessage).toContain('OTHER');
     expect(result.errorMessage).toContain('CTRL1');
+  });
+
+  it('compares the whole control id field, components included', () => {
+    const sent = 'MSH|^~\\&|S|F|R|F|20260101||ADT^A01|ID^X|P|2.5.1';
+    expect(classifyAckResponse(ack('AA', 'ID^X'), controlIdOf(sent)).accepted).toBe(true);
+    expect(classifyAckResponse(ack('AA', 'ID^Y'), controlIdOf(sent)).accepted).toBe(false);
+  });
+
+  it('accepts the acknowledgement createAck builds for the message sent', () => {
+    const sent = 'MSH|^~\\&|S|F|R|F|20260101||ADT^A01|ID^X|P|2.5.1';
+    expect(classifyAckResponse(buildAck(sent, 'AA'), controlIdOf(sent)).accepted).toBe(true);
   });
 
   it('accepts when the acknowledgement carries no control id', () => {
