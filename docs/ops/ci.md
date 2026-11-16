@@ -29,6 +29,17 @@ These run everything, whatever changed:
 
 Dependency changes move `pnpm-lock.yaml`, so they run everything, `pnpm audit` included. A docs-only or e2e-only pull request skips the gate job and with it the audit; the next push to `main` runs it.
 
+## What a run costs
+
+Measured on GitHub's runners on 2026-11-16, after #177 (job selection) and #181 (4 Playwright workers). The wall clock runs from `changes` starting to `ci-ok` finishing. Before both, every change ran every job and took 7m21s, with e2e alone at 7m20s.
+
+| Change | Jobs that ran | Wall clock |
+|---|---|---|
+| Web only ([run](https://github.com/MichaelLeeHobbs/mirthless/actions/runs/43784090750)) | gate with web tests 1m21s, e2e 2m49s, docs 30s | 3m02s |
+| Everything: a connectors, engine or core change, CI files, root config, a push to `main` ([run](https://github.com/MichaelLeeHobbs/mirthless/actions/runs/43783845444)) | gate 2m22s, e2e 3m06s, connector integration 1m09s | 3m29s |
+
+e2e is the longest job whenever it runs. #182 tracks about 96s of fixed sleeps in the specs.
+
 ## The required check
 
 `ci-ok` needs every other job and runs even when they fail. It passes when each job passed or was skipped and fails when any failed or was cancelled. A skipped job never reports a status, so branch protection on `main` requires `ci-ok` alone, not the individual jobs. The check must come from the GitHub Actions app. A branch need not be up to date with `main` to merge; the full run on every push to `main` catches what two green pull requests break together. Force pushes to `main` and deleting it are blocked. Admins can still merge past a red `ci-ok`, for an emergency.
