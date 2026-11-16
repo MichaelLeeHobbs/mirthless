@@ -26,15 +26,21 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
+  // CI has already run `pnpm build`, so it serves the built server and web
+  // bundle. The Vite dev server sends every browser context hundreds of
+  // unbundled modules, which made four workers CPU-bound on a 4-vCPU runner.
+  // `vite preview` uses the dev server's /api and /socket.io proxy.
   webServer: [
     {
-      command: 'pnpm dev:server',
+      command: process.env.CI ? 'pnpm --filter @galvaniflow/server start' : 'pnpm dev:server',
       url: 'http://localhost:3000/api/v1/health',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },
     {
-      command: 'pnpm dev:web',
+      command: process.env.CI
+        ? 'pnpm --filter @galvaniflow/web exec vite preview --port 5173 --strictPort'
+        : 'pnpm dev:web',
       url: 'http://localhost:5173',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
