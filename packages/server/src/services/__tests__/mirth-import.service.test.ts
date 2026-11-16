@@ -1117,9 +1117,17 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
         expect(validateConnectorProperties('DICOM', 'destination', dest?.properties ?? {})).toMatchObject({ ok: true });
       });
 
-      it('says messages are file paths here, and that a Listener with no storage folder needs one', () => {
+      it('writes the Sender\'s AE titles Mirth uses when they are blank, not GalvaniFlow\'s defaults', () => {
+        const blank = sender().replace('<applicationEntity>PACS_MAIN</applicationEntity>', '<applicationEntity></applicationEntity>').replace('<localApplicationEntity>HUB_SCU</localApplicationEntity>', '<localApplicationEntity></localApplicationEntity>');
+        const dest = convertXml(dicom(listener('/data/dicom'), blank)).channels[0]?.destinations[0];
+        expect(dest?.properties).toMatchObject({ calledAETitle: 'DCMRCV', callingAETitle: 'DCMSND' });
+      });
+
+      it('says messages are file paths here, and that a Listener with no storage folder needs one, still keeping its files', () => {
         const result = convertXml(dicom(listener(''), sender()));
         expect(result.channels[0]?.sourceConnectorProperties['storageDir']).toBeUndefined();
+        // Mirth's default folder is blank; the files must still stay, or a queued Sender finds none.
+        expect(result.channels[0]?.sourceConnectorProperties['postAction']).toBe('NONE');
         expect(warningsWith(result, 'storageDir')).toHaveLength(1);
         expect(warningsWith(result, 'file path')).toHaveLength(1);
       });
@@ -1142,15 +1150,24 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
         .replace('<transportName>TCP Listener</transportName>', '<transportName>JavaScript Reader</transportName>'));
 
       it('warns, naming the channel and the time, that a time-of-day schedule becomes an interval', () => {
-        const warnings = warningsWith(reader('<pollingType>TIME</pollingType><pollingFrequency>5000</pollingFrequency><pollingHour>2</pollingHour><pollingMinute>5</pollingMinute>'), 'interval');
+        const warnings = warningsWith(reader('<pollingType>TIME</pollingType><pollingFrequency>5000</pollingFrequency><pollingHour>2</pollingHour><pollingMinute>5</pollingMinute>'), '02:05');
         expect(warnings).toHaveLength(1);
         expect(warnings[0]).toContain('Channel "4x Listener"');
-        expect(warnings[0]).toContain('02:05');
+        expect(warnings[0]).toContain('interval');
       });
 
       it('warns with the cron expressions that a cron schedule becomes an interval', () => {
         const result = reader('<pollingType>CRON</pollingType><cronJobs><cronProperty><description>nightly</description><expression>0 30 1 * * ?</expression></cronProperty></cronJobs>');
         expect(warningsWith(result, '0 30 1 * * ?')).toHaveLength(1);
+      });
+
+      it('imports a channel polled by time of day or cron disabled, so it does not run every few seconds once deployed', () => {
+        for (const type of ['TIME', 'CRON']) {
+          const result = reader(`<pollingType>${type}</pollingType><pollingHour>2</pollingHour><pollingMinute>0</pollingMinute>`);
+          expect(result.channels[0]?.enabled).toBe(false);
+          expect(warningsWith(result, 'imported disabled')).toHaveLength(1);
+        }
+        expect(reader('<pollingType>INTERVAL</pollingType><pollingFrequency>5000</pollingFrequency>').channels[0]?.enabled).toBe(true);
       });
 
       it('warns when interval polling was limited to some days or hours', () => {
@@ -1186,11 +1203,20 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
         expect(warningsWith(result, 'prun')).toEqual([]);
       });
 
-      it('warns that errored messages are pruned and nothing is archived here', () => {
-        const warning = warningsWith(convertXml(pruning('<pruneMetaDataDays>30</pruneMetaDataDays><archiveEnabled>true</archiveEnabled><pruneErroredMessages>false</pruneErroredMessages>')), 'prun');
+      it('leaves pruning off, and says why, when Mirth keeps errored messages, which GalvaniFlow would prune', () => {
+        const result = convertXml(pruning('<pruneMetaDataDays>30</pruneMetaDataDays><archiveEnabled>false</archiveEnabled><pruneErroredMessages>false</pruneErroredMessages>'));
+        expect(result.channels[0]).toMatchObject({ pruningEnabled: false, pruningMaxAgeDays: 30 });
+        const warning = warningsWith(result, 'prun');
         expect(warning).toHaveLength(1);
         expect(warning[0]).toContain('errored');
-        expect(warning[0]).toContain('archive');
+        // Mirth's default is to keep them, so an export without the flag does the same.
+        expect(convertXml(pruning('<pruneMetaDataDays>30</pruneMetaDataDays><archiveEnabled>false</archiveEnabled>')).channels[0]?.pruningEnabled).toBe(false);
+      });
+
+      it('warns that nothing is archived here when Mirth archived before pruning', () => {
+        const result = convertXml(pruning('<pruneMetaDataDays>30</pruneMetaDataDays><archiveEnabled>true</archiveEnabled><pruneErroredMessages>true</pruneErroredMessages>'));
+        expect(result.channels[0]?.pruningEnabled).toBe(true);
+        expect(warningsWith(result, 'archive')).toHaveLength(1);
       });
 
       it('warns that content-only pruning keeps the content until the whole message is pruned', () => {
@@ -1260,6 +1286,23 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       it('keeps the script an older Rule Builder rule carries in place of a field', () => {
         const legacy = convertXml((x) => x.replace(/<filter version="4\.5\.0">[\s\S]*?<\/filter>/, '<filter><rules><rule><sequenceNumber>0</sequenceNumber><name>Old</name><type>Rule Builder</type><script>return msg.get(&apos;MSH.9.1&apos;) == &apos;ORM&apos;;</script><operator>NONE</operator></rule></rules></filter>'));
         expect(sourceRule(legacy)).toMatchObject({ type: 'JAVASCRIPT', script: "return msg.get('MSH.9.1') == 'ORM';" });
+      });
+
+      it('compares with empty text when a rule has no values, as Mirth does', () => {
+        expect(sourceRule(rule(HL7_FIELD, 'EQUALS', ''))).toMatchObject({ type: 'RULE_BUILDER', condition: 'EQUALS', values: [''] });
+        expect(sourceRule(rule(HL7_FIELD, 'CONTAINS', ''))).toMatchObject({ condition: 'CONTAINS', values: [''] });
+      });
+
+      it('keeps Mirth\'s generated JavaScript for a field outside MSH, where a segment or field can repeat', () => {
+        const obx = 'msg[&apos;OBX&apos;][&apos;OBX.3&apos;][&apos;OBX.3.1&apos;].toString()';
+        const result = rule(obx, 'EQUALS', '<string>&quot;GLU&quot;</string>');
+        expect(sourceRule(result)).toMatchObject({ type: 'JAVASCRIPT', script: "if(msg['OBX']['OBX.3']['OBX.3.1'].toString() == \"GLU\") {\n\treturn true;\n}\nreturn false;" });
+        expect(warningsWith(result, 'Mirth-only constructs')).toHaveLength(1);
+      });
+
+      it('does not warn about a disabled rule with no field, which never runs', () => {
+        const result = convertXml((x) => x.replace(/<filter version="4\.5\.0">[\s\S]*?<\/filter>/, ruleBuilder('', 'EQUALS', '').replace('<enabled>true</enabled>', '<enabled>false</enabled>')));
+        expect(warningsWith(result, 'Rule Builder')).toEqual([]);
       });
 
       it('keeps a rule it cannot read as a Rule Builder rule the deploy refuses, and warns', () => {

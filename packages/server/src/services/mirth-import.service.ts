@@ -369,18 +369,20 @@ function convertPruning(mirthChannel: Record<string, unknown>, props: Record<str
   const settings = getNestedRecord(metadata, 'pruningSettings') ?? props;
   const messageDays = pruneDays(settings, 'pruneMetaDataDays');
   const contentDays = pruneDays(settings, 'pruneContentDays');
+  // Mirth's pruner skips errored messages unless told otherwise; this one prunes them, so pruning stays off then.
+  const prune = messageDays !== null && getBoolean(settings, 'pruneErroredMessages', false);
   const differences: string[] = [];
   if (contentDays !== null && (messageDays === null || contentDays < messageDays)) {
-    differences.push(`Mirth removes message content after ${String(contentDays)} days; GalvaniFlow prunes whole messages only, so content is kept ${messageDays === null ? 'for good' : `until ${String(messageDays)} days`}`);
+    differences.push(`Mirth removes message content after ${String(contentDays)} days; GalvaniFlow prunes whole messages only, so content is kept ${prune ? `until ${String(messageDays)} days` : 'until pruning is turned on'}`);
   }
-  if (messageDays !== null && !getBoolean(settings, 'pruneErroredMessages', false)) {
-    differences.push('Mirth keeps errored messages; GalvaniFlow prunes them with the rest');
+  if (messageDays !== null && !prune) {
+    differences.push(`Mirth prunes after ${String(messageDays)} days but keeps errored messages; GalvaniFlow would prune errored messages too, so pruning is left off`);
   }
-  if (messageDays !== null && getBoolean(settings, 'archiveEnabled', true)) {
+  if (prune && getBoolean(settings, 'archiveEnabled', true)) {
     differences.push('Mirth archives messages before pruning them; GalvaniFlow does not archive');
   }
   if (differences.length > 0) warnings.push(`Channel "${channelName}": its pruning differs here: ${differences.join('; ')}`);
-  return { pruningEnabled: messageDays !== null, pruningMaxAgeDays: messageDays, pruningArchiveEnabled: false };
+  return { pruningEnabled: prune, pruningMaxAgeDays: messageDays, pruningArchiveEnabled: false };
 }
 
 // ----- Source Response -----
@@ -701,6 +703,11 @@ function fileWriterWarnings(propsNode: Record<string, unknown>, properties: Reco
  */
 function disablingSettings(mirthChannel: Record<string, unknown>): string[] {
   const reasons: string[] = [];
+  const sourceProps = getNestedRecord(getNestedRecord(mirthChannel, 'sourceConnector') ?? {}, 'properties') ?? {};
+  const pollingType = getString(getNestedRecord(sourceProps, 'pollConnectorProperties') ?? {}, 'pollingType');
+  if (pollingType === 'TIME' || pollingType === 'CRON') {
+    reasons.push('its source polls on a schedule (time of day or cron) and would poll at an interval here');
+  }
   for (const [, dest] of destinationConnectorsById(mirthChannel)) {
     if (failsOnExistingFile(getNestedRecord(dest, 'properties') ?? {})) {
       reasons.push(`the File Writer "${getString(dest, 'name') ?? ''}" must not overwrite an existing file`);
@@ -911,31 +918,35 @@ function smtpProperties(propsNode: Record<string, unknown>): Record<string, unkn
 
 /**
  * A Mirth DICOM Listener: its port, its AE title, and the folder it stores
- * received objects in (`dest`). Mirth keeps the stored files, so they stay
- * (`postAction` NONE) instead of the DICOM source's default DELETE.
+ * received objects in (`dest`). The files always stay (`postAction` NONE),
+ * never the DICOM source's default DELETE: a message here is the file's path,
+ * so a queued Sender or a reprocess needs the file after the source is done.
  */
 function dicomListenerProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
+  const result: Record<string, unknown> = { postAction: 'NONE' };
   const port = getString(getNestedRecord(propsNode, 'listenerConnectorProperties') ?? {}, 'port');
   if (port) result['port'] = portValue(port);
   const dest = getString(propsNode, 'dest');
-  if (dest) Object.assign(result, { storageDir: dest, postAction: 'NONE' });
+  if (dest) result['storageDir'] = dest;
   const aeTitle = getString(propsNode, 'applicationEntity');
   if (aeTitle) result['aeTitle'] = aeTitle;
   return result;
 }
 
-/** A Mirth DICOM Sender: the remote host and port, its AE title (called) and our own (calling). */
+/**
+ * A Mirth DICOM Sender: the remote host and port, its AE title (called) and
+ * our own (calling). Blank titles are the ones Mirth sends then (`DCMRCV`, and
+ * dcm4che's `DCMSND`), not the DICOM destination's own defaults.
+ */
 function dicomSenderProperties(propsNode: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
+  const result: Record<string, unknown> = {
+    calledAETitle: getString(propsNode, 'applicationEntity') || 'DCMRCV',
+    callingAETitle: getString(propsNode, 'localApplicationEntity') || 'DCMSND',
+  };
   const host = getString(propsNode, 'host');
   if (host) result['host'] = host;
   const port = getString(propsNode, 'port');
   if (port) result['port'] = portValue(port);
-  const called = getString(propsNode, 'applicationEntity');
-  if (called) result['calledAETitle'] = called;
-  const calling = getString(propsNode, 'localApplicationEntity');
-  if (calling) result['callingAETitle'] = calling;
   return result;
 }
 
@@ -1339,6 +1350,7 @@ const RULE_BUILDER_CONDITION: Readonly<Record<string, string>> = {
 type RuleBuilderFields = Pick<ChannelExportEntry['filters'][number]['rules'][number], 'type' | 'script' | 'field' | 'condition' | 'values'>;
 
 interface MirthRule {
+  readonly enabled: boolean;
   readonly name: string | null;
   readonly script: string | null;
   readonly field: string | null;
@@ -1348,11 +1360,12 @@ interface MirthRule {
 
 /**
  * A Mirth Rule Builder rule, whose field and values are JavaScript
- * expressions. An HL7 field (`msg['MSH']['MSH.9']['MSH.9.1'].toString()`)
- * compared with quoted text becomes an engine Rule Builder rule; any other
- * expression becomes the JavaScript Mirth itself generates, which the script
- * check reads like any other. A legacy rule that carries only its generated
- * script keeps it. A rule with no field or an unknown condition stays a Rule
+ * expressions. An MSH field (`msg['MSH']['MSH.9']['MSH.9.1'].toString()`)
+ * compared with quoted text becomes an engine Rule Builder rule, with no
+ * values read as Mirth's comparison with empty text; any other expression
+ * becomes the JavaScript Mirth itself generates, which the script check reads
+ * like any other. A legacy rule that carries only its generated script keeps
+ * it. An enabled rule with no field or an unknown condition stays a Rule
  * Builder rule the deploy refuses, with a preview warning.
  */
 function ruleBuilderRule(rule: MirthRule, sink: WarningSink): RuleBuilderFields {
@@ -1360,14 +1373,17 @@ function ruleBuilderRule(rule: MirthRule, sink: WarningSink): RuleBuilderFields 
   if (field === '' && rule.script) return { type: 'JAVASCRIPT', script: rule.script, field: null, condition: null, values: [] };
   const condition = RULE_BUILDER_CONDITION[rule.condition ?? ''];
   if (field === '' || condition === undefined) {
-    sink.warnings.push(`Channel "${sink.channelName}": Rule Builder rule "${rule.name ?? ''}" has ${field === '' ? 'no field' : `the unknown condition "${rule.condition ?? ''}"`}; it will not deploy until it is rewritten`);
+    if (rule.enabled) {
+      sink.warnings.push(`Channel "${sink.channelName}": Rule Builder rule "${rule.name ?? ''}" has ${field === '' ? 'no field' : `the unknown condition "${rule.condition ?? ''}"`}; it will not deploy until it is rewritten`);
+    }
     return { type: 'RULE_BUILDER', script: null, field, condition: rule.condition, values: [...rule.values] };
   }
   const path = hl7FieldPath(field);
   const texts = rule.values.map(quotedText);
   const literals = texts.filter((t): t is string => t !== null);
   if (path !== null && literals.length === texts.length) {
-    return { type: 'RULE_BUILDER', script: null, field: path, condition, values: condition.endsWith('EXISTS') ? [] : literals };
+    const values = condition.endsWith('EXISTS') ? [] : literals.length > 0 ? literals : [''];
+    return { type: 'RULE_BUILDER', script: null, field: path, condition, values };
   }
   return { type: 'JAVASCRIPT', script: mirthRuleScript(field, rule.condition ?? '', rule.values), field: null, condition: null, values: [] };
 }
@@ -1375,14 +1391,18 @@ function ruleBuilderRule(rule: MirthRule, sink: WarningSink): RuleBuilderFields 
 /** `msg['SEG']['SEG.n']...` with an optional `.toString()`: the bracketed names. */
 const E4X_FIELD = /^msg((?:\[\s*(?:'[^'\\]+'|"[^"\\]+")\s*\])+)(?:\.toString\(\))?$/;
 
-/** The HL7 path (`MSH.9.1`) of an E4X field expression, or null when it is not one. */
+/**
+ * The HL7 path (`MSH.9.1`) of an E4X field in MSH, or null. Only MSH: it
+ * occurs once and its fields do not repeat, so the engine's first-occurrence
+ * read agrees with Mirth's. In other segments a segment or field can repeat,
+ * where Mirth's comparison sees every repetition.
+ */
 function hl7FieldPath(field: string): string | null {
   const brackets = E4X_FIELD.exec(field)?.[1];
   if (brackets === undefined) return null;
   const names = [...brackets.matchAll(/\[\s*['"]([^'"]+)['"]\s*\]/g)].map((m) => m[1] ?? '');
-  const segment = names[0] ?? '';
   const last = names[names.length - 1] ?? '';
-  return last.startsWith(`${segment}.`) ? last : null;
+  return names[0] === 'MSH' && last.startsWith('MSH.') ? last : null;
 }
 
 /** The text of a quoted JavaScript string with no escapes (`"ORM"`, `'ORM'`), or null. */
