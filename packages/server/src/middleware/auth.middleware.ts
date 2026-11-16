@@ -114,67 +114,10 @@ export async function authenticate(
       permissions,
       mustChangePassword: user.mustChangePassword,
     };
-    if (payload.sessionId) {
-      req.sessionId = payload.sessionId;
-    }
+    req.sessionId = payload.sessionId;
     next();
   } catch (error) {
     logger.debug({ errMsg: error instanceof Error ? error.message : String(error) }, 'Token verification failed');
     res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token' } });
   }
-}
-
-/**
- * Optional auth — attaches user if token present but doesn't fail if absent.
- */
-export async function optionalAuth(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    next();
-    return;
-  }
-
-  const token = authHeader.slice(7);
-
-  try {
-    const payload = verifyAccessToken(token);
-
-    const [user] = await db
-      .select({
-        id: users.id,
-        username: users.username,
-        email: users.email,
-        role: users.role,
-        enabled: users.enabled,
-        mustChangePassword: users.mustChangePassword,
-      })
-      .from(users)
-      .where(eq(users.id, payload.userId));
-
-    if (user && user.enabled) {
-      const permissions = permissionNamesForRole(user.role);
-
-      req.user = {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        isActive: user.enabled,
-        permissions,
-        mustChangePassword: user.mustChangePassword,
-      };
-      if (payload.sessionId) {
-        req.sessionId = payload.sessionId;
-      }
-    }
-  } catch {
-    // Ignore invalid tokens for optional auth
-  }
-
-  next();
 }

@@ -30,6 +30,8 @@ vi.mock('../../db/schema/index.js', () => ({
   users: {}, userPermissions: {},
 }));
 vi.mock('drizzle-orm', () => ({ eq: vi.fn() }));
+// Session liveness has its own tests (session-live.test.ts, forged-token.routes.test.ts).
+vi.mock('../../lib/session-live.js', () => ({ isSessionLive: vi.fn(() => Promise.resolve(true)) }));
 
 const { authenticate } = await import('../auth.middleware.js');
 
@@ -51,7 +53,7 @@ function makeReq(method: string, originalUrl: string): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockVerify.mockReturnValue({ userId: 'u1' });
+  mockVerify.mockReturnValue({ userId: 'u1', sessionId: 's1', type: 'access' });
   // First where() call -> user row; subsequent -> permission rows.
   mockWhere.mockImplementation(() => (userRow ? Promise.resolve([userRow]) : Promise.resolve([])));
 });
