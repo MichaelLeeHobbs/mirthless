@@ -169,6 +169,13 @@ A FILE channel now fails to deploy when it has:
 - a `binary`, `checkFileAge`, `tempFileEnabled` or `appendMode` that is not `true` or `false`. Before, any text, `"false"` included, turned the setting on.
 - an empty `directory`, `fileFilter` or `outputPattern`. These failed before as well, when the connector deployed, without naming the key. A `directory`, `fileFilter` or `outputPattern` of only spaces now fails too.
 - `postAction` `MOVE` with an empty `moveToDirectory`. This failed before as well, without naming the key.
+- an `ignoreDot` that is not `true` or `false` (#244). The SFTP source refuses one too.
+
+Three things change without a deploy error, for the FILE source and the SFTP source alike, so that both pick the files a Mirth File Reader picks (#244, D-304). Each makes a source read fewer files, never more, and a file it no longer reads stays in its folder.
+
+- The filter is case-sensitive on every platform, Windows included: `*.hl7` no longer picks up `A.HL7`. Before, matching ignored case. If a channel needs both, write the filter in the case the files arrive in, or run a second channel with the other case's pattern.
+- Names starting with `.` are skipped. A channel saved before this release has no `ignoreDot`, and a missing `ignoreDot` means `true`. Turn `ignoreDot` off on a channel that must read dotfiles.
+- The FILE source never reads a name ending in `.ignore`, and holds back `<name>` while `<name>.ignore` exists next to it. Remove the `.ignore` file to release it; the next poll reads it.
 
 Before upgrading, list the keys the schema would refuse:
 
@@ -176,7 +183,7 @@ Before upgrading, list the keys the schema would refuse:
 SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
 WHERE source_connector_type = 'FILE'
   AND k NOT IN ('directory','fileFilter','pollingIntervalMs','sortBy','charset','binary','checkFileAge','fileAgeMs',
-                'postAction','moveToDirectory','processBatch');
+                'postAction','moveToDirectory','processBatch','ignoreDot');
 SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
 WHERE connector_type = 'FILE'
   AND k NOT IN ('directory','outputPattern','charset','binary','tempFileEnabled','appendMode','template');

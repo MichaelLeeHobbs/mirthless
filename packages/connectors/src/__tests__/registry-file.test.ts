@@ -23,6 +23,11 @@ describe('registry FILE factories', () => {
     expect(() => createDestinationConnector('FILE', { directory: '/out', template: '${message.encodedData}' })).not.toThrow();
   });
 
+  it('build a source that reads dotfiles, and refuse ignoreDot stored as text (#244)', () => {
+    expect(() => createSourceConnector('FILE', { directory: '/in', ignoreDot: false })).not.toThrow();
+    expect(() => createSourceConnector('FILE', { directory: '/in', ignoreDot: 'false' })).toThrow(/ignoreDot/);
+  });
+
   it('refuse a misspelled key instead of ignoring it', () => {
     expect(() => createSourceConnector('FILE', { directory: '/in', filePattern: '*.hl7' }))
       .toThrow(/FILE properties are invalid: .*filePattern/);

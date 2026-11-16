@@ -47,6 +47,7 @@ const PAGES = {
   'destination-javascript': { url: '/channels/c9', click: 'Destinations' },
   'source-delimited': { url: '/channels/c6', click: ['Source', 'Source Transformer'], scrollTo: 'Source Transformer' },
   'destination-database': { url: '/channels/c6', click: 'Destinations', scrollTo: 'Connector Settings' },
+  'source-file': { url: '/channels/c6', click: 'Source', scrollTo: 'Connector Settings' },
   'message-browser': '/channels/c1/messages',
   traffic: '/messages',
   alerts: '/alerts',
