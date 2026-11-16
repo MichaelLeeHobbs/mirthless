@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import { createSourceConnector, createDestinationConnector } from '../registry.js';
+import { createSourceConnector, createDestinationConnector, fhirDispatcherConfig, smtpDispatcherConfig } from '../registry.js';
 
 describe('registry CHANNEL factories', () => {
   // CHANNEL_*_DEFAULTS since 45fad27 (2026-03), with the id deploy sets and a target picked.
@@ -38,6 +38,17 @@ describe('registry FHIR factory', () => {
     expect(() => createDestinationConnector('FHIR', { ...saved, headers: 'X-Site: LAB' })).not.toThrow();
   });
 
+  it('hands each credential to the dispatcher under its own name', () => {
+    const config = fhirDispatcherConfig({
+      baseUrl: 'https://f/r4', authType: 'API_KEY', authUsername: 'u', authPassword: 'p', authToken: 't', authHeaderName: 'X-Key', authApiKey: 'k',
+      headers: 'X-Site: LAB', template: '${message.encodedData}',
+    });
+    expect(config.authConfig).toEqual({ username: 'u', password: 'p', token: 't', headerName: 'X-Key', apiKey: 'k' });
+    expect(config.headers).toEqual({ 'X-Site': 'LAB' });
+    expect(config).not.toHaveProperty('template');
+    expect(config).not.toHaveProperty('authToken');
+  });
+
   it('refuses an auth type missing its credential, or an unknown one, naming the key', () => {
     expect(() => createDestinationConnector('FHIR', { baseUrl: 'https://f/r4', authType: 'BEARER' })).toThrow(/authToken/);
     expect(() => createDestinationConnector('FHIR', { baseUrl: 'https://f/r4', authType: 'OAUTH' })).toThrow(/authType/);
@@ -51,6 +62,15 @@ describe('registry SMTP factory', () => {
       host: 'mail', port: 587, secure: false, requireTLS: false, authUser: '', authPass: '', from: 'a@x', to: 'b@x', cc: '', bcc: '',
       subject: '', bodyTemplate: '${msg}', contentType: 'text/plain', attachContent: false, attachments: [{ filename: '', mimeType: '', content: '' }],
     })).not.toThrow();
+  });
+
+  it('logs in only when a user is set, with that user and password', () => {
+    const base = { host: 'mail', from: 'a@x', to: 'b@x' };
+    expect(smtpDispatcherConfig({ ...base, authUser: 'lab', authPass: 's3cret' }).auth).toEqual({ user: 'lab', pass: 's3cret' });
+    expect(smtpDispatcherConfig({ ...base, authUser: 'lab' }).auth).toEqual({ user: 'lab', pass: '' });
+    expect(smtpDispatcherConfig({ ...base, authUser: '', authPass: 'x' })).not.toHaveProperty('auth');
+    expect(smtpDispatcherConfig(base)).not.toHaveProperty('auth');
+    expect(smtpDispatcherConfig({ ...base, authUser: 'lab', template: 't' })).not.toHaveProperty('authUser');
   });
 
   it('builds with a port from a resolved configuration reference', () => {

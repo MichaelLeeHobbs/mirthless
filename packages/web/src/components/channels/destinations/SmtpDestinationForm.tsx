@@ -17,8 +17,8 @@ import { SMTP_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
 import { getStr, getNum, getBool, propertyUpdaters } from '../common/connector-properties.js';
+import { SMTP_CONTENT_TYPES } from '@galvaniflow/core-models';
 
-const CONTENT_TYPES = ['text/plain', 'text/html'] as const;
 const DEFAULT_MIME_TYPE = 'text/plain';
 
 interface AttachmentRow {
@@ -288,7 +288,7 @@ export function SmtpDestinationForm({ properties, onChange }: DestConnectorFormP
           fullWidth
           sx={{ mb: 2 }}
         >
-          {CONTENT_TYPES.map((ct) => (
+          {SMTP_CONTENT_TYPES.map((ct) => (
             <MenuItem key={ct} value={ct}>{ct}</MenuItem>
           ))}
         </TextField>

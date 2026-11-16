@@ -190,7 +190,7 @@ A FHIR channel now fails to deploy when it has:
 
 - any other key its table doesn't list. Before, such a key was ignored.
 - an `authType` other than `NONE`, `BASIC`, `BEARER` or `API_KEY`. Before, an unknown type sent every request with no credentials.
-- an auth type without its credentials (`BASIC` without `authUsername` and `authPassword`, `BEARER` without `authToken`, `API_KEY` without `authHeaderName` and `authApiKey`), or a `baseUrl` that is not an absolute URL. These failed before as well, when the connector deployed, without naming the key.
+- an auth type without its credentials (`BASIC` without `authUsername` and `authPassword`, `BEARER` without `authToken`, `API_KEY` without `authHeaderName` and `authApiKey`), or a `baseUrl` that is not an absolute URL. These failed before as well, when the connector deployed, without naming the key. A credential of only spaces now fails too; before, it was sent.
 - a `method` other than `POST` or `PUT`, or a `format` other than `json` or `xml`. Before, any other format was sent as XML.
 - a `timeout` that is not a whole number from 1 to 2147483647. Before, 0 failed every send at once, and a value that wasn't a number became 30000 without a word.
 - `headers` whose values are not text, or a credential that is not text.
@@ -204,7 +204,7 @@ WHERE connector_type = 'FHIR'
 
 **SMTP** is the eighth. Channels saved by this app's own editor keep deploying: the SMTP form has saved the same keys since 2026-03, plus `requireTLS` and `attachments` since 2026-07-15, and the importer writes only keys the connector reads. Nothing in the database is rewritten.
 
-One thing now deploys that didn't: `port` written as digits, e.g. a `${smtpPort}` configuration reference, which resolves to text. Before, deploy refused it with `port: expected number`.
+Two things now deploy that didn't: `port` written as digits, e.g. a `${smtpPort}` configuration reference, which resolves to text, and no `port` at all, which now means 587. Before, deploy refused both with `port: expected number` or a missing `port`.
 
 An SMTP channel now fails to deploy when it has:
 
@@ -212,7 +212,7 @@ An SMTP channel now fails to deploy when it has:
 - an attachment that is not an object with text `filename` and `content` and optional text `mimeType`, or one with another key. Before, such an entry was skipped without a word.
 - a `secure`, `requireTLS` or `attachContent` that is not `true` or `false`. Before, any text, `"false"` included, turned the setting on.
 - a `contentType` other than `text/plain` or `text/html`, or a `port` outside 1 to 65535.
-- an empty or blank `host`, `from` or `to`. These failed before as well, when the connector deployed, without naming the key; `from` is now marked required in the reference.
+- an empty or blank `host`, `from` or `to`. An empty one failed before as well, when the connector deployed, without naming the key; one of only spaces now fails too. `from` is now marked required in the reference.
 
 ```sql
 SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k

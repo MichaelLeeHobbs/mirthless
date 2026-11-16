@@ -485,7 +485,7 @@ It sends one email per message. The subject, body and attachment fields may use 
 | `bodyTemplate` | No | Body, `${msg}` by default. |
 | `contentType` | No | `text/plain` (default) or `text/html`. |
 | `attachContent` | No | `true` also attaches the message content as a file. |
-| `attachments` | No | List of `filename`, `content` and optional `mimeType`, all text; filename and content may use variables. An entry with a missing or non-text field, or another key, refuses to deploy. |
+| `attachments` | No | List of `filename`, `content` and optional `mimeType`, all text; filename and content may use variables. An entry with a missing or non-text field, or another key, refuses to deploy. A row left blank in the editor is sent as an empty attachment, so remove rows you do not use. |
 
 ### SMTP limits
 

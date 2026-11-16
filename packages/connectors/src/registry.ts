@@ -19,10 +19,10 @@ import { DatabaseDispatcher } from './database/database-dispatcher.js';
 import { DATABASE_VENDOR, type DatabaseVendor } from './database/database-vendor.js';
 import { JavaScriptReceiver } from './javascript/javascript-receiver.js';
 import { JavaScriptDispatcher } from './javascript/javascript-dispatcher.js';
-import { SmtpDispatcher } from './smtp/smtp-dispatcher.js';
+import { SmtpDispatcher, type SmtpDispatcherConfig } from './smtp/smtp-dispatcher.js';
 import { ChannelReceiver } from './channel/channel-receiver.js';
 import { ChannelDispatcher } from './channel/channel-dispatcher.js';
-import { FhirDispatcher } from './fhir/fhir-dispatcher.js';
+import { FhirDispatcher, type FhirDispatcherConfig } from './fhir/fhir-dispatcher.js';
 import { DicomReceiver } from './dicom/dicom-receiver.js';
 import { DicomDispatcher } from './dicom/dicom-dispatcher.js';
 import { EmailReceiver, EMAIL_POST_ACTION, type EmailPostAction, type EmailProtocol } from './email/email-receiver.js';
@@ -232,20 +232,20 @@ function channelDispatcher(props: Record<string, unknown>): ChannelDispatcher {
   return new ChannelDispatcher({ targetChannelId, waitForResponse });
 }
 
-/** A FHIR destination: schema-checked props, the credentials grouped as the dispatcher reads them. */
-function fhirDispatcher(props: Record<string, unknown>): FhirDispatcher {
+/** A FHIR destination's config from schema-checked props, the credentials grouped as the dispatcher reads them. */
+export function fhirDispatcherConfig(props: Record<string, unknown>): FhirDispatcherConfig {
   const { authUsername, authPassword, authToken, authHeaderName, authApiKey, template: _template, ...config } =
     parseProps('FHIR', fhirDestinationPropertiesSchema, props);
-  return new FhirDispatcher({
+  return {
     ...config,
     authConfig: { username: authUsername, password: authPassword, token: authToken, headerName: authHeaderName, apiKey: authApiKey },
-  });
+  };
 }
 
-/** An SMTP destination: schema-checked props; auth only when a user is set (anonymous relay otherwise). */
-function smtpDispatcher(props: Record<string, unknown>): SmtpDispatcher {
+/** An SMTP destination's config from schema-checked props: a login only when a user is set (anonymous relay otherwise). */
+export function smtpDispatcherConfig(props: Record<string, unknown>): SmtpDispatcherConfig {
   const { authUser, authPass, template: _template, ...config } = parseProps('SMTP', smtpDestinationPropertiesSchema, props);
-  return new SmtpDispatcher({ ...config, ...(authUser ? { auth: { user: authUser, pass: authPass ?? '' } } : {}) });
+  return { ...config, ...(authUser ? { auth: { user: authUser, pass: authPass ?? '' } } : {}) };
 }
 
 // ----- Source Factories -----
@@ -315,9 +315,9 @@ const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<De
   ['FILE', fileDispatcher],
   ['DATABASE', databaseDispatcher],
   ['JAVASCRIPT', javascriptDispatcher],
-  ['SMTP', smtpDispatcher],
+  ['SMTP', (props): DestinationConnectorRuntime => new SmtpDispatcher(smtpDispatcherConfig(props))],
   ['CHANNEL', channelDispatcher],
-  ['FHIR', fhirDispatcher],
+  ['FHIR', (props): DestinationConnectorRuntime => new FhirDispatcher(fhirDispatcherConfig(props))],
   ['DICOM', (props): DestinationConnectorRuntime => new DicomDispatcher({
     host: props['host'] as string,
     port: num(props, 'port', 0),
