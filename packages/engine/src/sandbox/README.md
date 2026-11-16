@@ -67,7 +67,12 @@ Result: `logger.info.constructor`, `({}).constructor.constructor`,
 
 `vm.runInContext({ timeout })` bounds only synchronous work. When IO bridges are
 present, user scripts may `await`; the executor additionally races the resulting
-promise against the abort signal for an async wall-clock timeout.
+promise against the abort signal for an async wall-clock timeout. The script's
+code, its IO settles and the collection of its result share one deadline that
+starts when the script does (building the globals has a limit of its own), and
+IO results that are ready are settled
+together in one timed call, because each timed call starts a watchdog thread that a
+busy machine is slow to schedule (D-298). A timeout always names the whole limit.
 
 ## Notes / limitations
 

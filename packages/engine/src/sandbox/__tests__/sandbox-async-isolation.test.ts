@@ -43,7 +43,7 @@ describe('VmSandboxExecutor async isolation', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.message).toMatch(/timed out/);
+    expect(result.error.message).toBe('Script execution timed out after 100ms');
   });
 
   it('times out an infinite loop that runs after an IO bridge resolves', async () => {
@@ -57,7 +57,17 @@ describe('VmSandboxExecutor async isolation', () => {
     expect(ticked).toBe(true);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.message).toMatch(/timed out/);
+    expect(result.error.message).toBe('Script execution timed out after 2000ms');
+  });
+
+  it("names the script's own time limit when the limit stops it between reads (#188)", async () => {
+    // Each step after a read runs 30 ms, so the limit runs out inside one of them.
+    // The error names the 300 ms limit, not the few milliseconds that step had left.
+    const executor = new VmSandboxExecutor({ getResource: vi.fn().mockResolvedValue('x') });
+    const script = "for (;;) { await getResource('a'); const t = Date.now(); while (Date.now() - t < 30) {} }";
+    const result = await executor.execute(makeScript(script), createSandboxContext('m', 'r'), { timeout: 300 });
+
+    expect(result.ok ? 'finished' : result.error.message).toBe('Script execution timed out after 300ms');
   });
 
   it('times out an infinite loop inside a promise callback of a synchronous script', async () => {
@@ -70,7 +80,7 @@ describe('VmSandboxExecutor async isolation', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.message).toMatch(/timed out/);
+    expect(result.error.message).toBe('Script execution timed out after 100ms');
   });
 
   it('never resumes a timed-out script, so it cannot keep calling bridges', async () => {
