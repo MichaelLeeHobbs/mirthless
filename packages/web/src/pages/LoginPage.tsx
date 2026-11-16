@@ -6,6 +6,7 @@ import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import { Wordmark } from '../components/common/Wordmark.js';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import type { LoginInput } from '@galvanigraph/core-models';
@@ -86,9 +87,9 @@ export function LoginPage(): ReactNode {
           <Typography
             variant="h4"
             component="h1"
-            sx={{ fontWeight: 700, color: 'primary.main', mb: 0.5 }}
+            sx={{ fontWeight: 700, letterSpacing: '-0.01em', color: 'text.primary', mb: 0.5 }}
           >
-            GalvaniGraph
+            <Wordmark />
           </Typography>
           <Typography variant="body2" sx={{
             color: 'text.secondary'

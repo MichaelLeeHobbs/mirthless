@@ -10,6 +10,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import { Wordmark } from '../common/Wordmark.js';
 import Stack from '@mui/material/Stack';
 
 interface AboutDialogProps {
@@ -27,8 +28,8 @@ export function AboutDialog({ open, onClose }: AboutDialogProps): ReactNode {
       <DialogTitle>About GalvaniGraph</DialogTitle>
       <DialogContent>
         <Stack spacing={1} sx={{ mt: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 700, color: 'primary.main' }}>
-            GalvaniGraph
+          <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
+            <Wordmark />
           </Typography>
           <Typography variant="body2" sx={{
             color: 'text.secondary'
