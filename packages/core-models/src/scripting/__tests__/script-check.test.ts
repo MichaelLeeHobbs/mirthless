@@ -26,4 +26,13 @@ describe('scriptBodyPosition', () => {
     expect(scriptBodyPosition(code, 9, 3)).toEqual({ line: 2, column: 10 });
     expect(scriptBodyPosition('', 3, 2)).toEqual({ line: 1, column: 1 });
   });
+
+  it('counts lines as TypeScript does, which breaks lines at U+2028, U+2029 and a lone CR too', () => {
+    // TypeScript sees three script lines here: `const s = "a`, `b";` and `return s;`.
+    const separated = 'const s = "a\u2028b";\rreturn s;';
+    expect(scriptBodyPosition(separated, 3, 2)).toEqual({ line: 2, column: 2 });
+    expect(scriptBodyPosition(separated, 4, 1)).toEqual({ line: 3, column: 1 });
+    expect(scriptBodyPosition(separated, 5, 1)).toEqual({ line: 3, column: 10 });
+    expect(scriptBodyPosition('a\u2029b\r\nc', 5, 1)).toEqual({ line: 3, column: 2 });
+  });
 });

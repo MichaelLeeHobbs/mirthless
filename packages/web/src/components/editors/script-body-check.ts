@@ -79,8 +79,11 @@ let hiddenModels = 0;
 /**
  * A model for the wrapped copy of a script. Plain text, so Monaco's own
  * TypeScript checks leave it alone; the worker still reads it as TypeScript by
- * its .ts name. What it declares is local to the wrapper function, so it
- * cannot clash with another editor's script.
+ * its .ts name. Every hidden model declares the same wrapper function, and
+ * what the script declares is local to it. They do not clash only because
+ * SCRIPT_COMPILER_OPTIONS sets `moduleDetection` to Force, which makes each
+ * file a module: without it the wrapper's name is global and two hidden models
+ * report "Duplicate function implementation" (2393).
  */
 function createBodyModel(): monaco.editor.ITextModel {
   hiddenModels += 1;
@@ -124,9 +127,13 @@ export function useScriptBodyTypeMarkers(editor: CodeEditor | null, active: bool
     const check = (): void => {
       latest += 1;
       const run = latest;
-      // Only the latest check's answer counts; an older one may finish later.
+      const version = model.getVersionId();
+      // Only the latest check's answer counts (an older one may finish later),
+      // and only for the text it checked: its lines may not match newer text,
+      // whose own check is already scheduled.
       const set = (markers: monaco.editor.IMarkerData[]): void => {
-        if (run === latest && !model.isDisposed()) monaco.editor.setModelMarkers(model, SCRIPT_BODY_MARKER_OWNER, markers);
+        if (run !== latest || model.isDisposed() || model.getVersionId() !== version) return;
+        monaco.editor.setModelMarkers(model, SCRIPT_BODY_MARKER_OWNER, markers);
       };
       checkBody(model, body).then(set, (err: unknown) => { set(checkFailed(err)); });
     };
