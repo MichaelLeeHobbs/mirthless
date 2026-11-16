@@ -1,6 +1,6 @@
 # RBAC, permissions, audit and API keys
 
-Accepted 2026-11-16 with every default (D-309 to D-312). The epics are #263 to #267.
+Accepted 2026-11-16 with every default (D-310 to D-313). The epics are #263 to #267.
 
 This plan came from a Critical-depth debate: four builders (maintainer, security operator, designer, minimalist), three users (integration admin, scoped lab analyst, privacy officer) and four guardians (architecture, performance, safety, data steward). Users reviewed three times and guardians twice. The guardians' second-round findings were fixes they agreed on, applied without another builder round; the text marks them "(guardian round 2)".
 
@@ -112,7 +112,7 @@ Reads of the global map, configuration map and collections are recorded (section
 
 This text goes in the role editor, the assignment picker, the key form and `docs/user/access-control.md`, and a doc test checks it:
 
-> Scope limits what a person or key can see and change through GalvaniFlow's screens and API. Message reads, searches and exports, and the reads listed under "What is recorded", are recorded in an audit log that the product can't change or delete; each entry there says whether the read is refused when it can't be recorded or recorded on a best-effort basis. Reads under "What is not recorded" aren't. Scope is not a boundary for code: anyone who can change or deploy channel code, code templates or global scripts, or restore a backup, can reach every channel's messages and credentials through that code, and that reach is not recorded. A database owner can still alter the audit log.
+> Scope limits what a person or key can see and change through GalvaniGraph's screens and API. Message reads, searches and exports, and the reads listed under "What is recorded", are recorded in an audit log that the product can't change or delete; each entry there says whether the read is refused when it can't be recorded or recorded on a best-effort basis. Reads under "What is not recorded" aren't. Scope is not a boundary for code: anyone who can change or deploy channel code, code templates or global scripts, or restore a backup, can reach every channel's messages and credentials through that code, and that reach is not recorded. A database owner can still alter the audit log.
 
 The two-person write/deploy split isn't claimed until #225 lands.
 
@@ -265,7 +265,7 @@ Channel page → Who can access:
 
 ```
 Who can access ADT-Lab-In    As of [ now v ]   Person [ all v ]  [Export CSV]
-Through GalvaniFlow (message access recorded)
+Through GalvaniGraph (message access recorded)
   Priya Shah   Read, Reprocess   Analyst · Lab      since 3 Oct   permanent
   Acme CI key  Deploy            key role · Lab     since 1 Sep   until 1 Mar
 Through channel code (not recorded)
