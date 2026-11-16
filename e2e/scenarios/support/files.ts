@@ -4,7 +4,7 @@
 // File Reader scenarios poll a folder under the system temp folder, emptied
 // before each use. The server runs on this machine, so it reads the same path.
 // It is outside the repository because File connectors may not use the
-// server's install (D-310), and the suite's server lists it in FILE_CONNECTOR_ROOTS.
+// server's install (D-314), and the suite's server lists it in FILE_CONNECTOR_ROOTS.
 
 import { mkdirSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';

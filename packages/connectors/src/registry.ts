@@ -309,7 +309,7 @@ const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<De
 
 /** What the server tells every connector it builds. */
 export interface ConnectorEnvironment {
-  /** Where File connectors may read and write (FILE_CONNECTOR_ROOTS, D-310). */
+  /** Where File connectors may read and write (FILE_CONNECTOR_ROOTS, D-314). */
   readonly fileRoots: FileRoots;
 }
 

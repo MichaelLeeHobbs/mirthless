@@ -18,7 +18,7 @@ import { PartitionManagerService } from '../../services/partition-manager.servic
 
 /**
  * Where the example File writers write: outside the install, which File
- * connectors may not use (D-310). Add DEMO_FILE_ROOT to FILE_CONNECTOR_ROOTS
+ * connectors may not use (D-314). Add DEMO_FILE_ROOT to FILE_CONNECTOR_ROOTS
  * to deploy them.
  */
 export const DEMO_FILE_ROOT = path.join(os.tmpdir(), 'galvanigraph-files');
