@@ -37,6 +37,7 @@ import {
   type SftpClient,
   type SftpClientFactory,
   type SftpConnectionOptions,
+  type SftpPathKind,
 } from '@galvaniflow/connectors';
 import { ServiceError } from '../lib/service-error.js';
 import { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } from './connector-tls-resolver.js';
@@ -558,18 +559,19 @@ function startSftpConnect(client: SftpClient): { readonly connecting: Promise<vo
 }
 
 /**
- * The result of an SFTP session that logged in. The client's exists() is true
- * for a file as well as a directory, so the message says "path". A missing
- * path fails a source; a destination creates its directory on first send.
+ * The result of an SFTP session that logged in. A regular file where the
+ * remote directory should be fails both directions. A missing path fails a
+ * source; a destination creates its directory on first send.
  */
 function sftpPathResult(
   mode: string,
-  found: boolean,
+  kind: SftpPathKind,
   latency: number,
   where: { readonly target: string; readonly path: string },
 ): ConnectionTestResult {
   const { target, path } = where;
-  if (found) return successResult(`SFTP connected: ${target}, remote path ${path} found`, latency);
+  if (kind === 'directory') return successResult(`SFTP connected: ${target}, remote directory ${path} found`, latency);
+  if (kind === 'file') return failureResult(`SFTP connected to ${target} but remote path ${path} is a file, not a directory`, latency);
   if (mode === 'DESTINATION') {
     return successResult(`SFTP connected: ${target}, remote directory ${path} does not exist yet and will be created on first send`, latency);
   }
@@ -591,12 +593,12 @@ const testSftp: Tester = async (mode, props) => {
   const client = sftpClientFactory(options);
   const session = startSftpConnect(client);
   try {
-    const found = await withTimeout(
-      session.connecting.then(() => client.exists(remoteDirectory)),
+    const kind = await withTimeout(
+      session.connecting.then(() => client.pathKind(remoteDirectory)),
       TEST_TIMEOUT_MS,
       'SFTP connection test',
     );
-    return sftpPathResult(mode, found, performance.now() - start, { target, path: remoteDirectory });
+    return sftpPathResult(mode, kind, performance.now() - start, { target, path: remoteDirectory });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return failureResult(`SFTP connection failed: ${msg}`, performance.now() - start);

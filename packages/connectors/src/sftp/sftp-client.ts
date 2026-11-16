@@ -45,6 +45,9 @@ export interface SftpFileInfo {
   readonly isFile: boolean;
 }
 
+/** What a remote path is, links followed: a directory, a file (anything else that exists), or missing. */
+export type SftpPathKind = 'directory' | 'file' | 'missing';
+
 // ----- Client -----
 
 /**
@@ -65,8 +68,8 @@ export interface SftpClient {
   rename(from: string, to: string): Promise<void>;
   /** Create a directory (recursively). No-op if it already exists. */
   mkdir(remoteDirectory: string): Promise<void>;
-  /** True if the path exists (any type). */
-  exists(remotePath: string): Promise<boolean>;
+  /** Whether the path is a directory, a file or missing. A link counts as what it points to. */
+  pathKind(remotePath: string): Promise<SftpPathKind>;
   end(): Promise<void>;
 }
 
@@ -101,9 +104,10 @@ function normalizeHostKey(key: string): string {
  * Build the ssh2 `hostVerifier` for strict host-key checking. Strict checking is
  * ON by default (verify-by-default) so PHI is never sent over an unauthenticated
  * SFTP connection that an ARP/DNS attacker could MITM; it can be explicitly
- * disabled per channel. When enabled, the presented key is accepted only if it
- * matches the configured {@link SftpConnectionOptions.hostKey} (compared as base64
- * or as the raw provided string). A missing hostKey rejects everything: the
+ * disabled per channel. When enabled, the presented key is accepted only if the
+ * whole key, base64-encoded (or read as text), equals the configured
+ * {@link SftpConnectionOptions.hostKey}. No hash is taken, so this is a full-key
+ * comparison, not a fingerprint check. A missing hostKey rejects everything: the
  * operator pastes the server's base64 public key blob (the third field of
  * `ssh-keyscan` output), not a `SHA256:` fingerprint, which never matches.
  */
@@ -139,7 +143,20 @@ interface Ssh2ClientInstance {
   rename(from: string, to: string): Promise<string>;
   mkdir(remoteDir: string, recursive: boolean): Promise<string>;
   exists(remotePath: string): Promise<false | string>;
+  stat(remotePath: string): Promise<{ readonly isDirectory: boolean }>;
   end(): Promise<boolean>;
+}
+
+/**
+ * Map ssh2-sftp-client's exists() answer ('d', '-', 'l' or false; it uses
+ * lstat, so a link is 'l') to a path kind. A link is followed with
+ * `isDirectoryTarget`, so a link to a directory counts as a directory.
+ */
+export async function toPathKind(type: false | string, isDirectoryTarget: () => Promise<boolean>): Promise<SftpPathKind> {
+  if (type === false) return 'missing';
+  if (type === 'd') return 'directory';
+  if (type === 'l') return (await isDirectoryTarget()) ? 'directory' : 'file';
+  return 'file';
 }
 
 /**
@@ -197,8 +214,9 @@ export function createSsh2SftpClient(options: SftpConnectionOptions): SftpClient
       if (already === 'd') return;
       await client.mkdir(remoteDirectory, true);
     },
-    async exists(remotePath: string): Promise<boolean> {
-      return (await client.exists(remotePath)) !== false;
+    async pathKind(remotePath: string): Promise<SftpPathKind> {
+      const type = await client.exists(remotePath);
+      return toPathKind(type, async () => (await client.stat(remotePath)).isDirectory);
     },
     async end(): Promise<void> {
       await client.end();

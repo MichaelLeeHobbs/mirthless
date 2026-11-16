@@ -23,6 +23,7 @@ import {
   type SftpClientFactory,
   type SftpConnectionOptions,
   type SftpFileInfo,
+  type SftpPathKind,
 } from './sftp-client.js';
 
 /** Bound each SFTP operation — a hung server must not wedge the poll loop. */
@@ -297,13 +298,13 @@ export class SftpReceiver implements SourceConnectorRuntime {
     return {
       read: async (ledgerPath: string): Promise<string | null> => {
         if (!this.client) return null;
-        let exists: boolean;
+        let kind: SftpPathKind;
         try {
-          exists = await withTimeout(this.client.exists(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP exists');
+          kind = await withTimeout(this.client.pathKind(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP exists');
         } catch {
           return null;
         }
-        if (!exists) return null;
+        if (kind === 'missing') return null;
         const buf = await withTimeout(this.client.get(ledgerPath), SFTP_OP_TIMEOUT_MS, 'SFTP get ledger');
         return buf.toString('utf8');
       },

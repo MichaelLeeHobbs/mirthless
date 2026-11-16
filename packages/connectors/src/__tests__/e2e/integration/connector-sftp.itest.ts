@@ -14,6 +14,7 @@ import {
   SftpDispatcher,
   SFTP_POST_ACTION,
   clearChannelRegistry,
+  createSsh2SftpClient,
 } from '../../../index.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from '../support/e2e-harness.js';
 import { sendMllp } from '../support/tcp-helpers.js';
@@ -85,5 +86,24 @@ describeSftp('SFTP connector cascade (real SFTP server)', () => {
 
     expect(sink.received).toHaveLength(1);
     expect(sink.lastContent()).toBe('MSH|^~\\&|SFTPTEST::sftp');
+  });
+
+  it('tells a directory from a regular file and a missing path (#133)', async () => {
+    const cfg = requireSftp();
+    const client = createSsh2SftpClient({
+      host: cfg.host, port: cfg.port, username: cfg.username, password: cfg.password, strictHostKey: false,
+    });
+    const filePath = `${cfg.baseDir}/pathkind-${String(Date.now())}.txt`;
+    await client.connect();
+    try {
+      await client.put(Buffer.from('x'), filePath);
+
+      expect(await client.pathKind(cfg.baseDir)).toBe('directory');
+      expect(await client.pathKind(filePath)).toBe('file');
+      expect(await client.pathKind(`${cfg.baseDir}/no-such-entry`)).toBe('missing');
+    } finally {
+      await client.delete(filePath).catch(() => undefined);
+      await client.end();
+    }
   });
 });
