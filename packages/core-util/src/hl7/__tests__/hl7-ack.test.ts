@@ -2,9 +2,9 @@
 // HL7v2 ACK Tests
 // ===========================================
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Hl7Message } from '../hl7-message.js';
-import { createAck } from '../hl7-ack.js';
+import { createAck, newControlId } from '../hl7-ack.js';
 
 // ----- Helpers -----
 
@@ -31,9 +31,16 @@ describe('createAck', () => {
     expect(ack.get('MSH.5')).toBe('SENDER');
     expect(ack.get('MSH.6')).toBe('SFAC');
 
-    // MSA segment
     expect(ack.get('MSH.9.1')).toBe('ACK');
-    expect(ack.get('MSH.10')).toBe('MSG001');
+    expect(ack.get('MSA.2')).toBe('MSG001');
+  });
+
+  it('gives the ACK a control id of its own that fits MSH-10 (#187)', () => {
+    const ack = parseAck(createAck(Hl7Message.parse(ADT_A01), { ackCode: 'AA' }));
+    const id = ack.get('MSH.10')!;
+    expect(id).not.toBe('MSG001');
+    expect(id).toMatch(/^GF\d+$/);
+    expect(id.length).toBeLessThanOrEqual(20);
   });
 
   it('includes MSA with ack code and control ID', () => {
@@ -129,6 +136,23 @@ describe('createAck with composite header fields', () => {
     const ack = createAck(original, { ackCode: 'AA' });
 
     expect(ack.split('\r')[0]).toMatch(/^MSH\|\^~\\&\|EHR\^9\.9\^ISO\|HOSP\^8\.8\^ISO\|LAB\^1\.2\.3\^ISO\|FAC\^4\.5\^ISO\|/);
-    expect(ack.split('\r')[0]).toContain('|42|P^T|2.5');
+    expect(ack.split('\r')[0]).toContain('|P^T|2.5');
+    expect(ack.split('\r')[1]).toBe('MSA|AA|42');
+  });
+});
+
+describe('newControlId', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('gives different ids to ACKs made in the same millisecond', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    const ids = new Set([newControlId(), newControlId(), newControlId()]);
+    expect(ids.size).toBe(3);
+    for (const id of ids) {
+      expect(id.startsWith('GF1800000000000')).toBe(true);
+      expect(id.length).toBe(20);
+    }
   });
 });

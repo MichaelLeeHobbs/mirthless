@@ -14,9 +14,23 @@ export interface AckOptions {
   readonly errorCode?: string;
 }
 
+let controlIdSequence = 0;
+
+/**
+ * A new control id for a message GalvaniFlow sends, such as an ACK's MSH-10:
+ * `GF`, the millisecond clock (13 digits) and a 5-digit sequence, 20 characters
+ * in all, the most MSH-10 holds. The sequence keeps ids made in the same
+ * millisecond apart.
+ */
+export function newControlId(): string {
+  controlIdSequence = (controlIdSequence + 1) % 100_000;
+  return `GF${String(Date.now())}${String(controlIdSequence).padStart(5, '0')}`;
+}
+
 /**
  * Create an ACK/NAK response for the given original message.
- * Swaps sender/receiver, sets MSA with ack code + control ID.
+ * Swaps sender/receiver, gives the ACK its own control id in MSH-10 and echoes
+ * the original's in MSA-2.
  */
 export function createAck(original: Hl7Message, options: AckOptions): string {
   const enc = original.encoding;
@@ -43,7 +57,7 @@ export function createAck(original: Hl7Message, options: AckOptions): string {
     timestamp,
     '',
     `ACK${enc.componentSep}${original.get('MSH.9.2') ?? ''}`,
-    controlId,
+    newControlId(),
     original.getRaw('MSH.11') ?? 'P',
     version,
   ].join(enc.fieldSep);

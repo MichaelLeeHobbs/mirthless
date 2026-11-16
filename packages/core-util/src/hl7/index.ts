@@ -14,7 +14,7 @@ export { Hl7Message } from './hl7-message.js';
 export { splitHl7Batch } from './hl7-batch.js';
 
 export type { AckOptions } from './hl7-ack.js';
-export { createAck } from './hl7-ack.js';
+export { createAck, newControlId } from './hl7-ack.js';
 
 export { formatTimestamp } from './hl7-timestamp.js';
 

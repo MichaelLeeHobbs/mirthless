@@ -6,7 +6,7 @@
 // destination connector must treat a NAK (MSA-1 = AE/AR/CE/CR) as an ERROR,
 // not a silent SENT.
 
-import { Hl7Message, createAck, formatTimestamp, escapeValue, type Hl7Encoding } from '@galvaniflow/core-util';
+import { Hl7Message, createAck, formatTimestamp, escapeValue, newControlId, type Hl7Encoding } from '@galvaniflow/core-util';
 
 /** HL7 acknowledgement codes we emit. */
 export type AckCode = 'AA' | 'AE' | 'AR';
@@ -38,8 +38,7 @@ const DEFAULT_ENCODING: Hl7Encoding = {
 /** Minimal ACK used when the inbound message is not parseable HL7. */
 function buildFallbackAck(ackCode: AckCode, textMessage?: string): string {
   const timestamp = formatTimestamp(new Date());
-  // MSH-10 holds at most 20 characters: "GF" plus the millisecond clock is 15.
-  const controlId = `GF${String(Date.now())}`;
+  const controlId = newControlId();
   const msh = ['MSH', '^~\\&', '', '', '', '', timestamp, '', 'ACK', controlId, 'P', '2.5.1'].join('|');
   const msaParts = ['MSA', ackCode, controlId];
   if (textMessage !== undefined) msaParts.push(escapeValue(textMessage, DEFAULT_ENCODING));
