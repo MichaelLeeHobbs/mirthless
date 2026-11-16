@@ -2,7 +2,9 @@
 // Monaco setup
 // ===========================================
 // The one place the app loads Monaco. It is bundled (no CDN), so editors work on
-// networks with no internet access and under a strict Content-Security-Policy.
+// networks with no internet access and a Content-Security-Policy needs no CDN
+// host. Monaco injects inline styles, so such a policy would need
+// `style-src 'unsafe-inline'`, as MUI does (D-283).
 // Importing this module configures @monaco-editor/react to use the bundle.
 
 import * as monaco from 'monaco-editor';

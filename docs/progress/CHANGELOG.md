@@ -2,6 +2,16 @@
 
 > Session-by-session log of what was built. Enables any future Claude instance to pick up where we left off.
 
+## 2026-11-15 — Code editor follow-ups (#183, D-291, D-292)
+
+The items the PR #168 review left in #183.
+
+- **Saving a channel keeps TypeScript (D-291).** An update that left languages out turned TypeScript scripts into JavaScript, which switched off their deploy type check. Channel scripts keep their stored language; filter rules, transformer steps and response transformers must carry their language on update (400 otherwise), since they are reinserted by position.
+- **Backup restore.** A TypeScript global script with type errors in a backup restores as JavaScript and is reported; the other global scripts restore instead of the whole section failing.
+- **Type checker queue.** Checks go to the worker one at a time, each time limit starts when the worker takes the check, and an overrun or crash fails only that check.
+- **Editor.** An empty script opens in its saved language; full screen keeps the same editor, so undo and the cursor survive; undo cannot reach another list item's or tab's text; an edited HL7 sample keeps `\r` endings; an editor whose declarations are not the applied ones shows syntax errors only and says types are checked when you click in (D-292); a transformer step knows the names earlier steps declare.
+- **Tests and docs.** The out-of-memory test expects the heap-limit error only, and test-run tests that should finish get 10 s (the first one failed on a cold worker). D-283 no longer claims editors work under a strict CSP, which nothing tested and the app does not send. Test-run fairness is recorded in D-286 as left out on purpose.
+
 ## 2026-11-15 — Code editor hill climb (branch `claude/code-editor-climb`)
 
 Michael asked for a scored climb of the code editor to 9+, with the TypeScript side covered and the editor as one reusable component. A blind judge scored 24 to 27 editor screenshots on six criteria (TypeScript counts double). Baseline 3.2; rounds A 5.6, B 7.15, C 7.25 (kept as a requirement), D 7.9; E (phone toolbar, popups positioned relative to the editor, documentation beside completions) scored 7.8 and was reverted to a patch. The climb stopped short of 9 at a plateau; it resumed on a desktop-only rubric (2.9 baseline, 7.83 after the test-run work, 8.27 after rounds H and I). The climb log and evidence are in `tmp/editor-climb/`.
