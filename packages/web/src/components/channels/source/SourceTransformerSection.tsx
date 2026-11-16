@@ -17,6 +17,7 @@ import AddIcon from '@mui/icons-material/Add';
 import type { TransformerFormValues, TransformerStepFormValues } from './types.js';
 import { createDefaultTransformerStep } from './types.js';
 import { TransformerStepEditor } from './TransformerStepEditor.js';
+import { earlierStepNames } from '../../editors/surface-state.js';
 import { DelimitedSettings } from './DelimitedSettings.js';
 
 /** The source transformer's saved Delimited settings, or none. */
@@ -101,6 +102,7 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
             {transformer.steps.map((step, index) => (
               <TransformerStepEditor
                 key={index}
+                earlierNames={earlierStepNames(transformer.steps, index)}
                 step={step}
                 index={index}
                 total={transformer.steps.length}
