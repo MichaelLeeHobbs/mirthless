@@ -1,15 +1,19 @@
 // ===========================================
 // Body Limit Middleware
 // ===========================================
-// JSON bodies are capped at 1 MB, except on the few routes that take a whole
-// backup, a channel export or a message. Those routes are parsed only after
-// authentication (see largeJsonBody).
+// No request body is read before the caller is known (#157). routes/index.ts
+// mounts jsonBody after the API's one `authenticate`, the few routes that take
+// a whole backup, a channel export or a message parse theirs with
+// largeJsonBody inside their routers, and login parses its small body with
+// authJsonBody after the login rate limiter.
 
 import express, { type RequestHandler } from 'express';
 
 const DEFAULT_LIMIT = '1mb';
 /** Backups, channel imports and messages with embedded documents. */
 const LARGE_LIMIT = '50mb';
+/** A username and a password. */
+const AUTH_LIMIT = '4kb';
 
 const LARGE_BODY_ROUTES: ReadonlyArray<RegExp> = [
   /^\/api\/v1\/system\/backup\/?$/,
@@ -26,13 +30,12 @@ export function isLargeBodyRoute(path: string): boolean {
 }
 
 /**
- * Parse a JSON body up to the default limit. The large-body routes are left
- * unparsed here: their body is read by {@link largeJsonBody}, which their
- * routers mount after authentication, so nobody without a session (and nothing
- * the rate limiter has refused) can make the server parse 50 MB of JSON.
+ * Parse a JSON body up to the default limit. Mount after `authenticate`. The
+ * large-body routes are left unparsed here: their body is read by
+ * {@link largeJsonBody}.
  */
 export const jsonBody: RequestHandler = (req, res, next) => {
-  if (isLargeBodyRoute(req.path)) { next(); return; }
+  if (isLargeBodyRoute(req.baseUrl + req.path)) { next(); return; }
   defaultJson(req, res, next);
 };
 
@@ -41,3 +44,6 @@ export const largeJsonBody: RequestHandler = (req, res, next) => {
   if (!isLargeBodyRoute(req.baseUrl + req.path)) { next(); return; }
   largeJson(req, res, next);
 };
+
+/** Parse a sign-in body, which has no session to check first. Mount after the login rate limiter. */
+export const authJsonBody: RequestHandler = express.json({ limit: AUTH_LIMIT });

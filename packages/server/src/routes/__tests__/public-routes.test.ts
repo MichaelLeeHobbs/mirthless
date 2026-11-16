@@ -3,14 +3,15 @@
 // ===========================================
 // routes/index.ts authenticates once, in front of every router (#217, D-298).
 // This boots the real app, walks every route the routers define, and calls
-// each one without credentials and with a bogus bearer token. Anything other
-// than the guard's 401 fails, unless the route is in PUBLIC_ROUTES. A route
+// each one without credentials, with a bogus bearer token and with a malformed
+// body. Anything other than the guard's 401 fails, unless the route is in
+// PUBLIC_ROUTES; a body parser in front of the guard fails it too (#157). A route
 // mounted above the guard by mistake, or a router mounted before it, shows up
 // here. Nothing reaches a handler, so no database is needed.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
-import type { Server } from 'node:http';
+import { request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Router } from 'express';
 
@@ -87,10 +88,45 @@ interface Answer {
   readonly message: string | undefined;
 }
 
-async function call(route: ApiRoute, headers: Readonly<Record<string, string>> = {}): Promise<Answer> {
-  const res = await fetch(`${base}${concrete(route.path)}`, { method: route.method, headers: { connection: 'close', ...headers } });
-  const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-  return { status: res.status, message: body.error?.message };
+async function call(route: ApiRoute, headers: Readonly<Record<string, string>> = {}, body?: string): Promise<Answer> {
+  const res = await fetch(`${base}${concrete(route.path)}`, {
+    method: route.method,
+    headers: { connection: 'close', ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
+    ...(body === undefined ? {} : { body }),
+  });
+  const json = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+  return { status: res.status, message: json.error?.message };
+}
+
+const takesBody = (r: ApiRoute): boolean => r.method !== 'GET' && r.method !== 'HEAD';
+
+/**
+ * POST up to `total` bytes in 64 KB chunks with no length header, so a parser
+ * would have to read the stream to find its end. Stops writing as soon as the
+ * server answers, and reports how much had been sent by then.
+ */
+function streamUntilAnswered(path: string, total: number): Promise<{ readonly status: number; readonly sent: number }> {
+  return new Promise((resolve, reject) => {
+    const chunk = Buffer.alloc(64 * 1024, 0x20);
+    let sent = 0;
+    let answered = false;
+    const req = request(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', connection: 'close' } });
+    req.on('response', (res) => {
+      answered = true;
+      resolve({ status: res.statusCode ?? 0, sent });
+      res.resume();
+      req.destroy();
+    });
+    req.on('error', (err) => { if (!answered) reject(err); });
+    const pump = (): void => {
+      while (!answered && sent < total) {
+        sent += chunk.length;
+        if (!req.write(chunk)) { req.once('drain', pump); return; }
+      }
+      if (!answered) req.end();
+    };
+    pump();
+  });
 }
 
 describe('the route walk', () => {
@@ -113,6 +149,9 @@ describe('a caller without a session', () => {
       const bogus = await call(route, { authorization: 'Bearer not-a-token' });
       if (anonymous.status !== 401 || anonymous.message !== 'Unauthorized') reached.push(`${route.method} ${route.path} anonymous: ${String(anonymous.status)}`);
       if (bogus.status !== 401 || bogus.message !== 'Invalid or expired token') reached.push(`${route.method} ${route.path} bogus token: ${String(bogus.status)}`);
+      // A parser in front of the guard would answer 400 here (#157).
+      const malformed = takesBody(route) ? await call(route, {}, '{not json') : anonymous;
+      if (malformed.status !== 401 || malformed.message !== 'Unauthorized') reached.push(`${route.method} ${route.path} malformed body: ${String(malformed.status)}`);
     }
     expect(reached).toEqual([]);
   });
@@ -126,5 +165,33 @@ describe('a caller without a session', () => {
     // No body: the login validator answers, not the guard.
     expect((await call({ method: 'POST', path: '/api/v1/auth/login' })).status).toBe(400);
     expect(await call({ method: 'POST', path: '/api/v1/auth/refresh' })).toEqual({ status: 401, message: 'No refresh token provided' });
+  });
+});
+
+describe('request bodies are read only after the guard (#157)', () => {
+  const channels: ApiRoute = { method: 'POST', path: '/api/v1/channels' };
+  const login: ApiRoute = { method: 'POST', path: '/api/v1/auth/login' };
+
+  it('answers malformed JSON from a caller without a session with 401, not a parse error', async () => {
+    expect(await call(channels, {}, '{not json')).toEqual({ status: 401, message: 'Unauthorized' });
+  });
+
+  it('answers a caller without a session before reading an over-limit body', async () => {
+    const total = 20 * 1024 * 1024;
+    const { status, sent } = await streamUntilAnswered(channels.path, total);
+    expect(status).toBe(401);
+    expect(sent).toBeLessThan(total);
+  });
+
+  it('refuses a login body over its small limit with 413', async () => {
+    expect((await call(login, {}, JSON.stringify({ pad: 'x'.repeat(8 * 1024) }))).status).toBe(413);
+  });
+
+  it('still parses a small login body', async () => {
+    const answer = await call(login, {}, JSON.stringify({ username: 'kpatel' }));
+    // The validator saw the parsed username and missed only the password.
+    expect(answer.status).toBe(400);
+    expect(answer.message).toContain('at password');
+    expect(answer.message).not.toContain('username');
   });
 });

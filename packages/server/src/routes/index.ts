@@ -5,6 +5,7 @@
 
 import { Router, type IRouter } from 'express';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { jsonBody } from '../middleware/body-limit.middleware.js';
 import alertRoutes from './alert.routes.js';
 import authRoutes from './auth.routes.js';
 import attachmentRoutes from './attachment.routes.js';
@@ -60,6 +61,8 @@ router.use('/auth', authRoutes);
 // One guard for the whole API. Routers must not add their own: ten routers share
 // the /channels mount, and each one's guard would run again (#217).
 router.use(authenticate);
+// Bodies are read only now, after the guard (#157); large-body routers parse their own.
+router.use(jsonBody);
 
 router.use('/alerts', alertRoutes);
 // Mount specific /channels sub-routes BEFORE channelRoutes — channelRoutes
