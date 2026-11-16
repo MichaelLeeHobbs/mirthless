@@ -5,14 +5,10 @@
 import { Router, type IRouter } from 'express';
 import { eventExportQuerySchema } from '@galvaniflow/core-models';
 import { EventExportController } from '../controllers/event-export.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const router: IRouter = Router();
-
-// All export routes require authentication
-router.use(authenticate);
 
 router.get(
   '/',
