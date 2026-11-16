@@ -1,8 +1,8 @@
 # What CI runs
 
-`.github/workflows/ci.yml` runs on every pull request to `main` and every push to `main`. Its first job, `changes`, looks at which files changed and picks the jobs the change needs. The rules live in one script, [`scripts/ci/classify-changes.mjs`](../../scripts/ci/classify-changes.mjs), with table tests beside it that `pnpm gate` runs (`pnpm test:ci`). Why it works this way: D-280 in [`DECISIONS.md`](../progress/DECISIONS.md).
+`.github/workflows/ci.yml` runs on every pull request to `main` and every push to `main`. On a pull request, its first job, `changes`, looks at which files changed and picks the jobs the change needs. The rules live in one script, [`scripts/ci/classify-changes.mjs`](../../scripts/ci/classify-changes.mjs), with table tests beside it that `pnpm gate` runs (`pnpm test:ci`). Why it works this way: D-280 in [`DECISIONS.md`](../progress/DECISIONS.md).
 
-A pull request is compared with its merge base on `main`; a push with the commit before it.
+A pull request is compared with its merge base on `main`.
 
 | Changed | Jobs |
 |---|---|
@@ -13,7 +13,8 @@ A pull request is compared with its merge base on `main`; a push with the commit
 | `packages/cli` | Gate (cli tests) |
 | `e2e/**`, `playwright.*` | e2e |
 | `docs/**`, top-level `*.md`, `.claude/**`, `.github/ISSUE_TEMPLATE/**`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/dependabot.yml`, `LICENSE` | `docs`: the unit tests whose source names a changed file, such as the guards on `docs/user/connector-reference.md`. Nothing else. |
-| Anything else: root `package.json`, `pnpm-lock.yaml`, `tsconfig*`, `eslint.config.js`, `.github/workflows/**`, `docker/**`, `scripts/**`, a path with no rule | Everything |
+| `.github/workflows/**`, `scripts/ci/**` | Everything, decided in the workflow without running the classifier, so a pull request that breaks the classifier still runs its tests |
+| Anything else: root `package.json`, `pnpm-lock.yaml`, `tsconfig*`, `eslint.config.js`, `docker/**`, `scripts/**`, a path with no rule | Everything |
 
 The server's docs guards that read the repository through `readRepoFile` (connector reference, access control, capabilities) run in the `docs` job on every change whose gate doesn't already run the server's tests. The capabilities page cites proof tests across the repo, so deleting a cited web test or e2e spec must still fail CI.
 
@@ -23,12 +24,15 @@ Inside the gate, build, lint and `pnpm audit` always cover the whole repository.
 
 These run everything, whatever changed:
 
+- every push to `main`: nobody waits on it, it catches what two green pull requests break together, and a force push can't hide the commits it replaced,
 - a version tag (`docker-build.yml` calls `ci.yml` before it publishes images),
-- an empty diff, or one the classifier cannot compute (no base commit, a script error).
+- an empty diff, or one the classifier cannot compute (no merge base, a script error).
+
+Dependency changes move `pnpm-lock.yaml`, so they run everything, `pnpm audit` included. A docs-only or e2e-only pull request skips the gate job and with it the audit; the next push to `main` runs it.
 
 ## The required check
 
-`ci-ok` needs every other job and runs even when they fail. It passes when each job passed or was skipped and fails when any failed or was cancelled. A skipped job never reports a status, so branch protection on `main` should require `ci-ok` alone, not the individual jobs.
+`ci-ok` needs every other job and runs even when they fail. It passes when each job passed or was skipped and fails when any failed or was cancelled. A skipped job never reports a status, so branch protection on `main` should require `ci-ok` alone, not the individual jobs. `main` has no branch protection configured yet; until it does, nothing stops a merge with a red `ci-ok`.
 
 ## Checking a diff locally
 
