@@ -13,6 +13,7 @@ import { FHIR_DEST_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { HeadersEditor, coerceHeaders } from '../../common/HeadersEditor.js';
 import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
+import { FHIR_METHODS, FHIR_AUTH_TYPES, FHIR_FORMATS } from '@galvaniflow/core-models';
 
 const RESOURCE_TYPES = [
   'Patient', 'Observation', 'Encounter', 'Condition',
@@ -20,9 +21,6 @@ const RESOURCE_TYPES = [
   'AllergyIntolerance', 'Immunization', 'Bundle',
 ] as const;
 
-const METHODS = ['POST', 'PUT'] as const;
-const AUTH_TYPES = ['NONE', 'BASIC', 'BEARER', 'API_KEY'] as const;
-const FORMATS = ['json', 'xml'] as const;
 
 export function FhirDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -87,7 +85,7 @@ export function FhirDestinationForm({ properties, onChange }: DestConnectorFormP
           fullWidth
           sx={{ mb: 2 }}
         >
-          {METHODS.map((m) => (
+          {FHIR_METHODS.map((m) => (
             <MenuItem key={m} value={m}>{m}</MenuItem>
           ))}
         </TextField>
@@ -100,7 +98,7 @@ export function FhirDestinationForm({ properties, onChange }: DestConnectorFormP
           fullWidth
           sx={{ mb: 2 }}
         >
-          {FORMATS.map((f) => (
+          {FHIR_FORMATS.map((f) => (
             <MenuItem key={f} value={f}>{f === 'json' ? 'JSON (application/fhir+json)' : 'XML (application/fhir+xml)'}</MenuItem>
           ))}
         </TextField>
@@ -139,7 +137,7 @@ export function FhirDestinationForm({ properties, onChange }: DestConnectorFormP
           fullWidth
           sx={{ mb: 2 }}
         >
-          {AUTH_TYPES.map((at) => (
+          {FHIR_AUTH_TYPES.map((at) => (
             <MenuItem key={at} value={at}>{at}</MenuItem>
           ))}
         </TextField>

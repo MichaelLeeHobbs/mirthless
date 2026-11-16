@@ -14,6 +14,9 @@ import { httpSourceObjectSchema, httpDestinationObjectSchema } from '../http-con
 import { databaseSourceObjectSchema, databaseDestinationObjectSchema } from '../database-connector.schema.js';
 import { fileSourceObjectSchema, fileDestinationObjectSchema } from '../file-connector.schema.js';
 import { javascriptSourceObjectSchema, javascriptDestinationObjectSchema } from '../javascript-connector.schema.js';
+import { channelSourceObjectSchema, channelDestinationObjectSchema } from '../channel-connector.schema.js';
+import { fhirDestinationObjectSchema } from '../fhir-connector.schema.js';
+import { smtpDestinationObjectSchema } from '../smtp-connector.schema.js';
 
 const DOC = readFileSync(new URL('../../../../../docs/user/connector-reference.md', import.meta.url), 'utf-8');
 
@@ -48,6 +51,10 @@ const SCHEMAS = [
   ['FILE as a destination', 'destination', fileDestinationObjectSchema.shape],
   ['JAVASCRIPT as a source', 'source', javascriptSourceObjectSchema.shape],
   ['JAVASCRIPT as a destination', 'destination', javascriptDestinationObjectSchema.shape],
+  ['CHANNEL as a source', 'source', channelSourceObjectSchema.shape],
+  ['CHANNEL as a destination', 'destination', channelDestinationObjectSchema.shape],
+  ['FHIR as a destination', 'destination', fhirDestinationObjectSchema.shape],
+  ['SMTP as a destination', 'destination', smtpDestinationObjectSchema.shape],
 ] as const;
 
 describe('docs/user/connector-reference.md property tables', () => {
