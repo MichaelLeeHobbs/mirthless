@@ -6,11 +6,18 @@
 
 The e2e job took 7m20s on main and is the slowest job for every server or web change (#177 follow-up).
 
-- **Spec files run on 4 Playwright workers** instead of 1 (D-282, superseding D-038). Tests inside a file still run in order. An audit of the 21 spec files found no two that touch the same rows or settings.
+- **Spec files run on 4 Playwright workers** instead of 1 (D-289, superseding D-038). Tests inside a file still run in order. An audit of the 21 spec files found no two that touch the same rows or settings.
 - **CI e2e runs against the built server and web bundle** (`node dist/index.js`, `vite preview`) instead of the dev servers, which made four workers CPU-bound. Local runs keep the dev servers.
 - **`db:seed` exits when it is done.** The example-message step's server pool was never closed, so the script sat for its 30s idle timeout after "Seed complete". `seed-exit.itest.ts` now requires the script to exit within 15s.
 - **CI migrates without rebuilding.** Both jobs call `drizzle-kit migrate` directly, because `pnpm db:migrate` runs `tsc` first (9s) after the build has already run.
 - **Found on the way:** vacuous e2e tests and 96s of fixed sleeps (filed as an issue).
+
+## 2026-11-15 — CI runs only what a change needs (branch `ci/177-change-classifier`)
+
+#177 (D-288). On a pull request, a `changes` job classifies the diff with `scripts/ci/classify-changes.mjs` and the other jobs run only when it selects them. Pushes to main, and pull requests that change CI itself, run everything. A docs-only change runs a `docs` job with just the unit tests that read the changed file; a web change skips both integration lanes; a server change skips connector integration. Unit tests in the gate narrow to the changed packages and their dependents; build, lint and audit stay whole-repo. Root config, workflows, `docker/`, `scripts/`, tags and anything unknown run everything. `ci-ok` is the single check branch protection on main requires (set up the same day: from the GitHub Actions app, branches need not be up to date, force pushes blocked). Table tests (`pnpm test:ci`, now part of `pnpm gate`) also fail when `ci.yml` gains a job the classifier and `ci-ok` don't know, or when `pnpm gate` gains a step CI doesn't run. What runs when: `docs/ops/ci.md`.
+
+- Differs from the issue on purpose: a connectors change also runs the Postgres lane and e2e, because the server depends on connectors; and a push to main runs everything instead of comparing with its parent.
+- Measured on main before this change: e2e is 7m20s of the 7m20s wall clock (Playwright alone 5m34s, one worker), the gate job 3m35s, connector integration 1m. So server and web PRs still wait on e2e.
 
 ## 2026-11-15 — Removed the CLI (branch `remove-cli`, #145)
 

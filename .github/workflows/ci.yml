@@ -8,8 +8,61 @@ on:
   # Allow other workflows (e.g. docker-build on a tag) to gate on CI passing.
   workflow_call:
 
+# Which jobs a pull request runs is decided by the `changes` job
+# (scripts/ci/classify-changes.mjs, rules at the top of that file). A push to
+# main, a tag, a path with no rule and any error run everything. `ci-ok` is the
+# one check branch protection on main requires, since a skipped job never
+# reports.
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.classify.outputs.full }}
+      gate: ${{ steps.classify.outputs.gate }}
+      test_filter: ${{ steps.classify.outputs.test_filter }}
+      pg_integration: ${{ steps.classify.outputs.pg_integration }}
+      connector_integration: ${{ steps.classify.outputs.connector_integration }}
+      e2e: ${{ steps.classify.outputs.e2e }}
+      docs: ${{ steps.classify.outputs.docs }}
+      doc_tests: ${{ steps.classify.outputs.doc_tests }}
+    steps:
+      # Full history, so the merge base with main is always present.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # A pull request that changes CI itself runs everything without asking the
+      # classifier, so one that breaks the classifier still runs the tests that
+      # catch it. classify-changes.test.mjs checks the echo list covers every
+      # output above. Plain Node on the runner: the classifier has no dependencies.
+      - name: Classify changed files
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          ci_changed=""
+          if [ -n "$BASE_SHA" ]; then
+            base=$(git merge-base "$BASE_SHA" HEAD) && ci_changed=$(git diff --name-only "$base" HEAD -- .github/workflows scripts/ci) || ci_changed="(no merge base)"
+          fi
+          if [ -n "$ci_changed" ]; then
+            echo "CI itself changed, running everything: $ci_changed"
+            {
+              echo full=true
+              echo gate=true
+              echo test_filter=-r
+              echo pg_integration=true
+              echo connector_integration=true
+              echo e2e=true
+              echo docs=false
+              echo doc_tests=
+            } >> "$GITHUB_OUTPUT"
+          else
+            node scripts/ci/classify-changes.mjs
+          fi
+
   build-lint-test:
+    needs: changes
+    if: needs.changes.outputs.gate == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -48,10 +101,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Build, lint and unit tests with coverage minimums: the same command
-      # agents and developers run locally before calling a change done.
+      # Build, lint and unit tests with coverage minimums: the steps of
+      # `pnpm gate`, with unit tests narrowed to the changed packages and their
+      # dependents (TEST_FILTER is -r on a full run). Build and lint stay
+      # whole-repo. classify-changes.test.mjs fails if `gate` gains a step.
       - name: Gate (build, lint, test with coverage)
-        run: pnpm gate
+        env:
+          TEST_FILTER: ${{ needs.changes.outputs.test_filter }}
+        run: |
+          pnpm build
+          pnpm lint
+          pnpm $TEST_FILTER run test:coverage
+          pnpm test:ci
 
       # Fail on high/critical vulns in production deps.
       - name: Audit production dependencies
@@ -64,11 +125,13 @@ jobs:
       # The gate already built the server, so call drizzle-kit directly:
       # `pnpm db:migrate` would run tsc again first.
       - name: Run database migrations
+        if: needs.changes.outputs.pg_integration == 'true'
         run: pnpm --filter @galvaniflow/server exec drizzle-kit migrate
 
       # data-source.itest.ts stores encrypted credentials, so it needs a
       # content key. Test-only value (64 hex chars), scoped to this step.
       - name: Integration tests (real Postgres)
+        if: needs.changes.outputs.pg_integration == 'true'
         run: pnpm test:integration
         env:
           CONTENT_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -86,6 +149,8 @@ jobs:
   # CONNECTOR_ITEST_REQUIRED makes a missing service fail the run instead of
   # skipping its suite (see src/__tests__/e2e/integration/gates.ts).
   connector-integration:
+    needs: changes
+    if: needs.changes.outputs.connector_integration == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -149,6 +214,8 @@ jobs:
         run: docker compose -f docker/docker-compose.yml --profile test logs --no-color sftp-test mail-test kafka-test rabbitmq-test
 
   e2e:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -215,3 +282,65 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+
+  # Unit tests that read a changed doc (or other non-package file) when the
+  # gate does not already run their package, so a docs-only change that breaks
+  # docs/user/connector-reference.md still fails CI.
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # pnpm version comes from package.json "packageManager".
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The doc tests import workspace packages through their built output.
+      - name: Build
+        run: pnpm build
+
+      # DOC_TESTS has one line per package: `<package dir> <file> <file>...`.
+      # vitest treats each file as a filter and the server passes with no tests,
+      # so a missing file is checked here instead of passing green.
+      - name: Tests that read the changed files
+        env:
+          DOC_TESTS: ${{ needs.changes.outputs.doc_tests }}
+        run: |
+          while read -r dir rest; do
+            [ -n "$dir" ] || continue
+            read -ra files <<< "$rest"
+            for file in "${files[@]}"; do
+              [ -f "$dir/$file" ] || { echo "::error::$dir/$file not found"; exit 1; }
+            done
+            pnpm --filter "./$dir" exec vitest run "${files[@]}"
+          done <<< "$DOC_TESTS"
+
+  # The one required check. Passes when every job passed or was skipped; fails
+  # when any failed or was cancelled, including `changes` itself.
+  ci-ok:
+    if: always()
+    needs: [changes, build-lint-test, connector-integration, e2e, docs]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::a CI job ended $result"; exit 1 ;;
+            esac
+          done

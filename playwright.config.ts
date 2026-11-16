@@ -10,7 +10,7 @@ export default defineConfig({
   // Spec files run in parallel; the tests inside one file still run in order on
   // one worker, because most files create a row in one test and edit or delete
   // it in the next. Files share the seeded database, so each works only on rows
-  // with its own names and leaves server-wide settings as it found them (D-282).
+  // with its own names and leaves server-wide settings as it found them (D-289).
   fullyParallel: false,
   workers: 4,
   retries: 0,

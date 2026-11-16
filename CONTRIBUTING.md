@@ -93,7 +93,8 @@ We follow the **mission-critical-ts** standard strictly. Full rules live in
   it isn't obvious. Group related changes; avoid noise commits.
 - **PRs:** fill out the pull request template. Keep them focused — one logical change per
   PR. Link any related issue. Describe what you tested and how.
-- A PR must be green on CI (lint + build + unit + integration) before review.
+- A PR must be green on CI (the `ci-ok` check) before review. CI runs only the jobs your
+  change needs; [`docs/ops/ci.md`](docs/ops/ci.md) says which.
 
 ## Progress Docs
 
