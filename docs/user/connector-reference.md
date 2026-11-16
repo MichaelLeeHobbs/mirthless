@@ -48,7 +48,7 @@ The source listens on a TCP port and reads framed messages, by default MLLP (0x0
 
 The source answers every message. With `responseMode` AUTO_ACK it builds an HL7 ACK from the inbound MSH: AA when the pipeline accepted the message (a filtered message counts as accepted), AE when it failed. It never sends AR. With PASSTHROUGH it returns the response the pipeline produced, and falls back to the same ACK when there is none.
 
-The destination waits for the partner's acknowledgement and reads MSA-1. AA or CA is SENT. Anything else is an ERROR with the code and MSA-3 text in the error message: a NAK (AE, AR, CE, CR), a missing MSA-1, an acknowledgement it cannot parse, an MSA-2 that names a different message control ID, or the connection closing before an acknowledgement arrives. An ERROR is retried only if the destination's queue is on.
+The destination waits for the partner's acknowledgement and reads MSA-1. AA or CA is SENT. Anything else is an ERROR with the code and MSA-3 text in the error message: a NAK (AE, AR, CE, CR), a missing MSA-1, an acknowledgement it cannot parse, an MSA-2 that names a different message control ID (the whole MSH-10 field is compared), or the connection closing before an acknowledgement arrives. An ERROR is retried only if the destination's queue is on.
 
 ### TCP_MLLP security
 
