@@ -17,7 +17,7 @@
 |---|---|---|---|---|
 | 3 | Readiness returns 200 when DB connected | `GET /health/ready` | 200 `{ "status": "ok", "database": { "connected": true } }` | |
 | 4 | Readiness returns 503 when DB unreachable | Stop PostgreSQL, `GET /health/ready` | 503 `{ "status": "unavailable", "database": { "connected": false } }` | |
-| 4a | A failed startup step is reported and skips nothing | Make pg-boss fail to start (a database user that can't create the `pgboss` schema), restart, `GET /health/ready` | 200 `status: "degraded"`, `startup.failedSteps` lists `queue` and `pruner-scheduler`; channels that were deployed are deployed again; a `SERVER_STARTUP_STEP_FAILED` event per step | |
+| 4a | A failed startup step is reported and skips nothing | Make pg-boss fail to start (a database user that can't create the `pgboss` schema), restart, `GET /health/ready` | 200 `status: "degraded"`, `startup.failedSteps` lists `queue` and `pruner-scheduler`; `GET /health` answers 200 `{ "status": "degraded" }`; channels that were deployed are deployed again; a `SERVER_STARTUP_STEP_FAILED` event per step | |
 
 ## Full Health Check
 

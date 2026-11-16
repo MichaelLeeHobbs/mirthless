@@ -171,7 +171,7 @@ Anyone, without signing in:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /health` | Overall status only (`ok` or not), for load balancers |
+| `GET /health` | Overall status only (`ok` or `degraded`), for load balancers; 503 only while the database is unreachable |
 | `GET /health/live` | Liveness: the process answers |
 | `GET /health/ready` | Readiness: whether the database is reachable, and the names of any startup steps that failed (no error text) |
 | `GET /api/v1/health` | Returns `ok` |

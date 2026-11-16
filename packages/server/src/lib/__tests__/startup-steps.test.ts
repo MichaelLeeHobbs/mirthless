@@ -146,17 +146,32 @@ describe('runStartupSteps', () => {
     });
 
     it('replaces the timeout with the real error when it fails later', async () => {
+      let finishQueue: (r: Result<void>) => void = () => undefined;
+      const h = harness({ startQueue: vi.fn(() => new Promise<Result<void>>((resolve) => { finishQueue = resolve; })) });
+
+      const run = runStartupSteps(h.deps);
+      await vi.advanceTimersByTimeAsync(STARTUP_STEP_TIMEOUT_MS);
+      finishQueue(failed('permission denied for schema pgboss'));
+      await run;
+
+      expect(h.status.failed()).toEqual([
+        expect.objectContaining({ step: STARTUP_STEP.QUEUE, errMsg: 'permission denied for schema pgboss' }),
+        expect.objectContaining({ step: STARTUP_STEP.PRUNER_SCHEDULER, errMsg: 'Not started: the job queue did not start' }),
+      ]);
+    });
+
+    it('never times out channel redeploy, which reports its own failures', async () => {
       let finishRedeploy: (r: Result<void>) => void = () => undefined;
       const h = harness({ redeployChannels: vi.fn(() => new Promise<Result<void>>((resolve) => { finishRedeploy = resolve; })) });
 
       const run = runStartupSteps(h.deps);
-      await vi.advanceTimersByTimeAsync(STARTUP_STEP_TIMEOUT_MS);
-      finishRedeploy(failed('2 of 900 channels failed to redeploy: A, B'));
+      await vi.advanceTimersByTimeAsync(STARTUP_STEP_TIMEOUT_MS * 10);
+      expect(h.status.failed()).toEqual([]);
+      expect(h.logError).not.toHaveBeenCalled();
+      finishRedeploy(OK);
       await run;
 
-      expect(h.status.failed()).toEqual([
-        expect.objectContaining({ step: STARTUP_STEP.CHANNEL_REDEPLOY, errMsg: '2 of 900 channels failed to redeploy: A, B' }),
-      ]);
+      expect(h.status.failed()).toEqual([]);
     });
   });
 

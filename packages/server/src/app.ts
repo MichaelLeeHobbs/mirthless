@@ -19,7 +19,7 @@ import { errorHandler, notFoundHandler } from './middleware/error.middleware.js'
 import { apiRateLimiter } from './middleware/rate-limit.middleware.js';
 import { authenticate } from './middleware/auth.middleware.js';
 import { requirePermission } from './middleware/permission.middleware.js';
-import { getHealthStatus, getReadiness } from './services/health.service.js';
+import { getHealthStatus, getReadiness, healthHttpStatus } from './services/health.service.js';
 import { registry } from './lib/metrics.js';
 import { metricsMiddleware } from './middleware/metrics.middleware.js';
 
@@ -71,16 +71,14 @@ app.get('/health', async (_req: Request, res: Response) => {
   // counts to the public. Detailed health is available on the authenticated
   // /health/full endpoint.
   const health = await getHealthStatus();
-  const status = health.status === 'ok' ? 200 : 503;
-  res.status(status).json({ status: health.status });
+  res.status(healthHttpStatus(health)).json({ status: health.status });
 });
 
 // Full health detail (memory, engine deployment counts, dependency checks) — behind
 // auth so it isn't exposed to the public.
 app.get('/health/full', authenticate, requirePermission('system:info'), async (_req: Request, res: Response) => {
   const health = await getHealthStatus();
-  const status = health.status === 'ok' ? 200 : 503;
-  res.status(status).json(health);
+  res.status(healthHttpStatus(health)).json(health);
 });
 
 // Prometheus metrics endpoint. Protected by default; set METRICS_PUBLIC=true to
