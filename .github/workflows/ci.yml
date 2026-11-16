@@ -61,8 +61,10 @@ jobs:
       # integration lane that exercises real SQL (queue, partitions, pruner,
       # channel + message round trip). These catch schema/SQL drift that the
       # mock-DB unit tests cannot.
+      # The gate already built the server, so call drizzle-kit directly:
+      # `pnpm db:migrate` would run tsc again first.
       - name: Run database migrations
-        run: pnpm db:migrate
+        run: pnpm --filter @galvaniflow/server exec drizzle-kit migrate
 
       # data-source.itest.ts stores encrypted credentials, so it needs a
       # content key. Test-only value (64 hex chars), scoped to this step.
@@ -192,10 +194,12 @@ jobs:
         run: pnpm build
 
       # Playwright's webServer starts dev:server + dev:web; the specs log in as
-      # the seeded admin, so the DB must be migrated and seeded first.
+      # the seeded admin, so the DB must be migrated and seeded first. The
+      # server is already built, so drizzle-kit runs directly (`pnpm db:migrate`
+      # would run tsc again first).
       - name: Migrate and seed database
         run: |
-          pnpm db:migrate
+          pnpm --filter @galvaniflow/server exec drizzle-kit migrate
           pnpm db:seed
 
       - name: Install Playwright browser
