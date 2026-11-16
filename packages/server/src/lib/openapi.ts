@@ -734,7 +734,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
           operationId: 'healthFull',
           responses: {
             '200': {
-              description: 'System healthy',
+              description: 'System healthy, or `degraded` because a startup step failed',
               content: {
                 'application/json': {
                   schema: { $ref: '#/components/schemas/HealthStatus' },
@@ -742,7 +742,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
               },
             },
             '503': {
-              description: 'System unhealthy',
+              description: 'Database unreachable (`degraded`)',
               content: {
                 'application/json': {
                   schema: { $ref: '#/components/schemas/HealthStatus' },

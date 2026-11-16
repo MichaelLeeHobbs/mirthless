@@ -23,7 +23,7 @@ vi.mock('../../engine.js', () => ({
 
 // ----- Import after mocks -----
 
-import { checkDatabase, getEngineStats, getMemoryStats, getHealthStatus, getReadiness } from '../health.service.js';
+import { checkDatabase, getEngineStats, getMemoryStats, getHealthStatus, getReadiness, healthHttpStatus } from '../health.service.js';
 import { startupStatus, STARTUP_STEP, type StartupFailure } from '../../lib/startup-steps.js';
 
 const QUEUE_FAILURE: StartupFailure = { step: STARTUP_STEP.QUEUE, errMsg: 'permission denied for database', failedAt: '2026-11-16T00:00:00.000Z' };
@@ -223,6 +223,32 @@ describe('Health Service', () => {
 
       expect(health.status).toBe('ok');
       expect(health.startup.failed).toEqual([]);
+    });
+  });
+
+  // ----- healthHttpStatus -----
+
+  describe('healthHttpStatus', () => {
+    it('answers 200 for a startup-step failure, so a load balancer keeps the instance (D-308)', async () => {
+      mockExecute.mockResolvedValue([{ '?column?': 1 }]);
+      vi.spyOn(startupStatus, 'failed').mockReturnValue([QUEUE_FAILURE]);
+
+      const health = await getHealthStatus();
+
+      expect(health.status).toBe('degraded');
+      expect(healthHttpStatus(health)).toBe(200);
+    });
+
+    it('answers 503 while the database is unreachable', async () => {
+      mockExecute.mockRejectedValue(new Error('Connection refused'));
+
+      expect(healthHttpStatus(await getHealthStatus())).toBe(503);
+    });
+
+    it('answers 200 when healthy', async () => {
+      mockExecute.mockResolvedValue([{ '?column?': 1 }]);
+
+      expect(healthHttpStatus(await getHealthStatus())).toBe(200);
     });
   });
 

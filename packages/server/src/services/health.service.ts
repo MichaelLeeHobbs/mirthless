@@ -104,6 +104,16 @@ export async function getHealthStatus(): Promise<HealthStatus> {
 }
 
 /**
+ * The HTTP status for `/health` and `/health/full`: 503 only while the
+ * database is unreachable. A failed startup step makes the status `degraded`
+ * but answers 200, so a load balancer on `/health` keeps the instance and its
+ * UI in rotation (D-308).
+ */
+export function healthHttpStatus(health: HealthStatus): 200 | 503 {
+  return health.database.connected ? 200 : 503;
+}
+
+/**
  * Readiness for `/health/ready`: 503 while the database is unreachable.
  * A failed startup step makes it 200 `degraded`, naming the step (D-308):
  * the server can still serve the UI an operator needs to fix it, so it must
