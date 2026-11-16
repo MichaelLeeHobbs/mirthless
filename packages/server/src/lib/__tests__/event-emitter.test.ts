@@ -55,6 +55,18 @@ describe('emitAuditEvent', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('calls back once the record is written, and never for a lost one', async () => {
+    const written = vi.fn();
+    emitAuditEvent({ action: 'GLOBAL_MAP_READ', outcome: 'SUCCESS' }, written);
+    await vi.waitFor(() => { expect(written).toHaveBeenCalledOnce(); });
+
+    const lost = vi.fn();
+    record.mockResolvedValueOnce({ ok: false, error: new Error('disk full') });
+    emitAuditEvent({ action: 'GLOBAL_MAP_READ', outcome: 'SUCCESS' }, lost);
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalled(); });
+    expect(lost).not.toHaveBeenCalled();
+  });
+
   it('counts each lost record, for system info', async () => {
     const before = lostAuditRecordCount();
     record.mockResolvedValueOnce({ ok: false, error: new Error('disk full') });

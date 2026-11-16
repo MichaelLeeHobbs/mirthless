@@ -136,7 +136,7 @@ Scripts run in a `node:vm` sandbox. [SECURITY.md](../../SECURITY.md) says this s
 | Channel export (scripts and connector settings, secret fields masked) | `channels:read` | All four | Yes: `CHANNEL_EXPORTED` |
 | Connector credentials (channel and revision reads with secrets unmasked) | `channels:write` | admin, deployer, developer | Best effort: `CHANNEL_SECRETS_READ` |
 | Server log and live log stream | `system:info` | admin, deployer | The log page, best effort: `SERVER_LOG_READ`. The live stream is not |
-| Server backup | `system:backup` | admin | Yes, fail-closed in the audit log, with the file's SHA-256: `SERVER_BACKUP_EXPORTED` |
+| Server backup | `system:backup` | admin | Yes, fail-closed in the audit log, with the SHA-256 of the file as the Backup page saves it: `SERVER_BACKUP_EXPORTED` |
 | Alert emails | `alerts:write` to set recipients | admin, deployer | The alert change is (`ALERT_UPDATED`); each email is recorded best effort with its recipients, never its text (`ALERT_SENT`) |
 | Channel destinations, and scripts using `httpFetch`, `dbQuery`, `routeMessage` or collections | `channels:write` to write, `channels:deploy` to run | admin, deployer; developer writes | Channel changes and deploys are (`CHANNEL_UPDATED`, `CHANNEL_DEPLOYED`); what a running channel sends is not |
 
@@ -163,7 +163,7 @@ These write no audit event:
 - Socket.IO live feeds: the dashboard and channel feeds carry IDs, states and counts; the log feed carries log entries.
 - Reading channels, code templates, resources, data sources and settings. Channel export is audited.
 - Listing a message's attachments. Downloads are audited.
-- Test Connection, and the data source connection test. Sending a test message into a channel is recorded fail-closed (`MESSAGE_SENT`), as is a script test run that returns a result (`SCRIPT_TEST_RUN`).
+- Test Connection, and the data source connection test. Sending a test message into a channel is recorded fail-closed before it is sent (`MESSAGE_SENT`), so a refusal means nothing was sent, as is a script test run that returns a result (`SCRIPT_TEST_RUN`).
 - Resetting channel statistics and unlocking an account. Enabling or disabling an extension writes a `SETTINGS_CHANGED` event with no user or client address.
 - Token refreshes.
 

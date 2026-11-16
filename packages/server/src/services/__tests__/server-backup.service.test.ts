@@ -247,10 +247,12 @@ describe('ServerBackupService', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
+      // What the browser saves: the JSON response, parsed, written with two-space indents.
       const { createHash } = await import('node:crypto');
+      const saved = JSON.stringify(JSON.parse(JSON.stringify({ success: true, data: result.value })).data, null, 2);
       expect(recordOrRefuse).toHaveBeenCalledWith({
         action: 'SERVER_BACKUP_EXPORTED', outcome: 'SUCCESS', userId: 'u-1', ipAddress: '10.0.0.9',
-        attributes: { channels: result.value.channels.length, sha256: createHash('sha256').update(JSON.stringify(result.value)).digest('hex') },
+        attributes: { channels: result.value.channels.length, sha256: createHash('sha256').update(saved).digest('hex') },
       });
     });
 

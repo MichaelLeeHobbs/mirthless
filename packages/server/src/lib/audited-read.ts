@@ -23,9 +23,10 @@ export interface AuditedRead {
   /**
    * The read's dedupe key (route, channel, message id or filters with page)
    * and the message ids it returned, at most a page (200). Omit to record
-   * every time.
+   * every time. `idsOnlyForDedupe` keeps the ids out of the record, for ids
+   * that can themselves be PHI (global map keys) or are not ids (log lines).
    */
-  readonly dedupe?: { readonly key: string; readonly ids: readonly (string | number)[] };
+  readonly dedupe?: { readonly key: string; readonly ids: readonly (string | number)[]; readonly idsOnlyForDedupe?: boolean };
 }
 
 /**
@@ -44,13 +45,16 @@ export function recordReadBestEffort(req: Request, read: AuditedRead): void {
     const toRecord = dedupe.idsToRecord(key, read.dedupe.ids, Date.now());
     if (toRecord === null) return;
     ids = toRecord;
-    if (ids.length > 0) attributes = { ...attributes, ids };
+    if (ids.length > 0 && read.dedupe.idsOnlyForDedupe !== true) attributes = { ...attributes, ids };
   }
+  const remembered = key;
   emitAuditEvent({
     action: read.action, outcome: 'SUCCESS', userId,
     channelId: read.channelId ?? null, ipAddress: req.ip ?? null, attributes,
+  }, () => {
+    // Only a written record holds back the repeats; a lost one leaves them to be recorded.
+    if (remembered !== undefined) dedupe.remember(remembered, ids, Date.now());
   });
-  if (key !== undefined) dedupe.remember(key, ids, Date.now());
 }
 
 /**

@@ -21,7 +21,8 @@ export class LogController {
     // Error text from scripts and connectors can hold PHI: recorded, best effort (D-312).
     recordReadBestEffort(req, {
       action: AUDIT_ACTION.SERVER_LOG_READ, attributes: { query },
-      dedupe: { key: `server-log|${JSON.stringify(query)}`, ids: [] },
+      // New lines on a polled page record again; the lines themselves stay out of the record.
+      dedupe: { key: `server-log|${JSON.stringify(query)}`, ids: result.entries.map((e) => `${e.timestamp}|${e.message}`), idsOnlyForDedupe: true },
     });
     res.json({ success: true, data: result });
   }

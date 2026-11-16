@@ -97,16 +97,33 @@ describe('recordReadBestEffort', () => {
 
     expect(emitAuditEvent).toHaveBeenCalledWith({
       action: 'CONFIG_MAP_READ', outcome: 'SUCCESS', userId: 'u-h', channelId: null, ipAddress: '10.0.0.7', attributes: { entries: 3 },
-    });
+    }, expect.any(Function));
     expect(recordOrRefuse).not.toHaveBeenCalled();
   });
 
-  it('records a repeated read once, and new ids at most once a minute', () => {
-    const read = { action: 'GLOBAL_MAP_READ', attributes: {}, dedupe: { key: 'global-map', ids: ['a', 'b'] } };
+  it('records a repeated read once its first record was written', () => {
+    emitAuditEvent.mockImplementation((_input: unknown, onWritten?: () => void) => { onWritten?.(); });
+    const read = { action: 'COLLECTION_RECORDS_READ', attributes: {}, dedupe: { key: 'collection|k1', ids: ['a', 'b'] } };
     recordReadBestEffort(req('u-i'), read);
     recordReadBestEffort(req('u-i'), read);
 
     expect(emitAuditEvent).toHaveBeenCalledOnce();
     expect(emitAuditEvent.mock.calls[0]?.[0]).toMatchObject({ attributes: { ids: ['a', 'b'] } });
+  });
+
+  it('records the repeat when the first record was lost', () => {
+    // The callback never runs: the write failed.
+    const read = { action: 'COLLECTION_RECORDS_READ', attributes: {}, dedupe: { key: 'collection|k2', ids: ['a'] } };
+    recordReadBestEffort(req('u-j'), read);
+    recordReadBestEffort(req('u-j'), read);
+
+    expect(emitAuditEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps ids out of the record when they are for dedupe only', () => {
+    recordReadBestEffort(req('u-k'), { action: 'GLOBAL_MAP_READ', attributes: { entries: 1 }, dedupe: { key: 'global-map', ids: ['mrn_12345'], idsOnlyForDedupe: true } });
+
+    expect(emitAuditEvent.mock.calls[0]?.[0]).toMatchObject({ attributes: { entries: 1 } });
+    expect(JSON.stringify(emitAuditEvent.mock.calls[0]?.[0])).not.toContain('mrn_12345');
   });
 });

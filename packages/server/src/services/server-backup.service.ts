@@ -58,7 +58,9 @@ export class ServerBackupService {
   static async exportBackup(context?: AuditContext): Promise<Result<ServerBackup>> {
     const result = await ServerBackupService.buildBackup();
     if (!result.ok) return result;
-    const sha256 = createHash('sha256').update(JSON.stringify(result.value)).digest('hex');
+    // The hash of the file as the web saves it: the response parsed and written
+    // with two-space indents (packages/web/src/hooks/use-backup.ts).
+    const sha256 = createHash('sha256').update(JSON.stringify(result.value, null, 2)).digest('hex');
     const recorded = await AuditService.recordOrRefuse({
       action: AUDIT_ACTION.SERVER_BACKUP_EXPORTED, outcome: 'SUCCESS',
       userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null,

@@ -160,6 +160,12 @@ export class DeploymentController {
   static async sendMessage(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const { content } = req.body as { content: string };
+    // The response carries the processed message, so the send is recorded first
+    // (D-312): a refusal then means nothing was sent, and a retry is safe.
+    const recorded = await recordReadOrRefuse(req, res, {
+      action: AUDIT_ACTION.MESSAGE_SENT, channelId: id, attributes: { contentLength: content.length },
+    });
+    if (!recorded) return;
     const result = await DeploymentService.sendMessage(id, content);
 
     if (!result.ok) {
@@ -170,11 +176,6 @@ export class DeploymentController {
     }
 
     logger.info({ channelId: id, messageId: result.value.messageId }, 'Message sent');
-    // The response carries the processed message: recorded before it is sent (D-312).
-    const recorded = await recordReadOrRefuse(req, res, {
-      action: AUDIT_ACTION.MESSAGE_SENT, channelId: id, attributes: { messageId: result.value.messageId },
-    });
-    if (!recorded) return;
     res.json({ success: true, data: result.value });
   }
 }

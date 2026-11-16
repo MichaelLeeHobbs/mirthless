@@ -23,7 +23,8 @@ export class GlobalMapController {
     // Scripts keep PHI and credentials here: recorded, best effort (D-312).
     recordReadBestEffort(req, {
       action: AUDIT_ACTION.GLOBAL_MAP_READ, attributes: { entries: result.value.length },
-      dedupe: { key: 'global-map', ids: result.value.map((e) => e.key) },
+      // Keys are often built from patient identifiers: they dedupe, but stay out of the record.
+      dedupe: { key: 'global-map', ids: result.value.map((e) => e.key), idsOnlyForDedupe: true },
     });
     res.json({ success: true, data: result.value });
   }
@@ -40,8 +41,8 @@ export class GlobalMapController {
     }
 
     recordReadBestEffort(req, {
-      action: AUDIT_ACTION.GLOBAL_MAP_READ, attributes: { key },
-      dedupe: { key: `global-map|${key}`, ids: [key] },
+      action: AUDIT_ACTION.GLOBAL_MAP_READ, attributes: { entries: 1 },
+      dedupe: { key: `global-map|${key}`, ids: [key], idsOnlyForDedupe: true },
     });
     res.json({ success: true, data: result.value });
   }

@@ -34,12 +34,14 @@ export function emitEvent(input: CreateEventInput): void {
  * never reaches the caller. For records whose loss must refuse the request,
  * use AuditService.recordOrRefuse instead.
  */
-export function emitAuditEvent(input: AuditRecordInput): void {
+export function emitAuditEvent(input: AuditRecordInput, onWritten?: () => void): void {
   AuditService.record(input).then((result) => {
     if (!result.ok) {
       lostAuditRecords += 1;
       logger.warn({ errMsg: result.error.message, action: input.action }, 'Failed to write audit record');
+      return;
     }
+    onWritten?.();
   }).catch((err: unknown) => {
     lostAuditRecords += 1;
     logger.warn({ errMsg: err instanceof Error ? err.message : String(err), action: input.action }, 'Failed to write audit record');
