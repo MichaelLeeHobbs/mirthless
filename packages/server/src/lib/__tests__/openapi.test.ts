@@ -52,6 +52,7 @@ describe('generateOpenAPISpec', () => {
     expect(spec.paths['/channels']).toBeDefined();
     expect(spec.paths['/channels/{id}']).toBeDefined();
     expect(spec.paths['/channels/{id}/clone']).toBeDefined();
+    expect(spec.paths['/channels/{id}/groups']?.['put']).toBeDefined();
     expect(spec.paths['/channels/import/mirth']).toBeDefined();
   });
 

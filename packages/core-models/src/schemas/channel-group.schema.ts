@@ -23,19 +23,19 @@ export type UpdateChannelGroupInput = z.infer<typeof updateChannelGroupSchema>;
 
 // ----- Member Management -----
 
-export const addChannelGroupMemberSchema = z.object({
-  channelId: z.string().uuid(),
+/**
+ * The full set of groups a channel belongs to, replacing what it had. An empty
+ * list takes the channel out of every group.
+ */
+export const setChannelGroupsSchema = z.object({
+  groupIds: z.array(z.string().uuid())
+    .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not repeat a group' }),
 });
 
-export type AddChannelGroupMemberInput = z.infer<typeof addChannelGroupMemberSchema>;
+export type SetChannelGroupsInput = z.infer<typeof setChannelGroupsSchema>;
 
 // ----- Params -----
 
 export const channelGroupUuidParamSchema = z.object({
   id: z.string().uuid(),
-});
-
-export const channelGroupMemberParamSchema = z.object({
-  id: z.string().uuid(),
-  channelId: z.string().uuid(),
 });

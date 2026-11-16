@@ -306,6 +306,45 @@ export function generateOpenAPISpec(): OpenAPISpec {
           },
         },
       },
+      '/channels/{id}/groups': {
+        put: {
+          tags: ['Channels'],
+          summary: 'Set the groups a channel belongs to',
+          description: 'Replaces every group membership the channel has with the listed groups, in one transaction. An empty list takes the channel out of every group. Needs channels:write.',
+          operationId: 'channelSetGroups',
+          security: bearerSecurity,
+          parameters: [
+            { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['groupIds'],
+                  properties: {
+                    groupIds: { type: 'array', uniqueItems: true, items: { type: 'string', format: 'uuid' } },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': successResponse('Channel groups set', {
+              type: 'object',
+              properties: {
+                channelId: { type: 'string', format: 'uuid' },
+                groupIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+              },
+            }),
+            '400': openApiErrorResponse('Validation error'),
+            '401': openApiErrorResponse('Not authenticated'),
+            '403': openApiErrorResponse('Missing channels:write'),
+            '404': openApiErrorResponse('Channel or group not found'),
+          },
+        },
+      },
       '/channels/import/mirth': {
         post: {
           tags: ['Channels'],

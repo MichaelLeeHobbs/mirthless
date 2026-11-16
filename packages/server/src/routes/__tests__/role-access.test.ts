@@ -58,6 +58,7 @@ vi.mock('../../controllers/attachment.controller.js', () => ({ AttachmentControl
 vi.mock('../../controllers/message-reprocess.controller.js', () => ({ MessageReprocessController: stubController('MessageReprocessController') }));
 vi.mock('../../controllers/deployment.controller.js', () => ({ DeploymentController: stubController('DeploymentController') }));
 vi.mock('../../controllers/channel.controller.js', () => ({ ChannelController: stubController('ChannelController') }));
+vi.mock('../../controllers/channel-group.controller.js', () => ({ ChannelGroupController: stubController('ChannelGroupController') }));
 vi.mock('../../controllers/user.controller.js', () => ({ UserController: stubController('UserController') }));
 vi.mock('../../controllers/settings.controller.js', () => ({ SettingsController: stubController('SettingsController') }));
 vi.mock('../../controllers/event-export.controller.js', () => ({ EventExportController: stubController('EventExportController') }));
@@ -95,6 +96,8 @@ const ENDPOINTS: readonly Endpoint[] = [
   { method: 'GET', path: `/channels/${ID}`, permission: 'channels:read', handler: 'ChannelController.getById' },
   { method: 'PUT', path: `/channels/${ID}`, permission: 'channels:write', handler: 'ChannelController.update' },
   { method: 'DELETE', path: `/channels/${ID}`, permission: 'channels:delete', handler: 'ChannelController.delete' },
+  // Group membership will decide who can read a channel's PHI once access goes by group (#160).
+  { method: 'PUT', path: `/channels/${ID}/groups`, permission: 'channels:write', handler: 'ChannelGroupController.setChannelGroups' },
   { method: 'POST', path: '/users', permission: 'users:write', handler: 'UserController.create' },
   { method: 'PUT', path: `/users/${ID}`, permission: 'users:write', handler: 'UserController.update' },
   { method: 'POST', path: `/users/${ID}/password`, permission: 'users:write', handler: 'UserController.changePassword' },
