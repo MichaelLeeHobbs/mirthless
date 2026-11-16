@@ -62,6 +62,7 @@ describe('File connector (drop a file in → transform → write a file out)', (
         fileAgeMs: 0,
         postAction: FILE_POST_ACTION.DELETE,
         moveToDirectory: '',
+        ignoreDot: true,
       }),
       transformer: "return String(msg) + '::processed';",
       destinations: [{

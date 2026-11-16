@@ -39,8 +39,10 @@ const connection = {
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const sftpSourceObjectSchema = z.strictObject({
   ...connection,
-  /** Glob for the files to read. */
+  /** Glob for the files to read, case-sensitive as Mirth's (D-304). */
   filePattern: requiredTextSchema.default('*'),
+  /** Leave names starting with `.` alone, as a Mirth File Reader does by default. */
+  ignoreDot: z.boolean().default(true),
   /** The receiver refuses to poll more often than every 100 ms. */
   pollingIntervalMs: pollingIntervalSchema(100, 5_000),
   afterProcessing: z.enum(SFTP_POST_ACTIONS).default('DELETE'),

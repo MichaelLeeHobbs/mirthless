@@ -21,13 +21,20 @@ const DEST_SAVED = {
 
 describe('sftpSourcePropertiesSchema', () => {
   it('accepts what the editor saves, as it is', () => {
-    expect(sftpSourcePropertiesSchema.parse(SOURCE_SAVED)).toEqual(SOURCE_SAVED);
+    const saved = { ...SOURCE_SAVED, ignoreDot: true };
+    expect(sftpSourcePropertiesSchema.parse(saved)).toEqual(saved);
   });
 
   // What the importer writes for a Mirth File Reader with the sftp scheme (0ebf4d2, 2026-11-13).
   it('accepts an imported reader and fills the defaults', () => {
     const imported = { host: 'h', remoteDirectory: '/in', username: 'u', password: 'p', strictHostKey: false, port: '2222', filePattern: '*.hl7', afterProcessing: 'MOVE', moveToDirectory: '/done', pollingIntervalMs: 500, processBatch: true };
     expect(sftpSourcePropertiesSchema.parse(imported)).toMatchObject({ port: 2222, charset: 'utf-8', minFileAgeMs: 1000 });
+  });
+
+  // Saved before #244 (no ignoreDot): reads as Mirth's default, skipping dotfiles. The editor now saves it.
+  it('fills ignoreDot true when absent, and keeps false', () => {
+    expect(sftpSourcePropertiesSchema.parse(SOURCE_SAVED).ignoreDot).toBe(true);
+    expect(sftpSourcePropertiesSchema.parse({ ...SOURCE_SAVED, ignoreDot: false }).ignoreDot).toBe(false);
   });
 
   it('accepts a private key instead of a password, and no host key with checking off', () => {
@@ -42,6 +49,7 @@ describe('sftpSourcePropertiesSchema', () => {
     [{ ...SOURCE_SAVED, pollingIntervalMs: 50 }, 'pollingIntervalMs'],
     [{ ...SOURCE_SAVED, charset: 'base64' }, 'charset'],
     [{ ...SOURCE_SAVED, strictHostKey: 'false' }, 'strictHostKey'],
+    [{ ...SOURCE_SAVED, ignoreDot: 'false' }, 'ignoreDot'],
     [{ ...SOURCE_SAVED, fileFilter: '*' }, 'fileFilter'],
     [{ ...SOURCE_SAVED, host: '' }, 'host'],
   ])('rejects %j, naming %s', (props, key) => {
