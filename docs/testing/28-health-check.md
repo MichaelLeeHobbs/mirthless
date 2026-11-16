@@ -23,7 +23,9 @@
 
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
-| 5 | Full health returns all sections | `GET /health` | 200 with status, timestamp, uptime, database, engine, memory sections | |
-| 6 | Engine stats show deployed channels | Deploy 2 channels, start 1, `GET /health` | engine.deployed=2, engine.started=1, engine.stopped=1 | |
-| 7 | Memory stats present | `GET /health` | memory.rss, memory.heapUsed, memory.heapTotal, memory.external all present and positive | |
-| 8 | Full health returns 503 when DB down | Stop PostgreSQL, `GET /health` | 503 with status='degraded', database.connected=false | |
+| 5 | Public health returns the status only | `GET /health` (no auth) | 200 `{ "status": "ok" }` and nothing else | |
+| 5a | Full health returns all sections | `GET /health/full` as an admin | 200 with status, timestamp, uptime, database, engine, memory and startup sections | |
+| 5b | Full health needs `system:info` | `GET /health/full` with no token, then as a viewer | 401, then 403 | |
+| 6 | Engine stats show deployed channels | Deploy 2 channels, start 1, `GET /health/full` | engine.deployed=2, engine.started=1, engine.stopped=1 | |
+| 7 | Memory stats present | `GET /health/full` | memory.rss, memory.heapUsed, memory.heapTotal, memory.external all present and positive | |
+| 8 | Health returns 503 when DB down | Stop PostgreSQL, `GET /health`, then `GET /health/full` | 503 `{ "status": "degraded" }`; `/health/full` also shows database.connected=false | |
