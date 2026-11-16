@@ -35,6 +35,10 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         update-types: [version-update:semver-major]
+      # Pinned and patched (patches/monaco-editor@0.55.1.patch, D-285). A bump
+      # leaves the patch unused, which pnpm refuses (ERR_PNPM_UNUSED_PATCH), and
+      # would fail the whole runtime group; upgrade it by hand with the patch.
+      - dependency-name: "monaco-editor"
 
   # Base images in docker/Dockerfile.*. Node and Postgres majors are deliberate
   # choices (package.json engines, PostgreSQL 17), so only minor and patch tags.

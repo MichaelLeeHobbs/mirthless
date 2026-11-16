@@ -4,14 +4,17 @@
 // Zod schemas for channel export/import payloads.
 
 import { z } from 'zod/v4';
-import { scriptLanguageSchema } from './script-language.schema.js';
+import { toScriptLanguage } from './script-language.schema.js';
 import { sourceConnectorTypeSchema, destinationConnectorTypeSchema } from './channel.schema.js';
 
 // ----- Export Schema -----
 
 // Script languages and response transformers are optional so files exported
 // before they were included still import (as JavaScript, with no response transformer).
-const exportLanguage = scriptLanguageSchema.optional();
+// A language this version does not know (from a newer export) reads as
+// JavaScript, as a stored value does (toScriptLanguage): JavaScript is never
+// type-checked, so that is the safe reading, and the rest of the file imports.
+const exportLanguage = z.unknown().transform(toScriptLanguage).optional();
 
 const channelExportFilterRuleSchema = z.object({
   enabled: z.boolean(),
