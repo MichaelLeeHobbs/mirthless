@@ -6,7 +6,7 @@
 // RemoteState can back multiple client instances (across a simulated restart),
 // mirroring a persistent remote filesystem.
 
-import type { SftpClient, SftpFileInfo } from '../sftp/sftp-client.js';
+import type { SftpClient, SftpFileInfo, SftpPathKind } from '../sftp/sftp-client.js';
 
 const LEDGER_NAME = '.galvaniflow-quarantine.json';
 /** Ledger name used before the GalvaniFlow rename. */
@@ -123,11 +123,11 @@ export function makeMockSftpClient(state: RemoteState, failures: MockFailures = 
     async mkdir(remoteDirectory: string): Promise<void> {
       state.mkdirs.push(remoteDirectory);
     },
-    async exists(remotePath: string): Promise<boolean> {
+    async pathKind(remotePath: string): Promise<SftpPathKind> {
       const name = basename(remotePath);
-      if (name === LEDGER_NAME) return state.ledger !== null;
-      if (name === LEGACY_LEDGER_NAME) return state.legacyLedger !== null;
-      return state.files.has(name);
+      if (name === LEDGER_NAME) return state.ledger !== null ? 'file' : 'missing';
+      if (name === LEGACY_LEDGER_NAME) return state.legacyLedger !== null ? 'file' : 'missing';
+      return state.files.has(name) ? 'file' : 'missing';
     },
     async end(): Promise<void> {
       state.endCount++;
