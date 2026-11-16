@@ -5,11 +5,12 @@
 // keeps its 4xx status instead of becoming a 500, and the reply never echoes
 // the body, which can hold PHI.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { errorHandler } from '../error.middleware.js';
+import logger from '../../lib/logger.js';
 
 let server: Server | null = null;
 
@@ -40,6 +41,18 @@ describe('errorHandler', () => {
     expect(status).toBe(400);
     expect(JSON.parse(text)).toEqual({ success: false, error: { code: 'BAD_REQUEST', message: 'The request body could not be read' } });
     expect(text).not.toContain('MRN-12345');
+  });
+
+  it('logs the parser error type and never the body text', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      await post('{"mrn":"MRN-12345",');
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toMatchObject({ status: 400, type: 'entity.parse.failed' });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('MRN-12345');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('answers a body over the limit with 413', async () => {
