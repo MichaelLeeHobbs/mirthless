@@ -31,6 +31,12 @@ describe('buildAck', () => {
     expect(ack).not.toContain('/var/data/out');
   });
 
+  it('answers a message with an invalid MSH-2 with the fallback ACK, not one built from misread delimiters', () => {
+    const ack = buildAck('MSH|^~\\|SEND|FAC|RECV|RFAC|20240101||ADT^A01|CTRL42|P|2.5.1', 'AE');
+    expect(ack).toMatch(/^MSH\|\^~\\&\|\|\|\|\|/);
+    expect(ack).toContain('MSA|AE|GF');
+  });
+
   it('includes MSA-3 diagnostic text when provided', () => {
     expect(buildAck(VALID_HL7, 'AE', 'DB timeout')).toContain('MSA|AE|CTRL42|DB timeout');
   });

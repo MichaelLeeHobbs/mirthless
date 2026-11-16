@@ -46,6 +46,34 @@ describe('detectEncoding', () => {
     expect(() => detectEncoding('PID|1||12345')).toThrow('Invalid MSH segment');
     expect(() => detectEncoding('')).toThrow('Invalid MSH segment');
   });
+
+  it('refuses an MSH-2 with fewer than four characters rather than reading the field separator as one (#187)', () => {
+    expect(() => detectEncoding('MSH|^~\\|A|B')).toThrow('Invalid MSH-2 encoding characters');
+    expect(() => detectEncoding('MSH||A')).toThrow('Invalid MSH-2 encoding characters');
+  });
+
+  it('refuses an MSH-2 with more than five characters', () => {
+    expect(() => detectEncoding('MSH|^~\\&#X|A')).toThrow('Invalid MSH-2 encoding characters');
+  });
+
+  it('refuses an MSH-2 that repeats a character', () => {
+    expect(() => detectEncoding('MSH|^^\\&|A')).toThrow('Invalid MSH-2 encoding characters');
+  });
+
+  it('refuses a line break as the field separator', () => {
+    expect(() => detectEncoding('MSH\r^~\\&')).toThrow('Invalid MSH segment');
+  });
+
+  it('accepts the v2.7 truncation character as a fifth encoding character', () => {
+    const enc = detectEncoding('MSH|^~\\&#|SENDER');
+    expect(enc.subComponentSep).toBe('&');
+  });
+
+  it('accepts a header that ends right after MSH-2', () => {
+    expect(detectEncoding('MSH|^~\\&').subComponentSep).toBe('&');
+    expect(detectEncoding('MSH|^~\\&\rPID|1').subComponentSep).toBe('&');
+    expect(detectEncoding('MSH|^~\\&\nPID|1').subComponentSep).toBe('&');
+  });
 });
 
 describe('escapeValue', () => {

@@ -14,20 +14,29 @@ export interface Hl7Encoding {
   readonly segmentSep: string;
 }
 
-const MSH_REGEX = /^MSH(.)(.)(.)(.)(.)/;
-
-/** Detect encoding characters from an MSH segment line. */
+/**
+ * Detect encoding characters from an MSH segment line.
+ *
+ * MSH-2 must hold 4 distinct characters (component, repetition, escape,
+ * subcomponent), or 5 from v2.7, which adds the truncation character. Anything
+ * else is refused: reading delimiters from a malformed header would split every
+ * field in the wrong place without an error.
+ */
 export function detectEncoding(mshSegment: string): Hl7Encoding {
-  const matches = MSH_REGEX.exec(mshSegment);
-  if (!matches) {
+  const fieldSep = /^MSH([^\r\n])/.exec(mshSegment)?.[1];
+  if (fieldSep === undefined) {
     throw new Error('Invalid MSH segment — cannot detect encoding');
   }
+  const chars = mshSegment.slice(4).split(fieldSep)[0]!.split(/[\r\n]/)[0]!;
+  if (chars.length < 4 || chars.length > 5 || new Set(chars).size !== chars.length) {
+    throw new Error(`Invalid MSH-2 encoding characters "${chars}": expected 4 or 5 distinct characters`);
+  }
   return {
-    fieldSep: matches[1]!,
-    componentSep: matches[2]!,
-    repetitionSep: matches[3]!,
-    escapeChar: matches[4]!,
-    subComponentSep: matches[5]!,
+    fieldSep,
+    componentSep: chars[0]!,
+    repetitionSep: chars[1]!,
+    escapeChar: chars[2]!,
+    subComponentSep: chars[3]!,
     segmentSep: '\r',
   };
 }

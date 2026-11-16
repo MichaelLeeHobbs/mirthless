@@ -37,6 +37,11 @@ describe('Hl7Message.parse', () => {
     expect(() => Hl7Message.parse('PID|1||12345')).toThrow('must start with MSH');
   });
 
+  it('throws for an MSH-2 that is not four or five distinct characters', () => {
+    expect(() => Hl7Message.parse('MSH|^~\\|SND|SF|RCV|RF|20260101||ADT^A01|C1|P|2.5\rPID|1||A&B'))
+      .toThrow('Invalid MSH-2 encoding characters');
+  });
+
   it('throws for empty input', () => {
     expect(() => Hl7Message.parse('')).toThrow('non-empty string');
   });
