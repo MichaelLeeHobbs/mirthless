@@ -278,26 +278,7 @@ Ranked by **channels unblocked**, not effort. Effort is a rough T-shirt size.
 
 ## 7. Migration Impact Matrix (for adopters)
 
-| Channel uses… | Migratable today? | Blocked on |
-|---|---|---|
-| Postgres Database Reader/Writer (SQL mode) | ✅ Yes (gains safer claiming) | — |
-| Oracle / SQL Server / MySQL / SQLite DB | ❌ No | Rank 1 |
-| Database JavaScript mode | ❌ No | Rank 1 |
-| Local File | ✅ Mostly (may lose regex/recursion/batch) | Rank 2 (depth) |
-| SFTP File | ⚠️ Config reshape | Rank 2 |
-| FTP/FTPS / SMB / S3 File | ❌ No | Rank 2 |
-| Standard MLLP TCP | ✅ Yes | — |
-| Custom-framing / Basic / delimited TCP | ❌ No | Rank 3 |
-| TLS TCP / latin1 HL7 | ⚠️ Engine yes, UI no | Rank 4 |
-| HTTP (no auth / bearer) | ✅ Yes (TLS ahead) | — |
-| HTTP outbound Basic/Digest or query params | ⚠️ Degraded | Rank 5 |
-| SOAP / Web Service | ❌ No | Rank 6 |
-| Document Writer (PDF/RTF) | ❌ No | Rank 7 |
-| Plain PACS DICOM | ✅ Yes | — |
-| Secured (TLS) PACS DICOM | ❌ No | Rank 8 |
-| SMTP send | ✅ Yes (single attachment) | Rank 9 (depth) |
-| Channel / JavaScript / FHIR / IMAP | ✅ Yes | — |
-| JMS | ❌ No | Rank 11 |
+This matrix moved to the Mirth migration section of [What GalvaniFlow can do](../user/capabilities.md#mirth-migration), which says what each Mirth connector and setting imports as, whether it deploys, and whether the import preview warns, and which a docs guard keeps current. The ranks it cited are the numbered items in [ROADMAP.md](../progress/ROADMAP.md).
 
 ---
 

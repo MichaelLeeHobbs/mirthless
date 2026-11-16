@@ -1,6 +1,6 @@
 # What CI runs
 
-`.github/workflows/ci.yml` runs on every pull request to `main` and every push to `main`. Its first job, `changes`, looks at which files changed and picks the jobs the change needs. The rules live in one script, [`scripts/ci/classify-changes.mjs`](../../scripts/ci/classify-changes.mjs), with table tests beside it that `pnpm gate` runs (`pnpm test:ci`). Why it works this way: D-279 in [`DECISIONS.md`](../progress/DECISIONS.md).
+`.github/workflows/ci.yml` runs on every pull request to `main` and every push to `main`. Its first job, `changes`, looks at which files changed and picks the jobs the change needs. The rules live in one script, [`scripts/ci/classify-changes.mjs`](../../scripts/ci/classify-changes.mjs), with table tests beside it that `pnpm gate` runs (`pnpm test:ci`). Why it works this way: D-280 in [`DECISIONS.md`](../progress/DECISIONS.md).
 
 A pull request is compared with its merge base on `main`; a push with the commit before it.
 
