@@ -116,38 +116,6 @@ export function useSuggestRoom(editor: CodeEditor | null): number {
   return room;
 }
 
-/** The owner Monaco's TypeScript service sets its markers under (the language id). */
-const TYPESCRIPT_MARKER_OWNER = 'typescript';
-
-/** The markers that do not depend on the declarations: syntax errors. */
-export function syntaxMarkers(markers: readonly monaco.editor.IMarker[]): monaco.editor.IMarker[] {
-  return markers.filter((m) => problemKind(m.code) === 'syntax');
-}
-
-/**
- * While another editor's surface is applied (`stale`), TypeScript checks this
- * editor against declarations that are not its own: drop the type errors it
- * reports, keeping syntax errors, until this editor's surface is applied again.
- */
-export function useStaleTypeMarkers(editor: CodeEditor | null, stale: boolean): void {
-  useEffect(() => {
-    if (!editor || !stale) return undefined;
-    const strip = (): void => {
-      const model = editor.getModel();
-      if (!model) return;
-      const markers = monaco.editor.getModelMarkers({ resource: model.uri, owner: TYPESCRIPT_MARKER_OWNER });
-      const kept = syntaxMarkers(markers);
-      if (kept.length !== markers.length) monaco.editor.setModelMarkers(model, TYPESCRIPT_MARKER_OWNER, kept);
-    };
-    strip();
-    const sub = monaco.editor.onDidChangeMarkers((uris) => {
-      const model = editor.getModel();
-      if (model && uris.some((u) => u.toString() === model.uri.toString())) strip();
-    });
-    return () => { sub.dispose(); };
-  }, [editor, stale]);
-}
-
 /** Monaco stores text with its own line endings, so compare text with all of them as `\n`. */
 function sameText(a: string, b: string): boolean {
   return a.replace(/\r\n?/g, '\n') === b.replace(/\r\n?/g, '\n');
