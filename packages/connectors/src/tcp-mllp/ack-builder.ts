@@ -57,15 +57,17 @@ export interface AckClassification {
  * Accepts on MSA-1 = AA or CA; everything else (AE/AR/CE/CR, missing MSA,
  * or unparseable) is a failure so the message surfaces and can retry.
  *
- * A positive acknowledgement that names a different message (MSA-2 differs
- * from the control ID that was sent, compared as whole encoded fields) is also a failure: on a reused connection
- * it means the reply belongs to something else, and counting it would mark an
- * undelivered message SENT. An acknowledgement with no MSA-2 is accepted.
+ * A positive acknowledgement that names a different message is also a failure:
+ * on a reused connection it means the reply belongs to something else, and
+ * counting it would mark an undelivered message SENT. MSA-2 names this message
+ * when it equals the whole sent MSH-10 or its first component, which some
+ * receivers echo alone; rejecting that would resend, and so duplicate, a
+ * message the receiver already took. An acknowledgement with no MSA-2 is accepted.
  *
  * @param response - The raw HL7 acknowledgement received.
- * @param sentControlId - MSH-10 of the message that was sent, when it has one.
+ * @param sent - The control id of the message that was sent ({@link controlIdOf}), when it has one.
  */
-export function classifyAckResponse(response: string, sentControlId?: string): AckClassification {
+export function classifyAckResponse(response: string, sent?: SentControlId): AckClassification {
   const extracted = extractMsa(response);
   if (extracted === undefined) {
     return { accepted: false, ackCode: '', errorMessage: 'Unparseable acknowledgement response' };
@@ -74,11 +76,11 @@ export function classifyAckResponse(response: string, sentControlId?: string): A
   const ackCode = extracted.code.toUpperCase();
   if (ackCode === 'AA' || ackCode === 'CA') {
     const ackedId = extracted.controlId ?? '';
-    if (sentControlId && ackedId !== '' && ackedId !== sentControlId) {
+    if (sent && ackedId !== '' && ackedId !== sent.whole && ackedId !== sent.first) {
       return {
         accepted: false,
         ackCode,
-        errorMessage: `Acknowledgement is for a different message (MSA-2=${ackedId}, sent ${sentControlId})`,
+        errorMessage: `Acknowledgement is for a different message (MSA-2=${ackedId}, sent ${sent.whole})`,
       };
     }
     return { accepted: true, ackCode };
@@ -119,14 +121,23 @@ function extractMsa(response: string): { code: string; controlId?: string; text?
   return undefined;
 }
 
+/** MSH-10 of a sent message: the whole field as encoded, and its first component. */
+export interface SentControlId {
+  readonly whole: string;
+  readonly first: string;
+}
+
 /**
- * MSH-10 of an outbound message as it is encoded, every component included, or
- * undefined when it is not HL7 or has none. A receiver echoes it whole in MSA-2.
+ * The control id of an outbound message, or undefined when it is not HL7 or has
+ * none. Both values are read with the message's own separators, which encoded
+ * the id: a receiver echoes it in MSA-2 whole, or sometimes only its first component.
  */
-export function controlIdOf(message: string): string | undefined {
+export function controlIdOf(message: string): SentControlId | undefined {
   try {
-    const id = Hl7Message.parse(message).getRaw('MSH.10');
-    return id !== undefined && id !== '' ? id : undefined;
+    const msg = Hl7Message.parse(message);
+    const whole = msg.getRaw('MSH.10');
+    if (whole === undefined || whole === '') return undefined;
+    return { whole, first: msg.getRaw('MSH.10.1') ?? whole };
   } catch {
     return undefined;
   }

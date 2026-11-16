@@ -575,7 +575,7 @@ function extractConnectorProperties(propsNode: Record<string, unknown>, connecto
         const host = getString(listener, 'host');
         const port = getString(listener, 'port');
         if (host) result['host'] = host;
-        if (port) result['port'] = Number(port);
+        if (port) result['port'] = portValue(port);
         Object.assign(result, httpListenerProperties(propsNode));
       }
       const url = getString(propsNode, 'host');
@@ -1188,7 +1188,7 @@ function isMirthDefaultScript(script: string): boolean {
  * operator knows what to rewrite.
  */
 const MIRTH_ONLY_CONSTRUCTS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/\b(?:msg|tmp)\s*\[\s*['"]/, "E4X field access (msg['PID']...): use msg.get('PID.5.1') / msg.set, where [n] counts from 1, so Mirth's msg['OBX'][1] is msg.get('OBX[2].5')"],
+  [/\b(?:msg|tmp)\s*\[\s*['"]/, "E4X field access (msg['PID']...): use msg.get('PID.5.1') / msg.set, where [n] counts from 1, so Mirth's msg['OBX'][1]['OBX.5'] is msg.get('OBX[2].5')"],
   [/\bfor\s+each\s*\(/, "Rhino 'for each': use for...of"],
   [/\bnew\s+XML\s*\(/, 'E4X new XML(...): build HL7 with parseHL7 and msg.set'],
   [/\b(?:Packages|java|javax|org\.apache|com\.mirth)\./, 'Java classes: use JavaScript built-ins'],
