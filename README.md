@@ -101,8 +101,7 @@ packages/
 ├── engine/          — Message pipeline, sandbox, channel runtime
 ├── connectors/      — TCP/MLLP, HTTP, File, SFTP, Database, JS, Channel, SMTP, FHIR, DICOM, Email, Kafka, AMQP
 ├── server/          — Express API (131 endpoints), auth, deployment
-├── web/             — React + MUI admin UI
-└── cli/             — Command-line interface
+└── web/             — React + MUI admin UI
 ```
 
 **Stack:** Node.js, TypeScript (strict), Express, PostgreSQL, Drizzle ORM, React 18, Material UI 6, Vite, Vitest, pnpm workspaces
@@ -111,7 +110,7 @@ packages/
 
 This is a working system with about 2,500 unit tests plus real-Postgres integration and Playwright end-to-end suites. You can create channels, write transformers in TypeScript, deploy them, send messages, and watch them flow through the pipeline. The 10 seeded example channels demonstrate HL7v2, JSON, XML, channel-to-channel routing, filtering, error handling, and more.
 
-What works: channels, pipeline, sandbox, 13 connector types, RBAC, audit logging, message browser, code templates, alerts, groups, tags, dark mode, CLI.
+What works: channels, pipeline, sandbox, 13 connector types, RBAC, audit logging, message browser, code templates, alerts, groups, tags, dark mode. Scripts and CI use the REST API ([recipes](docs/ops/api-automation.md)).
 
 What's next: visual flow builder (think Node-RED for healthcare), plugin system, clustering. See [ROADMAP](docs/progress/ROADMAP.md).
 
