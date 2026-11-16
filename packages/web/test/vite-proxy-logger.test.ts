@@ -25,6 +25,9 @@ describe('quietWsProxyResets', () => {
     ['ws proxy socket error:', 'ECONNRESET', 'read ECONNRESET'],
     ['ws proxy error:', 'EPIPE', 'write EPIPE'],
     ['ws proxy socket error:', 'EPIPE', 'write EPIPE'],
+    // Windows reports the same teardown as an aborted write.
+    ['ws proxy error:', 'ECONNABORTED', 'write ECONNABORTED'],
+    ['ws proxy socket error:', 'ECONNABORTED', 'write ECONNABORTED'],
   ])('drops "%s" when the socket was dropped (%s)', (head, code, message) => {
     const { logger, printed } = capture();
     const err = socketError(code, message);

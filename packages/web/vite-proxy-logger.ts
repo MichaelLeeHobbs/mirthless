@@ -4,16 +4,17 @@
 // The dev server and `vite preview` proxy /socket.io to the API. When a browser
 // tab or a Playwright context closes, the browser drops that websocket without a
 // close handshake, and Vite logs the read reset (ECONNRESET) or the write to the
-// closed socket (EPIPE) as a "ws proxy error" / "ws proxy socket error" pair
+// closed socket (EPIPE, or ECONNABORTED on Windows) as a "ws proxy error" / "ws proxy socket error" pair
 // (#167). Those pairs sat beside real failures in the e2e log and looked like
-// them. Only those two heads with those two codes are dropped: a refused or
+// them. Only those two heads with those codes are dropped: a refused or
 // failed connection to the API, and every HTTP proxy error, still print.
 
 import { stripVTControlCharacters } from 'node:util';
 import type { LogErrorOptions, Logger } from 'vite';
 
 const WS_PROXY_HEADS: ReadonlySet<string> = new Set(['ws proxy error:', 'ws proxy socket error:']);
-const PEER_GONE_CODES: ReadonlySet<string> = new Set(['ECONNRESET', 'EPIPE']);
+// ECONNABORTED is how Windows reports the same write to a closed socket.
+const PEER_GONE_CODES: ReadonlySet<string> = new Set(['ECONNRESET', 'EPIPE', 'ECONNABORTED']);
 
 function isWsPeerGone(msg: string, options: LogErrorOptions | undefined): boolean {
   const err: unknown = options?.error;
@@ -24,7 +25,7 @@ function isWsPeerGone(msg: string, options: LogErrorOptions | undefined): boolea
 }
 
 /**
- * Make a Vite logger drop websocket proxy errors whose peer went away (ECONNRESET, EPIPE).
+ * Make a Vite logger drop websocket proxy errors whose peer went away (ECONNRESET, EPIPE, ECONNABORTED).
  * Changes and returns the logger it is given, so its other state keeps working.
  */
 export function quietWsProxyResets(logger: Logger): Logger {
