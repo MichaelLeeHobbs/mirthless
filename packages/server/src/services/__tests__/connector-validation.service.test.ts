@@ -156,6 +156,34 @@ describe('validateConnectorProperties', () => {
       expect(validateConnectorProperties('TCP_MLLP', 'destination', dest).ok).toBe(true);
     });
 
+    it('rejects an HTTP key the schema does not list, naming it', () => {
+      const result = validateConnectorProperties('HTTP', 'source', { port: 8080, responseStatus: 202 });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('responseStatus');
+    });
+
+    it('rejects an HTTP source path that a request could never match', () => {
+      const result = validateConnectorProperties('HTTP', 'source', { port: 8080, path: 'api' });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('path: must start with /');
+    });
+
+    it('accepts HTTP channels the 2026-02 to 2026-07 editor saved', () => {
+      const source = { host: '0.0.0.0', port: 8080, contextPath: '/', methods: ['POST'], responseStatusCode: 200, responseContentType: 'text/plain', charset: 'UTF-8' };
+      const dest = { url: 'http://localhost:8080', method: 'POST', headers: '', contentType: 'text/plain', charset: 'UTF-8', responseTimeout: 30000 };
+      const pemDest = { url: 'http://localhost:8080', method: 'POST', headers: {}, contentType: 'text/plain', responseTimeout: 30000, tls: { ca: '', cert: '', key: '', rejectUnauthorized: true } };
+      expect(validateConnectorProperties('HTTP', 'source', source).ok).toBe(true);
+      expect(validateConnectorProperties('HTTP', 'destination', dest).ok).toBe(true);
+      expect(validateConnectorProperties('HTTP', 'destination', pemDest).ok).toBe(true);
+    });
+
+    it('accepts the keys the engine reads from every HTTP connector', () => {
+      expect(validateConnectorProperties('HTTP', 'source', { port: 8080, processBatch: true }).ok).toBe(true);
+      expect(validateConnectorProperties('HTTP', 'destination', { url: 'http://lis', template: 'x' }).ok).toBe(true);
+    });
+
     it('accepts the keys the engine reads from every TCP_MLLP connector', () => {
       expect(validateConnectorProperties('TCP_MLLP', 'source', { port: 6661, processBatch: true }).ok).toBe(true);
       expect(validateConnectorProperties('TCP_MLLP', 'destination', { host: 'lis', port: 6661, template: 'x' }).ok).toBe(true);

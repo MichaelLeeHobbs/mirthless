@@ -104,22 +104,58 @@ describe('fallback ACK', () => {
 describe('classifyAckResponse control id check', () => {
   const ack = (code: string, id: string): string =>
     `MSH|^~\\&|R|F|S|F|20260101||ACK|X1|P|2.5.1\rMSA|${code}|${id}`;
+  /** The control id of a sent message with this MSH-10 and these encoding characters. */
+  const sent = (id: string, encodingChars = '^~\\&'): ReturnType<typeof controlIdOf> =>
+    controlIdOf(`MSH|${encodingChars}|S|F|R|F|20260101||ADT^A01|${id}|P|2.5.1`);
 
   it('accepts a positive acknowledgement for the message that was sent', () => {
-    expect(classifyAckResponse(ack('AA', 'CTRL1'), 'CTRL1').accepted).toBe(true);
+    expect(classifyAckResponse(ack('AA', 'CTRL1'), sent('CTRL1')).accepted).toBe(true);
   });
 
   it('rejects a positive acknowledgement for a different message', () => {
-    const result = classifyAckResponse(ack('AA', 'OTHER'), 'CTRL1');
+    const result = classifyAckResponse(ack('AA', 'OTHER'), sent('CTRL1'));
     expect(result.accepted).toBe(false);
     expect(result.errorMessage).toContain('OTHER');
     expect(result.errorMessage).toContain('CTRL1');
   });
 
-  it('compares the whole control id field, components included', () => {
-    const sent = 'MSH|^~\\&|S|F|R|F|20260101||ADT^A01|ID^X|P|2.5.1';
-    expect(classifyAckResponse(ack('AA', 'ID^X'), controlIdOf(sent)).accepted).toBe(true);
-    expect(classifyAckResponse(ack('AA', 'ID^Y'), controlIdOf(sent)).accepted).toBe(false);
+  describe('a control id with components (#197)', () => {
+    const sentId = sent('ID^X');
+
+    it('accepts an acknowledgement that echoes the whole control id', () => {
+      expect(classifyAckResponse(ack('AA', 'ID^X'), sentId).accepted).toBe(true);
+    });
+
+    it('accepts one that echoes only its first component, so the message is not resent', () => {
+      expect(classifyAckResponse(ack('AA', 'ID'), sentId).accepted).toBe(true);
+    });
+
+    it('rejects one whose later component differs', () => {
+      expect(classifyAckResponse(ack('AA', 'ID^Y'), sentId).accepted).toBe(false);
+    });
+
+    it('rejects one for another message', () => {
+      expect(classifyAckResponse(ack('AA', 'OTHER'), sentId).accepted).toBe(false);
+    });
+
+    it('takes the first component with the sent message\'s separators, which encoded the id', () => {
+      // Sent with @ as the component separator; the partner answers with the standard ^.
+      expect(classifyAckResponse(ack('AA', 'ID'), sent('ID@X', '@~\\&')).accepted).toBe(true);
+      expect(classifyAckResponse(ack('AA', 'ID@X'), sent('ID@X', '@~\\&')).accepted).toBe(true);
+      expect(classifyAckResponse(ack('AA', 'ID@Y'), sent('ID@X', '@~\\&')).accepted).toBe(false);
+      // Sent with ^; the partner answers with @ as its own component separator.
+      const atAck = (id: string): string => `MSH|@~\\&|R|F|S|F|20260101||ACK|X1|P|2.5.1\rMSA|AA|${id}`;
+      expect(classifyAckResponse(atAck('ID'), sentId).accepted).toBe(true);
+    });
+
+    it('compares a bare MSA with no MSH the same way', () => {
+      expect(classifyAckResponse('MSA|AA|ID', sentId).accepted).toBe(true);
+      expect(classifyAckResponse('MSA|AA|IDX', sentId).accepted).toBe(false);
+    });
+
+    it('keeps the subcomponents of the first component', () => {
+      expect(sent('ID&1^X')).toEqual({ whole: 'ID&1^X', first: 'ID&1' });
+    });
   });
 
   it('accepts the acknowledgement createAck builds for the message sent', () => {
@@ -128,11 +164,13 @@ describe('classifyAckResponse control id check', () => {
   });
 
   it('accepts when the acknowledgement carries no control id', () => {
-    expect(classifyAckResponse(ack('AA', ''), 'CTRL1').accepted).toBe(true);
+    expect(classifyAckResponse(ack('AA', ''), sent('CTRL1')).accepted).toBe(true);
   });
 
   it('accepts when the sent content had no control id to compare', () => {
+    expect(sent('')).toBeUndefined();
+    expect(controlIdOf('not hl7')).toBeUndefined();
     expect(classifyAckResponse(ack('AA', 'ANY')).accepted).toBe(true);
-    expect(classifyAckResponse(ack('AA', 'ANY'), '').accepted).toBe(true);
+    expect(classifyAckResponse(ack('AA', 'ANY'), sent('')).accepted).toBe(true);
   });
 });

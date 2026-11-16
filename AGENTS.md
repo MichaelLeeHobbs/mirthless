@@ -53,6 +53,7 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `num` in `connectors/src/registry.ts` and `getNum` read only finite numbers (D-276); `readTlsServerOptions`/`readTlsClientOptions` in `connectors/src/tls.ts` refuse a non-object `tls` (D-277).
   - `containsPattern` in `server/src/lib/like.ts` (a LIKE pattern from user text), `emitSuccessEvent` in `server/src/lib/event-emitter.ts` (an INFO/SUCCESS audit event), and `buildEventWhereConditions` in `server/src/services/event.service.ts` (the event list and export filters).
   - `errorMessage` in `web/src/lib/error-message.ts` (text for an unknown thrown value, with the caller's fallback), `definedSearchParams` in `web/src/lib/search-params.ts` (query params without the unset ones), `messageFilterParts` in `web/src/lib/message-filter-query.ts` (the message search and export filters), and `updateTls` on `propertyUpdaters` for a connector form's TLS fields.
+  - `parseHeaderLines` in `core-models/src/schemas/http-connector.schema.ts`: header text (`Name: value` per line) to a map, for the HTTP schema and the web headers editor. `optionalTlsSchema` and `withoutKeys` in `core-models/src/schemas/connector-property-fields.ts`: a connector schema's optional `tls` object and its dropped legacy keys.
   - `GlobalChannelMap` in `engine/src/runtime/global-channel-map.ts` is the in-memory script map; `GlobalMapProxy` keeps its entries in one rather than its own `Map`.
 - No speculative generalization — design for today's requirements, not hypothetical futures
 - If you find yourself saying "this might be useful later" — stop and don't build it
@@ -319,7 +320,7 @@ Start with the type lists in `packages/core-models/src/constants.ts` (`SOURCE_CO
 - Certificate-ID resolvers in `packages/server/src/engine.ts` (`SOURCE_TLS_RESOLVERS`, `DESTINATION_TLS_RESOLVERS`), if the connector takes certificates from the store.
 - Editor forms and defaults: `SOURCE_CONNECTOR_FORMS` in `packages/web/src/components/channels/source/ConnectorSettingsSection.tsx`, `DEST_CONNECTOR_FORMS` in `destinations/DestinationConnectorSettings.tsx`, and the defaults maps in both `connector-defaults.ts` files.
 - The Mirth importer in `packages/server/src/services/mirth-import.service.ts`, if Mirth has an equivalent: the class map (`CONNECTOR_TYPE_MAP`), the `transportMap` in `mapTransportName`, and a case in the `extractConnectorProperties` switch. A connector missing from the maps imports as JAVASCRIPT with a warning. One with no case in the switch keeps Mirth's own property names, which the connector does not read, so its settings are lost on import.
-- The property tables in `docs/user/connector-reference.md`. Their keys are checked only for connectors whose properties have a core-models schema, by `packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts` (TCP_MLLP today); add the connector there when its schema lands ([#115](https://github.com/MichaelLeeHobbs/mirthless/issues/115)).
+- The property tables in `docs/user/connector-reference.md`. Their keys are checked only for connectors whose properties have a core-models schema, by `packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts` (TCP_MLLP and HTTP today); add the connector there when its schema lands ([#115](https://github.com/MichaelLeeHobbs/mirthless/issues/115)).
 
 ---
 
