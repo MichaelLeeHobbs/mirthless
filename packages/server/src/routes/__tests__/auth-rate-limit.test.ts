@@ -37,7 +37,7 @@ interface RouteLayer {
 }
 
 interface MiddlewareLayer {
-  readonly handle: (...args: readonly unknown[]) => unknown;
+  readonly handle: unknown;
   readonly name: string;
 }
 

@@ -19,7 +19,7 @@ The server's docs guards that read the repository through `readRepoFile` (connec
 
 A package's jobs come from the workspace dependency graph: a job runs when a package it exercises, or one of that package's dependencies, changed. Connector integration exercises connectors; the Postgres lane, server; e2e, server and web.
 
-Inside the gate, build, lint and `pnpm audit` always cover the whole repository. Lint runs ESLint and then `pnpm typecheck:tests`, which type-checks what the build leaves out: each package's tests, Vite and Vitest configs (its `tsconfig.test.json`) and `e2e/` (#242). Only the unit tests narrow, to the changed packages and the packages that depend on them, and each package's coverage minimums still apply.
+Inside the gate, build, lint and `pnpm audit` always cover the whole repository. Lint runs ESLint and then `pnpm typecheck:tests`, which type-checks what the build leaves out: each package's tests, Vite and Vitest configs (its `tsconfig.test.json`) and `e2e/` (#242, D-305). Only the unit tests narrow, to the changed packages and the packages that depend on them, and each package's coverage minimums still apply.
 
 These run everything, whatever changed:
 
