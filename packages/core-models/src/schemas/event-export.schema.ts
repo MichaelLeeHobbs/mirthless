@@ -4,6 +4,7 @@
 // Validation schemas for exporting audit events as CSV or JSON.
 
 import { z } from 'zod/v4';
+import { exportReasonSchema } from './audit.schema.js';
 
 // ----- Const Objects -----
 
@@ -25,6 +26,8 @@ export const eventExportQuerySchema = z.object({
   name: z.string().optional(),
   outcome: z.string().optional(),
   maxRows: z.coerce.number().int().positive().max(50_000).default(10_000),
+  /** Why the export is taken: recorded in the audit log and the file's header. */
+  reason: exportReasonSchema,
 });
 
 export type EventExportQuery = z.infer<typeof eventExportQuerySchema>;

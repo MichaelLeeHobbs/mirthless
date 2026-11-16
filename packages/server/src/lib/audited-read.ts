@@ -58,6 +58,24 @@ export function recordReadBestEffort(req: Request, read: AuditedRead): void {
 }
 
 /**
+ * Record an export for the signed-in caller before the file is sent, never
+ * deduped, and return the audit row's id for the file's header. Returns null
+ * when the record could not be written: the request has then been answered
+ * 503 and the caller must send nothing more.
+ */
+export async function recordExportOrRefuse(req: Request, res: Response, read: Omit<AuditedRead, 'dedupe'>): Promise<number | null> {
+  const recorded = await AuditService.recordOrRefuse({
+    action: read.action, outcome: 'SUCCESS', userId: req.user?.id ?? null,
+    channelId: read.channelId ?? null, ipAddress: req.ip ?? null, attributes: read.attributes,
+  });
+  if (!recorded.ok) {
+    res.status(mapErrorToStatus(recorded.error)).json({ success: false, error: errorResponse(recorded.error) });
+    return null;
+  }
+  return recorded.value;
+}
+
+/**
  * Record `read` for the signed-in caller before anything is sent. A deduped
  * read records every id the page returned that is not recorded yet (D-317),
  * so the dedupe never holds an id that was not written. Returns false when

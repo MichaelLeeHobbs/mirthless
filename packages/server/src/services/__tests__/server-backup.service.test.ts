@@ -190,14 +190,14 @@ describe('ServerBackupService', () => {
     it('returns backup payload with all sections', async () => {
       setupExportMocks();
 
-      const result = await ServerBackupService.exportBackup();
+      const result = await ServerBackupService.exportBackup('Monthly backup');
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.version).toBe(1);
-      expect(result.value.channels).toEqual([]);
-      expect(result.value.codeTemplateLibraries).toEqual([]);
-      expect(result.value.settings).toEqual([]);
+      expect(result.value.backup.version).toBe(1);
+      expect(result.value.backup.channels).toEqual([]);
+      expect(result.value.backup.codeTemplateLibraries).toEqual([]);
+      expect(result.value.backup.settings).toEqual([]);
     });
 
     it('includes channels from export service', async () => {
@@ -205,11 +205,11 @@ describe('ServerBackupService', () => {
       const channelEntry = { id: 'ch-1', name: 'Test Channel' };
       mockChannelExportAll.mockResolvedValue(okResult({ version: 1, exportedAt: '', channels: [channelEntry] }));
 
-      const result = await ServerBackupService.exportBackup();
+      const result = await ServerBackupService.exportBackup('Monthly backup');
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.channels).toHaveLength(1);
+      expect(result.value.backup.channels).toHaveLength(1);
     });
 
     it('includes user data without password hash', async () => {
@@ -220,12 +220,12 @@ describe('ServerBackupService', () => {
       };
       mockUserListUsers.mockResolvedValue(okResult([user]));
 
-      const result = await ServerBackupService.exportBackup();
+      const result = await ServerBackupService.exportBackup('Monthly backup');
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.users).toHaveLength(1);
-      expect(result.value.users[0]).not.toHaveProperty('passwordHash');
+      expect(result.value.backup.users).toHaveLength(1);
+      expect(result.value.backup.users[0]).not.toHaveProperty('passwordHash');
     });
 
     it('returns error when channel export fails, without recording an export', async () => {
@@ -233,7 +233,7 @@ describe('ServerBackupService', () => {
       mockChannelExportAll.mockResolvedValue(errResult('DB error'));
       recordOrRefuse.mockClear();
 
-      const result = await ServerBackupService.exportBackup({ userId: 'u-1', ipAddress: '10.0.0.9' });
+      const result = await ServerBackupService.exportBackup('Monthly backup', { userId: 'u-1', ipAddress: '10.0.0.9' });
 
       expect(result.ok).toBe(false);
       expect(recordOrRefuse).not.toHaveBeenCalled();
@@ -243,16 +243,20 @@ describe('ServerBackupService', () => {
       setupExportMocks();
       recordOrRefuse.mockClear();
 
-      const result = await ServerBackupService.exportBackup({ userId: 'u-1', ipAddress: '10.0.0.9' });
+      recordOrRefuse.mockResolvedValueOnce({ ok: true, value: 12 } as never);
+      const result = await ServerBackupService.exportBackup('Monthly backup', { userId: 'u-1', ipAddress: '10.0.0.9' });
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      // What the browser saves: the JSON response, parsed, written with two-space indents.
+      expect(result.value.auditRecordId).toBe(12);
+      // What the browser saves: the response (exportInfo first, then the backup),
+      // parsed and written with two-space indents. Less exportInfo, it hashes as recorded.
       const { createHash } = await import('node:crypto');
-      const saved = JSON.stringify(JSON.parse(JSON.stringify({ success: true, data: result.value })).data, null, 2);
+      const response = JSON.parse(JSON.stringify({ success: true, data: { exportInfo: { auditRecordId: 12 }, ...result.value.backup } })) as { data: Record<string, unknown> };
+      const { exportInfo: _header, ...file } = response.data;
       expect(recordOrRefuse).toHaveBeenCalledWith({
         action: 'SERVER_BACKUP_EXPORTED', outcome: 'SUCCESS', userId: 'u-1', ipAddress: '10.0.0.9',
-        attributes: { channels: result.value.channels.length, sha256: createHash('sha256').update(saved).digest('hex') },
+        attributes: { channels: result.value.backup.channels.length, sha256: createHash('sha256').update(JSON.stringify(file, null, 2)).digest('hex'), reason: 'Monthly backup' },
       });
     });
 
@@ -260,7 +264,7 @@ describe('ServerBackupService', () => {
       setupExportMocks();
       recordOrRefuse.mockResolvedValueOnce({ ok: false, error: Object.assign(new Error('audit down'), { name: 'ServiceError', code: 'AUDIT_UNAVAILABLE' }) } as never);
 
-      const result = await ServerBackupService.exportBackup({ userId: 'u-1', ipAddress: '10.0.0.9' });
+      const result = await ServerBackupService.exportBackup('Monthly backup', { userId: 'u-1', ipAddress: '10.0.0.9' });
 
       expect(result.ok).toBe(false);
       expect(result.error).toMatchObject({ code: 'AUDIT_UNAVAILABLE' });
@@ -280,12 +284,12 @@ describe('ServerBackupService', () => {
       mockAlertList.mockResolvedValue(okResult({ data: [alertSummary], pagination: { page: 1, pageSize: 10000, total: 1, totalPages: 1 } }));
       mockAlertGetByIds.mockResolvedValue(okResult([alertDetail]));
 
-      const result = await ServerBackupService.exportBackup();
+      const result = await ServerBackupService.exportBackup('Monthly backup');
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.alerts).toHaveLength(1);
-      expect(result.value.alerts[0]!.trigger.type).toBe('ON_ERROR');
+      expect(result.value.backup.alerts).toHaveLength(1);
+      expect(result.value.backup.alerts[0]!.trigger.type).toBe('ON_ERROR');
     });
 
     it('includes resource content from detail fetch', async () => {
@@ -297,12 +301,12 @@ describe('ServerBackupService', () => {
         id: 'r-1', name: 'Script', description: null, mimeType: 'text/plain', sizeBytes: 10, content: 'console.log(1)',
       }));
 
-      const result = await ServerBackupService.exportBackup();
+      const result = await ServerBackupService.exportBackup('Monthly backup');
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.resources).toHaveLength(1);
-      expect(result.value.resources[0]!.content).toBe('console.log(1)');
+      expect(result.value.backup.resources).toHaveLength(1);
+      expect(result.value.backup.resources[0]!.content).toBe('console.log(1)');
     });
   });
 

@@ -19,8 +19,8 @@ vi.mock('../../lib/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-const recordReadOrRefuse = vi.fn();
-vi.mock('../../lib/audited-read.js', () => ({ recordReadOrRefuse }));
+const recordExportOrRefuse = vi.fn();
+vi.mock('../../lib/audited-read.js', () => ({ recordExportOrRefuse }));
 
 const { MessageExportController } = await import('../message-export.controller.js');
 
@@ -45,7 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockService.toCsv.mockReturnValue('CSV_BODY');
   mockService.toJson.mockReturnValue('JSON_BODY');
-  recordReadOrRefuse.mockResolvedValue(true);
+  recordExportOrRefuse.mockResolvedValue(41);
 });
 
 describe('MessageExportController.exportMessages', () => {
@@ -53,18 +53,41 @@ describe('MessageExportController.exportMessages', () => {
     mockService.collect.mockResolvedValue({ ok: true, value: okData, error: null });
     const res = makeRes();
 
-    await MessageExportController.exportMessages(makeReq({ format: 'csv', includeContent: false }), res);
+    await MessageExportController.exportMessages(makeReq({ format: 'csv', includeContent: false, reason: 'Quarterly review' }), res);
 
-    expect(recordReadOrRefuse).toHaveBeenCalledWith(expect.anything(), res, {
+    expect(recordExportOrRefuse).toHaveBeenCalledWith(expect.anything(), res, {
       action: 'MESSAGES_EXPORTED', channelId: 'ch-1',
-      attributes: { format: 'csv', exported: 1, total: 1, truncated: false, includeContent: false, messageIds: [1] },
+      attributes: { reason: 'Quarterly review', format: 'csv', exported: 1, total: 1, truncated: false, includeContent: false, messageIds: [1] },
     });
-    expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.send).mock.invocationCallOrder[0] ?? 0);
+    expect(recordExportOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.send).mock.invocationCallOrder[0] ?? 0);
+  });
+
+  it('heads the CSV with the export header, naming the audit record and the reason', async () => {
+    mockService.collect.mockResolvedValue({ ok: true, value: okData, error: null });
+    const res = makeRes();
+
+    await MessageExportController.exportMessages(makeReq({ format: 'csv', includeContent: false, reason: 'Quarterly review' }), res);
+
+    const body = String(vi.mocked(res.send).mock.calls[0]?.[0]);
+    expect(body).toMatch(/^# GalvaniGraph export\n/);
+    expect(body).toContain('# audit record: 41\n# reason: Quarterly review\nCSV_BODY');
+  });
+
+  it('wraps the JSON rows with the export header', async () => {
+    mockService.collect.mockResolvedValue({ ok: true, value: okData, error: null });
+    mockService.toJson.mockReturnValueOnce('[{"messageId":1}]');
+    const res = makeRes();
+
+    await MessageExportController.exportMessages(makeReq({ format: 'json', includeContent: false, reason: 'Quarterly review' }), res);
+
+    const parsed = JSON.parse(String(vi.mocked(res.send).mock.calls[0]?.[0])) as { export: Record<string, unknown>; messages: unknown[] };
+    expect(parsed.export).toMatchObject({ auditRecordId: 41, reason: 'Quarterly review', exportedBy: 'user-5' });
+    expect(parsed.messages).toEqual([{ messageId: 1 }]);
   });
 
   it('sends no file when the export cannot be recorded', async () => {
     mockService.collect.mockResolvedValue({ ok: true, value: okData, error: null });
-    recordReadOrRefuse.mockResolvedValueOnce(false);
+    recordExportOrRefuse.mockResolvedValueOnce(null);
     const res = makeRes();
 
     await MessageExportController.exportMessages(makeReq({ format: 'csv', includeContent: false }), res);
@@ -83,7 +106,7 @@ describe('MessageExportController.exportMessages', () => {
     expect(res.setHeader).toHaveBeenCalledWith('X-Export-Truncated', 'false');
     expect(res.setHeader).toHaveBeenCalledWith('X-Export-Count', '1');
     expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('.csv'));
-    expect(res.send).toHaveBeenCalledWith('CSV_BODY');
+    expect(res.send).toHaveBeenCalledWith(expect.stringMatching(/CSV_BODY$/));
   });
 
   it('returns a JSON body for format=json', async () => {
@@ -93,7 +116,7 @@ describe('MessageExportController.exportMessages', () => {
     await MessageExportController.exportMessages(makeReq({ format: 'json', includeContent: false }), res);
 
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/json');
-    expect(res.send).toHaveBeenCalledWith('JSON_BODY');
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining('"messages": JSON_BODY'));
     expect(mockService.toJson).toHaveBeenCalled();
   });
 
@@ -103,7 +126,7 @@ describe('MessageExportController.exportMessages', () => {
 
     await MessageExportController.exportMessages(makeReq({ format: 'csv', includeContent: false }), res);
 
-    expect(recordReadOrRefuse).not.toHaveBeenCalled();
+    expect(recordExportOrRefuse).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
   });
 });

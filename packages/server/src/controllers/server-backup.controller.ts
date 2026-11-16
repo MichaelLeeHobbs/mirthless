@@ -4,14 +4,16 @@
 // Handles HTTP requests for server backup/restore.
 
 import type { Request, Response } from 'express';
-import type { BackupCollisionMode, ServerBackup } from '@galvanigraph/core-models';
+import type { BackupCollisionMode, BackupExportQuery, ServerBackup } from '@galvanigraph/core-models';
+import { exportHeader } from '../lib/export-header.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { ServerBackupService } from '../services/server-backup.service.js';
 import logger from '../lib/logger.js';
 
 export class ServerBackupController {
   static async exportBackup(req: Request, res: Response): Promise<void> {
-    const result = await ServerBackupService.exportBackup({ userId: req.user?.id ?? null, ipAddress: req.ip ?? null });
+    const { reason } = req.query as unknown as BackupExportQuery;
+    const result = await ServerBackupService.exportBackup(reason, { userId: req.user?.id ?? null, ipAddress: req.ip ?? null });
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
@@ -20,7 +22,9 @@ export class ServerBackupController {
       return;
     }
 
-    res.json({ success: true, data: result.value });
+    // exportInfo goes first: the recorded hash is of the file without it.
+    const exportInfo = exportHeader(req, result.value.auditRecordId, reason);
+    res.json({ success: true, data: { exportInfo, ...result.value.backup } });
   }
 
   static async restoreBackup(req: Request, res: Response): Promise<void> {

@@ -44,20 +44,20 @@ describe('buildExportUrl', () => {
   it('serialises the format, every filter and maxRows in a fixed order', () => {
     const url = buildExportUrl({
       format: 'json', startDate: START, endDate: END, level: 'ERROR', name: 'USER_LOGIN',
-      outcome: 'FAILURE', maxRows: 1000,
+      outcome: 'FAILURE', maxRows: 1000, reason: 'Incident 42',
     });
     expect(url).toBe(
-      `/api/v1/events/export?format=json&${START_QS}&${END_QS}&level=ERROR&name=USER_LOGIN&outcome=FAILURE&maxRows=1000`,
+      `/api/v1/events/export?format=json&${START_QS}&${END_QS}&level=ERROR&name=USER_LOGIN&outcome=FAILURE&maxRows=1000&reason=Incident+42`,
     );
   });
 
   it('sends only the format when no filter is set', () => {
-    expect(buildExportUrl({ format: 'csv', ...BLANK_FILTERS })).toBe('/api/v1/events/export?format=csv');
+    expect(buildExportUrl({ format: 'csv', ...BLANK_FILTERS, reason: 'x' })).toBe('/api/v1/events/export?format=csv&reason=x');
   });
 
   it('keeps a zero maxRows and drops the empty filters', () => {
-    expect(buildExportUrl({ format: 'csv', name: 'A B', level: '', maxRows: 0 })).toBe(
-      '/api/v1/events/export?format=csv&name=A+B&maxRows=0',
+    expect(buildExportUrl({ format: 'csv', name: 'A B', level: '', maxRows: 0, reason: 'x' })).toBe(
+      '/api/v1/events/export?format=csv&name=A+B&maxRows=0&reason=x',
     );
   });
 });

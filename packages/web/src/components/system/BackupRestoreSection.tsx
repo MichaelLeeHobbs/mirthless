@@ -26,6 +26,7 @@ import TableRow from '@mui/material/TableRow';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import type { ServerRestoreResult } from '@galvanigraph/core-models';
 import { useBackup, useRestore } from '../../hooks/use-backup.js';
+import { ConfirmDialog } from '../common/ConfirmDialog.js';
 
 /** Every error and warning the restore reported, under its section. */
 function RestoreErrors({ sections }: { readonly sections: ServerRestoreResult['sections'] }): ReactNode {
@@ -56,9 +57,11 @@ export function BackupRestoreSection(): ReactNode {
   const [backupData, setBackupData] = useState<unknown>(null);
   const [fileName, setFileName] = useState('');
   const [restoreResult, setRestoreResult] = useState<ServerRestoreResult | null>(null);
+  const [backupDialogOpen, setBackupDialogOpen] = useState(false);
 
-  const handleDownload = (): void => {
-    backupMutation.mutate(undefined, {
+  const handleDownload = (reason: string): void => {
+    setBackupDialogOpen(false);
+    backupMutation.mutate(reason, {
       onSuccess: (blob) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -111,10 +114,22 @@ export function BackupRestoreSection(): ReactNode {
     <Paper sx={{ p: 3 }}>
       <Typography variant="h6" sx={{ mb: 2 }}>Backup & Restore</Typography>
 
+      <ConfirmDialog
+        open={backupDialogOpen}
+        title="Download backup"
+        message="The backup holds every channel's scripts and connector settings, both maps, resources, and every user's name and email address. Keep it as you would credentials and PHI. The download is recorded in the audit log with your reason."
+        confirmLabel="Download"
+        severity="warning"
+        reasonLabel="Reason for this backup"
+        isPending={backupMutation.isPending}
+        onConfirm={(reason) => { handleDownload(reason ?? ''); }}
+        onCancel={() => { setBackupDialogOpen(false); }}
+      />
+
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <Button
           variant="contained"
-          onClick={handleDownload}
+          onClick={() => { setBackupDialogOpen(true); }}
           disabled={backupMutation.isPending}
         >
           {backupMutation.isPending ? <CircularProgress size={20} sx={{ mr: 1 }} /> : null}

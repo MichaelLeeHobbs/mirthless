@@ -45,6 +45,19 @@ export const AUDIT_ACTION = {
 
 export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];
 
+/**
+ * Why an export or backup is being taken (D-312). Required: it is recorded in
+ * the audit log and written into the file's header. One line, so it cannot
+ * break out of a CSV header comment.
+ */
+export const exportReasonSchema = z.string().trim().min(3, 'Say why you are exporting this (at least 3 characters).').max(500)
+  .refine((v) => !/[\r\n]/.test(v), 'The reason must be one line.');
+
+/** GET /system/backup query string. */
+export const backupExportQuerySchema = z.object({ reason: exportReasonSchema });
+
+export type BackupExportQuery = z.infer<typeof backupExportQuerySchema>;
+
 /** GET /audit query filters. `action` is a comma-separated list. */
 export const auditListQuerySchema = z.object({
   // A deeper page is a huge OFFSET; filter by date instead.

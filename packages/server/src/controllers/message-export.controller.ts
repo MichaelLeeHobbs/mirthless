@@ -9,7 +9,8 @@ import type { Request, Response } from 'express';
 import { AUDIT_ACTION, type MessageExportQuery } from '@galvanigraph/core-models';
 import { MessageExportService } from '../services/message-export.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
-import { recordReadOrRefuse } from '../lib/audited-read.js';
+import { recordExportOrRefuse } from '../lib/audited-read.js';
+import { csvHeaderLines, exportHeader, wrapJsonExport } from '../lib/export-header.js';
 import logger from '../lib/logger.js';
 
 export class MessageExportController {
@@ -27,11 +28,13 @@ export class MessageExportController {
 
     const data = result.value;
 
-    // An export is a PHI read: recorded, with every exported id, before the file
-    // goes out, and never deduped (D-312).
-    const recorded = await recordReadOrRefuse(req, res, {
+    // An export is a PHI read: recorded, with its reason and every exported id,
+    // before the file goes out, and never deduped (D-312). The file's header
+    // names that record.
+    const auditRecordId = await recordExportOrRefuse(req, res, {
       action: AUDIT_ACTION.MESSAGES_EXPORTED, channelId,
       attributes: {
+        reason: query.reason,
         format: query.format,
         exported: data.rows.length,
         total: data.total,
@@ -40,7 +43,8 @@ export class MessageExportController {
         messageIds: data.rows.map((r) => r.messageId),
       },
     });
-    if (!recorded) return;
+    if (auditRecordId === null) return;
+    const header = exportHeader(req, auditRecordId, query.reason);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     res.setHeader('X-Export-Truncated', String(data.truncated));
@@ -49,12 +53,12 @@ export class MessageExportController {
     if (query.format === 'json') {
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename="messages-${channelId}-${timestamp}.json"`);
-      res.status(200).send(MessageExportService.toJson(data, query.includeContent));
+      res.status(200).send(wrapJsonExport(header, 'messages', MessageExportService.toJson(data, query.includeContent)));
       return;
     }
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="messages-${channelId}-${timestamp}.csv"`);
-    res.status(200).send(MessageExportService.toCsv(data, query.includeContent));
+    res.status(200).send(csvHeaderLines(header) + MessageExportService.toCsv(data, query.includeContent));
   }
 }

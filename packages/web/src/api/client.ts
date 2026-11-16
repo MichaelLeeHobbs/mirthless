@@ -1,6 +1,7 @@
 import type { ApiResponse } from '@galvanigraph/core-models';
 import { isPlainObject } from '@galvanigraph/core-util';
 import { useAuthStore, type AuthUser } from '../stores/auth.store.js';
+import { noticeAuditUnavailable } from '../lib/audit-unavailable.js';
 
 const BASE_URL = '/api/v1';
 
@@ -125,8 +126,9 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
 
   if (!response.ok && response.status !== 401) {
     try {
-      const errorJson: unknown = await response.json();
-      return errorJson as ApiResponse<T>;
+      const errorJson = (await response.json()) as ApiResponse<T>;
+      if (!errorJson.success) noticeAuditUnavailable(errorJson.error.code);
+      return errorJson;
     } catch {
       return {
         success: false,

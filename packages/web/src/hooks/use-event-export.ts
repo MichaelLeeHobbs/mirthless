@@ -6,6 +6,7 @@
 import { useState, useCallback } from 'react';
 import { useAuthStore } from '../stores/auth.store.js';
 import { definedSearchParams } from '../lib/search-params.js';
+import { downloadFailure } from '../lib/audit-unavailable.js';
 
 const BASE_URL = '/api/v1';
 
@@ -17,6 +18,8 @@ export interface EventExportParams {
   readonly name?: string;
   readonly outcome?: string;
   readonly maxRows?: number;
+  /** Why the export is taken: required, recorded in the audit log and the file's header. */
+  readonly reason: string;
 }
 
 interface EventExportState {
@@ -35,6 +38,7 @@ export function buildExportUrl(params: EventExportParams): string {
     name: params.name,
     outcome: params.outcome,
     maxRows: params.maxRows,
+    reason: params.reason,
   });
   return `${BASE_URL}/events/export?${searchParams.toString()}`;
 }
@@ -59,7 +63,7 @@ export function useEventExport(): EventExportState {
       const response = await fetch(url, { headers });
 
       if (!response.ok) {
-        setError(`Export failed with status ${String(response.status)}`);
+        setError(await downloadFailure(response));
         return;
       }
 
