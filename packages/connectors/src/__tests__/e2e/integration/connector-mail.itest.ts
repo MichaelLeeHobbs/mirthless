@@ -9,13 +9,12 @@
 import { it, expect, afterEach } from 'vitest';
 import nodemailer from 'nodemailer';
 import {
-  TcpMllpReceiver,
   SmtpDispatcher,
   EmailReceiver,
   clearChannelRegistry,
 } from '../../../index.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from '../support/e2e-harness.js';
-import { sendMllp } from '../support/tcp-helpers.js';
+import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { describeMail, requireMail } from './gates.js';
 
 const TCP_PORT = 17751;
@@ -66,7 +65,7 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
     const channelA = await deployChannel({
       channelId: '00000000-0000-0000-0000-connmail000a',
       dataType: 'RAW',
-      source: new TcpMllpReceiver({ host: '127.0.0.1', port: TCP_PORT, maxConnections: 10 }),
+      source: mllpSource(TCP_PORT, { maxConnections: 10 }),
       destinations: [{
         metaDataId: 1,
         name: 'SMTP Out',

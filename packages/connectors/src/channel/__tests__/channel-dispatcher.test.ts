@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { stderr } from '@galvaniflow/core-util';
 import type { ConnectorMessage } from '../../base.js';
 import { ChannelDispatcher, resolveTarget, type ChannelDispatcherConfig } from '../channel-dispatcher.js';
 
@@ -165,7 +166,7 @@ describe('ChannelDispatcher.send', () => {
       await inner.onStart();
       const r = await inner.send(makeMessage(), makeSignal());
       if (r.ok && r.value.status === 'ERROR') {
-        return { ok: false as const, value: null, error: new Error(r.value.errorMessage ?? 'error') };
+        return { ok: false as const, value: null, error: stderr(r.value.errorMessage ?? 'error') };
       }
       return { ok: true as const, value: { messageId: 1 }, error: null };
     });
@@ -219,7 +220,7 @@ describe('ChannelDispatcher.send', () => {
     registerChannel('target-ch-001', async () => ({
       ok: false as const,
       value: null,
-      error: { name: 'Error', message: 'pipeline error', code: 'PIPELINE_ERROR' },
+      error: stderr({ name: 'Error', message: 'pipeline error', code: 'PIPELINE_ERROR' }),
     }));
 
     const dispatcher = new ChannelDispatcher(makeConfig());

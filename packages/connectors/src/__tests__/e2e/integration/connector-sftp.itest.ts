@@ -10,7 +10,6 @@
 import { it, expect, afterEach } from 'vitest';
 import SftpLibrary from 'ssh2-sftp-client';
 import {
-  TcpMllpReceiver,
   SftpReceiver,
   SftpDispatcher,
   SFTP_POST_ACTION,
@@ -18,7 +17,7 @@ import {
   createSsh2SftpClient,
 } from '../../../index.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from '../support/e2e-harness.js';
-import { sendMllp } from '../support/tcp-helpers.js';
+import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { describeSftp, requireSftp } from './gates.js';
 
 const TCP_PORT = 17741;
@@ -69,7 +68,7 @@ describeSftp('SFTP connector cascade (real SFTP server)', () => {
     const channelA = await deployChannel({
       channelId: '00000000-0000-0000-0000-connsftp000a',
       dataType: 'RAW',
-      source: new TcpMllpReceiver({ host: '127.0.0.1', port: TCP_PORT, maxConnections: 10 }),
+      source: mllpSource(TCP_PORT, { maxConnections: 10 }),
       destinations: [{
         metaDataId: 1,
         name: 'SFTP Out',
