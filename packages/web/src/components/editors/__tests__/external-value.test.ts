@@ -4,7 +4,7 @@
 // value does that, since Monaco clears a model's undo stack on setValue.
 
 import { describe, it, expect, vi } from 'vitest';
-import { replaceExternalValue } from '../editor-hooks.js';
+import { isExternalReplace, replaceExternalValue } from '../editor-hooks.js';
 import { textFromEditor } from '../TextEditor.js';
 
 // #183: Monaco gives back an edited HL7 sample with \n (or \r\n) line endings,
@@ -37,6 +37,17 @@ describe('replaceExternalValue', () => {
     const { editor, setValue } = fakeEditor('return true;');
     expect(replaceExternalValue(editor, 'return true;')).toBe(false);
     expect(setValue).not.toHaveBeenCalled();
+  });
+
+  // #228: Monaco reports setValue as a content change, which reaches the host's onChange.
+  it('marks the editor as being replaced only while the host\'s text goes in', () => {
+    const seen: boolean[] = [];
+    const editor = { getValue: () => 'tab one' } as Record<string, unknown>;
+    editor['getModel'] = () => ({ setValue: () => { seen.push(isExternalReplace(editor as never)); } });
+    replaceExternalValue(editor as never, 'tab two');
+    expect(seen).toEqual([true]);
+    expect(isExternalReplace(editor as never)).toBe(false);
+    expect(isExternalReplace(null)).toBe(false);
   });
 
   it('counts text that differs only in line endings as the same (Monaco stores its own)', () => {

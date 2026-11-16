@@ -23,14 +23,17 @@ interface ConnectorScriptEditorProps {
 
 export function ConnectorScriptEditor({ properties, onChange, label, surface }: ConnectorScriptEditorProps): ReactNode {
   const script = getStr(properties, 'script', '');
+  const language = loadedScriptLanguage(script, properties['scriptLanguage']);
   return (
     <ScriptEditor
       height="auto"
       label={label}
       surface={surface}
       value={script}
-      onChange={(value) => { onChange({ ...properties, script: value }); }}
-      language={loadedScriptLanguage(script, properties['scriptLanguage'])}
+      // Store the language shown with the script: an empty script with none
+      // shows TypeScript, but deploy reads a missing language as JavaScript (#228).
+      onChange={(value) => { onChange({ ...properties, script: value, scriptLanguage: language }); }}
+      language={language}
       onLanguageChange={(language) => { onChange({ ...properties, scriptLanguage: language }); }}
       showLanguageToggle
     />
