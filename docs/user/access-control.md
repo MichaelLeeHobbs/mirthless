@@ -38,7 +38,7 @@ This page describes who can sign in to GalvaniFlow, how sessions work, how to cu
 
 **Session record.** Each login and each refresh creates a row in the `sessions` table holding a SHA-256 hash of the refresh token, the user agent and client address of that request, and an expiry `JWT_REFRESH_EXPIRES_IN` later (default 7 days). Logout deletes the row.
 
-**Rotation.** `POST /api/v1/auth/refresh` checks the refresh token's signature, finds its session, and checks that the user still exists and is enabled. It then deletes that session and creates a new one with a new refresh token and a new expiry. A refresh token works once.
+**Rotation.** `POST /api/v1/auth/refresh` checks the refresh token's signature, then deletes its session in the same statement that finds it, so of two refreshes sent with one token only one gets the session. It checks that the session has not expired and that the user still exists and is enabled, then creates a new session with a new refresh token and a new expiry. A refresh token works once.
 
 **Lifetimes.** `JWT_ACCESS_EXPIRES_IN` (default `15m`) and `JWT_REFRESH_EXPIRES_IN` (default `7d`) set the token lifetimes, and the session row and the refresh cookie follow the refresh token's expiry. Both need a unit (`15m`, `12h`, `7d`), and the server refuses to start when the refresh lifetime is shorter than the access lifetime.
 

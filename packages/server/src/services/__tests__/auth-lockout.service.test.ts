@@ -1,19 +1,20 @@
 // ===========================================
-// Auth Service: lockout window and rotated session metadata (#174)
+// Auth Service: lockout outcomes and rotated session metadata (#174)
 // ===========================================
-// A lock that has expired starts a new count of failed attempts, so one wrong
-// password after the lock does not lock the account again. A rotated session
-// keeps the client details of the request that rotated it.
+// A wrong password is counted by one UPDATE ... RETURNING; login answers from
+// the row it returns. The SQL itself (expired lock restarts the count,
+// concurrent guesses all count, a late write never clears a lock) is proven
+// against real Postgres in test/integration/auth-concurrency.itest.ts. A
+// rotated session keeps the client details of the request that rotated it.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 let selectResponses: unknown[][] = [];
+let countedRow: unknown[] = [];
 const mockSelect = vi.fn(() => ({ from: () => ({ where: () => Promise.resolve(selectResponses.shift() ?? []) }) }));
-const updateSets: Record<string, unknown>[] = [];
-const mockUpdate = vi.fn(() => ({
-  set: (values: Record<string, unknown>) => { updateSets.push(values); return { where: () => Promise.resolve(undefined) }; },
-}));
-const mockDelete = vi.fn(() => ({ where: () => Promise.resolve(undefined) }));
+const mockUpdate = vi.fn(() => ({ set: () => ({ where: () => ({ returning: () => Promise.resolve(countedRow) }) }) }));
+const consumedSession = [{ userId: 'u-1', expiresAt: new Date(Date.now() + 60_000) }];
+const mockDelete = vi.fn(() => ({ where: () => ({ returning: () => Promise.resolve(consumedSession) }) }));
 const insertValues: Record<string, unknown>[] = [];
 const mockInsert = vi.fn(() => ({
   values: (values: Record<string, unknown>) => { insertValues.push(values); return { returning: () => Promise.resolve([{ id: 'new-session' }]) }; },
@@ -23,7 +24,6 @@ const mockDb = { select: mockSelect, update: mockUpdate, delete: mockDelete, ins
 vi.mock('../../lib/db.js', () => ({ db: mockDb, default: mockDb }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
 vi.mock('bcryptjs', () => ({ default: { compare: vi.fn().mockResolvedValue(false) } }));
-vi.mock('drizzle-orm', () => ({ eq: vi.fn() }));
 vi.mock('../../lib/jwt.js', () => ({
   verifyRefreshToken: vi.fn(() => ({ userId: 'u-1' })),
   signRefreshToken: vi.fn(() => 'signed-refresh'),
@@ -40,52 +40,51 @@ function user(overrides: Record<string, unknown> = {}): Record<string, unknown> 
   };
 }
 
+function errorCode(result: { ok: boolean; error?: unknown }): string | undefined {
+  return result.ok ? undefined : (result.error as { code?: string }).code;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   selectResponses = [];
-  updateSets.length = 0;
+  countedRow = [];
   insertValues.length = 0;
 });
 
-describe('AuthService.login lockout window', () => {
-  it('starts a new count after a lock expires, so one wrong password does not lock again', async () => {
+describe('AuthService.login wrong password', () => {
+  it('answers INVALID_CREDENTIALS while the count stays under the limit', async () => {
     selectResponses = [[user({ failedLoginAttempts: 5, lockedUntil: new Date(Date.now() - 1000) })]];
+    countedRow = [{ failedLoginAttempts: 1 }]; // the expired lock's count restarted
 
-    const result = await AuthService.login('alice', 'wrong');
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect((result.error as { code?: string }).code).toBe('INVALID_CREDENTIALS');
-    expect(updateSets).toEqual([expect.objectContaining({ failedLoginAttempts: 1, lockedUntil: null })]);
+    expect(errorCode(await AuthService.login('alice', 'wrong'))).toBe('INVALID_CREDENTIALS');
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('still locks on the fifth wrong password inside one window', async () => {
+  it('answers ACCOUNT_LOCKED when this attempt reaches the limit', async () => {
     selectResponses = [[user({ failedLoginAttempts: 4 })]];
+    countedRow = [{ failedLoginAttempts: 5 }];
 
-    const result = await AuthService.login('alice', 'wrong');
+    expect(errorCode(await AuthService.login('alice', 'wrong'))).toBe('ACCOUNT_LOCKED');
+  });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect((result.error as { code?: string }).code).toBe('ACCOUNT_LOCKED');
-    expect(updateSets[0]?.['failedLoginAttempts']).toBe(5);
-    expect(updateSets[0]?.['lockedUntil']).toBeInstanceOf(Date);
+  it('answers ACCOUNT_LOCKED when a concurrent attempt locked the account first', async () => {
+    selectResponses = [[user({ failedLoginAttempts: 4 })]];
+    countedRow = [];
+
+    expect(errorCode(await AuthService.login('alice', 'wrong'))).toBe('ACCOUNT_LOCKED');
   });
 
   it('refuses a login while the lock is still running, without counting it', async () => {
     selectResponses = [[user({ failedLoginAttempts: 5, lockedUntil: new Date(Date.now() + 60_000) })]];
 
-    const result = await AuthService.login('alice', 'wrong');
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect((result.error as { code?: string }).code).toBe('ACCOUNT_LOCKED');
-    expect(updateSets).toEqual([]);
+    expect(errorCode(await AuthService.login('alice', 'wrong'))).toBe('ACCOUNT_LOCKED');
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });
 
 describe('AuthService.refreshSession client details', () => {
   it('stores the user agent and address of the refreshing request on the new session', async () => {
-    selectResponses = [
-      [{ id: 'sess-1', userId: 'u-1', expiresAt: new Date(Date.now() + 60_000) }],
-      [user()],
-    ];
+    selectResponses = [[user()]];
 
     const result = await AuthService.refreshSession('token', { userAgent: 'Firefox/140', ipAddress: '10.0.0.7' });
 
