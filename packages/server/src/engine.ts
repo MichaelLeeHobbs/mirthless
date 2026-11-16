@@ -50,7 +50,7 @@ import {
   type SourceConnectorRuntime,
   type DestinationConnectorRuntime,
 } from '@galvanigraph/connectors';
-import { MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, MESSAGE_STORAGE_MODE, CONTENT_TYPE, SOCKET_EVENT, type MessageStorageMode, storeRecordSchema, findRecordsSchema, updateRecordSchema, collectionRecordIdSchema, delimitedOptionsSchema, destinationTemplate } from '@galvanigraph/core-models';
 import { eq, asc } from 'drizzle-orm';
 import { MessageService } from './services/message.service.js';
 import { GlobalScriptService } from './services/global-script.service.js';
@@ -71,7 +71,7 @@ import { buildFileRoots } from './lib/file-roots.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
-import { emitEvent } from './lib/event-emitter.js';
+import { emitAuditEvent, emitEvent } from './lib/event-emitter.js';
 import { emitToAll } from './lib/socket.js';
 import type { ChannelDetail } from './services/channel.service.js';
 
@@ -690,6 +690,11 @@ export class EngineManager {
       if (!result.ok) {
         logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to send alert email');
       }
+      // An alert can carry message details out by email: who it went to, never what it said (D-312).
+      emitAuditEvent({
+        action: AUDIT_ACTION.ALERT_SENT, outcome: result.ok ? 'SUCCESS' : 'FAILURE',
+        channelId: channel.id, attributes: { recipients: [...to] },
+      });
     };
 
     // Create alert manager and load alerts for this channel

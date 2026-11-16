@@ -11,7 +11,7 @@ vi.mock('../../services/audit.service.js', () => ({ AuditService: { record } }))
 const warn = vi.fn();
 vi.mock('../logger.js', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() } }));
 
-const { emitSuccessEvent, emitAuditEvent } = await import('../event-emitter.js');
+const { emitSuccessEvent, emitAuditEvent, lostAuditRecordCount } = await import('../event-emitter.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -53,6 +53,29 @@ describe('emitAuditEvent', () => {
 
     expect(record).toHaveBeenCalledWith({ action: 'USER_LOGIN', outcome: 'SUCCESS', userId: 'user-1' });
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it('calls back once the record is written, and never for a lost one', async () => {
+    const written = vi.fn();
+    emitAuditEvent({ action: 'GLOBAL_MAP_READ', outcome: 'SUCCESS' }, written);
+    await vi.waitFor(() => { expect(written).toHaveBeenCalledOnce(); });
+
+    const lost = vi.fn();
+    record.mockResolvedValueOnce({ ok: false, error: new Error('disk full') });
+    emitAuditEvent({ action: 'GLOBAL_MAP_READ', outcome: 'SUCCESS' }, lost);
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalled(); });
+    expect(lost).not.toHaveBeenCalled();
+  });
+
+  it('counts each lost record, for system info', async () => {
+    const before = lostAuditRecordCount();
+    record.mockResolvedValueOnce({ ok: false, error: new Error('disk full') });
+    record.mockRejectedValueOnce(new Error('pool closed'));
+    emitAuditEvent({ action: 'USER_LOGOUT', outcome: 'SUCCESS' });
+    emitAuditEvent({ action: 'USER_LOGOUT', outcome: 'SUCCESS' });
+    emitAuditEvent({ action: 'USER_LOGOUT', outcome: 'SUCCESS' });
+
+    await vi.waitFor(() => { expect(lostAuditRecordCount()).toBe(before + 2); });
   });
 
   it('logs a failed write at WARN and never throws to the caller', async () => {

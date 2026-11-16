@@ -51,6 +51,8 @@ export interface SystemInfo {
   readonly audit: {
     /** Audit rows in the DEFAULT partition (counted up to 10,000); null when unknown. */
     readonly rowsOutsideMonths: number | null;
+    /** Best-effort audit records the server failed to write since it started. */
+    readonly lostRecords: number;
   };
 }
 

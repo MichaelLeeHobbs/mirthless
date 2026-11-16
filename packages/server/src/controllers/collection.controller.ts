@@ -12,8 +12,10 @@ import type {
   StoreRecordInput,
   UpdateRecordInput,
 } from '@galvanigraph/core-models';
+import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { CollectionService } from '../services/collection.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
+import { recordReadBestEffort } from '../lib/audited-read.js';
 import logger from '../lib/logger.js';
 
 export class CollectionController {
@@ -92,6 +94,12 @@ export class CollectionController {
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
+    // Records often hold PHI from many channels: recorded, best effort (D-312).
+    recordReadBestEffort(req, {
+      action: AUDIT_ACTION.COLLECTION_RECORDS_READ,
+      attributes: { collectionId: id, query, total: result.value.total },
+      dedupe: { key: `collection|${id}|${JSON.stringify(query)}`, ids: result.value.items.map((r) => r.id) },
+    });
     res.json({ success: true, data: result.value });
   }
 

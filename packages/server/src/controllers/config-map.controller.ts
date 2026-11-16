@@ -4,9 +4,10 @@
 // Handles HTTP requests for categorized configuration map CRUD.
 
 import type { Request, Response } from 'express';
-import type { UpsertConfigMapEntryInput, BulkUpsertConfigMapInput, ConfigMapQuery } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, type UpsertConfigMapEntryInput, type BulkUpsertConfigMapInput, type ConfigMapQuery } from '@galvanigraph/core-models';
 import { ConfigMapService } from '../services/config-map.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
+import { recordReadBestEffort } from '../lib/audited-read.js';
 import logger from '../lib/logger.js';
 
 export class ConfigMapController {
@@ -21,6 +22,11 @@ export class ConfigMapController {
       return;
     }
 
+    // Values often hold credentials: recorded, best effort (D-312).
+    recordReadBestEffort(req, {
+      action: AUDIT_ACTION.CONFIG_MAP_READ, attributes: { category: query?.category ?? null, entries: result.value.length },
+      dedupe: { key: `config-map|${query?.category ?? '*'}`, ids: result.value.map((e) => `${e.category}/${e.name}`) },
+    });
     res.json({ success: true, data: result.value });
   }
 
@@ -36,6 +42,10 @@ export class ConfigMapController {
       return;
     }
 
+    recordReadBestEffort(req, {
+      action: AUDIT_ACTION.CONFIG_MAP_READ, attributes: { category, name },
+      dedupe: { key: `config-map|${category}/${name}`, ids: [`${category}/${name}`] },
+    });
     res.json({ success: true, data: result.value });
   }
 

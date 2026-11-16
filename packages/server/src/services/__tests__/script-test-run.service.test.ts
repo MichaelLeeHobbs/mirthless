@@ -10,12 +10,14 @@ vi.setConfig({ testTimeout: 30_000 });
 
 const mockChannelService = { getById: vi.fn() };
 const mockTemplates = { listTemplatesForChannel: vi.fn(), listTemplates: vi.fn() };
-const emitEvent = vi.fn();
+const emitAuditEvent = vi.fn();
+const recordOrRefuse = vi.fn(async () => ({ ok: true, value: undefined }));
 const getResource = vi.fn(async () => 'from-resource');
 
 vi.mock('../channel.service.js', () => ({ ChannelService: mockChannelService }));
 vi.mock('../code-template.service.js', () => ({ CodeTemplateService: mockTemplates }));
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent }));
+vi.mock('../../lib/event-emitter.js', () => ({ emitAuditEvent }));
+vi.mock('../audit.service.js', () => ({ AuditService: { recordOrRefuse } }));
 vi.mock('../../engine.js', () => ({
   createResourceBridge: () => getResource,
   createCollectionBridge: () => ({ find: vi.fn(async () => []) }),
@@ -63,10 +65,19 @@ describe('ScriptTestRunService.run', () => {
       { userId: 'u1', ipAddress: '10.0.0.1' },
     );
 
-    expect(emitEvent).toHaveBeenCalledTimes(1);
-    const event = emitEvent.mock.calls[0]![0] as Record<string, unknown>;
-    expect(event).toMatchObject({ name: 'SCRIPT_TEST_RUN', outcome: 'SUCCESS', userId: 'u1', channelId: CHANNEL_ID });
+    expect(recordOrRefuse).toHaveBeenCalledTimes(1);
+    const event = (recordOrRefuse.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    expect(event).toMatchObject({ action: 'SCRIPT_TEST_RUN', outcome: 'SUCCESS', userId: 'u1', channelId: CHANNEL_ID });
     expect(JSON.stringify(event)).not.toContain('NGUYEN');
+  });
+
+  it('withholds the result, with AUDIT_UNAVAILABLE, when the run cannot be recorded', async () => {
+    recordOrRefuse.mockResolvedValueOnce({ ok: false, error: Object.assign(new Error('audit down'), { name: 'ServiceError', code: 'AUDIT_UNAVAILABLE' }) } as never);
+
+    const result = await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' }, { userId: 'u1', ipAddress: null });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatchObject({ code: 'AUDIT_UNAVAILABLE' });
   });
 
   it('stops an endless loop at the test-run limit, even for a channel that allows longer', async () => {
@@ -94,8 +105,8 @@ describe('ScriptTestRunService.run', () => {
 
   it('audits a run whose script fails, as well as one that succeeds', async () => {
     await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: "throw new Error('bad');" }, { userId: 'u1', ipAddress: null });
-    expect(emitEvent).toHaveBeenCalledTimes(1);
-    expect(emitEvent.mock.calls[0]![0]).toMatchObject({ name: 'SCRIPT_TEST_RUN', outcome: 'FAILURE', userId: 'u1' });
+    expect(recordOrRefuse).toHaveBeenCalledTimes(1);
+    expect((recordOrRefuse.mock.calls[0] as unknown[])[0]).toMatchObject({ action: 'SCRIPT_TEST_RUN', outcome: 'FAILURE', userId: 'u1' });
   });
 
   it('refuses a channel that does not exist', async () => {
@@ -106,7 +117,8 @@ describe('ScriptTestRunService.run', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toHaveProperty('code', 'NOT_FOUND');
-    expect(emitEvent).not.toHaveBeenCalled();
+    expect(recordOrRefuse).not.toHaveBeenCalled();
+    expect(emitAuditEvent).not.toHaveBeenCalled();
   });
 
   it('uses every template when no channel is given', async () => {

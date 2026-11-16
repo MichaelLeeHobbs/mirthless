@@ -22,6 +22,8 @@ export function useBackup(): ReturnType<typeof useMutation<Blob, Error>> {
     mutationFn: async () => {
       const result = await api.get<unknown>('/system/backup');
       if (!result.success) throw new Error(result.error.message);
+      // The server records the SHA-256 of exactly this text in the audit log
+      // (server-backup.service.ts): keep the two-space indent in step with it.
       const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
       return blob;
     },

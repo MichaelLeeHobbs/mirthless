@@ -52,6 +52,9 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
 }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
+// The audit writer has its own tests; here only what is recorded and the refusal matter.
+const recordOrRefuse = vi.fn(async () => ({ ok: true, value: undefined }));
+vi.mock('../audit.service.js', () => ({ AuditService: { recordOrRefuse } }));
 
 vi.mock('../channel-export.service.js', () => ({
   ChannelExportService: { exportAll: mockChannelExportAll },
@@ -225,27 +228,42 @@ describe('ServerBackupService', () => {
       expect(result.value.users[0]).not.toHaveProperty('passwordHash');
     });
 
-    it('returns error when channel export fails, without logging an export', async () => {
+    it('returns error when channel export fails, without recording an export', async () => {
       setupExportMocks();
       mockChannelExportAll.mockResolvedValue(errResult('DB error'));
-      const { emitEvent } = await import('../../lib/event-emitter.js');
+      recordOrRefuse.mockClear();
 
       const result = await ServerBackupService.exportBackup({ userId: 'u-1', ipAddress: '10.0.0.9' });
 
       expect(result.ok).toBe(false);
-      expect(emitEvent).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'SERVER_BACKUP_EXPORTED' }));
+      expect(recordOrRefuse).not.toHaveBeenCalled();
     });
 
-    it('audit-logs a successful export with who and from where', async () => {
+    it('records a successful export, with who, from where and the file\'s SHA-256, before returning it', async () => {
       setupExportMocks();
-      const { emitEvent } = await import('../../lib/event-emitter.js');
+      recordOrRefuse.mockClear();
 
       const result = await ServerBackupService.exportBackup({ userId: 'u-1', ipAddress: '10.0.0.9' });
 
       expect(result.ok).toBe(true);
-      expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({
-        name: 'SERVER_BACKUP_EXPORTED', outcome: 'SUCCESS', userId: 'u-1', ipAddress: '10.0.0.9',
-      }));
+      if (!result.ok) return;
+      // What the browser saves: the JSON response, parsed, written with two-space indents.
+      const { createHash } = await import('node:crypto');
+      const saved = JSON.stringify(JSON.parse(JSON.stringify({ success: true, data: result.value })).data, null, 2);
+      expect(recordOrRefuse).toHaveBeenCalledWith({
+        action: 'SERVER_BACKUP_EXPORTED', outcome: 'SUCCESS', userId: 'u-1', ipAddress: '10.0.0.9',
+        attributes: { channels: result.value.channels.length, sha256: createHash('sha256').update(saved).digest('hex') },
+      });
+    });
+
+    it('refuses the export when the audit log cannot record it', async () => {
+      setupExportMocks();
+      recordOrRefuse.mockResolvedValueOnce({ ok: false, error: Object.assign(new Error('audit down'), { name: 'ServiceError', code: 'AUDIT_UNAVAILABLE' }) } as never);
+
+      const result = await ServerBackupService.exportBackup({ userId: 'u-1', ipAddress: '10.0.0.9' });
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatchObject({ code: 'AUDIT_UNAVAILABLE' });
     });
 
     it('includes alert details with trigger and actions', async () => {

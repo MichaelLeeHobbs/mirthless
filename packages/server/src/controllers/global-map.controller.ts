@@ -4,13 +4,14 @@
 // Handles HTTP requests for global map key-value store CRUD.
 
 import type { Request, Response } from 'express';
-import type { UpsertGlobalMapEntryInput } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, type UpsertGlobalMapEntryInput } from '@galvanigraph/core-models';
 import { GlobalMapService } from '../services/global-map.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
+import { recordReadBestEffort } from '../lib/audited-read.js';
 import logger from '../lib/logger.js';
 
 export class GlobalMapController {
-  static async list(_req: Request, res: Response): Promise<void> {
+  static async list(req: Request, res: Response): Promise<void> {
     const result = await GlobalMapService.list();
 
     if (!result.ok) {
@@ -19,6 +20,12 @@ export class GlobalMapController {
       return;
     }
 
+    // Scripts keep PHI and credentials here: recorded, best effort (D-312).
+    recordReadBestEffort(req, {
+      action: AUDIT_ACTION.GLOBAL_MAP_READ, attributes: { entries: result.value.length },
+      // Keys are often built from patient identifiers: they dedupe, but stay out of the record.
+      dedupe: { key: 'global-map', ids: result.value.map((e) => e.key), idsOnlyForDedupe: true },
+    });
     res.json({ success: true, data: result.value });
   }
 
@@ -33,6 +40,10 @@ export class GlobalMapController {
       return;
     }
 
+    recordReadBestEffort(req, {
+      action: AUDIT_ACTION.GLOBAL_MAP_READ, attributes: { entries: 1 },
+      dedupe: { key: `global-map|${key}`, ids: [key], idsOnlyForDedupe: true },
+    });
     res.json({ success: true, data: result.value });
   }
 

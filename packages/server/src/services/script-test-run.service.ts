@@ -11,9 +11,10 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { runScriptTestIsolated, type ScriptTestResult } from '@galvanigraph/engine';
-import type { ScriptTestRunInput, TemplateSource } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, type ScriptTestRunInput, type TemplateSource } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
-import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import { emitAuditEvent, type AuditContext } from '../lib/event-emitter.js';
+import { AuditService } from './audit.service.js';
 import { ChannelService } from './channel.service.js';
 import { CodeTemplateService } from './code-template.service.js';
 import { createCollectionBridge, createResourceBridge } from '../engine.js';
@@ -54,13 +55,24 @@ async function channelScope(channelId: string | undefined): Promise<ChannelScope
 /** One test run at a time per server: a second request is refused, not queued. */
 let running = false;
 
-function audit(input: ScriptTestRunInput, context: AuditContext | undefined, result: ScriptTestResult | undefined): void {
-  emitEvent({
-    level: 'INFO', name: 'SCRIPT_TEST_RUN', outcome: result !== undefined && result.outcome !== 'error' ? 'SUCCESS' : 'FAILURE',
-    userId: context?.userId ?? null, channelId: input.channelId ?? null,
-    serverId: null, ipAddress: context?.ipAddress ?? null,
+/**
+ * Record a test run in the audit log: who, which channel, never the sample. A
+ * run that returned a result can show resource and collection data, so it is
+ * recorded fail-closed and the result withheld when that fails (D-312); a run
+ * that threw is recorded best effort.
+ */
+async function audit(input: ScriptTestRunInput, context: AuditContext | undefined, result: ScriptTestResult | undefined): Promise<void> {
+  const record = {
+    action: AUDIT_ACTION.SCRIPT_TEST_RUN, outcome: result !== undefined && result.outcome !== 'error' ? 'SUCCESS' : 'FAILURE',
+    userId: context?.userId ?? null, channelId: input.channelId ?? null, ipAddress: context?.ipAddress ?? null,
     attributes: { kind: input.kind, outcome: result?.outcome ?? 'not finished', skipped: result?.skipped.length ?? 0 },
-  });
+  } as const;
+  if (result === undefined) {
+    emitAuditEvent(record);
+    return;
+  }
+  const recorded = await AuditService.recordOrRefuse(record);
+  if (!recorded.ok) throw recorded.error;
 }
 
 export class ScriptTestRunService {
@@ -87,10 +99,13 @@ export class ScriptTestRunService {
             { getResource: createResourceBridge(), collectionFind: collections.find },
             { timeoutMs: scope.timeoutMs, maxOldGenerationSizeMb: TEST_RUN_HEAP_MB, maxMemoryGrowthMb: TEST_RUN_MEMORY_GROWTH_MB },
           );
-          return result;
-        } finally {
-          audit(input, context, result);
+        } catch (err: unknown) {
+          await audit(input, context, undefined);
+          throw err;
         }
+        // The result is returned only once its record is written.
+        await audit(input, context, result);
+        return result;
       } finally {
         running = false;
       }

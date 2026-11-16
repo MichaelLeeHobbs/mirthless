@@ -35,10 +35,7 @@ export const EVENT_NAME = {
   MESSAGE_REPROCESSED: 'MESSAGE_REPROCESSED',
   MESSAGES_REPROCESSED: 'MESSAGES_REPROCESSED',
   MESSAGE_RESEND_QUEUED: 'MESSAGE_RESEND_QUEUED',
-  SERVER_BACKUP_EXPORTED: 'SERVER_BACKUP_EXPORTED',
-  // A user ran a script against a sample message they supplied (which can be PHI;
-  // the event records who and which channel, never the sample).
-  SCRIPT_TEST_RUN: 'SCRIPT_TEST_RUN',
+  // Backup downloads and script test runs are in audit_log (AUDIT_ACTION).
 } as const;
 
 export type EventName = (typeof EVENT_NAME)[keyof typeof EVENT_NAME];

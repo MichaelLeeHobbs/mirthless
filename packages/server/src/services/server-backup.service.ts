@@ -15,8 +15,10 @@ import type {
   SettingType,
   ScriptLanguageCode,
 } from '@galvanigraph/core-models';
-import { DEFAULT_STORED_SCRIPT_LANGUAGE } from '@galvanigraph/core-models';
+import { createHash } from 'node:crypto';
+import { AUDIT_ACTION, DEFAULT_STORED_SCRIPT_LANGUAGE } from '@galvanigraph/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
+import { AuditService } from './audit.service.js';
 import { db } from '../lib/db.js';
 import { ChannelExportService } from './channel-export.service.js';
 import { ChannelImportService } from './channel-import.service.js';
@@ -48,18 +50,23 @@ import {
 
 export class ServerBackupService {
   /** Export full server configuration as a backup payload. */
-  /** Export the server configuration. A successful export is audit-logged: it can carry secrets. */
+  /**
+   * Export the server configuration. The export holds credentials and PHI, so
+   * it is recorded in the audit log with its SHA-256 before it is returned,
+   * and refused (AUDIT_UNAVAILABLE) when the record cannot be written (D-312).
+   */
   static async exportBackup(context?: AuditContext): Promise<Result<ServerBackup>> {
     const result = await ServerBackupService.buildBackup();
-    if (result.ok) {
-      emitEvent({
-        level: 'INFO', name: 'SERVER_BACKUP_EXPORTED', outcome: 'SUCCESS',
-        userId: context?.userId ?? null, channelId: null,
-        serverId: null, ipAddress: context?.ipAddress ?? null,
-        attributes: { channels: result.value.channels.length },
-      });
-    }
-    return result;
+    if (!result.ok) return result;
+    // The hash of the file as the web saves it: the response parsed and written
+    // with two-space indents (packages/web/src/hooks/use-backup.ts).
+    const sha256 = createHash('sha256').update(JSON.stringify(result.value, null, 2)).digest('hex');
+    const recorded = await AuditService.recordOrRefuse({
+      action: AUDIT_ACTION.SERVER_BACKUP_EXPORTED, outcome: 'SUCCESS',
+      userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null,
+      attributes: { channels: result.value.channels.length, sha256 },
+    });
+    return recorded.ok ? result : recorded;
   }
 
   private static async buildBackup(): Promise<Result<ServerBackup>> {

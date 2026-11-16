@@ -11,8 +11,10 @@ import type {
   ChannelListQuery,
   PatchChannelEnabledInput,
 } from '@galvanigraph/core-models';
+import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { ChannelService } from '../services/channel.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
+import { recordReadBestEffort } from '../lib/audited-read.js';
 import { redactChannelDetail } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
 import { getEngine } from '../engine.js';
@@ -49,6 +51,13 @@ export class ChannelController {
     const data = canWrite
       ? result.value
       : redactChannelDetail(result.value as unknown as Record<string, unknown>);
+    // Unmasked connector credentials: recorded, best effort (D-312).
+    if (canWrite) {
+      recordReadBestEffort(req, {
+        action: AUDIT_ACTION.CHANNEL_SECRETS_READ, channelId: id, attributes: { revision: null },
+        dedupe: { key: `channel-secrets|${id}`, ids: [id] },
+      });
+    }
 
     res.json({ success: true, data });
   }

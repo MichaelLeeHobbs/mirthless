@@ -89,11 +89,11 @@ None of these actions changes a secret the person knew. Rotate them yourself: da
 | `users:delete` | Yes | No | No | No | Deleting disables the account and ends its sessions; the row is kept. |
 | `settings:read` | Yes | No | No | No | Also reads certificates (not private keys), tags, extensions, and the pruner schedule and statistics. Secret settings are masked. |
 | `settings:write` | Yes | No | No | No | Purges audit events older than a chosen number of days (minimum 1). Runs the message pruner now, for all channels or for one channel with any age of 1 day or more, which deletes messages, and changes its schedule. Also uploads certificates and private keys, manages tags and enables or disables extensions. |
-| `events:read` | Yes | Yes | Yes | Yes | Reads and exports the whole audit log, including every user's sign-ins and client addresses. Exports are not audited. |
+| `events:read` | Yes | Yes | Yes | Yes | Reads and exports the whole audit log, including every user's sign-ins and client addresses. Searches and exports are recorded in the audit log, best effort. |
 | `resources:read` | Yes | Yes | Yes | Yes | |
 | `resources:write` | Yes | Yes | Yes | No | Channel scripts read resources with `getResource`, so an edit changes what they receive. |
 | `resources:delete` | Yes | Yes | No | No | |
-| `collections:read` | Yes | Yes | Yes | Yes | Reads collection records, which channel scripts write and which can hold PHI. Viewers have it, and reads are not audited. |
+| `collections:read` | Yes | Yes | Yes | Yes | Reads collection records, which channel scripts write and which can hold PHI. Viewers have it, and reads are recorded in the audit log, best effort. |
 | `collections:write` | Yes | Yes | Yes | No | Adds and edits records that running channels read. |
 | `collections:delete` | Yes | Yes | No | No | |
 | `datasources:read` | Yes | Yes | Yes | Yes | Shows each data source's host, port, database and user name. The password is never returned. |
@@ -101,9 +101,9 @@ None of these actions changes a secret the person knew. Rotate them yourself: da
 | `datasources:delete` | Yes | Yes | No | No | |
 | `global_scripts:read` | Yes | Yes | Yes | No | |
 | `global_scripts:write` | Yes | No | No | No | Runs code on the server: global deploy and undeploy scripts run with every channel, and the global preprocessor and postprocessor run on every message. |
-| `global_map:read` | Yes | Yes | Yes | No | Values are returned in full. Scripts can store PHI or credentials there. Reads are not audited. |
+| `global_map:read` | Yes | Yes | Yes | No | Values are returned in full. Scripts can store PHI or credentials there. Reads are recorded in the audit log, best effort. |
 | `global_map:write` | Yes | No | No | No | Can clear the whole map, which running scripts read. |
-| `config_map:read` | Yes | Yes | Yes | No | Values are returned in full, and the configuration map often holds credentials. Reads are not audited. |
+| `config_map:read` | Yes | Yes | Yes | No | Values are returned in full, and the configuration map often holds credentials. Reads are recorded in the audit log, best effort. |
 | `config_map:write` | Yes | No | No | No | Channel scripts read these values. |
 | `system:info` | Yes | Yes | No | No | Also reads the server log and the live log stream, `/metrics` and `/health/full`. Error text in the log, from scripts and connectors, can hold PHI. |
 | `system:backup` | Yes | No | No | No | The backup holds every channel's scripts, the global and configuration map values, resources, and every user's name and email address. Secret settings and secret connector fields are masked. |
@@ -130,14 +130,14 @@ Scripts run in a `node:vm` sandbox. [SECURITY.md](../../SECURITY.md) says this s
 | Attachment download | `messages:read` | All four | Yes, fail-closed in the audit log: `ATTACHMENT_DOWNLOADED`. Listing a message's attachments is not. |
 | Cross-channel message search (Traffic, `GET /api/v1/messages`) | `channels:read` | All four | Yes, fail-closed in the audit log: `MESSAGES_SEARCHED_ALL_CHANNELS` |
 | Reprocess and resend to destinations | `messages:reprocess` | admin, deployer | Yes: `MESSAGE_REPROCESSED`, `MESSAGES_REPROCESSED`, `MESSAGE_RESEND_QUEUED` |
-| Collection records | `collections:read` | All four | No |
-| Global map and configuration map values | `global_map:read`, `config_map:read` | admin, deployer, developer | No |
-| Audit event export (`GET /api/v1/events/export`) | `events:read` | All four | No |
+| Collection records | `collections:read` | All four | Best effort: `COLLECTION_RECORDS_READ` |
+| Global map and configuration map values | `global_map:read`, `config_map:read` | admin, deployer, developer | Best effort: `GLOBAL_MAP_READ`, `CONFIG_MAP_READ` |
+| Audit event export (`GET /api/v1/events/export`) | `events:read` | All four | Best effort: `EVENTS_EXPORTED` |
 | Channel export (scripts and connector settings, secret fields masked) | `channels:read` | All four | Yes: `CHANNEL_EXPORTED` |
-| Connector credentials (channel and revision reads with secrets unmasked) | `channels:write` | admin, deployer, developer | No |
-| Server log and live log stream | `system:info` | admin, deployer | No |
-| Server backup | `system:backup` | admin | Yes: `SERVER_BACKUP_EXPORTED` |
-| Alert emails | `alerts:write` to set recipients | admin, deployer | The alert change is (`ALERT_UPDATED`); each email is not |
+| Connector credentials (channel and revision reads with secrets unmasked) | `channels:write` | admin, deployer, developer | Best effort: `CHANNEL_SECRETS_READ` |
+| Server log and live log stream | `system:info` | admin, deployer | The log page, best effort: `SERVER_LOG_READ`. The live stream is not |
+| Server backup | `system:backup` | admin | Yes, fail-closed in the audit log, with the SHA-256 of the file as the Backup page saves it: `SERVER_BACKUP_EXPORTED` |
+| Alert emails | `alerts:write` to set recipients | admin, deployer | The alert change is (`ALERT_UPDATED`); each email is recorded best effort with its recipients, never its text (`ALERT_SENT`) |
 | Channel destinations, and scripts using `httpFetch`, `dbQuery`, `routeMessage` or collections | `channels:write` to write, `channels:deploy` to run | admin, deployer; developer writes | Channel changes and deploys are (`CHANNEL_UPDATED`, `CHANNEL_DEPLOYED`); what a running channel sends is not |
 
 `httpFetch` refuses private and reserved addresses unless the host is listed in `SCRIPT_HTTP_ALLOWED_HOSTS`. Public addresses are always allowed.
@@ -150,28 +150,26 @@ Roles with a scope of channel groups arrive with [#265](https://github.com/Micha
 
 > Scope limits what a person or key can see and change through GalvaniGraph's screens and API. Message reads, searches and exports, and the reads listed under "What is recorded", are recorded in an audit log that the product can't change or delete; each entry there says whether the read is refused when it can't be recorded or recorded on a best-effort basis. Reads under "What is not audited" aren't. Scope is not a boundary for code: anyone who can change or deploy channel code, code templates or global scripts, or restore a backup, can reach every channel's messages and credentials through that code, and that reach is not recorded. A database owner can still alter the audit log.
 
-The audit log is the `audit_log` table. The server's database role may only add rows to it and read them, and triggers refuse changes and deletions even from the table's owner. Only the owner can drop a month of it. The owner function for that, `drop_expired_audit_partitions`, drops no month younger than the retention setting (at least six years), but an owner can still drop a partition by hand. The [audit log runbook](../ops/audit-log.md) covers retention and the partitions. Only `audit:read`, held by admin, reads it; the Events page shows it under Access records. It holds sign-ins, sign-outs and failed sign-ins, refused requests, event purges, and message searches, detail views, exports and attachment downloads.
+The audit log is the `audit_log` table. The server's database role may only add rows to it and read them, and triggers refuse changes and deletions even from the table's owner. Only the owner can drop a month of it. The owner function for that, `drop_expired_audit_partitions`, drops no month younger than the retention setting (at least six years), but an owner can still drop a partition by hand. The [audit log runbook](../ops/audit-log.md) covers retention and the partitions. Only `audit:read`, held by admin, reads it; the Events page shows it under Access records. It holds sign-ins, sign-outs and failed sign-ins, refused requests, event purges, message searches, detail views, exports and attachment downloads, messages sent from the UI, script test runs, backup downloads, and the best-effort reads in the table above.
 
-**What is recorded.** A message search (in one channel or across channels), a message's detail, a message export and an attachment download are recorded before anything is sent. When the record cannot be written within 2 seconds the request is refused with 503 `AUDIT_UNAVAILABLE` and nothing is sent. A search records the search term as typed, the filters, the total and every message id it returned; an export records every exported id. The same caller repeating the same search page or detail view within 15 minutes is not recorded again, except that a repeated page that lists a message not recorded yet is recorded again at once, naming only the new ids, so every message a caller was shown is in the log. Exports and attachment downloads are recorded every time. The other audit events in this page are still written to the `events` table until the rest of [#264](https://github.com/MichaelLeeHobbs/mirthless/issues/264) moves them.
+**What is recorded.** A message search (in one channel or across channels), a message's detail, a message export and an attachment download are recorded before anything is sent. When the record cannot be written within 2 seconds the request is refused with 503 `AUDIT_UNAVAILABLE` and nothing is sent. A search records the search term as typed, the filters, the total and every message id it returned; an export records every exported id. The same caller repeating the same search page or detail view within 15 minutes is not recorded again, except that a repeated page that lists a message not recorded yet is recorded again at once, naming only the new ids, so every message a caller was shown is in the log. Exports and attachment downloads are recorded every time. A message sent from the UI, a script test run that returns a result and a backup download are recorded the same way, fail-closed. Changes to channels, users, settings and the like are still events in the `events` table.
 
 ## What is not audited
 
 These write no audit event:
 
-- Reading collections and their records.
-- Reading the global map and the configuration map.
-- Reading the server log, and the live log stream.
-- Listing, viewing and exporting audit events.
+- The live log stream.
+- Viewing one event, and the audit log itself (`GET /api/v1/audit`).
 - Socket.IO live feeds: the dashboard and channel feeds carry IDs, states and counts; the log feed carries log entries.
 - Reading channels, code templates, resources, data sources and settings. Channel export is audited.
 - Listing a message's attachments. Downloads are audited.
-- Sending a test message into a channel, Test Connection, and the data source connection test.
+- Test Connection, and the data source connection test. Sending a test message into a channel is recorded fail-closed before it is sent (`MESSAGE_SENT`), so a refusal means nothing was sent, as is a script test run that returns a result (`SCRIPT_TEST_RUN`).
 - Resetting channel statistics and unlocking an account. Enabling or disabling an extension writes a `SETTINGS_CHANGED` event with no user or client address.
 - Token refreshes.
 
 **Refused requests.** A request the API refuses for its credential or its permission writes an `ACCESS_DENIED` row to the audit log (outcome FAILURE). It records the method, the route template (`/api/v1/channels/:id`, never the URL or query string), the reason, the status, the user when known, the client address and the request id; never the body or the token. The reasons are `no_credentials`, `bad_token`, `user_not_found` and `session_revoked` (401), and `account_disabled`, `password_change_required` and `no_permission` (403). A refusal of the credential happens before the request is routed, so it carries no route. The first refusal for a user (or an anonymous caller), method, route and reason writes an event, and further ones in the next minute are counted rather than written: when the minute ends, one more event carries their number in `repeatsSinceLast`. The route's mount path is recorded in lower case, so changing the case of a URL does not open a new minute.
 
-Sign-ins, sign-outs, failed sign-ins and refused requests are written to the audit log in the background, as are the events in the `events` table. If a write fails, the server logs a warning and the record is lost; the action itself still succeeds.
+Sign-ins, sign-outs, failed sign-ins, refused requests and the best-effort reads above are written to the audit log in the background, as are the events in the `events` table. If a write fails, the server logs a warning, counts it (System Info shows the count since the server started) and the record is lost; the action itself still succeeds.
 
 An admin (`settings:write`) can purge events from the `events` table older than any number of days down to 1 (`DELETE /api/v1/events?olderThanDays=N`). The purge is first recorded in the audit log as `EVENTS_PURGED`, and refused with 503 `AUDIT_UNAVAILABLE` when that record cannot be written. A purge never touches the audit log, and the message pruner does not delete events.
 

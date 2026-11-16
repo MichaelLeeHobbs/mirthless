@@ -8,7 +8,10 @@ import type { Request, Response } from 'express';
 const recordOrRefuse = vi.fn();
 vi.mock('../../services/audit.service.js', () => ({ AuditService: { recordOrRefuse } }));
 
-const { recordReadOrRefuse } = await import('../audited-read.js');
+const emitAuditEvent = vi.fn();
+vi.mock('../event-emitter.js', () => ({ emitAuditEvent }));
+
+const { recordReadOrRefuse, recordReadBestEffort } = await import('../audited-read.js');
 
 function makeRes(): Response & { statusCode?: number; body?: unknown } {
   const res = {} as Response & { statusCode?: number; body?: unknown };
@@ -21,6 +24,7 @@ const req = (userId: string): Request => ({ user: { id: userId }, ip: '10.0.0.7'
 const UNAVAILABLE = { name: 'ServiceError', code: 'AUDIT_UNAVAILABLE', message: 'The audit log could not record this request' };
 
 beforeEach(() => {
+  emitAuditEvent.mockReset();
   recordOrRefuse.mockReset();
   recordOrRefuse.mockResolvedValue({ ok: true, value: undefined });
 });
@@ -84,5 +88,42 @@ describe('recordReadOrRefuse', () => {
     expect(recorded[0]).toEqual(page);
     // The new id is recorded at once, on the very next read.
     expect(recorded[1]).toEqual([200]);
+  });
+});
+
+describe('recordReadBestEffort', () => {
+  it('writes the record in the background, for the caller', () => {
+    recordReadBestEffort(req('u-h'), { action: 'CONFIG_MAP_READ', attributes: { entries: 3 } });
+
+    expect(emitAuditEvent).toHaveBeenCalledWith({
+      action: 'CONFIG_MAP_READ', outcome: 'SUCCESS', userId: 'u-h', channelId: null, ipAddress: '10.0.0.7', attributes: { entries: 3 },
+    }, expect.any(Function));
+    expect(recordOrRefuse).not.toHaveBeenCalled();
+  });
+
+  it('records a repeated read once its first record was written', () => {
+    emitAuditEvent.mockImplementation((_input: unknown, onWritten?: () => void) => { onWritten?.(); });
+    const read = { action: 'COLLECTION_RECORDS_READ', attributes: {}, dedupe: { key: 'collection|k1', ids: ['a', 'b'] } };
+    recordReadBestEffort(req('u-i'), read);
+    recordReadBestEffort(req('u-i'), read);
+
+    expect(emitAuditEvent).toHaveBeenCalledOnce();
+    expect(emitAuditEvent.mock.calls[0]?.[0]).toMatchObject({ attributes: { ids: ['a', 'b'] } });
+  });
+
+  it('records the repeat when the first record was lost', () => {
+    // The callback never runs: the write failed.
+    const read = { action: 'COLLECTION_RECORDS_READ', attributes: {}, dedupe: { key: 'collection|k2', ids: ['a'] } };
+    recordReadBestEffort(req('u-j'), read);
+    recordReadBestEffort(req('u-j'), read);
+
+    expect(emitAuditEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps ids out of the record when they are for dedupe only', () => {
+    recordReadBestEffort(req('u-k'), { action: 'GLOBAL_MAP_READ', attributes: { entries: 1 }, dedupe: { key: 'global-map', ids: ['mrn_12345'], idsOnlyForDedupe: true } });
+
+    expect(emitAuditEvent.mock.calls[0]?.[0]).toMatchObject({ attributes: { entries: 1 } });
+    expect(JSON.stringify(emitAuditEvent.mock.calls[0]?.[0])).not.toContain('mrn_12345');
   });
 });

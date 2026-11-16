@@ -4,6 +4,8 @@
 // HTTP adapter for channel deployment operations.
 
 import type { Request, Response } from 'express';
+import { AUDIT_ACTION } from '@galvanigraph/core-models';
+import { recordReadOrRefuse } from '../lib/audited-read.js';
 import { DeploymentService } from '../services/deployment.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
@@ -158,6 +160,12 @@ export class DeploymentController {
   static async sendMessage(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const { content } = req.body as { content: string };
+    // The response carries the processed message, so the send is recorded first
+    // (D-312): a refusal then means nothing was sent, and a retry is safe.
+    const recorded = await recordReadOrRefuse(req, res, {
+      action: AUDIT_ACTION.MESSAGE_SENT, channelId: id, attributes: { contentLength: content.length },
+    });
+    if (!recorded) return;
     const result = await DeploymentService.sendMessage(id, content);
 
     if (!result.ok) {

@@ -10,6 +10,7 @@ import { sql } from 'drizzle-orm';
 import { tryCatch, type Result } from 'stderr-lib';
 import { db } from '../lib/db.js';
 import { getEngineStats, getMemoryStats } from './health.service.js';
+import { lostAuditRecordCount } from '../lib/event-emitter.js';
 
 // ----- Types -----
 
@@ -66,6 +67,8 @@ export interface SystemInfo {
      * they are moved (docs/ops/audit-log.md).
      */
     readonly rowsOutsideMonths: number | null;
+    /** Best-effort audit records this process failed to write since it started (D-312). */
+    readonly lostRecords: number;
   };
 }
 
@@ -135,7 +138,7 @@ export class SystemInfoService {
         memory: { ...getMemoryStats(), heapLimit: v8.getHeapStatistics().heap_size_limit },
         engine: getEngineStats(),
         database,
-        audit: { rowsOutsideMonths },
+        audit: { rowsOutsideMonths, lostRecords: lostAuditRecordCount() },
       };
     });
   }
