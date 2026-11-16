@@ -34,6 +34,7 @@ const SHARED_HELPERS = [
   { names: 'createNodemailerTransport|buildNodemailerOptions', home: '@galvaniflow/connectors (smtp/smtp-dispatcher.ts)' },
   { names: 'parseHeaderLines|parseHeaders|headersFromText', home: '@galvaniflow/core-models (http-connector.schema.ts)' },
   { names: 'redirectMessage', home: 'packages/connectors/src/redirect.ts' },
+  { names: 'createThrottle|throttle', home: '@galvaniflow/core-util (throttle.ts, D-306)' },
 ];
 const sharedHelperSelectors = SHARED_HELPERS.flatMap(({ names, home }) => [
   { selector: `:not(ExportNamedDeclaration) > FunctionDeclaration[id.name=/^(${names})$/]`, message: `Import this from ${home} instead of copying it.` },

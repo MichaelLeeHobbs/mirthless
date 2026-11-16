@@ -9,7 +9,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, sql, gt, lte, asc, max } from 'drizzle-orm';
 import { SOCKET_EVENT, type ContentType, type MessageStatus } from '@galvaniflow/core-models';
 import { db } from '../lib/db.js';
-import { emitToRoom } from '../lib/socket.js';
+import { emitToRoomCoalesced } from '../lib/socket.js';
 import { decryptIfEncrypted } from '../lib/content-crypto.js';
 import {
   messages,
@@ -38,6 +38,20 @@ export interface ChannelStatistics {
 // ----- Stat Field Type -----
 
 type StatField = 'received' | 'filtered' | 'sent' | 'errored';
+
+// ----- Live Events -----
+// Both are coalesced per room (D-306): listeners only refetch, so the payload
+// carries only what stays true for every event a window collapses.
+
+/** Tell the channel's open message browsers that its message list changed. */
+function emitMessageNew(channelId: string): void {
+  emitToRoomCoalesced(`channel:${channelId}`, SOCKET_EVENT.MESSAGE_NEW, { channelId });
+}
+
+/** Tell open dashboards that some channel's statistics changed. */
+function emitStatsUpdate(): void {
+  emitToRoomCoalesced('dashboard', SOCKET_EVENT.STATS_UPDATE, {});
+}
 
 // ----- Service -----
 
@@ -77,7 +91,7 @@ export class MessageService {
         status,
       });
 
-      emitToRoom(`channel:${channelId}`, SOCKET_EVENT.MESSAGE_NEW, { channelId, messageId, metaDataId });
+      emitMessageNew(channelId);
     });
   }
 
@@ -342,7 +356,7 @@ export class MessageService {
           ${sql.raw(lifetimeField)} = message_statistics.${sql.raw(lifetimeField)} + 1
       `);
 
-      emitToRoom('dashboard', SOCKET_EVENT.STATS_UPDATE, { channelId, metaDataId, serverId, field });
+      emitStatsUpdate();
     });
   }
 
@@ -634,8 +648,8 @@ export class MessageService {
       const messageId = result.rows[0]!.message_id;
       const resolvedCorrelationId = result.rows[0]!.correlation_id;
 
-      emitToRoom(`channel:${channelId}`, SOCKET_EVENT.MESSAGE_NEW, { channelId, messageId, metaDataId: 0 });
-      emitToRoom('dashboard', SOCKET_EVENT.STATS_UPDATE, { channelId, metaDataId: 0, serverId, field: 'received' });
+      emitMessageNew(channelId);
+      emitStatsUpdate();
 
       return { messageId, correlationId: resolvedCorrelationId };
     });
@@ -669,7 +683,7 @@ export class MessageService {
         WHERE channel_id = ${channelId} AND id = ${messageId}
       `);
 
-      emitToRoom('dashboard', SOCKET_EVENT.STATS_UPDATE, { channelId, metaDataId: 0, serverId, field: 'sent' });
+      emitStatsUpdate();
     });
   }
 }

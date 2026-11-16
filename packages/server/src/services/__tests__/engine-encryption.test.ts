@@ -79,7 +79,7 @@ vi.mock('../alert.service.js', () => ({ AlertService: { list: vi.fn(), getByIds:
 vi.mock('../email.service.js', () => ({ EmailService: { sendMail: vi.fn() } }));
 vi.mock('../../lib/db.js', () => ({ db: { select: vi.fn(), execute: vi.fn() }, default: {} }));
 vi.mock('../../lib/logger.js', () => ({ default: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn(), level: 'info' } }));
-vi.mock('../../lib/socket.js', () => ({ emitToRoom: vi.fn(), emitToAll: vi.fn() }));
+vi.mock('../../lib/socket.js', () => ({ emitToRoom: vi.fn(), emitToRoomCoalesced: vi.fn(), emitToAll: vi.fn() }));
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn(),
   asc: vi.fn(),

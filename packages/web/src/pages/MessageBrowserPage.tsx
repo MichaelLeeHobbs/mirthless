@@ -18,8 +18,9 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChannel } from '../hooks/use-channels.js';
-import { useMessageSearch, type MessageSearchParams } from '../hooks/use-messages.js';
-import { useSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
+import { SOCKET_EVENT } from '@galvaniflow/core-models';
+import { useMessageSearch, MESSAGE_KEYS, type MessageSearchParams } from '../hooks/use-messages.js';
+import { useThrottledSocketEvent, useSocketRoom } from '../hooks/use-socket.js';
 import { MessageSearchBar } from '../components/messages/MessageSearchBar.js';
 import { MessageTable } from '../components/messages/MessageTable.js';
 import { MessageDetailPanel } from '../components/messages/MessageDetail.js';
@@ -104,12 +105,18 @@ export function MessageBrowserPage(): ReactNode {
   // --- WebSocket: join/leave channel room (re-joins on reconnect) ---
   useSocketRoom('join:channel', 'leave:channel', channelId);
 
-  // --- WebSocket: invalidate messages on new message events ---
+  // --- WebSocket: refresh this channel's message list on new messages ---
+  // Throttled (D-306) and scoped to the channel. The list only: an open message's
+  // detail no longer refreshes on live events, so while a message is still being
+  // processed its detail can lag its list row until it is reselected once its
+  // cached detail is stale (30 s), the page reloads, or the socket reconnects.
+  // That is the accepted trade-off for not re-reading PHI content on every
+  // message (refetch on window focus is off app-wide).
   const handleNewMessage = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['messages'] });
-  }, [queryClient]);
+    void queryClient.invalidateQueries({ queryKey: MESSAGE_KEYS.channelSearches(channelId) });
+  }, [queryClient, channelId]);
 
-  useSocketEvent('message:new', handleNewMessage);
+  useThrottledSocketEvent(SOCKET_EVENT.MESSAGE_NEW, handleNewMessage, channelId);
 
   // Build search params
   const searchParams: MessageSearchParams = {
