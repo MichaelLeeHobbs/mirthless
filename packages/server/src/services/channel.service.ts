@@ -786,13 +786,6 @@ export class ChannelService {
 
         const channelId = inserted[0]!.id;
 
-        // Partitions in the same transaction: a channel without them would put
-        // its messages in the default partitions, so a failure rolls it back (#260).
-        const partitions = await PartitionManagerService.createPartitions(channelId, tx);
-        if (!partitions.ok) {
-          throw new ServiceError('INTERNAL', `Channel "${input.name}" was not created: its message partitions could not be created: ${partitions.error.message}`);
-        }
-
         // Insert default scripts (using input.scripts if provided)
         const scriptValues = DEFAULT_SCRIPT_TYPES.map((scriptType) => {
           const key = scriptType.toLowerCase() as 'deploy' | 'undeploy' | 'preprocessor' | 'postprocessor';
@@ -854,6 +847,14 @@ export class ChannelService {
           await syncTransformers(tx, channelId, input.transformers, destIdByMetaDataId);
         }
         if (cloneOf !== undefined) await addCloneToLibraries(tx, cloneOf, channelId);
+
+        // Partitions in the same transaction: a channel without them would put
+        // its messages in the default partitions, so a failure rolls it back
+        // (#260). Last, because it locks the six message tables until commit.
+        const partitions = await PartitionManagerService.createPartitions(channelId, tx);
+        if (!partitions.ok) {
+          throw new ServiceError('INTERNAL', `Channel "${input.name}" was not created: its message partitions could not be created: ${partitions.error.message}`);
+        }
 
         return inserted;
       });

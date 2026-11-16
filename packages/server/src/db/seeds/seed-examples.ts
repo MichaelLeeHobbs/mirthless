@@ -197,6 +197,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
       return existing;
     }
     const id = await fn();
+    // Not one transaction: a seed killed between these two lines leaves this channel without partitions, and a rerun skips it as existing; reset the database.
     await createSeededChannelPartitions(db, id);
     // Assign to Examples group
     await db.insert(schema.channelGroupMembers).values({

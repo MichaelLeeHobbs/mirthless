@@ -185,14 +185,15 @@ async function createChannel(
       updatedAt: now,
     });
 
+    await insertRelations(tx, entry.id, entry);
+
     // Partitions in the same transaction: a channel without them would put its
     // messages in the default partitions, so a failure rolls it back (#260).
+    // Last, because it locks the six message tables until commit.
     const partitions = await PartitionManagerService.createPartitions(entry.id, tx);
     if (!partitions.ok) {
       throw new Error(`its message partitions could not be created, so it was not imported: ${partitions.error.message}`);
     }
-
-    await insertRelations(tx, entry.id, entry);
   });
 
   return 'created';
