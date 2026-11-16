@@ -22,7 +22,6 @@ GalvaniFlow keeps what works (channels, transformers, filters, the pipeline mode
 - **Everything is free** — RBAC, channel history, message search, alerting, certificate management (Mirth's paid SSL Manager) — all built-in, no tiers (MFA is on the roadmap, not yet shipped)
 - **Shared data for scripts** — Collections (a keyed record store), Data Sources (named database connections with encrypted passwords) and Resources, managed in the web UI. The global map is saved to the database, so it survives a restart. Mirth has no Collections or Data Sources, and its global map is lost on restart
 - **TypeScript in transformers** — write channel scripts in TypeScript with full Monaco editor + autocomplete
-- **13ms message processing** — batched CTE queries on native Postgres. Mirth does ~70ms for comparable workloads
 - **Real-time dashboard** — WebSocket-driven updates, not polling
 
 ## Security model
