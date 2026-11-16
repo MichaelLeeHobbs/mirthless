@@ -89,7 +89,9 @@ export function UsersPage(): ReactNode {
     const input = changedFields(user, data);
     const hasUpdates = Object.keys(input).length > 0;
     try {
-      if (hasUpdates) await updateUser.mutateAsync({ id: user.id, input });
+      // The saved user becomes what the dialog edits, so a retry after a refused
+      // password does not send (and audit) the same details again.
+      if (hasUpdates) setEditingUser(await updateUser.mutateAsync({ id: user.id, input }));
     } catch (err) {
       setDialogError(errorMessage(err, 'The user could not be saved.'));
       return;

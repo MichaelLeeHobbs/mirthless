@@ -52,7 +52,10 @@ const switchFor = (name: string): HTMLInputElement => screen.getByRole('switch',
 beforeEach(() => {
   updateMutate.mockReset();
   deleteMutate.mockReset();
-  updateAsync.mockReset().mockResolvedValue(undefined);
+  // The server answers an update with the saved user.
+  updateAsync.mockReset().mockImplementation(({ input }: { input: Record<string, unknown> }) => (
+    Promise.resolve({ ...user('u1', 'jmorales', true), ...input })
+  ));
   passwordAsync.mockReset().mockResolvedValue(undefined);
 });
 afterEach(() => { cleanup(); });
@@ -78,6 +81,22 @@ describe('UsersPage edit dialog password change', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(updateAsync).toHaveBeenCalledWith({ id: 'u1', input: { email: 'jm@example.test' } });
     expect(passwordAsync).toHaveBeenCalledWith({ id: 'u1', newPassword: 'weakpassword' });
+  });
+
+  it('retries only the password after a refused one, without saving the details again', async () => {
+    passwordAsync.mockRejectedValueOnce(new Error('Password must contain a digit'));
+    editJmorales('jm@example.test', 'weakpassword');
+    expect(await screen.findByText(/details were saved/i)).toBeTruthy();
+    // The dialog now edits the saved user, which clears the refused password.
+    await waitFor(() => { expect((screen.getByLabelText(/New Password/) as HTMLInputElement).value).toBe(''); });
+    expect((screen.getByLabelText(/Email/) as HTMLInputElement).value).toBe('jm@example.test');
+
+    fireEvent.change(screen.getByLabelText(/New Password/), { target: { value: 'Str0ngPassword' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull(); });
+    expect(updateAsync).toHaveBeenCalledTimes(1);
+    expect(passwordAsync).toHaveBeenLastCalledWith({ id: 'u1', newPassword: 'Str0ngPassword' });
   });
 
   it('closes the dialog once both the details and the password are saved', async () => {
