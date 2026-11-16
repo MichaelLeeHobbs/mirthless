@@ -4,7 +4,6 @@
 // Business logic for channel CRUD operations.
 // All methods return Result<T> using tryCatch from stderr-lib.
 
-import { randomUUID } from 'node:crypto';
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, isNull, and, count, asc, sql } from 'drizzle-orm';
 import {
@@ -729,17 +728,8 @@ export class ChannelService {
         throw new ServiceError('ALREADY_EXISTS', `Channel with name "${input.name}" already exists`);
       }
 
-      // Partitions first, under the id the channel will get: a channel without
-      // them would put its messages in the default partitions (#260).
-      const newChannelId = randomUUID();
-      const partitions = await PartitionManagerService.createPartitions(newChannelId);
-      if (!partitions.ok) {
-        throw new ServiceError('INTERNAL', `Channel "${input.name}" was not created: its message partitions could not be created: ${partitions.error.message}`);
-      }
-
       const now = new Date();
       const channelValues: typeof channels.$inferInsert = {
-        id: newChannelId,
         name: input.name,
         description: input.description,
         enabled: input.enabled,
@@ -774,6 +764,13 @@ export class ChannelService {
         const inserted = await tx.insert(channels).values(channelValues).returning();
 
         const channelId = inserted[0]!.id;
+
+        // Partitions in the same transaction: a channel without them would put
+        // its messages in the default partitions, so a failure rolls it back (#260).
+        const partitions = await PartitionManagerService.createPartitions(channelId, tx);
+        if (!partitions.ok) {
+          throw new ServiceError('INTERNAL', `Channel "${input.name}" was not created: its message partitions could not be created: ${partitions.error.message}`);
+        }
 
         // Insert default scripts (using input.scripts if provided)
         const scriptValues = DEFAULT_SCRIPT_TYPES.map((scriptType) => {

@@ -180,7 +180,7 @@ describe('ChannelImportService.importChannels', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('does not write a channel whose partitions cannot be created, and reports it (#260)', async () => {
+  it('rolls back a channel whose partitions cannot be created, reports it and imports the rest (#260)', async () => {
     vi.mocked(PartitionManagerService.createPartitions)
       .mockResolvedValueOnce({ ok: false, value: null, error: new StdError('permission denied for table messages') });
     const entries = [makeEntry({ id: 'ch-1', name: 'No Partitions' }), makeEntry({ id: 'ch-2', name: 'Fine' })];
@@ -193,9 +193,12 @@ describe('ChannelImportService.importChannels', () => {
     expect(result.value.errors).toEqual([
       'Error importing "No Partitions": its message partitions could not be created, so it was not imported: permission denied for table messages',
     ]);
-    // Only the channel whose partitions exist was written.
-    expect(vi.mocked(db.transaction)).toHaveBeenCalledOnce();
-    expect(vi.mocked(PartitionManagerService.createPartitions).mock.calls.map((c) => c[0])).toEqual(['ch-1', 'ch-2']);
+    // Each channel's partitions are made on its own transaction, and the failed
+    // one's transaction threw, which rolls its channel row back.
+    const calls = vi.mocked(PartitionManagerService.createPartitions).mock.calls;
+    expect(calls.map((c) => c[0])).toEqual(['ch-1', 'ch-2']);
+    for (const call of calls) expect(call[1]).toEqual(expect.objectContaining({ insert: expect.any(Function) }));
+    expect(vi.mocked(db.transaction).mock.settledResults.map((r) => r.type)).toEqual(['rejected', 'fulfilled']);
   });
 });
 

@@ -37,12 +37,14 @@ export async function findChannelId(db: Db, name: string): Promise<string | null
 
 /**
  * Creates a newly seeded channel's message partitions the way channel
- * creation does. Throws when they can't be created, so the seed fails
- * instead of putting the channel's messages in the default partitions.
+ * creation does, after its row is written (the partition function refuses a
+ * channel that does not exist). Throws when they can't be created, so the
+ * seed fails instead of putting the channel's messages in the default partitions.
+ * @param db - The seed's database handle, which wrote the channel
  * @param channelId - The channel just inserted
  */
-export async function createSeededChannelPartitions(channelId: string): Promise<void> {
-  const result = await PartitionManagerService.createPartitions(channelId);
+export async function createSeededChannelPartitions(db: Db, channelId: string): Promise<void> {
+  const result = await PartitionManagerService.createPartitions(channelId, db);
   if (!result.ok) {
     throw new Error(`Failed to create partitions for seeded channel ${channelId}: ${result.error.message}`);
   }
@@ -195,7 +197,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
       return existing;
     }
     const id = await fn();
-    await createSeededChannelPartitions(id);
+    await createSeededChannelPartitions(db, id);
     // Assign to Examples group
     await db.insert(schema.channelGroupMembers).values({
       channelGroupId: groupId,

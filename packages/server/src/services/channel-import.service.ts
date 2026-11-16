@@ -157,13 +157,6 @@ async function createChannel(
   entry: ChannelExportEntry,
   _context?: AuditContext,
 ): Promise<'created'> {
-  // Partitions first: a channel without them would put its messages in the
-  // default partitions (#260), so it is not imported at all.
-  const partitions = await PartitionManagerService.createPartitions(entry.id);
-  if (!partitions.ok) {
-    throw new Error(`its message partitions could not be created, so it was not imported: ${partitions.error.message}`);
-  }
-
   const now = new Date();
 
   await db.transaction(async (tx) => {
@@ -191,6 +184,13 @@ async function createChannel(
       createdAt: now,
       updatedAt: now,
     });
+
+    // Partitions in the same transaction: a channel without them would put its
+    // messages in the default partitions, so a failure rolls it back (#260).
+    const partitions = await PartitionManagerService.createPartitions(entry.id, tx);
+    if (!partitions.ok) {
+      throw new Error(`its message partitions could not be created, so it was not imported: ${partitions.error.message}`);
+    }
 
     await insertRelations(tx, entry.id, entry);
   });
