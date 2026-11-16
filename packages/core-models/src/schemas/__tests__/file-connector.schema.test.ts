@@ -70,10 +70,10 @@ describe('fileSourcePropertiesSchema', () => {
     expect(result.error.issues[0]?.message).toContain('filePattern');
   });
 
-  // FILE_SOURCE_DEFAULTS from 7793c71 (2026-03) to today, with the directory filled.
-  it('deploys a source the editor saved, reading charset UTF-8 as utf-8', () => {
+  // FILE_SOURCE_DEFAULTS from 7793c71 (2026-03) until ignoreDot (#244), with the directory filled.
+  it('deploys a source the editor saved, reading charset UTF-8 as utf-8 and skipping dotfiles', () => {
     const saved = { directory: '/in', fileFilter: '*', pollingIntervalMs: 5000, sortBy: 'NAME', charset: 'UTF-8', binary: false, checkFileAge: true, fileAgeMs: 1000, postAction: 'DELETE', moveToDirectory: '' };
-    expect(fileSourcePropertiesSchema.parse(saved)).toEqual({ ...saved, charset: 'utf-8' });
+    expect(fileSourcePropertiesSchema.parse(saved)).toEqual({ ...saved, charset: 'utf-8', ignoreDot: true });
   });
 
   // The charset choices the forms offered from 7793c71 until 439267a (2026-07).
