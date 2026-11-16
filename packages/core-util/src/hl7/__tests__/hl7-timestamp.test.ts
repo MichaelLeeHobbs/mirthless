@@ -2,7 +2,7 @@
 // HL7v2 timestamp tests
 // ===========================================
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { formatTimestamp } from '../hl7-timestamp.js';
 
 /** The instant an HL7 `YYYYMMDDHHmmss+ZZZZ` timestamp names. */
@@ -25,5 +25,16 @@ describe('formatTimestamp', () => {
       expect(ts).toMatch(/^\d{14}[+-]\d{4}$/);
       expect(instantOf(ts)).toBe(date.getTime());
     }
+  });
+
+  it('writes zones west of UTC with a minus sign and half-hour zones with their minutes', () => {
+    const date = new Date(2026, 0, 2, 3, 4, 5);
+    const offset = vi.spyOn(date, 'getTimezoneOffset');
+    offset.mockReturnValue(300);
+    expect(formatTimestamp(date, { utcOffset: true })).toBe('20260102030405-0500');
+    offset.mockReturnValue(-330);
+    expect(formatTimestamp(date, { utcOffset: true })).toBe('20260102030405+0530');
+    offset.mockReturnValue(0);
+    expect(formatTimestamp(date, { utcOffset: true })).toBe('20260102030405+0000');
   });
 });
