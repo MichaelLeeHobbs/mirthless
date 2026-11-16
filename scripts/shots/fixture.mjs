@@ -101,6 +101,23 @@ const queueChannelDetail = {
   }],
 };
 
+/** A JavaScript source and destination, for their script editors (#200). */
+const scriptedDetail = {
+  ...channelDetail,
+  id: 'c9', name: 'Bed Census Poll', sourceConnectorType: 'JAVASCRIPT',
+  sourceConnectorProperties: {
+    script: "// Poll the bed board and send one message per changed bed\nconst beds = await getCollection('beds').find({ changed: true });\nreturn beds.map((b) => JSON.stringify(b));",
+    scriptLanguage: 'TYPESCRIPT', pollingIntervalMs: 60000,
+  },
+  destinations: [{
+    ...channelDetail.destinations[0], name: 'To Census API', connectorType: 'JAVASCRIPT',
+    properties: {
+      script: "const res = await httpFetch('https://census.example.test/beds', { method: 'POST', body: connectorMessage.content });\nreturn String(res.status);",
+      scriptLanguage: 'TYPESCRIPT',
+    },
+  }],
+};
+
 // A Delimited file drop written to a partner's MySQL: shows the Delimited
 // settings and the database type.
 const billingDetail = {
@@ -239,6 +256,7 @@ export function route(pathname, search) {
 
   if (p === '/channels/c8') return queueChannelDetail;
   if (p === '/channels/c6') return billingDetail;
+  if (p === '/channels/c9') return scriptedDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
   if (p === '/messages') {
     const items = search.includes('status=ERROR') ? traffic.filter((t) => t.status === 'ERROR') : traffic;

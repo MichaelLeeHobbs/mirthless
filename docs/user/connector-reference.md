@@ -327,14 +327,16 @@ The script runs inside the server. Whatever it reaches through the script bridge
 
 | Property | Required | Notes |
 |---|---|---|
-| `script` | Yes | Script whose return value is sent. An empty script refuses to deploy. |
+| `script` | Yes | Script whose return value is sent. An empty script refuses to deploy. It runs with no message (`msg`, `tmp` and `rawData` are empty), and sees `channelId` and `channelName`. |
+| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
 | `pollingIntervalMs` | No | Milliseconds between runs. |
 
 ### JAVASCRIPT as a destination
 
 | Property | Required | Notes |
 |---|---|---|
-| `script` | Yes | Script run for each message. An empty script refuses to deploy. |
+| `script` | Yes | Script run for each message. An empty script refuses to deploy. It sees `msg` parsed for the channel's data type, `channelId`, `channelName` and `connectorMessage` (the message being sent, with its ids and content). |
+| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
 
 ### JAVASCRIPT limits
 

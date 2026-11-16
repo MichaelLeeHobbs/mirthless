@@ -4,13 +4,14 @@
 // Configuration form for JavaScript destination connectors.
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import Grid from '@mui/material/Grid';
-import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import { CODE_TEMPLATE_CONTEXT } from '@galvaniflow/core-models';
 import type { DestConnectorFormProps } from './types.js';
 import { JAVASCRIPT_DEST_DEFAULTS } from './connector-defaults.js';
-import { FONT_FAMILY_MONO } from '../../../styles/tokens.js';
-import { getStr, propertyUpdaters } from '../common/connector-properties.js';
+import { ConnectorScriptEditor } from '../common/ConnectorScriptEditor.js';
+
+/** The engine runs it with msg typed by the data type, the channel identity and the connector message. */
+const DESTINATION_SCRIPT_SURFACE = { connectorMessage: true, templateContext: CODE_TEMPLATE_CONTEXT.DESTINATION_DISPATCHER } as const;
 
 export function JavaScriptDestinationForm({ properties, onChange }: DestConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -24,32 +25,17 @@ export function JavaScriptDestinationForm({ properties, onChange }: DestConnecto
     }
   }, [properties, onChange]);
 
-  const { handleText } = propertyUpdaters(properties, onChange);
-
   return (
-    <Grid container spacing={3}>
-      <Grid size={12}>
-        <Typography
-          variant="subtitle2"
-          sx={{
-            color: 'text.secondary',
-            mb: 2
-          }}>
-          Script
-        </Typography>
-
-        <TextField
-          label="Destination Script"
-          value={getStr(properties, 'script', '')}
-          onChange={handleText('script')}
-          helperText="JavaScript with access to 'msg' (message content) and 'connectorMessage'. Return value becomes response."
-          fullWidth
-          multiline
-          minRows={8}
-          maxRows={20}
-          sx={{ mb: 2, '& .MuiInputBase-input': { fontFamily: FONT_FAMILY_MONO, fontSize: '0.875rem' } }}
-        />
-      </Grid>
-    </Grid>
+    <>
+      <ConnectorScriptEditor
+        label="Destination script"
+        properties={properties}
+        onChange={onChange}
+        surface={DESTINATION_SCRIPT_SURFACE}
+      />
+      <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'text.secondary' }}>
+        Runs for each message with msg, connectorMessage and the channel maps. What it returns becomes the response.
+      </Typography>
+    </>
   );
 }
