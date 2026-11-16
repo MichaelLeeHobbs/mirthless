@@ -12,10 +12,11 @@ import { sessions } from '../db/schema/index.js';
  * True when the token's session still exists and has not expired. Logout and
  * admin password-reset delete the session row, so this makes an access token stop
  * working immediately on logout instead of lingering until its 15-minute TTL.
- * Tokens minted without a sessionId (should not happen for access tokens) pass.
+ * A token with no sessionId is refused: the server never issues one, so it was
+ * signed elsewhere with the secret (GHSA-r434-hwqg-cvcw).
  */
 export async function isSessionLive(sessionId: string | undefined, userId: string): Promise<boolean> {
-  if (sessionId === undefined) return true;
+  if (sessionId === undefined || sessionId === '') return false;
   const [row] = await db
     .select({ id: sessions.id })
     .from(sessions)

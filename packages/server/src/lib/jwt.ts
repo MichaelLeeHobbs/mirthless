@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
+import { z } from 'zod';
 import { config } from '../config/index.js';
 
 export interface JwtPayload {
@@ -49,12 +50,27 @@ export function tokenExpiresAt(token: string): Date {
   return new Date(decoded.exp * 1000);
 }
 
-export function verifyAccessToken(token: string): JwtPayload {
-  const decoded = jwt.verify(token, config.JWT_SECRET, { algorithms: [JWT_ALGORITHM] }) as JwtPayload;
-  if (decoded.type !== 'access') {
-    throw new Error('Invalid token type: expected access token');
+/** An access token's claims. Every one the server signs names the session it belongs to. */
+const accessTokenClaimsSchema = z.object({
+  userId: z.string().min(1),
+  sessionId: z.string().min(1),
+  type: z.literal('access'),
+});
+
+export type AccessTokenPayload = z.infer<typeof accessTokenClaimsSchema>;
+
+/**
+ * Verify an access token and return its claims. A token with no session id is
+ * refused: the server never issues one, so it was signed elsewhere with the
+ * secret, and without a session there is nothing to revoke (GHSA-r434-hwqg-cvcw).
+ */
+export function verifyAccessToken(token: string): AccessTokenPayload {
+  const decoded = jwt.verify(token, config.JWT_SECRET, { algorithms: [JWT_ALGORITHM] });
+  const claims = accessTokenClaimsSchema.safeParse(decoded);
+  if (!claims.success) {
+    throw new Error('Invalid access token claims');
   }
-  return decoded;
+  return claims.data;
 }
 
 export function verifyRefreshToken(token: string): JwtPayload {

@@ -161,7 +161,7 @@ describe('Socket.IO Auth & Room Management', () => {
     });
 
     it('accepts connection with valid JWT', async () => {
-      const token = createValidToken({ userId: 'user-1', type: 'access' });
+      const token = createValidToken({ userId: 'user-1', sessionId: 's1', type: 'access' });
       const socket = createMockSocket(token);
       const next = vi.fn();
 
@@ -171,9 +171,21 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(next).toHaveBeenCalledWith();
     });
 
+    it('rejects an access token with no session id (GHSA-r434-hwqg-cvcw)', async () => {
+      userRow = { id: 'user-1', enabled: true, role: 'admin' };
+      const socket = createMockSocket(createValidToken({ userId: 'user-1', type: 'access' }));
+      const next = vi.fn();
+
+      await authMiddleware(socket, next);
+
+      const err = next.mock.calls[0]![0] as Error;
+      expect(err.message).toBe('Authentication required');
+      expect(socket.data['user']).toBeUndefined();
+    });
+
     it('rejects connection when the user is disabled', async () => {
       userRow = { id: 'user-1', enabled: false };
-      const token = createValidToken({ userId: 'user-1', type: 'access' });
+      const token = createValidToken({ userId: 'user-1', sessionId: 's1', type: 'access' });
       const socket = createMockSocket(token);
       const next = vi.fn();
 
