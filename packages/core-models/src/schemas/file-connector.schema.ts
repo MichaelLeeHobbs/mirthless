@@ -12,6 +12,8 @@
 import { z } from 'zod/v4';
 import {
   wholeNumberSchema,
+  pollingIntervalSchema,
+  requiredTextSchema,
   charsetSchema,
   sourceCommonProperties,
   destinationCommonProperties,
@@ -23,16 +25,13 @@ export const FILE_SORT_ORDERS = ['NAME', 'DATE', 'SIZE'] as const;
 /** What the source does with a file once the pipeline has taken it. */
 export const FILE_POST_ACTIONS = ['DELETE', 'MOVE', 'NONE'] as const;
 
-/** Text with something other than whitespace in it, kept as given. */
-const requiredText = z.string().refine((value) => value.trim() !== '', { message: 'required' });
-
 /** The source's keys; the docs guard compares them with the connector reference. */
 export const fileSourceObjectSchema = z.strictObject({
-  directory: requiredText,
+  directory: requiredTextSchema,
   /** Glob (`*`, `?`) for the files to read. */
-  fileFilter: requiredText.default('*'),
+  fileFilter: requiredTextSchema.default('*'),
   /** The receiver refuses to poll more often than every 100 ms. */
-  pollingIntervalMs: wholeNumberSchema(100).default(5_000),
+  pollingIntervalMs: pollingIntervalSchema(100, 5_000),
   sortBy: z.enum(FILE_SORT_ORDERS).default('NAME'),
   charset: charsetSchema,
   /** Read the file as base64 instead of text. */
@@ -47,9 +46,9 @@ export const fileSourceObjectSchema = z.strictObject({
 
 /** The destination's keys; the docs guard compares them with the connector reference. */
 export const fileDestinationObjectSchema = z.strictObject({
-  directory: requiredText,
+  directory: requiredTextSchema,
   /** File name; `${messageId}` and `${timestamp}` are filled. */
-  outputPattern: requiredText.default('${messageId}.txt'),
+  outputPattern: requiredTextSchema.default('${messageId}.txt'),
   charset: charsetSchema,
   /** Decode the content from base64 and write the bytes. */
   binary: z.boolean().default(false),

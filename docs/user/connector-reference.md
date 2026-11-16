@@ -175,7 +175,7 @@ The connector adds no transport security. A network share must be protected wher
 |---|---|---|
 | `directory` | Yes | Directory to poll. |
 | `fileFilter` | No | Glob (`*`, `?`) for the files to read, `*` by default. Not empty. |
-| `pollingIntervalMs` | No | Milliseconds between polls, at least 100, 5000 by default. |
+| `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 100 to 2147483647 (about 24.8 days), 5000 by default. |
 | `sortBy` | No | `NAME` (default), `DATE` or `SIZE`: the order files are read in. |
 | `charset` | No | `utf-8` (default), `latin1` (ISO-8859-1), `ascii` or `utf16le`, used to decode the file. Case is ignored, and `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` are read as those. Any other refuses to deploy, in binary mode too. |
 | `binary` | No | `true` reads the file as base64 instead of text. |
@@ -286,7 +286,7 @@ Set `tls` to true to connect over TLS. The database server's certificate is then
 | `selectQuery` | Yes | Query that returns the rows to send. |
 | `updateQuery` | No | Statement run after rows are sent, such as marking them processed. Required when `updateMode` is `ALWAYS` or `ON_SUCCESS`. |
 | `updateMode` | No | `NEVER` (default), `ALWAYS` or `ON_SUCCESS`: when `updateQuery` runs. With `NEVER`, the next poll returns the same rows again unless `selectQuery` excludes them. |
-| `pollingIntervalMs` | No | Milliseconds between polls, at least 100. Defaults to 5000. |
+| `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 100 to 2147483647 (about 24.8 days). Defaults to 5000. |
 | `rowFormat` | No | `JSON`, the only format. |
 | `tls` | No | `true` connects over TLS with certificate verification. `true` or `false` only. |
 
@@ -329,16 +329,16 @@ The script runs inside the server. Whatever it reaches through the script bridge
 
 | Property | Required | Notes |
 |---|---|---|
-| `script` | Yes | Script whose return value is sent. An empty script refuses to deploy. It runs with no message (`msg`, `tmp` and `rawData` are empty), and sees `channelId` and `channelName`. |
-| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
-| `pollingIntervalMs` | No | Milliseconds between runs. |
+| `script` | Yes | Script whose return value is sent. An empty or blank script refuses to deploy. It runs with no message (`msg`, `tmp` and `rawData` are empty), and sees `channelId` and `channelName`. |
+| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`; any other value refuses to deploy. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
+| `pollingIntervalMs` | No | Milliseconds between runs, a whole number from 100 to 2147483647 (about 24.8 days). Default 5000. |
 
 ### JAVASCRIPT as a destination
 
 | Property | Required | Notes |
 |---|---|---|
-| `script` | Yes | Script run for each message. An empty script refuses to deploy. It sees `msg` parsed for the channel's data type, `channelId`, `channelName` and `connectorMessage` (the message being sent, with its ids and content). |
-| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
+| `script` | Yes | Script run for each message. An empty or blank script refuses to deploy. It sees `msg` parsed for the channel's data type, `channelId`, `channelName` and `connectorMessage` (the message being sent, with its ids and content). |
+| `scriptLanguage` | No | `JAVASCRIPT` or `TYPESCRIPT`; any other value refuses to deploy. Missing means JavaScript. A TypeScript script with type errors refuses to deploy. |
 
 ### JAVASCRIPT limits
 
