@@ -41,6 +41,14 @@ describe('ItemCard', () => {
     expect(screen.getByText('step body')).toBeTruthy();
   });
 
+  it('keeps keyboard focus on the card when it opens and closes, instead of dropping it to the page', () => {
+    renderCard();
+    fireEvent.click(screen.getByRole('button', { name: /Normalize MRN/ }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Collapse Normalize MRN' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Normalize MRN' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /Normalize MRN/ }));
+  });
+
   it('closes from its collapse button', () => {
     renderCard();
     fireEvent.click(screen.getByRole('button', { name: /Normalize MRN/ }));
