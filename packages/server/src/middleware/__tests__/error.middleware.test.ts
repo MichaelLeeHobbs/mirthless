@@ -20,7 +20,7 @@ afterEach(async () => {
   server = null;
 });
 
-async function post(body: string, failure?: Error): Promise<{ readonly status: number; readonly text: string }> {
+async function post(body: string, failure?: unknown): Promise<{ readonly status: number; readonly text: string }> {
   const app = express();
   app.use(express.json({ limit: '1kb' }));
   app.post('/', (_req, _res, next) => { next(failure); });
@@ -70,5 +70,31 @@ describe('errorHandler', () => {
   it('answers a 4xx error that is not marked safe to expose with 500', async () => {
     const hidden = Object.assign(new Error('internal detail'), { status: 404, expose: false });
     expect((await post('{}', hidden)).status).toBe(500);
+  });
+
+  it('logs the message and stack of an unhandled error', async () => {
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    try {
+      const boom = new Error('boom');
+      await post('{}', boom);
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(error.mock.calls[0]?.[0]).toMatchObject({ errMsg: 'boom', name: 'Error', stack: boom.stack, path: '/', method: 'POST' });
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('answers a thrown value whose getters throw with a 500 JSON body and logs it', async () => {
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    try {
+      const hostile = new Proxy({}, { get(): never { throw new Error('trap'); } });
+      const { status, text } = await post('{}', hostile);
+      expect(status).toBe(500);
+      expect((JSON.parse(text) as { error: { code: string } }).error.code).toBe('INTERNAL');
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(error.mock.calls[0]?.[0]).toMatchObject({ errMsg: 'Unprintable error value', path: '/', method: 'POST' });
+    } finally {
+      error.mockRestore();
+    }
   });
 });

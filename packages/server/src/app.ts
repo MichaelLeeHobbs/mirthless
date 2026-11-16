@@ -14,6 +14,7 @@ import logger from './lib/logger.js';
 import routes from './routes/index.js';
 import apiDocsRoutes from './routes/api-docs.routes.js';
 import { requestId } from './middleware/request-id.middleware.js';
+import { requestLogger } from './middleware/request-log.middleware.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import { apiRateLimiter } from './middleware/rate-limit.middleware.js';
 import { authenticate } from './middleware/auth.middleware.js';
@@ -24,7 +25,6 @@ import { metricsMiddleware } from './middleware/metrics.middleware.js';
 
 // Use createRequire for proper ESM/CJS interop with CJS packages
 const require = createRequire(import.meta.url);
-const pinoHttp = require('pino-http') as typeof import('pino-http').default;
 const compression = require('compression') as typeof import('compression');
 
 const app: Express = express();
@@ -54,32 +54,7 @@ app.use(cookieParser());
 app.use(requestId);
 
 // Request logging — set LOG_HTTP_HEADERS=true for full header output
-app.use(
-  pinoHttp({
-    logger,
-    customProps: (req) => ({ requestId: (req as Request).id }),
-    autoLogging: {
-      ignore: (req) => {
-        const url = (req as Request).url;
-        return url === '/health' || url === '/health/live' || url === '/health/ready' || url === '/metrics';
-      },
-    },
-    ...(config.LOG_HTTP_HEADERS
-      ? {}
-      : {
-          serializers: {
-            req: (req: Record<string, unknown>) => ({
-              id: req['id'],
-              method: req['method'],
-              url: req['url'],
-            }),
-            res: (res: Record<string, unknown>) => ({
-              statusCode: res['statusCode'],
-            }),
-          },
-        }),
-  })
-);
+app.use(requestLogger(logger, config.LOG_HTTP_HEADERS));
 
 // Health check endpoints (liveness, readiness, full)
 app.get('/health/live', (_req: Request, res: Response) => {

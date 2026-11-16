@@ -95,7 +95,7 @@ Two things now deploy that didn't. `port` is no longer required: with none set, 
 
 A DATABASE channel now fails to deploy when it has:
 
-- any other key its table doesn't list, e.g. a misspelling such as `pollingInterval`. Before, such a key was ignored. Channels imported from Mirth before 2026-11-12 carry `url` and `driver` (and a reader's SELECT under `query`); they never deployed, because they had no `host`. Import them again.
+- any other key its table doesn't list, e.g. a misspelling such as `pollingInterval`. Before, such a key was ignored. Channels imported from Mirth between 2026-03-03 and 2026-11-12 carry `url` and `driver` (and a reader's SELECT under `query`). They deployed once someone filled in the host, database and query in the editor, which cannot remove keys, so the schema drops `url`, `driver` and a reader's `query` (#227). Those channels keep deploying with the edits made to them; nothing in the database is rewritten. A reader nobody gave a `selectQuery` never deployed and still refuses, naming `selectQuery`: its old `query` is not used, because starting it would run a SELECT nobody sees, with no update query, reading the same rows again every poll.
 - a `vendor` other than `postgresql` or `mysql`. That refused before too, with the same message.
 - an empty or blank `host`, `database`, `selectQuery` or `query`, or a `port` outside 1 to 65535.
 - an `updateMode` other than `NEVER`, `ALWAYS` or `ON_SUCCESS`, or `ALWAYS`/`ON_SUCCESS` with an empty `updateQuery`. Before, an unknown mode marked every row as `ALWAYS` does; the empty query failed when the connector deployed, without naming the key.
@@ -109,11 +109,12 @@ Before upgrading, list the keys the schema would refuse:
 SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
 WHERE source_connector_type = 'DATABASE'
   AND k NOT IN ('vendor','host','port','database','username','password','tls',
-                'selectQuery','updateQuery','updateMode','pollingIntervalMs','rowFormat','processBatch');
+                'selectQuery','updateQuery','updateMode','pollingIntervalMs','rowFormat','processBatch',
+                'url','driver','query');
 SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
 WHERE connector_type = 'DATABASE'
   AND k NOT IN ('vendor','host','port','database','username','password','tls',
-                'query','useTransaction','returnGeneratedKeys','template');
+                'query','useTransaction','returnGeneratedKeys','template','url','driver');
 ```
 
 **FILE** is the fourth. Channels saved by this app's own editor keep deploying: the File Reader and Writer forms have saved the same keys since 2026-03, so nothing is dropped. The charset is read as for TCP_MLLP: any case, and `UTF-8`, `utf8`, `ISO-8859-1`, `US-ASCII` and `UTF-16LE` become `utf-8`, `latin1`, `ascii` and `utf16le`. The FILE defaults saved `UTF-8` until this release, and the 2026-03 to 2026-07 forms offered `ISO-8859-1` and `US-ASCII`. Nothing in the database is rewritten.
@@ -228,7 +229,7 @@ WHERE connector_type = 'SMTP'
                 'contentType','attachContent','attachments','template');
 ```
 
-**DICOM** is the ninth. Channels saved by this app's own editor keep deploying: the DICOM forms have saved the same keys since 2026-03. The Mirth importer has no DICOM mapping, so since 2026-03-03 it has copied all of a DICOM Listener's or Sender's Mirth properties (`applicationEntity`, `localHost`, `dest`, `tls`, `keyStorePW`, `stgcmt` and some 30 more, listed in `packages/core-models/src/schemas/dicom-connector.schema.ts`). Nothing reads them, and the schema drops them, so an imported Sender (whose `host` and `port` have the same names here) keeps deploying, and so does a Listener once its port and storage directory were filled in. Nothing in the database is rewritten.
+**DICOM** is the ninth. Channels saved by this app's own editor keep deploying: the DICOM forms have saved the same keys since 2026-03. Until it mapped DICOM on 2026-11-16 (#171), the Mirth importer copied all of a DICOM Listener's or Sender's Mirth properties (`applicationEntity`, `localHost`, `dest`, `tls`, `keyStorePW`, `stgcmt` and some 30 more, listed in `packages/core-models/src/schemas/dicom-connector.schema.ts`). Nothing reads them, and the schema drops them, so an imported Sender (whose `host` and `port` have the same names here) keeps deploying, and so does a Listener once its port and storage directory were filled in. Nothing in the database is rewritten. A channel imported since then has the DICOM keys themselves (D-301).
 
 One behaviour changes without a deploy error. An imported DICOM Sender also carries Mirth's default template, `${DICOMMESSAGE}`. Since 2026-11-12 the engine has sent a destination's template instead of the message, so every send from such a channel failed: the text `${DICOMMESSAGE}` is not a DICOM file. The engine and the schema now treat that one template as no template (`destinationTemplate` in core-models), so the message itself is sent, as in Mirth. Mirth's `applicationEntity` is still not mapped to `calledAETitle`; set the called AE title by hand ([#171](https://github.com/MichaelLeeHobbs/mirthless/issues/171)).
 

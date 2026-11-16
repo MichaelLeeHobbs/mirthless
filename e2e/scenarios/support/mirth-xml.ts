@@ -19,7 +19,7 @@ const RESOURCE_IDS = '<resourceIds class="linked-hash-map"><entry><string>Defaul
 
 // ----- Data types -----
 
-export type DataType = 'HL7V2' | 'JSON' | 'XML' | 'RAW' | 'DELIMITED' | 'EDI/X12';
+export type DataType = 'HL7V2' | 'JSON' | 'XML' | 'RAW' | 'DELIMITED' | 'EDI/X12' | 'DICOM';
 
 export interface DelimitedOptions {
   readonly columnDelimiter?: string;
@@ -48,6 +48,7 @@ function dataTypeProps(tag: string, type: DataType, delimited?: DelimitedOptions
   <deserializationProperties class="com.mirth.connect.plugins.datatypes.delimited.DelimitedDeserializationProperties" version="${V}"><columnDelimiter>${esc(delimited?.columnDelimiter ?? ',')}</columnDelimiter><recordDelimiter>${esc(delimited?.recordDelimiter ?? '\\n')}</recordDelimiter><columnWidths/><quoteToken>&quot;</quoteToken><escapeWithDoubleQuote>true</escapeWithDoubleQuote><quoteEscapeToken>\\</quoteEscapeToken></deserializationProperties>
   <batchProperties class="com.mirth.connect.plugins.datatypes.delimited.DelimitedBatchProperties" version="${V}"><splitType>Record</splitType><batchSkipRecords>0</batchSkipRecords><batchMessageDelimiter></batchMessageDelimiter><batchMessageDelimiterIncluded>false</batchMessageDelimiterIncluded><batchGroupingColumn></batchGroupingColumn><batchScript></batchScript></batchProperties>
 </${tag}>`;
+    case 'DICOM': return `<${tag} class="com.mirth.connect.plugins.datatypes.dicom.DICOMDataTypeProperties" version="${V}"/>`;
     case 'EDI/X12': return `<${tag} class="com.mirth.connect.plugins.datatypes.edi.EDIDataTypeProperties" version="${V}"><serializationProperties class="com.mirth.connect.plugins.datatypes.edi.EDISerializationProperties" version="${V}"><segmentDelimiter>~</segmentDelimiter><elementDelimiter>*</elementDelimiter><subelementDelimiter>:</subelementDelimiter><inferX12Delimiters>true</inferX12Delimiters></serializationProperties><batchProperties class="com.mirth.connect.plugins.datatypes.edi.EDIBatchProperties" version="${V}"><splitType>JavaScript</splitType><batchScript></batchScript></batchProperties></${tag}>`;
     default: return '';
   }
@@ -210,6 +211,8 @@ export interface FileReaderOptions {
   readonly fileFilter?: string;
   readonly regex?: boolean;
   readonly moveToDirectory?: string;
+  /** Mirth's "After Processing Action"; MOVE when moveToDirectory is set, DELETE otherwise. */
+  readonly afterProcessingAction?: 'NONE' | 'MOVE' | 'DELETE';
   readonly username?: string;
   readonly password?: string;
   readonly processBatch?: boolean;
@@ -223,9 +226,23 @@ export const fileReader = (o: FileReaderOptions): Pick<Connector, 'transportName
     : '';
   return {
     transportName: 'File Reader',
-    properties: `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="${V}"><pluginProperties/>${pollProps(o.pollMs ?? 1000)}${sourceProps({ responseVariable: 'None', processBatch: o.processBatch ?? false })}<scheme>${scheme}</scheme>${schemeProps}<host>${esc(o.host)}</host><fileFilter>${esc(o.fileFilter ?? '*')}</fileFilter><regex>${String(o.regex ?? false)}</regex><directoryRecursion>false</directoryRecursion><ignoreDot>true</ignoreDot><anonymous>${String(o.username === undefined)}</anonymous><username>${esc(o.username ?? 'anonymous')}</username><password>${esc(o.password ?? 'anonymous')}</password><timeout>10000</timeout><secure>true</secure><passive>true</passive><validateConnection>true</validateConnection><afterProcessingAction>${o.moveToDirectory ? 'MOVE' : 'DELETE'}</afterProcessingAction><moveToDirectory>${esc(o.moveToDirectory ?? '')}</moveToDirectory><moveToFileName></moveToFileName><errorReadingAction>NONE</errorReadingAction><errorResponseAction>AFTER_PROCESSING</errorResponseAction><errorMoveToDirectory></errorMoveToDirectory><errorMoveToFileName></errorMoveToFileName><checkFileAge>false</checkFileAge><fileAge>1000</fileAge><fileSizeMinimum>0</fileSizeMinimum><fileSizeMaximum></fileSizeMaximum><ignoreFileSizeMaximum>true</ignoreFileSizeMaximum><sortBy>date</sortBy><binary>false</binary><charsetEncoding>DEFAULT_ENCODING</charsetEncoding></properties>`,
+    properties: `<properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="${V}"><pluginProperties/>${pollProps(o.pollMs ?? 1000)}${sourceProps({ responseVariable: 'None', processBatch: o.processBatch ?? false })}<scheme>${scheme}</scheme>${schemeProps}<host>${esc(o.host)}</host><fileFilter>${esc(o.fileFilter ?? '*')}</fileFilter><regex>${String(o.regex ?? false)}</regex><directoryRecursion>false</directoryRecursion><ignoreDot>true</ignoreDot><anonymous>${String(o.username === undefined)}</anonymous><username>${esc(o.username ?? 'anonymous')}</username><password>${esc(o.password ?? 'anonymous')}</password><timeout>10000</timeout><secure>true</secure><passive>true</passive><validateConnection>true</validateConnection><afterProcessingAction>${o.afterProcessingAction ?? (o.moveToDirectory ? 'MOVE' : 'DELETE')}</afterProcessingAction><moveToDirectory>${esc(o.moveToDirectory ?? '')}</moveToDirectory><moveToFileName></moveToFileName><errorReadingAction>NONE</errorReadingAction><errorResponseAction>AFTER_PROCESSING</errorResponseAction><errorMoveToDirectory></errorMoveToDirectory><errorMoveToFileName></errorMoveToFileName><checkFileAge>false</checkFileAge><fileAge>1000</fileAge><fileSizeMinimum>0</fileSizeMinimum><fileSizeMaximum></fileSizeMaximum><ignoreFileSizeMaximum>true</ignoreFileSizeMaximum><sortBy>date</sortBy><binary>false</binary><charsetEncoding>DEFAULT_ENCODING</charsetEncoding></properties>`,
   };
 };
+
+const DICOM_TLS_OFF = '<keyPW></keyPW><keyStore></keyStore><keyStorePW></keyStorePW><noClientAuth>true</noClientAuth><nossl2>true</nossl2><tls>notls</tls><trustStore></trustStore><trustStorePW></trustStorePW>';
+
+/** A DICOM Listener (C-STORE SCP) storing received objects in `dest`, answering as `aeTitle`. */
+export const dicomListener = (port: number, dest: string, aeTitle: string): Pick<Connector, 'transportName' | 'properties'> => ({
+  transportName: 'DICOM Listener',
+  properties: `<properties class="com.mirth.connect.connectors.dimse.DICOMReceiverProperties" version="${V}"><pluginProperties/><listenerConnectorProperties version="${V}"><host>0.0.0.0</host><port>${String(port)}</port></listenerConnectorProperties>${sourceProps({ responseVariable: 'None' })}<applicationEntity>${esc(aeTitle)}</applicationEntity><localHost></localHost><localPort></localPort><localApplicationEntity></localApplicationEntity><soCloseDelay>50</soCloseDelay><releaseTo>5</releaseTo><requestTo>5</requestTo><idleTo>60</idleTo><reaper>10</reaper><rspDelay>0</rspDelay><pdv1>false</pdv1><sndpdulen>16</sndpdulen><rcvpdulen>16</rcvpdulen><async>0</async><bigEndian>false</bigEndian><bufSize>1</bufSize><defts>false</defts><dest>${esc(dest)}</dest><nativeData>false</nativeData><sorcvbuf>0</sorcvbuf><sosndbuf>0</sosndbuf><tcpDelay>true</tcpDelay>${DICOM_TLS_OFF}</properties>`,
+});
+
+/** A DICOM Sender (C-STORE SCU) calling `calledAe` at host:port as `callingAe`, sending the message as Mirth's default template does. */
+export const dicomSender = (host: string, port: string, calledAe: string, callingAe: string, q?: Queue): Pick<Connector, 'transportName' | 'properties'> => ({
+  transportName: 'DICOM Sender',
+  properties: `<properties class="com.mirth.connect.connectors.dimse.DICOMDispatcherProperties" version="${V}"><pluginProperties/>${destProps(q)}<host>${esc(host)}</host><port>${esc(port)}</port><applicationEntity>${esc(calledAe)}</applicationEntity><localHost></localHost><localPort></localPort><localApplicationEntity>${esc(callingAe)}</localApplicationEntity><template>\${DICOMMESSAGE}</template><acceptTo>5000</acceptTo><async>0</async><bufSize>1</bufSize><connectTo>0</connectTo><priority>med</priority><passcode></passcode><pdv1>false</pdv1><rcvpdulen>16</rcvpdulen><reaper>10</reaper><releaseTo>5</releaseTo><rspTo>60</rspTo><shutdownDelay>1000</shutdownDelay><sndpdulen>16</sndpdulen><soCloseDelay>50</soCloseDelay><sorcvbuf>0</sorcvbuf><sosndbuf>0</sosndbuf><stgcmt>false</stgcmt><tcpDelay>true</tcpDelay><ts1>false</ts1><uidnegrsp>false</uidnegrsp><username></username>${DICOM_TLS_OFF}</properties>`,
+});
 
 export interface DbOptions {
   readonly driver: string;

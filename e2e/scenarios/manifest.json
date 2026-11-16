@@ -26,6 +26,8 @@
     { "id": "S24", "weight": 3, "source": "anti-gaming B4: 3 disabled channels in the prod backup", "title": "A channel disabled in Mirth is imported disabled" },
     { "id": "S25", "weight": 3, "source": "anti-gaming R(a): prod library scoping", "title": "Code template libraries apply only to the channels Mirth enabled them for" },
     { "id": "S26", "weight": 2, "source": "anti-gaming: Auto-generate (Before processing)", "title": "A listener that responds before processing answers AA even when its transformer fails" },
-    { "id": "S27", "weight": 2, "source": "anti-gaming A7b: error with no reason", "title": "A destination error records why it failed" }
+    { "id": "S27", "weight": 2, "source": "anti-gaming A7b: error with no reason", "title": "A destination error records why it failed" },
+    { "id": "S28", "weight": 3, "source": "#178: imported File Readers deleted files", "title": "A File Reader leaves or moves the files it reads as Mirth did" },
+    { "id": "S29", "weight": 2, "source": "#171: DICOM settings dropped on import", "title": "A DICOM router forwards a stored image to the PACS" }
   ]
 }
