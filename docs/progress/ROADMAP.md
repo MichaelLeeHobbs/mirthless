@@ -25,7 +25,7 @@ What already ships is listed, with the tests that prove it, in [What GalvaniFlow
 
 ### Mirth migration suite
 
-> `pnpm test:scenarios` (D-237, `docs/testing/migration-scenarios.md`) scores 55/60 on 2026-11-13. The three that fail each need a decision first: [`docs/design/17-remaining-migration-gaps.md`](../design/17-remaining-migration-gaps.md).
+> `pnpm test:scenarios` (D-237, `docs/testing/migration-scenarios.md`) scores 60/60, all 26 scenarios, on 2026-11-15. It scored 55/60 on 2026-11-13; the three gaps that failed then were decided in [`docs/design/17-remaining-migration-gaps.md`](../design/17-remaining-migration-gaps.md) and built as S15, S19 and S20 below.
 
 - [x] **S15** Database Reader and Writer talk to MySQL as well as PostgreSQL (D-259). SQL Server and Oracle are still open under [1] below.
 - [x] **S19** Delimited data is an array of row objects keyed by column name (D-257). Not yet: fixed-width columns, Process Batch per row. The source transformer edits the settings (2026-11-14).
