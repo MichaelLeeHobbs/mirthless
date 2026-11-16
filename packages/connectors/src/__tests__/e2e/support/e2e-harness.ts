@@ -38,7 +38,6 @@ import type {
   DestinationConnectorRuntime,
   ConnectorMessage,
   ConnectorResponse,
-  DispatchResult,
 } from '../../../index.js';
 import type { Result } from '@galvaniflow/core-util';
 
