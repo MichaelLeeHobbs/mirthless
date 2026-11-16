@@ -65,9 +65,9 @@ export interface AckClassification {
  * message the receiver already took. An acknowledgement with no MSA-2 is accepted.
  *
  * @param response - The raw HL7 acknowledgement received.
- * @param sentControlId - MSH-10 of the message that was sent, as encoded, when it has one.
+ * @param sent - The control id of the message that was sent ({@link controlIdOf}), when it has one.
  */
-export function classifyAckResponse(response: string, sentControlId?: string): AckClassification {
+export function classifyAckResponse(response: string, sent?: SentControlId): AckClassification {
   const extracted = extractMsa(response);
   if (extracted === undefined) {
     return { accepted: false, ackCode: '', errorMessage: 'Unparseable acknowledgement response' };
@@ -76,12 +76,11 @@ export function classifyAckResponse(response: string, sentControlId?: string): A
   const ackCode = extracted.code.toUpperCase();
   if (ackCode === 'AA' || ackCode === 'CA') {
     const ackedId = extracted.controlId ?? '';
-    const sentFirst = sentControlId?.split(extracted.componentSep)[0];
-    if (sentControlId && ackedId !== '' && ackedId !== sentControlId && ackedId !== sentFirst) {
+    if (sent && ackedId !== '' && ackedId !== sent.whole && ackedId !== sent.first) {
       return {
         accepted: false,
         ackCode,
-        errorMessage: `Acknowledgement is for a different message (MSA-2=${ackedId}, sent ${sentControlId})`,
+        errorMessage: `Acknowledgement is for a different message (MSA-2=${ackedId}, sent ${sent.whole})`,
       };
     }
     return { accepted: true, ackCode };
@@ -97,20 +96,18 @@ export function classifyAckResponse(response: string, sentControlId?: string): A
 }
 
 /**
- * Extract MSA-1/MSA-3 and the component separator from an acknowledgement.
- * Handles a full HL7 message (MSH + MSA) via the parser, and falls back to a
- * manual segment scan, with the default `|` and `^`, for degenerate responses
- * that omit MSH (be liberal in what we accept).
+ * Extract MSA-1/MSA-3 from an acknowledgement. Handles a full HL7 message
+ * (MSH + MSA) via the parser, and falls back to a manual segment scan for
+ * degenerate responses that omit MSH (be liberal in what we accept).
  */
-function extractMsa(response: string): { code: string; componentSep: string; controlId?: string; text?: string } | undefined {
+function extractMsa(response: string): { code: string; controlId?: string; text?: string } | undefined {
   try {
     const msg = Hl7Message.parse(response);
     const code = msg.get('MSA.1');
     if (code !== undefined) {
       const controlId = msg.getRaw('MSA.2');
       const text = msg.get('MSA.3');
-      const componentSep = msg.encoding.componentSep;
-      return { code, componentSep, ...(controlId !== undefined ? { controlId } : {}), ...(text !== undefined ? { text } : {}) };
+      return { code, ...(controlId !== undefined ? { controlId } : {}), ...(text !== undefined ? { text } : {}) };
     }
   } catch {
     // No MSH / not parseable as a full message — try a manual scan below.
@@ -118,20 +115,29 @@ function extractMsa(response: string): { code: string; componentSep: string; con
   for (const seg of response.split(/[\r\n]+/)) {
     if (seg.startsWith('MSA')) {
       const fields = seg.split('|');
-      return { code: fields[1] ?? '', componentSep: '^', ...(fields[2] ? { controlId: fields[2] } : {}), ...(fields[3] ? { text: fields[3] } : {}) };
+      return { code: fields[1] ?? '', ...(fields[2] ? { controlId: fields[2] } : {}), ...(fields[3] ? { text: fields[3] } : {}) };
     }
   }
   return undefined;
 }
 
+/** MSH-10 of a sent message: the whole field as encoded, and its first component. */
+export interface SentControlId {
+  readonly whole: string;
+  readonly first: string;
+}
+
 /**
- * MSH-10 of an outbound message as it is encoded, every component included, or
- * undefined when it is not HL7 or has none. A receiver echoes it whole in MSA-2.
+ * The control id of an outbound message, or undefined when it is not HL7 or has
+ * none. Both values are read with the message's own separators, which encoded
+ * the id: a receiver echoes it in MSA-2 whole, or sometimes only its first component.
  */
-export function controlIdOf(message: string): string | undefined {
+export function controlIdOf(message: string): SentControlId | undefined {
   try {
-    const id = Hl7Message.parse(message).getRaw('MSH.10');
-    return id !== undefined && id !== '' ? id : undefined;
+    const msg = Hl7Message.parse(message);
+    const whole = msg.getRaw('MSH.10');
+    if (whole === undefined || whole === '') return undefined;
+    return { whole, first: msg.getRaw('MSH.10.1') ?? whole };
   } catch {
     return undefined;
   }

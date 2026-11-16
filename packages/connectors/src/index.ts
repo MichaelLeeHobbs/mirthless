@@ -30,6 +30,7 @@ export {
   classifyAckResponse,
   type AckCode,
   type AckClassification,
+  type SentControlId,
 } from './tcp-mllp/ack-builder.js';
 export {
   TcpMllpReceiver,

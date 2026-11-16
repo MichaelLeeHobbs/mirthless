@@ -13,7 +13,7 @@ import { tryCatch, type Result } from '@galvaniflow/core-util';
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { MllpParser, wrapMllp, type Framing } from '../transmission/mllp-mode.js';
 import type { TlsClientOptions } from '../tls.js';
-import { classifyAckResponse, controlIdOf } from './ack-builder.js';
+import { classifyAckResponse, controlIdOf, type SentControlId } from './ack-builder.js';
 import { createConnectorLogger, errorInfo, type ConnectorLogger } from '../logger.js';
 
 // ----- Config -----
@@ -277,7 +277,7 @@ export class TcpMllpDispatcher implements DestinationConnectorRuntime {
 }
 
 /** Convert an acknowledgement frame into a connector response. */
-function toResponse(ack: string, sentControlId: string | undefined): ConnectorResponse {
+function toResponse(ack: string, sentControlId: SentControlId | undefined): ConnectorResponse {
   const classification = classifyAckResponse(ack, sentControlId);
   if (classification.accepted) {
     return { status: 'SENT', content: ack };
