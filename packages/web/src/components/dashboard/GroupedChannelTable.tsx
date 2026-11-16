@@ -304,11 +304,8 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
     if (overId === fromGroupId) return;
     const targetGroupId = overId === '__ungrouped__' ? null : overId;
 
-    // Optimistically move the row; revert if persistence fails.
-    const prevOverride = dragOverride;
-    const next = new Map(dragOverride);
-    next.set(channelId, targetGroupId);
-    setDragOverride(next);
+    // Optimistically move the row until the server answers.
+    setDragOverride((prev) => new Map(prev).set(channelId, targetGroupId));
 
     // One call replaces every membership the channel has (a channel has one group
     // in the UI, D-126), so a failure leaves it where it was, never in no group.
@@ -316,11 +313,21 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
       try {
         await setChannelGroups.mutateAsync({ channelId, groupIds: targetGroupId === null ? [] : [targetGroupId] });
       } catch (err) {
-        setDragOverride(prevOverride);
         notify(errorMessage(err, 'Failed to move channel'), 'error');
+      } finally {
+        // mutateAsync settles after the hook's onSettled has refetched the
+        // memberships, so from here the server's data shows where the channel is.
+        // Drop only this drag's override: another channel's, or a later drag of
+        // this one, stays until its own call settles.
+        setDragOverride((prev) => {
+          if (prev.get(channelId) !== targetGroupId) return prev;
+          const next = new Map(prev);
+          next.delete(channelId);
+          return next;
+        });
       }
     })();
-  }, [dragOverride, setChannelGroups, notify]);
+  }, [setChannelGroups, notify]);
 
   const toggleGroup = (groupId: string): void => {
     setCollapsed((prev) => {

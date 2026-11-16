@@ -30,7 +30,9 @@ import { useChannelGroups, useGroupMemberships, useSetChannelGroups } from '../.
 import { SOURCE_CONNECTOR_TYPES } from '@galvaniflow/core-models';
 import { useNotification } from '../../stores/notification.store.js';
 import { errorMessage } from '../../lib/error-message.js';
-import { isSameGroupSet } from '../../lib/group-membership.js';
+import { isSameGroupSet, multiGroupNote } from '../../lib/group-membership.js';
+import { usePermissions } from '../../hooks/use-permissions.js';
+import { PERMISSION } from '../../lib/permissions.js';
 
 const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR', 'X12'] as const;
 
@@ -72,6 +74,8 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
   }, [membershipsQuery.data, channelId]);
 
   const currentGroupId = currentGroupIds[0] ?? NONE_GROUP;
+  const canChangeGroup = usePermissions().has(PERMISSION.CHANNELS_WRITE);
+  const groupNote = multiGroupNote(currentGroupIds.map((id) => groupsQuery.data?.find((g) => g.id === id)?.name ?? id));
 
   const handleGroupChange = useCallback(async (newGroupId: string): Promise<void> => {
     if (!channelId) return;
@@ -177,7 +181,8 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
                 sx={{ mb: 2 }}
                 value={currentGroupId}
                 onChange={(e) => { handleGroupChange(e.target.value); }}
-                disabled={groupsQuery.isLoading || membershipsQuery.isLoading}
+                disabled={!canChangeGroup || groupsQuery.isLoading || membershipsQuery.isLoading}
+                helperText={groupNote}
               >
                 <MenuItem value={NONE_GROUP}><em>None</em></MenuItem>
                 {(groupsQuery.data ?? []).map((g) => (

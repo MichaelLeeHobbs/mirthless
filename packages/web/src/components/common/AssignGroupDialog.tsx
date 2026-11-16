@@ -19,7 +19,7 @@ import Box from '@mui/material/Box';
 import { useChannelGroups, useGroupMemberships, useSetChannelGroups } from '../../hooks/use-channel-groups.js';
 import { useNotification } from '../../stores/notification.store.js';
 import { errorMessage } from '../../lib/error-message.js';
-import { isSameGroupSet } from '../../lib/group-membership.js';
+import { isSameGroupSet, multiGroupNote } from '../../lib/group-membership.js';
 
 interface AssignGroupDialogProps {
   readonly open: boolean;
@@ -68,9 +68,7 @@ export function AssignGroupDialog({ open, onClose, channelId }: AssignGroupDialo
 
   const isLoading = groupsQuery.isLoading || membershipsQuery.isLoading;
   const currentNames = currentGroupIds.map((id) => groups.find((g) => g.id === id)?.name ?? id);
-  const helperText = currentNames.length > 1
-    ? `In ${String(currentNames.length)} groups: ${currentNames.join(', ')}. Saving keeps only the group you choose.`
-    : undefined;
+  const helperText = multiGroupNote(currentNames);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>

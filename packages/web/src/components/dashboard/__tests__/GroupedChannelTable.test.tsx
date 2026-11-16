@@ -65,16 +65,36 @@ function group(id: string, name: string): ComponentProps<typeof GroupedChannelTa
 }
 
 function renderTable(): void {
-  render(
+  const { rerender } = render(table(INITIAL_MEMBERSHIPS));
+  rerenderWith = (memberships) => { rerender(table(memberships)); };
+}
+
+type Memberships = ComponentProps<typeof GroupedChannelTable>['memberships'];
+
+const INITIAL_MEMBERSHIPS: Memberships = [{ channelGroupId: 'g1', channelId: 'c1' }, { channelGroupId: 'g2', channelId: 'c2' }];
+
+/** Re-render with new server memberships, as the memberships query does after a refetch. */
+let rerenderWith: (memberships: Memberships) => void = () => undefined;
+
+function table(memberships: Memberships): ReactNode {
+  return (
     <ThemeProvider theme={darkTheme}>
       <GroupedChannelTable
         statistics={[stats('c1', 'ADT In'), stats('c2', 'Orders Out')]}
         deploymentStatuses={[]}
         groups={[group('g1', 'Lab'), group('g2', 'Radiology')]}
-        memberships={[{ channelGroupId: 'g1', channelId: 'c1' }, { channelGroupId: 'g2', channelId: 'c2' }]}
+        memberships={memberships}
       />
-    </ThemeProvider>,
+    </ThemeProvider>
   );
+}
+
+/** A promise the test settles by hand, to hold a move in flight. */
+function deferred(): { promise: Promise<void>; resolve: () => void; reject: (e: Error) => void } {
+  let resolve: () => void = () => undefined;
+  let reject: (e: Error) => void = () => undefined;
+  const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
 }
 
 /** Deliver the drop dnd-kit would send when channel `channelId` from `fromGroupId` lands on `overId`. */
@@ -123,7 +143,8 @@ describe('GroupedChannelTable drag handle', () => {
 });
 
 describe('GroupedChannelTable drop', () => {
-  it('moves the channel with one call naming only the target group', async () => {
+  it('moves the channel with one call naming only the target group, showing it there while the call runs', async () => {
+    setGroups.mockImplementation(() => new Promise<void>(() => undefined));
     renderTable();
     await drop('c1', 'g1', 'g2');
 
@@ -155,5 +176,30 @@ describe('GroupedChannelTable drop', () => {
 
     await waitFor(() => { expect(notify).toHaveBeenCalledWith('Channel group not found: g2', 'error'); });
     expect(sectionOf('ADT In')).toBe('Lab');
+  });
+
+  it('follows the server after a move, so a later Change Group back to the old group shows', async () => {
+    renderTable();
+    await drop('c1', 'g1', 'g2');
+    // The memberships refetch after the move...
+    rerenderWith([{ channelGroupId: 'g2', channelId: 'c1' }, { channelGroupId: 'g2', channelId: 'c2' }]);
+    expect(sectionOf('ADT In')).toBe('Radiology');
+    // ...then the Change Group dialog puts it back in Lab.
+    rerenderWith([{ channelGroupId: 'g1', channelId: 'c1' }, { channelGroupId: 'g2', channelId: 'c2' }]);
+
+    expect(sectionOf('ADT In')).toBe('Lab');
+  });
+
+  it('keeps another channel\'s move in flight when one move fails', async () => {
+    const first = deferred();
+    setGroups.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => new Promise<void>(() => undefined));
+    renderTable();
+    await drop('c1', 'g1', 'g2');
+    await drop('c2', 'g2', 'g1');
+
+    await act(async () => { first.reject(new Error('boom')); await first.promise.catch(() => undefined); });
+
+    await waitFor(() => { expect(sectionOf('ADT In')).toBe('Lab'); });
+    expect(sectionOf('Orders Out')).toBe('Lab');
   });
 });

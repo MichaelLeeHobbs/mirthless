@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { isSameGroupSet } from '../group-membership.js';
+import { isSameGroupSet, multiGroupNote } from '../group-membership.js';
+
+describe('multiGroupNote', () => {
+  it('names every group for a channel in several', () => {
+    expect(multiGroupNote(['Lab', 'Radiology'])).toBe('In 2 groups: Lab, Radiology. Saving keeps only the group you choose.');
+  });
+
+  it('says nothing for one group or none', () => {
+    expect(multiGroupNote(['Lab'])).toBeUndefined();
+    expect(multiGroupNote([])).toBeUndefined();
+  });
+});
 
 describe('isSameGroupSet', () => {
   it('is true for the same groups in another order', () => {
