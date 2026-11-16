@@ -170,7 +170,7 @@ The importer reads a Mirth channel export or server backup (`POST /api/v1/channe
 | Response transformers and response modes | Yes | | | | Response transformer, Respond from | `packages/engine/src/pipeline/__tests__/response-transformer.test.ts`<br>`packages/server/src/__tests__/engine-dispatch-status.test.ts` |
 | Split batches by delimiter, regex or script | Partial | Only HL7 v2 Process Batch is reachable from a channel; the other splitters have no setting. | | | Batch processing | `packages/engine/src/batch/__tests__/batch-processor.test.ts` |
 | E4X access to messages | Won't | Use the path API (`msg.get('PID.5.1')`). | D-244 "does not support E4X" | [scripting-api.md](scripting-api.md) | E4X | |
-| Mirth script APIs (ResponseFactory, DateUtil, channelMap.put) | Won't | Rewrite in GalvaniGraph's API; the import preview names them. | D-244 "scripts are rewritten in GalvaniGraph's API" | [scripting-api.md](scripting-api.md) | userutil API | |
+| Mirth script APIs (ResponseFactory, DateUtil, channelMap.put) | Won't | Rewrite in GalvaniGraph's API; the import preview names them. | D-244 "the same holds for Mirth's other script APIs" | [scripting-api.md](scripting-api.md) | userutil API | |
 | Java classes, JAR loading or Python in scripts | Won't | Use JavaScript built-ins and the IO bridges. | D-260 "no Java interop, JAR loading or Python runtime" | | Java interop | |
 | Multiple threads per destination queue | No | Split the load over several channels; destinations already run as parallel chains. | ROADMAP N7 | | Queue threads, Rotate | |
 | Keep per-patient order while scaling out | No | none known | ROADMAP B3 | | Thread assignment variable | |
