@@ -126,10 +126,11 @@ export function generateOpenAPISpec(): OpenAPISpec {
           summary: 'Refresh access token using refresh cookie',
           operationId: 'authRefresh',
           responses: {
-            '200': successResponse('Token refreshed', {
+            '200': successResponse('Token refreshed, with the user and their current permissions', {
               type: 'object',
               properties: {
                 accessToken: { type: 'string' },
+                user: { $ref: '#/components/schemas/User' },
               },
             }),
             '401': openApiErrorResponse('Invalid or expired refresh token'),

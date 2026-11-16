@@ -38,7 +38,7 @@ This page describes who can sign in to GalvaniFlow, how sessions work, how to cu
 
 **Session record.** Each login creates a row in the `sessions` table holding a SHA-256 hash of the refresh token, the user agent and client address of the login (sessions created by a refresh record neither, [#174](https://github.com/MichaelLeeHobbs/mirthless/issues/174)), and an expiry `JWT_REFRESH_EXPIRES_IN` later (default 7 days). Logout deletes the row.
 
-**Rotation.** `POST /api/v1/auth/refresh` checks the refresh token's signature, finds its session, and checks that the user still exists and is enabled. It then deletes that session and creates a new one with a new refresh token and a new expiry. A refresh token works once.
+**Rotation.** `POST /api/v1/auth/refresh` checks the refresh token's signature, finds its session, and checks that the user still exists and is enabled. It then deletes that session and creates a new one with a new refresh token and a new expiry. A refresh token works once. The response carries the user with their current role and permissions, and the web UI replaces the list it was given at sign-in, so a role change reaches an open browser at its next refresh.
 
 **Lifetimes.** `JWT_ACCESS_EXPIRES_IN` (default `15m`) and `JWT_REFRESH_EXPIRES_IN` (default `7d`) set the token lifetimes, and the session row and the refresh cookie follow the refresh token's expiry. Both need a unit (`15m`, `12h`, `7d`), and the server refuses to start when the refresh lifetime is shorter than the access lifetime.
 
@@ -49,7 +49,7 @@ This page describes who can sign in to GalvaniFlow, how sessions work, how to cu
 | Disable the user | Users page, or `PUT /api/v1/users/:id` with `enabled: false` (`users:write`) | All of the user's sessions are deleted. The next request fails, and refresh fails. | Disconnected at the next re-check |
 | Reset the password | `POST /api/v1/users/:id/password` (`users:write`) | All of the user's sessions are deleted. The account stays enabled, and the user can sign in with the new password without being made to change it. | Disconnected at the next re-check |
 | Delete the user | `DELETE /api/v1/users/:id` (`users:delete`) | Same as disabling: the account is disabled and its sessions deleted. The row stays, so the audit log keeps the identity. | Disconnected at the next re-check |
-| Change the role | `PUT /api/v1/users/:id` with a new `role` (`users:write`) | Sessions are kept. The new role's permissions apply from the next request. | Leaves any room the new role may not join, at the next re-check |
+| Change the role | `PUT /api/v1/users/:id` with a new `role` (`users:write`) | Sessions are kept. The new role's permissions apply from the next request. The web UI shows the new role's pages and buttons after its next token refresh, at most `JWT_ACCESS_EXPIRES_IN` (default 15 minutes) later. | Leaves any room the new role may not join, at the next re-check |
 
 The server re-checks every open Socket.IO connection against the database every 60 seconds, and again whenever the connection asks to join a room. So a cut-off user can keep receiving live updates for up to a minute.
 

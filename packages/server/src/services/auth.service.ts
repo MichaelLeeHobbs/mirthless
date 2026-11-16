@@ -86,12 +86,30 @@ export interface UserResponse {
   mustChangePassword: boolean;
 }
 
+/** What a login or a refresh returns: the user as they are now, and the new tokens. */
 export interface LoginResult {
   user: UserResponse;
   accessToken: string;
   refreshToken: string;
 }
 
+/**
+ * The user as the web sees them. Permissions are resolved live from the role
+ * (single source of truth), so each login and refresh carries the current list.
+ */
+function toUserResponse(user: {
+  readonly id: string; readonly username: string; readonly email: string;
+  readonly role: string; readonly mustChangePassword: boolean;
+}): UserResponse {
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    permissions: permissionNamesForRole(user.role),
+    mustChangePassword: user.mustChangePassword,
+  };
+}
 
 export class AuthService {
   static async login(
@@ -159,9 +177,6 @@ export class AuthService {
       // Create session and tokens
       const tokens = await this.createTokens(user.id, metadata);
 
-      // Resolve permissions live from the user's role (single source of truth).
-      const permissions = permissionNamesForRole(user.role);
-
       emitEvent({
         level: 'INFO', name: 'USER_LOGIN', outcome: 'SUCCESS',
         userId: user.id, channelId: null, serverId: null,
@@ -169,25 +184,16 @@ export class AuthService {
         attributes: { username: user.username },
       });
 
-      return {
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-          permissions,
-          mustChangePassword: user.mustChangePassword,
-        },
-        ...tokens,
-      };
+      return { user: toUserResponse(user), ...tokens };
     });
   }
 
   /**
    * Rotate a session: check the refresh token, drop its session and open a new
    * one that records the client details of the request doing the rotation.
+   * Returns the user as they are now, so the web picks up a role change (#219).
    */
-  static async refreshSession(refreshToken: string, metadata?: SessionMetadata): Promise<Result<AuthTokens>> {
+  static async refreshSession(refreshToken: string, metadata?: SessionMetadata): Promise<Result<LoginResult>> {
     return tryCatch(async () => {
       // Verify token signature (throws on tamper/expiry). We rely on the DB
       // session + a fresh user check below rather than the token's own claims.
@@ -207,7 +213,10 @@ export class AuthService {
       // Re-validate the user on every refresh: a disabled or deleted user must not
       // be able to keep rotating tokens. Drop the session and fail loudly.
       const [user] = await db
-        .select({ id: users.id, enabled: users.enabled })
+        .select({
+          id: users.id, username: users.username, email: users.email, role: users.role,
+          enabled: users.enabled, mustChangePassword: users.mustChangePassword,
+        })
         .from(users)
         .where(eq(users.id, session.userId));
 
@@ -219,8 +228,8 @@ export class AuthService {
       // Delete old session (rotate tokens)
       await db.delete(sessions).where(eq(sessions.id, session.id));
 
-      // Create new tokens
-      return await this.createTokens(session.userId, metadata);
+      const tokens = await this.createTokens(session.userId, metadata);
+      return { user: toUserResponse(user), ...tokens };
     });
   }
 
