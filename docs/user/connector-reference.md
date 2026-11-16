@@ -279,16 +279,16 @@ Set `tls` to true to connect over TLS. The database server's certificate is then
 |---|---|---|
 | `vendor` | No | `postgresql` (default) or `mysql`. MariaDB uses `mysql`. Any other value refuses to deploy. |
 | `host` | Yes | Database server. |
-| `port` | Yes | Deploy checks it is a number; the editor fills 5432 or 3306 for the vendor. |
+| `port` | No | 1 to 65535. Defaults to the vendor's port, 5432 or 3306; the editor fills it in. |
 | `database` | Yes | Database name. |
 | `username` | No | Database user. Deploy does not check it. Left empty, PostgreSQL connects as the `PGUSER` environment variable or the server process's operating system user, and MySQL connects with no user name. Set it. |
 | `password` | No | Password, if the database asks for one. |
 | `selectQuery` | Yes | Query that returns the rows to send. |
-| `updateQuery` | No | Statement run after rows are sent, such as marking them processed. |
+| `updateQuery` | No | Statement run after rows are sent, such as marking them processed. Required when `updateMode` is `ALWAYS` or `ON_SUCCESS`. |
 | `updateMode` | No | `NEVER` (default), `ALWAYS` or `ON_SUCCESS`: when `updateQuery` runs. With `NEVER`, the next poll returns the same rows again unless `selectQuery` excludes them. |
-| `pollingIntervalMs` | No | Milliseconds between polls. |
+| `pollingIntervalMs` | No | Milliseconds between polls, at least 100. Defaults to 5000. |
 | `rowFormat` | No | `JSON`, the only format. |
-| `tls` | No | `true` connects over TLS with certificate verification. |
+| `tls` | No | `true` connects over TLS with certificate verification. `true` or `false` only. |
 
 ### DATABASE as a destination
 
@@ -296,14 +296,16 @@ Set `tls` to true to connect over TLS. The database server's certificate is then
 |---|---|---|
 | `vendor` | No | `postgresql` (default) or `mysql`. MariaDB uses `mysql`. |
 | `host` | Yes | Database server. |
-| `port` | Yes | Deploy checks it is a number; the editor fills the vendor's port. |
+| `port` | No | 1 to 65535. Defaults to the vendor's port; the editor fills it in. |
 | `database` | Yes | Database name. |
 | `username` | No | Database user. Deploy does not check it; left empty, the drivers fall back as for the source. Set it. |
 | `password` | No | Password, if the database asks for one. |
 | `query` | Yes | Statement run for each message. |
 | `useTransaction` | No | `true` runs the statement in a transaction. |
 | `returnGeneratedKeys` | No | `true` makes the response a JSON array instead of the affected row count. On PostgreSQL it holds the rows the statement returns, which is `[]` unless the query has a `RETURNING` clause (such as `RETURNING id`). On MySQL a write gives `[{"insertId": <n>}]` with the first generated id, or `[]` when no id was generated; a `SELECT` gives its rows. |
-| `tls` | No | `true` connects over TLS with certificate verification. |
+| `tls` | No | `true` connects over TLS with certificate verification. `true` or `false` only. |
+
+A key neither table lists refuses to deploy, naming the key.
 
 ### DATABASE limits
 

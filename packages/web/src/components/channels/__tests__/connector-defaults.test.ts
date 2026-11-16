@@ -8,12 +8,14 @@ import {
   SFTP_SOURCE_DEFAULTS,
   HTTP_SOURCE_DEFAULTS,
   TCP_MLLP_SOURCE_DEFAULTS,
+  DATABASE_SOURCE_DEFAULTS,
   getDefaultProperties,
 } from '../source/connector-defaults.js';
 import {
   SFTP_DEST_DEFAULTS,
   HTTP_DEST_DEFAULTS,
   TCP_MLLP_DEST_DEFAULTS,
+  DATABASE_DEST_DEFAULTS,
   SMTP_DEST_DEFAULTS,
   getDestDefaultProperties,
   createDefaultDestination,
@@ -26,7 +28,11 @@ import {
   TCP_MLLP_RESPONSE_MODES,
   httpSourcePropertiesSchema,
   httpDestinationPropertiesSchema,
+  databaseSourcePropertiesSchema,
+  databaseDestinationPropertiesSchema,
+  DATABASE_VENDORS,
 } from '@galvaniflow/core-models';
+import { DATABASE_VENDOR_OPTIONS } from '../common/DatabaseVendorField.js';
 
 // Exact keys the SFTP connectors read — must not drift.
 const SFTP_SOURCE_KEYS = [
@@ -122,6 +128,22 @@ describe('HTTP defaults match the core-models schema', () => {
     ['destination', httpDestinationPropertiesSchema, HTTP_DEST_DEFAULTS],
   ] as const)('%s', (_name, schema, defaults) => {
     expect(schema.parse(defaults)).toEqual(defaults);
+  });
+});
+
+describe('DATABASE defaults match the core-models schema', () => {
+  // The schema returns the defaults unchanged once the fields a user must
+  // fill in are set: it rejects unknown keys, and it would add any defaulted
+  // key the form left out. `vendor` and `port` stay as the form saves them.
+  it.each([
+    ['source', databaseSourcePropertiesSchema, { ...DATABASE_SOURCE_DEFAULTS, database: 'lab', selectQuery: 'SELECT 1' }],
+    ['destination', databaseDestinationPropertiesSchema, { ...DATABASE_DEST_DEFAULTS, database: 'lab', query: 'SELECT 1' }],
+  ] as const)('%s', (_name, schema, filled) => {
+    expect(schema.parse(filled)).toEqual(filled);
+  });
+
+  it('the vendor field offers exactly the schema vendors', () => {
+    expect(DATABASE_VENDOR_OPTIONS.map((o) => o.value)).toEqual([...DATABASE_VENDORS]);
   });
 });
 

@@ -8,21 +8,18 @@
 import type { ReactNode } from 'react';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
+import { defaultDatabasePort } from '@galvaniflow/core-models';
 import { getStr } from './connector-properties.js';
 
-export const DATABASE_VENDORS = [
-  { value: 'postgresql', label: 'PostgreSQL', port: 5432 },
-  { value: 'mysql', label: 'MySQL or MariaDB', port: 3306 },
+/** The core-models DATABASE_VENDORS with their names on screen; a test keeps the two lists equal. */
+export const DATABASE_VENDOR_OPTIONS = [
+  { value: 'postgresql', label: 'PostgreSQL' },
+  { value: 'mysql', label: 'MySQL or MariaDB' },
 ] as const;
 
 /** The saved vendor; a connector saved before vendors existed is PostgreSQL. */
 export function databaseVendor(properties: Readonly<Record<string, unknown>>): string {
   return getStr(properties, 'vendor', 'postgresql');
-}
-
-/** The default port of a vendor, or PostgreSQL's for one with no driver. */
-export function defaultDatabasePort(vendor: string): number {
-  return DATABASE_VENDORS.find((v) => v.value === vendor)?.port ?? 5432;
 }
 
 /**
@@ -42,7 +39,7 @@ interface DatabaseVendorFieldProps {
 
 export function DatabaseVendorField({ properties, onChange }: DatabaseVendorFieldProps): ReactNode {
   const vendor = databaseVendor(properties);
-  const supported = DATABASE_VENDORS.some((v) => v.value === vendor);
+  const supported = DATABASE_VENDOR_OPTIONS.some((v) => v.value === vendor);
   return (
     <TextField
       label="Database type"
@@ -54,7 +51,7 @@ export function DatabaseVendorField({ properties, onChange }: DatabaseVendorFiel
       helperText={supported ? undefined : `There is no driver for ${vendor}, so this channel will not deploy. Choose PostgreSQL or MySQL.`}
       sx={{ mb: 2 }}
     >
-      {DATABASE_VENDORS.map((v) => <MenuItem key={v.value} value={v.value}>{v.label}</MenuItem>)}
+      {DATABASE_VENDOR_OPTIONS.map((v) => <MenuItem key={v.value} value={v.value}>{v.label}</MenuItem>)}
       {!supported && <MenuItem value={vendor} disabled>{vendor} (not supported)</MenuItem>}
     </TextField>
   );

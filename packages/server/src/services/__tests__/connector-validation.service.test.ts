@@ -184,6 +184,47 @@ describe('validateConnectorProperties', () => {
       expect(validateConnectorProperties('HTTP', 'destination', { url: 'http://lis', template: 'x' }).ok).toBe(true);
     });
 
+    // DATABASE defaults from 7793c71 (2026-03) until 73d0a87 (2026-11) added `tls`, with the required fields filled.
+    it('accepts DATABASE channels the editor saved before tls existed', () => {
+      const connection = { host: 'localhost', port: 5432, database: 'lab', username: '', password: '' };
+      expect(validateConnectorProperties('DATABASE', 'source', {
+        ...connection, selectQuery: 'SELECT 1', updateQuery: '', updateMode: 'NEVER', pollingIntervalMs: 5000, rowFormat: 'JSON',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('DATABASE', 'destination', {
+        ...connection, query: 'INSERT INTO t VALUES (1)', useTransaction: false, returnGeneratedKeys: false,
+      }).ok).toBe(true);
+    });
+
+    it('accepts a DATABASE connector with no port, which then uses the vendor default', () => {
+      expect(validateConnectorProperties('DATABASE', 'source', { vendor: 'mysql', host: 'db', database: 'lab', selectQuery: 'SELECT 1' }).ok).toBe(true);
+    });
+
+    it('rejects a DATABASE key it does not know, naming it', () => {
+      const result = validateConnectorProperties('DATABASE', 'source', { host: 'db', database: 'lab', selectQuery: 'SELECT 1', url: 'jdbc:postgresql://db/lab' });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('url');
+    });
+
+    it('rejects a DATABASE source that would update rows with no update query', () => {
+      const result = validateConnectorProperties('DATABASE', 'source', { host: 'db', database: 'lab', selectQuery: 'SELECT 1', updateMode: 'ON_SUCCESS' });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('updateQuery: required when updateMode is ON_SUCCESS');
+    });
+
+    it('rejects a DATABASE source polling faster than the receiver allows', () => {
+      const result = validateConnectorProperties('DATABASE', 'source', { host: 'db', database: 'lab', selectQuery: 'SELECT 1', pollingIntervalMs: 50 });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('pollingIntervalMs');
+    });
+
+    it('accepts the keys the engine reads from every DATABASE connector', () => {
+      expect(validateConnectorProperties('DATABASE', 'source', { host: 'db', database: 'lab', selectQuery: 'SELECT 1', processBatch: true }).ok).toBe(true);
+      expect(validateConnectorProperties('DATABASE', 'destination', { host: 'db', database: 'lab', query: 'SELECT 1', template: 'x' }).ok).toBe(true);
+    });
+
     it('accepts the keys the engine reads from every TCP_MLLP connector', () => {
       expect(validateConnectorProperties('TCP_MLLP', 'source', { port: 6661, processBatch: true }).ok).toBe(true);
       expect(validateConnectorProperties('TCP_MLLP', 'destination', { host: 'lis', port: 6661, template: 'x' }).ok).toBe(true);
