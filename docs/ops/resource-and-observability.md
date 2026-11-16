@@ -88,11 +88,24 @@ not logged, so probe traffic won't drown your logs.
 ### `LOG_HTTP_HEADERS` caveat
 
 When `false` (the default), request logs include only `id`, `method`, and `url` for the
-request and `statusCode` for the response — minimal and safe. Setting `LOG_HTTP_HEADERS=true`
+request and `statusCode` for the response — minimal and safe. The logged `url` is the path
+plus the names of its query parameters, never their values: `/api/v1/channels/<id>/messages?contentSearch=12345&limit=25`
+is logged as `/api/v1/channels/<id>/messages?contentSearch&limit`, because search terms are
+usually patient identifiers. A part with no `=` (`?MRN123456`) or a name that isn't a plain
+parameter name (a letter, then up to 63 letters, digits, `_`, `.`, `-`, `[` or `]`) is logged
+as `<redacted>`. This holds with either setting. Setting `LOG_HTTP_HEADERS=true`
 logs **full inbound request headers**, which is verbose and can capture sensitive material
 (the `authorization`/`cookie`/`set-cookie` headers and known secret fields are redacted by
-the logger, but custom headers are not). **Keep it `false` in production**; enable it only
+the logger, but custom headers and the `referer` URL are not). **Keep it `false` in production**; enable it only
 transiently for debugging, and never ship it on in an environment handling PHI.
+
+### nginx logs
+
+The web container's nginx (`docker/nginx/default.conf`) writes its access log in its own
+`no_query` format: client address, time, method, path, protocol, status, size and user agent,
+with no query string and no referer. Its error log can't be reformatted: when the API is
+unreachable (a 502), nginx's error line quotes the full request line and upstream URL, query
+string included. Treat the web container's error output like the server log.
 
 ### PHI in logs
 

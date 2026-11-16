@@ -4,7 +4,7 @@
 // Global error handler for Express.
 
 import type { NextFunction, Request, Response } from 'express';
-import { stderr } from 'stderr-lib';
+import { errorInfo } from '@galvaniflow/core-util';
 import logger from '../lib/logger.js';
 import { config } from '../config/index.js';
 
@@ -21,11 +21,16 @@ const BAD_REQUEST = { code: 'BAD_REQUEST', message: 'The request body could not 
  * is a server fault.
  */
 function clientError(err: unknown): { readonly status: number; readonly type: string | undefined } | undefined {
-  if (!(err instanceof Error)) return undefined;
-  const { status, expose, type } = err as Error & { status?: unknown; expose?: unknown; type?: unknown };
-  if (typeof status !== 'number' || status < 400 || status > 499 || expose !== true) return undefined;
-  // body-parser's `type` (entity.too.large, entity.parse.failed) names the cause without quoting the body.
-  return { status, type: typeof type === 'string' ? type : undefined };
+  // A thrown value's getters or Proxy traps may throw (#238): such a value is a server fault.
+  try {
+    if (!(err instanceof Error)) return undefined;
+    const { status, expose, type } = err as Error & { status?: unknown; expose?: unknown; type?: unknown };
+    if (typeof status !== 'number' || status < 400 || status > 499 || expose !== true) return undefined;
+    // body-parser's `type` (entity.too.large, entity.parse.failed) names the cause without quoting the body.
+    return { status, type: typeof type === 'string' ? type : undefined };
+  } catch {
+    return undefined;
+  }
 }
 
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
@@ -36,12 +41,12 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     return;
   }
 
-  const error = stderr(err);
+  const info = errorInfo(err);
 
-  logger.error({ errMsg: error.message, stack: error.stack, path: req.path, method: req.method }, 'Unhandled error');
+  logger.error({ ...info, path: req.path, method: req.method }, 'Unhandled error');
 
   // Don't leak error details in production
-  const message = config.NODE_ENV === 'production' ? 'Internal server error' : error.message;
+  const message = config.NODE_ENV === 'production' ? 'Internal server error' : info['errMsg'];
 
   res.status(500).json({ success: false, error: { code: 'INTERNAL', message } });
 }
