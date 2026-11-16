@@ -26,8 +26,8 @@ const EVENT_LEVELS = ['', 'INFO', 'WARN', 'ERROR'] as const;
 const EVENT_OUTCOMES = ['', 'SUCCESS', 'FAILURE'] as const;
 
 const EVENT_NAMES = [
-  '', 'USER_LOGIN', 'USER_LOGIN_FAILED', 'ACCESS_DENIED',
-  'USER_CREATED', 'USER_UPDATED', 'USER_DELETED',
+  // Sign-ins and refused requests are in the audit log: the Access records tab.
+  '', 'USER_CREATED', 'USER_UPDATED', 'USER_DELETED',
   'CHANNEL_CREATED', 'CHANNEL_UPDATED', 'CHANNEL_DELETED',
   'CHANNEL_DEPLOYED', 'CHANNEL_UNDEPLOYED',
   'CHANNEL_STARTED', 'CHANNEL_STOPPED', 'CHANNEL_PAUSED',

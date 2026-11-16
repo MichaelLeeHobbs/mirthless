@@ -42,7 +42,7 @@ vi.mock('../../lib/jwt.js', () => ({
   signAccessToken: vi.fn(() => 'next-access'),
   tokenExpiresAt: vi.fn(() => new Date(Date.now() + 3_600_000)),
 }));
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
+vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn(), emitAuditEvent: vi.fn() }));
 vi.mock('../../middleware/rate-limit.middleware.js', () => ({
   authRateLimiter: (_req: unknown, _res: unknown, next: () => void): void => { next(); },
   refreshRateLimiter: (_req: unknown, _res: unknown, next: () => void): void => { next(); },

@@ -19,7 +19,8 @@ export const passwordSchema = z
   });
 
 export const loginSchema = z.object({
-  username: z.string().min(1),
+  // No username is longer (users.username is varchar(100)).
+  username: z.string().min(1).max(100),
   password: passwordSchema,
 });
 

@@ -6,7 +6,8 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, count, desc, and, inArray, gte, lte, sql } from 'drizzle-orm';
-import type { CreateEventInput, EventListQuery } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, type CreateEventInput, type EventListQuery } from '@galvanigraph/core-models';
+import { AuditService } from './audit.service.js';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { events } from '../db/schema/index.js';
@@ -192,25 +193,27 @@ export class EventService {
   /**
    * Purge events at least N days old (N >= 1). Admin-only. The server's database
    * role cannot delete events itself (D-307), so this calls the owner function
-   * `purge_events`, which refuses N below 1.
+   * `purge_events`, which refuses N below 1. The purge and its record in the
+   * protected audit log share one transaction (D-312): when the record cannot
+   * be written the purge rolls back, and a purge that fails is not recorded
+   * as done.
    */
   static async purge(olderThanDays: number, actor?: { userId?: string | null; ipAddress?: string | null }): Promise<Result<{ deleted: number }>> {
-    return tryCatch(async () => {
-      const purged = await db.execute<{ deleted: string | number }>(
+    return tryCatch(async () => db.transaction(async (tx) => {
+      const purged = await tx.execute<{ deleted: string | number }>(
         sql`SELECT public.purge_events(${olderThanDays}::integer) AS deleted`,
       );
       const deleted = Number(purged.rows[0]?.deleted ?? 0);
-
-      // Record the purge itself so erasing the audit trail is not invisible. This
-      // new event is created after the delete, so it survives the cutoff.
-      await EventService.create({
-        level: 'WARN', name: 'EVENTS_PURGED', outcome: 'SUCCESS',
-        userId: actor?.userId ?? null, channelId: null, serverId: null,
-        ipAddress: actor?.ipAddress ?? null,
-        attributes: { olderThanDays, deleted },
-      });
-
+      try {
+        await AuditService.recordInTx(tx, {
+          action: AUDIT_ACTION.EVENTS_PURGED, outcome: 'SUCCESS',
+          userId: actor?.userId ?? null, ipAddress: actor?.ipAddress ?? null,
+          attributes: { olderThanDays, deleted },
+        });
+      } catch {
+        throw new ServiceError('AUDIT_UNAVAILABLE', 'The audit log could not record this purge, so nothing was purged.');
+      }
       return { deleted };
-    });
+    }));
   }
 }

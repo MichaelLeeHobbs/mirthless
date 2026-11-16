@@ -624,15 +624,12 @@ export const resources = pgTable('resources', {
 
 Audit log. Every significant operation creates an event for HIPAA compliance and operational auditing.
 
-**Event taxonomy — operations that create events:**
+**Event taxonomy — operations that create events:** (sign-ins, sign-outs, failed sign-ins, refused requests and event purges are written to `audit_log` instead, D-312 and D-316)
 
 | Event Name | Level | Trigger |
 |---|---|---|
 | `SERVER_STARTUP` | INFO | Server starts |
 | `SERVER_SHUTDOWN` | INFO | Server stops |
-| `USER_LOGIN` | INFO | Successful login |
-| `USER_LOGIN_FAILED` | WARN | Failed login attempt |
-| `USER_LOGOUT` | INFO | User logs out |
 | `USER_CREATED` | INFO | New user account |
 | `USER_UPDATED` | INFO | User profile/role change |
 | `USER_DELETED` | INFO | User removed |

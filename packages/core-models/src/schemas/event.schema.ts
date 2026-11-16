@@ -9,9 +9,7 @@ import { z } from 'zod/v4';
 // EVENT_LEVEL and EVENT_OUTCOME are defined in constants.ts
 
 export const EVENT_NAME = {
-  USER_LOGIN: 'USER_LOGIN',
-  USER_LOGIN_FAILED: 'USER_LOGIN_FAILED',
-  USER_LOGOUT: 'USER_LOGOUT',
+  // Sign-ins, sign-outs, refusals and purges go to audit_log: AUDIT_ACTION in audit.schema.ts.
   USER_CREATED: 'USER_CREATED',
   USER_UPDATED: 'USER_UPDATED',
   USER_DELETED: 'USER_DELETED',
@@ -44,9 +42,6 @@ export const EVENT_NAME = {
   // A user ran a script against a sample message they supplied (which can be PHI;
   // the event records who and which channel, never the sample).
   SCRIPT_TEST_RUN: 'SCRIPT_TEST_RUN',
-  // A guard refused a request: no credential, a bad or revoked one, or a missing
-  // permission. Recorded once a minute per caller, route and reason (#158).
-  ACCESS_DENIED: 'ACCESS_DENIED',
 } as const;
 
 export type EventName = (typeof EVENT_NAME)[keyof typeof EVENT_NAME];

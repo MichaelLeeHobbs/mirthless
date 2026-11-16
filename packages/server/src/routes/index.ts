@@ -7,6 +7,7 @@ import { Router, type IRouter } from 'express';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { jsonBody } from '../middleware/body-limit.middleware.js';
 import alertRoutes from './alert.routes.js';
+import auditRoutes from './audit.routes.js';
 import authRoutes from './auth.routes.js';
 import attachmentRoutes from './attachment.routes.js';
 import channelDependencyRoutes from './channel-dependency.routes.js';
@@ -66,6 +67,7 @@ router.use(authenticate);
 router.use(jsonBody);
 
 router.use('/alerts', alertRoutes);
+router.use('/audit', auditRoutes);
 // Mount specific /channels sub-routes BEFORE channelRoutes — channelRoutes
 // defines GET /:id which greedily matches any single-segment path like
 // /statistics or /status, causing UUID validation failures.

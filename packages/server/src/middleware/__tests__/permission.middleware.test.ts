@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vites
 import type { Request, Response } from 'express';
 
 const emitEvent = vi.fn();
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: (...args: unknown[]) => { emitEvent(...args); } }));
+vi.mock('../../lib/event-emitter.js', () => ({ emitAuditEvent: (...args: unknown[]) => { emitEvent(...args); } }));
 vi.mock('../../lib/logger.js', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -149,7 +149,7 @@ describe('deny', () => {
     deny(makeReq({ userId: 'u1', route: '/:id/messages' }), makeRes(), DENY_REASON.NO_PERMISSION);
 
     const event = emitEvent.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(event).toMatchObject({ level: 'WARN', name: 'ACCESS_DENIED', outcome: 'FAILURE', userId: 'u1', channelId: null, ipAddress: '10.0.0.7' });
+    expect(event).toMatchObject({ action: 'ACCESS_DENIED', outcome: 'FAILURE', userId: 'u1', ipAddress: '10.0.0.7' });
     expect(recorded()).toEqual({
       method: 'GET', route: '/api/v1/channels/:id/messages', reason: 'no_permission', status: 403,
       principal: 'user', requestId: 'req-1', repeatsSinceLast: 0,
@@ -198,7 +198,7 @@ describe('deny', () => {
 
     expect(emitEvent).toHaveBeenCalledTimes(2);
     expect(emitEvent.mock.calls[1]?.[0]).toMatchObject({
-      name: 'ACCESS_DENIED', userId: 'u-quiet', ipAddress: '10.0.0.7',
+      action: 'ACCESS_DENIED', userId: 'u-quiet', ipAddress: '10.0.0.7',
       attributes: { route: '/api/v1/channels/:id', reason: 'no_permission', repeatsSinceLast: 2, requestId: null },
     });
   });

@@ -7,7 +7,15 @@ import {
   passwordSchema,
   changeOwnPasswordSchema,
   createUserSchema,
+  loginSchema,
 } from '../user.schema.js';
+
+describe('loginSchema', () => {
+  it('refuses a username longer than any account can have', () => {
+    expect(loginSchema.safeParse({ username: 'a'.repeat(100), password: 'Passw0rd!' }).success).toBe(true);
+    expect(loginSchema.safeParse({ username: 'a'.repeat(101), password: 'Passw0rd!' }).success).toBe(false);
+  });
+});
 
 describe('passwordSchema', () => {
   it('accepts a password with letters and numbers', () => {

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 - Logged in as admin
-- Some events exist (e.g., from login — USER_LOGIN events are auto-generated)
+- Some events exist (e.g., create a tag: TAG_UPDATED). Sign-ins are access records, on the Access records tab (admin only)
 
 ## Events Table
 
@@ -20,7 +20,8 @@
 | # | Scenario | Steps | Expected | Pass? |
 |---|---|---|---|---|
 | 7 | Filter by level | Select level filter (e.g., INFO) | Only events with that level shown | |
-| 8 | Filter by event name | Select event name (e.g., USER_LOGIN) | Only matching events shown | |
+| 8 | Filter by event name | Select event name (e.g., TAG_UPDATED) | Only matching events shown | |
+| 8a | Access records tab | As admin, open Access records, filter Action by User login | Your own sign-in is listed; expanding a row shows its details. A non-admin sees no Access records tab | |
 | 9 | Filter by outcome | Select outcome (SUCCESS or FAILURE) | Only events with that outcome shown | |
 | 10 | Combined filters | Set level + outcome filters | Results match all criteria | |
 | 11 | Clear filters | Remove all filters | All events shown again | |

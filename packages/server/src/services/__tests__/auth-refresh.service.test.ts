@@ -30,7 +30,7 @@ vi.mock('../../lib/jwt.js', () => ({
   tokenExpiresAt: vi.fn(() => new Date(Date.now() + 60_000)),
 }));
 
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
+vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn(), emitAuditEvent: vi.fn() }));
 
 const { AuthService } = await import('../auth.service.js');
 

@@ -15,12 +15,12 @@ const mockDelete = vi.fn(() => ({ where: () => Promise.resolve(undefined) }));
 const mockDb = { select: mockSelect, update: mockUpdate, delete: mockDelete };
 
 vi.mock('../../lib/db.js', () => ({ db: mockDb, default: mockDb }));
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
+vi.mock('../../lib/event-emitter.js', () => ({ emitAuditEvent: vi.fn() }));
 vi.mock('bcryptjs', () => ({ default: { compare: vi.fn().mockResolvedValue(false) } }));
 vi.mock('drizzle-orm', () => ({ eq: vi.fn(), and: vi.fn(), or: vi.fn(), isNull: vi.fn(), lte: vi.fn(), sql: vi.fn() }));
 
 const { AuthService } = await import('../auth.service.js');
-const { emitEvent } = await import('../../lib/event-emitter.js');
+const { emitAuditEvent: emitEvent } = await import('../../lib/event-emitter.js');
 
 const META = { ipAddress: '10.0.0.9' };
 
@@ -30,7 +30,7 @@ function user(overrides: Record<string, unknown> = {}): Record<string, unknown> 
 
 function expectFailureAudit(userId: string | null, reason: string): void {
   expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({
-    name: 'USER_LOGIN_FAILED', outcome: 'FAILURE', userId, ipAddress: '10.0.0.9',
+    action: 'USER_LOGIN_FAILED', outcome: 'FAILURE', userId, ipAddress: '10.0.0.9',
     attributes: { username: 'alice', reason },
   }));
 }
@@ -45,6 +45,13 @@ describe('AuthService.login audit', () => {
     const result = await AuthService.login('alice', 'pw', META);
     expect(result.ok).toBe(false);
     expectFailureAudit(null, 'unknown_user');
+  });
+
+  it('records at most 100 characters of the typed username, the longest a username can be', async () => {
+    selectResult = [];
+    await AuthService.login('x'.repeat(5000), 'pw', META);
+    const attrs = vi.mocked(emitEvent).mock.calls[0]?.[0]?.attributes as { username: string } | undefined;
+    expect(attrs?.username).toHaveLength(100);
   });
 
   it('does a password comparison for an unknown username, so timing does not reveal which accounts exist', async () => {
@@ -95,7 +102,7 @@ describe('AuthService.logout audit', () => {
     expect(result.ok).toBe(true);
     expect(mockDelete).toHaveBeenCalled();
     expect(emitEvent).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'USER_LOGOUT', outcome: 'SUCCESS', userId: 'u-1', ipAddress: '10.0.0.9',
+      action: 'USER_LOGOUT', outcome: 'SUCCESS', userId: 'u-1', ipAddress: '10.0.0.9',
     }));
   });
 });

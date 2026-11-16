@@ -14,7 +14,7 @@ vi.mock('../../lib/jwt.js', () => ({
 }));
 
 const mockEmit = vi.fn();
-vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: (...args: unknown[]) => { mockEmit(...args); } }));
+vi.mock('../../lib/event-emitter.js', () => ({ emitAuditEvent: (...args: unknown[]) => { mockEmit(...args); } }));
 
 vi.mock('../../lib/logger.js', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -118,7 +118,7 @@ describe('authenticate — refusals are recorded through deny()', () => {
 
     await authenticate(makeReq('GET', '/api/v1/channels'), makeRes(), vi.fn());
 
-    expect(recorded()).toMatchObject({ name: 'ACCESS_DENIED', userId: 'u-pw', attributes: { reason: 'password_change_required', principal: 'user', route: null } });
+    expect(recorded()).toMatchObject({ action: 'ACCESS_DENIED', userId: 'u-pw', attributes: { reason: 'password_change_required', principal: 'user', route: null } });
   });
 
   it('records a disabled account by user id', async () => {

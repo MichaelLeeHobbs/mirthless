@@ -21,6 +21,7 @@ export function mapErrorToStatus(error: unknown): number {
   if (isServiceError(error, 'SELF_ACTION')) return 400;
   if (isServiceError(error, 'NOT_SUPPORTED')) return 422;
   if (isServiceError(error, 'UNAVAILABLE')) return 503;
+  if (isServiceError(error, 'AUDIT_UNAVAILABLE')) return 503;
   return 500;
 }
 

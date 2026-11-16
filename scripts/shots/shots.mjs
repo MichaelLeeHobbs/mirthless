@@ -53,6 +53,7 @@ const PAGES = {
   alerts: '/alerts',
   users: '/users',
   events: '/events',
+  'events-access': { url: '/events', click: 'Access records' },
   settings: '/settings',
   'settings-edited': { url: '/settings', fill: { 'Server name': 'GalvaniGraph (prod)', Port: '70000' } },
   system: '/system',

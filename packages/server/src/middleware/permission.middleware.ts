@@ -6,11 +6,11 @@
 // event, once a minute per caller, route and reason (#158).
 
 import type { NextFunction, Request, Response } from 'express';
-import { EVENT_NAME, type Permission } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, type Permission } from '@galvanigraph/core-models';
 import { errorInfo } from '@galvanigraph/core-util';
 import { ServiceError, type ServiceErrorCode } from '../lib/service-error.js';
 import { errorResponse, mapErrorToStatus } from '../lib/controller-helpers.js';
-import { emitEvent } from '../lib/event-emitter.js';
+import { emitAuditEvent } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
 
 /** Why a request was refused. Recorded in each ACCESS_DENIED event. */
@@ -67,9 +67,8 @@ let sweeper: ReturnType<typeof setInterval> | undefined;
 
 function writeRefusal(refusal: Refusal, requestId: string | null, repeatsSinceLast: number): void {
   const { userId, ipAddress, ...rest } = refusal;
-  emitEvent({
-    level: 'WARN', name: EVENT_NAME.ACCESS_DENIED, outcome: 'FAILURE',
-    userId, channelId: null, serverId: null, ipAddress,
+  emitAuditEvent({
+    action: AUDIT_ACTION.ACCESS_DENIED, outcome: 'FAILURE', userId, ipAddress,
     attributes: { ...rest, principal: userId === null ? 'anonymous' : 'user', requestId, repeatsSinceLast },
   });
 }
