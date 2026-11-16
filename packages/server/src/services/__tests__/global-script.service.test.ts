@@ -73,6 +73,14 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
+// Templates come from the database; none here. The type checker itself is real.
+vi.mock('../code-template.service.js', () => ({
+  CodeTemplateService: { listTemplates: vi.fn(async () => ({ ok: true, value: [], error: null })) },
+}));
+
+// A real TypeScript check starts a worker thread, past the 5 s default when cold.
+vi.setConfig({ testTimeout: 60_000 });
+
 const { GlobalScriptService } = await import('../global-script.service.js');
 
 // ----- Fixtures -----
@@ -149,6 +157,8 @@ describe('GlobalScriptService', () => {
 
   describe('update', () => {
     it('updates existing script row', async () => {
+      // The current scripts, read to see whether the save touches a TypeScript one
+      pushFromResponse(makeScriptRows());
       // For deploy field: select().from().where() — existing found
       pushFromResponse([{ scriptType: 'DEPLOY' }]);
       // Final fetch: select().from() — no .where()
@@ -175,6 +185,8 @@ describe('GlobalScriptService', () => {
     });
 
     it('inserts when script row does not exist', async () => {
+      // The current scripts: none yet
+      pushFromResponse([]);
       // For preprocessor field: select().from().where() — not found
       pushFromResponse([]);
       // Final fetch
@@ -201,6 +213,8 @@ describe('GlobalScriptService', () => {
     });
 
     it('handles all 4 fields', async () => {
+      // The current scripts
+      pushFromResponse(makeScriptRows());
       // 4 existence checks (each uses select().from().where())
       pushFromResponse([{ scriptType: 'DEPLOY' }]);
       pushFromResponse([{ scriptType: 'UNDEPLOY' }]);
@@ -218,6 +232,38 @@ describe('GlobalScriptService', () => {
 
       expect(result.ok).toBe(true);
       expect(mockUpdate).toHaveBeenCalledTimes(4);
+    });
+
+    // A global script runs for every channel, so a TypeScript one with type
+    // errors is refused when saved instead of failing every channel's deploy.
+    it('refuses a TypeScript script with type errors and saves nothing', async () => {
+      pushFromResponse(makeScriptRows());
+      const result = await GlobalScriptService.update({ deploy: "const port: number = '6661';", languages: { deploy: 'TYPESCRIPT' } });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('The global scripts were not saved: a TypeScript global script has type errors.');
+      expect(result.error.message).toContain("- Global deploy script, line 1: Type 'string' is not assignable to type 'number'.");
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockInsert).not.toHaveBeenCalled();
+    });
+
+    it('saves a TypeScript script without type errors', async () => {
+      pushFromResponse(makeScriptRows());
+      pushFromResponse([{ scriptType: 'DEPLOY' }]);
+      pushFromResponse(makeScriptRows());
+      const result = await GlobalScriptService.update({ deploy: 'logger.info(`${channelName} deployed`);', languages: { deploy: 'TYPESCRIPT' } });
+      expect(result.ok).toBe(true);
+      expect(mockUpdate).toHaveBeenCalled();
+    });
+
+    it('does not let an older broken TypeScript script block saving another one', async () => {
+      const rows = makeScriptRows().map((r) => (r.scriptType === 'UNDEPLOY' ? { ...r, script: 'const n: number = "x";', language: 'TYPESCRIPT' } : r));
+      pushFromResponse(rows);
+      pushFromResponse([{ scriptType: 'DEPLOY' }]);
+      pushFromResponse(rows);
+      const result = await GlobalScriptService.update({ deploy: '// fixed', languages: { deploy: 'TYPESCRIPT' } });
+      expect(result.ok).toBe(true);
     });
   });
 });

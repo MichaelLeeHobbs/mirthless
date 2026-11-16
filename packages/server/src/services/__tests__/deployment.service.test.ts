@@ -62,14 +62,8 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
-// Deploy type-checks TypeScript scripts with the global scripts and code
-// templates; these read the database, so they are stubbed here.
-const NO_GLOBAL_SCRIPTS = {
-  deploy: '', undeploy: '', preprocessor: '', postprocessor: '',
-  languages: { deploy: 'JAVASCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' },
-};
-const mockGlobalScripts = vi.fn().mockResolvedValue({ ok: true, value: NO_GLOBAL_SCRIPTS, error: null });
-vi.mock('../global-script.service.js', () => ({ GlobalScriptService: { getAll: mockGlobalScripts } }));
+// Deploy type-checks TypeScript scripts with the code templates, which read
+// the database (stubbed below). Global scripts are checked when saved instead.
 const mockTemplates = vi.fn().mockResolvedValue({ ok: true, value: [], error: null });
 vi.mock('../code-template.service.js', () => ({ CodeTemplateService: { listTemplatesForChannel: mockTemplates } }));
 

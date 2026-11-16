@@ -10,6 +10,7 @@
 
 import { Worker } from 'node:worker_threads';
 import type { ScriptTestInput, ScriptTestReaders, ScriptTestResult } from './script-test-run.js';
+import { workerEntry } from './worker-entry.js';
 
 /** The test-run input that crosses into the worker: everything but the readers. */
 export type IsolatedTestInput = Omit<ScriptTestInput, 'readers' | 'timeoutMs'>;
@@ -38,18 +39,6 @@ export type WorkerReply =
   | { readonly type: 'read-result'; readonly id: number; readonly ok: true; readonly value: unknown }
   | { readonly type: 'read-result'; readonly id: number; readonly ok: false; readonly error: string };
 
-/**
- * The worker entry next to this module. From TypeScript source (dev, tests) it
- * is loaded through tsx, which maps the `.js` imports to `.ts` files.
- */
-function workerEntry(): { readonly url: URL; readonly execArgv: string[] } {
-  const fromSource = import.meta.url.endsWith('.ts');
-  return {
-    url: new URL(fromSource ? './script-test-worker.ts' : './script-test-worker.js', import.meta.url),
-    execArgv: fromSource ? ['--import', 'tsx'] : [],
-  };
-}
-
 function errorResult(error: string, durationMs: number): ScriptTestResult {
   return { outcome: 'error', output: null, returned: null, logs: [], maps: {}, destinations: null, skipped: [], error, durationMs };
 }
@@ -74,7 +63,7 @@ export function runScriptTestIsolated(
   input: IsolatedTestInput, readers: ScriptTestReaders, limits: IsolationLimits,
 ): Promise<ScriptTestResult> {
   const started = Date.now();
-  const entry = workerEntry();
+  const entry = workerEntry(import.meta.url, 'script-test-worker');
   const offered = (['getResource', 'collectionFind'] as const).filter((k) => readers[k] !== undefined);
   // The sandbox's own timeout stops a loop inside the worker first; the
   // worker is terminated a little later in case it does not.

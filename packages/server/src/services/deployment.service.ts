@@ -17,30 +17,26 @@ import { configLookup, resolveConfigReferences } from '../lib/config-references.
 import { getEngine } from '../engine.js';
 import type { DeployedChannel, SourceDispatchOutcome } from '../engine.js';
 import logger from '../lib/logger.js';
-import { GlobalScriptService } from './global-script.service.js';
 import { CodeTemplateService } from './code-template.service.js';
 import { assertScriptsTypeCheck } from './script-type-gate.service.js';
 
 /**
  * Refuse a channel whose TypeScript scripts have type errors. Runs before
  * anything is torn down, so a refused redeploy leaves the channel running.
+ * Results are cached, so a redeploy's second check costs nothing.
  */
 async function typeCheckChannel(channel: ChannelDetail): Promise<void> {
-  const [globals, templates] = await Promise.all([
-    GlobalScriptService.getAll(),
-    CodeTemplateService.listTemplatesForChannel(channel.id),
-  ]);
-  if (!globals.ok) throw globals.error;
+  const templates = await CodeTemplateService.listTemplatesForChannel(channel.id);
   if (!templates.ok) throw templates.error;
-  await assertScriptsTypeCheck(channel, globals.value, templates.value);
+  await assertScriptsTypeCheck(channel, templates.value);
 }
 
 /** Options for a deploy. */
 export interface DeployOptions {
   /**
    * Refuse a channel with TypeScript type errors (default true). The startup
-   * auto-deploy turns it off and logs the errors instead: a channel that was
-   * running must come back after a restart.
+   * auto-deploy turns it off and does not check at all: a channel that was
+   * running must come back after a restart, and the check would only cost time.
    */
   readonly typeCheck?: boolean;
 }
@@ -132,14 +128,7 @@ export class DeploymentService {
         }
       }
 
-      if (options.typeCheck === false) {
-        // Deploy anyway, but say so: the next user-started deploy will refuse it.
-        await typeCheckChannel(channel).catch((err: unknown) => {
-          logger.warn({ channelId, errMsg: err instanceof Error ? err.message : String(err) }, 'Channel deployed with TypeScript type errors');
-        });
-      } else {
-        await typeCheckChannel(channel);
-      }
+      if (options.typeCheck !== false) await typeCheckChannel(channel);
 
       await engine.deploy(deployChannel);
 

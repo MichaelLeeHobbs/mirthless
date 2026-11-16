@@ -28,6 +28,9 @@ export interface ScriptTypeError {
 
 const SCRIPT_FILE = '/script.ts';
 
+/** Parsed TypeScript lib files (lib.es2022.d.ts and the files it references), by name. */
+const libFiles = new Map<string, import('typescript').SourceFile | undefined>();
+
 type TypeScript = typeof import('typescript');
 let typescript: Promise<TypeScript> | undefined;
 
@@ -61,7 +64,10 @@ export async function checkScriptTypes(
     const readLib = host.getSourceFile.bind(host);
     host.getSourceFile = (name, lang) => {
       const text = files[name];
-      return text === undefined ? readLib(name, lang) : ts.createSourceFile(name, text, lang, true);
+      if (text !== undefined) return ts.createSourceFile(name, text, lang, true);
+      // TypeScript's own lib files never change: parse each once per process.
+      if (!libFiles.has(name)) libFiles.set(name, readLib(name, lang));
+      return libFiles.get(name);
     };
     host.fileExists = (name) => files[name] !== undefined || ts.sys.fileExists(name);
     host.readFile = (name) => files[name] ?? ts.sys.readFile(name);

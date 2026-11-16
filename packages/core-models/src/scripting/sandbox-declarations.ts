@@ -41,12 +41,12 @@ interface Hl7MessageProxy {
   getSegmentString(name: string, index?: number): string | undefined;
 }
 
-/** Sandbox logger with level-based methods. */
+/** Sandbox logger with level-based methods. Any value is logged as text (String(value)). */
 interface SandboxLogger {
-  info(message: string): void;
-  warn(message: string): void;
-  error(message: string): void;
-  debug(message: string): void;
+  info(message: unknown): void;
+  warn(message: unknown): void;
+  error(message: unknown): void;
+  debug(message: unknown): void;
 }
 
 /** Response from an HTTP fetch operation. */
@@ -236,7 +236,14 @@ declare function httpFetch(
  * Route a raw message into another deployed, started channel by name. Guarded
  * against routing loops by a hop-depth cap.
  */
-declare function routeMessage(channelName: string, rawData: string): Promise<{ success: boolean; response?: string }>;
+declare function routeMessage(channelName: string, rawData: string): Promise<{
+  success: boolean;
+  /** The id the target channel gave the message. */
+  messageId?: number;
+  /** True when the target channel's source filter rejected the message. */
+  filtered?: boolean;
+  response?: string;
+}>;
 
 /**
  * Run a parameterized query against a named Data Source (defined under Data
@@ -341,11 +348,22 @@ export function templateDeclarations(templates: readonly TemplateSource[], surfa
     .join('\n');
 }
 
+/** Deploy and undeploy scripts run outside the message pipeline, with the channel's identity. */
+const CHANNEL_IDENTITY = `
+/** The id of the channel this script is deploying or undeploying. */
+declare var channelId: string;
+/** The name of the channel this script is deploying or undeploying. */
+declare var channelName: string;
+`;
+
 /** The TypeScript declarations a script sees on this surface. */
 export function scriptDeclarations(surface: ScriptSurface): string {
-  if (surface.message === false) return SANDBOX_BASE;
+  if (surface.message === false) return SANDBOX_BASE + CHANNEL_IDENTITY;
   const message = surface.dataType === undefined
-    ? { type: 'unknown', doc: 'Its type depends on the channel the script runs for, so check it before use.' }
+    // Global pre- and postprocessors run for every channel, and the engine parses
+    // msg with each channel's own data type, so no one type is true. `unknown`
+    // made even msg.get('MSH.9') an error, and type errors refuse the save.
+    ? { type: 'any', doc: 'Parsed with the data type of the channel the script runs for (an HL7 proxy, X12 proxy, rows, text...): check which before relying on it.' }
     : MESSAGE_TYPES[surface.dataType] ?? TEXT_MESSAGE;
   const messageVars = `
 /** Original inbound raw data. */

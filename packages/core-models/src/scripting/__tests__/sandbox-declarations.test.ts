@@ -62,14 +62,21 @@ describe('scriptDeclarations', () => {
     expect(check('const first: string | undefined = msg[0]?.["name"];', { dataType: 'DELIMITED' })).toEqual([]);
   });
 
-  it('leaves msg unknown when the script is not tied to one data type', () => {
-    expect(check("msg.get('PID.3');", {})).toEqual(["/script.ts: 'msg' is of type 'unknown'."]);
+  it('leaves msg loosely typed when the script runs for channels of any data type (global scripts)', () => {
+    // msg is each channel's own parsed message there; unknown refused even msg.get().
+    expect(check("const id = msg.get('PID.3');", {})).toEqual([]);
   });
 
   it('declares no msg, tmp or rawData for a script that runs without a message (deploy, undeploy)', () => {
     expect(check('parseHL7(rawData);', { message: false })).toEqual(["/script.ts: Cannot find name 'rawData'."]);
     expect(check("msg.get('PID.3');", { message: false })).toEqual(["/script.ts: Cannot find name 'msg'."]);
     expect(check("logger.info('deployed'); channelMap['x'] = 1;", { message: false })).toEqual([]);
+  });
+
+  it('accepts what the runtime gives: channel identity in deploy scripts, any value to logger, the full routeMessage result', () => {
+    expect(check('logger.info(`${channelName} (${channelId}) deployed`);', { message: false })).toEqual([]);
+    expect(check('logger.info(42); logger.warn({ a: 1 });', { dataType: 'HL7V2' })).toEqual([]);
+    expect(check("const r = await routeMessage('Archive', rawData);\nif (r.filtered) logger.info(r.messageId);", { dataType: 'HL7V2' })).toEqual([]);
   });
 
   it('declares destinationSet only for source filters and transformers', () => {
@@ -84,9 +91,11 @@ describe('scriptDeclarations', () => {
     ]);
   });
 
-  it('keeps two scripts that declare the same name from colliding', () => {
-    // Each script is its own module (moduleDetection force), so a second script's
-    // `const hl7` must not be "Cannot redeclare block-scoped variable".
+  it('keeps two separate scripts that declare the same name from colliding', () => {
+    // Filter rules (each its own function) and scripts open in other editors are
+    // separate, so each is its own module (moduleDetection force) and a second
+    // script's `const hl7` is not "Cannot redeclare". Transformer steps are not
+    // separate: they run as one body, and deploy checks them joined.
     const both = ['const hl7 = parseHL7(rawData);', 'const hl7 = parseHL7(rawData);'];
     expect(check(both, { dataType: 'HL7V2' })).toEqual([]);
   });
