@@ -22,7 +22,7 @@ import { usePermissions } from '../../hooks/use-permissions.js';
 import { EditorFrame } from './EditorFrame.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
 import {
-  settledProblems, useCursor, useEditorTheme, useExternalValue, useProblems, useSuggestRoom,
+  isExternalReplace, settledProblems, useCursor, useEditorTheme, useExternalValue, useProblems, useSuggestRoom,
 } from './editor-hooks.js';
 import { useScriptBodyTypeMarkers } from './script-body-check.js';
 import { appliedSurfaceKey, onSurfaceApplied, surfaceLibs } from './surface-state.js';
@@ -287,7 +287,7 @@ export function ScriptEditor({
         language={MONACO_LANGUAGE[language]}
         theme={theme}
         defaultValue={value}
-        onChange={(v) => { onChange(v ?? ''); }}
+        onChange={(v) => { if (!isExternalReplace(editor)) onChange(v ?? ''); }}
         onMount={(ed) => { setEditor(ed); }}
         options={{ ...BASE_EDITOR_OPTIONS, readOnly, ariaLabel: label, autoClosingBrackets: 'always', formatOnPaste: true }}
       />

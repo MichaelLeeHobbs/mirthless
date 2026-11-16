@@ -14,7 +14,7 @@ import type { monaco } from './monaco.js';
 import { EditorFrame } from './EditorFrame.js';
 import { EditorToolbarButton } from './EditorToolbarButton.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
-import { useCursor, useEditorTheme, useExternalValue } from './editor-hooks.js';
+import { isExternalReplace, useCursor, useEditorTheme, useExternalValue } from './editor-hooks.js';
 
 export type TextLanguage = 'plaintext' | 'hl7' | 'json';
 
@@ -97,7 +97,7 @@ export function TextEditor({
         language={language}
         theme={theme}
         defaultValue={value}
-        onChange={(v) => { onChange?.(textFromEditor(language, v ?? '')); }}
+        onChange={(v) => { if (!isExternalReplace(editor)) onChange?.(textFromEditor(language, v ?? '')); }}
         onMount={(ed) => { setEditor(ed); }}
         options={{ ...BASE_EDITOR_OPTIONS, readOnly, ariaLabel: label, lineNumbers: lineNumbers ? 'on' : 'off' }}
       />
