@@ -88,10 +88,13 @@ not logged, so probe traffic won't drown your logs.
 ### `LOG_HTTP_HEADERS` caveat
 
 When `false` (the default), request logs include only `id`, `method`, and `url` for the
-request and `statusCode` for the response — minimal and safe. Setting `LOG_HTTP_HEADERS=true`
+request and `statusCode` for the response — minimal and safe. The logged `url` is the path
+plus the names of its query parameters, never their values: `/api/v1/channels/<id>/messages?contentSearch=12345&limit=25`
+is logged as `/api/v1/channels/<id>/messages?contentSearch&limit`, because search terms are
+usually patient identifiers. This holds with either setting. Setting `LOG_HTTP_HEADERS=true`
 logs **full inbound request headers**, which is verbose and can capture sensitive material
 (the `authorization`/`cookie`/`set-cookie` headers and known secret fields are redacted by
-the logger, but custom headers are not). **Keep it `false` in production**; enable it only
+the logger, but custom headers and the `referer` URL are not). **Keep it `false` in production**; enable it only
 transiently for debugging, and never ship it on in an environment handling PHI.
 
 ### PHI in logs
