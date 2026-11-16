@@ -40,8 +40,9 @@ export const TYPE_CHECK_TIMEOUT_MS = 30_000;
 const CACHE_LIMIT = 500;
 /**
  * Checks that may wait for the worker. Each is a deploy or a save; past this
- * many, a new one is refused at once rather than waiting behind all of them
- * and timing out, and the queue cannot grow without end (#228).
+ * many, a new one is refused at once (the server answers 503, try again), so
+ * the queue cannot grow without end (#228). It bounds how many wait, not how
+ * long: a check waits for the ones ahead of it, each up to its own time limit.
  */
 export const TYPE_CHECK_QUEUE_LIMIT = 100;
 /** Heap limit of the type-check worker. */
@@ -145,7 +146,7 @@ function ask(jobs: readonly TypeCheckJob[], templates: readonly TemplateSource[]
   if (queue.length >= TYPE_CHECK_QUEUE_LIMIT) {
     return Promise.resolve({
       id: request.id, ok: false,
-      error: `The type checker is busy: ${String(queue.length)} checks are waiting. Try again shortly.`,
+      error: `The type checker is busy: ${String(queue.length)} checks are waiting.`,
     });
   }
   return new Promise((resolve) => {

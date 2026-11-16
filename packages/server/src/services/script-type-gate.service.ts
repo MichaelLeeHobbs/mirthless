@@ -194,11 +194,19 @@ function attribute(script: TypedScript, errors: readonly ScriptTypeError[]): Scr
     .filter((f) => f.errors.length > 0);
 }
 
-/** Type-check scripts off the main thread and name each error by the part the user wrote. */
+/**
+ * Type-check scripts off the main thread and name each error by the part the
+ * user wrote. When the checker itself fails (busy, overran, crashed) nothing is
+ * known about the scripts, so the refusal is UNAVAILABLE (503), to try again,
+ * not a 500 (#228).
+ */
 export async function findTypeFailures(scripts: readonly TypedScript[], templates: readonly TemplateSource[]): Promise<ScriptTypeFailure[]> {
   if (scripts.length === 0) return [];
   const result = await checkScriptTypesBatch(scripts.map((s) => ({ code: s.code, surface: s.surface })), templates);
-  if (!result.ok) throw new ServiceError('INTERNAL', `Could not type-check the TypeScript scripts: ${result.error.message}`);
+  if (!result.ok) {
+    const reason = result.error.message.replace(/\.?$/, '.');
+    throw new ServiceError('UNAVAILABLE', `Could not type-check the TypeScript scripts: ${reason} Try again in a moment.`);
+  }
   return scripts.flatMap((script, i) => attribute(script, result.value[i]!));
 }
 

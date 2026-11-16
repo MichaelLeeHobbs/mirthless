@@ -107,7 +107,7 @@ function errResult(message: string): { ok: false; value: null; error: { message:
 }
 
 /** A save refused as a ServiceError, as GlobalScriptService returns it. */
-function refused(code: 'INVALID_INPUT' | 'INTERNAL', message: string): { ok: false; value: null; error: { name: string; code: string; message: string } } {
+function refused(code: 'INVALID_INPUT' | 'UNAVAILABLE', message: string): { ok: false; value: null; error: { name: string; code: string; message: string } } {
   return { ok: false, value: null, error: { name: 'ServiceError', code, message } };
 }
 
@@ -531,7 +531,8 @@ describe('ServerBackupService', () => {
       mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
       const timeout = 'Could not type-check the TypeScript scripts: Type-checking took longer than 30000 ms and was stopped.';
       mockGlobalScriptUpdate.mockImplementation(async (input: { languages?: Record<string, string> }) =>
-        (input.languages?.['deploy'] === undefined ? okResult(backup.globalScripts) : refused('INTERNAL', timeout)));
+        // Only the TypeScript save fails: a JavaScript retry would succeed, so the fallback shows if it runs.
+        (input.languages?.['deploy'] === 'TYPESCRIPT' ? refused('UNAVAILABLE', timeout) : okResult(backup.globalScripts)));
 
       const result = await ServerBackupService.restoreBackup(backup, 'SKIP');
 
