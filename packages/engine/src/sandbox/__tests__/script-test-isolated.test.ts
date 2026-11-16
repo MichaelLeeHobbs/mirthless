@@ -73,9 +73,7 @@ describe('runScriptTestIsolated', () => {
       'logger.info(String(refused.length));',
       'logger.info((refused[0] as PromiseRejectedResult).reason.message);',
     ].join('\n');
-    // A thousand bridge calls: about 1 s on an idle machine, but past 10 s on a saturated one,
-    // and this test is not about the time limit (D-290).
-    const result = await run({ kind: 'script', script }, { getResource }, { timeoutMs: 25_000 });
+    const result = await run({ kind: 'script', script }, { getResource });
     expect(getResource).toHaveBeenCalledTimes(MAX_TEST_READS);
     // The rest are refused in the worker, never reaching the main thread, and the script is told why.
     expect(result.logs).toEqual([
