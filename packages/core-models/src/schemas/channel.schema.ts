@@ -6,6 +6,7 @@ import { z } from 'zod/v4';
 import { CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES } from '../constants.js';
 import { filterInputSchema } from './filter.schema.js';
 import { transformerInputSchema } from './transformer.schema.js';
+import { DEFAULT_STORED_SCRIPT_LANGUAGE, scriptLanguageSchema } from './script-language.schema.js';
 
 // ----- Shared Enums -----
 
@@ -49,6 +50,8 @@ export const destinationInputSchema = z.object({
   waitForPrevious: z.boolean().default(false),
   /** Optional per-destination response transformer script (JS/TS source). */
   responseTransformer: z.string().nullish(),
+  /** The language of `responseTransformer`. */
+  responseTransformerLanguage: scriptLanguageSchema.default(DEFAULT_STORED_SCRIPT_LANGUAGE),
 });
 
 export type DestinationInput = z.infer<typeof destinationInputSchema>;
@@ -63,11 +66,24 @@ export const metadataColumnInputSchema = z.object({
 
 export type MetadataColumnInput = z.infer<typeof metadataColumnInputSchema>;
 
+const storedLanguage = scriptLanguageSchema.default(DEFAULT_STORED_SCRIPT_LANGUAGE);
+
+/** The language of each channel script. */
+export const channelScriptLanguagesSchema = z.object({
+  deploy: storedLanguage,
+  undeploy: storedLanguage,
+  preprocessor: storedLanguage,
+  postprocessor: storedLanguage,
+});
+
+export type ChannelScriptLanguages = z.infer<typeof channelScriptLanguagesSchema>;
+
 export const channelScriptsSchema = z.object({
   deploy: z.string().nullable().default(null),
   undeploy: z.string().nullable().default(null),
   preprocessor: z.string().nullable().default(null),
   postprocessor: z.string().nullable().default(null),
+  languages: channelScriptLanguagesSchema.prefault({}),
 });
 
 export const createChannelSchema = z.object({

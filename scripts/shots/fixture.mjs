@@ -48,13 +48,39 @@ const channelDetail = {
   createdAt: ago(90000), updatedAt: ago(60), responseMode: 'AUTO_AFTER_DESTINATIONS', responseConnectorName: null,
   initialState: 'STARTED', messageStorageMode: 'DEVELOPMENT', encryptData: false, removeContentOnCompletion: false,
   removeAttachmentsOnCompletion: false, pruningEnabled: true, pruningMaxAgeDays: 30, pruningArchiveEnabled: false,
-  scriptTimeoutSeconds: 30, sourceConnectorProperties: { host: '0.0.0.0', port: 6661 }, scripts: [],
+  scriptTimeoutSeconds: 30, sourceConnectorProperties: { host: '0.0.0.0', port: 6661 },
+  scripts: [
+    { scriptType: 'DEPLOY', script: "// Warm the facility lookup before the first message\nconst facilities = getCollection('facilities');\nlogger.info('ADT channel deployed');\n", language: 'TYPESCRIPT' },
+    { scriptType: 'PREPROCESSOR', script: '// Strip a trailing segment terminator some senders add\nreturn rawData.replace(/\\r+$/, "");\n', language: 'JAVASCRIPT' },
+  ],
   destinations: [
     { id: 'd1', metaDataId: 1, name: 'To EHR', enabled: true, connectorType: 'TCP_MLLP', properties: { host: 'ehr.example.test', port: 7001 },
       queueMode: 'ON_FAILURE', retryCount: 3, retryIntervalMs: 10000, rotateQueue: false, queueThreadCount: 1, waitForPrevious: false },
   ],
-  metadataColumns: [], tags: [tags[0]], filters: [], transformers: [],
+  metadataColumns: [], tags: [tags[0]],
+  filters: [{ connectorId: null, rules: [
+    { enabled: true, name: 'Only inpatient ADT', operator: 'AND', type: 'JAVASCRIPT', script: "const hl7 = parseHL7(rawData);\nreturn hl7.get('PV1.2') === 'I';\n", language: 'TYPESCRIPT' },
+  ] }],
+  transformers: [{ connectorId: null, inboundDataType: 'HL7V2', outboundDataType: 'HL7V2', steps: [
+    { enabled: true, name: 'Normalize MRN', type: 'JAVASCRIPT', script: "const hl7 = parseHL7(rawData);\nconst mrn = hl7.get('PID.3.1') ?? '';\nchannelMap['mrn'] = mrn.padStart(10, '0');\n", language: 'TYPESCRIPT' },
+  ] }],
 };
+
+const revisions = [3, 2, 1].map((revision) => ({
+  id: `r${String(revision)}`, channelId: 'c1', revision, userId: 'u1',
+  comment: ['Initial version', 'Pad MRN to 10 digits', 'Inpatient filter'][revision - 1], createdAt: ago((4 - revision) * 900),
+}));
+function revisionDetail(revision) {
+  const pad = revision >= 2 ? "channelMap['mrn'] = mrn.padStart(10, '0');" : "channelMap['mrn'] = mrn;";
+  return {
+    ...revisions[3 - revision],
+    snapshot: {
+      name: channelDetail.name, revision, inboundDataType: 'HL7V2', enabled: true,
+      transformer: { steps: [{ name: 'Normalize MRN', script: `const mrn = parseHL7(rawData).get('PID.3.1') ?? '';\n${pad}` }] },
+      filter: revision >= 3 ? { rules: [{ name: 'Only inpatient ADT', script: "return parseHL7(rawData).get('PV1.2') === 'I';" }] } : { rules: [] },
+    },
+  };
+}
 
 /** A Kafka source with SASL and TLS on, and an AMQP destination, for the queue connector forms. */
 const queueChannelDetail = {
@@ -171,8 +197,11 @@ const templates = [
   ['t2', 'l1', 'normalizeMrn', null],
   ['t3', 'l2', 'toIsoDate', 'HL7 TS to ISO 8601'],
 ].map(([id, libraryId, name, description]) => ({
-  id, libraryId, name, description, type: 'FUNCTION', language: 'JAVASCRIPT',
-  code: `function ${name}(value) {\n  return value;\n}`, contexts: ['SOURCE_FILTER_TRANSFORMER'], revision: 1, createdAt: ago(9000), updatedAt: ago(900),
+  id, libraryId, name, description, type: 'FUNCTION', language: name === 'getPatientName' ? 'TYPESCRIPT' : 'JAVASCRIPT',
+  code: name === 'getPatientName'
+    ? "/**\n * Formats PID-5 as \"Last, First\".\n * @param raw - the raw HL7 message\n */\nfunction getPatientName(raw: string): string {\n  const hl7 = parseHL7(raw);\n  return `${hl7.get('PID.5.1') ?? ''}, ${hl7.get('PID.5.2') ?? ''}`;\n}"
+    : `function ${name}(value) {\n  return value;\n}`,
+  contexts: ['SOURCE_FILTER_TRANSFORMER'], revision: 1, createdAt: ago(9000), updatedAt: ago(900),
 }));
 
 const alertDetail = {
@@ -204,6 +233,10 @@ export function route(pathname, search) {
   if (p === '/channels/statistics') return stats;
   if (p === '/channels/status') return status;
   if (p === '/channels/c1') return channelDetail;
+  if (p === '/channels/c1/revisions') return revisions;
+  const rev = /^\/channels\/c1\/revisions\/(\d)$/.exec(p);
+  if (rev) return revisionDetail(Number(rev[1]));
+
   if (p === '/channels/c8') return queueChannelDetail;
   if (p === '/channels/c6') return billingDetail;
   if (p === '/channels/c1/messages') return { items: messages, total: 48211, limit: 25, offset: 0 };
@@ -224,7 +257,12 @@ export function route(pathname, search) {
   if (p === '/admin/prune/schedule') return { enabled: true, cronExpression: '0 2 * * *', lastRunAt: ago(720), lastRunResult: { channelsPruned: 4, totalDeleted: 18230, completedAt: ago(715) } };
   if (p === '/code-templates/libraries') return libraries;
   if (p === '/code-templates') return templates;
-  if (p === '/global-scripts') return { deploy: '// Runs when any channel deploys\n', undeploy: '', preprocessor: 'return message;\n', postprocessor: '' };
+  if (p === '/global-scripts') {
+    return {
+      deploy: '// Runs when any channel deploys\n', undeploy: '', preprocessor: 'return rawData;\n', postprocessor: '',
+      languages: { deploy: 'TYPESCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' },
+    };
+  }
   if (p === '/resources') return [
     { id: 'r1', name: 'facility-codes.json', description: 'Facility code lookup', mimeType: 'application/json', sizeBytes: 18234, createdAt: ago(90000), updatedAt: ago(4000) },
     { id: 'r2', name: 'zip-to-county.csv', description: null, mimeType: 'text/csv', sizeBytes: 1048576, createdAt: ago(90000), updatedAt: ago(40000) },

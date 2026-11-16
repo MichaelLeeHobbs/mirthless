@@ -40,6 +40,8 @@ export interface ChannelDetail extends ChannelSummary {
     readonly id: string;
     readonly scriptType: string;
     readonly script: string;
+    /** JAVASCRIPT or TYPESCRIPT; absent reads as JavaScript. */
+    readonly language?: string;
   }>;
   readonly destinations: ReadonlyArray<{
     readonly id: string;
@@ -57,6 +59,7 @@ export interface ChannelDetail extends ChannelSummary {
     // Per-destination response transformer script (CT_RESPONSE_TRANSFORMED).
     // Optional until the server projects it; read defensively.
     readonly responseTransformer?: string | null;
+    readonly responseTransformerLanguage?: string;
   }>;
   readonly metadataColumns: ReadonlyArray<{
     readonly id: string;
@@ -80,6 +83,7 @@ export interface ChannelDetail extends ChannelSummary {
       readonly operator: string;
       readonly type: string;
       readonly script: string | null;
+      readonly language?: string;
       readonly field: string | null;
       readonly condition: string | null;
       readonly values: ReadonlyArray<string> | null;
@@ -101,6 +105,7 @@ export interface ChannelDetail extends ChannelSummary {
       readonly name: string | null;
       readonly type: string;
       readonly script: string | null;
+      readonly language?: string;
       readonly sourceField: string | null;
       readonly targetField: string | null;
       readonly defaultValue: string | null;

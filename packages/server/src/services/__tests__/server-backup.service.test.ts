@@ -480,6 +480,19 @@ describe('ServerBackupService', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
+      // A backup from before languages were stored holds JavaScript, so it restores
+      // as JavaScript rather than keeping whatever language each script has now.
+      const js = { deploy: 'JAVASCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' };
+      expect(mockGlobalScriptUpdate).toHaveBeenCalledWith({ ...backup.globalScripts, languages: js });
+    });
+
+    it('restores global scripts in the languages the backup recorded', async () => {
+      const languages = { deploy: 'TYPESCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' } as const;
+      const backup = makeMinimalBackup({ globalScripts: { deploy: "logger.info('up');", undeploy: '', preprocessor: '', postprocessor: '', languages } });
+      mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+      mockGlobalScriptUpdate.mockResolvedValue(okResult(backup.globalScripts));
+
+      await ServerBackupService.restoreBackup(backup, 'SKIP');
       expect(mockGlobalScriptUpdate).toHaveBeenCalledWith(backup.globalScripts);
     });
 

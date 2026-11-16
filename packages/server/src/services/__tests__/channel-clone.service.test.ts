@@ -527,7 +527,7 @@ describe('ChannelService.clone', () => {
       filters: [{ id: 'f1', connectorId: null }],
       filterRules: [{
         id: 'r1', filterId: 'f1', sequenceNumber: 0, enabled: true, name: 'ADT only',
-        operator: 'AND', type: 'JAVASCRIPT', script: 'return msg.MSH[9] === "ADT";',
+        operator: 'AND', type: 'JAVASCRIPT', script: 'return msg.MSH[9] === "ADT";', language: 'TYPESCRIPT',
         field: null, condition: null, values: null,
       }],
       transformers: [{
@@ -536,7 +536,7 @@ describe('ChannelService.clone', () => {
       }],
       transformerSteps: [{
         id: 'st1', transformerId: 't1', sequenceNumber: 0, enabled: true, name: 'Set MRN',
-        type: 'JAVASCRIPT', script: 'tmp.mrn = msg.PID[3];', sourceField: null, targetField: null,
+        type: 'JAVASCRIPT', script: 'tmp.mrn = msg.PID[3];', language: 'TYPESCRIPT', sourceField: null, targetField: null,
         defaultValue: null, mapping: null,
       }],
     });
@@ -567,14 +567,15 @@ describe('ChannelService.clone', () => {
     // Source filter: no connector, with its rule.
     expect(inserted.get(channelFilters)).toEqual([{ channelId: CLONED_ID, connectorId: null }]);
     expect(inserted.get(filterRules)).toEqual([[
-      expect.objectContaining({ filterId: 'new-f1', name: 'ADT only', script: 'return msg.MSH[9] === "ADT";' }),
+      // The language travels too: a TypeScript rule must stay type-checked on the clone.
+      expect.objectContaining({ filterId: 'new-f1', name: 'ADT only', script: 'return msg.MSH[9] === "ADT";', language: 'TYPESCRIPT' }),
     ]]);
     // Destination transformer: on the clone's second destination, not the source's d3.
     expect(inserted.get(channelTransformers)).toEqual([
       expect.objectContaining({ channelId: CLONED_ID, connectorId: 'new-d2', outboundDataType: 'XML' }),
     ]);
     expect(inserted.get(transformerSteps)).toEqual([[
-      expect.objectContaining({ transformerId: 'new-t1', name: 'Set MRN', script: 'tmp.mrn = msg.PID[3];' }),
+      expect.objectContaining({ transformerId: 'new-t1', name: 'Set MRN', script: 'tmp.mrn = msg.PID[3];', language: 'TYPESCRIPT' }),
     ]]);
     // Response transformer travels with its destination.
     const destValues = inserted.get(channelConnectors)?.[0] as readonly Record<string, unknown>[];

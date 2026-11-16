@@ -19,6 +19,8 @@ export const channelConnectors = pgTable('channel_connectors', {
   // Per-destination response transformer script (runs on the destination's
   // response after a successful send). Null/empty = no response transformer.
   responseTransformer: text('response_transformer'),
+  /** Language of the response transformer: JAVASCRIPT or TYPESCRIPT. */
+  responseTransformerLanguage: varchar('response_transformer_language', { length: 20 }).notNull().default('JAVASCRIPT'),
 
   // Queue settings
   queueMode: varchar('queue_mode', { length: 20 }).notNull().default('NEVER'),

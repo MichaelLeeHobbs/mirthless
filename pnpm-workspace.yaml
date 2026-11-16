@@ -24,6 +24,12 @@ minimumReleaseAgeExclude:
   - '@typescript-eslint/visitor-keys@8.72.1'
   - typescript-eslint@8.72.1
 
+# Monaco places completion and its documentation panel by page coordinates,
+# so on a scrolled page they opened in the wrong place. Drop this patch when
+# an upgrade fixes suggestWidget.js and overlayWidgets.js (see D-287).
+patchedDependencies:
+  monaco-editor@0.55.1: patches/monaco-editor@0.55.1.patch
+
 # Security overrides — bounded to the current major so we only take the patch.
 # adm-zip is pinned to 0.6.1 under dcmjs, which declares it but never imports it.
 # Two cross a major because the parent's range has no patched release:

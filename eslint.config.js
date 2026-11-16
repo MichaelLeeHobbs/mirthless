@@ -106,6 +106,21 @@ export default tseslint.config(
       ],
     },
   },
+  // Every code editor goes through components/editors (ScriptEditor, TextEditor,
+  // CodeDiffEditor), so they share one frame, theme and bundled Monaco.
+  {
+    files: ['packages/web/src/**/*.{ts,tsx}'],
+    ignores: ['packages/web/src/components/editors/**', '**/__tests__/**', '**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['@monaco-editor/react', 'monaco-editor', 'monaco-editor/*'],
+          allowTypeImports: true,
+          message: 'Use ScriptEditor, TextEditor or CodeDiffEditor from components/editors.',
+        }],
+      }],
+    },
+  },
   // JSX accessibility rules (only for web package)
   {
     files: ['packages/web/**/*.{ts,tsx}'],

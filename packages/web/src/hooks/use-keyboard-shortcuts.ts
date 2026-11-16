@@ -29,8 +29,9 @@ export function useKeyboardShortcuts({ onHelpOpen, onPaletteOpen }: UseKeyboardS
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const handleKeyDown = useCallback((e: KeyboardEvent): void => {
-    // Ctrl/Cmd+K works everywhere, even while typing, like VS Code.
-    if (isPaletteShortcut(e)) {
+    // Ctrl/Cmd+K works everywhere, even while typing, like VS Code, except inside
+    // a code editor, where Ctrl+K starts the editor's own chords (Ctrl+K Ctrl+C comments a line).
+    if (isPaletteShortcut(e) && !document.activeElement?.closest('.monaco-editor')) {
       e.preventDefault();
       onPaletteOpen();
       return;

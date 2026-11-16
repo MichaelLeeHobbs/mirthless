@@ -5,21 +5,15 @@
 // Used by both source and destination filter sections.
 
 import { type ReactNode, type ChangeEvent } from 'react';
-import Accordion from '@mui/material/Accordion';
-import AccordionSummary from '@mui/material/AccordionSummary';
-import AccordionDetails from '@mui/material/AccordionDetails';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
-import IconButton from '@mui/material/IconButton';
-import Typography from '@mui/material/Typography';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import DeleteIcon from '@mui/icons-material/Delete';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { ScriptEditor } from '../../editors/ScriptEditor.js';
+import { ItemOrderActions } from './ItemOrderActions.js';
+import { ItemCard } from './ItemCard.js';
+import { FILTER_TRANSFORMER_SURFACE, type ScriptStage } from '../../editors/script-context.js';
 import type { FilterRuleFormValues } from './types.js';
 
 interface FilterRuleEditorProps {
@@ -30,9 +24,12 @@ interface FilterRuleEditorProps {
   readonly onRemove: () => void;
   readonly onMoveUp: () => void;
   readonly onMoveDown: () => void;
+  /** Source rules can choose destinations; the stage also picks the code templates offered. */
+  readonly stage?: ScriptStage;
 }
 
 export function FilterRuleEditor({
+  stage = 'source',
   rule,
   index,
   total,
@@ -43,34 +40,14 @@ export function FilterRuleEditor({
 }: FilterRuleEditorProps): ReactNode {
   const title = rule.name || `Rule ${String(index + 1)}`;
 
-  return (
-    <Accordion disableGutters>
-      <AccordionSummary
-        expandIcon={<ExpandMoreIcon />}
-        sx={{ '& .MuiAccordionSummary-content': { alignItems: 'center', gap: 1 } }}
-      >
-        <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>{title}</Typography>
-        <Typography
-          variant="caption"
-          sx={{
-            color: 'text.secondary',
-            mr: 1
-          }}>
-          {rule.type === 'JAVASCRIPT' ? 'JavaScript' : 'Rule Builder'}
-        </Typography>
-        {!rule.enabled ? (
-          <Typography
-            variant="caption"
-            sx={{
-              color: 'warning.main',
-              mr: 1
-            }}>
-            Disabled
-          </Typography>
-        ) : null}
-      </AccordionSummary>
-      <AccordionDetails>
-        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+  const summary = (
+    <>
+      {rule.type === 'JAVASCRIPT' ? `Script · ${rule.language === 'TYPESCRIPT' ? 'TypeScript' : 'JavaScript'}` : 'Rule Builder'}
+      {!rule.enabled ? <Box component="span" sx={{ color: 'warning.main', ml: 1 }}>Disabled</Box> : null}
+    </>
+  );
+  const settings = (
+        <>
           <TextField
             label="Name"
             value={rule.name}
@@ -88,7 +65,8 @@ export function FilterRuleEditor({
             size="small"
             sx={{ minWidth: 150 }}
           >
-            <MenuItem value="JAVASCRIPT">JavaScript</MenuItem>
+            {/* JAVASCRIPT is the stored name for any script rule, JavaScript or TypeScript. */}
+            <MenuItem value="JAVASCRIPT">Script</MenuItem>
             <MenuItem value="RULE_BUILDER">Rule Builder</MenuItem>
           </TextField>
           <TextField
@@ -114,11 +92,22 @@ export function FilterRuleEditor({
             }
             label="Enabled"
           />
-        </Box>
+          <ItemOrderActions noun="rule" index={index} total={total} onMoveUp={onMoveUp} onMoveDown={onMoveDown} onRemove={onRemove} />
+        </>
+  );
+
+  return (
+    <ItemCard title={title} summary={summary} settings={settings}>
 
         {rule.type === 'JAVASCRIPT' ? (
           <ScriptEditor
-            height="200px"
+            height="auto"
+            showLabel={false}
+            label={`${rule.name || 'Rule'} script`}
+            surface={FILTER_TRANSFORMER_SURFACE[stage]}
+            testKind="filter"
+            language={rule.language}
+            onLanguageChange={(language) => { onChange({ language }); }}
             value={rule.script}
             onChange={(value) => { onChange({ script: value ?? '' }); }}
             showLanguageToggle
@@ -163,19 +152,6 @@ export function FilterRuleEditor({
             />
           </Box>
         )}
-
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 0.5 }}>
-          <IconButton size="small" onClick={onMoveUp} disabled={index === 0} title="Move up">
-            <ArrowUpwardIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={onMoveDown} disabled={index === total - 1} title="Move down">
-            <ArrowDownwardIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={onRemove} title="Remove rule">
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      </AccordionDetails>
-    </Accordion>
+    </ItemCard>
   );
 }

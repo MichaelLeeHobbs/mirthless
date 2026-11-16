@@ -490,10 +490,14 @@ async function restoreCodeTemplates(
   }));
 }
 
+const ALL_JAVASCRIPT = { deploy: 'JAVASCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' } as const;
+
 async function restoreGlobalScripts(
   scripts: ServerBackup['globalScripts'],
 ): Promise<RestoreSectionResult> {
-  const result = await GlobalScriptService.update(scripts);
+  // A backup taken before languages were stored holds JavaScript: restore it as
+  // such, not in whatever language each script has now.
+  const result = await GlobalScriptService.update(scripts.languages ? scripts : { ...scripts, languages: ALL_JAVASCRIPT });
   if (!result.ok) {
     return { section: 'globalScripts', created: 0, updated: 0, skipped: 0, errors: [result.error.message] };
   }

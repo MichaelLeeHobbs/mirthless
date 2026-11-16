@@ -12,8 +12,7 @@ import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
-import Editor from '@monaco-editor/react';
-import { useUiStore } from '../../stores/ui.store.js';
+import { TextEditor } from '../editors/TextEditor.js';
 import { useNotification } from '../../stores/notification.store.js';
 import { useSendMessage } from '../../hooks/use-deployment.js';
 
@@ -26,7 +25,6 @@ interface SendMessageDialogProps {
 
 export function SendMessageDialog({ open, onClose, channelId, channelName }: SendMessageDialogProps): ReactNode {
   const [content, setContent] = useState('');
-  const themeMode = useUiStore((state) => state.themeMode);
   const { notify } = useNotification();
   const sendMessage = useSendMessage();
 
@@ -64,21 +62,8 @@ export function SendMessageDialog({ open, onClose, channelId, channelName }: Sen
         </Typography>
       </DialogTitle>
       <DialogContent>
-        <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, mt: 1 }}>
-          <Editor
-            height="300px"
-            language="text"
-            theme={themeMode === 'dark' ? 'vs-dark' : 'light'}
-            value={content}
-            onChange={(value) => { setContent(value ?? ''); }}
-            options={{
-              minimap: { enabled: false },
-              lineNumbers: 'on',
-              scrollBeyondLastLine: false,
-              wordWrap: 'on',
-              fontSize: 13,
-            }}
-          />
+        <Box sx={{ mt: 1 }}>
+          <TextEditor label="Message" value={content} onChange={setContent} language="hl7" height="300px" />
         </Box>
       </DialogContent>
       <DialogActions>

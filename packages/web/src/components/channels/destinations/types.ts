@@ -2,6 +2,7 @@
 // Destination Connector Form Types
 // ===========================================
 
+import type { ScriptLanguageCode } from '@galvaniflow/core-models';
 import type { FilterFormValues, TransformerFormValues } from '../source/types.js';
 
 /** A single destination in the form state. */
@@ -24,6 +25,8 @@ export interface DestinationFormValues {
    * after a successful send. Empty string = no response transformer.
    */
   responseTransformer: string;
+  /** The language of `responseTransformer`. */
+  responseTransformerLanguage: ScriptLanguageCode;
 }
 
 /** Props for destination connector-specific settings forms. */

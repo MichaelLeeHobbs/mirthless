@@ -4,9 +4,17 @@
 // Zod schemas for channel export/import payloads.
 
 import { z } from 'zod/v4';
+import { toScriptLanguage } from './script-language.schema.js';
 import { sourceConnectorTypeSchema, destinationConnectorTypeSchema } from './channel.schema.js';
 
 // ----- Export Schema -----
+
+// Script languages and response transformers are optional so files exported
+// before they were included still import (as JavaScript, with no response transformer).
+// A language this version does not know (from a newer export) reads as
+// JavaScript, as a stored value does (toScriptLanguage): JavaScript is never
+// type-checked, so that is the safe reading, and the rest of the file imports.
+const exportLanguage = z.unknown().transform(toScriptLanguage).optional();
 
 const channelExportFilterRuleSchema = z.object({
   enabled: z.boolean(),
@@ -14,6 +22,7 @@ const channelExportFilterRuleSchema = z.object({
   operator: z.string(),
   type: z.string(),
   script: z.string().nullable(),
+  language: exportLanguage,
   field: z.string().nullable(),
   condition: z.string().nullable(),
   values: z.array(z.string()).nullable(),
@@ -40,6 +49,7 @@ const channelExportTransformerStepSchema = z.object({
   name: z.string().nullable(),
   type: z.string(),
   script: z.string().nullable(),
+  language: exportLanguage,
   sourceField: z.string().nullable(),
   targetField: z.string().nullable(),
   defaultValue: z.string().nullable(),
@@ -71,11 +81,14 @@ const channelExportDestinationSchema = z.object({
   rotateQueue: z.boolean(),
   queueThreadCount: z.number(),
   waitForPrevious: z.boolean(),
+  responseTransformer: z.string().nullish(),
+  responseTransformerLanguage: exportLanguage,
 });
 
 const channelExportScriptSchema = z.object({
   scriptType: z.string(),
   script: z.string(),
+  language: exportLanguage,
 });
 
 const channelExportMetadataColumnSchema = z.object({

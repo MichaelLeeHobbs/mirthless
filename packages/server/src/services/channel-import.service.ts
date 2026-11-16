@@ -10,6 +10,7 @@ import { eq, isNull, and } from 'drizzle-orm';
 import {
   isSourceConnectorType,
   isDestinationConnectorType,
+  toScriptLanguage,
   type ChannelExportEntry,
   type CollisionMode,
   type ImportResult,
@@ -267,6 +268,7 @@ async function insertRelations(
         channelId,
         scriptType: s.scriptType,
         script: s.script,
+        language: toScriptLanguage(s.language),
       })),
     );
   }
@@ -288,6 +290,8 @@ async function insertRelations(
         rotateQueue: d.rotateQueue,
         queueThreadCount: d.queueThreadCount,
         waitForPrevious: d.waitForPrevious,
+        responseTransformer: d.responseTransformer ?? null,
+        responseTransformerLanguage: toScriptLanguage(d.responseTransformerLanguage),
       })),
     ).returning({ id: channelConnectors.id, metaDataId: channelConnectors.metaDataId });
     for (const row of insertedDestinations) destIdByMetaDataId.set(row.metaDataId, row.id);
@@ -324,6 +328,7 @@ async function insertRelations(
           operator: r.operator,
           type: r.type,
           script: r.script,
+          language: toScriptLanguage(r.language),
           field: r.field,
           condition: r.condition,
           values: r.values,
@@ -357,6 +362,7 @@ async function insertRelations(
           name: s.name,
           type: s.type,
           script: s.script,
+          language: toScriptLanguage(s.language),
           sourceField: s.sourceField,
           targetField: s.targetField,
           defaultValue: s.defaultValue,

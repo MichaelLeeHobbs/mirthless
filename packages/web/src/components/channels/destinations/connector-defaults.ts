@@ -4,6 +4,7 @@
 
 import type { DestinationFormValues } from './types.js';
 import { createDefaultFilter, createDefaultTransformer } from '../source/types.js';
+import { NEW_SCRIPT_LANGUAGE } from '../../../lib/script-language.js';
 import { KAFKA_CONNECTION_DEFAULTS, AMQP_CONNECTION_DEFAULTS } from '../common/queue-connection-defaults.js';
 
 // Keys must match what packages/connectors/src/registry.ts reads for each type.
@@ -176,5 +177,6 @@ export function createDefaultDestination(index: number): DestinationFormValues {
     filter: createDefaultFilter(),
     transformer: createDefaultTransformer(),
     responseTransformer: '',
+    responseTransformerLanguage: NEW_SCRIPT_LANGUAGE,
   };
 }
