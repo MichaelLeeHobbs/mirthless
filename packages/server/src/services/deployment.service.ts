@@ -9,7 +9,7 @@ import { CHANNEL_STATE, SOCKET_EVENT, type ChannelState } from '@galvaniflow/cor
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { emitToAll } from '../lib/socket.js';
-import { ChannelService, type ChannelDetail } from './channel.service.js';
+import { ChannelService, type ChannelDetail, type ChannelSummary } from './channel.service.js';
 import { ChannelDependencyService, orderByDependencies } from './channel-dependency.service.js';
 import { validateConnectorProperties } from './connector-validation.service.js';
 import { ConfigMapService } from './config-map.service.js';
@@ -406,10 +406,7 @@ export class DeploymentService {
    */
   static async autoDeployChannels(): Promise<Result<void>> {
     return tryCatch(async () => {
-      const listResult = await ChannelService.list({ page: 1, pageSize: 1000 });
-      if (!listResult.ok) throw listResult.error;
-
-      const allChannels = listResult.value.data;
+      const allChannels = await listAllChannels();
       const channels = await orderForDeploy(allChannels.filter((ch) => ch.enabled));
       if (channels === null) {
         throw new ServiceError('INTERNAL', 'Channel dependencies could not be loaded, so no channel was redeployed');
@@ -448,6 +445,20 @@ export class DeploymentService {
 }
 
 // ----- Helper -----
+
+/** Channels read per page by the startup auto-deploy. */
+const AUTO_DEPLOY_PAGE_SIZE = 500;
+
+/** Every live channel, page by page, so none past the first page is left undeployed. Throws when a page can't load. */
+async function listAllChannels(): Promise<readonly ChannelSummary[]> {
+  const all: ChannelSummary[] = [];
+  for (let page = 1; ; page++) {
+    const result = await ChannelService.list({ page, pageSize: AUTO_DEPLOY_PAGE_SIZE });
+    if (!result.ok) throw result.error;
+    all.push(...result.value.data);
+    if (page >= result.value.pagination.totalPages || result.value.data.length === 0) return all;
+  }
+}
 
 /** Sort channels so dependencies deploy first. Returns null, after logging, if edges can't load. */
 async function orderForDeploy<T extends { readonly id: string }>(channels: readonly T[]): Promise<readonly T[] | null> {

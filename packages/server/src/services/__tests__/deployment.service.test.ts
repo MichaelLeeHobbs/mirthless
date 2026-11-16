@@ -622,6 +622,11 @@ describe('DeploymentService', () => {
     const summary = (id: string, enabled = true): { id: string; name: string; enabled: boolean } =>
       ({ id, name: `ch-${id}`, enabled });
 
+    /** One page of a `ChannelService.list` answer: `data` is page `page` of `totalPages`. */
+    function page<T>(data: readonly T[], pageNo = 1, totalPages = 1): ReturnType<typeof ok> {
+      return ok({ data, pagination: { page: pageNo, pageSize: 500, total: totalPages * 500, totalPages } });
+    }
+
     function deployedOrder(): string[] {
       return mockChannelService.getById.mock.calls.map((c) => c[0] as string);
     }
@@ -631,7 +636,7 @@ describe('DeploymentService', () => {
     });
 
     it('deploys dependencies before the channels that depend on them', async () => {
-      mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b'), summary('c')] }));
+      mockChannelService.list.mockResolvedValue(page([summary('a'), summary('b'), summary('c')]));
       mockListAllDependencies.mockResolvedValue(ok([
         { channelId: 'a', dependsOnChannelId: 'b' },
         { channelId: 'b', dependsOnChannelId: 'c' },
@@ -642,8 +647,23 @@ describe('DeploymentService', () => {
       expect(deployedOrder()).toEqual(['c', 'b', 'a']);
     });
 
+    it('redeploys the channels on every page of the channel list, not only the first', async () => {
+      const firstPage = Array.from({ length: 500 }, (_, i) => summary(`p1-${String(i)}`));
+      mockChannelService.list
+        .mockResolvedValueOnce(page(firstPage, 1, 2))
+        .mockResolvedValueOnce(page([summary('p2-last')], 2, 2));
+      mockListAllDependencies.mockResolvedValue(ok([]));
+
+      const result = await DeploymentService.autoDeployChannels();
+
+      expect(result.ok).toBe(true);
+      expect(deployedOrder()).toHaveLength(501);
+      expect(deployedOrder()).toContain('p2-last');
+      expect(mockChannelService.list.mock.calls.map((c) => (c[0] as { page: number }).page)).toEqual([1, 2]);
+    });
+
     it('skips disabled channels', async () => {
-      mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b', false)] }));
+      mockChannelService.list.mockResolvedValue(page([summary('a'), summary('b', false)]));
       mockListAllDependencies.mockResolvedValue(ok([{ channelId: 'a', dependsOnChannelId: 'b' }]));
 
       await DeploymentService.autoDeployChannels();
@@ -652,7 +672,7 @@ describe('DeploymentService', () => {
     });
 
     it('deploys nothing when dependencies fail to load, since no safe order is known', async () => {
-      mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b')] }));
+      mockChannelService.list.mockResolvedValue(page([summary('a'), summary('b')]));
       mockListAllDependencies.mockResolvedValue({ ok: false, value: null, error: new Error('db down') });
 
       const result = await DeploymentService.autoDeployChannels();
@@ -663,7 +683,7 @@ describe('DeploymentService', () => {
     });
 
     it('succeeds when every enabled channel redeploys', async () => {
-      mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b')] }));
+      mockChannelService.list.mockResolvedValue(page([summary('a'), summary('b')]));
       mockListAllDependencies.mockResolvedValue(ok([]));
 
       const result = await DeploymentService.autoDeployChannels();
@@ -681,7 +701,7 @@ describe('DeploymentService', () => {
     });
 
     it('deploys the other channels when one fails, then fails naming the one that did not deploy', async () => {
-      mockChannelService.list.mockResolvedValue(ok({ data: [summary('a'), summary('b'), summary('c')] }));
+      mockChannelService.list.mockResolvedValue(page([summary('a'), summary('b'), summary('c')]));
       mockListAllDependencies.mockResolvedValue(ok([]));
       mockChannelService.getById.mockImplementation(async (id: string) => (id === 'b'
         ? { ok: false, value: null, error: new Error('gone') }
