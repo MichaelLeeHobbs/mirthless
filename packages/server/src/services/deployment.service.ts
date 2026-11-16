@@ -9,7 +9,7 @@ import { CHANNEL_STATE, SOCKET_EVENT, type ChannelState } from '@galvaniflow/cor
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { emitToAll } from '../lib/socket.js';
-import { ChannelService, type ChannelDetail, type ChannelSummary } from './channel.service.js';
+import { ChannelService, type ChannelDetail, type ChannelDeployEntry } from './channel.service.js';
 import { ChannelDependencyService, orderByDependencies } from './channel-dependency.service.js';
 import { validateConnectorProperties } from './connector-validation.service.js';
 import { ConfigMapService } from './config-map.service.js';
@@ -446,18 +446,14 @@ export class DeploymentService {
 
 // ----- Helper -----
 
-/** Channels read per page by the startup auto-deploy. */
-const AUTO_DEPLOY_PAGE_SIZE = 500;
-
-/** Every live channel, page by page, so none past the first page is left undeployed. Throws when a page can't load. */
-async function listAllChannels(): Promise<readonly ChannelSummary[]> {
-  const all: ChannelSummary[] = [];
-  for (let page = 1; ; page++) {
-    const result = await ChannelService.list({ page, pageSize: AUTO_DEPLOY_PAGE_SIZE });
-    if (!result.ok) throw result.error;
-    all.push(...result.value.data);
-    if (page >= result.value.pagination.totalPages || result.value.data.length === 0) return all;
-  }
+/**
+ * Every live channel, read in one query and kept once per id, so no channel
+ * is deployed twice or skipped (names are not unique). Throws when it can't load.
+ */
+async function listAllChannels(): Promise<readonly ChannelDeployEntry[]> {
+  const result = await ChannelService.listLiveForDeploy();
+  if (!result.ok) throw result.error;
+  return [...new Map(result.value.map((ch) => [ch.id, ch])).values()];
 }
 
 /** Sort channels so dependencies deploy first. Returns null, after logging, if edges can't load. */

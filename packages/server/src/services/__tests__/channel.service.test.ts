@@ -281,6 +281,26 @@ describe('ChannelService', () => {
   });
 
   // ========== GET BY ID ==========
+  describe('listLiveForDeploy', () => {
+    it('returns every live channel in one query, ordered by id (#259)', async () => {
+      const rows = [{ id: 'a', name: 'ADT', enabled: true }, { id: 'b', name: 'ADT', enabled: false }];
+      pushResponse(rows, { orderable: true });
+
+      const result = await ChannelService.listLiveForDeploy();
+
+      expect(result).toEqual({ ok: true, value: rows, error: null });
+      expect(mockSelect).toHaveBeenCalledOnce();
+    });
+
+    it('returns the error when the query fails', async () => {
+      selectResponses.push(() => { throw new Error('DB down'); });
+
+      const result = await ChannelService.listLiveForDeploy();
+
+      expect(result.ok).toBe(false);
+    });
+  });
+
   describe('getById', () => {
     it('returns channel detail with relations', async () => {
       const channel = makeChannel();

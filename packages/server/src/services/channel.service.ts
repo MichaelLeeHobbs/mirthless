@@ -55,6 +55,13 @@ export interface ChannelSummary {
   readonly updatedAt: Date;
 }
 
+/** What the startup auto-deploy needs of each channel. */
+export interface ChannelDeployEntry {
+  readonly id: string;
+  readonly name: string;
+  readonly enabled: boolean;
+}
+
 export interface ChannelScript {
   readonly id: string;
   readonly scriptType: string;
@@ -700,6 +707,20 @@ export class ChannelService {
         },
       };
     });
+  }
+
+  /**
+   * Every live (not deleted) channel's id, name and enabled flag, in one
+   * query ordered by id. The startup auto-deploy reads this rather than
+   * paging `list`, whose name order is not unique and whose offsets shift
+   * while the API serves, so a page could repeat one channel and skip another.
+   */
+  static async listLiveForDeploy(): Promise<Result<readonly ChannelDeployEntry[]>> {
+    return tryCatch(async () => db
+      .select({ id: channels.id, name: channels.name, enabled: channels.enabled })
+      .from(channels)
+      .where(isNull(channels.deletedAt))
+      .orderBy(asc(channels.id)));
   }
 
   /** Get full channel detail by ID. */
