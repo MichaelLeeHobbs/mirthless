@@ -428,6 +428,33 @@ describe('validateConnectorProperties', () => {
     });
   });
 
+  describe('FILE', () => {
+    // FILE_SOURCE_DEFAULTS and FILE_DEST_DEFAULTS from 7793c71 (2026-03) to today, with the directory filled.
+    it('accepts FILE channels the editor saved, charset UTF-8 included', () => {
+      expect(validateConnectorProperties('FILE', 'source', {
+        directory: '/in', fileFilter: '*', pollingIntervalMs: 5000, sortBy: 'NAME', charset: 'UTF-8', binary: false,
+        checkFileAge: true, fileAgeMs: 1000, postAction: 'DELETE', moveToDirectory: '',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('FILE', 'destination', {
+        directory: '/out', outputPattern: '${messageId}.txt', charset: 'UTF-8', binary: false, tempFileEnabled: true, appendMode: false,
+      }).ok).toBe(true);
+    });
+
+    it.each([
+      ['source', { directory: '/in', filePattern: '*.hl7' }, 'filePattern'],
+      ['source', { directory: '/in', postAction: 'MOVE', moveToDirectory: '' }, 'moveToDirectory'],
+      ['source', { directory: '/in', pollingIntervalMs: 50 }, 'pollingIntervalMs'],
+      ['source', { directory: '/in', charset: 'windows-1252' }, 'charset'],
+      ['destination', { directory: '/out', outputPattern: '' }, 'outputPattern'],
+      ['destination', { directory: '/out', appendMode: 'true' }, 'appendMode'],
+    ] as const)('rejects a FILE %s with %j, naming %s', (direction, props, key) => {
+      const result = validateConnectorProperties('FILE', direction, props);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain(key);
+    });
+  });
+
   describe('SFTP', () => {
     // As the SFTP source and destination forms save them (web connector-defaults), filled in.
     const SFTP_SOURCE = {

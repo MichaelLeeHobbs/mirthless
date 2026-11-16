@@ -30,6 +30,28 @@ export function wholeNumberSchema(min: number, max = Number.MAX_SAFE_INTEGER): z
   return z.preprocess(digitsToNumber, z.number().int().min(min).max(max));
 }
 
+/** Text encodings of a TCP/MLLP or FILE payload, as Node names them. */
+export const CONNECTOR_CHARSETS = ['utf-8', 'latin1', 'ascii', 'utf16le'] as const;
+export type ConnectorCharset = (typeof CONNECTOR_CHARSETS)[number];
+
+/**
+ * Other names for the charsets, matched case-insensitively. The TCP/MLLP and
+ * FILE forms saved `UTF-8`, `ISO-8859-1` and `US-ASCII` until 2026-07, and the
+ * FILE defaults still save `UTF-8`.
+ */
+const CHARSET_ALIASES: Readonly<Record<string, ConnectorCharset>> = {
+  'utf-8': 'utf-8', utf8: 'utf-8',
+  latin1: 'latin1', 'iso-8859-1': 'latin1',
+  ascii: 'ascii', 'us-ascii': 'ascii',
+  utf16le: 'utf16le', 'utf-16le': 'utf16le',
+};
+
+/** A payload charset, `utf-8` by default; other names for one of {@link CONNECTOR_CHARSETS} are mapped onto it. */
+export const charsetSchema = z.preprocess(
+  (value) => (typeof value === 'string' ? CHARSET_ALIASES[value.trim().toLowerCase()] ?? value : value),
+  z.enum(CONNECTOR_CHARSETS),
+).default('utf-8');
+
 /** A TLS object with `fields`, or none: absent, null or false (read as null). */
 export function optionalTlsSchema<T extends z.ZodRawShape>(fields: T): z.ZodType {
   return z.preprocess((value) => (value === false ? null : value), z.strictObject(fields).nullable()).optional();

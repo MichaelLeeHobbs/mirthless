@@ -14,17 +14,8 @@ import type { SourceConnectorFormProps } from './types.js';
 import { FILE_SOURCE_DEFAULTS } from './connector-defaults.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { getStr, getNum, getBool, propertyUpdaters } from '../common/connector-properties.js';
-
-// Values must be valid Node Buffer encodings (passed straight to fs.readFile) —
-// 'ISO-8859-1'/'US-ASCII' are NOT and throw ERR_UNKNOWN_ENCODING at runtime.
-const CHARSETS: readonly { value: string; label: string }[] = [
-  { value: 'utf-8', label: 'UTF-8' },
-  { value: 'latin1', label: 'ISO-8859-1 (Latin-1)' },
-  { value: 'ascii', label: 'US-ASCII' },
-  { value: 'utf16le', label: 'UTF-16 LE' },
-];
-const SORT_OPTIONS = ['NAME', 'DATE', 'SIZE'] as const;
-const POST_ACTIONS = ['DELETE', 'MOVE', 'NONE'] as const;
+import { CHARSET_OPTIONS } from '../common/charset-options.js';
+import { FILE_SORT_ORDERS, FILE_POST_ACTIONS } from '@galvaniflow/core-models';
 
 export function FileSourceForm({ properties, onChange }: SourceConnectorFormProps): ReactNode {
   const initializedRef = useRef(false);
@@ -85,7 +76,7 @@ export function FileSourceForm({ properties, onChange }: SourceConnectorFormProp
           fullWidth
           sx={{ mb: 2 }}
         >
-          {SORT_OPTIONS.map((s) => (
+          {FILE_SORT_ORDERS.map((s) => (
             <MenuItem key={s} value={s}>{s}</MenuItem>
           ))}
         </TextField>
@@ -125,7 +116,7 @@ export function FileSourceForm({ properties, onChange }: SourceConnectorFormProp
           fullWidth
           sx={{ mb: 2 }}
         >
-          {CHARSETS.map((c) => (
+          {CHARSET_OPTIONS.map((c) => (
             <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>
           ))}
         </TextField>
@@ -173,7 +164,7 @@ export function FileSourceForm({ properties, onChange }: SourceConnectorFormProp
           fullWidth
           sx={{ mb: 2 }}
         >
-          {POST_ACTIONS.map((a) => (
+          {FILE_POST_ACTIONS.map((a) => (
             <MenuItem key={a} value={a}>{a}</MenuItem>
           ))}
         </TextField>

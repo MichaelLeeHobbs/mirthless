@@ -12,6 +12,7 @@ import { sourceCommonProperties, destinationCommonProperties } from '../connecto
 import { tcpMllpSourceObjectSchema, tcpMllpDestinationObjectSchema } from '../tcp-mllp-connector.schema.js';
 import { httpSourceObjectSchema, httpDestinationObjectSchema } from '../http-connector.schema.js';
 import { databaseSourceObjectSchema, databaseDestinationObjectSchema } from '../database-connector.schema.js';
+import { fileSourceObjectSchema, fileDestinationObjectSchema } from '../file-connector.schema.js';
 
 const DOC = readFileSync(new URL('../../../../../docs/user/connector-reference.md', import.meta.url), 'utf-8');
 
@@ -42,6 +43,8 @@ const SCHEMAS = [
   ['HTTP as a destination', 'destination', httpDestinationObjectSchema.shape],
   ['DATABASE as a source', 'source', databaseSourceObjectSchema.shape],
   ['DATABASE as a destination', 'destination', databaseDestinationObjectSchema.shape],
+  ['FILE as a source', 'source', fileSourceObjectSchema.shape],
+  ['FILE as a destination', 'destination', fileDestinationObjectSchema.shape],
 ] as const;
 
 describe('docs/user/connector-reference.md property tables', () => {

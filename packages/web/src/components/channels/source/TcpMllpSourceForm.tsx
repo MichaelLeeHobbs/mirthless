@@ -13,7 +13,8 @@ import MenuItem from '@mui/material/MenuItem';
 import Typography from '@mui/material/Typography';
 import type { SourceConnectorFormProps } from './types.js';
 import { TCP_MLLP_SOURCE_DEFAULTS } from './connector-defaults.js';
-import { MLLP_CHARSETS, MLLP_RESPONSE_MODES } from './tcp-mllp-options.js';
+import { MLLP_RESPONSE_MODES } from './tcp-mllp-options.js';
+import { CHARSET_OPTIONS } from '../common/charset-options.js';
 import { TestConnectionButton } from '../../common/TestConnectionButton.js';
 import { getStr, getNum, propertyUpdaters } from '../common/connector-properties.js';
 
@@ -119,7 +120,7 @@ export function TcpMllpSourceForm({ properties, onChange }: SourceConnectorFormP
           fullWidth
           sx={{ mb: 2 }}
         >
-          {MLLP_CHARSETS.map((o) => (
+          {CHARSET_OPTIONS.map((o) => (
             <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
           ))}
         </TextField>

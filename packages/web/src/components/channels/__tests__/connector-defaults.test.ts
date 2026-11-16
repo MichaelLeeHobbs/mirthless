@@ -9,6 +9,7 @@ import {
   HTTP_SOURCE_DEFAULTS,
   TCP_MLLP_SOURCE_DEFAULTS,
   DATABASE_SOURCE_DEFAULTS,
+  FILE_SOURCE_DEFAULTS,
   getDefaultProperties,
 } from '../source/connector-defaults.js';
 import {
@@ -16,16 +17,20 @@ import {
   HTTP_DEST_DEFAULTS,
   TCP_MLLP_DEST_DEFAULTS,
   DATABASE_DEST_DEFAULTS,
+  FILE_DEST_DEFAULTS,
   SMTP_DEST_DEFAULTS,
   getDestDefaultProperties,
   createDefaultDestination,
 } from '../destinations/connector-defaults.js';
-import { MLLP_CHARSETS, MLLP_RESPONSE_MODES } from '../source/tcp-mllp-options.js';
+import { MLLP_RESPONSE_MODES } from '../source/tcp-mllp-options.js';
+import { CHARSET_OPTIONS } from '../common/charset-options.js';
 import {
   tcpMllpSourcePropertiesSchema,
   tcpMllpDestinationPropertiesSchema,
-  TCP_MLLP_CHARSETS,
+  CONNECTOR_CHARSETS,
   TCP_MLLP_RESPONSE_MODES,
+  fileSourcePropertiesSchema,
+  fileDestinationPropertiesSchema,
   httpSourcePropertiesSchema,
   httpDestinationPropertiesSchema,
   databaseSourcePropertiesSchema,
@@ -114,9 +119,26 @@ describe('TCP/MLLP defaults match the core-models schema', () => {
     expect(schema.parse(defaults)).toEqual(defaults);
   });
 
-  it('the form offers exactly the schema charsets and response modes', () => {
-    expect(MLLP_CHARSETS.map((o) => o.value)).toEqual([...TCP_MLLP_CHARSETS]);
+  it('the form offers exactly the schema response modes', () => {
     expect(MLLP_RESPONSE_MODES.map((o) => o.value)).toEqual([...TCP_MLLP_RESPONSE_MODES]);
+  });
+});
+
+describe('the charset field', () => {
+  it('offers exactly the charsets the TCP/MLLP and FILE schemas accept', () => {
+    expect(CHARSET_OPTIONS.map((o) => o.value)).toEqual([...CONNECTOR_CHARSETS]);
+  });
+});
+
+describe('FILE defaults match the core-models schema', () => {
+  // The schema returns the defaults unchanged once the directory a user must
+  // fill in is set: it rejects unknown keys, and it would add any defaulted
+  // key the form left out.
+  it.each([
+    ['source', fileSourcePropertiesSchema, { ...FILE_SOURCE_DEFAULTS, directory: '/in' }],
+    ['destination', fileDestinationPropertiesSchema, { ...FILE_DEST_DEFAULTS, directory: '/out' }],
+  ] as const)('%s', (_name, schema, filled) => {
+    expect(schema.parse(filled)).toEqual(filled);
   });
 });
 
