@@ -20,6 +20,12 @@ Michael asked for a scored climb of the code editor to 9+, with the TypeScript s
 - **Review fixes (PR #168).** Test runs run in a worker thread (64 MB, 5 s, one at a time, rate-limited) and need `channels:deploy`. Transformer steps are type-checked joined, as they run; the declarations match the runtime, with a test that keeps them so; checks run in a cached worker; global scripts with type errors can't be saved and no longer block channel deploys (Michael's choice); startup no longer type-checks. The dashboard no longer loads Monaco, and rule and step cards keep keyboard focus. Old backups restore global scripts as JavaScript, and imports read an unknown language as JavaScript.
 - Not done: a syntax error reports Monaco's cascade (one missing `)` can show as several errors); the editor offers every template enabled for the context while deploy uses only templates whose library includes the channel; the editor checks each transformer step alone, so it flags a reference to an earlier step that deploy accepts. The review's remaining minor items are in #183.
 
+## 2026-11-15 — Removed the CLI (branch `remove-cli`, #145)
+
+- **`packages/cli` deleted** (D-280). It had no users and wrapped one REST endpoint per command. Its coverage row is gone from `AGENTS.md`, along with the "CLI session refresh" roadmap item (L25).
+- **`docs/ops/api-automation.md`:** `curl` recipes for log in, export, import and redeploy. Redeploy returns once the channel is in its final state and fails when it can't start, so a CI job doesn't need to poll.
+- Not done here: API tokens (#144) and the break-glass admin reset (#141). Until #144, the recipes log in with a password, which won't work for an account with MFA.
+
 ## 2026-11-15 — Old status copies cut down, docs slice 4 (branch `docs/status-cutdown`)
 
 Slice 4 of the docs restructure (#116): with the capabilities page as the one home for status (D-279), the copies that drifted are cut back.
