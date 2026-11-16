@@ -323,7 +323,7 @@ Start with the type lists in `packages/core-models/src/constants.ts` (`SOURCE_CO
 - Certificate-ID resolvers in `packages/server/src/engine.ts` (`SOURCE_TLS_RESOLVERS`, `DESTINATION_TLS_RESOLVERS`), if the connector takes certificates from the store.
 - Editor forms and defaults: `SOURCE_CONNECTOR_FORMS` in `packages/web/src/components/channels/source/ConnectorSettingsSection.tsx`, `DEST_CONNECTOR_FORMS` in `destinations/DestinationConnectorSettings.tsx`, and the defaults maps in both `connector-defaults.ts` files.
 - The Mirth importer in `packages/server/src/services/mirth-import.service.ts`, if Mirth has an equivalent: the class map (`CONNECTOR_TYPE_MAP`), the `transportMap` in `mapTransportName`, and a case in the `extractConnectorProperties` switch. A connector missing from the maps imports as JAVASCRIPT with a warning. One with no case in the switch keeps Mirth's own property names, which the connector does not read, so its settings are lost on import.
-- The connector's property schemas in `packages/core-models/src/schemas/<type>-connector.schema.ts` (strict, D-274), used by deploy validation and the registry, and its rows in `SCHEMAS` in `packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`, which checks the property tables in `docs/user/connector-reference.md` against them (every type but KAFKA and AMQP today, #115).
+- The connector's property schemas in `packages/core-models/src/schemas/<type>-connector.schema.ts` (strict, D-274), used by deploy validation and the registry, and its rows in `SCHEMAS` in `packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`, which checks the property tables in `docs/user/connector-reference.md` against them (every connector type).
 
 ---
 

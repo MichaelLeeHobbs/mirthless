@@ -39,7 +39,7 @@ migration will not migrate it for you. From 1.0 onward, migrations will be data-
 
 ## Stricter connector properties (#115)
 
-Connector properties are moving, one connector type at a time, to a schema in `packages/core-models` that refuses keys it does not list and values of the wrong type. A channel that deployed before can then fail its deploy, including the auto-deploy at server start, with `Invalid source connector properties for <TYPE>: ...` or `Invalid destination connector properties for <TYPE>: ...`. The message names the key. Nothing in the database is changed; edit the channel's properties and deploy again. `docs/user/connector-reference.md` lists the keys each type accepts.
+Connector properties moved, one connector type at a time, to a schema in `packages/core-models` that refuses keys it does not list and values of the wrong type. A channel that deployed before can then fail its deploy, including the auto-deploy at server start, with `Invalid source connector properties for <TYPE>: ...` or `Invalid destination connector properties for <TYPE>: ...`. The message names the key. Nothing in the database is changed; edit the channel's properties and deploy again. `docs/user/connector-reference.md` lists the keys each type accepts.
 
 **TCP_MLLP** is the first. Channels saved by this app's own editor keep deploying. From 2026-02 to 2026-07 the TCP/MLLP forms saved `receiveTimeout`, `bufferSize`, `keepConnectionOpen`, `transmissionMode` and `sendTimeout`, which no connector reads; the schema drops those five keys. It also reads a charset name in any case and maps the names that editor saved: `UTF-8` and `utf8` become `utf-8`, `ISO-8859-1` becomes `latin1`, `US-ASCII` becomes `ascii`, and `UTF-16LE` becomes `utf16le`. Nothing in the database is rewritten. A channel saved with `ISO-8859-1` or `US-ASCII` used to deploy and then fail on its first message, because Node has no encoding by those names; it now works.
 
@@ -280,6 +280,34 @@ SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_
 WHERE connector_type = 'SFTP'
   AND k NOT IN ('host','port','username','password','privateKey','passphrase','remoteDirectory','strictHostKey','hostKey',
                 'fileNameTemplate','appendMode','template');
+```
+
+**KAFKA** and **AMQP** come last. They have had a core-models schema since they shipped, but it dropped a key it did not list instead of refusing it; now it refuses it, like every other type. Their forms have saved the same keys since they reached `main` on 2026-11-15, and the importer never creates them, so channels saved by the editor keep deploying. Nothing in the database is rewritten. The Kafka destination's record key has always been `messageKey` on `main`; a channel saved with `key` on the pre-release branch now fails and needs it renamed.
+
+A KAFKA or AMQP channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. `key`, `prefetch` or `persistent`, or a key inside `tls` other than `caCertId`, `clientCertId` and `rejectUnauthorized` (such as pasted PEM). Before, such a key was dropped without a word.
+- an AMQP `port` or a `maxStoreAttempts` of `true`, or text other than plain digits (`"0x1628"`, `"5.672e3"`). Before, `true` was read as 1 and such text as the number it spells.
+
+```sql
+SELECT id, name, source_connector_type, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE (source_connector_type = 'KAFKA'
+       AND k NOT IN ('brokers','clientId','useTls','tls','saslMechanism','saslUsername','saslPassword','topic','groupId',
+                     'startFrom','charset','maxStoreAttempts','processBatch'))
+   OR (source_connector_type = 'AMQP'
+       AND k NOT IN ('host','port','vhost','username','password','useTls','tls','queue','charset','maxStoreAttempts','processBatch'));
+SELECT channel_id, name, connector_type, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE (connector_type = 'KAFKA'
+       AND k NOT IN ('brokers','clientId','useTls','tls','saslMechanism','saslUsername','saslPassword','topic','messageKey','headers','template'))
+   OR (connector_type = 'AMQP'
+       AND k NOT IN ('host','port','vhost','username','password','useTls','tls','exchange','routingKey','headers','contentType','template'));
+-- Keys inside tls, both directions:
+SELECT id, name, k AS unknown_tls_key FROM channels, jsonb_object_keys(source_connector_properties->'tls') k
+WHERE source_connector_type IN ('KAFKA','AMQP') AND jsonb_typeof(source_connector_properties->'tls') = 'object'
+  AND k NOT IN ('caCertId','clientCertId','rejectUnauthorized');
+SELECT channel_id, name, k AS unknown_tls_key FROM channel_connectors, jsonb_object_keys(properties->'tls') k
+WHERE connector_type IN ('KAFKA','AMQP') AND jsonb_typeof(properties->'tls') = 'object'
+  AND k NOT IN ('caCertId','clientCertId','rejectUnauthorized');
 ```
 
 ## Standard upgrade (Docker)
