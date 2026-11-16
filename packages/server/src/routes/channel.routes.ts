@@ -9,8 +9,10 @@ import {
   updateChannelSchema,
   channelListQuerySchema,
   patchChannelEnabledSchema,
+  setChannelGroupsSchema,
 } from '@galvaniflow/core-models';
 import { ChannelController } from '../controllers/channel.controller.js';
+import { ChannelGroupController } from '../controllers/channel-group.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
@@ -64,6 +66,14 @@ router.patch(
   requirePermission('channels:write'),
   validate({ params: uuidParamsSchema, body: patchChannelEnabledSchema }),
   ChannelController.setEnabled
+);
+
+// Replaces the channel's group memberships in one transaction (#223).
+router.put(
+  '/:id/groups',
+  requirePermission('channels:write'),
+  validate({ params: uuidParamsSchema, body: setChannelGroupsSchema }),
+  ChannelGroupController.setChannelGroups
 );
 
 router.post(

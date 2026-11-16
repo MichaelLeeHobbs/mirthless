@@ -26,9 +26,13 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { ChannelFormData } from '../../pages/ChannelEditorPage.js';
 import type { AdvancedFormValues } from './AdvancedTab.js';
-import { useChannelGroups, useGroupMemberships, useAddGroupMember, useRemoveGroupMember } from '../../hooks/use-channel-groups.js';
+import { useChannelGroups, useGroupMemberships, useSetChannelGroups } from '../../hooks/use-channel-groups.js';
 import { SOURCE_CONNECTOR_TYPES } from '@galvaniflow/core-models';
 import { useNotification } from '../../stores/notification.store.js';
+import { errorMessage } from '../../lib/error-message.js';
+import { isSameGroupSet, multiGroupNote } from '../../lib/group-membership.js';
+import { usePermissions } from '../../hooks/use-permissions.js';
+import { PERMISSION } from '../../lib/permissions.js';
 
 const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR', 'X12'] as const;
 
@@ -62,37 +66,31 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
   // ----- Group dropdown (edit mode only) -----
   const groupsQuery = useChannelGroups();
   const membershipsQuery = useGroupMemberships();
-  const addMember = useAddGroupMember();
-  const removeMember = useRemoveGroupMember();
+  const setChannelGroups = useSetChannelGroups();
   const { notify } = useNotification();
 
-  const channelMemberships = useMemo((): readonly { channelGroupId: string }[] => {
-    return (membershipsQuery.data ?? []).filter((m) => m.channelId === channelId);
+  const currentGroupIds = useMemo((): readonly string[] => {
+    return (membershipsQuery.data ?? []).filter((m) => m.channelId === channelId).map((m) => m.channelGroupId);
   }, [membershipsQuery.data, channelId]);
 
-  const currentGroupId = useMemo((): string => {
-    return channelMemberships[0]?.channelGroupId ?? NONE_GROUP;
-  }, [channelMemberships]);
+  const currentGroupId = currentGroupIds[0] ?? NONE_GROUP;
+  const canChangeGroup = usePermissions().has(PERMISSION.CHANNELS_WRITE);
+  const groupNote = multiGroupNote(currentGroupIds.map((id) => groupsQuery.data?.find((g) => g.id === id)?.name ?? id));
 
   const handleGroupChange = useCallback(async (newGroupId: string): Promise<void> => {
     if (!channelId) return;
-    if (channelMemberships.length > 0 && channelMemberships[0]?.channelGroupId === newGroupId) return;
+    const groupIds = newGroupId === NONE_GROUP ? [] : [newGroupId];
+    if (isSameGroupSet(groupIds, currentGroupIds)) return;
 
     try {
-      // Remove from ALL current groups first (handles multi-membership cleanup),
-      // then add to the new one. Await both so the success toast reflects reality
-      // — the previous fire-and-forget path reported success even on failure.
-      for (const m of channelMemberships) {
-        await removeMember.mutateAsync({ groupId: m.channelGroupId, channelId });
-      }
-      if (newGroupId !== NONE_GROUP) {
-        await addMember.mutateAsync({ groupId: newGroupId, channelId });
-      }
+      // One call replaces every membership (a channel has one group in the UI,
+      // D-126), so a failure leaves the channel's groups as they were (#223).
+      await setChannelGroups.mutateAsync({ channelId, groupIds });
       notify('Channel group updated', 'success');
     } catch (e) {
-      notify(e instanceof Error ? e.message : 'Failed to update channel group', 'error');
+      notify(errorMessage(e, 'Failed to update channel group'), 'error');
     }
-  }, [channelId, channelMemberships, removeMember, addMember, notify]);
+  }, [channelId, currentGroupIds, setChannelGroups, notify]);
 
   return (
     <Box>
@@ -183,7 +181,8 @@ export function SummaryTab({ control, errors, isEditMode, channelId, revision, a
                 sx={{ mb: 2 }}
                 value={currentGroupId}
                 onChange={(e) => { handleGroupChange(e.target.value); }}
-                disabled={groupsQuery.isLoading || membershipsQuery.isLoading}
+                disabled={!canChangeGroup || groupsQuery.isLoading || membershipsQuery.isLoading}
+                helperText={groupNote}
               >
                 <MenuItem value={NONE_GROUP}><em>None</em></MenuItem>
                 {(groupsQuery.data ?? []).map((g) => (
