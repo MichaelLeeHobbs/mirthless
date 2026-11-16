@@ -26,6 +26,24 @@ describe('validateConnectorProperties: Kafka and AMQP', () => {
   it('rejects an AMQP source with no queue', () => {
     expect(validateConnectorProperties('AMQP', 'source', { host: 'rabbit' }).ok).toBe(false);
   });
+
+  // D-274: an unlisted key fails the deploy instead of being dropped.
+  it.each([
+    ['KAFKA', 'source', { brokers: 'k:9092', topic: 't', groupId: 'g', fromBeginning: true }, 'fromBeginning'],
+    ['KAFKA', 'destination', { brokers: 'k:9092', topic: 't', key: '${id}' }, 'key'],
+    ['AMQP', 'source', { host: 'rabbit', queue: 'q', prefetch: 10 }, 'prefetch'],
+    ['AMQP', 'destination', { host: 'rabbit', routingKey: 'q', tls: { caCertId: '', ca: 'PEM' } }, 'ca'],
+  ] as const)('rejects a %s %s with an unlisted key, naming it', (type, mode, props, key) => {
+    const result = validateConnectorProperties(type, mode, props);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain(key);
+  });
+
+  it('accepts the keys the engine reads from any connector', () => {
+    expect(validateConnectorProperties('KAFKA', 'source', { brokers: 'k:9092', topic: 't', groupId: 'g', processBatch: true }).ok).toBe(true);
+    expect(validateConnectorProperties('AMQP', 'destination', { host: 'rabbit', routingKey: 'q', template: '${message.encodedData}' }).ok).toBe(true);
+  });
 });
 
 // ----- Source Connectors -----

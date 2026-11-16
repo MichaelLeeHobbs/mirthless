@@ -22,9 +22,9 @@ Every property below is the key the connector reads from the channel's saved pro
 | [KAFKA](#kafka) | Yes | Yes | Kafka topics | `useTls` with a CA and client certificate from the certificate store | SASL PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512, or client certificate | none |
 | [AMQP](#amqp) | Yes | Yes | AMQP 0-9-1 brokers such as RabbitMQ | `useTls` with a CA and client certificate from the certificate store | Broker username and password, or client certificate | none |
 
-The Kafka and AMQP property schemas are in `packages/core-models/src/schemas/queue-connector.schema.ts`; their delivery guarantees are in D-266. The TCP_MLLP property schemas are in `packages/core-models/src/schemas/tcp-mllp-connector.schema.ts`.
+Each type's property schemas are in `packages/core-models/src/schemas/<type>-connector.schema.ts` (Kafka and AMQP share `queue-connector.schema.ts`; their delivery guarantees are in D-266).
 
-A connector's properties are checked when the channel deploys. TCP_MLLP rejects a key its table below does not list, so a misspelled key fails the deploy instead of being ignored. The exceptions are five keys the editor saved before 2026-07, which are dropped (see `docs/ops/upgrade.md`). A test (`packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`) fails when a TCP_MLLP table and its schema list different keys.
+A connector's properties are checked when the channel deploys. Every type rejects a key its table below does not list, or a value of the wrong type, so a misspelled key fails the deploy instead of being ignored. The exceptions are keys this app's own editor or Mirth importer once saved and nothing reads, which are dropped, and old value spellings, which are mapped; `docs/ops/upgrade.md` lists them per type. A test (`packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts`) fails when a table and its schema list different keys.
 
 ## Keys on every connector
 

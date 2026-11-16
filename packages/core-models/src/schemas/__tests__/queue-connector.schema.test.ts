@@ -118,6 +118,48 @@ describe('amqpDestinationPropertiesSchema', () => {
   });
 });
 
+// D-274: a key the schema does not list fails the deploy instead of being ignored.
+describe('Kafka and AMQP refuse keys they do not list', () => {
+  const tls = { caCertId: '', clientCertId: '', rejectUnauthorized: true };
+  const KAFKA = { brokers: 'k:9092', clientId: 'galvaniflow', saslMechanism: 'NONE', saslUsername: '', saslPassword: '', useTls: false, tls };
+  const AMQP = { host: 'rabbit', port: 5672, vhost: '/', username: '', password: '', useTls: false, tls };
+
+  // The editor's defaults since b49f662, required fields filled, plus the keys the engine reads from any connector.
+  it.each([
+    ['Kafka source', kafkaSourcePropertiesSchema, { ...KAFKA, topic: 't', groupId: 'g', startFrom: 'EARLIEST', charset: 'utf-8', maxStoreAttempts: 5, processBatch: true }],
+    ['Kafka destination', kafkaDestinationPropertiesSchema, { ...KAFKA, topic: 't', messageKey: '', headers: {}, template: '${message.encodedData}' }],
+    ['AMQP source', amqpSourcePropertiesSchema, { ...AMQP, queue: 'q', charset: 'utf-8', maxStoreAttempts: 5, processBatch: false }],
+    ['AMQP destination', amqpDestinationPropertiesSchema, { ...AMQP, exchange: '', routingKey: 'r', headers: {}, contentType: 'text/plain', template: 'x' }],
+  ] as const)('%s accepts what the editor saves, as it is', (_name, schema, saved) => {
+    expect(schema.parse(saved)).toEqual(saved);
+  });
+
+  it.each([
+    ['Kafka source', kafkaSourcePropertiesSchema, { ...KAFKA, topic: 't', groupId: 'g', group: 'g2' }, 'group'],
+    ['Kafka destination', kafkaDestinationPropertiesSchema, { ...KAFKA, topic: 't', key: 'k' }, 'key'],
+    ['AMQP source', amqpSourcePropertiesSchema, { ...AMQP, queue: 'q', prefetch: 10 }, 'prefetch'],
+    ['AMQP destination', amqpDestinationPropertiesSchema, { ...AMQP, routingKey: 'r', persistent: true }, 'persistent'],
+    ['Kafka TLS', kafkaSourcePropertiesSchema, { ...KAFKA, topic: 't', groupId: 'g', tls: { ...tls, ca: 'PEM' } }, 'ca'],
+  ] as const)('%s refuses an unlisted key', (_name, schema, props, key) => {
+    const result = schema.safeParse(props);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(JSON.stringify(result.error.issues)).toContain(key);
+  });
+
+  it.each([
+    ['a port as true', { ...AMQP, queue: 'q', port: true }, 'port'],
+    ['a port with a fraction', { ...AMQP, queue: 'q', port: '5672.5' }, 'port'],
+    ['store attempts as true', { ...AMQP, queue: 'q', maxStoreAttempts: true }, 'maxStoreAttempts'],
+    ['a switch as text', { ...AMQP, queue: 'q', useTls: 'false' }, 'useTls'],
+  ] as const)('AMQP source refuses %s', (_name, props, key) => {
+    const result = amqpSourcePropertiesSchema.safeParse(props);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path[0]).toBe(key);
+  });
+});
+
 describe('connector type lists', () => {
   it('include KAFKA and AMQP everywhere a channel names a connector type', () => {
     for (const type of ['KAFKA', 'AMQP']) {
