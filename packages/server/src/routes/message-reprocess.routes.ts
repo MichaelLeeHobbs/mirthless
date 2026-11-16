@@ -11,13 +11,10 @@ import {
   resendParamsSchema,
 } from '@galvaniflow/core-models';
 import { MessageReprocessController } from '../controllers/message-reprocess.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const router: IRouter = Router();
-
-router.use(authenticate);
 
 // Specific/static routes are declared before the greedy `/:msgId` patterns so
 // literal segments (bulk, bulk-reprocess) are not captured as message ids.

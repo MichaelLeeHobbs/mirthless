@@ -4,6 +4,7 @@
 // Combines all route modules under /api/v1 prefix.
 
 import { Router, type IRouter } from 'express';
+import { authenticate } from '../middleware/auth.middleware.js';
 import alertRoutes from './alert.routes.js';
 import authRoutes from './auth.routes.js';
 import attachmentRoutes from './attachment.routes.js';
@@ -44,14 +45,23 @@ import userRoutes from './user.routes.js';
 
 const router: IRouter = Router();
 
-// Health check (unauthenticated, used by Playwright + load balancers)
+// ----- Public: the only routes a caller without a session reaches (D-298) -----
+// public-routes.test.ts lists them and fails on any other route that answers an
+// anonymous caller. Add one only with a reason in that list.
+
+// Health check, used by Playwright and load balancers
 router.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
-
-// API v1 routes
-router.use('/alerts', alertRoutes);
+// Login and refresh (each behind its own rate limiter). Logout authenticates itself.
 router.use('/auth', authRoutes);
+
+// ----- Everything below needs a session -----
+// One guard for the whole API. Routers must not add their own: ten routers share
+// the /channels mount, and each one's guard would run again (#217).
+router.use(authenticate);
+
+router.use('/alerts', alertRoutes);
 // Mount specific /channels sub-routes BEFORE channelRoutes — channelRoutes
 // defines GET /:id which greedily matches any single-segment path like
 // /statistics or /status, causing UUID validation failures.
