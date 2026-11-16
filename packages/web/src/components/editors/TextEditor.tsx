@@ -14,7 +14,7 @@ import type { monaco } from './monaco.js';
 import { EditorFrame } from './EditorFrame.js';
 import { EditorToolbarButton } from './EditorToolbarButton.js';
 import { BASE_EDITOR_OPTIONS } from './editor-options.js';
-import { useCursor, useEditorTheme } from './editor-hooks.js';
+import { useCursor, useEditorTheme, useExternalValue } from './editor-hooks.js';
 
 export type TextLanguage = 'plaintext' | 'hl7' | 'json';
 
@@ -23,6 +23,15 @@ const LANGUAGE_NAME: Readonly<Record<TextLanguage, string>> = {
   hl7: 'HL7 v2',
   json: 'JSON',
 };
+
+/**
+ * The text to hand the host after an edit. Monaco keeps \n or \r\n line
+ * endings, but HL7 v2 ends each segment with \r, so an edited HL7 message gets
+ * its \r endings back (#183).
+ */
+export function textFromEditor(language: TextLanguage, text: string): string {
+  return language === 'hl7' ? text.replace(/\r?\n/g, '\r') : text;
+}
 
 export interface TextEditorProps {
   readonly value: string;
@@ -44,6 +53,7 @@ export function TextEditor({
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const cursor = useCursor(editor);
+  useExternalValue(editor, value);
   const lines = value === '' ? 0 : value.split(/\r\n|\r|\n/).length;
 
   const copy = (): void => {
@@ -86,8 +96,8 @@ export function TextEditor({
         height="100%"
         language={language}
         theme={theme}
-        value={value}
-        onChange={(v) => { onChange?.(v ?? ''); }}
+        defaultValue={value}
+        onChange={(v) => { onChange?.(textFromEditor(language, v ?? '')); }}
         onMount={(ed) => { setEditor(ed); }}
         options={{ ...BASE_EDITOR_OPTIONS, readOnly, ariaLabel: label, lineNumbers: lineNumbers ? 'on' : 'off' }}
       />

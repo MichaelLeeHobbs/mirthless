@@ -2,7 +2,9 @@
 // Monaco setup
 // ===========================================
 // The one place the app loads Monaco. It is bundled (no CDN), so editors work on
-// networks with no internet access and under a strict Content-Security-Policy.
+// networks with no internet access and a Content-Security-Policy needs no CDN
+// host. Monaco injects inline styles, so such a policy would need
+// `style-src 'unsafe-inline'`, as MUI does (D-283).
 // Importing this module configures @monaco-editor/react to use the bundle.
 
 import * as monaco from 'monaco-editor';
@@ -13,10 +15,8 @@ import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker.js?worker
 import { StandaloneServices } from 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices.js';
 import { IStorageService } from 'monaco-editor/esm/vs/platform/storage/common/storage.js';
 import { editorTheme, editorThemeName } from '../../styles/editor-theme.js';
-import {
-  IGNORED_SCRIPT_DIAGNOSTICS, SCRIPT_COMPILER_OPTIONS, scriptDeclarations, templateDeclarations,
-  type ScriptSurface, type TemplateSource,
-} from '@galvaniflow/core-models';
+import { IGNORED_SCRIPT_DIAGNOSTICS, SCRIPT_COMPILER_OPTIONS } from '@galvaniflow/core-models';
+import { markSurfaceApplied, surfaceLibs, type SurfaceLibs } from './surface-state.js';
 
 self.MonacoEnvironment = {
   getWorker(_workerId: string, label: string): Worker {
@@ -84,28 +84,19 @@ ts.javascriptDefaults.setDiagnosticsOptions({
   noSemanticValidation: true, noSyntaxValidation: false, diagnosticCodesToIgnore: [...IGNORED_SCRIPT_DIAGNOSTICS],
 });
 
-let appliedLibs = '';
-
 /**
- * Give the TypeScript service the globals for one script surface: the sandbox
- * (msg typed by data type, destinationSet where it exists) and the code
- * templates the script can call. Monaco keeps one set for every editor, so the
- * focused editor's surface wins; the deploy check repeats the check per script.
+ * Give the TypeScript service the globals for one script surface (see
+ * surfaceLibs). Monaco keeps one set for every editor, so the focused editor's
+ * surface wins, and an editor with another surface hides the type errors it
+ * gets meanwhile (surface-state.ts); the deploy check repeats the check per script.
  */
-export function applyScriptSurface(surface: ScriptSurface, templates: readonly TemplateSource[]): void {
-  const sandbox = scriptDeclarations(surface);
-  const library = templateDeclarations(templates, surface);
-  const key = `${sandbox}\u0000${library}`;
-  if (key === appliedLibs) return;
-  appliedLibs = key;
-  const libs = [
-    { content: sandbox, filePath: 'file:///sandbox.d.ts' },
-    { content: library, filePath: 'file:///code-templates.d.ts' },
-  ];
-  ts.typescriptDefaults.setExtraLibs(libs);
-  ts.javascriptDefaults.setExtraLibs(libs);
+export function applyScriptSurface(libs: SurfaceLibs): void {
+  if (!markSurfaceApplied(libs.key)) return;
+  const files = [...libs.files];
+  ts.typescriptDefaults.setExtraLibs(files);
+  ts.javascriptDefaults.setExtraLibs(files);
 }
-applyScriptSurface({}, []);
+applyScriptSurface(surfaceLibs({}, []));
 
 /**
  * Where every editor renders its popups (completion, hover, parameter hints).

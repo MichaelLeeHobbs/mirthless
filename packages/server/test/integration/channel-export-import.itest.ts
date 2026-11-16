@@ -110,7 +110,7 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     await expectLanguages(copyId);
   });
 
-  it('updates a channel script language, and an update without languages resets them to JavaScript', async () => {
+  it('updates a channel script language, and an update without languages keeps the stored ones', async () => {
     const { ChannelService } = mods;
     const created1 = unwrap(await ChannelService.create(createChannelSchema.parse({
       name: `itest-lang-update-${randomUUID()}`, enabled: false, inboundDataType: 'RAW', outboundDataType: 'RAW',
@@ -126,9 +126,16 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     const afterTs = unwrap(await ChannelService.getById(created1.id));
     expect(afterTs.scripts.find((s) => s.scriptType === 'DEPLOY')).toMatchObject({ script: 'logger.info("up");', language: 'TYPESCRIPT' });
 
-    // The scripts object replaces all four scripts, languages included.
+    // A language the request leaves out keeps the stored one, so the script stays type-checked (D-294).
+    const kept = unwrap(await ChannelService.update(created1.id, updateChannelSchema.parse({
+      revision: updated.revision, scripts: { deploy: 'logger.info("still ts");' },
+    })));
+    const afterKept = unwrap(await ChannelService.getById(created1.id));
+    expect(afterKept.scripts.find((s) => s.scriptType === 'DEPLOY')).toMatchObject({ script: 'logger.info("still ts");', language: 'TYPESCRIPT' });
+
+    // A language the request gives replaces it.
     unwrap(await ChannelService.update(created1.id, updateChannelSchema.parse({
-      revision: updated.revision, scripts: { deploy: 'logger.info("js");' },
+      revision: kept.revision, scripts: { deploy: 'logger.info("js");', languages: { deploy: 'JAVASCRIPT' } },
     })));
     const afterJs = unwrap(await ChannelService.getById(created1.id));
     expect(afterJs.scripts.find((s) => s.scriptType === 'DEPLOY')?.language).toBe('JAVASCRIPT');

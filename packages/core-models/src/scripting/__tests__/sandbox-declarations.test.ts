@@ -79,6 +79,15 @@ describe('scriptDeclarations', () => {
     expect(check("const r = await routeMessage('Archive', rawData);\nif (r.filtered) logger.info(r.messageId);", { dataType: 'HL7V2' })).toEqual([]);
   });
 
+  // #200: a JavaScript destination's script also gets the channel identity and the connector message.
+  it('declares connectorMessage and the channel identity for a JavaScript destination script only', () => {
+    const script = "logger.info(`${channelName}: message ${String(connectorMessage.messageId)} to ${String(connectorMessage.metaDataId)}`);\nreturn msg.get('MSH.10');";
+    expect(check(script, { dataType: 'HL7V2', connectorMessage: true })).toEqual([]);
+    expect(check('const n: string = connectorMessage.messageId;', { dataType: 'HL7V2', connectorMessage: true }))
+      .toEqual(["/script.ts: Type 'number' is not assignable to type 'string'."]);
+    expect(check('logger.info(connectorMessage.content);', { dataType: 'HL7V2' })).toEqual(["/script.ts: Cannot find name 'connectorMessage'. Did you mean 'connectorMap'?"]);
+  });
+
   it('declares destinationSet only for source filters and transformers', () => {
     expect(check("destinationSet.remove('To EHR');", { dataType: 'HL7V2', destinationSet: true })).toEqual([]);
     expect(check("destinationSet.remove('To EHR');", { dataType: 'HL7V2' })).toEqual(["/script.ts: Cannot find name 'destinationSet'."]);
@@ -137,8 +146,8 @@ describe('scriptSurfaceKey', () => {
     const keys = new Set([
       scriptSurfaceKey({}), scriptSurfaceKey({ dataType: 'HL7V2' }),
       scriptSurfaceKey({ dataType: 'HL7V2', destinationSet: true }), scriptSurfaceKey({ dataType: 'JSON' }),
-      scriptSurfaceKey({ message: false }),
+      scriptSurfaceKey({ message: false }), scriptSurfaceKey({ dataType: 'HL7V2', connectorMessage: true }),
     ]);
-    expect(keys.size).toBe(5);
+    expect(keys.size).toBe(6);
   });
 });

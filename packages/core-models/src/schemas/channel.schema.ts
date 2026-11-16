@@ -6,7 +6,7 @@ import { z } from 'zod/v4';
 import { CONNECTOR_TYPES, DESTINATION_CONNECTOR_TYPES, SOURCE_CONNECTOR_TYPES } from '../constants.js';
 import { filterInputSchema } from './filter.schema.js';
 import { transformerInputSchema } from './transformer.schema.js';
-import { DEFAULT_STORED_SCRIPT_LANGUAGE, scriptLanguageSchema } from './script-language.schema.js';
+import { scriptLanguageSchema } from './script-language.schema.js';
 
 // ----- Shared Enums -----
 
@@ -50,8 +50,8 @@ export const destinationInputSchema = z.object({
   waitForPrevious: z.boolean().default(false),
   /** Optional per-destination response transformer script (JS/TS source). */
   responseTransformer: z.string().nullish(),
-  /** The language of `responseTransformer`. */
-  responseTransformerLanguage: scriptLanguageSchema.default(DEFAULT_STORED_SCRIPT_LANGUAGE),
+  /** The language of `responseTransformer`. Create stores JavaScript when it is left out; update requires it with a script (D-294). */
+  responseTransformerLanguage: scriptLanguageSchema.optional(),
 });
 
 export type DestinationInput = z.infer<typeof destinationInputSchema>;
@@ -66,14 +66,15 @@ export const metadataColumnInputSchema = z.object({
 
 export type MetadataColumnInput = z.infer<typeof metadataColumnInputSchema>;
 
-const storedLanguage = scriptLanguageSchema.default(DEFAULT_STORED_SCRIPT_LANGUAGE);
-
-/** The language of each channel script. */
+/**
+ * The language of each channel script. One left out is JavaScript on create
+ * and keeps its stored language on update (D-294).
+ */
 export const channelScriptLanguagesSchema = z.object({
-  deploy: storedLanguage,
-  undeploy: storedLanguage,
-  preprocessor: storedLanguage,
-  postprocessor: storedLanguage,
+  deploy: scriptLanguageSchema.optional(),
+  undeploy: scriptLanguageSchema.optional(),
+  preprocessor: scriptLanguageSchema.optional(),
+  postprocessor: scriptLanguageSchema.optional(),
 });
 
 export type ChannelScriptLanguages = z.infer<typeof channelScriptLanguagesSchema>;
@@ -115,8 +116,45 @@ export const createChannelSchema = z.object({
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 
-export const updateChannelSchema = createChannelSchema.partial().extend({
+/** A script whose language the request must give on update. */
+interface LanguagedScript {
+  readonly script: string | null | undefined;
+  readonly language: string | undefined;
+  readonly path: ReadonlyArray<string | number>;
+}
+
+/** Every filter rule, transformer step and response transformer script in an update, with its language. */
+function updateScripts(input: z.infer<typeof updateChannelBaseSchema>): ReadonlyArray<LanguagedScript> {
+  const found: LanguagedScript[] = [];
+  input.filters?.forEach((f, i) => f.rules.forEach((r, j) => {
+    found.push({ script: r.script, language: r.language, path: ['filters', i, 'rules', j, 'language'] });
+  }));
+  input.transformers?.forEach((t, i) => t.steps.forEach((s, j) => {
+    found.push({ script: s.script, language: s.language, path: ['transformers', i, 'steps', j, 'language'] });
+  }));
+  input.destinations?.forEach((d, i) => {
+    found.push({ script: d.responseTransformer, language: d.responseTransformerLanguage, path: ['destinations', i, 'responseTransformerLanguage'] });
+  });
+  return found;
+}
+
+const updateChannelBaseSchema = createChannelSchema.partial().extend({
   revision: z.number().int().positive(),
+});
+
+/**
+ * An update replaces filter rules, transformer steps and destinations by
+ * position, with no id to find the stored row by, so it cannot keep a stored
+ * language the request leaves out. Defaulting it would silently turn a
+ * TypeScript script into JavaScript and switch off its deploy type check, so
+ * an update must give the language of every script it sends (D-294).
+ */
+export const updateChannelSchema = updateChannelBaseSchema.superRefine((input, ctx) => {
+  for (const s of updateScripts(input)) {
+    if (s.script !== null && s.script !== undefined && s.language === undefined) {
+      ctx.addIssue({ code: 'custom', path: [...s.path], message: 'Give the script\'s language (JAVASCRIPT or TYPESCRIPT) when updating a channel' });
+    }
+  }
 });
 
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;

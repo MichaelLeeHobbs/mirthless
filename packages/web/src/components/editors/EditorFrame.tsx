@@ -4,10 +4,13 @@
 // The shared chrome around every code editor: a toolbar, the editor, and a
 // status line, with a full-screen mode. ScriptEditor, TextEditor and
 // CodeDiffEditor all render inside it, so every host looks the same.
+//
+// Full screen restyles the same elements to cover the window rather than
+// rendering the editor again in a dialog: a second editor would start with an
+// empty undo history and lose the cursor (#183).
 
-import { type ReactNode } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect } from 'react';
 import Box from '@mui/material/Box';
-import Dialog from '@mui/material/Dialog';
 import Typography from '@mui/material/Typography';
 import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
@@ -34,86 +37,92 @@ interface EditorFrameProps {
   readonly children: ReactNode;
 }
 
-function Frame({ label, showLabel, start, end, status, footer, expanded, onExpandedChange, children, fill, rounded = false }: Omit<EditorFrameProps, 'height'> & { readonly fill: boolean; readonly rounded?: boolean }): ReactNode {
-  return (
-    <Box
-      role="group"
-      aria-label={label}
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: fill ? '100%' : 'auto',
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: rounded ? `${String(RADIUS.md)}px` : 0,
-        bgcolor: 'background.paper',
-        overflow: 'hidden',
-        transition: 'border-color 120ms, box-shadow 120ms',
-        '&:focus-within': { borderColor: 'primary.main', boxShadow: (t) => `0 0 0 3px ${t.palette.action.focus}` },
-      }}
-    >
-      <Box
-        sx={{
-          display: 'flex', alignItems: 'center', gap: 1, minHeight: 40, px: 1, py: 0.5,
-          borderBottom: 1, borderColor: 'divider',
-        }}
-      >
-        {showLabel !== false ? (
-          <Typography variant="body2" noWrap sx={{ fontWeight: 600, pl: 0.5, display: { xs: 'none', sm: 'block' } }}>
-            {label}
-          </Typography>
-        ) : null}
-        {start}
-        <Box sx={{ flexGrow: 1 }} />
-        {end}
-        <EditorToolbarButton
-          icon={expanded ? <CloseFullscreenIcon fontSize="small" /> : <OpenInFullIcon fontSize="small" />}
-          label={expanded ? 'Exit full screen' : 'Full screen'}
-          ariaLabel={expanded ? 'Exit full screen' : 'Expand to full screen'}
-          tooltip={expanded ? 'Exit full screen (Esc)' : 'Expand to full screen'}
-          onClick={() => { onExpandedChange(!expanded); }}
-        />
-      </Box>
-      <Box sx={{ flexGrow: 1, minHeight: 0 }}>{children}</Box>
-      {status ? (
-        <Box
-          sx={{
-            display: 'flex', alignItems: 'center', gap: 1.5, minHeight: 28, px: 1.5,
-            borderTop: 1, borderColor: 'divider', typography: 'caption', color: 'text.secondary',
-            overflow: 'hidden', whiteSpace: 'nowrap',
-          }}
-        >
-          {status}
-        </Box>
-      ) : null}
-      {footer}
-    </Box>
-  );
+/** While full screen, the page behind does not scroll. */
+function useScrollLock(locked: boolean): void {
+  useEffect(() => {
+    if (!locked) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, [locked]);
 }
 
 /** Toolbar, editor body and status line; full screen when `expanded`. */
-export function EditorFrame({ height, expanded, onExpandedChange, ...rest }: EditorFrameProps): ReactNode {
-  if (expanded) {
-    return (
-      <>
-        <Box sx={{ height, border: 1, borderColor: 'divider', borderRadius: `${String(RADIUS.md)}px`, bgcolor: 'action.hover' }} />
-        <Dialog fullScreen open onClose={() => { onExpandedChange(false); }} aria-label={rest.label}>
-          <Frame {...rest} expanded onExpandedChange={onExpandedChange} fill />
-        </Dialog>
-      </>
-    );
-  }
+export function EditorFrame({
+  label, showLabel, start, end, status, footer, height, expanded, onExpandedChange, children,
+}: EditorFrameProps): ReactNode {
+  useScrollLock(expanded);
   // "100%" means fill the host (a flex page area); anything else sizes the editor area.
-  if (height === '100%') {
-    return (
-      <Box sx={{ height: '100%', minHeight: 0 }}>
-        <Frame {...rest} expanded={false} onExpandedChange={onExpandedChange} fill rounded />
-      </Box>
-    );
-  }
+  const fills = height === '100%';
+  // Escape leaves full screen unless the editor used it (closing its completion list).
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (expanded && e.key === 'Escape' && !e.defaultPrevented) onExpandedChange(false);
+  };
+
   return (
-    <Frame {...rest} expanded={false} onExpandedChange={onExpandedChange} fill={false} rounded>
-      <Box sx={{ height }}>{rest.children}</Box>
-    </Frame>
+    // While expanded this keeps the editor's place in the page, so nothing below it jumps.
+    <Box sx={{ height: fills ? '100%' : 'auto', minHeight: 0 }}>
+      <Box
+        role={expanded ? 'dialog' : 'group'}
+        aria-modal={expanded ? true : undefined}
+        aria-label={label}
+        onKeyDown={onKeyDown}
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: fills || expanded ? '100%' : 'auto',
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: expanded ? 0 : `${String(RADIUS.md)}px`,
+          bgcolor: 'background.paper',
+          overflow: 'hidden',
+          transition: 'border-color 120ms, box-shadow 120ms',
+          '&:focus-within': { borderColor: 'primary.main', boxShadow: (t) => `0 0 0 3px ${t.palette.action.focus}` },
+          ...(expanded ? { position: 'fixed', inset: 0, zIndex: (t) => t.zIndex.modal } : {}),
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 1, minHeight: 40, px: 1, py: 0.5,
+            borderBottom: 1, borderColor: 'divider',
+          }}
+        >
+          {showLabel !== false ? (
+            <Typography variant="body2" noWrap sx={{ fontWeight: 600, pl: 0.5, display: { xs: 'none', sm: 'block' } }}>
+              {label}
+            </Typography>
+          ) : null}
+          {start}
+          <Box sx={{ flexGrow: 1 }} />
+          {end}
+          <EditorToolbarButton
+            icon={expanded ? <CloseFullscreenIcon fontSize="small" /> : <OpenInFullIcon fontSize="small" />}
+            label={expanded ? 'Exit full screen' : 'Full screen'}
+            ariaLabel={expanded ? 'Exit full screen' : 'Expand to full screen'}
+            tooltip={expanded ? 'Exit full screen (Esc)' : 'Expand to full screen'}
+            onClick={() => { onExpandedChange(!expanded); }}
+          />
+        </Box>
+        <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+          <Box sx={{ height: fills || expanded ? '100%' : height }}>{children}</Box>
+        </Box>
+        {status ? (
+          <Box
+            sx={{
+              display: 'flex', alignItems: 'center', gap: 1.5, minHeight: 28, px: 1.5,
+              borderTop: 1, borderColor: 'divider', typography: 'caption', color: 'text.secondary',
+              overflow: 'hidden', whiteSpace: 'nowrap',
+            }}
+          >
+            {status}
+          </Box>
+        ) : null}
+        {footer}
+      </Box>
+      {/* The editor's place while it covers the window. */}
+      {expanded && !fills ? (
+        <Box sx={{ height, border: 1, borderColor: 'divider', borderRadius: `${String(RADIUS.md)}px`, bgcolor: 'action.hover' }} />
+      ) : null}
+    </Box>
   );
 }

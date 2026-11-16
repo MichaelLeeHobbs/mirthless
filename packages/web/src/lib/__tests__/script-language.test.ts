@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { loadedScriptLanguage, NEW_SCRIPT_LANGUAGE } from '../script-language.js';
+import { loadedScriptLanguage, NEW_SCRIPT_LANGUAGE, NEW_CHANNEL_SCRIPT_LANGUAGES } from '../script-language.js';
 
 describe('loadedScriptLanguage', () => {
   it('keeps the stored language of a script that has code', () => {
@@ -11,10 +11,23 @@ describe('loadedScriptLanguage', () => {
     expect(loadedScriptLanguage('return true;', undefined)).toBe('JAVASCRIPT');
   });
 
-  it('starts an empty script as TypeScript, whatever was stored', () => {
+  // #183: an empty script saved as JavaScript used to reopen as TypeScript.
+  it('keeps the stored language of an empty script', () => {
+    expect(loadedScriptLanguage('', 'JAVASCRIPT')).toBe('JAVASCRIPT');
+    expect(loadedScriptLanguage('   \n', 'TYPESCRIPT')).toBe('TYPESCRIPT');
+  });
+
+  it('starts an empty script with no stored language as TypeScript', () => {
     expect(NEW_SCRIPT_LANGUAGE).toBe('TYPESCRIPT');
-    expect(loadedScriptLanguage('', 'JAVASCRIPT')).toBe('TYPESCRIPT');
-    expect(loadedScriptLanguage('   \n', 'JAVASCRIPT')).toBe('TYPESCRIPT');
     expect(loadedScriptLanguage(null, undefined)).toBe('TYPESCRIPT');
+    expect(loadedScriptLanguage('', null)).toBe('TYPESCRIPT');
+  });
+});
+
+describe('NEW_CHANNEL_SCRIPT_LANGUAGES', () => {
+  it('creates a channel with its four scripts in TypeScript', () => {
+    expect(NEW_CHANNEL_SCRIPT_LANGUAGES).toEqual({
+      deploy: 'TYPESCRIPT', undeploy: 'TYPESCRIPT', preprocessor: 'TYPESCRIPT', postprocessor: 'TYPESCRIPT',
+    });
   });
 });

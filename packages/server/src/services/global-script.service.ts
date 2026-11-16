@@ -35,12 +35,19 @@ const ENTRIES: ReadonlyArray<{ readonly key: string; readonly field: GlobalScrip
   { key: GLOBAL_SCRIPT_TYPE.POSTPROCESSOR, field: 'postprocessor' },
 ];
 
-/** Read every global script, with empty strings for missing rows. */
+/**
+ * Read every global script, with empty strings for missing rows. A script never
+ * saved has no row and starts in TypeScript, as the editor starts every new
+ * script; a saved one keeps its language even when empty (#183).
+ */
 async function readAll(): Promise<GlobalScriptsData> {
   const rows = await db.select().from(globalScripts);
   const byType = new Map(rows.map((r) => [r.scriptType, r]));
   const script = (key: string): string => byType.get(key)?.script ?? '';
-  const language = (key: string): ScriptLanguageCode => toScriptLanguage(byType.get(key)?.language);
+  const language = (key: string): ScriptLanguageCode => {
+    const row = byType.get(key);
+    return row ? toScriptLanguage(row.language) : 'TYPESCRIPT';
+  };
   return {
     deploy: script(GLOBAL_SCRIPT_TYPE.DEPLOY),
     undeploy: script(GLOBAL_SCRIPT_TYPE.UNDEPLOY),

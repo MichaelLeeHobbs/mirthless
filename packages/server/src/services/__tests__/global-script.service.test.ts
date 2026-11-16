@@ -131,6 +131,20 @@ describe('GlobalScriptService', () => {
       expect(result.value.postprocessor).toBe('');
     });
 
+    // #183: the editor opens a script in its stored language; one never saved
+    // starts in TypeScript, as every new script does.
+    it('gives a script never saved the TypeScript language, and a stored one its own', async () => {
+      pushFromResponse([{ scriptType: 'DEPLOY', script: '', language: 'JAVASCRIPT' }]);
+
+      const result = await GlobalScriptService.getAll();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.languages).toEqual({
+        deploy: 'JAVASCRIPT', undeploy: 'TYPESCRIPT', preprocessor: 'TYPESCRIPT', postprocessor: 'TYPESCRIPT',
+      });
+    });
+
     it('surfaces a DB failure as a Result.error', async () => {
       mockSelect.mockImplementationOnce(() => {
         throw new Error('connection refused');
