@@ -317,7 +317,7 @@ describe('validateConnectorProperties', () => {
 
     it('accepts valid SMTP destination properties', () => {
       const result = validateConnectorProperties('SMTP', 'destination', {
-        host: 'smtp.example.com', port: 587, to: 'admin@example.com',
+        host: 'smtp.example.com', port: 587, from: 'lab@example.com', to: 'admin@example.com',
       });
       expect(result.ok).toBe(true);
     });
@@ -495,6 +495,41 @@ describe('validateConnectorProperties', () => {
       ['destination', { script: 'return msg;', scriptLanguage: 'PYTHON' }, 'scriptLanguage'],
     ] as const)('rejects a JAVASCRIPT %s with %j, naming %s', (direction, props, key) => {
       const result = validateConnectorProperties('JAVASCRIPT', direction, props);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain(key);
+    });
+  });
+
+  describe('CHANNEL, FHIR and SMTP', () => {
+    // The editor's defaults with the required fields filled, and the keys the old importer copied.
+    it('accepts channels the editor saved and the importer wrote', () => {
+      expect(validateConnectorProperties('CHANNEL', 'source', { channelId: 'c1', pluginProperties: '', sourceConnectorProperties: {} }).ok).toBe(true);
+      expect(validateConnectorProperties('CHANNEL', 'destination', {
+        targetChannelId: 'c2', waitForResponse: false, pluginProperties: '', destinationConnectorProperties: {}, channelId: 'c2', channelTemplate: 'x', mapVariables: '',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('FHIR', 'destination', {
+        baseUrl: 'https://f/r4', resourceType: 'Patient', method: 'POST', authType: 'NONE', authUsername: '', authPassword: '', authToken: '',
+        authHeaderName: '', authApiKey: '', format: 'json', timeout: 30000, headers: 'X-Site: LAB',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('SMTP', 'destination', {
+        host: 'mail', port: '25', secure: false, requireTLS: false, authUser: '', authPass: '', from: 'a@x', to: 'b@x', cc: '', bcc: '', subject: '',
+        bodyTemplate: '${msg}', contentType: 'text/plain', attachContent: false, attachments: [{ filename: '', mimeType: '', content: '' }],
+      }).ok).toBe(true);
+    });
+
+    it.each([
+      ['CHANNEL', 'destination', { targetChannelId: 'c2', waitForResponse: 'true' }, 'waitForResponse'],
+      ['CHANNEL', 'destination', { targetChannelId: 'c2', waitForReply: true }, 'waitForReply'],
+      ['FHIR', 'destination', { baseUrl: 'not a url' }, 'baseUrl'],
+      ['FHIR', 'destination', { baseUrl: 'https://f/r4', authType: 'BASIC', authUsername: 'u' }, 'authPassword'],
+      ['FHIR', 'destination', { baseUrl: 'https://f/r4', authType: 'OAUTH' }, 'authType'],
+      ['FHIR', 'destination', { baseUrl: 'https://f/r4', timeout: 0 }, 'timeout'],
+      ['SMTP', 'destination', { host: 'mail', to: 'b@x' }, 'from'],
+      ['SMTP', 'destination', { host: 'mail', from: 'a@x', to: 'b@x', user: 'u' }, 'user'],
+      ['SMTP', 'destination', { host: 'mail', from: 'a@x', to: 'b@x', attachments: [{ filename: 'a.txt' }] }, 'attachments'],
+    ] as const)('rejects a %s %s with %j, naming %s', (type, direction, props, key) => {
+      const result = validateConnectorProperties(type, direction, props);
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.message).toContain(key);

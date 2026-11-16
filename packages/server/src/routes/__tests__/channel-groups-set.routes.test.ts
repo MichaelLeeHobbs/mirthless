@@ -38,6 +38,7 @@ vi.mock('../../lib/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+const { authenticate } = await import('../../middleware/auth.middleware.js');
 const router = (await import('../channel.routes.js')).default;
 const { ServiceError } = await import('../../lib/service-error.js');
 
@@ -52,6 +53,8 @@ interface Reply { readonly status: number; readonly body: unknown }
 
 async function put(path: string, body: unknown, permissions: readonly string[]): Promise<Reply> {
   const app = express();
+  // routes/index.ts authenticates once in front of every router.
+  app.use(authenticate);
   app.use(express.json());
   app.use('/channels', router);
   server = app.listen(0);

@@ -22,6 +22,10 @@ import {
   fileDestinationPropertiesSchema,
   javascriptSourcePropertiesSchema,
   javascriptDestinationPropertiesSchema,
+  channelSourcePropertiesSchema,
+  channelDestinationPropertiesSchema,
+  fhirDestinationPropertiesSchema,
+  smtpDestinationPropertiesSchema,
   connectorPortSchema as portSchema,
   formatPropertyIssues,
 } from '@galvaniflow/core-models';
@@ -32,10 +36,9 @@ import { ServiceError } from '../lib/service-error.js';
 const nonEmptyString = z.string().min(1);
 
 // ----- Source Connector Schemas -----
-// TCP_MLLP, HTTP, DATABASE, FILE, JAVASCRIPT, KAFKA and AMQP use their core-models
-// schemas (#115); the others still check only their required keys here.
+// TCP_MLLP, HTTP, DATABASE, FILE, JAVASCRIPT, CHANNEL, FHIR, SMTP, KAFKA and AMQP use
+// their core-models schemas (#115); the others still check only their required keys here.
 
-const channelSourceSchema = z.object({ channelId: nonEmptyString }).passthrough();
 const dicomSourceSchema = z.object({ port: portSchema, storageDir: nonEmptyString }).passthrough();
 const emailSourceSchema = z.object({ host: nonEmptyString, port: portSchema, username: nonEmptyString, password: nonEmptyString }).passthrough();
 
@@ -80,9 +83,6 @@ const sftpSourceSchema = sftpConnectionSchema.extend({
 
 // ----- Destination Connector Schemas -----
 
-const smtpDestSchema = z.object({ host: nonEmptyString, port: z.number(), to: nonEmptyString }).passthrough();
-const channelDestSchema = z.object({ targetChannelId: nonEmptyString }).passthrough();
-const fhirDestSchema = z.object({ baseUrl: nonEmptyString }).passthrough();
 const dicomDestSchema = z.object({ host: nonEmptyString, port: portSchema }).passthrough();
 const sftpDestSchema = sftpConnectionSchema.superRefine(checkSftpCredentials);
 
@@ -94,7 +94,7 @@ const SOURCE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   FILE: fileSourcePropertiesSchema,
   DATABASE: databaseSourcePropertiesSchema,
   JAVASCRIPT: javascriptSourcePropertiesSchema,
-  CHANNEL: channelSourceSchema,
+  CHANNEL: channelSourcePropertiesSchema,
   DICOM: dicomSourceSchema,
   EMAIL: emailSourceSchema,
   SFTP: sftpSourceSchema,
@@ -108,9 +108,9 @@ const DEST_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   FILE: fileDestinationPropertiesSchema,
   DATABASE: databaseDestinationPropertiesSchema,
   JAVASCRIPT: javascriptDestinationPropertiesSchema,
-  SMTP: smtpDestSchema,
-  CHANNEL: channelDestSchema,
-  FHIR: fhirDestSchema,
+  SMTP: smtpDestinationPropertiesSchema,
+  CHANNEL: channelDestinationPropertiesSchema,
+  FHIR: fhirDestinationPropertiesSchema,
   DICOM: dicomDestSchema,
   SFTP: sftpDestSchema,
   KAFKA: kafkaDestinationPropertiesSchema,
