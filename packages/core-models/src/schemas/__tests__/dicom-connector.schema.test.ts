@@ -1,0 +1,107 @@
+// ===========================================
+// DICOM Connector Schema Tests
+// ===========================================
+
+import { describe, it, expect } from 'vitest';
+import {
+  dicomSourcePropertiesSchema,
+  dicomDestinationPropertiesSchema,
+} from '../dicom-connector.schema.js';
+
+// DICOM_SOURCE_DEFAULTS / DICOM_DEST_DEFAULTS since 4349bf4 (2026-03-02); the AE titles said MIRTHLESS until 02b022a.
+const SOURCE_SAVED = {
+  port: 4242, storageDir: '/dicom/in', aeTitle: 'MIRTHLESS', minPoolSize: 2, maxPoolSize: 10, connectionTimeoutMs: 10000,
+  dispatchMode: 'PER_FILE', postAction: 'DELETE', moveToDirectory: '',
+};
+const DEST_SAVED = {
+  host: 'localhost', port: 104, calledAETitle: 'PACS', callingAETitle: 'MIRTHLESS', mode: 'multiple', maxAssociations: 4,
+  maxRetries: 3, retryDelayMs: 1000, timeoutMs: 30000,
+};
+
+/** A few of the Mirth DICOM Listener properties the importer copies (it has no DICOM case). */
+const MIRTH_LISTENER = {
+  pluginProperties: '', listenerConnectorProperties: { host: '0.0.0.0', port: '104' }, sourceConnectorProperties: { responseVariable: 'None' },
+  applicationEntity: 'MIRTH', localHost: '', localPort: '', dest: '/mirth/dicom', tls: 'notls', keyStorePW: '', reaper: '10', bufSize: '1',
+};
+const MIRTH_SENDER = {
+  pluginProperties: '', destinationConnectorProperties: { queueEnabled: 'false' }, applicationEntity: 'PACS1', localApplicationEntity: '',
+  priority: 'med', stgcmt: 'false', ts1: 'false', username: '', passcode: '', tls: 'notls', trustStorePW: '',
+};
+
+describe('dicomSourcePropertiesSchema', () => {
+  it('accepts what the editor saves, as it is', () => {
+    expect(dicomSourcePropertiesSchema.parse(SOURCE_SAVED)).toEqual(SOURCE_SAVED);
+  });
+
+  it('needs a port and a storage directory, and fills the rest', () => {
+    expect(dicomSourcePropertiesSchema.parse({ port: '4242', storageDir: '/in' })).toEqual({
+      port: 4242, storageDir: '/in', aeTitle: 'GALVANIFLOW', minPoolSize: 2, maxPoolSize: 10, connectionTimeoutMs: 10000,
+      dispatchMode: 'PER_FILE', postAction: 'DELETE', moveToDirectory: '',
+    });
+  });
+
+  // The importer has copied a DICOM Listener's Mirth properties since 2026-03-03; once the form's port and directory are filled it deploys.
+  it("drops the Mirth keys the importer copies and nothing reads", () => {
+    expect(dicomSourcePropertiesSchema.parse({ ...MIRTH_LISTENER, ...SOURCE_SAVED })).toEqual(SOURCE_SAVED);
+  });
+
+  it.each([
+    ['port', 0],
+    ['storageDir', ' '],
+    ['aeTitle', 'SEVENTEEN_CHARS_X'],
+    ['minPoolSize', 0],
+    ['connectionTimeoutMs', -1],
+    ['dispatchMode', 'PER_STUDY'],
+    ['postAction', 'ARCHIVE'],
+    ['processBatch', 'true'],
+    ['aeTitles', 'X'],
+  ])('rejects %s = %j, naming the key', (key, value) => {
+    const result = dicomSourcePropertiesSchema.safeParse({ ...SOURCE_SAVED, [key]: value });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(JSON.stringify(result.error.issues)).toContain(key);
+  });
+
+  it('needs maxPoolSize at least minPoolSize, and a move-to directory for MOVE', () => {
+    const pools = dicomSourcePropertiesSchema.safeParse({ ...SOURCE_SAVED, minPoolSize: 5, maxPoolSize: 4 });
+    expect(pools.success ? [] : pools.error.issues.map((i) => i.path)).toEqual([['maxPoolSize']]);
+    const move = dicomSourcePropertiesSchema.safeParse({ ...SOURCE_SAVED, postAction: 'MOVE' });
+    expect(move.success ? [] : move.error.issues.map((i) => i.path)).toEqual([['moveToDirectory']]);
+  });
+});
+
+describe('dicomDestinationPropertiesSchema', () => {
+  it('accepts what the editor saves, as it is', () => {
+    expect(dicomDestinationPropertiesSchema.parse(DEST_SAVED)).toEqual(DEST_SAVED);
+  });
+
+  // An imported DICOM Sender keeps Mirth's host and port and deploys unedited.
+  it('drops the Mirth keys the importer copies, keeping host and port', () => {
+    expect(dicomDestinationPropertiesSchema.parse({ ...MIRTH_SENDER, host: 'pacs', port: '104' })).toEqual({
+      host: 'pacs', port: 104, calledAETitle: 'PACS', callingAETitle: 'GALVANIFLOW', mode: 'multiple', maxAssociations: 4,
+      maxRetries: 3, retryDelayMs: 1000, timeoutMs: 30000,
+    });
+  });
+
+  // Mirth's DICOM Sender template `${DICOMMESSAGE}` means "the message"; sent as written it is a file path that does not exist.
+  it("drops Mirth's ${DICOMMESSAGE} template, so the message itself is sent", () => {
+    expect(dicomDestinationPropertiesSchema.parse({ ...DEST_SAVED, template: '${DICOMMESSAGE}' })).toEqual(DEST_SAVED);
+    expect(dicomDestinationPropertiesSchema.parse({ ...DEST_SAVED, template: '${message.encodedData}' })).toEqual({ ...DEST_SAVED, template: '${message.encodedData}' });
+  });
+
+  it.each([
+    ['host', ''],
+    ['port', 70000],
+    ['calledAETitle', 'SEVENTEEN_CHARS_X'],
+    ['callingAETitle', 'SEVENTEEN_CHARS_X'],
+    ['mode', 'pooled'],
+    ['maxRetries', -1],
+    ['timeoutMs', 2_147_483_648],
+    ['template', 3],
+  ])('rejects %s = %j, naming the key', (key, value) => {
+    const result = dicomDestinationPropertiesSchema.safeParse({ ...DEST_SAVED, [key]: value });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path[0]).toBe(key);
+  });
+});
