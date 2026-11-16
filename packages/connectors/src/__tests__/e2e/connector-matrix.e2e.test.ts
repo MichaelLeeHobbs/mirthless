@@ -63,6 +63,7 @@ describe('File connector (drop a file in → transform → write a file out)', (
         postAction: FILE_POST_ACTION.DELETE,
         moveToDirectory: '',
         ignoreDot: true,
+        roots: { allowed: [srcDir, destDir], denied: [] },
       }),
       transformer: "return String(msg) + '::processed';",
       destinations: [{
@@ -75,6 +76,7 @@ describe('File connector (drop a file in → transform → write a file out)', (
           binary: false,
           tempFileEnabled: false,
           appendMode: false,
+          roots: { allowed: [srcDir, destDir], denied: [] },
         }),
       }],
     });

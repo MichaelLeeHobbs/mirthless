@@ -18,3 +18,5 @@ export {
   unknownPlaceholders,
   type FileDispatcherConfig,
 } from './file-dispatcher.js';
+
+export { resolveWithinRoots, NO_FILE_ROOTS, type FileRoots } from './file-roots.js';

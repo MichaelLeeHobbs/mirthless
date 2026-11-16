@@ -15,14 +15,17 @@ vi.mock('node:fs/promises', () => ({
   rename: vi.fn(),
   mkdir: vi.fn(),
   stat: vi.fn(),
+  realpath: vi.fn(),
 }));
 
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 
 const mockWriteFile = vi.mocked(fs.writeFile);
 const mockAppendFile = vi.mocked(fs.appendFile);
 const mockRename = vi.mocked(fs.rename);
 const mockMkdir = vi.mocked(fs.mkdir);
+const mockRealpath = vi.mocked(fs.realpath);
 
 // ----- Helpers -----
 
@@ -34,6 +37,7 @@ function makeConfig(overrides?: Partial<FileDispatcherConfig>): FileDispatcherCo
     binary: false,
     tempFileEnabled: true,
     appendMode: false,
+    roots: { allowed: ['/data'], denied: [] },
     ...overrides,
   };
 }
@@ -56,6 +60,8 @@ let dispatcher: FileDispatcher | null = null;
 beforeEach(() => {
   vi.clearAllMocks();
   mockMkdir.mockResolvedValue(undefined as never);
+  // No symlinks unless a test says so: every path is its own real path.
+  mockRealpath.mockImplementation(((p: string) => Promise.resolve(p)) as never);
   mockWriteFile.mockResolvedValue(undefined);
   mockAppendFile.mockResolvedValue(undefined);
   mockRename.mockResolvedValue(undefined);
@@ -200,7 +206,58 @@ describe('FileDispatcher', () => {
 
       await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
 
-      expect(mockMkdir).toHaveBeenCalledWith('/data/outbound', { recursive: true });
+      expect(mockMkdir).toHaveBeenCalledWith(path.resolve('/data/outbound'), { recursive: true });
+    });
+
+    // GHSA-r434-hwqg-cvcw: a File destination could write anywhere the server
+    // process can, including over its own code.
+    it('refuses to deploy a directory outside FILE_CONNECTOR_ROOTS', async () => {
+      dispatcher = new FileDispatcher(makeConfig({ directory: '/app/packages/server/dist' }));
+      const result = await dispatcher.onDeploy();
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toMatch(/outside FILE_CONNECTOR_ROOTS/);
+    });
+
+    it('refuses to deploy when no roots are configured', async () => {
+      dispatcher = new FileDispatcher(makeConfig({ roots: { allowed: [], denied: [] } }));
+      const result = await dispatcher.onDeploy();
+      expect(result.error?.message).toMatch(/FILE_CONNECTOR_ROOTS is not set/);
+    });
+
+    it('writes nothing when the file name pattern climbs out of the roots', async () => {
+      dispatcher = new FileDispatcher(makeConfig({ outputPattern: '../../app/${messageId}.js', tempFileEnabled: false }));
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+      expect(result.ok).toBe(false);
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mockAppendFile).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing when the output file is a link out of the roots', async () => {
+      mockRealpath.mockImplementation(((p: string) =>
+        Promise.resolve(p === path.resolve('/data/outbound/42.txt') ? path.resolve('/app/.env') : p)) as never);
+      dispatcher = new FileDispatcher(makeConfig({ appendMode: true }));
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+      expect(result.ok).toBe(false);
+      expect(mockAppendFile).not.toHaveBeenCalled();
+    });
+
+    it('creates nothing when the directory has become a link out of the roots', async () => {
+      mockRealpath.mockImplementation(((p: string) =>
+        Promise.resolve(p === path.resolve('/data/outbound') ? path.resolve('/app') : p)) as never);
+      dispatcher = new FileDispatcher(makeConfig());
+      await dispatcher.onStart();
+
+      const result = await dispatcher.send(makeMessage(), AbortSignal.timeout(5_000));
+
+      expect(result.ok).toBe(false);
+      expect(mockMkdir).not.toHaveBeenCalled();
+      expect(mockWriteFile).not.toHaveBeenCalled();
     });
 
     it('writes file with temp-file-then-rename when tempFileEnabled', async () => {

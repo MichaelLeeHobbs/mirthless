@@ -126,7 +126,7 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 vi.mock('../../config/index.js', () => ({
-  config: { LOG_LEVEL: 'info', NODE_ENV: 'test' },
+  config: { LOG_LEVEL: 'info', NODE_ENV: 'test', FILE_CONNECTOR_ROOTS: ['/srv/files'] },
 }));
 
 // Must import after mocks
@@ -330,6 +330,28 @@ describe('EngineManager.deploy of one channel twice at once', () => {
 
     transformerRows = [];
     await expect(engine.deploy(makeChannel())).resolves.toBeUndefined();
+  });
+});
+
+// GHSA-r434-hwqg-cvcw: without the roots a File connector refuses every path,
+// so this is what makes FILE_CONNECTOR_ROOTS reach the File source and destination.
+describe('EngineManager.deploy passes the File roots to the connectors it builds', () => {
+  it('gives the source and each destination FILE_CONNECTOR_ROOTS and the server directories', async () => {
+    const { createSourceConnector, createDestinationConnector } = await import('@galvanigraph/connectors');
+    const { INSTALL_ROOT } = await import('../../lib/file-roots.js');
+    const env = { fileRoots: { allowed: ['/srv/files'], denied: [INSTALL_ROOT, process.cwd()] } };
+
+    await new EngineManager('test-server').deploy(makeChannel({
+      sourceConnectorType: 'FILE',
+      sourceConnectorProperties: { directory: '/srv/files/in' },
+      destinations: [{
+        metaDataId: 1, name: 'Out', enabled: true, connectorType: 'FILE', properties: { directory: '/srv/files/out' },
+        queueMode: 'NEVER', retryCount: 0, retryIntervalMs: 0, rotateQueue: false,
+      }],
+    }));
+
+    expect(vi.mocked(createSourceConnector)).toHaveBeenLastCalledWith(expect.any(String), expect.anything(), env);
+    expect(vi.mocked(createDestinationConnector)).toHaveBeenLastCalledWith(expect.any(String), expect.anything(), env);
   });
 });
 

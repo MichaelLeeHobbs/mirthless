@@ -4,6 +4,7 @@
 // Validates environment variables at startup using Zod.
 // If validation fails, the app exits immediately.
 
+import * as path from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import type { SignOptions } from 'jsonwebtoken';
 import { z } from 'zod/v4';
@@ -92,6 +93,13 @@ export const configSchema = z.object({
   // addresses only.
   SCRIPT_HTTP_ALLOWED_HOSTS: z.string().default('')
     .transform((v): ReadonlyArray<string> => v.split(',').map((h) => h.trim().toLowerCase()).filter((h) => h.length > 0)),
+
+  // Directories File sources and File destinations may use (absolute paths,
+  // comma separated), with everything under them. Empty: File connectors are
+  // off. The server's own directories are refused even inside a root (D-315).
+  FILE_CONNECTOR_ROOTS: z.string().default('')
+    .transform((v): ReadonlyArray<string> => v.split(',').map((p) => p.trim()).filter((p) => p.length > 0))
+    .refine((roots) => roots.every((p) => path.isAbsolute(p)), 'every FILE_CONNECTOR_ROOTS entry must be an absolute path'),
 
   // Logging
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),

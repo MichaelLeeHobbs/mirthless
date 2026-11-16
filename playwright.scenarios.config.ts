@@ -13,6 +13,7 @@
 // pnpm test:scenarios:score   run it and print the weighted score
 
 import { defineConfig } from '@playwright/test';
+import { SCENARIO_FILE_ROOT } from './e2e/scenarios/support/files.js';
 
 const databaseUrl = process.env.SCENARIO_DATABASE_URL ?? '';
 if (!/_test$/i.test(new URL(databaseUrl || 'postgresql://x/none').pathname)) {
@@ -44,6 +45,7 @@ export default defineConfig({
       JWT_SECRET: 'scenario-suite-jwt-secret-not-for-production-use',
       LOG_LEVEL: 'warn',
       API_RATE_LIMIT_MAX: '100000',
+      FILE_CONNECTOR_ROOTS: SCENARIO_FILE_ROOT,
     },
   },
 });

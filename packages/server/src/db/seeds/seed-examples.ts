@@ -9,10 +9,23 @@
 // A channel's message partitions are created with it, as channel creation
 // does, so its example messages land in its own partitions (#260).
 
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { eq, and, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../schema/index.js';
 import { PartitionManagerService } from '../../services/partition-manager.service.js';
+
+/**
+ * Where the example File writers write: outside the install, which File
+ * connectors may not use (D-315). Add DEMO_FILE_ROOT to FILE_CONNECTOR_ROOTS
+ * to deploy them.
+ */
+export const DEMO_FILE_ROOT = path.join(os.tmpdir(), 'galvanigraph-files');
+
+function demoFileDir(name: string): string {
+  return path.join(DEMO_FILE_ROOT, name);
+}
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -278,7 +291,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
   await create('Example: JSON Processor', async () => {
     const id = await insertChannel(db, {
       name: 'Example: JSON Processor',
-      description: 'JSON via HTTP POST on port 6671. msg is auto-parsed — access fields directly (msg.name). Writes to ./output/json-processor/.',
+      description: 'JSON via HTTP POST on port 6671. msg is auto-parsed — access fields directly (msg.name). Writes to ' + demoFileDir('json-processor') + '.',
       inboundDataType: 'JSON',
       outboundDataType: 'JSON',
       sourceConnectorType: 'HTTP',
@@ -290,7 +303,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
         name: 'File Writer',
         connectorType: 'FILE',
         properties: {
-          directory: './output/json-processor', outputPattern: 'msg-${messageId}.json',
+          directory: demoFileDir('json-processor'), outputPattern: 'msg-${messageId}.json',
           charset: 'utf-8', binary: false, tempFileEnabled: true, appendMode: false,
         },
       }],
@@ -312,7 +325,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
   await create('Example: XML Transform', async () => {
     const id = await insertChannel(db, {
       name: 'Example: XML Transform',
-      description: 'XML via HTTP POST on port 6672. msg is auto-parsed — access elements via dot notation. Writes to ./output/xml-transform/.',
+      description: 'XML via HTTP POST on port 6672. msg is auto-parsed — access elements via dot notation. Writes to ' + demoFileDir('xml-transform') + '.',
       inboundDataType: 'XML',
       outboundDataType: 'XML',
       sourceConnectorType: 'HTTP',
@@ -324,7 +337,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
         name: 'File Writer',
         connectorType: 'FILE',
         properties: {
-          directory: './output/xml-transform', outputPattern: 'msg-${messageId}.xml',
+          directory: demoFileDir('xml-transform'), outputPattern: 'msg-${messageId}.xml',
           charset: 'utf-8', binary: false, tempFileEnabled: true, appendMode: false,
         },
       }],
@@ -444,7 +457,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
           name: 'File Archive',
           connectorType: 'FILE',
           properties: {
-            directory: './output/hl7-archive', outputPattern: 'adt-${messageId}.hl7',
+            directory: demoFileDir('hl7-archive'), outputPattern: 'adt-${messageId}.hl7',
             charset: 'utf-8', binary: false, tempFileEnabled: true, appendMode: false,
           },
         },
@@ -492,7 +505,7 @@ export async function seedExampleChannels(db: Db): Promise<void> {
           name: 'File Writer',
           connectorType: 'FILE',
           properties: {
-            directory: './output/multi-dest', outputPattern: 'msg-${messageId}.txt',
+            directory: demoFileDir('multi-dest'), outputPattern: 'msg-${messageId}.txt',
             charset: 'utf-8', binary: false, tempFileEnabled: true, appendMode: false,
           },
         },

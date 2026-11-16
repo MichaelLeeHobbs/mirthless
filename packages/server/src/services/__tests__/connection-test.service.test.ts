@@ -104,8 +104,18 @@ const mockAccess = vi.fn();
 vi.mock('node:fs/promises', () => ({
   default: { access: (...args: unknown[]) => mockAccess(...args) },
   access: (...args: unknown[]) => mockAccess(...args),
+  // The File root check resolves symlinks; there are none here.
+  realpath: (p: string) => Promise.resolve(p),
   constants: { R_OK: 4, W_OK: 2 },
 }));
+
+// File tests run with /data as the only File root, and the install root above
+// it so it is inside a root and still refused.
+vi.mock('../../config/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../config/index.js')>();
+  const { INSTALL_ROOT } = await import('../../lib/file-roots.js');
+  return { ...actual, config: { ...actual.config, FILE_CONNECTOR_ROOTS: ['/data', INSTALL_ROOT] } };
+});
 
 // Mock global fetch for HTTP and FHIR tests
 const mockFetch = vi.fn();
@@ -351,13 +361,36 @@ describe('ConnectionTestService', () => {
       mockAccess.mockRejectedValueOnce(new Error('ENOENT: no such file or directory'));
 
       const result = await ConnectionTestService.testConnection('FILE', 'SOURCE', {
-        directory: '/nonexistent',
+        directory: '/data/nonexistent',
       });
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.success).toBe(false);
       expect(result.value.message).toContain('ENOENT');
+    });
+
+    // GHSA-r434-hwqg-cvcw: the tester must not say whether a path outside the
+    // roots exists or can be read.
+    it('refuses a directory outside FILE_CONNECTOR_ROOTS without looking at it', async () => {
+      const result = await ConnectionTestService.testConnection('FILE', 'SOURCE', { directory: '/etc' });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toMatch(/outside FILE_CONNECTOR_ROOTS/);
+      expect(mockAccess).not.toHaveBeenCalled();
+    });
+
+    it('refuses the server install directory', async () => {
+      const { INSTALL_ROOT } = await import('../../lib/file-roots.js');
+      const result = await ConnectionTestService.testConnection('FILE', 'SOURCE', { directory: INSTALL_ROOT });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.success).toBe(false);
+      expect(result.value.message).toMatch(/server's own/);
+      expect(mockAccess).not.toHaveBeenCalled();
     });
 
     it('returns error when directory property is missing', async () => {
@@ -1003,7 +1036,7 @@ describe('ConnectionTestService', () => {
       mockAccess.mockRejectedValueOnce(new Error('ENOENT'));
 
       const result = await ConnectionTestService.testConnection('FILE', 'SOURCE', {
-        directory: '/nonexistent',
+        directory: '/data/nonexistent',
       });
 
       expect(result.ok).toBe(true);

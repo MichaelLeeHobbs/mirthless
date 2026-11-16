@@ -67,6 +67,7 @@ import { resolveHttpSourceTls, resolveHttpDestinationTls, resolveQueueTls } from
 import { db } from './lib/db.js';
 import { ServiceError } from './lib/service-error.js';
 import { safeHttpFetch } from './lib/safe-http-fetch.js';
+import { buildFileRoots } from './lib/file-roots.js';
 import { channelFilters, filterRules, channelTransformers, transformerSteps } from './db/schema/index.js';
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
@@ -626,9 +627,11 @@ export class EngineManager {
       }
       sourceProperties = resolved.value;
     }
+    const connectorEnv = { fileRoots: buildFileRoots(config.FILE_CONNECTOR_ROOTS) };
     const source = createSourceConnector(
       channel.sourceConnectorType,
       sourceProperties,
+      connectorEnv,
     ) as SourceConnectorRuntime;
 
     // Create destination connectors (HTTP, Kafka and AMQP resolve cert-IDs too).
@@ -646,6 +649,7 @@ export class EngineManager {
       const connector = createDestinationConnector(
         dest.connectorType,
         destProperties,
+        connectorEnv,
       );
       destinations.set(dest.metaDataId, connector);
     }

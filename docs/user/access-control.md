@@ -140,6 +140,8 @@ Scripts run in a `node:vm` sandbox. [SECURITY.md](../../SECURITY.md) says this s
 
 `httpFetch` refuses private and reserved addresses unless the host is listed in `SCRIPT_HTTP_ALLOWED_HOSTS`. Public addresses are always allowed.
 
+File sources and File destinations reach only directories under `FILE_CONNECTOR_ROOTS`, never the server's install, working directory, `/proc`, `/sys` or `/dev`, so a deployer cannot read the server's `.env` or overwrite its code through a channel ([FILE security](connector-reference.md#file-security)). DICOM storage directories are not limited yet.
+
 ## What scope promises
 
 Roles with a scope of channel groups arrive with [#265](https://github.com/MichaelLeeHobbs/mirthless/issues/265) and [#266](https://github.com/MichaelLeeHobbs/mirthless/issues/266). Until then every permission covers every channel. Once they ship, this is what a scope means; the role editor, the assignment picker and the API key form say the same:
