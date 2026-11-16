@@ -19,6 +19,7 @@ const SHARED_HELPERS = [
   { names: 'expiryDays|expiryColor|expiryLabel', home: 'packages/web/src/lib/certificate-expiry.ts' },
   { names: 'getStr|getNum|getBool|getTls|getTlsStr|getTlsBool|propertyUpdaters', home: 'packages/web/src/components/channels/common/connector-properties.ts' },
   { names: 'compileScript|compileErrorMessages|extractEsbuildErrors', home: 'packages/engine/src/sandbox/script-compiler.ts' },
+  { names: 'wrapScriptBody|scriptBodyPosition', home: '@galvaniflow/core-models (scripting/script-check.ts, D-297)' },
   { names: 'toPoolConfig', home: 'packages/connectors/src/database/connection-pool.ts' },
   { names: 'dispatchQuarantined', home: 'packages/connectors/src/quarantine-ledger.ts' },
   { names: 'connectFresh|closeQuietly', home: 'packages/connectors/src/client-lifecycle.ts' },

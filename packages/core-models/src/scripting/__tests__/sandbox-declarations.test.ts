@@ -110,6 +110,15 @@ describe('scriptDeclarations', () => {
     const both = ['const hl7 = parseHL7(rawData);', 'const hl7 = parseHL7(rawData);'];
     expect(check(both, { dataType: 'HL7V2' })).toEqual([]);
   });
+
+  it('keeps two wrapped scripts from clashing, which needs every script to be a module', () => {
+    // Each wrapped script declares the same wrapper function. The editor keeps
+    // one hidden wrapped model per editor in one TypeScript project (D-297):
+    // only moduleDetection Force keeps the wrapper's name out of the global
+    // scope, where two of them are "Duplicate function implementation" (2393).
+    expect(SCRIPT_COMPILER_OPTIONS.moduleDetection).toBe(ts.ModuleDetectionKind.Force);
+    expect(check(['return 1;', 'return 2;'], {})).toEqual([]);
+  });
 });
 
 describe('templateDeclarations', () => {

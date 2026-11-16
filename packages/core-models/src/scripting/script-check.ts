@@ -38,14 +38,17 @@ export function wrapScriptBody(code: string): string {
   return `${SCRIPT_BODY_OPEN}\n${code}\n}`;
 }
 
+/** The line breaks TypeScript counts lines by: CR LF, LF, CR, U+2028 and U+2029. */
+const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
+
 /**
  * A 1-based line and column in {@link wrapScriptBody}'s output, on the
- * script's own lines. A position on the wrapper's first line goes to the
- * script's start, one on its closing brace (an unclosed block, say) to the
- * script's end.
+ * script's own lines, counted as TypeScript counts them. A position on the
+ * wrapper's first line goes to the script's start, one on its closing brace
+ * (an unclosed block, say) to the script's end.
  */
 export function scriptBodyPosition(code: string, line: number, column: number): { readonly line: number; readonly column: number } {
-  const lines = code.split('\n');
+  const lines = code.split(LINE_BREAK);
   if (line < 2) return { line: 1, column: 1 };
   if (line > lines.length + 1) return { line: lines.length, column: (lines.at(-1) ?? '').length + 1 };
   return { line: line - 1, column };
