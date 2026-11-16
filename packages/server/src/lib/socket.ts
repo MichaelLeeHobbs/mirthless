@@ -8,6 +8,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
 import { eq } from 'drizzle-orm';
 import { PERMISSIONS, type Permission } from '@galvaniflow/core-models';
+import { createThrottle, type Throttle } from '@galvaniflow/core-util';
 import { config } from '../config/index.js';
 import { db } from './db.js';
 import { users } from '../db/schema/index.js';
@@ -240,6 +241,47 @@ export function emitToRoom(room: string, event: string, data: unknown): void {
   io.to(room).emit(event, data);
 }
 
+/** The window in which repeated live events for one room collapse into one emit (D-306). */
+export const LIVE_EVENT_COALESCE_MS = 1_000;
+
+interface CoalescedEmit {
+  data: unknown;
+  readonly throttle: Throttle;
+}
+
+/** One throttle per room and event. Bounded by the number of rooms (channels plus dashboard). */
+const coalescedEmits = new Map<string, CoalescedEmit>();
+
+/**
+ * Emit an event to a room at most once per LIVE_EVENT_COALESCE_MS. The first
+ * event goes out at once; the events after it in the same window go out as one
+ * emit when the window ends, carrying the latest data. Used for the per-message
+ * events (`stats:update`, `message:new`), whose listeners only refetch, so a
+ * busy channel does not push one event per message to every open page (#231).
+ * No-ops if Socket.IO is not initialized.
+ */
+export function emitToRoomCoalesced(room: string, event: string, data: unknown): void {
+  if (!io) return;
+  const key = `${room}\n${event}`;
+  let entry = coalescedEmits.get(key);
+  if (!entry) {
+    const created: CoalescedEmit = {
+      data,
+      throttle: createThrottle(() => { emitToRoom(room, event, created.data); }, LIVE_EVENT_COALESCE_MS),
+    };
+    coalescedEmits.set(key, created);
+    entry = created;
+  }
+  entry.data = data;
+  entry.throttle.call();
+}
+
+/** Drop every pending coalesced emit. */
+function cancelCoalescedEmits(): void {
+  for (const entry of coalescedEmits.values()) entry.throttle.cancel();
+  coalescedEmits.clear();
+}
+
 /**
  * Emit an event to all connected sockets.
  * No-ops if Socket.IO is not initialized.
@@ -256,6 +298,7 @@ export async function shutdownSocketIO(): Promise<void> {
     clearInterval(revalidateTimer);
     revalidateTimer = null;
   }
+  cancelCoalescedEmits();
   if (io) {
     // Force-disconnect all clients first. Open websockets otherwise keep the
     // underlying HTTP server's `close()` from ever resolving, which would hang
@@ -274,5 +317,6 @@ export async function shutdownSocketIO(): Promise<void> {
  * @internal
  */
 export function _resetIO(server: SocketIOServer | null): void {
+  cancelCoalescedEmits();
   io = server;
 }

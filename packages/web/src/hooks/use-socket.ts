@@ -3,7 +3,8 @@
 // ===========================================
 // React hooks for managing socket.io lifecycle and event subscriptions.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createThrottle } from '@galvaniflow/core-util';
 import { useAuthStore } from '../stores/auth.store.js';
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socket.js';
 import { queryClient } from '../providers/QueryProvider.js';
@@ -93,6 +94,29 @@ export function useSocketEvent<T = unknown>(event: string, handler: (data: T) =>
       socket.off(event, wrappedHandler);
     };
   }, [event]);
+}
+
+/**
+ * The shortest time between two runs of a live-event handler (D-306). The server
+ * already coalesces these events to one a second per room; this bounds the
+ * refetches each open page makes.
+ */
+export const LIVE_REFRESH_INTERVAL_MS = 2_000;
+
+/**
+ * Subscribe to a socket.io event whose handler refetches, running the handler at
+ * most once per LIVE_REFRESH_INTERVAL_MS. The first event runs it at once; later
+ * events in the window run it once when the window ends, so the last change is
+ * always shown. The event payload is not passed on. A pending run is dropped on
+ * unmount.
+ */
+export function useThrottledSocketEvent(event: string, handler: () => void): void {
+  const handlerRef = useRef(handler);
+  handlerRef.current = handler;
+  const [throttle] = useState(() => createThrottle(() => { handlerRef.current(); }, LIVE_REFRESH_INTERVAL_MS));
+
+  useEffect(() => () => { throttle.cancel(); }, [throttle]);
+  useSocketEvent(event, throttle.call);
 }
 
 /**

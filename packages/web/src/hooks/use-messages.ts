@@ -66,10 +66,12 @@ export interface MessageSearchParams extends MessageFilters {
 
 // ----- Query Keys -----
 
-const MESSAGE_KEYS = {
+export const MESSAGE_KEYS = {
   all: ['messages'] as const,
+  /** Every search of one channel's messages, whatever its filters and page. */
+  channelSearches: (channelId: string) => [...MESSAGE_KEYS.all, 'search', channelId] as const,
   search: (channelId: string, params: Record<string, unknown>) =>
-    [...MESSAGE_KEYS.all, 'search', channelId, params] as const,
+    [...MESSAGE_KEYS.channelSearches(channelId), params] as const,
   detail: (channelId: string, messageId: number) =>
     [...MESSAGE_KEYS.all, 'detail', channelId, messageId] as const,
 } as const;

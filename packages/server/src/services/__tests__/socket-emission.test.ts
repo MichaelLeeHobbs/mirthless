@@ -12,10 +12,12 @@ import { SOCKET_EVENT } from '@galvaniflow/core-models';
 
 const mockEmitToAll = vi.fn();
 const mockEmitToRoom = vi.fn();
+const mockEmitToRoomCoalesced = vi.fn();
 
 vi.mock('../../lib/socket.js', () => ({
   emitToAll: (...args: unknown[]) => mockEmitToAll(...args),
   emitToRoom: (...args: unknown[]) => mockEmitToRoom(...args),
+  emitToRoomCoalesced: (...args: unknown[]) => mockEmitToRoomCoalesced(...args),
 }));
 
 // ----- Mock Engine (for DeploymentService) -----
@@ -207,37 +209,36 @@ describe('Socket emission on deployment state changes', () => {
 });
 
 describe('Socket emission on message operations', () => {
-  it('emits stats:update to dashboard room after incrementStats', async () => {
+  // The per-message events are coalesced per room (#231, D-306), so their
+  // payload carries only what stays true for a whole window of events.
+  it('emits a coalesced stats:update to dashboard room after incrementStats', async () => {
     const result = await MessageService.incrementStats(
       CHANNEL_ID, 0, SERVER_ID, 'received',
     );
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToRoom).toHaveBeenCalledWith('dashboard', SOCKET_EVENT.STATS_UPDATE, {
-      channelId: CHANNEL_ID,
-      metaDataId: 0,
-      serverId: SERVER_ID,
-      field: 'received',
-    });
+    expect(mockEmitToRoomCoalesced).toHaveBeenCalledWith('dashboard', SOCKET_EVENT.STATS_UPDATE, {});
+    expect(mockEmitToRoom).not.toHaveBeenCalled();
   });
 
-  it('emits message:new to channel room after createConnectorMessage', async () => {
+  it('emits a coalesced message:new to channel room after createConnectorMessage', async () => {
     const result = await MessageService.createConnectorMessage(
       CHANNEL_ID, MESSAGE_ID, 0, 'Source', 'RECEIVED',
     );
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToRoom).toHaveBeenCalledWith(
+    expect(mockEmitToRoomCoalesced).toHaveBeenCalledWith(
       `channel:${CHANNEL_ID}`,
       SOCKET_EVENT.MESSAGE_NEW,
-      { channelId: CHANNEL_ID, messageId: MESSAGE_ID, metaDataId: 0 },
+      { channelId: CHANNEL_ID },
     );
+    expect(mockEmitToRoom).not.toHaveBeenCalled();
   });
 
   it('does not throw when socket is not initialized', async () => {
     // emitToRoom and emitToAll are mocked — they won't throw by default.
     // This confirms the service completes successfully even when emission is a no-op.
-    mockEmitToRoom.mockImplementation(() => { /* no-op, simulating null IO */ });
+    mockEmitToRoomCoalesced.mockImplementation(() => { /* no-op, simulating null IO */ });
 
     const result = await MessageService.incrementStats(
       CHANNEL_ID, 0, SERVER_ID, 'sent',
@@ -253,6 +254,6 @@ describe('Socket emission on message operations', () => {
 
     expect(result.ok).toBe(true);
     // The emission was called but the result is still ok (void)
-    expect(mockEmitToRoom).toHaveBeenCalledOnce();
+    expect(mockEmitToRoomCoalesced).toHaveBeenCalledOnce();
   });
 });
