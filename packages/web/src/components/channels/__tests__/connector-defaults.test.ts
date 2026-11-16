@@ -10,6 +10,7 @@ import {
   TCP_MLLP_SOURCE_DEFAULTS,
   DATABASE_SOURCE_DEFAULTS,
   FILE_SOURCE_DEFAULTS,
+  JAVASCRIPT_SOURCE_DEFAULTS,
   getDefaultProperties,
 } from '../source/connector-defaults.js';
 import {
@@ -18,6 +19,7 @@ import {
   TCP_MLLP_DEST_DEFAULTS,
   DATABASE_DEST_DEFAULTS,
   FILE_DEST_DEFAULTS,
+  JAVASCRIPT_DEST_DEFAULTS,
   SMTP_DEST_DEFAULTS,
   getDestDefaultProperties,
   createDefaultDestination,
@@ -31,6 +33,8 @@ import {
   TCP_MLLP_RESPONSE_MODES,
   fileSourcePropertiesSchema,
   fileDestinationPropertiesSchema,
+  javascriptSourcePropertiesSchema,
+  javascriptDestinationPropertiesSchema,
   httpSourcePropertiesSchema,
   httpDestinationPropertiesSchema,
   databaseSourcePropertiesSchema,
@@ -137,6 +141,18 @@ describe('FILE defaults match the core-models schema', () => {
   it.each([
     ['source', fileSourcePropertiesSchema, { ...FILE_SOURCE_DEFAULTS, directory: '/in' }],
     ['destination', fileDestinationPropertiesSchema, { ...FILE_DEST_DEFAULTS, directory: '/out' }],
+  ] as const)('%s', (_name, schema, filled) => {
+    expect(schema.parse(filled)).toEqual(filled);
+  });
+});
+
+describe('JAVASCRIPT defaults match the core-models schema', () => {
+  // The schema returns the defaults unchanged once the script a user must
+  // write is set: it rejects unknown keys and a blank script, and it would add
+  // any defaulted key the form left out.
+  it.each([
+    ['source', javascriptSourcePropertiesSchema, { ...JAVASCRIPT_SOURCE_DEFAULTS, script: 'return "x";' }],
+    ['destination', javascriptDestinationPropertiesSchema, { ...JAVASCRIPT_DEST_DEFAULTS, script: 'return msg;' }],
   ] as const)('%s', (_name, schema, filled) => {
     expect(schema.parse(filled)).toEqual(filled);
   });

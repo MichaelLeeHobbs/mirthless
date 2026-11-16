@@ -13,6 +13,7 @@ import { tcpMllpSourceObjectSchema, tcpMllpDestinationObjectSchema } from '../tc
 import { httpSourceObjectSchema, httpDestinationObjectSchema } from '../http-connector.schema.js';
 import { databaseSourceObjectSchema, databaseDestinationObjectSchema } from '../database-connector.schema.js';
 import { fileSourceObjectSchema, fileDestinationObjectSchema } from '../file-connector.schema.js';
+import { javascriptSourceObjectSchema, javascriptDestinationObjectSchema } from '../javascript-connector.schema.js';
 
 const DOC = readFileSync(new URL('../../../../../docs/user/connector-reference.md', import.meta.url), 'utf-8');
 
@@ -45,6 +46,8 @@ const SCHEMAS = [
   ['DATABASE as a destination', 'destination', databaseDestinationObjectSchema.shape],
   ['FILE as a source', 'source', fileSourceObjectSchema.shape],
   ['FILE as a destination', 'destination', fileDestinationObjectSchema.shape],
+  ['JAVASCRIPT as a source', 'source', javascriptSourceObjectSchema.shape],
+  ['JAVASCRIPT as a destination', 'destination', javascriptDestinationObjectSchema.shape],
 ] as const;
 
 describe('docs/user/connector-reference.md property tables', () => {

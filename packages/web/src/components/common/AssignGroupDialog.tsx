@@ -1,7 +1,10 @@
 // ===========================================
 // Assign Group Dialog
 // ===========================================
-// Lets the user change which group a channel belongs to.
+// Lets the user change which group a channel belongs to. A channel has one
+// group in the UI (D-126); a channel the API put in several shows them all,
+// and saving keeps only the chosen one. The change is one server call, so a
+// failure leaves the channel's groups as they were (#223).
 
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
@@ -13,8 +16,10 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import CircularProgress from '@mui/material/CircularProgress';
 import Box from '@mui/material/Box';
-import { useChannelGroups, useGroupMemberships, useAddGroupMember, useRemoveGroupMember } from '../../hooks/use-channel-groups.js';
+import { useChannelGroups, useGroupMemberships, useSetChannelGroups } from '../../hooks/use-channel-groups.js';
 import { useNotification } from '../../stores/notification.store.js';
+import { errorMessage } from '../../lib/error-message.js';
+import { isSameGroupSet, multiGroupNote } from '../../lib/group-membership.js';
 
 interface AssignGroupDialogProps {
   readonly open: boolean;
@@ -27,53 +32,43 @@ const NONE_VALUE = '__none__';
 export function AssignGroupDialog({ open, onClose, channelId }: AssignGroupDialogProps): ReactNode {
   const groupsQuery = useChannelGroups();
   const membershipsQuery = useGroupMemberships();
-  const addMember = useAddGroupMember();
-  const removeMember = useRemoveGroupMember();
+  const setGroups = useSetChannelGroups();
   const { notify } = useNotification();
   const [selectedGroupId, setSelectedGroupId] = useState<string>(NONE_VALUE);
   const [saving, setSaving] = useState(false);
 
   const groups = groupsQuery.data ?? [];
 
-  const channelMemberships = useMemo((): readonly { channelGroupId: string }[] => {
-    return (membershipsQuery.data ?? []).filter((m) => m.channelId === channelId);
+  const currentGroupIds = useMemo((): readonly string[] => {
+    return (membershipsQuery.data ?? []).filter((m) => m.channelId === channelId).map((m) => m.channelGroupId);
   }, [membershipsQuery.data, channelId]);
 
-  const currentGroupId = useMemo((): string => {
-    return channelMemberships[0]?.channelGroupId ?? NONE_VALUE;
-  }, [channelMemberships]);
+  const initialGroupId = currentGroupIds[0] ?? NONE_VALUE;
 
   // Sync selection when data loads or channelId changes
   useEffect(() => {
-    setSelectedGroupId(currentGroupId);
-  }, [currentGroupId]);
+    setSelectedGroupId(initialGroupId);
+  }, [initialGroupId]);
+
+  const nextGroupIds = useMemo((): readonly string[] => (selectedGroupId === NONE_VALUE ? [] : [selectedGroupId]), [selectedGroupId]);
+  const unchanged = isSameGroupSet(nextGroupIds, currentGroupIds);
 
   const handleSave = useCallback(async (): Promise<void> => {
-    if (selectedGroupId === currentGroupId) {
-      onClose();
-      return;
-    }
-
     setSaving(true);
     try {
-      // Remove from ALL current groups (handles multi-membership cleanup)
-      for (const m of channelMemberships) {
-        await removeMember.mutateAsync({ groupId: m.channelGroupId, channelId });
-      }
-      // Add to new group if not "None"
-      if (selectedGroupId !== NONE_VALUE) {
-        await addMember.mutateAsync({ groupId: selectedGroupId, channelId });
-      }
+      await setGroups.mutateAsync({ channelId, groupIds: nextGroupIds });
       notify('Channel group updated', 'success');
       onClose();
     } catch (err) {
-      notify(`Failed to update group: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+      notify(`Failed to update group: ${errorMessage(err, 'Unknown error')}`, 'error');
     } finally {
       setSaving(false);
     }
-  }, [selectedGroupId, currentGroupId, channelId, channelMemberships, removeMember, addMember, notify, onClose]);
+  }, [nextGroupIds, channelId, setGroups, notify, onClose]);
 
   const isLoading = groupsQuery.isLoading || membershipsQuery.isLoading;
+  const currentNames = currentGroupIds.map((id) => groups.find((g) => g.id === id)?.name ?? id);
+  const helperText = multiGroupNote(currentNames);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
@@ -90,6 +85,7 @@ export function AssignGroupDialog({ open, onClose, channelId }: AssignGroupDialo
             label="Group"
             value={selectedGroupId}
             onChange={(e) => { setSelectedGroupId(e.target.value); }}
+            helperText={helperText}
             sx={{ mt: 1 }}
           >
             <MenuItem value={NONE_VALUE}>None</MenuItem>
@@ -104,7 +100,7 @@ export function AssignGroupDialog({ open, onClose, channelId }: AssignGroupDialo
         <Button
           variant="contained"
           onClick={handleSave}
-          disabled={saving || isLoading || selectedGroupId === currentGroupId}
+          disabled={saving || isLoading || unchanged}
         >
           Save
         </Button>
