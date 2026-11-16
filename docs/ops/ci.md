@@ -35,6 +35,7 @@ Measured on GitHub's runners on 2026-11-16, after #177 (job selection) and #181 
 
 | Change | Jobs that ran | Wall clock |
 |---|---|---|
+| Docs only ([run](https://github.com/MichaelLeeHobbs/mirthless/actions/runs/43784518184)) | docs 32s | 46s |
 | Web only ([run](https://github.com/MichaelLeeHobbs/mirthless/actions/runs/43784090750)) | gate with web tests 1m21s, e2e 2m49s, docs 30s | 3m02s |
 | Everything: a connectors, engine or core change, CI files, root config, a push to `main` ([run](https://github.com/MichaelLeeHobbs/mirthless/actions/runs/43783845444)) | gate 2m22s, e2e 3m06s, connector integration 1m09s | 3m29s |
 
