@@ -1,6 +1,6 @@
 # Roadmap
 
-> What's planned. What's done lives in git history and CHANGELOG.md.
+> What's planned. What's done lives in git history and the merged pull requests.
 > This is a living document. Check items off as they ship, add items as they emerge.
 
 ---

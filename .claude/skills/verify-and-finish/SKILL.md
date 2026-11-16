@@ -21,7 +21,7 @@ Michael tests this project by hand and it is too big for that. A task is finishe
    - Throughput or memory: `pnpm soak`.
    - Docs only: check that every command and path you mention exists.
 3. **Run them.** Read the output. A passing typecheck is not a test. If a check fails, fix the cause and run it again; never skip, weaken or delete a test to get green.
-4. **Check the working agreement.** A bug fix has a test that failed before the fix. A new flow has an automated check. `docs/progress/CHANGELOG.md` has an entry, `DECISIONS.md` has any non-obvious choice, `ROADMAP.md` is ticked or extended, and `AGENTS.md` still tells the truth.
+4. **Check the working agreement.** A bug fix has a test that failed before the fix. A new flow has an automated check. The PR description says what changed and what was checked, `docs/progress/DECISIONS.md` has any non-obvious choice, `ROADMAP.md` is ticked or extended, and `AGENTS.md` still tells the truth.
 5. **Give the verdict**, as the last thing you say:
    - **DONE**: every applicable check ran and passed. List the commands.
    - **NEEDS YOU**: verified except for a named step only a person can do (for example, look at a device, approve a release tag). Say exactly what and how.

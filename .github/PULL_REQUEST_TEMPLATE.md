@@ -43,7 +43,6 @@ How did you verify this? Check all that apply and describe:
 
 ## Progress Docs
 
-- [ ] Updated `docs/progress/CHANGELOG.md` (if substantial)
 - [ ] Recorded any non-obvious decision in `docs/progress/DECISIONS.md`
 
 ## Notes for Reviewer
