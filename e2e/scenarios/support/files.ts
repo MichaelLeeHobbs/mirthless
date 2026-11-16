@@ -1,13 +1,19 @@
 // ===========================================
 // Scenario suite: a local drop folder
 // ===========================================
-// File Reader scenarios poll a folder under tmp/feature-climb/files, emptied
+// File Reader scenarios poll a folder under the system temp folder, emptied
 // before each use. The server runs on this machine, so it reads the same path.
+// It is outside the repository because File connectors may not use the
+// server's install (D-315), and the suite's server lists it in FILE_CONNECTOR_ROOTS.
 
 import { mkdirSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-const ROOT = resolve('tmp/feature-climb/files');
+/** The File root the scenario server is given. */
+export const SCENARIO_FILE_ROOT = join(tmpdir(), 'galvanigraph-scenarios', 'files');
+
+const ROOT = SCENARIO_FILE_ROOT;
 
 /** Create an empty folder for one scenario and return its absolute path. */
 export function dropFolder(name: string): string {

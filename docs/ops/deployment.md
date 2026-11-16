@@ -35,6 +35,12 @@ version you run is the commit you have checked out. Tag or pin that commit.
    - `SCRIPT_HTTP_ALLOWED_HOSTS` (optional): internal hosts channel scripts may call with
      `httpFetch`, comma separated, for example `lis.hospital.local,10.20.0.15`. Without it
      scripts can reach public addresses only.
+   - `FILE_CONNECTOR_ROOTS` (optional): the directories File sources and File destinations may
+     use, as absolute paths inside the server container, comma separated, for example
+     `/srv/galvanigraph/files`. Mount a volume there in `docker/docker-compose.prod.yml`. Without
+     it every File connector refuses to deploy. The server's own directories (`/app` in the
+     image) and `/proc`, `/sys` and `/dev` are refused even inside a root. See
+     [FILE security](../user/connector-reference.md#file-security).
 2. Build and start:
 
    ```bash

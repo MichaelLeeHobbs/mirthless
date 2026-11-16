@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
+import * as path from 'node:path';
 import { configSchema } from '../index.js';
 
 const base = { DATABASE_URL: 'postgresql://u:p@localhost:5432/x', JWT_SECRET: 'k'.repeat(40) };
@@ -24,5 +25,19 @@ describe('configSchema', () => {
     for (const bad of ['lots', '0', '-5', '1.5']) {
       expect(configSchema.safeParse({ ...base, API_RATE_LIMIT_MAX: bad }).success).toBe(false);
     }
+  });
+
+  it('turns File connectors off when FILE_CONNECTOR_ROOTS is unset', () => {
+    expect(configSchema.parse(base).FILE_CONNECTOR_ROOTS).toEqual([]);
+  });
+
+  it('reads FILE_CONNECTOR_ROOTS as a comma separated list of absolute paths', () => {
+    const a = path.resolve('/srv/galvanigraph/in');
+    const b = path.resolve('/srv/galvanigraph/out');
+    expect(configSchema.parse({ ...base, FILE_CONNECTOR_ROOTS: ` ${a}, ${b} ,` }).FILE_CONNECTOR_ROOTS).toEqual([a, b]);
+  });
+
+  it('refuses a relative FILE_CONNECTOR_ROOTS entry, which would depend on where the server starts', () => {
+    expect(configSchema.safeParse({ ...base, FILE_CONNECTOR_ROOTS: './files' }).success).toBe(false);
   });
 });
