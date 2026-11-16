@@ -47,6 +47,8 @@ import {
   defaultDatabasePort,
   fileSourcePropertiesSchema,
   fileDestinationPropertiesSchema,
+  javascriptSourcePropertiesSchema,
+  javascriptDestinationPropertiesSchema,
   formatPropertyIssues,
 } from '@galvaniflow/core-models';
 
@@ -223,6 +225,18 @@ function fileDispatcher(props: Record<string, unknown>): FileDispatcher {
   return new FileDispatcher(config);
 }
 
+/** A JavaScript Reader: schema-checked props. The engine reads the script language and compiles the script. */
+function javascriptReceiver(props: Record<string, unknown>): JavaScriptReceiver {
+  const { script, pollingIntervalMs } = parseProps('JAVASCRIPT', javascriptSourcePropertiesSchema, props);
+  return new JavaScriptReceiver({ script, pollingIntervalMs });
+}
+
+/** A JavaScript Writer: schema-checked props. */
+function javascriptDispatcher(props: Record<string, unknown>): JavaScriptDispatcher {
+  const { script } = parseProps('JAVASCRIPT', javascriptDestinationPropertiesSchema, props);
+  return new JavaScriptDispatcher({ script });
+}
+
 // ----- Source Factories -----
 
 type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
@@ -232,10 +246,7 @@ const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnec
   ['HTTP', httpReceiver],
   ['FILE', fileReceiver],
   ['DATABASE', databaseReceiver],
-  ['JAVASCRIPT', (props): SourceConnectorRuntime => new JavaScriptReceiver({
-    script: (props['script'] as string | undefined) ?? '',
-    pollingIntervalMs: num(props, 'pollingIntervalMs', 5_000),
-  })],
+  ['JAVASCRIPT', javascriptReceiver],
   ['CHANNEL', (props): SourceConnectorRuntime => new ChannelReceiver({
     channelId: props['channelId'] as string,
   })],
@@ -294,9 +305,7 @@ const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<De
   ['HTTP', httpDispatcher],
   ['FILE', fileDispatcher],
   ['DATABASE', databaseDispatcher],
-  ['JAVASCRIPT', (props): DestinationConnectorRuntime => new JavaScriptDispatcher({
-    script: (props['script'] as string | undefined) ?? '',
-  })],
+  ['JAVASCRIPT', javascriptDispatcher],
   ['SMTP', (props): DestinationConnectorRuntime => new SmtpDispatcher({
     host: (props['host'] as string | undefined) ?? '',
     port: num(props, 'port', 587),

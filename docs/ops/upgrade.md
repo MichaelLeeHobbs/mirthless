@@ -140,6 +140,30 @@ WHERE connector_type = 'FILE'
   AND k NOT IN ('directory','outputPattern','charset','binary','tempFileEnabled','appendMode','template');
 ```
 
+**JAVASCRIPT** is the fifth. Channels saved by this app's own editor keep deploying: the JavaScript Reader and Writer forms have saved `script` (and the reader `pollingIntervalMs`) since 2026-02, plus `scriptLanguage` since 2026-11-15. Until 2026-11-13 the Mirth importer copied all of a JavaScript Reader's or Writer's Mirth properties into the channel: `pluginProperties`, `pollConnectorProperties` and `sourceConnectorProperties` on a reader, `pluginProperties` and `destinationConnectorProperties` on a writer. Nothing read them, and the schema drops them, so those channels keep deploying and still poll every 5000 ms. Import such a channel again to get Mirth's polling interval and Process Batch setting, which the importer now maps. Nothing in the database is rewritten.
+
+A connector that the importer could not map (an unknown Mirth connector, or a send-only one used as a source) is imported as JAVASCRIPT with a warning. It has no `script`, so it never deployed, and still doesn't. Until 2026-11-13 it also carried the other connector's Mirth properties, which are now refused as well; replace the connector in the editor.
+
+A JAVASCRIPT channel now fails to deploy when it has:
+
+- any other key its table doesn't list, e.g. a misspelling such as `pollingInterval`, or `pollingIntervalMs` on a destination. Before, such a key was ignored.
+- a `scriptLanguage` other than `JAVASCRIPT` or `TYPESCRIPT`, e.g. `typescript`. Before, any other value was read as JavaScript, so a TypeScript script written through the API with a misspelled language skipped its deploy type check.
+- a `script` of only spaces or line breaks. Before, it deployed and did nothing. An empty `script` failed before as well.
+- a `pollingIntervalMs` that is not a whole number of at least 100. Below 100 failed before as well, when the connector deployed, without naming the key; a value that wasn't a number became 5000 without a word.
+- a `processBatch` that is not `true` or `false`, or a `template` that is not text.
+
+Before upgrading, list the keys the schema would refuse:
+
+```sql
+SELECT id, name, k AS unknown_key FROM channels, jsonb_object_keys(source_connector_properties) k
+WHERE source_connector_type = 'JAVASCRIPT'
+  AND k NOT IN ('script','scriptLanguage','pollingIntervalMs','processBatch',
+                'pluginProperties','pollConnectorProperties','sourceConnectorProperties');
+SELECT channel_id, name, k AS unknown_key FROM channel_connectors, jsonb_object_keys(properties) k
+WHERE connector_type = 'JAVASCRIPT'
+  AND k NOT IN ('script','scriptLanguage','template','pluginProperties','destinationConnectorProperties');
+```
+
 ## Standard upgrade (Docker)
 
 ```bash
