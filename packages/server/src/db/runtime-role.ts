@@ -24,8 +24,10 @@ export interface RuntimeRole {
 /** Where the upgrade steps for this live, for the error texts. */
 const DOC = 'docs/ops/upgrade.md#database-roles';
 
-/** The owner functions the runtime role may call (migration 0016). */
-const OWNER_FUNCTIONS = ['public.create_channel_partitions(uuid)', 'public.purge_events(integer)'] as const;
+/** The owner functions the runtime role may call (migrations 0016 and 0017). */
+const OWNER_FUNCTIONS = [
+  'public.create_channel_partitions(uuid)', 'public.purge_events(integer)', 'public.ensure_audit_partitions()',
+] as const;
 
 /**
  * The runtime role's grants, after its quoted name. Each line is what the
@@ -58,6 +60,25 @@ function grantStatements(role: string, database: string): readonly string[] {
     `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO ${role}`,
   ];
 }
+
+/**
+ * The audit log is appended and read only (D-312). The grant on every table
+ * above reaches audit_log and each of its partitions, and Postgres checks a
+ * partition's own privileges when a statement names it directly, so UPDATE
+ * and DELETE come back off the parent and every partition. Reads the role's
+ * name from the `galvanigraph.runtime_role` setting, like PG_BOSS_SCHEMA_SQL.
+ */
+const AUDIT_LOG_SQL = `DO $audit$
+DECLARE
+  app text := current_setting('galvanigraph.runtime_role');
+  part regclass;
+BEGIN
+  EXECUTE format('REVOKE UPDATE, DELETE ON TABLE public.audit_log FROM %I', app);
+  FOR part IN SELECT inhrelid::regclass FROM pg_inherits WHERE inhparent = 'public.audit_log'::regclass LOOP
+    EXECUTE format('REVOKE UPDATE, DELETE ON TABLE %s FROM %I', part, app);
+  END LOOP;
+END
+$audit$`;
 
 /** The schema pg-boss (lib/queue.ts) keeps its job queue in. Migration 0016 creates it. */
 export const PG_BOSS_SCHEMA = 'pgboss';
@@ -177,6 +198,7 @@ export async function provisionRuntimeRole(owner: SqlClient, spec: RuntimeRole):
       for (const statement of grantStatements(q.role, q.database)) await owner.query(statement);
       await owner.query(`SELECT set_config('galvanigraph.runtime_role', $1::text, true)`, [spec.user]);
       await owner.query(PG_BOSS_SCHEMA_SQL);
+      await owner.query(AUDIT_LOG_SQL);
       await owner.query('COMMIT');
     } catch (err) {
       await owner.query('ROLLBACK');

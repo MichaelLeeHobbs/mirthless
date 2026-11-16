@@ -256,6 +256,23 @@ export const METADATA_COLUMN_TYPE = {
 } as const;
 export type MetadataColumnType = (typeof METADATA_COLUMN_TYPE)[keyof typeof METADATA_COLUMN_TYPE];
 
+// --- What scope promises ---
+
+/**
+ * What a scoped assignment does and does not limit (RBAC plan section 3). The
+ * role editor, the assignment picker, the key form and
+ * docs/user/access-control.md show this text, and a docs guard checks the page
+ * carries it word for word.
+ */
+export const SCOPE_PROMISE =
+  'Scope limits what a person or key can see and change through GalvaniGraph\'s screens and API. '
+  + 'Message reads, searches and exports, and the reads listed under "What is recorded", are recorded in an audit log that the product can\'t change or delete; '
+  + 'each entry there says whether the read is refused when it can\'t be recorded or recorded on a best-effort basis. '
+  + 'Reads under "What is not audited" aren\'t. '
+  + 'Scope is not a boundary for code: anyone who can change or deploy channel code, code templates or global scripts, or restore a backup, '
+  + 'can reach every channel\'s messages and credentials through that code, and that reach is not recorded. '
+  + 'A database owner can still alter the audit log.';
+
 // --- User Roles ---
 
 export const USER_ROLE = {

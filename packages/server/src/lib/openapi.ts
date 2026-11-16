@@ -792,7 +792,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
                       },
                       startup: {
                         type: 'object',
-                        properties: { failedSteps: { type: 'array', items: { type: 'string', enum: ['queue', 'pruner-scheduler', 'channel-redeploy'] } } },
+                        properties: { failedSteps: { type: 'array', items: { type: 'string', enum: ['queue', 'pruner-scheduler', 'channel-redeploy', 'audit-partitions'] } } },
                       },
                     },
                   },

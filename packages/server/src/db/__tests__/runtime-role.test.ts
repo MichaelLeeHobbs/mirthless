@@ -59,11 +59,13 @@ describe('provisionRuntimeRole', () => {
     ]);
     expect(statements).toContain('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO galvanigraph_app');
     expect(statements).toContain('REVOKE UPDATE, DELETE ON TABLE public.events FROM galvanigraph_app');
-    for (const fn of ['public.create_channel_partitions(uuid)', 'public.purge_events(integer)']) {
+    for (const fn of ['public.create_channel_partitions(uuid)', 'public.purge_events(integer)', 'public.ensure_audit_partitions()']) {
       expect(statements).toContain(`REVOKE ALL ON FUNCTION ${fn} FROM PUBLIC`);
       expect(statements).toContain(`GRANT EXECUTE ON FUNCTION ${fn} TO galvanigraph_app`);
     }
-    expect(statements.at(-2)).toMatch(/^DO \$pgboss\$/);
+    expect(statements.at(-3)).toMatch(/^DO \$pgboss\$/);
+    // The audit log's UPDATE and DELETE come back off it and every partition, after the table-wide grant.
+    expect(statements.at(-2)).toMatch(/^DO \$audit\$[\s\S]*REVOKE UPDATE, DELETE ON TABLE public\.audit_log[\s\S]*pg_inherits/);
     expect(statements.at(-1)).toBe('COMMIT');
     expect(statements.some((s) => /TRUNCATE|REFERENCES|TRIGGER|CREATE ON SCHEMA/.test(s) && s.startsWith('GRANT'))).toBe(false);
   });

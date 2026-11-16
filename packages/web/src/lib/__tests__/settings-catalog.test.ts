@@ -75,6 +75,14 @@ describe('validateSetting', () => {
     expect(validateSetting('number', '25.5', 'port')).toMatch(/1 to 65535/);
   });
 
+  it('keeps audit retention at six whole years or more', () => {
+    expect(validateSetting('number', '6', 'retentionYears')).toBeNull();
+    expect(validateSetting('number', '10', 'retentionYears')).toBeNull();
+    expect(validateSetting('number', '5', 'retentionYears')).toMatch(/at least 6/);
+    expect(validateSetting('number', '6.5', 'retentionYears')).toMatch(/at least 6/);
+    expect(validateSetting('number', '', 'retentionYears')).toBe('Enter a number.');
+  });
+
   it('requires a number for a number setting', () => {
     expect(validateSetting('number', '', undefined)).toBe('Enter a number.');
     expect(validateSetting('number', 'abc', undefined)).toBe('Enter a number.');

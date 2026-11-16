@@ -58,6 +58,15 @@ export interface SystemInfo {
     readonly paused: number;
   };
   readonly database: DatabaseProbe;
+  readonly audit: {
+    /**
+     * Rows in audit_log's DEFAULT partition, counted up to 10,000; null when
+     * the count failed. Above 0 means a month's partition was missing when they
+     * were written, and the next one for that month cannot be created until
+     * they are moved (docs/ops/audit-log.md).
+     */
+    readonly rowsOutsideMonths: number | null;
+  };
 }
 
 // Server version read from package.json at import time
@@ -82,6 +91,14 @@ export async function probeDatabase(): Promise<DatabaseProbe> {
   };
 }
 
+/** How many audit rows sit in the DEFAULT partition (capped), or null when the count fails. */
+async function auditRowsOutsideMonths(): Promise<number | null> {
+  const result = await tryCatch(async () => db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM (SELECT 1 FROM public.audit_log_default LIMIT 10000) AS d
+  `));
+  return result.ok ? (result.value.rows[0]?.n ?? null) : null;
+}
+
 function loadAverage(): readonly [number, number, number] {
   const [one = 0, five = 0, fifteen = 0] = os.loadavg();
   return [one, five, fifteen];
@@ -93,7 +110,7 @@ export class SystemInfoService {
   /** Get full system info. */
   static async getInfo(): Promise<Result<SystemInfo>> {
     return tryCatch(async () => {
-      const database = await probeDatabase();
+      const [database, rowsOutsideMonths] = await Promise.all([probeDatabase(), auditRowsOutsideMonths()]);
       const uptime = process.uptime();
 
       return {
@@ -118,6 +135,7 @@ export class SystemInfoService {
         memory: { ...getMemoryStats(), heapLimit: v8.getHeapStatistics().heap_size_limit },
         engine: getEngineStats(),
         database,
+        audit: { rowsOutsideMonths },
       };
     });
   }

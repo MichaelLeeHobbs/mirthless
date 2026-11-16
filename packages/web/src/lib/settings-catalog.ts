@@ -10,7 +10,10 @@ import { SETTING_TYPE, type SettingType } from '@galvanigraph/core-models';
 import { humanize } from './format.js';
 
 /** Extra checks beyond the setting's type. */
-export type SettingCheck = 'port' | 'email' | 'cron';
+export type SettingCheck = 'port' | 'email' | 'cron' | 'retentionYears';
+
+/** The least audit retention, in years (D-312). The database function enforces it too. */
+export const MIN_AUDIT_RETENTION_YEARS = 6;
 
 export interface SettingField {
   readonly key: string;
@@ -69,6 +72,19 @@ export const SETTING_SECTIONS: readonly SettingSection[] = [
         label: 'Schedule',
         help: 'A cron expression: minute, hour, day of month, month, day of week. "0 3 * * *" is 3 AM daily.',
         check: 'cron',
+      },
+    ],
+  },
+  {
+    id: 'audit',
+    label: 'Audit log',
+    intro: 'The protected record of who read PHI and who changed access. Nothing in the product can change or delete it.',
+    fields: [
+      {
+        key: 'audit.retention_years',
+        label: 'Keep for (years)',
+        help: 'How long audit months are kept before the database owner may drop them. Never less than 6; dropping is a manual step for the database owner.',
+        check: 'retentionYears',
       },
     ],
   },
@@ -158,8 +174,11 @@ function checkCron(value: string): string | null {
 
 function checkNumber(value: string, check: SettingCheck | undefined): string | null {
   if (value.trim() === '' || !Number.isFinite(Number(value))) return 'Enter a number.';
-  if (check !== 'port') return null;
   const n = Number(value);
+  if (check === 'retentionYears') {
+    return Number.isInteger(n) && n >= MIN_AUDIT_RETENTION_YEARS && n <= 999 ? null : `Enter whole years, at least ${String(MIN_AUDIT_RETENTION_YEARS)}.`;
+  }
+  if (check !== 'port') return null;
   return Number.isInteger(n) && n >= 1 && n <= 65535 ? null : 'Enter a port from 1 to 65535.';
 }
 

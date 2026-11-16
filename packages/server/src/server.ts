@@ -17,11 +17,13 @@ import { createShutdownHandler, undeployAll } from './lib/shutdown.js';
 import { dataSourcePoolManager } from './services/data-source-pool-manager.js';
 import { warnIfDefaultAdminPassword } from './lib/security-checks.js';
 import { installFatalHandlers } from './lib/fatal-handlers.js';
-import { runStartupSteps, startupStatus } from './lib/startup-steps.js';
+import { rerunStep, runStartupSteps, startupStatus, STARTUP_STEP } from './lib/startup-steps.js';
 import { emitEvent } from './lib/event-emitter.js';
-import { tryCatch } from 'stderr-lib';
+import { PartitionManagerService } from './services/partition-manager.service.js';
+import { tryCatch, type Result } from 'stderr-lib';
 
 const PORT = config.PORT;
+const AUDIT_PARTITION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const server = app.listen(PORT, () => {
   logger.info(
@@ -39,14 +41,25 @@ setLogCaptureStream(LogStreamService.createWritableStream());
 // Start the job queue (then the pruner scheduler) and redeploy channels. Each
 // step runs on its own: a failed one is logged, emitted as an event and shown
 // by the health endpoints, and does not skip the others (#259).
-void runStartupSteps({
+const ensureAuditPartitions = (): Promise<Result<void>> =>
+  tryCatch(async () => {
+    const made = await PartitionManagerService.ensureAuditPartitions();
+    if (!made.ok) throw made.error;
+  });
+const startupDeps = {
   logger,
   emitEvent,
   status: startupStatus,
   startQueue: () => tryCatch(async () => { await startQueue(); }),
   startPrunerScheduler: () => PrunerSchedulerService.start(),
   redeployChannels: () => DeploymentService.autoDeployChannels(),
-});
+  ensureAuditPartitions,
+};
+void runStartupSteps(startupDeps);
+// Audit partitions are kept three months ahead (D-312): at start, then daily.
+setInterval(() => {
+  void rerunStep(startupDeps, STARTUP_STEP.AUDIT_PARTITIONS, ensureAuditPartitions);
+}, AUDIT_PARTITION_INTERVAL_MS).unref();
 void warnIfDefaultAdminPassword();
 
 // Graceful shutdown — ordered cleanup with engine disposal before DB pool close

@@ -8,7 +8,7 @@
 // routes/__tests__/role-access.test.ts.
 
 import { describe, it, expect } from 'vitest';
-import { PERMISSIONS, USER_ROLE } from '@galvanigraph/core-models';
+import { PERMISSIONS, SCOPE_PROMISE, USER_ROLE } from '@galvanigraph/core-models';
 import { permissionNamesForRole } from '../../lib/role-permissions.js';
 import { readRepoFile, tables, brokenRelativeLinks } from '../../../test/markdown.js';
 
@@ -21,6 +21,12 @@ function matrix(): readonly (readonly string[])[] {
   expect(table.header).toEqual(['Permission', ...ROLES, 'Also allows']);
   return table.rows;
 }
+
+describe('access control: what scope promises', () => {
+  it('quotes the scope promise word for word, as the screens show it', () => {
+    expect(readRepoFile(DOC)).toContain(`> ${SCOPE_PROMISE}\n`);
+  });
+});
 
 describe('access control: role and permission matrix', () => {
   it('has one row per permission', () => {

@@ -140,6 +140,14 @@ Scripts run in a `node:vm` sandbox. [SECURITY.md](../../SECURITY.md) says this s
 
 `httpFetch` refuses private and reserved addresses unless the host is listed in `SCRIPT_HTTP_ALLOWED_HOSTS`. Public addresses are always allowed.
 
+## What scope promises
+
+Roles with a scope of channel groups arrive with [#265](https://github.com/MichaelLeeHobbs/mirthless/issues/265) and [#266](https://github.com/MichaelLeeHobbs/mirthless/issues/266). Until then every permission covers every channel. Once they ship, this is what a scope means; the role editor, the assignment picker and the API key form say the same:
+
+> Scope limits what a person or key can see and change through GalvaniGraph's screens and API. Message reads, searches and exports, and the reads listed under "What is recorded", are recorded in an audit log that the product can't change or delete; each entry there says whether the read is refused when it can't be recorded or recorded on a best-effort basis. Reads under "What is not audited" aren't. Scope is not a boundary for code: anyone who can change or deploy channel code, code templates or global scripts, or restore a backup, can reach every channel's messages and credentials through that code, and that reach is not recorded. A database owner can still alter the audit log.
+
+The audit log is the `audit_log` table. The server's database role may only add rows to it and read them, and triggers refuse changes and deletions even from the table's owner. Only the owner can drop a month of it, and never one younger than the retention setting (at least six years). The [audit log runbook](../ops/audit-log.md) covers retention and the partitions. Until [#264](https://github.com/MichaelLeeHobbs/mirthless/issues/264)'s next slice moves records there, the server still writes its audit events to the `events` table.
+
 ## What is not audited
 
 These write no audit event:

@@ -187,6 +187,7 @@ const settings = [
   ['s9', 'pruner.enabled', 'true', 'boolean', 'Run the data pruner nightly', 'pruner'],
   ['s10', 'pruner.cron_expression', '0 3 * * *', 'string', null, 'pruner'],
   ['s11', 'features.maintenance_mode', 'false', 'boolean', null, 'features'],
+  ['s12', 'audit.retention_years', '6', 'number', null, 'audit'],
 ].map(([id, key, value, type, description, category]) => ({ id, key, value, type, description, category, createdAt: ago(90000), updatedAt: ago(500) }));
 
 const systemInfo = {
@@ -195,6 +196,7 @@ const systemInfo = {
   memory: { rss: 512 * 2 ** 20, heapUsed: 214 * 2 ** 20, heapTotal: 300 * 2 ** 20, heapLimit: 4144 * 2 ** 20, external: 12 * 2 ** 20 },
   engine: { deployed: 6, started: 4, stopped: 1, paused: 1 },
   database: { connected: true, latencyMs: 2.4, version: '17.2', sizeBytes: 38.6 * 2 ** 30 },
+  audit: { rowsOutsideMonths: 0 },
 };
 
 const logs = [

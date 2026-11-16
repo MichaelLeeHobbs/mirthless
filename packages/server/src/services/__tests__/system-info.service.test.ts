@@ -65,9 +65,18 @@ describe('SystemInfoService.getInfo', () => {
   });
 
   it('still answers when the database is down, reporting it disconnected', async () => {
-    mockExecute.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    mockExecute.mockRejectedValue(new Error('ECONNREFUSED'));
     const { value } = await getInfo();
     expect(value.database).toEqual({ connected: false, latencyMs: null, version: null, sizeBytes: null });
+    expect(value.audit).toEqual({ rowsOutsideMonths: null });
+  });
+
+  it('counts audit rows that landed in the DEFAULT partition, outside every month', async () => {
+    mockExecute.mockImplementation((query: unknown) => Promise.resolve(
+      JSON.stringify(query).includes('audit_log_default') ? { rows: [{ n: 3 }] } : { rows: [{ version: '17.2', size: '1' }] },
+    ));
+    const { value } = await getInfo();
+    expect(value.audit).toEqual({ rowsOutsideMonths: 3 });
   });
 });
 

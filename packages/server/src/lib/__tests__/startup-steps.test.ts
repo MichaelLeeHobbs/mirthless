@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Logger } from 'pino';
 import { StdError, type Result } from 'stderr-lib';
-import { runStartupSteps, StartupStatus, STARTUP_STEP, STARTUP_STEP_TIMEOUT_MS, type StartupDeps } from '../startup-steps.js';
+import { runStartupSteps, rerunStep, StartupStatus, STARTUP_STEP, STARTUP_STEP_TIMEOUT_MS, type StartupDeps } from '../startup-steps.js';
 
 const OK: Result<void> = { ok: true, value: undefined, error: null };
 
@@ -23,7 +23,7 @@ interface Harness {
   readonly emitEvent: ReturnType<typeof vi.fn>;
 }
 
-function harness(overrides: Partial<Pick<StartupDeps, 'startQueue' | 'startPrunerScheduler' | 'redeployChannels'>> = {}): Harness {
+function harness(overrides: Partial<Pick<StartupDeps, 'startQueue' | 'startPrunerScheduler' | 'redeployChannels' | 'ensureAuditPartitions'>> = {}): Harness {
   const status = new StartupStatus();
   const logError = vi.fn();
   const logWarn = vi.fn();
@@ -34,6 +34,7 @@ function harness(overrides: Partial<Pick<StartupDeps, 'startQueue' | 'startPrune
     startQueue: vi.fn(async () => OK),
     startPrunerScheduler: vi.fn(async () => OK),
     redeployChannels: vi.fn(async () => OK),
+    ensureAuditPartitions: vi.fn(async () => OK),
     ...overrides,
   };
   return { deps, status, logError, logWarn, emitEvent };
@@ -93,6 +94,30 @@ describe('runStartupSteps', () => {
 
     expect(h.deps.redeployChannels).toHaveBeenCalledOnce();
     expect(h.status.failed().map((f) => f.step)).toEqual([STARTUP_STEP.PRUNER_SCHEDULER]);
+  });
+
+  it('keeps the audit partitions ahead alongside the other steps, and reports it alone when it fails', async () => {
+    const h = harness({ ensureAuditPartitions: vi.fn(async () => failed('permission denied for function ensure_audit_partitions')) });
+
+    await runStartupSteps(h.deps);
+
+    expect(h.deps.ensureAuditPartitions).toHaveBeenCalledOnce();
+    expect(h.deps.redeployChannels).toHaveBeenCalledOnce();
+    expect(h.deps.startPrunerScheduler).toHaveBeenCalledOnce();
+    expect(h.status.failed().map((f) => f.step)).toEqual([STARTUP_STEP.AUDIT_PARTITIONS]);
+  });
+
+  it('reruns a step later: a failure is reported, and a success clears it', async () => {
+    const h = harness();
+    const ensure = vi.fn(async () => failed('db down'));
+
+    expect(await rerunStep(h.deps, STARTUP_STEP.AUDIT_PARTITIONS, ensure)).toBe(false);
+    expect(h.status.failed().map((f) => f.step)).toEqual([STARTUP_STEP.AUDIT_PARTITIONS]);
+    expect(h.emitEvent).toHaveBeenCalledWith(expect.objectContaining({ attributes: { step: STARTUP_STEP.AUDIT_PARTITIONS, error: 'db down' } }));
+
+    ensure.mockResolvedValueOnce(OK);
+    expect(await rerunStep(h.deps, STARTUP_STEP.AUDIT_PARTITIONS, ensure)).toBe(true);
+    expect(h.status.failed()).toEqual([]);
   });
 
   it('logs each failure at ERROR and emits an ERROR event naming the step', async () => {

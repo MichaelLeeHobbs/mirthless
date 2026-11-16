@@ -52,6 +52,25 @@ beforeEach(() => {
   mockExecute.mockResolvedValue({ rows: [] });
 });
 
+describe('PartitionManagerService.ensureAuditPartitions', () => {
+  it('calls the owner function, which takes no argument, and returns how many partitions it made', async () => {
+    mockExecute.mockResolvedValueOnce({ rows: [{ made: 2 }] });
+
+    const result = await PartitionManagerService.ensureAuditPartitions();
+
+    expect(result).toMatchObject({ ok: true, value: 2 });
+    const query = new PgDialect().sqlToQuery(mockExecute.mock.calls[0]![0] as SQL);
+    expect(query.sql).toBe('SELECT public.ensure_audit_partitions() AS made');
+    expect(query.params).toEqual([]);
+  });
+
+  it('fails when the function fails', async () => {
+    mockExecute.mockRejectedValueOnce(new Error('permission denied for function ensure_audit_partitions'));
+
+    expect((await PartitionManagerService.ensureAuditPartitions()).ok).toBe(false);
+  });
+});
+
 describe('PartitionManagerService', () => {
   // ========== CREATE PARTITIONS ==========
   describe('createPartitions', () => {
