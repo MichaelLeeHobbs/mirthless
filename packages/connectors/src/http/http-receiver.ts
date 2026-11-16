@@ -43,6 +43,16 @@ export interface HttpAuthConfig {
 /** Default cap on request body size (bytes), a DoS guard; core-models owns it with the property schema. */
 export { DEFAULT_MAX_BODY_BYTES };
 
+/**
+ * Why an auth guard cannot be used, or undefined. A guard missing a credential
+ * would compare the request against an empty one and let it in (#207).
+ */
+function missingCredential(auth: HttpAuthConfig | undefined): string | undefined {
+  if (!auth) return undefined;
+  if (auth.type === 'TOKEN') return auth.token ? undefined : 'auth type TOKEN needs a token';
+  return auth.username && auth.password ? undefined : 'auth type BASIC needs a username and a password';
+}
+
 export interface HttpReceiverConfig {
   readonly host: string;
   readonly port: number;
@@ -142,6 +152,8 @@ export class HttpReceiver implements SourceConnectorRuntime {
       if (this.config.tls && (!this.config.tls.cert || !this.config.tls.key)) {
         throw new Error('TLS requires both cert and key');
       }
+      const authError = missingCredential(this.config.auth);
+      if (authError) throw new Error(authError);
     });
   }
 

@@ -74,6 +74,7 @@ An HTTP channel now fails to deploy when it has:
 - a `method` other than GET, POST, PUT, PATCH or DELETE.
 - a `responseStatusCode` or `errorStatusCode` outside 100 to 599, a `maxBodyBytes` below 1, or a destination `responseTimeout` below 1. Before, a value that wasn't a number was replaced by the default without a word, and a `responseTimeout` of 0 failed every send at once (the editor wrongly said 0 meant no timeout).
 - an `auth` whose `type` is not `BASIC` or `TOKEN`, header, `parameters` or `basicAuth` values that are not text, or a `scheme` other than `HTTP` or `HTTPS`.
+- an `auth` guard missing a credential: `BASIC` without a non-empty `username` and `password`, or `TOKEN` without a non-empty `token`. Before, a `BASIC` guard with no username or password accepted a request with empty ones, so the channel was open to anyone who could reach the port (#207). Set the credentials, or remove `auth` if the channel was meant to be open.
 - a `tls` that is not an object, `false` or `null`, or a key inside it the table doesn't list. That includes a destination `tls` with inline PEM pasted into `ca`, `cert` or `key`; pick the certificates from the store instead (`tls.caCertId`, `tls.clientCertId`).
 
 Before upgrading, list the keys the schema would refuse:
