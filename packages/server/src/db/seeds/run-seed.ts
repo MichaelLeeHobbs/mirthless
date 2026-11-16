@@ -178,8 +178,15 @@ async function seed(): Promise<void> {
 
     // Seed browsable example messages for the example channels (uses the
     // MessageService write-path via the server db singleton — no db argument).
+    // Close that pool as well: its idle connections otherwise keep the process
+    // alive for its 30s idle timeout after the seed is done.
     const { seedExampleMessages } = await import('./seed-example-messages.js');
-    await seedExampleMessages();
+    const { pool: serverPool } = await import('../../lib/db.js');
+    try {
+      await seedExampleMessages();
+    } finally {
+      await serverPool.end();
+    }
   } finally {
     await pool.end();
   }
