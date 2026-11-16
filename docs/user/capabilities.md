@@ -84,6 +84,15 @@ The [connector reference](connector-reference.md) lists every connector and its 
 | Emergency (break-glass) access | No | Keep a sealed second admin account. | [#141](https://github.com/MichaelLeeHobbs/mirthless/issues/141) | [../ops/hipaa-security-checklist.md](../ops/hipaa-security-checklist.md) | | |
 | System use notice before sign-in | No | none known | [#135](https://github.com/MichaelLeeHobbs/mirthless/issues/135) | | Login warning banner | |
 
+## Certificates
+
+Mirth Connect sells certificate management as its SSL Manager extension. GalvaniFlow includes it.
+
+| Capability | Status | Limits | Plan | Docs | Mirth | Proof |
+|---|---|---|---|---|---|---|
+| Certificate store with issuer and expiry | Yes | The HTTP, Kafka and AMQP connectors pick certificates from the store; TCP/MLLP takes raw PEM and DICOM has no TLS. Private keys are stored in plaintext in the database and masked in API responses. | | [../ops/tls-and-phi.md](../ops/tls-and-phi.md) | SSL Manager (paid in Mirth) | `packages/server/src/services/__tests__/certificate.service.test.ts`<br>`packages/web/src/lib/__tests__/certificate-expiry.test.ts`<br>`e2e/certificates.spec.ts` |
+| Alert before a certificate expires | No | The Certificates page marks certificates that expire soon. | [#204](https://github.com/MichaelLeeHobbs/mirthless/issues/204) | | | |
+
 ## Data types
 
 | Capability | Status | Limits | Plan | Docs | Mirth | Proof |
@@ -171,6 +180,18 @@ The importer reads a Mirth channel export or server backup (`POST /api/v1/channe
 | Assertion-based channel tests in CI | No | Export channels and test them with the scenario harness. | ROADMAP B5 | | | |
 | Step-through debugger and live sample-message editing | No | Send a test message and read the message browser. | ROADMAP V3 | | | |
 
+## Shared data
+
+Named data that every channel's scripts can use, managed from the web UI and the REST API. Mirth Connect has nothing like Collections or Data Sources, and its global map is lost when the server restarts. The [access control](access-control.md#role-and-permission-matrix) page says which roles read and change each one.
+
+| Capability | Status | Limits | Plan | Docs | Mirth | Proof |
+|---|---|---|---|---|---|---|
+| Keyed record store for scripts (Collections) | Yes | Records can hold PHI; reading them is not audited. | | [scripting-api.md#collections](scripting-api.md#collections) | none | `packages/server/src/services/__tests__/collection.service.test.ts`<br>`packages/server/test/integration/collection.itest.ts`<br>`e2e/collections.spec.ts` |
+| Named database connections for scripts (Data Sources) | Yes | PostgreSQL only. Saving a password needs `CONTENT_ENCRYPTION_KEY`; the password is encrypted at rest and never returned. | | [scripting-api.md#data-sources](scripting-api.md#data-sources) | none | `packages/server/src/services/__tests__/data-source.service.test.ts`<br>`packages/server/test/integration/data-source.itest.ts`<br>`e2e/datasources.spec.ts` |
+| Named files scripts read by name (Resources) | Yes | Content is stored as text. Scripts read a resource with `getResource`; channels do not load code from it. | | [scripting-api.md#optional-io-bridges](scripting-api.md#optional-io-bridges) | Resources (JAR libraries on the classpath, a different feature) | `packages/server/src/services/__tests__/resource.service.test.ts`<br>`e2e/resources.spec.ts` |
+| Global map kept across restarts | Yes | Changes reach the database every 5 seconds, so a crash can lose the last few seconds of writes. Reads are not audited. | | [scripting-api.md#maps](scripting-api.md#maps) | Global map (lost on restart) | `packages/engine/src/runtime/__tests__/global-map-proxy.test.ts`<br>`packages/server/src/services/__tests__/engine-global-map.test.ts`<br>`e2e/global-map.spec.ts` |
+| Edit the configuration map from the web UI | Yes | Values are returned in full to admin, deployer and developer, and reads are not audited. | | [scripting-api.md#maps](scripting-api.md#maps) | Configuration Map | `packages/server/src/services/__tests__/config-map.service.test.ts`<br>`e2e/config-map.spec.ts` |
+
 ## Messages and storage
 
 | Capability | Status | Limits | Plan | Docs | Mirth | Proof |
@@ -188,7 +209,6 @@ The importer reads a Mirth channel export or server backup (`POST /api/v1/channe
 | Prune old messages on a schedule | Yes | Off by default per channel. | | | Data Pruner | `packages/server/src/services/__tests__/data-pruner.service.test.ts`<br>`packages/server/test/integration/data-pruner.itest.ts` |
 | Archive messages before pruning | No | Back up the database before pruning runs. | ROADMAP N8 | | Data Pruner archive | |
 | Recover messages after a crash | Yes | | | | Recovery | `packages/engine/src/runtime/__tests__/recovery-manager.test.ts`<br>`packages/server/src/services/__tests__/engine-recovery.test.ts`<br>`packages/server/test/integration/recovery-query.itest.ts` |
-| Keyed record store for scripts (Collections) | Yes | | | [scripting-api.md](scripting-api.md) | | `packages/server/src/services/__tests__/collection.service.test.ts`<br>`packages/server/test/integration/collection.itest.ts`<br>`e2e/collections.spec.ts` |
 
 ## Channels
 

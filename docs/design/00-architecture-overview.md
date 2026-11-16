@@ -2,6 +2,8 @@
 
 > GalvaniFlow: a spiritual remake of NextGen Connect (Mirth Connect) for Node.js/TypeScript.
 
+The current architecture, as packages and as functional domains, is in [architecture.svg](architecture.svg). The rest of this document is the original redesign analysis.
+
 ## Connect at a Glance
 
 NextGen Connect is a ~1,900 Java file monolith organized into 16 modules. The core abstractions are sound — the implementation is not. This document maps what Connect does, what's broken, and how we redesign it.
