@@ -6,11 +6,13 @@
 // filters, channel-to-channel routing, HTTP/File/JS connectors.
 //
 // Idempotent: checks by channel name before creating.
-// Partitions are NOT created here — they're created on first deploy.
+// A channel's message partitions are created with it, as channel creation
+// does, so its example messages land in its own partitions (#260).
 
 import { eq, and, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../schema/index.js';
+import { PartitionManagerService } from '../../services/partition-manager.service.js';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -31,6 +33,21 @@ export async function findChannelId(db: Db, name: string): Promise<string | null
     .from(schema.channels)
     .where(and(eq(schema.channels.name, name), isNull(schema.channels.deletedAt)));
   return row?.id ?? null;
+}
+
+/**
+ * Creates a newly seeded channel's message partitions the way channel
+ * creation does, after its row is written (the partition function refuses a
+ * channel that does not exist). Throws when they can't be created, so the
+ * seed fails instead of putting the channel's messages in the default partitions.
+ * @param db - The seed's database handle, which wrote the channel
+ * @param channelId - The channel just inserted
+ */
+export async function createSeededChannelPartitions(db: Db, channelId: string): Promise<void> {
+  const result = await PartitionManagerService.createPartitions(channelId, db);
+  if (!result.ok) {
+    throw new Error(`Failed to create partitions for seeded channel ${channelId}: ${result.error.message}`);
+  }
 }
 
 async function insertChannel(
@@ -180,6 +197,8 @@ export async function seedExampleChannels(db: Db): Promise<void> {
       return existing;
     }
     const id = await fn();
+    // Not one transaction: a seed killed between these two lines leaves this channel without partitions, and a rerun skips it as existing; reset the database.
+    await createSeededChannelPartitions(db, id);
     // Assign to Examples group
     await db.insert(schema.channelGroupMembers).values({
       channelGroupId: groupId,

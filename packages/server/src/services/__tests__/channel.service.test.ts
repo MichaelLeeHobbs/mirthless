@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { StdError } from 'stderr-lib';
 import { PartitionManagerService } from '../partition-manager.service.js';
 
 // ----- Mock DB -----
@@ -281,6 +282,26 @@ describe('ChannelService', () => {
   });
 
   // ========== GET BY ID ==========
+  describe('listLiveForDeploy', () => {
+    it('returns every live channel in one query, ordered by id (#259)', async () => {
+      const rows = [{ id: 'a', name: 'ADT', enabled: true }, { id: 'b', name: 'ADT', enabled: false }];
+      pushResponse(rows, { orderable: true });
+
+      const result = await ChannelService.listLiveForDeploy();
+
+      expect(result).toEqual({ ok: true, value: rows, error: null });
+      expect(mockSelect).toHaveBeenCalledOnce();
+    });
+
+    it('returns the error when the query fails', async () => {
+      selectResponses.push(() => { throw new Error('DB down'); });
+
+      const result = await ChannelService.listLiveForDeploy();
+
+      expect(result.ok).toBe(false);
+    });
+  });
+
   describe('getById', () => {
     it('returns channel detail with relations', async () => {
       const channel = makeChannel();
@@ -372,6 +393,56 @@ describe('ChannelService', () => {
       expect(result.value.name).toBe('Test Channel');
       expect(result.value.scripts).toHaveLength(4);
       expect(mockTransaction).toHaveBeenCalledOnce();
+    });
+
+    /** A transaction whose channel insert returns `channel`; `rejected` says whether its callback threw. */
+    function channelTx(channel: Record<string, unknown>): { readonly tx: { insert: ReturnType<typeof vi.fn> }; readonly rejected: () => boolean } {
+      let threw = false;
+      const tx = {
+        insert: vi.fn().mockImplementation(() => (
+          { values: vi.fn().mockReturnValue(Object.assign(Promise.resolve(undefined), { returning: vi.fn().mockResolvedValue([channel]) })) }
+        )),
+      };
+      mockTransaction.mockImplementation(async (fn: (t: unknown) => Promise<unknown>) => {
+        try {
+          return await fn(tx);
+        } catch (err) {
+          threw = true;
+          throw err;
+        }
+      });
+      return { tx, rejected: () => threw };
+    }
+
+    it('creates the partitions on the transaction that wrote the channel, after writing it (#260)', async () => {
+      pushResponse([]); // uniqueness check
+      const channel = makeChannel();
+      const { tx } = channelTx(channel);
+
+      await ChannelService.create(CREATE_INPUT);
+
+      expect(PartitionManagerService.createPartitions).toHaveBeenCalledWith(channel['id'], tx);
+      // Last statement in the transaction: it locks the six message tables until commit.
+      const lastInsert = tx.insert.mock.invocationCallOrder[tx.insert.mock.invocationCallOrder.length - 1]!;
+      expect(lastInsert).toBeLessThan(vi.mocked(PartitionManagerService.createPartitions).mock.invocationCallOrder[0]!);
+    });
+
+    it('fails, rolling the channel back, when its partitions cannot be created (#260)', async () => {
+      pushResponse([]); // uniqueness check
+      const { rejected } = channelTx(makeChannel());
+      vi.mocked(PartitionManagerService.createPartitions)
+        .mockResolvedValueOnce({ ok: false, value: null, error: new StdError('permission denied for table messages') });
+
+      const result = await ChannelService.create(CREATE_INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'INTERNAL');
+      expect(result.error.message).toBe(
+        'Channel "Test Channel" was not created: its message partitions could not be created: permission denied for table messages',
+      );
+      // The transaction callback threw, so Postgres rolls the channel row back.
+      expect(rejected()).toBe(true);
     });
 
     it('returns ALREADY_EXISTS for duplicate name', async () => {

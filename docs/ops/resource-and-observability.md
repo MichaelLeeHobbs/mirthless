@@ -8,25 +8,32 @@ Node server on `:3000` (reachable through nginx in the production stack).
 
 ## Health & Readiness Endpoints
 
-All three are **unauthenticated** and safe for load balancers / orchestrators. They are
-excluded from HTTP request logging to avoid noise.
+The first three are **unauthenticated** and safe for load balancers / orchestrators. `/health/full` needs a session with `system:info`. They are excluded from HTTP request logging to avoid noise.
 
 | Endpoint | Method | Purpose | Response |
 |----------|--------|---------|----------|
 | `/health/live` | GET | **Liveness** — process is up. Never touches the DB. | `200 {"status":"ok"}` |
-| `/health/ready` | GET | **Readiness** — can serve traffic (DB reachable). | `200` when DB OK; `503 {"status":"unavailable"}` when not |
-| `/health` | GET | **Full health** — DB, engine channel counts, memory, uptime. | `200` when `status:"ok"`; `503` when `status:"degraded"` (DB down) |
+| `/health/ready` | GET | **Readiness** — can serve traffic (DB reachable). | `200` when DB OK (`status:"degraded"` and `startup.failedSteps` when a startup step failed); `503 {"status":"unavailable"}` when the DB is not |
+| `/health` | GET | **Health status only** — `{"status":"ok"}` or `{"status":"degraded"}`, nothing else. | `200` for `ok` and for `degraded` from a failed startup step; `503` (`degraded`) only while the DB is unreachable |
+| `/health/full` | GET | **Full health** (needs `system:info`) — DB, engine channel counts, memory, uptime, failed startup steps with their errors. | Same status codes as `/health` |
 
-`/health` (full) payload:
+### Startup steps
+
+At startup the server starts the job queue (pg-boss), then the data pruner schedule, which needs the queue, and redeploys every enabled channel. Channel redeploy does not use the queue, so it runs alongside it, and one failed step never skips another. A step fails when it throws or reports an error, and the queue and the pruner schedule also fail when they have not started after 60 seconds. Channel redeploy has no time limit; it reads every live channel in one query, deploys each once, and fails when any channel could not be redeployed, naming those channels (the others are still deployed). A step reported failed by its timeout keeps running: if it then succeeds, its failure is cleared and a `Startup step finished after its timeout` WARN line is logged (a queue that starts late then starts the pruner schedule); if it fails, its real error replaces the timeout.
+
+A failed step is logged at ERROR (`Startup step failed`, with `step`), recorded as a `SERVER_STARTUP_STEP_FAILED` event (Events page), and reported by health: `/health/ready` and `/health` answer `200` with `status:"degraded"` (`/health/ready` also names the steps in `startup.failedSteps`: `queue`, `pruner-scheduler`, `channel-redeploy`), and `/health/full` adds each step's error and time. Both stay `200` so an instance is not pulled out of a load balancer, which would hide the UI an operator needs to fix it (D-308); alert on `status:"degraded"` instead. A failure stays recorded until the server restarts, or until that step later succeeds, so such an alert clears on the next restart that starts cleanly.
+
+`/health/full` payload:
 
 ```json
 {
-  "status": "ok",
+  "status": "degraded",
   "timestamp": "2026-07-12T00:00:00.000Z",
   "uptime": 1234.5,
   "database": { "connected": true },
   "engine": { "deployed": 3, "started": 2, "stopped": 1, "paused": 0 },
-  "memory": { "rss": 0, "heapUsed": 0, "heapTotal": 0, "external": 0 }
+  "memory": { "rss": 0, "heapUsed": 0, "heapTotal": 0, "external": 0 },
+  "startup": { "failed": [{ "step": "queue", "errMsg": "permission denied for schema pgboss", "failedAt": "2026-07-12T00:00:05.000Z" }] }
 }
 ```
 

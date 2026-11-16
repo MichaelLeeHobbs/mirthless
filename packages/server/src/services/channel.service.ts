@@ -55,6 +55,13 @@ export interface ChannelSummary {
   readonly updatedAt: Date;
 }
 
+/** What the startup auto-deploy needs of each channel. */
+export interface ChannelDeployEntry {
+  readonly id: string;
+  readonly name: string;
+  readonly enabled: boolean;
+}
+
 export interface ChannelScript {
   readonly id: string;
   readonly scriptType: string;
@@ -702,6 +709,20 @@ export class ChannelService {
     });
   }
 
+  /**
+   * Every live (not deleted) channel's id, name and enabled flag, in one
+   * query ordered by id. The startup auto-deploy reads this rather than
+   * paging `list`, whose name order is not unique and whose offsets shift
+   * while the API serves, so a page could repeat one channel and skip another.
+   */
+  static async listLiveForDeploy(): Promise<Result<readonly ChannelDeployEntry[]>> {
+    return tryCatch(async () => db
+      .select({ id: channels.id, name: channels.name, enabled: channels.enabled })
+      .from(channels)
+      .where(isNull(channels.deletedAt))
+      .orderBy(asc(channels.id)));
+  }
+
   /** Get full channel detail by ID. */
   static async getById(id: string): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
@@ -827,17 +848,19 @@ export class ChannelService {
         }
         if (cloneOf !== undefined) await addCloneToLibraries(tx, cloneOf, channelId);
 
+        // Partitions in the same transaction: a channel without them would put
+        // its messages in the default partitions, so a failure rolls it back
+        // (#260). Last, because it locks the six message tables until commit.
+        const partitions = await PartitionManagerService.createPartitions(channelId, tx);
+        if (!partitions.ok) {
+          throw new ServiceError('INTERNAL', `Channel "${input.name}" was not created: its message partitions could not be created: ${partitions.error.message}`);
+        }
+
         return inserted;
       });
 
       // Return full detail
       const channel = created!;
-
-      // Create message partitions for the new channel (non-blocking — log warning on failure)
-      const partitionResult = await PartitionManagerService.createPartitions(channel.id);
-      if (!partitionResult.ok) {
-        logger.warn({ channelId: channel.id, errMsg: partitionResult.error.message }, 'Failed to create partitions for channel');
-      }
 
       const relations = await fetchChannelRelations(channel.id);
       const detail = assembleDetail(channel, relations);

@@ -2,7 +2,7 @@
 // Health Service Tests
 // ===========================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ----- Hoisted Mocks -----
 
@@ -23,7 +23,10 @@ vi.mock('../../engine.js', () => ({
 
 // ----- Import after mocks -----
 
-import { checkDatabase, getEngineStats, getMemoryStats, getHealthStatus } from '../health.service.js';
+import { checkDatabase, getEngineStats, getMemoryStats, getHealthStatus, getReadiness, healthHttpStatus } from '../health.service.js';
+import { startupStatus, STARTUP_STEP, type StartupFailure } from '../../lib/startup-steps.js';
+
+const QUEUE_FAILURE: StartupFailure = { step: STARTUP_STEP.QUEUE, errMsg: 'permission denied for database', failedAt: '2026-11-16T00:00:00.000Z' };
 
 // ----- Tests -----
 
@@ -31,6 +34,10 @@ describe('Health Service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetAll.mockReturnValue(new Map());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   // ----- checkDatabase -----
@@ -197,6 +204,82 @@ describe('Health Service', () => {
       const health = await getHealthStatus();
       expect(typeof health.uptime).toBe('number');
       expect(health.uptime).toBeGreaterThan(0);
+    });
+
+    it('is degraded and lists a failed startup step, with its error, when the database is fine', async () => {
+      mockExecute.mockResolvedValue([{ '?column?': 1 }]);
+      vi.spyOn(startupStatus, 'failed').mockReturnValue([QUEUE_FAILURE]);
+
+      const health = await getHealthStatus();
+
+      expect(health.status).toBe('degraded');
+      expect(health.startup.failed).toEqual([QUEUE_FAILURE]);
+    });
+
+    it('reports no failed startup step when every step succeeded', async () => {
+      mockExecute.mockResolvedValue([{ '?column?': 1 }]);
+
+      const health = await getHealthStatus();
+
+      expect(health.status).toBe('ok');
+      expect(health.startup.failed).toEqual([]);
+    });
+  });
+
+  // ----- healthHttpStatus -----
+
+  describe('healthHttpStatus', () => {
+    it('answers 200 for a startup-step failure, so a load balancer keeps the instance (D-308)', async () => {
+      mockExecute.mockResolvedValue([{ '?column?': 1 }]);
+      vi.spyOn(startupStatus, 'failed').mockReturnValue([QUEUE_FAILURE]);
+
+      const health = await getHealthStatus();
+
+      expect(health.status).toBe('degraded');
+      expect(healthHttpStatus(health)).toBe(200);
+    });
+
+    it('answers 503 while the database is unreachable', async () => {
+      mockExecute.mockRejectedValue(new Error('Connection refused'));
+
+      expect(healthHttpStatus(await getHealthStatus())).toBe(503);
+    });
+
+    it('answers 200 when healthy', async () => {
+      mockExecute.mockResolvedValue([{ '?column?': 1 }]);
+
+      expect(healthHttpStatus(await getHealthStatus())).toBe(200);
+    });
+  });
+
+  // ----- getReadiness -----
+
+  describe('getReadiness', () => {
+    it('is ready (200) when the database is reachable and every startup step succeeded', async () => {
+      mockExecute.mockResolvedValue([{ '?column?': 1 }]);
+
+      const readiness = await getReadiness();
+
+      expect(readiness).toEqual({ httpStatus: 200, body: { status: 'ok', database: { connected: true }, startup: { failedSteps: [] } } });
+    });
+
+    it('is not ready (503) when the database is unreachable', async () => {
+      mockExecute.mockRejectedValue(new Error('Connection refused'));
+
+      const readiness = await getReadiness();
+
+      expect(readiness.httpStatus).toBe(503);
+      expect(readiness.body.status).toBe('unavailable');
+    });
+
+    it('is degraded and names the failed step, without its error text, when a startup step failed', async () => {
+      mockExecute.mockResolvedValue([{ '?column?': 1 }]);
+      vi.spyOn(startupStatus, 'failed').mockReturnValue([QUEUE_FAILURE]);
+
+      const readiness = await getReadiness();
+
+      expect(readiness).toEqual({ httpStatus: 200, body: { status: 'degraded', database: { connected: true }, startup: { failedSteps: ['queue'] } } });
+      expect(JSON.stringify(readiness.body)).not.toContain('permission denied');
     });
   });
 });

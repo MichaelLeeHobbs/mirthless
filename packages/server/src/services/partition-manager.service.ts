@@ -26,6 +26,9 @@ const PARTITIONED_TABLES = [
   'message_custom_metadata',
 ] as const;
 
+/** What runs the partition function: the global db, or a transaction on it. */
+export type PartitionExecutor = Pick<typeof db, 'execute'>;
+
 // ----- Helpers -----
 
 /**
@@ -49,10 +52,13 @@ export class PartitionManagerService {
    * Only the tables' owner may add a partition, and the server's role owns no
    * tables (D-307), so this calls the owner function `create_channel_partitions`
    * (migration 0016), which creates the same six `<table>_p_<id>` partitions.
+   * The function refuses a channel whose row does not exist yet, so a caller
+   * that writes the row in a transaction passes that transaction as
+   * `executor`: a failure then rolls the channel back with it (#260).
    */
-  static async createPartitions(channelId: string): Promise<Result<void>> {
+  static async createPartitions(channelId: string, executor: PartitionExecutor = db): Promise<Result<void>> {
     return tryCatch(async () => {
-      await db.execute(sql`SELECT public.create_channel_partitions(${channelId}::uuid)`);
+      await executor.execute(sql`SELECT public.create_channel_partitions(${channelId}::uuid)`);
       logger.debug({ channelId }, 'Created partitions for channel');
     });
   }

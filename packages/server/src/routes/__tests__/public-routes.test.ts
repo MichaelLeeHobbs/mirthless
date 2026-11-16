@@ -11,8 +11,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { request, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
+import { connect, type AddressInfo } from 'node:net';
 import type { Router } from 'express';
 
 interface ApiRoute {
@@ -120,32 +120,49 @@ async function call(route: ApiRoute, headers: Readonly<Record<string, string>> =
 
 const takesBody = (r: ApiRoute): boolean => r.method !== 'GET' && r.method !== 'HEAD';
 
+/** How long `postUnfinishedBody` waits for an answer before failing. */
+const ANSWER_WAIT_MS = 15_000;
+
 /**
- * POST up to `total` bytes in 64 KB chunks with no length header, so a parser
- * would have to read the stream to find its end. Stops writing as soon as the
- * server answers, and reports how much had been sent by then.
+ * POST a chunked body (no length header) over a raw socket, send its first
+ * 8 KB and never finish it, then read the status line of the answer. A body
+ * parser in front of the guard would wait for the body's end, which never
+ * comes, so only a server that answers without reading the body answers at all.
+ *
+ * Streaming megabytes until the answer came (#254) made the server close with
+ * unread bytes, and the reset that sends could beat the 401 to the client on
+ * a loaded machine. 8 KB fits in what the server reads off the socket
+ * unasked, so nothing is left unread and the answer arrives cleanly. A reset
+ * after the status line is still taken as the answer.
  */
-function streamUntilAnswered(path: string, total: number): Promise<{ readonly status: number; readonly sent: number }> {
+function postUnfinishedBody(path: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    const chunk = Buffer.alloc(64 * 1024, 0x20);
-    let sent = 0;
-    let answered = false;
-    const req = request(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', connection: 'close' } });
-    req.on('response', (res) => {
-      answered = true;
-      resolve({ status: res.statusCode ?? 0, sent });
-      res.resume();
-      req.destroy();
-    });
-    req.on('error', (err) => { if (!answered) reject(err); });
-    const pump = (): void => {
-      while (!answered && sent < total) {
-        sent += chunk.length;
-        if (!req.write(chunk)) { req.once('drain', pump); return; }
-      }
-      if (!answered) req.end();
+    const { hostname, port } = new URL(base);
+    const socket = connect(Number(port), hostname);
+    let received = '';
+    let settled = false;
+    const finish = (outcome: number | Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      if (typeof outcome === 'number') resolve(outcome); else reject(outcome);
     };
-    pump();
+    const timer = setTimeout(() => { finish(new Error(`no answer within ${String(ANSWER_WAIT_MS)} ms: something waited for the body's end`)); }, ANSWER_WAIT_MS);
+    const statusLine = (): RegExpExecArray | null => /^HTTP\/1\.1 (\d{3}) /.exec(received);
+    socket.setEncoding('latin1');
+    socket.on('data', (data: string) => {
+      received += data;
+      const match = statusLine();
+      if (match) finish(Number(match[1]));
+    });
+    socket.on('error', (err) => { finish(err); });
+    socket.on('close', () => { finish(new Error(`connection closed before a status line; got ${JSON.stringify(received)}`)); });
+    const prefix = ' '.repeat(8 * 1024);
+    socket.write(
+      `POST ${path} HTTP/1.1\r\nhost: ${hostname}\r\ncontent-type: application/json\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n`
+      + `${prefix.length.toString(16)}\r\n${prefix}\r\n`,
+    );
   });
 }
 
@@ -216,12 +233,9 @@ describe('request bodies are read only after the guard (#157)', () => {
     expect(await call(channels, {}, '{not json')).toEqual({ status: 401, message: 'Unauthorized' });
   });
 
-  it('answers a caller without a session before reading an over-limit body', async () => {
-    const total = 20 * 1024 * 1024;
-    const { status, sent } = await streamUntilAnswered(channels.path, total);
-    expect(status).toBe(401);
-    expect(sent).toBeLessThan(total);
-  });
+  it('answers a caller without a session before reading the body', async () => {
+    expect(await postUnfinishedBody(channels.path)).toBe(401);
+  }, ANSWER_WAIT_MS + 5_000);
 
   it('refuses a login body over its small limit with 413', async () => {
     expect((await call(login, {}, JSON.stringify({ pad: 'x'.repeat(8 * 1024) }))).status).toBe(413);

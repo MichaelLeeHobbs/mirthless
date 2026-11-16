@@ -19,7 +19,6 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
 import { REDACTED } from '../lib/secret-redaction.js';
-import logger from '../lib/logger.js';
 import {
   channels,
   channelScripts,
@@ -187,13 +186,15 @@ async function createChannel(
     });
 
     await insertRelations(tx, entry.id, entry);
-  });
 
-  // Create partitions (non-blocking)
-  const partResult = await PartitionManagerService.createPartitions(entry.id);
-  if (!partResult.ok) {
-    logger.warn({ channelId: entry.id, errMsg: partResult.error.message }, 'Failed to create partitions for imported channel');
-  }
+    // Partitions in the same transaction: a channel without them would put its
+    // messages in the default partitions, so a failure rolls it back (#260).
+    // Last, because it locks the six message tables until commit.
+    const partitions = await PartitionManagerService.createPartitions(entry.id, tx);
+    if (!partitions.ok) {
+      throw new Error(`its message partitions could not be created, so it was not imported: ${partitions.error.message}`);
+    }
+  });
 
   return 'created';
 }

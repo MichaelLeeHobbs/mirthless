@@ -81,19 +81,20 @@ jobs:
           docker logs galvaniflow-smoke
           exit 1
 
-      # /health/ready answers before the startup chain (job queue, pruner
-      # scheduler, channel auto-deploy) finishes, and a failure there is only a
-      # log line. Wait for the chain to get past the scheduler, then fail on it.
-      - name: Check the startup chain
+      # /health/ready answers before the startup steps (job queue, then the
+      # pruner scheduler; channel auto-deploy alongside) finish. A failed step
+      # logs "Startup step failed" naming it (D-308). Wait until the scheduler
+      # has started or a step has failed, then fail on any failed step.
+      - name: Check the startup steps
         run: |
           for i in $(seq 1 30); do
-            if docker logs galvaniflow-smoke 2>&1 | grep -q -e 'Pruner scheduler' -e 'Startup initialization failed'; then
+            if docker logs galvaniflow-smoke 2>&1 | grep -q -e 'Pruner scheduler' -e 'Startup step failed'; then
               break
             fi
             sleep 2
           done
-          if docker logs galvaniflow-smoke 2>&1 | grep -q 'Startup initialization failed'; then
-            echo "::error::server startup chain failed"
+          if docker logs galvaniflow-smoke 2>&1 | grep -q 'Startup step failed'; then
+            echo "::error::a server startup step failed"
             exit 1
           fi
           if ! docker logs galvaniflow-smoke 2>&1 | grep -q 'Pruner scheduler'; then

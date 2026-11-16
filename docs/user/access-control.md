@@ -171,9 +171,9 @@ Anyone, without signing in:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /health` | Overall status only (`ok` or not), for load balancers |
+| `GET /health` | Overall status only (`ok` or `degraded`), for load balancers; 503 only while the database is unreachable |
 | `GET /health/live` | Liveness: the process answers |
-| `GET /health/ready` | Readiness: whether the database is reachable |
+| `GET /health/ready` | Readiness: whether the database is reachable, and the names of any startup steps that failed (no error text) |
 | `GET /api/v1/health` | Returns `ok` |
 | `GET /metrics` | Prometheus metrics, only when `METRICS_PUBLIC=true`. Otherwise it needs `system:info`. |
 | `GET /api-docs`, `GET /api-docs/spec.json` | Swagger UI and the OpenAPI description, served when `API_DOCS_ENABLED=true`, or by default when `NODE_ENV` is not `production` |

@@ -20,7 +20,7 @@ import * as schema from '../schema/index.js';
 import { isContentEncryptionConfigured } from '../../lib/content-crypto.js';
 import { AlertService } from '../../services/alert.service.js';
 import { DataSourceService } from '../../services/data-source.service.js';
-import { findChannelId } from './seed-examples.js';
+import { createSeededChannelPartitions, findChannelId } from './seed-examples.js';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -379,6 +379,7 @@ async function seedHeadlineChannel(db: Db): Promise<void> {
     return;
   }
   const channelId = await insertHeadlineChannel(db, name);
+  await createSeededChannelPartitions(db, channelId);
   const connectorId = await insertHeadlineDestination(db, channelId);
   await addDestinationFilter(db, channelId, connectorId);
   await addDestinationTransformer(db, channelId, connectorId);

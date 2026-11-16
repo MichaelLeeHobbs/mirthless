@@ -50,6 +50,9 @@ vi.mock('../../db/schema/index.js', () => ({
 }));
 
 import { ChannelImportService, stripRedactedProperties, connectorDirectionError } from '../channel-import.service.js';
+import { PartitionManagerService } from '../partition-manager.service.js';
+import { db } from '../../lib/db.js';
+import { StdError } from 'stderr-lib';
 
 describe('stripRedactedProperties', () => {
   it('drops redacted credential values but keeps everything else', () => {
@@ -175,6 +178,27 @@ describe('ChannelImportService.importChannels', () => {
     const entry = makeEntry({ name: 'My Channel' });
     const result = await ChannelImportService.importChannels([entry], 'SKIP');
     expect(result.ok).toBe(true);
+  });
+
+  it('rolls back a channel whose partitions cannot be created, reports it and imports the rest (#260)', async () => {
+    vi.mocked(PartitionManagerService.createPartitions)
+      .mockResolvedValueOnce({ ok: false, value: null, error: new StdError('permission denied for table messages') });
+    const entries = [makeEntry({ id: 'ch-1', name: 'No Partitions' }), makeEntry({ id: 'ch-2', name: 'Fine' })];
+
+    const result = await ChannelImportService.importChannels(entries, 'SKIP');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.created).toBe(1);
+    expect(result.value.errors).toEqual([
+      'Error importing "No Partitions": its message partitions could not be created, so it was not imported: permission denied for table messages',
+    ]);
+    // Each channel's partitions are made on its own transaction, and the failed
+    // one's transaction threw, which rolls its channel row back.
+    const calls = vi.mocked(PartitionManagerService.createPartitions).mock.calls;
+    expect(calls.map((c) => c[0])).toEqual(['ch-1', 'ch-2']);
+    for (const call of calls) expect(call[1]).toEqual(expect.objectContaining({ insert: expect.any(Function) }));
+    expect(vi.mocked(db.transaction).mock.settledResults.map((r) => r.type)).toEqual(['rejected', 'fulfilled']);
   });
 });
 
