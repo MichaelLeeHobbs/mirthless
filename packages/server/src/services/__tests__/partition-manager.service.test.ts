@@ -54,14 +54,23 @@ beforeEach(() => {
 
 describe('PartitionManagerService.ensureAuditPartitions', () => {
   it('calls the owner function, which takes no argument, and returns how many partitions it made', async () => {
-    mockExecute.mockResolvedValueOnce({ rows: [{ made: 2 }] });
+    mockExecute.mockResolvedValueOnce({ rows: [{ made: 2, failed: [] }] });
 
     const result = await PartitionManagerService.ensureAuditPartitions();
 
     expect(result).toMatchObject({ ok: true, value: 2 });
     const query = new PgDialect().sqlToQuery(mockExecute.mock.calls[0]![0] as SQL);
-    expect(query.sql).toBe('SELECT public.ensure_audit_partitions() AS made');
+    expect(query.sql).toBe('SELECT made, failed FROM public.ensure_audit_partitions()');
     expect(query.params).toEqual([]);
+  });
+
+  it('fails naming the months the function could not make, so the step shows degraded', async () => {
+    mockExecute.mockResolvedValueOnce({ rows: [{ made: 3, failed: ['2027-03: updated partition constraint for default partition would be violated'] }] });
+
+    const result = await PartitionManagerService.ensureAuditPartitions();
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.message).toContain('2027-03: updated partition constraint');
   });
 
   it('fails when the function fails', async () => {

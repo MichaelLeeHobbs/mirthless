@@ -312,6 +312,8 @@ describeIntegration('Runtime database role (real Postgres)', () => {
 
   it('refuses the owner too: the triggers stop UPDATE, DELETE and TRUNCATE on the log and each partition', async () => {
     const RAISED = 'P0001';
+    // A row trigger fires only on a row, so give this test its own.
+    await owner.query(`INSERT INTO audit_log (action, outcome) VALUES ('ROLE_ITEST_OWNER_${SUFFIX}', 'SUCCESS')`);
     expect(await failureCode(owner, `UPDATE audit_log SET outcome = 'X'`)).toBe(RAISED);
     expect(await failureCode(owner, `DELETE FROM audit_log`)).toBe(RAISED);
     for (const table of ['audit_log', auditPartition(), auditPartition(11), 'audit_log_default']) {
@@ -324,13 +326,49 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     const ahead = auditPartition(3);
     await owner.query(`DROP TABLE ${ahead}`);
 
-    const made = await runtime.query<{ made: number }>('SELECT ensure_audit_partitions() AS made');
-    expect(made.rows[0]?.made).toBe(1);
-    expect((await runtime.query<{ made: number }>('SELECT ensure_audit_partitions() AS made')).rows[0]?.made).toBe(0);
+    // A caller's own time zone and date style must not move the bounds.
+    await runtime.query(`SET TimeZone = 'America/New_York'`);
+    await runtime.query(`SET DateStyle = 'SQL, DMY'`);
+    const ensure = 'SELECT made, failed FROM ensure_audit_partitions()';
+    expect((await runtime.query<{ made: number; failed: string[] }>(ensure)).rows[0]).toEqual({ made: 1, failed: [] });
+    expect((await runtime.query<{ made: number; failed: string[] }>(ensure)).rows[0]).toEqual({ made: 0, failed: [] });
+    await runtime.query('RESET TimeZone');
+    await runtime.query('RESET DateStyle');
+    const bounds = await owner.query<{ bound: string }>(
+      `SELECT pg_get_expr(c.relpartbound, c.oid) AS bound FROM pg_class c WHERE c.relname = $1`, [ahead]);
+    const first = new Date();
+    const start = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 3, 1));
+    expect(bounds.rows[0]?.bound).toContain(`'${start.toISOString().slice(0, 10)} 00:00:00+00'`);
 
     expect(await failureCode(runtime, `UPDATE ${ahead} SET outcome = 'X'`)).toBe(INSUFFICIENT_PRIVILEGE);
     expect(await failureCode(runtime, `DELETE FROM ${ahead}`)).toBe(INSUFFICIENT_PRIVILEGE);
     expect(await failureCode(owner, `TRUNCATE ${ahead}`)).toBe('P0001');
+  });
+
+  it('still makes the other months when one cannot be made, and names it', async () => {
+    const blocked = auditPartition(2);
+    const later = auditPartition(3);
+    const month = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 2, 15));
+    await owner.query(`DROP TABLE ${blocked}`);
+    await owner.query(`DROP TABLE ${later}`);
+    // A row in DEFAULT for the blocked month stops its partition from being made.
+    await runtime.query(`INSERT INTO audit_log (action, outcome, occurred_at) VALUES ('ROLE_ITEST_STRAY', 'SUCCESS', $1)`, [month]);
+
+    const result = await runtime.query<{ made: number; failed: string[] }>('SELECT made, failed FROM ensure_audit_partitions()');
+
+    expect(result.rows[0]?.made).toBe(1);
+    expect(result.rows[0]?.failed).toHaveLength(1);
+    expect(result.rows[0]?.failed[0]).toMatch(new RegExp(`^${month.toISOString().slice(0, 7)}: `));
+    expect((await owner.query('SELECT 1 FROM pg_class WHERE relname = $1', [later])).rowCount).toBe(1);
+    // Put it right the way docs/ops/audit-log.md says, so later tests see a clean log.
+    await owner.query('BEGIN');
+    await owner.query('ALTER TABLE audit_log DETACH PARTITION audit_log_default');
+    await owner.query(`SELECT audit_log_month_partition($1::date)`, [month.toISOString().slice(0, 10)]);
+    await owner.query('INSERT INTO audit_log SELECT * FROM audit_log_default');
+    await owner.query('DELETE FROM audit_log_default');
+    await owner.query('ALTER TABLE audit_log ATTACH PARTITION audit_log_default DEFAULT');
+    await owner.query('COMMIT');
+    expect((await owner.query(`SELECT 1 FROM ${blocked} WHERE action = 'ROLE_ITEST_STRAY'`)).rowCount).toBe(1);
   });
 
   it('drops only months past six years, even when the setting asks for less, and records the drop first', async () => {
@@ -338,8 +376,8 @@ describeIntegration('Runtime database role (real Postgres)', () => {
                        ON CONFLICT (key) DO UPDATE SET value = '1'`);
     const sevenYearsAgo = auditPartition(-7 * 12);
     const fiveYearsAgo = auditPartition(-5 * 12);
-    await owner.query(`SELECT audit_log_month_partition((now() - interval '7 years')::date)`);
-    await owner.query(`SELECT audit_log_month_partition((now() - interval '5 years')::date)`);
+    await owner.query(`SELECT audit_log_month_partition(((now() AT TIME ZONE 'UTC') - interval '7 years')::date)`);
+    await owner.query(`SELECT audit_log_month_partition(((now() AT TIME ZONE 'UTC') - interval '5 years')::date)`);
 
     expect(await failureCode(owner, `SELECT drop_expired_audit_partitions('  ')`)).toBe('22023');
     const dropped = await owner.query<{ n: number }>(`SELECT drop_expired_audit_partitions('itest retention') AS n`);

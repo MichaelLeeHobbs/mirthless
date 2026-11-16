@@ -88,6 +88,7 @@ describe('healthCells', () => {
   it('says one audit row in the singular, and stays healthy when the count is unknown', () => {
     expect(cell(info({ audit: { rowsOutsideMonths: 1 } }), 'database').summary).toBe('1 audit row outside a monthly partition: see the audit log runbook');
     expect(cell(info({ audit: { rowsOutsideMonths: null } }), 'database').level).toBe('healthy');
+    expect(cell(info({ audit: { rowsOutsideMonths: 10_000 } }), 'database').summary).toMatch(/^10,000\+ audit rows/);
   });
 
   it('still describes a connected database whose version and latency are unknown', () => {

@@ -64,6 +64,8 @@ AS $$
 DECLARE
   grantee text;
 BEGIN
+  -- Two servers starting together would race between the check and the CREATE.
+  PERFORM pg_advisory_xact_lock(hashtext('public.audit_log partitions'));
   IF to_regclass(format('public.%I', p_name)) IS NOT NULL THEN
     RETURN false;
   END IF;
@@ -85,10 +87,14 @@ END;
 $$;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.audit_log_add_partition(text, text) FROM PUBLIC;--> statement-breakpoint
 -- The month partition's name: audit_log_y2026m11 holds November 2026, UTC.
+-- TimeZone and DateStyle are pinned: the bounds are written as text, and a
+-- caller's settings must not move them.
 CREATE OR REPLACE FUNCTION public.audit_log_month_partition(p_month date)
 RETURNS boolean
 LANGUAGE plpgsql
 SET search_path = pg_catalog, pg_temp
+SET TimeZone = 'UTC'
+SET DateStyle = 'ISO, YMD'
 AS $$
 DECLARE
   first_day date := date_trunc('month', p_month)::date;
@@ -106,24 +112,33 @@ REVOKE ALL ON FUNCTION public.audit_log_month_partition(date) FROM PUBLIC;--> st
 -- ===========================================================================
 -- The server's role calls this at start and daily. It takes no argument, so a
 -- caller cannot make partitions for dates of its choosing. Returns how many it
--- created.
-CREATE OR REPLACE FUNCTION public.ensure_audit_partitions()
-RETURNS integer
+-- made, and the months it could not make (most often because DEFAULT already
+-- holds rows for them, docs/ops/audit-log.md). One failed month does not stop
+-- the others.
+CREATE OR REPLACE FUNCTION public.ensure_audit_partitions(OUT made integer, OUT failed text[])
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
+SET TimeZone = 'UTC'
+SET DateStyle = 'ISO, YMD'
 AS $$
 DECLARE
-  this_month date := date_trunc('month', now() AT TIME ZONE 'UTC')::date;
-  made integer := 0;
+  this_month date := date_trunc('month', now())::date;
+  month date;
   i integer;
 BEGIN
+  made := 0;
+  failed := '{}';
   FOR i IN 0..3 LOOP
-    IF public.audit_log_month_partition((this_month + make_interval(months => i))::date) THEN
-      made := made + 1;
-    END IF;
+    month := (this_month + make_interval(months => i))::date;
+    BEGIN
+      IF public.audit_log_month_partition(month) THEN
+        made := made + 1;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      failed := failed || (to_char(month, 'YYYY-MM') || ': ' || SQLERRM);
+    END;
   END LOOP;
-  RETURN made;
 END;
 $$;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.ensure_audit_partitions() FROM PUBLIC;--> statement-breakpoint
@@ -139,6 +154,8 @@ RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
+SET TimeZone = 'UTC'
+SET DateStyle = 'ISO, YMD'
 AS $$
 DECLARE
   setting text := (SELECT value FROM public.system_settings WHERE key = 'audit.retention_years');
