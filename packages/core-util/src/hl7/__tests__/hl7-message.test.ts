@@ -450,6 +450,10 @@ describe('Hl7Message getText hex escapes by MSH-18 (#194)', () => {
     expect(withCharset('UNICODE UTF-8', 'caf\\XC3A9\\').getText('NTE.3')).toBe('café');
   });
 
+  it('keeps a lone Latin-1 byte under UTF-8 instead of replacing it', () => {
+    expect(withCharset('UNICODE UTF-8', 'caf\\XE9\\').getText('NTE.3')).toBe('café');
+  });
+
   it('accepts the UTF-8 spellings senders use, in any case', () => {
     for (const msh18 of ['unicode utf-8', 'UTF-8', 'utf8', 'UNICODE UTF-8~8859/1']) {
       expect(withCharset(msh18, 'caf\\XC3A9\\').getText('NTE.3')).toBe('café');

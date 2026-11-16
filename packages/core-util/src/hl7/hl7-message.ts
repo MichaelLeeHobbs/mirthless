@@ -106,7 +106,8 @@ export class Hl7Message {
   getText(path: string): string | undefined {
     const raw = this.get(path);
     if (raw === undefined) return undefined;
-    return unescapeValue(raw, this._encoding, hexEscapeCharset(this.get('MSH.18')));
+    const hasHex = raw.includes(`${this._encoding.escapeChar}X`);
+    return unescapeValue(raw, this._encoding, hasHex ? hexEscapeCharset(this.get('MSH.18')) : undefined);
   }
 
   /**
