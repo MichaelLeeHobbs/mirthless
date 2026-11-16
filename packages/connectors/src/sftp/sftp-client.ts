@@ -45,7 +45,11 @@ export interface SftpFileInfo {
   readonly isFile: boolean;
 }
 
-/** What a remote path is, links followed: a directory, a file (anything else that exists), or missing. */
+/**
+ * What a remote path is, links followed: a directory, a regular file, or
+ * missing. ssh2-sftp-client's exists() answers false for anything else (a
+ * FIFO, socket or device), so those read as missing.
+ */
 export type SftpPathKind = 'directory' | 'file' | 'missing';
 
 // ----- Client -----
@@ -133,7 +137,8 @@ interface Ssh2FileInfo {
   readonly modifyTime: number;
 }
 
-interface Ssh2ClientInstance {
+/** The part of ssh2-sftp-client this module uses. */
+export interface Ssh2ClientInstance {
   connect(options: Record<string, unknown>): Promise<unknown>;
   list(remoteDir: string): Promise<readonly Ssh2FileInfo[]>;
   get(remotePath: string): Promise<Buffer>;
@@ -180,7 +185,13 @@ export function buildConnectOptions(options: SftpConnectionOptions): Record<stri
 /** Create an ssh2-sftp-client-backed {@link SftpClient}. */
 export function createSsh2SftpClient(options: SftpConnectionOptions): SftpClient {
   const Ctor = require('ssh2-sftp-client') as new () => Ssh2ClientInstance;
-  const client = new Ctor();
+  return wrapSsh2Client(new Ctor(), options);
+}
+
+/** Adapt an ssh2-sftp-client instance to {@link SftpClient}; exported so tests can pass a fake library. */
+export function wrapSsh2Client(client: Ssh2ClientInstance, options: SftpConnectionOptions): SftpClient {
+  const pathKind = async (remotePath: string): Promise<SftpPathKind> =>
+    toPathKind(await client.exists(remotePath), async () => (await client.stat(remotePath)).isDirectory);
   return {
     async connect(): Promise<void> {
       await client.connect(buildConnectOptions(options));
@@ -210,14 +221,12 @@ export function createSsh2SftpClient(options: SftpConnectionOptions): SftpClient
       await client.rename(from, to);
     },
     async mkdir(remoteDirectory: string): Promise<void> {
-      const already = await client.exists(remoteDirectory);
-      if (already === 'd') return;
+      // ssh2-sftp-client's mkdir refuses a link to a directory as "already
+      // exists as a file", so follow links before deciding to create it.
+      if ((await pathKind(remoteDirectory)) === 'directory') return;
       await client.mkdir(remoteDirectory, true);
     },
-    async pathKind(remotePath: string): Promise<SftpPathKind> {
-      const type = await client.exists(remotePath);
-      return toPathKind(type, async () => (await client.stat(remotePath)).isDirectory);
-    },
+    pathKind,
     async end(): Promise<void> {
       await client.end();
     },

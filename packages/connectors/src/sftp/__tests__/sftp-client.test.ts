@@ -8,6 +8,8 @@ import {
   makeHostVerifier,
   buildConnectOptions,
   toPathKind,
+  wrapSsh2Client,
+  type Ssh2ClientInstance,
   type SftpConnectionOptions,
 } from '../sftp-client.js';
 
@@ -81,6 +83,37 @@ describe('toPathKind', () => {
   it('follows a link, so a link to a directory is a directory and a link to a file is a file', async () => {
     expect(await toPathKind('l', async () => true)).toBe('directory');
     expect(await toPathKind('l', async () => false)).toBe('file');
+  });
+});
+
+describe('wrapSsh2Client mkdir', () => {
+  /** A fake ssh2-sftp-client whose path answers lstat-style `type` and stat-style `isDirectory`. */
+  function fakeLibrary(type: false | string, isDirectory: boolean): { lib: Ssh2ClientInstance; mkdirCalls: string[] } {
+    const mkdirCalls: string[] = [];
+    const lib = {
+      exists: async () => type,
+      stat: async () => ({ isDirectory }),
+      mkdir: async (dir: string) => { mkdirCalls.push(dir); return 'ok'; },
+    } as unknown as Ssh2ClientInstance;
+    return { lib, mkdirCalls };
+  }
+
+  it('does not create a directory that is a link to a directory', async () => {
+    const { lib, mkdirCalls } = fakeLibrary('l', true);
+    await wrapSsh2Client(lib, makeOptions()).mkdir('/linked');
+    expect(mkdirCalls).toEqual([]);
+  });
+
+  it('does not create a directory that already exists', async () => {
+    const { lib, mkdirCalls } = fakeLibrary('d', true);
+    await wrapSsh2Client(lib, makeOptions()).mkdir('/inbound');
+    expect(mkdirCalls).toEqual([]);
+  });
+
+  it('creates a missing directory', async () => {
+    const { lib, mkdirCalls } = fakeLibrary(false, false);
+    await wrapSsh2Client(lib, makeOptions()).mkdir('/new');
+    expect(mkdirCalls).toEqual(['/new']);
   });
 });
 
