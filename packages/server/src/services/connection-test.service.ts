@@ -421,9 +421,11 @@ const testSmtp: Tester = async (_mode, props) => {
     host,
     port,
     secure: props['secure'] === true,
+    requireTLS: props['requireTLS'] === true,
     connectionTimeout: TEST_TIMEOUT_MS,
-    ...(typeof props['user'] === 'string'
-      ? { auth: { user: props['user'], pass: props['password'] } }
+    // The connector's keys: a login only when authUser is set, as it sends mail.
+    ...(typeof props['authUser'] === 'string' && props['authUser'] !== ''
+      ? { auth: { user: props['authUser'], pass: typeof props['authPass'] === 'string' ? props['authPass'] : '' } }
       : {}),
   });
 
