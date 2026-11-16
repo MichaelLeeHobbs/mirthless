@@ -11,6 +11,7 @@
 import * as https from 'node:https';
 import { tryCatch, type Result } from '@galvaniflow/core-util';
 import { fillVariables, type DestinationConnectorRuntime, type ConnectorMessage, type ConnectorResponse } from '../base.js';
+import { redirectMessage } from '../redirect.js';
 import type { TlsClientOptions } from '../tls.js';
 
 // ----- Config -----
@@ -56,12 +57,6 @@ function hasActiveTlsOptions(tls: TlsClientOptions | undefined): boolean {
 }
 
 // ----- Dispatcher -----
-
-/** Error text for a redirect answer, which is never followed (see send). */
-function redirectMessage(status: number, location: string | null): string {
-  const target = location ? ` to ${location}` : '';
-  return `HTTP ${String(status)}: the server redirected${target}. Redirects are not followed; set the destination URL to the final address.`;
-}
 
 export class HttpDispatcher implements DestinationConnectorRuntime {
   private readonly config: HttpDispatcherConfig;
