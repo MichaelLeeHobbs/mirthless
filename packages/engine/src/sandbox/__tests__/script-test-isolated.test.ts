@@ -73,7 +73,7 @@ describe('runScriptTestIsolated', () => {
       'logger.info(String(refused.length));',
       'logger.info((refused[0] as PromiseRejectedResult).reason.message);',
     ].join('\n');
-    const result = await run({ kind: 'script', script }, { getResource });
+    const result = await run({ kind: 'script', script }, { getResource }, { timeoutMs: 5_000 });
     expect(getResource).toHaveBeenCalledTimes(MAX_TEST_READS);
     // The rest are refused in the worker, never reaching the main thread, and the script is told why.
     expect(result.logs).toEqual([
