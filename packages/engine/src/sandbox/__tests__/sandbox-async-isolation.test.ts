@@ -70,6 +70,15 @@ describe('VmSandboxExecutor async isolation', () => {
     expect(result.ok ? 'finished' : result.error.message).toBe('Script execution timed out after 300ms');
   });
 
+  it('gives each of several reads that finish together its own result (#188)', async () => {
+    const getResource = vi.fn(async (name: string) => `value of ${name}`);
+    const executor = new VmSandboxExecutor({ getResource });
+    const script = "return (await Promise.all(['a', 'b', 'c', 'd'].map((n) => getResource(n)))).join(', ');";
+    const result = await executor.execute(makeScript(script), createSandboxContext('m', 'r'), OPTIONS);
+
+    expect(result.ok ? result.value.returnValue : result.error.message).toBe('value of a, value of b, value of c, value of d');
+  });
+
   it('times out an infinite loop inside a promise callback of a synchronous script', async () => {
     const executor = new VmSandboxExecutor();
     const result = await executor.execute(

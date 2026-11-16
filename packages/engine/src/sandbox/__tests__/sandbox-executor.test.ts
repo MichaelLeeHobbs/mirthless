@@ -2,7 +2,7 @@
 // Sandbox Executor Tests
 // ===========================================
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   VmSandboxExecutor,
   DEFAULT_EXECUTION_OPTIONS,
@@ -231,6 +231,21 @@ describe('VmSandboxExecutor', () => {
       // The 50ms limit's timer was set before the 400ms one, so it always fires first: the run
       // ended without waiting for the IO. Checking this, not the elapsed time, keeps the test off the clock.
       expect(answered).toBe(false);
+    });
+
+    it('returns the result of a script that finished in time, even when collecting it starts after the limit (#188)', async () => {
+      // The script's last act moves the host clock past the deadline, as a
+      // descheduled host thread would between the script's end and the collection.
+      const realNow = Date.now.bind(Date);
+      let skew = 0;
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew);
+      try {
+        const context = makeContext({ extras: { destinationSet: { removeAll: () => { skew = 10_000; } } } });
+        const result = await executor.execute(makeScript("destinationSet.removeAll(); return 'done';"), context, { timeout: 1_000 });
+        expect(result.ok ? result.value.returnValue : result.error.message).toBe('done');
+      } finally {
+        clock.mockRestore();
+      }
     });
 
     it('still stops when the caller cancels first', async () => {

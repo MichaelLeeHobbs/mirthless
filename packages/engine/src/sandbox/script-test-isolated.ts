@@ -13,7 +13,7 @@ import type { ScriptTestInput, ScriptTestReaders, ScriptTestResult } from './scr
 import { workerEntry } from './worker-entry.js';
 
 /** The test-run input that crosses into the worker: everything but the readers. */
-export type IsolatedTestInput = Omit<ScriptTestInput, 'readers' | 'timeoutMs'>;
+export type IsolatedTestInput = Omit<ScriptTestInput, 'readers' | 'timeoutMs' | 'onCompiled'>;
 
 export interface IsolationLimits {
   /**
@@ -37,15 +37,16 @@ export const MAX_TEST_READS = 100;
 /** How often the main thread samples the process's memory during a run. */
 const MEMORY_SAMPLE_MS = 20;
 /**
- * How long a worker may take to start (load its modules) before the run is
- * given up. Start-up is the engine's cost, not the script's, and on a busy
- * machine it can take seconds, so it is not charged to the script's time limit (#188).
+ * How long a worker may take to start (load its modules, parse the sample and
+ * compile the script) before the run is given up. Start-up is the engine's cost,
+ * not the script's, and on a busy machine it can take seconds (esbuild starts a
+ * process of its own), so it is not charged to the script's time limit (#188).
  */
 export const WORKER_START_LIMIT_MS = 30_000;
 /**
  * How long after its time limit a started worker is terminated. The sandbox's
- * own limit stops a script first; this covers parsing the sample and compiling
- * the script, which happen before that limit starts, and a script it fails to stop.
+ * own limit stops a script first; this covers building the sandbox's globals,
+ * which is not counted against that limit, and a script the sandbox fails to stop.
  */
 const STOP_GRACE_MS = 5_000;
 
@@ -55,7 +56,7 @@ export interface WorkerStart {
   readonly readers: ReadonlyArray<'getResource' | 'collectionFind'>;
 }
 
-/** Worker to main thread. */
+/** Worker to main thread. `started`: the script is compiled and about to run. */
 export type WorkerRequest =
   | { readonly type: 'started' }
   | { readonly type: 'read'; readonly id: number; readonly call: 'getResource' | 'collectionFind'; readonly args: readonly unknown[] }

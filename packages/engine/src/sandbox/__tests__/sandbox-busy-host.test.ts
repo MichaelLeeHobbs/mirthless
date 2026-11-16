@@ -13,13 +13,14 @@ import type * as VmModule from 'node:vm';
 import { VmSandboxExecutor } from '../sandbox-executor.js';
 import { createSandboxContext } from '../sandbox-context.js';
 
-const SLOW_ENTRY_MS = vi.hoisted(() => 20);
+const { SLOW_ENTRY_MS, settles } = vi.hoisted(() => ({ SLOW_ENTRY_MS: 20, settles: { count: 0 } }));
 
 vi.mock('node:vm', async (importOriginal) => {
   const vm = await importOriginal<typeof VmModule>();
   const pause = new Int32Array(new SharedArrayBuffer(4));
   const runInContext = ((code: string, context: VmModule.Context, options?: VmModule.RunningCodeOptions | string) => {
     if (typeof options === 'object' && options.timeout !== undefined) Atomics.wait(pause, 0, 0, SLOW_ENTRY_MS);
+    if (code === '__settle()') settles.count += 1;
     return vm.runInContext(code, context, options);
   }) as typeof vm.runInContext;
   return { ...vm, runInContext, default: { ...vm, runInContext } };
@@ -35,5 +36,7 @@ describe('VmSandboxExecutor on a busy host', () => {
 
     expect(result.ok ? result.value.returnValue : result.error.message).toBe(200);
     expect(getResource).toHaveBeenCalledTimes(200);
+    // The 200 reads finished together, so one entry settled them all.
+    expect(settles.count).toBe(1);
   });
 });
