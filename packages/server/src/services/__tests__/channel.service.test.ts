@@ -374,6 +374,40 @@ describe('ChannelService', () => {
       expect(mockTransaction).toHaveBeenCalledOnce();
     });
 
+    it('creates the partitions for the id it then writes the channel under (#260)', async () => {
+      pushResponse([]); // uniqueness check
+      let insertedId: unknown;
+      mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
+        insert: vi.fn().mockImplementation(() => ({
+          values: vi.fn().mockImplementation((values: { id?: unknown }) => {
+            insertedId ??= values.id;
+            return Object.assign(Promise.resolve(undefined), { returning: vi.fn().mockResolvedValue([makeChannel({ id: values.id })]) });
+          }),
+        })),
+      }));
+
+      await ChannelService.create(CREATE_INPUT);
+
+      expect(insertedId).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/));
+      expect(PartitionManagerService.createPartitions).toHaveBeenCalledWith(insertedId);
+    });
+
+    it('fails without writing the channel when its partitions cannot be created (#260)', async () => {
+      pushResponse([]); // uniqueness check
+      vi.mocked(PartitionManagerService.createPartitions)
+        .mockResolvedValueOnce({ ok: false, value: null, error: new Error('permission denied for table messages') });
+
+      const result = await ChannelService.create(CREATE_INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'INTERNAL');
+      expect(result.error.message).toBe(
+        'Channel "Test Channel" was not created: its message partitions could not be created: permission denied for table messages',
+      );
+      expect(mockTransaction).not.toHaveBeenCalled();
+    });
+
     it('returns ALREADY_EXISTS for duplicate name', async () => {
       pushResponse([{ id: 'existing-id' }]); // uniqueness check finds existing
 

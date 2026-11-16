@@ -19,7 +19,6 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
 import { REDACTED } from '../lib/secret-redaction.js';
-import logger from '../lib/logger.js';
 import {
   channels,
   channelScripts,
@@ -158,6 +157,13 @@ async function createChannel(
   entry: ChannelExportEntry,
   _context?: AuditContext,
 ): Promise<'created'> {
+  // Partitions first: a channel without them would put its messages in the
+  // default partitions (#260), so it is not imported at all.
+  const partitions = await PartitionManagerService.createPartitions(entry.id);
+  if (!partitions.ok) {
+    throw new Error(`its message partitions could not be created, so it was not imported: ${partitions.error.message}`);
+  }
+
   const now = new Date();
 
   await db.transaction(async (tx) => {
@@ -188,12 +194,6 @@ async function createChannel(
 
     await insertRelations(tx, entry.id, entry);
   });
-
-  // Create partitions (non-blocking)
-  const partResult = await PartitionManagerService.createPartitions(entry.id);
-  if (!partResult.ok) {
-    logger.warn({ channelId: entry.id, errMsg: partResult.error.message }, 'Failed to create partitions for imported channel');
-  }
 
   return 'created';
 }

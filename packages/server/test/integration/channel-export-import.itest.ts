@@ -67,6 +67,24 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     await expectAttachedToSecond(copyId);
   });
 
+  it('creates and imports channels with their own partitions, under the id each is saved with (#260)', async () => {
+    const { ChannelService, PartitionManagerService } = mods;
+    const name = `itest-partitions-${randomUUID()}`;
+    const source = unwrap(await ChannelService.create(createChannelSchema.parse({
+      name, enabled: false, inboundDataType: 'RAW', outboundDataType: 'RAW',
+      sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'NONE',
+    })));
+    created.push(source.id);
+    expect(unwrap(await PartitionManagerService.partitionExists(source.id))).toBe(true);
+
+    const entry = unwrap(await exportMod.ChannelExportService.exportChannel(source.id)).channels[0]!;
+    const copyId = randomUUID();
+    created.push(copyId);
+    const result = unwrap(await importMod.ChannelImportService.importChannels([{ ...entry, id: copyId, name: `${name}-copy` }], 'CREATE_NEW'));
+    expect(result.errors).toEqual([]);
+    expect(unwrap(await PartitionManagerService.partitionExists(copyId))).toBe(true);
+  });
+
   it('keeps every script language and the response transformer through save, export and import', async () => {
     const { ChannelService } = mods;
     const name = `itest-languages-${randomUUID()}`;
