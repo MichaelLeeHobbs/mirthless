@@ -7,6 +7,7 @@
 
 import {
   type Hl7Encoding, detectEncoding, encodingCharsString, splitSegments, escapeValue, unescapeValue, escapeStructural,
+  hexEscapeCharset,
 } from './hl7-encoding.js';
 import { parsePath } from './hl7-path.js';
 
@@ -97,10 +98,15 @@ export class Hl7Message {
     return asString(value);
   }
 
-  /** Get the decoded text at a path: escape sequences become the characters they stand for. */
+  /**
+   * Get the decoded text at a path: escape sequences become the characters they
+   * stand for. The bytes of hex escapes (`\\X..\\`) are decoded in the charset
+   * MSH-18 names at the time of the call (see {@link hexEscapeCharset}).
+   */
   getText(path: string): string | undefined {
     const raw = this.get(path);
-    return raw === undefined ? undefined : unescapeValue(raw, this._encoding);
+    if (raw === undefined) return undefined;
+    return unescapeValue(raw, this._encoding, hexEscapeCharset(this.get('MSH.18')));
   }
 
   /**
