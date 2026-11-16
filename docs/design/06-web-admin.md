@@ -685,9 +685,11 @@ socket.on('channel:statistics', (data: ChannelStatisticsUpdate) => {
   queryClient.setQueryData(['channel-stats'], (old) => updateStats(old, data));
 });
 
-socket.on('message:new', (data: { channelId: ChannelId; messageId: MessageId }) => {
-  // Invalidate message queries if user is viewing this channel
-  queryClient.invalidateQueries({ queryKey: ['messages', data.channelId] });
+// Coalesced by the server to one per channel room per second, so the payload
+// names only the channel. The page refetches the list, throttled, and not an
+// open message's detail (D-306).
+socket.on('message:new', (data: { channelId: ChannelId }) => {
+  queryClient.invalidateQueries({ queryKey: ['messages', 'search', data.channelId] });
 });
 
 // Server log streaming (System page)
