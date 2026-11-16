@@ -12,7 +12,7 @@ import Tabs from '@mui/material/Tabs';
 import Button from '@mui/material/Button';
 import type { ScriptLanguageCode } from '@galvaniflow/core-models';
 import { ScriptEditor } from '../components/editors/ScriptEditor.js';
-import { NEW_SCRIPT_LANGUAGE, loadedScriptLanguage } from '../lib/script-language.js';
+import { NEW_CHANNEL_SCRIPT_LANGUAGES, loadedScriptLanguage } from '../lib/script-language.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
 import { useBlocker } from 'react-router';
@@ -44,10 +44,7 @@ const EMPTY_SCRIPTS: ScriptsState = {
   undeploy: '',
   preprocessor: '',
   postprocessor: '',
-  languages: {
-    deploy: NEW_SCRIPT_LANGUAGE, undeploy: NEW_SCRIPT_LANGUAGE,
-    preprocessor: NEW_SCRIPT_LANGUAGE, postprocessor: NEW_SCRIPT_LANGUAGE,
-  },
+  languages: { ...NEW_CHANNEL_SCRIPT_LANGUAGES },
 };
 
 export function GlobalScriptsPage(): ReactNode {

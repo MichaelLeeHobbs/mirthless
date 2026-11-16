@@ -18,6 +18,7 @@ import Stack from '@mui/material/Stack';
 import CircularProgress from '@mui/material/CircularProgress';
 import { SOURCE_CONNECTOR_TYPES } from '@galvaniflow/core-models';
 import { useCreateChannel } from '../../hooks/use-channels.js';
+import { NEW_CHANNEL_SCRIPT_LANGUAGES } from '../../lib/script-language.js';
 
 const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR', 'X12'] as const;
 
@@ -71,6 +72,8 @@ export function NewChannelDialog({ open, onClose }: NewChannelDialogProps): Reac
         sourceConnectorType: data.sourceConnectorType as typeof SOURCE_CONNECTOR_TYPES[number],
         sourceConnectorProperties: {},
         responseMode: 'AUTO_AFTER_DESTINATIONS',
+        // The editor opens each script in its stored language, so start them in TypeScript.
+        scripts: { deploy: null, undeploy: null, preprocessor: null, postprocessor: null, languages: { ...NEW_CHANNEL_SCRIPT_LANGUAGES } },
       });
       reset();
       onClose();
