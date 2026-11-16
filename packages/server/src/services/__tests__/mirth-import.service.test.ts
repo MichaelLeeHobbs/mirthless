@@ -1048,6 +1048,15 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
       expect(appending.warnings.some((w) => w.includes('already exists'))).toBe(false);
     });
 
+    it('leaves the channel enabled when the Writer that must not overwrite is itself disabled in Mirth (#171)', () => {
+      const result = MirthImportService.convertXml(loadFixture('mirth-4x-channel.xml')
+        .replace(/<properties class="com\.mirth\.connect\.connectors\.js\.JavaScriptDispatcherProperties"[\s\S]*?<\/properties>/, writer('<outputPattern>a.txt</outputPattern><outputAppend>false</outputAppend><errorOnExists>true</errorOnExists>'))
+        .replace(/(<mode>DESTINATION<\/mode>\s*)<enabled>true<\/enabled>/, '$1<enabled>false</enabled>'));
+      if (!result.ok) throw result.error;
+      expect(result.value.channels[0]?.destinations[0]?.enabled).toBe(false);
+      expect(result.value.channels[0]?.enabled).toBe(true);
+    });
+
     it.each([
       ['<directoryRecursion>true</directoryRecursion>', 'subfolders'],
       ['<fileSizeMinimum>10</fileSizeMinimum>', 'file size'],
@@ -1238,8 +1247,20 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
           const result = reader(`<pollingType>${type}</pollingType><pollingHour>2</pollingHour><pollingMinute>0</pollingMinute>`);
           expect(result.channels[0]?.enabled).toBe(false);
           expect(warningsWith(result, 'imported disabled')).toHaveLength(1);
+          // The reason travels with the channel, so the editor shows it and an export keeps it.
+          expect(result.channels[0]?.description).toContain('0123');
+          expect(result.channels[0]?.description).toContain('Imported disabled from Mirth: its source polls on a schedule');
         }
-        expect(reader('<pollingType>INTERVAL</pollingType><pollingFrequency>5000</pollingFrequency>').channels[0]?.enabled).toBe(true);
+        const interval = reader('<pollingType>INTERVAL</pollingType><pollingFrequency>5000</pollingFrequency>').channels[0];
+        expect(interval?.enabled).toBe(true);
+        expect(interval?.description).toBe('0123');
+      });
+
+      it('reads the polling type in lower case, as Mirth 3.0 to 3.2 write it', () => {
+        const time = reader('<pollingType>time</pollingType><pollingHour>2</pollingHour><pollingMinute>0</pollingMinute>');
+        expect(time.channels[0]?.enabled).toBe(false);
+        expect(warningsWith(time, '02:00')).toHaveLength(1);
+        expect(reader('<pollingType>interval</pollingType><pollingFrequency>7000</pollingFrequency>').channels[0]?.sourceConnectorProperties['pollingIntervalMs']).toBe(7000);
       });
 
       it('warns when interval polling was limited to some days or hours', () => {
