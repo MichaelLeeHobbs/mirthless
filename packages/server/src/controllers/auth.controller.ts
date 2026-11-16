@@ -88,7 +88,8 @@ export class AuthController {
     }
 
     setRefreshTokenCookie(res, result.value.refreshToken);
-    res.json({ success: true, data: { accessToken: result.value.accessToken } });
+    // The user rides along so the web replaces its permission list (#219).
+    res.json({ success: true, data: { user: result.value.user, accessToken: result.value.accessToken } });
   }
 
   static async logout(req: Request, res: Response): Promise<void> {
