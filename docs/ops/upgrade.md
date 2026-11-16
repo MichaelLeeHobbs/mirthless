@@ -111,9 +111,7 @@ volume, so an existing volume still holds database `mirthless` owned by user
 
 **Other changes:**
 
-- **CLI:** the command is `galvaniflow` (was `mirthless`). It writes its config to
-  `~/.galvaniflow`; when only `~/.mirthless` exists it reads that, so a saved login keeps
-  working.
+- **CLI:** removed (D-280). Scripts call the REST API; see `docs/ops/api-automation.md`.
 - **Prometheus metrics** are renamed from `mirthless_*` to `galvaniflow_*` (for example
   `galvaniflow_messages_processed_total`). Update dashboards, alert rules and recording
   rules.

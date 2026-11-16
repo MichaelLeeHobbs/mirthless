@@ -118,7 +118,7 @@ What already ships is listed, with the tests that prove it, in [What GalvaniFlow
   - [ ] A Kafka halt during a rejoin, then a restart, can orphan the consumer that rejoin opens
   - [ ] An empty AMQP username connects as guest/guest (amqplib's default) instead of failing validation
   - [ ] The broker list pattern rejects bracketed IPv6 (`[::1]:9092`)
-  - [x] The real-broker suite (`connector-queue.itest.ts`) is skipped in CI, and TLS has not been run against a real broker — CI job `connector-integration` runs every connector `*.itest.ts` and fails on a missing service; AMQPS runs against RabbitMQ (D-273, gh-88)
+  - [x] The real-broker suite (`connector-queue.itest.ts`) is skipped in CI, and TLS has not been run against a real broker — CI job `connector-integration` runs every connector `*.itest.ts` and fails on a missing service; AMQPS runs against RabbitMQ (D-274, gh-88)
   - [ ] Kafka over TLS has not been run against a real broker (only AMQPS has)
 - [ ] **[DECIDE]** npm packages in the sandbox? (doc 18, open decisions)
 
@@ -135,7 +135,6 @@ What already ships is listed, with the tests that prove it, in [What GalvaniFlow
 - [ ] Apply row limits in the database, not after the fetch: the Database Writer and `dbQuery` read a whole result before cutting it to the limit, so a huge SELECT can still use a lot of memory (needs a cursor; review item L21)
 - [ ] Stop copying the global and configuration maps into every script run: the cost of a script grows with the size of those maps (needs lazy map access across the sandbox boundary; review item L22)
 - [ ] An overall deadline for one message across all its stages. Each script and each send has its own limit, and a halt now cancels them, but nothing bounds their sum (review item L23)
-- [ ] CLI session refresh. A session lasts 15 minutes; the CLI now says to log in again but cannot renew it (review item L25)
 - [ ] Run scripts off the main thread (worker threads). A tight loop in a script blocks every channel until its timeout fires (D-212)
 - [ ] Mapper transformer steps. A channel with one does not deploy (D-207)
 - [ ] Attachment extraction and batch splitting: library code exists, no channel setting reaches it
@@ -260,7 +259,7 @@ Ideas that may become relevant. Not committed to any timeline.
 - A changed XML message loses the line break after its `<?xml ...?>` declaration (the document is otherwise written as it arrived)
 - A message interrupted by a server stop and run again is counted as received twice, once per row in the message browser (D-233)
 - A queued delivery that finishes before the pipeline finalizes its message keeps its content until the pruner, even with "remove content on completion" on (safe side of a race)
-- `POST /scripts/validate` compiles every script as an async function body, but deploy embeds filter rules in a synchronous function, so a filter rule using `await` validates and then fails to deploy ("await can only be used inside an async function"). No web or CLI caller uses the endpoint today; fix it (validate takes the script's kind and compiles a filter rule the way deploy does) before anything does. Found in the PR #101 review.
+- `POST /scripts/validate` compiles every script as an async function body, but deploy embeds filter rules in a synchronous function, so a filter rule using `await` validates and then fails to deploy ("await can only be used inside an async function"). No web caller uses the endpoint today; fix it (validate takes the script's kind and compiles a filter rule the way deploy does) before anything does. Found in the PR #101 review.
 
 ---
 

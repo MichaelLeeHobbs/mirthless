@@ -140,7 +140,6 @@ Tests are mandatory, not optional. This is healthcare software.
 | connectors | 89 | 78 | 85 | 91 |
 | server | 57 | 58 | 71 | 57 |
 | core-models | 40 | 49 | 54 | 39 |
-| cli | 34 | 31 | 52 | 34 |
 | web | 26 | 29 | 23 | 26 |
 
 The server number is low because the controllers, `engine.ts` and several services have few unit tests (the Postgres integration and Playwright suites exercise some of that code but are not counted here). The web number is low because most pages have no component tests. Raising both is on `docs/progress/ROADMAP.md`.
@@ -386,8 +385,7 @@ galvaniflow/             — repository root (the GitHub repository is still nam
 │   ├── engine/          — Message processing: channel runtime, routing, queuing, sandbox
 │   ├── connectors/      — Protocol adapters (tcp-mllp, http, file, sftp, database, dicom, fhir, smtp, email, js, kafka, amqp)
 │   ├── server/          — Express API, auth, channel deployment, config management
-│   ├── web/             — React + MUI admin: channel editor, message browser, dashboard
-│   └── cli/             — CLI for server management
+│   └── web/             — React + MUI admin: channel editor, message browser, dashboard
 ├── e2e/                 — Playwright specs (`pnpm test:e2e`)
 ├── docker/              — Dockerfiles, Compose (development and production), nginx
 ├── docs/design/         — Design documents and dated analyses (00-18)
