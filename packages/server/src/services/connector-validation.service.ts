@@ -71,6 +71,8 @@ function checkSftpCredentials(props: SftpConnection, ctx: z.RefinementCtx): void
 const sftpSourceSchema = sftpConnectionSchema.extend({
   afterProcessing: z.enum(['DELETE', 'MOVE', 'NONE']).optional(),
   moveToDirectory: z.string().optional(),
+  /** The registry reads anything but false as on, so text such as "false" is refused here (#244). */
+  ignoreDot: z.boolean().optional(),
 }).superRefine((props, ctx) => {
   checkSftpCredentials(props, ctx);
   if (props.afterProcessing === 'MOVE' && !props.moveToDirectory) {
