@@ -58,7 +58,8 @@ function Harness({ kind, Component }: { readonly kind: Section; readonly Compone
   const [t, setT] = useState(transformer);
   const [f, setF] = useState(filter);
   scripts = kind === 'transformer' ? t.steps.map((s) => s.script) : f.rules.map((r) => r.script);
-  const C = Component as React.ComponentType<Record<string, unknown>>;
+  // Two of the sections take a transformer, two a filter; `kind` says which.
+  const C = Component as unknown as React.ComponentType<Record<string, unknown>>;
   return kind === 'transformer' ? <C transformer={t} onChange={setT} /> : <C filter={f} onChange={setF} />;
 }
 
