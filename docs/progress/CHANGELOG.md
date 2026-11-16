@@ -12,6 +12,27 @@ On a loaded machine the engine and server suites failed on almost every local ga
 - **Other budgets:** map-continuity messages 20 s, engine-alerts and engine-source-failure waits 10 s, and the 2 s limit on the alert-email test is gone.
 - **Verified:** with 10 busy threads on the 8-core dev machine, main's engine suite failed 7 tests; this branch's engine and server coverage runs passed three times each.
 
+## 2026-11-15 — Access control page, docs slice 2 (branch `docs/access-control`)
+
+Slice 2 of the docs restructure (#116): one page that tells an admin who can do what, and what the product does not support.
+
+- **`docs/user/access-control.md`.** Supported and unsupported (no SSO, LDAP, MFA, API tokens, custom roles or per-channel access); signing in, lockout and rate limits with their conditions; sessions and token lifetimes; cutting someone off; the role and permission matrix with what each permission also allows; who can run code on the server; where PHI and secrets can leave; what is not audited; and the endpoints with no permission check.
+- **Guards.** `packages/server/src/__tests__/docs/access-control.test.ts` fails when the matrix and the role seed disagree. `packages/server/src/routes/__tests__/role-access.test.ts` calls 22 PHI and destructive endpoints over HTTP as every role and checks each gets 200 or 403 as the matrix says. Every permission being used somewhere stays with main's `route-permissions.test.ts`.
+- **HIPAA checklist** no longer says every route is permission-checked; it names the exceptions and links the page. Deployment and upgrade runbooks and the README link it.
+- **Corrected:** `scripting-api.md` promised script `logger` output in the message browser and server logs; it is discarded (#164). Two code comments said permissions are stored per user.
+- **Found on the way:** #164 (script logger output discarded).
+
+## 2026-11-15 — Reinvention decisions 1 to 4, batch 4 (branch `batch-2026-11-15-reinvention-4`)
+
+Michael took the report's defaults for the four decisions, with one change to decision 3 after the agent found the literal default would turn TCP/MLLP TLS off:
+
+- **Placeholders (G0251, G0250, D-275):** one `fillPlaceholders` rule in core-util for File/SFTP names, SMTP and alert templates, destination templates and configuration references; `placeholderNames` for the alert editor and the File/SFTP deploy check. Padded names fill (SMTP's built-ins included), bigints write as digits, NaN as NaN, inherited keys and function values stay as written. An alert with an invalid timestamp is still sent; before, the default body threw and stopped later alerts.
+- **Numbers (G0012, G0363, D-276):** connector properties read finite numbers or decimal text such as `'6661'` or `'+6661'` (a `${name}` reference resolves to text); blank, boolean, hex and exponent text fall back; the forms ignore a stored NaN or Infinity.
+- **TLS (G0013, D-277):** a plain `tls` object reads as before (`{}` still means TLS on TCP/MLLP); a non-object fails the deploy with a clear message instead of reading as plaintext.
+- **Times (G0144, D-278):** the log viewer, the channel list's Updated column and its tooltip show "—" for a missing time and the raw value for an unparseable one.
+- Found on the way: Test Connection does not resolve configuration references, so a channel with a `${PORT}` port deploys but fails its test (#92).
+- After this batch the next audit will still list G0012, G0363 and G0013 with a VARIANT member each, by design (Test Connection's throwing validator, the deploy-time decimal-text reader, the web form getters); they belong in `accepted.jsonl` with these records once the run gives their new hashes.
+
 ## 2026-11-15 — Connector reference, docs slice 1 (branch `docs/connector-reference`)
 
 Slice 1 of the docs restructure (#116): a user can now find out, from one page, which connectors can receive, which can send, and what each can do.
