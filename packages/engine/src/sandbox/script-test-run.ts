@@ -45,6 +45,8 @@ export interface ScriptTestInput {
   readonly destinations?: ReadonlyArray<{ readonly name: string; readonly metaDataId: number }>;
   readonly timeoutMs: number;
   readonly readers?: ScriptTestReaders;
+  /** Called once the sample is parsed and the script compiled, just before it runs. */
+  readonly onCompiled?: () => void;
 }
 
 export type { ScriptTestResult };
@@ -128,6 +130,7 @@ export async function runScriptTest(input: ScriptTestInput): Promise<Result<Scri
 
     const skipped: string[] = [];
     const sandbox = new VmSandboxExecutor(dryBridges(input.readers, skipped));
+    input.onCompiled?.();
     const result = await sandbox.execute(compiled.value, context, { timeout: input.timeoutMs });
     if (!result.ok) return errorResult(result.error.message, started, [], skipped);
 
