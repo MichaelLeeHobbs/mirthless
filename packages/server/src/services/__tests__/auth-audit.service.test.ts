@@ -8,14 +8,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 let selectResult: unknown[] = [];
 const mockSelect = vi.fn(() => ({ from: () => ({ where: () => Promise.resolve(selectResult) }) }));
-const mockUpdate = vi.fn(() => ({ set: () => ({ where: () => Promise.resolve(undefined) }) }));
+/** The row the failed-attempt UPDATE ... RETURNING gives back. */
+let countedRow: unknown[] = [];
+const mockUpdate = vi.fn(() => ({ set: () => ({ where: () => ({ returning: () => Promise.resolve(countedRow) }) }) }));
 const mockDelete = vi.fn(() => ({ where: () => Promise.resolve(undefined) }));
 const mockDb = { select: mockSelect, update: mockUpdate, delete: mockDelete };
 
 vi.mock('../../lib/db.js', () => ({ db: mockDb, default: mockDb }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
 vi.mock('bcryptjs', () => ({ default: { compare: vi.fn().mockResolvedValue(false) } }));
-vi.mock('drizzle-orm', () => ({ eq: vi.fn() }));
+vi.mock('drizzle-orm', () => ({ eq: vi.fn(), and: vi.fn(), or: vi.fn(), isNull: vi.fn(), lte: vi.fn(), sql: vi.fn() }));
 
 const { AuthService } = await import('../auth.service.js');
 const { emitEvent } = await import('../../lib/event-emitter.js');
@@ -66,15 +68,24 @@ describe('AuthService.login audit', () => {
 
   it('records a wrong password', async () => {
     selectResult = [user()];
+    countedRow = [{ failedLoginAttempts: 1 }];
     await AuthService.login('alice', 'pw', META);
     expectFailureAudit('u-1', 'invalid_password');
   });
 
   it('records the wrong password that locks the account', async () => {
     selectResult = [user({ failedLoginAttempts: 4 })];
+    countedRow = [{ failedLoginAttempts: 5 }];
     const result = await AuthService.login('alice', 'pw', META);
     expect(result.ok).toBe(false);
     expectFailureAudit('u-1', 'invalid_password_locked');
+  });
+
+  it('records a wrong password that arrives after a concurrent one locked the account', async () => {
+    selectResult = [user({ failedLoginAttempts: 4 })];
+    countedRow = []; // the UPDATE matched nothing: the account is locked now
+    await AuthService.login('alice', 'pw', META);
+    expectFailureAudit('u-1', 'account_locked');
   });
 });
 

@@ -2,13 +2,16 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { quietWsProxyResetsPlugin } from './vite-proxy-logger.js';
 
 const pkg = JSON.parse(
   readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8'),
 ) as { version: string };
 
 export default defineConfig({
-  plugins: [react()],
+  // The websocket proxy's teardown errors from closed tabs are dropped from the dev
+  // server's and `vite preview`'s log, and nothing else (#167).
+  plugins: [react(), quietWsProxyResetsPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },

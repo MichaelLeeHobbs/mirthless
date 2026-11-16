@@ -15,7 +15,7 @@ import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker.js?worker
 import { StandaloneServices } from 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices.js';
 import { IStorageService } from 'monaco-editor/esm/vs/platform/storage/common/storage.js';
 import { editorTheme, editorThemeName } from '../../styles/editor-theme.js';
-import { IGNORED_SCRIPT_DIAGNOSTICS, SCRIPT_COMPILER_OPTIONS } from '@galvaniflow/core-models';
+import { SCRIPT_COMPILER_OPTIONS } from '@galvaniflow/core-models';
 import { markSurfaceApplied, surfaceLibs, type SurfaceLibs } from './surface-state.js';
 
 self.MonacoEnvironment = {
@@ -76,13 +76,13 @@ const compilerOptions = {
   ...SCRIPT_COMPILER_OPTIONS, lib: [...SCRIPT_COMPILER_OPTIONS.lib],
 } as unknown as monaco.typescript.CompilerOptions;
 ts.typescriptDefaults.setCompilerOptions(compilerOptions);
-ts.typescriptDefaults.setDiagnosticsOptions({
-  noSemanticValidation: false, noSyntaxValidation: false, diagnosticCodesToIgnore: [...IGNORED_SCRIPT_DIAGNOSTICS],
-});
+// Monaco checks the script as the editor shows it, where a top-level `return`
+// hides its expression from the type checker, so it reports syntax errors only.
+// Type errors come from the script checked as the body of the function the
+// engine runs it in (script-body-check.ts, #206).
+ts.typescriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false });
 ts.javascriptDefaults.setCompilerOptions({ ...compilerOptions, allowJs: true, checkJs: false });
-ts.javascriptDefaults.setDiagnosticsOptions({
-  noSemanticValidation: true, noSyntaxValidation: false, diagnosticCodesToIgnore: [...IGNORED_SCRIPT_DIAGNOSTICS],
-});
+ts.javascriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false });
 
 /**
  * Give the TypeScript service the globals for one script surface (see

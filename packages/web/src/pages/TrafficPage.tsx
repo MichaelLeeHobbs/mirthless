@@ -59,9 +59,8 @@ export function TrafficPage(): ReactNode {
   const reprocess = useReprocessMessage();
   const [reprocessingKey, setReprocessingKey] = useState<string | null>(null);
   const { has } = usePermissions();
-  // Reprocess re-runs a message through the pipeline — gate it on channels:deploy,
-  // matching the per-channel message browser (the server rejects it otherwise).
-  const canReprocess = has(PERMISSION.CHANNELS_DEPLOY);
+  // Gate on messages:reprocess, the permission the server's reprocess route checks.
+  const canReprocess = has(PERMISSION.MESSAGES_REPROCESS);
   const handleReprocess = useCallback(async (channelId: string, messageId: number): Promise<void> => {
     const key = `${channelId}-${String(messageId)}`;
     setReprocessingKey(key);

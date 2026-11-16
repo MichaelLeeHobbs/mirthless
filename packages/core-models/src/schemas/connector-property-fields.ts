@@ -25,9 +25,24 @@ export const connectorPortSchema = z.preprocess(
   }).int().min(1).max(65_535),
 );
 
+/** Text with something other than whitespace in it, kept as given. */
+export const requiredTextSchema = z.string().refine((value) => value.trim() !== '', { message: 'required' });
+
 /** A whole number of at least `min` (and at most `max` when given), digits as text accepted. */
 export function wholeNumberSchema(min: number, max = Number.MAX_SAFE_INTEGER): z.ZodType<number, unknown> {
   return z.preprocess(digitsToNumber, z.number().int().min(min).max(max));
+}
+
+/** The longest delay Node's timers honour; a longer one fires after 1 ms. */
+export const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+/**
+ * A polling source's milliseconds between polls: a whole number from `min`
+ * (the receiver's own floor) to {@link MAX_TIMER_DELAY_MS}, since a longer
+ * interval would make `setInterval` poll every millisecond.
+ */
+export function pollingIntervalSchema(min: number, defaultMs: number): z.ZodType<number, unknown> {
+  return wholeNumberSchema(min, MAX_TIMER_DELAY_MS).default(defaultMs);
 }
 
 /** Text encodings of a TCP/MLLP or FILE payload, as Node names them. */

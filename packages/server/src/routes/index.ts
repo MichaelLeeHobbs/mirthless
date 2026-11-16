@@ -46,7 +46,7 @@ import userRoutes from './user.routes.js';
 
 const router: IRouter = Router();
 
-// ----- Public: the only routes a caller without a session reaches (D-298) -----
+// ----- Public: the only routes a caller without a session reaches (D-299) -----
 // public-routes.test.ts lists them and fails on any other route that answers an
 // anonymous caller. Add one only with a reason in that list.
 

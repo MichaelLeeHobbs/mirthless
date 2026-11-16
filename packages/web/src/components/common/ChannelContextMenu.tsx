@@ -172,7 +172,7 @@ export function ChannelContextMenu({
           <ListItemText>Send Message</ListItemText>
         </MenuItem>
       ) : null}
-      {onChangeGroup ? (
+      {onChangeGroup && canWrite ? (
         <MenuItem onClick={() => { onClose(); onChangeGroup(channelId); }}>
           <ListItemIcon><FolderIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Change Group</ListItemText>

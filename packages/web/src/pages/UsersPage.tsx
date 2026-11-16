@@ -26,6 +26,7 @@ import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useChangePasswor
 import { UserDialog, type UserFormData } from '../components/users/UserDialog.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { formatTimestamp, humanize } from '../lib/format.js';
+import { errorMessage } from '../lib/error-message.js';
 import { PageHeader } from '../components/common/PageHeader.js';
 import { EmptyState } from '../components/common/states/EmptyState.js';
 import { ErrorState } from '../components/common/states/ErrorState.js';
@@ -34,6 +35,16 @@ import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
 import type { UserRole } from '@galvaniflow/core-models';
 import type { UserSummary } from '../api/client.js';
+
+/** The fields of an edited user that differ from the stored ones, as an update request. */
+function changedFields(user: UserSummary, data: UserFormData): Record<string, unknown> {
+  const input: Record<string, unknown> = {};
+  if (data.email !== user.email) input['email'] = data.email;
+  if (data.firstName !== (user.firstName ?? '')) input['firstName'] = data.firstName || null;
+  if (data.lastName !== (user.lastName ?? '')) input['lastName'] = data.lastName || null;
+  if (data.role !== user.role) input['role'] = data.role;
+  return input;
+}
 
 export function UsersPage(): ReactNode {
   const { data: users, isLoading, error, isFetching, refetch } = useUsers();
@@ -69,36 +80,36 @@ export function UsersPage(): ReactNode {
     setDialogError(null);
   };
 
+  /**
+   * Save the edited details, then the new password, and close only when both
+   * worked. A refused password keeps the dialog open with the server's reason:
+   * an admin resetting a leaked password must know it did not change (#222).
+   */
+  const saveEdit = async (user: UserSummary, data: UserFormData): Promise<void> => {
+    const input = changedFields(user, data);
+    const hasUpdates = Object.keys(input).length > 0;
+    try {
+      // The saved user becomes what the dialog edits, so a retry after a refused
+      // password does not send (and audit) the same details again.
+      if (hasUpdates) setEditingUser(await updateUser.mutateAsync({ id: user.id, input }));
+    } catch (err) {
+      setDialogError(errorMessage(err, 'The user could not be saved.'));
+      return;
+    }
+    try {
+      // Any typed password goes to the server, which applies the password policy.
+      if (data.password.length > 0) await changePassword.mutateAsync({ id: user.id, newPassword: data.password });
+    } catch (err) {
+      const reason = errorMessage(err, 'The password could not be changed.');
+      setDialogError(hasUpdates ? `The details were saved, but the password was not changed: ${reason}` : reason);
+      return;
+    }
+    handleClose();
+  };
+
   const handleSave = (data: UserFormData): void => {
     if (editingUser) {
-      // Update existing user
-      const input: Record<string, unknown> = {};
-      if (data.email !== editingUser.email) input['email'] = data.email;
-      if (data.firstName !== (editingUser.firstName ?? '')) input['firstName'] = data.firstName || null;
-      if (data.lastName !== (editingUser.lastName ?? '')) input['lastName'] = data.lastName || null;
-      if (data.role !== editingUser.role) input['role'] = data.role;
-
-      const hasUpdates = Object.keys(input).length > 0;
-      const hasPasswordChange = data.password.length >= 8;
-
-      if (hasUpdates) {
-        updateUser.mutate({ id: editingUser.id, input }, {
-          onSuccess: () => {
-            if (hasPasswordChange) {
-              changePassword.mutate({ id: editingUser.id, newPassword: data.password });
-            }
-            handleClose();
-          },
-          onError: (err) => { setDialogError(err.message); },
-        });
-      } else if (hasPasswordChange) {
-        changePassword.mutate({ id: editingUser.id, newPassword: data.password }, {
-          onSuccess: () => { handleClose(); },
-          onError: (err) => { setDialogError(err.message); },
-        });
-      } else {
-        handleClose();
-      }
+      void saveEdit(editingUser, data);
     } else {
       // Create new user
       createUser.mutate({
@@ -246,7 +257,7 @@ export function UsersPage(): ReactNode {
         onClose={handleClose}
         onSave={handleSave}
         error={dialogError}
-        saving={createUser.isPending || updateUser.isPending}
+        saving={createUser.isPending || updateUser.isPending || changePassword.isPending}
       />
 
       <ConfirmDialog

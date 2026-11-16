@@ -37,6 +37,7 @@ describe('fileSourcePropertiesSchema', () => {
     ['directory', '  '],
     ['fileFilter', ''],
     ['pollingIntervalMs', 99],
+    ['pollingIntervalMs', 2_147_483_648],
     ['pollingIntervalMs', 'often'],
     ['sortBy', 'AGE'],
     ['charset', 'windows-1252'],

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
-/** User profile returned from the API after authentication */
-interface AuthUser {
+/** User profile returned from the API at sign-in and with each session refresh */
+export interface AuthUser {
   readonly id: string;
   readonly username: string;
   readonly email: string;

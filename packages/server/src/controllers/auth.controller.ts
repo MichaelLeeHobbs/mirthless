@@ -5,21 +5,26 @@
 // Validates input, calls service, formats responses.
 
 import type { Request, Response } from 'express';
-import { AuthService } from '../services/auth.service.js';
+import { AuthService, type SessionMetadata } from '../services/auth.service.js';
 import logger from '../lib/logger.js';
 import { setRefreshTokenCookie, clearRefreshTokenCookie, getRefreshTokenFromCookie } from '../lib/cookies.js';
 import { isServiceError } from '../lib/service-error.js';
+
+/** The client details a new session records: the request's user agent and address. */
+function sessionMetadata(req: Request): SessionMetadata {
+  const userAgent = req.headers['user-agent'];
+  const ipAddress = req.ip;
+  const metadata: SessionMetadata = {};
+  if (userAgent) { metadata.userAgent = userAgent; }
+  if (ipAddress) { metadata.ipAddress = ipAddress; }
+  return metadata;
+}
 
 export class AuthController {
   static async login(req: Request, res: Response): Promise<void> {
     const { username, password } = req.body as { username: string; password: string };
 
-    const userAgent = req.headers['user-agent'];
-    const ipAddress = req.ip;
-    const metadata: { userAgent?: string; ipAddress?: string } = {};
-    if (userAgent) { metadata.userAgent = userAgent; }
-    if (ipAddress) { metadata.ipAddress = ipAddress; }
-    const result = await AuthService.login(username, password, metadata);
+    const result = await AuthService.login(username, password, sessionMetadata(req));
 
     if (!result.ok) {
       logger.warn({ username, errMsg: result.error.message }, 'Login failed');
@@ -74,7 +79,7 @@ export class AuthController {
       return;
     }
 
-    const result = await AuthService.refreshSession(refreshToken);
+    const result = await AuthService.refreshSession(refreshToken, sessionMetadata(req));
 
     if (!result.ok) {
       clearRefreshTokenCookie(res);
@@ -83,7 +88,8 @@ export class AuthController {
     }
 
     setRefreshTokenCookie(res, result.value.refreshToken);
-    res.json({ success: true, data: { accessToken: result.value.accessToken } });
+    // The user rides along so the web replaces its permission list (#219).
+    res.json({ success: true, data: { user: result.value.user, accessToken: result.value.accessToken } });
   }
 
   static async logout(req: Request, res: Response): Promise<void> {

@@ -1,7 +1,7 @@
 // ===========================================
 // Every /api/v1 route needs a session, except the listed public ones
 // ===========================================
-// routes/index.ts authenticates once, in front of every router (#217, D-298).
+// routes/index.ts authenticates once, in front of every router (#217, D-299).
 // This boots the real app, walks every route the routers define, and calls
 // each one without credentials, with a bogus bearer token and with a malformed
 // body. Anything other than the guard's 401 fails, unless the route is in

@@ -43,6 +43,7 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `formatBytes` in `web/src/lib/system-health.ts`, `formatTimestamp` in `web/src/lib/format.ts` (the caller passes the label for a missing time), and the certificate `expiry*` helpers in `web/src/lib/certificate-expiry.ts`.
   - `getStr`, `getNum`, `getBool`, `getTls*` and `propertyUpdaters` in `web/src/components/channels/common/connector-properties.ts` for connector forms.
   - `compileScript` and `compileErrorMessages` in `engine/src/sandbox/script-compiler.ts`: compile a user script the way deploy does, and turn its errors into `Line N: <text>` on the script's own lines. Script validation uses both.
+  - `wrapScriptBody` and `scriptBodyPosition` in `core-models/src/scripting/script-check.ts`: a script as the body of the function the engine runs it in, and a position in that wrapped text back on the script's own lines. The compiler, the deploy type check and the editor's type check use both (D-297).
   - `toPoolConfig` in `connectors/src/database/connection-pool.ts`: a database connector's pool config from its connection fields.
   - `QuarantineLedger` and `dispatchQuarantined` in `connectors/src/quarantine-ledger.ts`: the quarantine set, its sidecar ledger and the dispatch-then-quarantine step, for any polling file source. The source supplies only the storage.
   - `connectFresh` and `closeQuietly` in `connectors/src/client-lifecycle.ts`: connect a polling receiver's remote client, or close it, under a timeout.
@@ -78,7 +79,7 @@ The simplest solution that works correctly is the best solution.
 - **CSRF protection** — JWT in Authorization header, not cookies
 - **Rate limiting** — On auth endpoints and any public-facing routes
 - **Principle of least privilege** — RBAC enforced at the API layer, not just the UI
-- **One guard for the API** — `routes/index.ts` runs `authenticate` once for every router mounted below it; a router never adds its own, and a new route still needs its `requirePermission`. A public route goes above the guard and into `PUBLIC_ROUTES` in `public-routes.test.ts` with its reason (D-298)
+- **One guard for the API** — `routes/index.ts` runs `authenticate` once for every router mounted below it; a router never adds its own, and a new route still needs its `requirePermission`. A public route goes above the guard and into `PUBLIC_ROUTES` in `public-routes.test.ts` with its reason (D-299)
 
 ---
 
@@ -322,7 +323,7 @@ Start with the type lists in `packages/core-models/src/constants.ts` (`SOURCE_CO
 - Certificate-ID resolvers in `packages/server/src/engine.ts` (`SOURCE_TLS_RESOLVERS`, `DESTINATION_TLS_RESOLVERS`), if the connector takes certificates from the store.
 - Editor forms and defaults: `SOURCE_CONNECTOR_FORMS` in `packages/web/src/components/channels/source/ConnectorSettingsSection.tsx`, `DEST_CONNECTOR_FORMS` in `destinations/DestinationConnectorSettings.tsx`, and the defaults maps in both `connector-defaults.ts` files.
 - The Mirth importer in `packages/server/src/services/mirth-import.service.ts`, if Mirth has an equivalent: the class map (`CONNECTOR_TYPE_MAP`), the `transportMap` in `mapTransportName`, and a case in the `extractConnectorProperties` switch. A connector missing from the maps imports as JAVASCRIPT with a warning. One with no case in the switch keeps Mirth's own property names, which the connector does not read, so its settings are lost on import.
-- The property tables in `docs/user/connector-reference.md`. Their keys are checked only for connectors whose properties have a core-models schema, by `packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts` (TCP_MLLP, HTTP, DATABASE and FILE today); add the connector there when its schema lands ([#115](https://github.com/MichaelLeeHobbs/mirthless/issues/115)).
+- The property tables in `docs/user/connector-reference.md`. Their keys are checked only for connectors whose properties have a core-models schema, by `packages/core-models/src/schemas/__tests__/connector-reference-docs.test.ts` (TCP_MLLP, HTTP, DATABASE, FILE and JAVASCRIPT today); add the connector there when its schema lands ([#115](https://github.com/MichaelLeeHobbs/mirthless/issues/115)).
 
 ---
 
