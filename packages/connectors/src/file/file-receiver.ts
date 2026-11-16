@@ -69,6 +69,8 @@ export interface FileReceiverConfig {
   readonly fileAgeMs: number;
   readonly postAction: FilePostAction;
   readonly moveToDirectory: string;
+  /** Leave names starting with `.` alone, as a Mirth File Reader does by default. */
+  readonly ignoreDot: boolean;
 }
 
 export { FILE_SORT_BY, FILE_POST_ACTION };
@@ -78,7 +80,8 @@ export type { FileSortBy, FilePostAction };
 
 /**
  * Match a filename against a simple glob pattern (supports * and ?).
- * Does NOT support ** or character classes.
+ * Does NOT support ** or character classes. Case-sensitive on every platform,
+ * as a Mirth File Reader's filter is (D-304): `*.hl7` does not match `A.HL7`.
  */
 export function matchGlob(pattern: string, filename: string): boolean {
   // Convert glob pattern to regex. Every non-wildcard character is escaped, so a
@@ -98,7 +101,28 @@ export function matchGlob(pattern: string, filename: string): boolean {
     }
   }
   regex += '$';
-  return new RegExp(regex, 'i').test(filename);
+  return new RegExp(regex).test(filename);
+}
+
+/**
+ * Whether a polling file source takes a file by its name: the glob matches and,
+ * with `ignoreDot`, the name does not start with a dot. The File and SFTP
+ * sources both use it, so they pick the files a Mirth File Reader would.
+ */
+export function selectsFileName(name: string, pattern: string, ignoreDot: boolean): boolean {
+  if (ignoreDot && name.startsWith('.')) return false;
+  return matchGlob(pattern, name);
+}
+
+/**
+ * Mirth's hold-back sentinel: while `<name>.ignore` exists, `<name>` is not
+ * read, and a name ending in `.ignore` is never read itself.
+ */
+const IGNORE_SUFFIX = '.ignore';
+
+/** True when the name is a `.ignore` sentinel or one sits next to it in the listing. */
+function heldBack(name: string, listed: ReadonlySet<string>): boolean {
+  return name.endsWith(IGNORE_SUFFIX) || listed.has(name + IGNORE_SUFFIX);
 }
 
 // ----- File Entry -----
@@ -239,13 +263,12 @@ export class FileReceiver implements SourceConnectorRuntime {
   /** List directory entries matching the glob and file-age filter. */
   private async listMatchingFiles(): Promise<readonly FileEntry[]> {
     const dirEntries = await fs.readdir(this.config.directory, { withFileTypes: true });
+    const listed = new Set(dirEntries.map((e) => e.name));
     const now = Date.now();
     const results: FileEntry[] = [];
 
     for (const entry of dirEntries) {
-      if (!entry.isFile()) continue;
-      if (entry.name === QUARANTINE_LEDGER || entry.name === LEGACY_QUARANTINE_LEDGER) continue; // never dispatch a ledger
-      if (!matchGlob(this.config.fileFilter, entry.name)) continue;
+      if (!entry.isFile() || !this.takesName(entry.name, listed)) continue;
 
       const fullPath = path.join(this.config.directory, entry.name);
       const stat = await fs.stat(fullPath).catch(() => null);
@@ -260,6 +283,13 @@ export class FileReceiver implements SourceConnectorRuntime {
       results.push({ name: entry.name, fullPath, mtime: stat.mtimeMs, size: stat.size });
     }
     return results;
+  }
+
+  /** Whether a listed name is one to read: not a ledger, not held back, and selected by the filter. */
+  private takesName(name: string, listed: ReadonlySet<string>): boolean {
+    if (name === QUARANTINE_LEDGER || name === LEGACY_QUARANTINE_LEDGER) return false; // never dispatch a ledger
+    if (heldBack(name, listed)) return false;
+    return selectsFileName(name, this.config.fileFilter, this.config.ignoreDot);
   }
 
   /** Sort file entries by the configured sort criterion. */

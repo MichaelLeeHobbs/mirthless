@@ -25,6 +25,7 @@ function makeConfig(overrides?: Partial<SftpReceiverConfig>): SftpReceiverConfig
     afterProcessing: SFTP_POST_ACTION.DELETE,
     moveToDirectory: '',
     minFileAgeMs: 1_000,
+    ignoreDot: true,
     ...overrides,
   };
 }
@@ -426,12 +427,49 @@ describe('durable quarantine', () => {
     state.addFile('a.hl7', 'X', Date.now() - 10_000);
 
     const captured: RawMessage[] = [];
-    receiver = new SftpReceiver(makeConfig({ filePattern: '*' }), factoryFor(state));
+    // ignoreDot off, so the ledger rule (not the dotfile rule) is what keeps it out.
+    receiver = new SftpReceiver(makeConfig({ filePattern: '*', ignoreDot: false }), factoryFor(state));
     receiver.setDispatcher(makeDispatcher((raw) => { captured.push(raw); return { messageId: 1 }; }));
     await receiver.onStart();
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(captured.map((r) => r.sourceMap['originalFilename'])).toEqual(['a.hl7']);
+  });
+});
+
+// ----- File names a Mirth File Reader (sftp scheme) leaves alone (#244) -----
+
+describe('file names a Mirth File Reader leaves alone (#244)', () => {
+  /** Poll once over a remote folder of these names; return the names dispatched and deleted. */
+  async function pollOnce(
+    names: readonly string[],
+    overrides?: Partial<SftpReceiverConfig>,
+  ): Promise<{ dispatched: string[]; deleted: string[] }> {
+    const state = new RemoteState();
+    for (const name of names) state.addFile(name, 'MSH|^~\\&|X', Date.now() - 10_000);
+    const dispatched: string[] = [];
+    receiver = new SftpReceiver(makeConfig({ afterProcessing: SFTP_POST_ACTION.DELETE, ...overrides }), factoryFor(state));
+    receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(String(raw.sourceMap['originalFilename'])); return { messageId: 1 }; }));
+    await receiver.onStart();
+    await vi.advanceTimersByTimeAsync(5_000);
+    return { dispatched, deleted: [...state.deleted] };
+  }
+
+  it('neither reads nor deletes a dotfile by default, even when the pattern matches it', async () => {
+    const { dispatched, deleted } = await pollOnce(['.lock', 'a.hl7'], { filePattern: '*' });
+    expect(dispatched).toEqual(['a.hl7']);
+    expect(deleted).toEqual(['a.hl7']);
+  });
+
+  it('reads a dotfile when ignoreDot is off', async () => {
+    const { dispatched } = await pollOnce(['.lock', 'a.hl7'], { filePattern: '*', ignoreDot: false });
+    expect(dispatched).toEqual(['.lock', 'a.hl7']);
+  });
+
+  it('neither reads nor deletes a file whose name differs from the pattern only in case', async () => {
+    const { dispatched, deleted } = await pollOnce(['A.HL7', 'b.hl7'], { filePattern: '*.hl7' });
+    expect(dispatched).toEqual(['b.hl7']);
+    expect(deleted).toEqual(['b.hl7']);
   });
 });
 
