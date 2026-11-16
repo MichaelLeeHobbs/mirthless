@@ -408,12 +408,16 @@ globalThis.__build = function (hostDispatch, payload) {
     var id = dispatch.apply(null, arguments);
     return new Promise(function (resolve) { pendingIo[id] = resolve; });
   }
+  // One result at a time: many large results in one string could pass V8's
+  // string limit. An empty string means none is left.
   Object.defineProperty(globalThis, '__settle', { value: function () {
-    var ready = JSON.parse(dispatch('io.next'));
-    for (var i = 0; i < ready.length; i++) {
-      var resolve = pendingIo[ready[i][0]];
-      delete pendingIo[ready[i][0]];
-      if (resolve) { resolve(ready[i][1]); }
+    for (;;) {
+      var next = dispatch('io.next');
+      if (next === '') { return; }
+      var t = JSON.parse(next);
+      var resolve = pendingIo[t[0]];
+      delete pendingIo[t[0]];
+      if (resolve) { resolve(t[1]); }
     }
   } });
   Object.defineProperty(globalThis, '__watch', { value: function (p) {
@@ -718,7 +722,10 @@ class AsyncRun {
   /** Wrap the host dispatch so IO bridge promises become ticket ids settled in-context. */
   wrap(dispatch: (op: string, ...args: unknown[]) => unknown): (op: string, ...args: unknown[]) => unknown {
     return (op: string, ...args: unknown[]): unknown => {
-      if (op === 'io.next') return JSON.stringify(this.ioResults.splice(0));
+      if (op === 'io.next') {
+        const next = this.ioResults.shift();
+        return next === undefined ? '' : JSON.stringify(next);
+      }
       if (op === 'io.done') { this.finish(args[0] === true ? undefined : new Error(String(args[1])), args[0] === true); return undefined; }
       const out = dispatch(op, ...args);
       if (!(out instanceof Promise)) return out;
@@ -765,8 +772,8 @@ function isVmTimeout(e: unknown): boolean {
  * anything thrown becomes a host Error. A timeout names the whole limit, not the
  * few milliseconds this call had left.
  */
-function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit): unknown {
-  const left = limit.deadline - Date.now();
+function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit, minimumMs = 0): unknown {
+  const left = Math.max(minimumMs, limit.deadline - Date.now());
   if (left <= 0) throw timedOut(limit);
   try {
     return vm.runInContext(code, contextObj, { timeout: left }) as unknown;
@@ -775,9 +782,16 @@ function runTimed(code: string, contextObj: vm.Context, limit: TimeLimit): unkno
   }
 }
 
+/**
+ * The least time collecting a result gets. A script that finished inside its
+ * limit is not reported as timed out because the host reached the collection a
+ * moment late; a 1 ms watchdog could fire on a busy machine from scheduling alone.
+ */
+const COLLECT_MIN_MS = 50;
+
 /** Serialise the script's result inside the sandbox (still under the deadline) and parse it on the host. */
 function collect(contextObj: vm.Context, limit: TimeLimit): CollectedResult {
-  const out = runTimed('__collect()', contextObj, limit);
+  const out = runTimed('__collect()', contextObj, limit, COLLECT_MIN_MS);
   if (typeof out !== 'string') throw new Error('Script result could not be read');
   const parsed = JSON.parse(out) as CollectedResult;
   if (parsed.err !== undefined) throw new Error(parsed.err);
@@ -832,7 +846,8 @@ export class VmSandboxExecutor implements SandboxExecutor {
       contextObj['__dispatch'] = makeNonThrowingDispatch(run.wrap(dispatch), errToken);
       contextObj['__payloadJson'] = JSON.stringify(payload);
       // Building the sandbox's globals is the engine's work, not the script's: it
-      // has a limit of its own, and the script's limit starts when the script does (D-298).
+      // has a limit of its own, and the script's limit starts when the script does,
+      // so one execute can take the setup time plus the limit (D-300).
       const setup: TimeLimit = { deadline: Date.now() + options.timeout, ms: options.timeout };
       runTimed(BOOTSTRAP_SRC, contextObj, setup);
       runTimed(INVOKE_SRC, contextObj, setup);

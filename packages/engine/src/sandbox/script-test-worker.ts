@@ -47,9 +47,10 @@ const readers: ScriptTestReaders = {
     : {}),
 };
 
-const input: ScriptTestInput = { ...start.input, readers };
-// The main thread measures memory growth from here, not from the worker's start-up.
-port.postMessage({ type: 'started' } satisfies WorkerRequest);
+// The main thread starts the script's time limit and measures memory growth from
+// here, once the script is compiled, not from the worker's start-up (#188).
+const onCompiled = (): void => { port.postMessage({ type: 'started' } satisfies WorkerRequest); };
+const input: ScriptTestInput = { ...start.input, readers, onCompiled };
 const result = await runScriptTest(input);
 const done: WorkerRequest = result.ok
   ? { type: 'done', result: result.value }
