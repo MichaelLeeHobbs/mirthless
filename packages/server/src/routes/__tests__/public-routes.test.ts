@@ -66,15 +66,34 @@ async function walkApiRoutes(index: Router): Promise<readonly ApiRoute[]> {
 const isPublic = (r: ApiRoute): boolean => PUBLIC_ROUTES.some((p) => p.method === r.method && p.path === r.path);
 const concrete = (path: string): string => path.replace(/:\w+/g, ID);
 
+/** The parts of an Express 5 router layer these checks read. */
+interface StackLayer {
+  readonly handle: unknown;
+  readonly route?: { readonly path: unknown };
+  match(path: string): boolean;
+}
+
 let server: Server;
 let base: string;
 let routes: readonly ApiRoute[];
+let appLayers: readonly StackLayer[];
+let indexLayers: readonly StackLayer[];
+let real: { readonly authenticate: unknown; readonly authRoutes: unknown; readonly apiRateLimiter: unknown; readonly index: unknown };
 
 beforeAll(async () => {
   // Hundreds of requests from one address: lift the API limiter for this file only.
   process.env['API_RATE_LIMIT_MAX'] = '100000';
   const app = (await import('../../app.js')).default;
-  routes = await walkApiRoutes((await import('../index.js')).default);
+  const index = (await import('../index.js')).default;
+  routes = await walkApiRoutes(index);
+  appLayers = (app as unknown as { router: { stack: readonly StackLayer[] } }).router.stack;
+  indexLayers = index.stack as unknown as readonly StackLayer[];
+  real = {
+    authenticate: (await import('../../middleware/auth.middleware.js')).authenticate,
+    authRoutes: (await import('../auth.routes.js')).default,
+    apiRateLimiter: (await import('../../middleware/rate-limit.middleware.js')).apiRateLimiter,
+    index,
+  };
   await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
   base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
 });
@@ -141,11 +160,30 @@ describe('the route walk', () => {
   });
 });
 
+describe('where the guard sits', () => {
+  it('has only the /health route and the auth router above it in routes/index.ts', () => {
+    const guard = indexLayers.findIndex((layer) => layer.handle === real.authenticate);
+    expect(guard).toBeGreaterThan(0);
+    const above = indexLayers.slice(0, guard);
+    expect(above).toHaveLength(2);
+    expect(above[0]?.route?.path).toBe('/health');
+    expect(above[1]?.handle).toBe(real.authRoutes);
+  });
+
+  it('is the only thing app.ts mounts under /api/v1 besides the API rate limiter', () => {
+    // Layers that match /api/v1 but not another path are the ones mounted there.
+    const onlyApi = appLayers.filter((layer) => layer.match('/api/v1/anything') && !layer.match('/elsewhere'));
+    expect(onlyApi.map((layer) => layer.handle)).toEqual([real.apiRateLimiter, real.index]);
+  });
+});
+
 describe('a caller without a session', () => {
   it('is refused by the guard on every route that is not public', async () => {
     const reached: string[] = [];
     for (const route of routes.filter((r) => !isPublic(r))) {
       const anonymous = await call(route);
+      // The messages are load-bearing: only authenticate answers 'Unauthorized' (no header) and
+      // 'Invalid or expired token' (bad token), so a 401 from a handler cannot pass for the guard.
       const bogus = await call(route, { authorization: 'Bearer not-a-token' });
       if (anonymous.status !== 401 || anonymous.message !== 'Unauthorized') reached.push(`${route.method} ${route.path} anonymous: ${String(anonymous.status)}`);
       if (bogus.status !== 401 || bogus.message !== 'Invalid or expired token') reached.push(`${route.method} ${route.path} bogus token: ${String(bogus.status)}`);
