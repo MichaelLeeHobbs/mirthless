@@ -14,7 +14,7 @@ const selectWhere = vi.fn().mockResolvedValue([]);
 // db.update(x).set(...).where(...).returning() — capture `set` to assert the patch.
 const updateReturning = vi.fn();
 const updateWhere = vi.fn(() => ({ returning: updateReturning }));
-const updateSet = vi.fn(() => ({ where: updateWhere }));
+const updateSet = vi.fn((_patch: Record<string, unknown>) => ({ where: updateWhere }));
 // db.insert(x).values(...).returning()
 const insertReturning = vi.fn();
 const insertValues = vi.fn(() => ({ returning: insertReturning }));
@@ -91,7 +91,7 @@ describe('CollectionService.update', () => {
     expect(result.value.defaultTtlSeconds).toBe(3600);
 
     // The patch carried exactly the provided fields (plus updatedAt) and NOT name.
-    const patch = updateSet.mock.calls[0]?.[0] as Record<string, unknown>;
+    const patch = updateSet.mock.calls[0]?.[0] ?? {};
     expect(patch['description']).toBe('updated demographics');
     expect(patch['indexedFields']).toEqual(['mrn', 'dob']);
     expect(patch['defaultTtlSeconds']).toBe(3600);

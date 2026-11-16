@@ -34,6 +34,8 @@ export function useGlobalMap(): ReturnType<typeof useQuery<readonly GlobalMapEnt
   });
 }
 
+// Mutations don't wait for the list to reload: a dialog closes, and its button
+// re-enables, once its own request succeeds, and the list catches up after (#241).
 export function useUpsertGlobalMapEntry(): ReturnType<typeof useMutation<GlobalMapEntry, Error, { key: string; value: string }>> {
   const queryClient = useQueryClient();
 
@@ -43,9 +45,7 @@ export function useUpsertGlobalMapEntry(): ReturnType<typeof useMutation<GlobalM
       if (!result.success) throw new Error(result.error.message);
       return result.data;
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: GMAP_KEYS.all });
-    },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: GMAP_KEYS.all }); },
   });
 }
 
@@ -57,9 +57,7 @@ export function useDeleteGlobalMapEntry(): ReturnType<typeof useMutation<void, E
       const result = await api.delete<void>(`/global-map/${encodeURIComponent(key)}`);
       if (!result.success) throw new Error(result.error.message);
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: GMAP_KEYS.all });
-    },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: GMAP_KEYS.all }); },
   });
 }
 
@@ -71,8 +69,6 @@ export function useClearGlobalMap(): ReturnType<typeof useMutation<void, Error, 
       const result = await api.delete<void>('/global-map');
       if (!result.success) throw new Error(result.error.message);
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: GMAP_KEYS.all });
-    },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: GMAP_KEYS.all }); },
   });
 }

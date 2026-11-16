@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { stderr } from '@galvaniflow/core-util';
 
 // Mock the channel service
 vi.mock('../channel.service.js', () => ({
@@ -142,7 +143,7 @@ describe('ChannelExportService.exportChannel', () => {
     const withTs = {
       ...detail,
       scripts: [{ id: 's', scriptType: 'PREPROCESSOR', script: 'return rawData;', language: 'TYPESCRIPT' }],
-      destinations: detail.destinations.map((d) => ({
+      destinations: (detail['destinations'] as ReadonlyArray<Record<string, unknown>>).map((d) => ({
         ...d, responseTransformer: 'return msg;', responseTransformerLanguage: 'TYPESCRIPT',
       })),
     };
@@ -193,7 +194,7 @@ describe('ChannelExportService.exportChannel', () => {
     mockGetById.mockResolvedValue({
       ok: false,
       value: null,
-      error: { name: 'ServiceError', message: 'Channel not found', code: 'NOT_FOUND' },
+      error: stderr({ name: 'ServiceError', message: 'Channel not found', code: 'NOT_FOUND' }),
     });
 
     const result = await ChannelExportService.exportChannel('nonexistent');
@@ -278,7 +279,7 @@ describe('ChannelExportService.exportAll', () => {
       if (callCount === 1) {
         return { ok: true as const, value: makeChannelDetail({ id: 'ch-1' }) as never, error: null };
       }
-      return { ok: false as const, value: null, error: { name: 'Error', message: 'DB error', code: 'INTERNAL' } };
+      return { ok: false as const, value: null, error: stderr({ name: 'Error', message: 'DB error', code: 'INTERNAL' }) };
     });
 
     const result = await ChannelExportService.exportAll();
@@ -293,7 +294,7 @@ describe('ChannelExportService.exportAll', () => {
     mockList.mockResolvedValue({
       ok: false,
       value: null,
-      error: { name: 'Error', message: 'DB error', code: 'INTERNAL' },
+      error: stderr({ name: 'Error', message: 'DB error', code: 'INTERNAL' }),
     });
 
     const result = await ChannelExportService.exportAll();

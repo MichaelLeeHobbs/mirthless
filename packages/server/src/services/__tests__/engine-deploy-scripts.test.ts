@@ -239,7 +239,7 @@ describe('EngineManager deploy/undeploy scripts', () => {
       // compileScript should be called for the deploy script
       expect(mockCompileScript).toHaveBeenCalled();
       const compileCalls = mockCompileScript.mock.calls.map((c: unknown[]) => c[1]);
-      const deployCall = compileCalls.find((c: Record<string, unknown>) => (c as { sourcefile: string }).sourcefile.includes('deploy'));
+      const deployCall = compileCalls.find((c) => (c as { sourcefile: string }).sourcefile.includes('deploy'));
       expect(deployCall).toBeDefined();
     });
 

@@ -13,7 +13,7 @@ import type {
   PipelineInput,
   DestinationResponse,
 } from '../message-processor.js';
-import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS } from '../../sandbox/sandbox-executor.js';
+import { VmSandboxExecutor, DEFAULT_EXECUTION_OPTIONS, type CompiledScript } from '../../sandbox/sandbox-executor.js';
 // ----- Helpers -----
 
 function makeScript(code: string): CompiledScript {

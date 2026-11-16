@@ -258,10 +258,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # A pull request that changes only e2e/ skips build-lint-test, so the
-      # specs are linted here: no fixed sleeps, no non-waiting isVisible()
-      # guards (#182).
+      # specs are linted and type-checked here: no fixed sleeps, no
+      # non-waiting isVisible() guards (#182), no type errors (#242).
       - name: Lint specs
-        run: pnpm exec eslint e2e --max-warnings 0
+        run: |
+          pnpm exec eslint e2e --max-warnings 0
+          pnpm exec tsc -p e2e/tsconfig.json
+          pnpm exec tsc -p e2e/scenarios/tsconfig.json
 
       - name: Build
         run: pnpm build

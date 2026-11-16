@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { stderr } from '@galvaniflow/core-util';
 import type { ConnectorMessage } from '../../base.js';
 import {
   DicomDispatcher,
@@ -62,7 +63,7 @@ function makeMockFactory(sender: DcmtkSender): SenderFactory {
 }
 
 function makeFailingFactory(message: string): SenderFactory {
-  return () => ({ ok: false as const, value: null, error: new Error(message) });
+  return () => ({ ok: false as const, value: null, error: stderr(message) });
 }
 
 // ----- Setup -----
@@ -150,7 +151,7 @@ describe('DicomDispatcher.send', () => {
       send: vi.fn(async () => ({
         ok: false as const,
         value: null,
-        error: new Error('Connection refused'),
+        error: stderr('Connection refused'),
       })),
     });
     const dispatcher = new DicomDispatcher(makeConfig(), makeMockFactory(sender));

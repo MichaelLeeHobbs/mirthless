@@ -45,8 +45,8 @@ are at `http://localhost:3000/api-docs` in development.
 Every PR must pass all of these locally before you push — CI runs the same gates:
 
 ```bash
-pnpm lint                      # ESLint, --max-warnings 0 (warnings fail)
-pnpm build                     # tsc across all packages (strict mode)
+pnpm build                     # tsc across all packages (strict mode); lint needs it first
+pnpm lint                      # ESLint, --max-warnings 0 (warnings fail), then type-checks tests and configs
 pnpm test                      # Vitest unit/integration (mock-DB) across packages
 ```
 
