@@ -587,7 +587,7 @@ describe('validateConnectorProperties', () => {
       expect(validateConnectorProperties('SFTP', 'source', { ...SFTP_SOURCE, afterProcessing: 'ARCHIVE' }).ok).toBe(false);
     });
 
-    // The registry reads a non-boolean ignoreDot as on; refuse it at deploy, as the FILE schema does (#244).
+    // ignoreDot (#244) is a switch: text such as "false" is refused at deploy, as the FILE schema does.
     it('rejects an SFTP source whose ignoreDot is not true or false, naming it, and accepts one without it', () => {
       const result = validateConnectorProperties('SFTP', 'source', { ...SFTP_SOURCE, ignoreDot: 'false' });
       expect(result.ok).toBe(false);
