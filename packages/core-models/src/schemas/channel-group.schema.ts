@@ -27,8 +27,12 @@ export type UpdateChannelGroupInput = z.infer<typeof updateChannelGroupSchema>;
  * The full set of groups a channel belongs to, replacing what it had. An empty
  * list takes the channel out of every group.
  */
+export const SET_CHANNEL_GROUPS_MAX = 1000;
+
 export const setChannelGroupsSchema = z.object({
-  groupIds: z.array(z.string().uuid())
+  // Lowercased so an id matches the stored group and the repeat check sees an upper/lower pair as one.
+  groupIds: z.array(z.string().uuid().transform((id) => id.toLowerCase()))
+    .max(SET_CHANNEL_GROUPS_MAX)
     .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not repeat a group' }),
 });
 

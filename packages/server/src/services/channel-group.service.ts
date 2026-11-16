@@ -5,10 +5,10 @@
 // All methods return Result<T> using tryCatch from stderr-lib.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, count, asc, inArray } from 'drizzle-orm';
+import { eq, and, count, asc, inArray, isNull } from 'drizzle-orm';
 import { DEFAULT_GROUP_NAME, type CreateChannelGroupInput, type UpdateChannelGroupInput } from '@galvaniflow/core-models';
 import { ServiceError } from '../lib/service-error.js';
-import { emitEvent, emitSuccessEvent, type AuditContext } from '../lib/event-emitter.js';
+import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { channelGroups, channelGroupMembers, channels } from '../db/schema/index.js';
 
@@ -36,13 +36,36 @@ export interface ChannelGroupSet {
 
 type GroupTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** Fail with NOT_FOUND naming each id in `groupIds` that is not a group. */
+/**
+ * Lock a channel that is not soft-deleted for the rest of the transaction, so
+ * two sets on one channel run one after the other, or fail with NOT_FOUND.
+ * FOR NO KEY UPDATE leaves inserts into tables that reference the channel free.
+ */
+async function lockLiveChannel(tx: GroupTx, channelId: string): Promise<void> {
+  const [channel] = await tx
+    .select({ id: channels.id })
+    .from(channels)
+    .where(and(eq(channels.id, channelId), isNull(channels.deletedAt)))
+    .for('no key update');
+  if (!channel) {
+    throw new ServiceError('NOT_FOUND', `Channel ${channelId} not found`);
+  }
+}
+
+/**
+ * Fail with NOT_FOUND naming each id in `groupIds` that is not a group. The
+ * found rows are locked FOR KEY SHARE until the transaction ends, so a group
+ * deleted at the same time is either gone here (a clean NOT_FOUND) or waits
+ * for this transaction, never failing the INSERT after the old memberships
+ * were removed.
+ */
 async function assertGroupsExist(tx: GroupTx, groupIds: readonly string[]): Promise<void> {
   if (groupIds.length === 0) return;
   const found = await tx
     .select({ id: channelGroups.id })
     .from(channelGroups)
-    .where(inArray(channelGroups.id, [...groupIds]));
+    .where(inArray(channelGroups.id, [...groupIds]))
+    .for('key share');
   const foundIds = new Set(found.map((g) => g.id));
   const missing = groupIds.filter((id) => !foundIds.has(id));
   if (missing.length > 0) {
@@ -280,8 +303,8 @@ export class ChannelGroupService {
   /**
    * Replace every group membership a channel has with `groupIds`, in one
    * transaction: a failure part way leaves the old memberships in place. An
-   * empty list takes the channel out of every group. The channel row is locked
-   * for the transaction so two sets on one channel run one after the other.
+   * empty list takes the channel out of every group. A deleted channel is
+   * NOT_FOUND, as it is everywhere else.
    */
   static async setChannelGroups(
     channelId: string,
@@ -291,14 +314,7 @@ export class ChannelGroupService {
     return tryCatch(async () => {
       const wanted = [...new Set(groupIds)];
       const previous = await db.transaction(async (tx) => {
-        const [channel] = await tx
-          .select({ id: channels.id })
-          .from(channels)
-          .where(eq(channels.id, channelId))
-          .for('update');
-        if (!channel) {
-          throw new ServiceError('NOT_FOUND', `Channel ${channelId} not found`);
-        }
+        await lockLiveChannel(tx, channelId);
         await assertGroupsExist(tx, wanted);
         const removed = await tx
           .delete(channelGroupMembers)
@@ -312,8 +328,12 @@ export class ChannelGroupService {
         return removed.map((r) => r.channelGroupId);
       });
 
-      emitSuccessEvent('CHANNEL_GROUP_UPDATED', context, {
-        action: 'setChannelGroups', channelId, groupIds: wanted, previousGroupIds: previous,
+      // The channel column is set so filtering events by channel shows the change.
+      emitEvent({
+        level: 'INFO', name: 'CHANNEL_GROUP_UPDATED', outcome: 'SUCCESS',
+        userId: context?.userId ?? null, channelId,
+        serverId: null, ipAddress: context?.ipAddress ?? null,
+        attributes: { action: 'setChannelGroups', groupIds: wanted, previousGroupIds: previous },
       });
       return { channelId, groupIds: wanted };
     });

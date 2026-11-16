@@ -92,6 +92,15 @@ describe('PUT /channels/:id/groups', () => {
     expect(setChannelGroups).toHaveBeenCalledWith(CHANNEL_ID, [], expect.anything());
   });
 
+  it('passes group ids to the service in lower case', async () => {
+    setChannelGroups.mockResolvedValue({ ok: true, value: { channelId: CHANNEL_ID, groupIds: [G1] }, error: null });
+
+    const reply = await put(`/${CHANNEL_ID}/groups`, { groupIds: [G1.toUpperCase()] }, WRITE);
+
+    expect(reply.status).toBe(200);
+    expect(setChannelGroups).toHaveBeenCalledWith(CHANNEL_ID, [G1], expect.anything());
+  });
+
   it('answers 403 without channels:write and never calls the service', async () => {
     const reply = await put(`/${CHANNEL_ID}/groups`, { groupIds: [G1] }, ['channels:read']);
 
@@ -103,6 +112,8 @@ describe('PUT /channels/:id/groups', () => {
     ['a missing groupIds', {}],
     ['a group id that is not a uuid', { groupIds: ['nope'] }],
     ['the same group twice', { groupIds: [G1, G1] }],
+    ['the same group in upper and lower case', { groupIds: [G1, G1.toUpperCase()] }],
+    ['more than 1000 groups', { groupIds: Array.from({ length: 1001 }, (_v, i) => `${i.toString(16).padStart(8, '0')}-8b3d-4c7a-9e21-0a5b7c9d1e2f`) }],
   ])('answers 400 for %s', async (_label, body) => {
     const reply = await put(`/${CHANNEL_ID}/groups`, body, WRITE);
 
