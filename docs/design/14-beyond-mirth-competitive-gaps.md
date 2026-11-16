@@ -1,6 +1,7 @@
 # 14 — Beyond Mirth: Competitive Capability Gaps vs the Broader Integration Landscape
 
-> **Status:** Draft for review · **Date:** 2026-07-15 · **Owner:** Michael Hobbs
+> **Status (2026-11): historical analysis.** Written 2026-07-15 and kept for its reasoning; its status claims are no longer kept current. What ships today, what is missing and the plan for each gap are in [What GalvaniFlow can do](../user/capabilities.md).
+>
 > **Scope:** Capabilities that *other* integration engines and health-data platforms offer that GalvaniFlow lacks — deliberately looking **past** Mirth/OIE parity (docs [12](./12-connector-parity-gap-analysis.md), [13](./13-non-connector-gap-analysis.md)) to "what should a modern engine that isn't shackled to Mirth's legacy aim for?"
 > **Method:** A 6-category survey (healthcare engines, iPaaS/low-code, streaming, workflow/EIP, FHIR/interop, platform/DevEx) → adversarial verification of each candidate against both the cited product's real capabilities and a grounded GalvaniFlow inventory. 68 candidates → **35 confirmed gaps, 33 partial, 0 rejected** (75 agents). Engines surveyed: Rhapsody, Cloverleaf, Corepoint, InterSystems IRIS for Health, Smile CDR, HAPI FHIR, MuleSoft, Boomi, Workato, Tray, n8n, WSO2, Kafka/Confluent, Pulsar, NATS, Redpanda, Apache Camel, NiFi, Node-RED, Camunda/Zeebe, Temporal, Kestra, Google/AWS/Azure health clouds, Redox, 1upHealth, Health Gorilla, Kong.
 

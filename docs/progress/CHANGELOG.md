@@ -19,6 +19,13 @@ Michael asked for a scored climb of the code editor to 9+, with the TypeScript s
 - **Test runs (D-284).** Filter rules, transformer steps, response transformers and channel scripts have a Test run button (Ctrl+Enter). It runs the script through the engine's own compile and sandbox against a sample message (pasted, or a generated fake ADT) and shows the outcome, output message, logger lines, map changes and destinations. Calls that would send, write or route are refused and listed. The sample stays in the page; the audit event records the run, not the sample.
 - Not done: a syntax error reports Monaco's cascade (one missing `)` can show as several errors); the editor offers every template enabled for the context while deploy uses only templates whose library includes the channel.
 
+## 2026-11-15 — Old status copies cut down, docs slice 4 (branch `docs/status-cutdown`)
+
+Slice 4 of the docs restructure (#116): with the capabilities page as the one home for status (D-279), the copies that drifted are cut back.
+
+- **ROADMAP:** the six "(done)" lists (Core Pipeline, Sandbox, Connectors, API & Auth, Web UI, CLI) are replaced by one link to the capabilities page, which lists what ships with its proof. Removed stale lines: SFTP as a someday idea (it ships) and "Database connectors are PostgreSQL only" (MySQL ships). `[B1]` no longer says the alert engine fires only on CHANNEL_ERROR.
+- **Design docs:** status banners in the house form on 03 and 05 ("original design") and on 09, 12, 13, 14 and 16 ("historical analysis", replacing "Draft for review"), each pointing at the page that is current, with D-182 named where it still binds. Local paths to the OIE source are gone from docs 12 and 13.
+
 ## 2026-11-15 — Capabilities page, docs slice 3 (branch `docs/capabilities`)
 
 Slice 3 of the docs restructure (#116): one page that shows what GalvaniFlow does and what it doesn't, so users can check before they commit and maintainers can see the gaps (D-279).
