@@ -12,8 +12,8 @@
 import type { Result } from '@galvaniflow/core-util';
 import { tryCatch } from '@galvaniflow/core-util';
 import {
-  IGNORED_SCRIPT_DIAGNOSTICS, SCRIPT_COMPILER_OPTIONS, scriptDeclarations, templateDeclarations,
-  type ScriptSurface, type TemplateSource,
+  IGNORED_SCRIPT_DIAGNOSTICS, SCRIPT_COMPILER_OPTIONS, scriptBodyPosition, scriptDeclarations, templateDeclarations,
+  wrapScriptBody, type ScriptSurface, type TemplateSource,
 } from '@galvaniflow/core-models';
 
 /** One type error in a script. */
@@ -64,7 +64,10 @@ export async function checkScriptTypes(
     const files: Readonly<Record<string, string>> = {
       '/sandbox.d.ts': scriptDeclarations(surface),
       '/code-templates.d.ts': templateDeclarations(templates, surface),
-      [SCRIPT_FILE]: script,
+      // Checked as the engine runs it, the body of a function: a `return`
+      // outside one is an error TypeScript reports without checking the
+      // returned expression (#206). Errors are mapped back to the script's lines.
+      [SCRIPT_FILE]: wrapScriptBody(script),
     };
     const options: import('typescript').CompilerOptions = {
       ...(SCRIPT_COMPILER_OPTIONS as unknown as import('typescript').CompilerOptions),
@@ -93,7 +96,8 @@ export async function checkScriptTypes(
     const relevant = (d: import('typescript').Diagnostic): boolean => !IGNORED_SCRIPT_DIAGNOSTICS.includes(d.code);
     const toError = (syntax: boolean) => (d: import('typescript').Diagnostic): ScriptTypeError => {
       const pos = d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start) : { line: 0, character: 0 };
-      return { line: pos.line + 1, column: pos.character + 1, message: ts.flattenDiagnosticMessageText(d.messageText, ' '), code: d.code, syntax };
+      const at = scriptBodyPosition(script, pos.line + 1, pos.character + 1);
+      return { line: at.line, column: at.column, message: ts.flattenDiagnosticMessageText(d.messageText, ' '), code: d.code, syntax };
     };
     return [
       ...program.getSyntacticDiagnostics(source).filter(relevant).map(toError(true)),
