@@ -150,7 +150,7 @@ The importer reads a Mirth channel export or server backup (`POST /api/v1/channe
 | Deploy, undeploy and postprocessor scripts | Channel scripts; Mirth's do-nothing defaults are dropped | Yes, once Mirth-only constructs are rewritten | Yes, once per channel | `packages/server/src/services/__tests__/mirth-import.service.test.ts` |
 | A disabled channel | A disabled channel | Stays undeployed | No | `packages/server/src/services/__tests__/mirth-import.service.test.ts`<br>`e2e/scenarios/s24-disabled-channel.scenario.ts` |
 | Storage mode, encryption and pruning | Storage mode and encryption; Mirth's message age (from `exportData/metadata/pruningSettings`, or the channel properties before Mirth 3.5), with pruning on only when Mirth also pruned errored messages, since this pruner does not skip them (D-301); no archive | Yes | Yes, when Mirth pruned only content, kept errored messages, or archived before pruning | `packages/server/src/services/__tests__/mirth-import.service.test.ts` |
-| Polling by time of day or cron, or on some days or hours only | The connector's default interval; a channel polled by time of day or cron is imported disabled (D-301) | Yes, on the wrong schedule, once enabled | Yes, naming the time or cron expressions | `packages/server/src/services/__tests__/mirth-import.service.test.ts` |
+| Polling by time of day or cron, or on some days or hours only | The connector's default interval; a channel polled by time of day or cron is imported disabled, with the reason in its description (D-301) | Yes, on the wrong schedule, once enabled | Yes, naming the time or cron expressions | `packages/server/src/services/__tests__/mirth-import.service.test.ts` |
 
 ## Pipeline and scripting
 

@@ -268,9 +268,9 @@ function convertChannel(
   warnings: string[],
 ): ChannelExportEntry {
   const name = getString(mirthChannel, 'name') ?? 'Unnamed Channel';
-  const description = getString(mirthChannel, 'description');
   const holds = channelEnabled(mirthChannel) ? disablingSettings(mirthChannel) : [];
   const enabled = channelEnabled(mirthChannel) && holds.length === 0;
+  const description = withHoldNote(getString(mirthChannel, 'description'), holds);
   const id = getString(mirthChannel, 'id') ?? randomUUID();
 
   // Source connector
@@ -746,16 +746,32 @@ function fileWriterWarnings(propsNode: Record<string, unknown>, properties: Reco
 function disablingSettings(mirthChannel: Record<string, unknown>): string[] {
   const reasons: string[] = [];
   const sourceProps = getNestedRecord(getNestedRecord(mirthChannel, 'sourceConnector') ?? {}, 'properties') ?? {};
-  const pollingType = getString(getNestedRecord(sourceProps, 'pollConnectorProperties') ?? {}, 'pollingType');
+  const pollingType = mirthPollingType(getNestedRecord(sourceProps, 'pollConnectorProperties'));
   if (pollingType === 'TIME' || pollingType === 'CRON') {
     reasons.push('its source polls on a schedule (time of day or cron) and would poll at an interval here');
   }
   for (const [, dest] of destinationConnectorsById(mirthChannel)) {
-    if (failsOnExistingFile(getNestedRecord(dest, 'properties') ?? {})) {
+    // A destination disabled in Mirth never writes, so its file setting cannot overwrite anything.
+    if (getBoolean(dest, 'enabled', true) && failsOnExistingFile(getNestedRecord(dest, 'properties') ?? {})) {
       reasons.push(`the File Writer "${getString(dest, 'name') ?? ''}" must not overwrite an existing file`);
     }
   }
   return reasons;
+}
+
+/**
+ * The channel description with why the import disabled it, so the editor
+ * shows the reason and an export carries it; unchanged when nothing did.
+ */
+function withHoldNote(description: string | null, holds: readonly string[]): string | null {
+  if (holds.length === 0) return description;
+  const note = `Imported disabled from Mirth: ${holds.join('; ')}. Enable it once you have decided how it should run here.`;
+  return description ? `${description}\n\n${note}` : note;
+}
+
+/** A Mirth polling type upper-cased (Mirth 3.0 to 3.2 write `interval`); INTERVAL when absent. */
+function mirthPollingType(poll: Record<string, unknown> | null): string {
+  return (getString(poll ?? {}, 'pollingType') ?? 'INTERVAL').toUpperCase();
 }
 
 /**
@@ -765,7 +781,7 @@ function disablingSettings(mirthChannel: Record<string, unknown>): string[] {
  */
 function pollingInterval(propsNode: Record<string, unknown>): Record<string, unknown> {
   const poll = getNestedRecord(propsNode, 'pollConnectorProperties');
-  if (!poll || (getString(poll, 'pollingType') ?? 'INTERVAL') !== 'INTERVAL') return {};
+  if (!poll || mirthPollingType(poll) !== 'INTERVAL') return {};
   const ms = getNumber(poll, 'pollingFrequency', 0);
   return ms > 0 ? { pollingIntervalMs: ms } : {};
 }
@@ -778,7 +794,7 @@ function pollingInterval(propsNode: Record<string, unknown>): Record<string, unk
 function pollingWarning(propsNode: Record<string, unknown>, channelName: string): string | null {
   const poll = getNestedRecord(propsNode, 'pollConnectorProperties');
   if (!poll) return null;
-  const type = getString(poll, 'pollingType') ?? 'INTERVAL';
+  const type = mirthPollingType(poll);
   const prefix = `Channel "${channelName}": the source polls`;
   const fallback = "; GalvaniFlow polls only at an interval, so it imported with the connector's default interval. Set its polling interval before deploying";
   if (type === 'TIME') {
