@@ -32,6 +32,7 @@ vi.mock('../../lib/jwt.js', () => ({
 }));
 
 const { AuthService } = await import('../auth.service.js');
+const { errorResponse } = await import('../../lib/controller-helpers.js');
 
 function user(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -40,8 +41,9 @@ function user(overrides: Record<string, unknown> = {}): Record<string, unknown> 
   };
 }
 
-function errorCode(result: { ok: boolean; error?: unknown }): string | undefined {
-  return result.ok ? undefined : (result.error as { code?: string }).code;
+async function loginCode(password: string): Promise<string | undefined> {
+  const result = await AuthService.login('alice', password);
+  return result.ok ? undefined : errorResponse(result.error).code;
 }
 
 beforeEach(() => {
@@ -56,7 +58,7 @@ describe('AuthService.login wrong password', () => {
     selectResponses = [[user({ failedLoginAttempts: 5, lockedUntil: new Date(Date.now() - 1000) })]];
     countedRow = [{ failedLoginAttempts: 1 }]; // the expired lock's count restarted
 
-    expect(errorCode(await AuthService.login('alice', 'wrong'))).toBe('INVALID_CREDENTIALS');
+    expect(await loginCode('wrong')).toBe('INVALID_CREDENTIALS');
     expect(mockUpdate).toHaveBeenCalledTimes(1);
   });
 
@@ -64,20 +66,20 @@ describe('AuthService.login wrong password', () => {
     selectResponses = [[user({ failedLoginAttempts: 4 })]];
     countedRow = [{ failedLoginAttempts: 5 }];
 
-    expect(errorCode(await AuthService.login('alice', 'wrong'))).toBe('ACCOUNT_LOCKED');
+    expect(await loginCode('wrong')).toBe('ACCOUNT_LOCKED');
   });
 
   it('answers ACCOUNT_LOCKED when a concurrent attempt locked the account first', async () => {
     selectResponses = [[user({ failedLoginAttempts: 4 })]];
     countedRow = [];
 
-    expect(errorCode(await AuthService.login('alice', 'wrong'))).toBe('ACCOUNT_LOCKED');
+    expect(await loginCode('wrong')).toBe('ACCOUNT_LOCKED');
   });
 
   it('refuses a login while the lock is still running, without counting it', async () => {
     selectResponses = [[user({ failedLoginAttempts: 5, lockedUntil: new Date(Date.now() + 60_000) })]];
 
-    expect(errorCode(await AuthService.login('alice', 'wrong'))).toBe('ACCOUNT_LOCKED');
+    expect(await loginCode('wrong')).toBe('ACCOUNT_LOCKED');
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 });
