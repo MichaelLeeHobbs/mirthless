@@ -41,6 +41,7 @@ vi.mock('../../controllers/code-template.controller.js', () => ({
   },
 }));
 
+const { authenticate } = await import('../../middleware/auth.middleware.js');
 const router = (await import('../code-template.routes.js')).default;
 
 const ID = '00000000-0000-4000-8000-000000000001';
@@ -48,6 +49,8 @@ let server: Server | null = null;
 
 async function del(path: string, permissions: readonly string[]): Promise<number> {
   const app = express();
+  // routes/index.ts authenticates once in front of every router.
+  app.use(authenticate);
   app.use('/code-templates', router);
   server = app.listen(0);
   const { port } = server.address() as AddressInfo;
