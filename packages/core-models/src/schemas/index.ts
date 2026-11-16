@@ -44,3 +44,6 @@ export * from './javascript-connector.schema.js';
 export * from './channel-connector.schema.js';
 export * from './fhir-connector.schema.js';
 export * from './smtp-connector.schema.js';
+export * from './dicom-connector.schema.js';
+export * from './email-connector.schema.js';
+export * from './sftp-connector.schema.js';

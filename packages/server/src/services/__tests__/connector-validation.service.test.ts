@@ -590,6 +590,64 @@ describe('validateConnectorProperties', () => {
     it.each(['username', 'remoteDirectory'])('rejects an SFTP destination with an empty %s', (key) => {
       expect(validateConnectorProperties('SFTP', 'destination', { ...SFTP_DEST, [key]: '' }).ok).toBe(false);
     });
+
+    it.each([
+      ['source', { ...SFTP_SOURCE, fileFilter: '*.hl7' }, 'fileFilter'],
+      ['source', { ...SFTP_SOURCE, charset: 'base64' }, 'charset'],
+      ['source', { ...SFTP_SOURCE, pollingIntervalMs: 50 }, 'pollingIntervalMs'],
+      ['destination', { ...SFTP_DEST, appendMode: 'true' }, 'appendMode'],
+      ['destination', { ...SFTP_DEST, fileNameTemplate: '' }, 'fileNameTemplate'],
+    ] as const)('rejects an SFTP %s with %j, naming %s', (mode, props, key) => {
+      const result = validateConnectorProperties('SFTP', mode, props);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain(key);
+    });
+  });
+
+  describe('DICOM and EMAIL', () => {
+    // The editor's defaults since 2026-03 (AE titles MIRTHLESS until 02b022a), the required fields filled.
+    const DICOM_SOURCE = {
+      port: 4242, storageDir: '/dicom', aeTitle: 'MIRTHLESS', minPoolSize: 2, maxPoolSize: 10, connectionTimeoutMs: 10000,
+      dispatchMode: 'PER_FILE', postAction: 'DELETE', moveToDirectory: '',
+    };
+    const DICOM_DEST = {
+      host: 'localhost', port: 104, calledAETitle: 'PACS', callingAETitle: 'MIRTHLESS', mode: 'multiple', maxAssociations: 4,
+      maxRetries: 3, retryDelayMs: 1000, timeoutMs: 30000,
+    };
+    const EMAIL = {
+      host: 'imap.example', port: 993, secure: true, username: 'lab', password: 'p', protocol: 'IMAP', folder: 'INBOX',
+      pollingIntervalMs: 60000, postAction: 'MARK_READ', moveToFolder: '', subjectFilter: '', includeAttachments: false,
+    };
+
+    it('accepts what the editor saves and what the importer copies from a Mirth DICOM connector', () => {
+      expect(validateConnectorProperties('DICOM', 'source', DICOM_SOURCE).ok).toBe(true);
+      expect(validateConnectorProperties('DICOM', 'destination', DICOM_DEST).ok).toBe(true);
+      expect(validateConnectorProperties('EMAIL', 'source', EMAIL).ok).toBe(true);
+      expect(validateConnectorProperties('DICOM', 'source', {
+        ...DICOM_SOURCE, pluginProperties: '', listenerConnectorProperties: { port: '104' }, dest: '/mirth', applicationEntity: 'MIRTH', tls: 'notls',
+      }).ok).toBe(true);
+      expect(validateConnectorProperties('DICOM', 'destination', {
+        pluginProperties: '', destinationConnectorProperties: {}, host: 'pacs', port: '104', applicationEntity: 'PACS1', template: '${DICOMMESSAGE}', stgcmt: 'false',
+      }).ok).toBe(true);
+    });
+
+    it.each([
+      ['DICOM', 'source', { ...DICOM_SOURCE, aeTitle: 'SEVENTEEN_CHARS_X' }, 'aeTitle'],
+      ['DICOM', 'source', { ...DICOM_SOURCE, minPoolSize: 5, maxPoolSize: 4 }, 'maxPoolSize'],
+      ['DICOM', 'source', { ...DICOM_SOURCE, dispatchMode: 'PER_STUDY' }, 'dispatchMode'],
+      ['DICOM', 'destination', { ...DICOM_DEST, mode: 'pooled' }, 'mode'],
+      ['DICOM', 'destination', { ...DICOM_DEST, aet: 'X' }, 'aet'],
+      ['EMAIL', 'source', { ...EMAIL, protocol: 'POP3' }, 'protocol'],
+      ['EMAIL', 'source', { ...EMAIL, pollingIntervalMs: 500 }, 'pollingIntervalMs'],
+      ['EMAIL', 'source', { ...EMAIL, postAction: 'MOVE' }, 'moveToFolder'],
+      ['EMAIL', 'source', { ...EMAIL, secure: 'false' }, 'secure'],
+    ] as const)('rejects a %s %s with %j, naming %s', (type, mode, props, key) => {
+      const result = validateConnectorProperties(type, mode, props);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain(key);
+    });
   });
 
   // ----- Error Message Format -----
