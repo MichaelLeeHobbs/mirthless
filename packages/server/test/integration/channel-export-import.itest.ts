@@ -67,15 +67,46 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     await expectAttachedToSecond(copyId);
   });
 
-  it('creates and imports channels with their own partitions, under the id each is saved with (#260)', async () => {
+  /** A plain RAW channel to create, named `name`. */
+  const rawChannel = (name: string): ReturnType<typeof createChannelSchema.parse> => createChannelSchema.parse({
+    name, enabled: false, inboundDataType: 'RAW', outboundDataType: 'RAW',
+    sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'NONE',
+  });
+
+  async function channelRows(column: 'id' | 'name', value: string): Promise<number> {
+    const { db, sql } = mods;
+    const result = await db.execute(sql`SELECT count(*)::int AS n FROM channels WHERE ${sql.identifier(column)} = ${value}`);
+    return (result.rows[0] as { n: number }).n;
+  }
+
+  /**
+   * Run `body` while migration 0016's `create_channel_partitions` raises, then
+   * put the real function back (its definition, read from the catalog).
+   */
+  async function withPartitionsRefused(body: () => Promise<void>): Promise<void> {
+    const { db, sql } = mods;
+    const def = await db.execute(sql`SELECT pg_get_functiondef('public.create_channel_partitions(uuid)'::regprocedure) AS def`);
+    const original = (def.rows[0] as { def: string }).def;
+    await db.execute(sql.raw(
+      "CREATE OR REPLACE FUNCTION public.create_channel_partitions(p_channel_id uuid) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'itest: partitions refused'; END; $$",
+    ));
+    try {
+      await body();
+    } finally {
+      await db.execute(sql.raw(original));
+    }
+  }
+
+  it('creates, clones and imports channels with their own partitions (#260)', async () => {
     const { ChannelService, PartitionManagerService } = mods;
     const name = `itest-partitions-${randomUUID()}`;
-    const source = unwrap(await ChannelService.create(createChannelSchema.parse({
-      name, enabled: false, inboundDataType: 'RAW', outboundDataType: 'RAW',
-      sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'NONE',
-    })));
+    const source = unwrap(await ChannelService.create(rawChannel(name)));
     created.push(source.id);
     expect(unwrap(await PartitionManagerService.partitionExists(source.id))).toBe(true);
+
+    const clone = unwrap(await ChannelService.clone(source.id, `${name}-clone`));
+    created.push(clone.id);
+    expect(unwrap(await PartitionManagerService.partitionExists(clone.id))).toBe(true);
 
     const entry = unwrap(await exportMod.ChannelExportService.exportChannel(source.id)).channels[0]!;
     const copyId = randomUUID();
@@ -83,6 +114,36 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     const result = unwrap(await importMod.ChannelImportService.importChannels([{ ...entry, id: copyId, name: `${name}-copy` }], 'CREATE_NEW'));
     expect(result.errors).toEqual([]);
     expect(unwrap(await PartitionManagerService.partitionExists(copyId))).toBe(true);
+  });
+
+  it('leaves no channel row when the partitions cannot be created (#260)', async () => {
+    const { ChannelService } = mods;
+    const name = `itest-refused-${randomUUID()}`;
+    const source = unwrap(await ChannelService.create(rawChannel(name)));
+    created.push(source.id);
+    const entry = unwrap(await exportMod.ChannelExportService.exportChannel(source.id)).channels[0]!;
+    const copyId = randomUUID();
+
+    await withPartitionsRefused(async () => {
+      const refused = await ChannelService.create(rawChannel(`${name}-new`));
+      expect(refused.ok).toBe(false);
+      expect(refused.error?.message).toContain(`Channel "${name}-new" was not created: its message partitions could not be created`);
+      expect(await channelRows('name', `${name}-new`)).toBe(0);
+
+      const cloned = await ChannelService.clone(source.id, `${name}-clone`);
+      expect(cloned.ok).toBe(false);
+      expect(await channelRows('name', `${name}-clone`)).toBe(0);
+
+      const imported = unwrap(await importMod.ChannelImportService.importChannels([{ ...entry, id: copyId, name: `${name}-copy` }], 'CREATE_NEW'));
+      expect(imported.created).toBe(0);
+      expect(imported.errors).toEqual([expect.stringContaining(`Error importing "${name}-copy": its message partitions could not be created, so it was not imported`)]);
+      expect(await channelRows('id', copyId)).toBe(0);
+    });
+
+    // The real function is back: a channel can be created again.
+    const after = unwrap(await ChannelService.create(rawChannel(`${name}-after`)));
+    created.push(after.id);
+    expect(unwrap(await mods.PartitionManagerService.partitionExists(after.id))).toBe(true);
   });
 
   it('keeps every script language and the response transformer through save, export and import', async () => {

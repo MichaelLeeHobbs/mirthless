@@ -379,7 +379,7 @@ async function seedHeadlineChannel(db: Db): Promise<void> {
     return;
   }
   const channelId = await insertHeadlineChannel(db, name);
-  await createSeededChannelPartitions(channelId);
+  await createSeededChannelPartitions(db, channelId);
   const connectorId = await insertHeadlineDestination(db, channelId);
   await addDestinationFilter(db, channelId, connectorId);
   await addDestinationTransformer(db, channelId, connectorId);

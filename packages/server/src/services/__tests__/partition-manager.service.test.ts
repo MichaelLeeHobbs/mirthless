@@ -67,6 +67,16 @@ describe('PartitionManagerService', () => {
       expect(query.params).toEqual([CHANNEL_ID]);
     });
 
+    it('runs on the transaction it is given, not the global db (#260)', async () => {
+      const txExecute = vi.fn().mockResolvedValue({ rows: [] });
+
+      const result = await PartitionManagerService.createPartitions(CHANNEL_ID, { execute: txExecute } as never);
+
+      expect(result.ok).toBe(true);
+      expect(txExecute).toHaveBeenCalledTimes(1);
+      expect(mockExecute).not.toHaveBeenCalled();
+    });
+
     it('returns error when db.execute fails', async () => {
       mockExecute.mockRejectedValueOnce(new Error('Connection refused'));
 
