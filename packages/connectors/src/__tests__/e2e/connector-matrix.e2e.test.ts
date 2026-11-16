@@ -9,7 +9,7 @@
 // This file adds File and HTTP. Each new connector added here is a small,
 // self-contained block following the same shape.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -22,10 +22,12 @@ import {
   HttpReceiver,
   HttpDispatcher,
   FhirDispatcher,
-  TcpMllpReceiver,
 } from '../../index.js';
 import { deployChannel, teardownAll, type DeployedChannel } from './support/e2e-harness.js';
-import { sendMllp } from './support/tcp-helpers.js';
+import { mllpSource, sendMllp } from './support/tcp-helpers.js';
+
+/** How long a delivery may take: inside each test's 15 s budget, so a miss names the wait. */
+const DELIVERY_WAIT = { timeout: 10_000, interval: 10 } as const;
 
 let deployed: DeployedChannel[] = [];
 const tempDirs: string[] = [];
@@ -81,9 +83,7 @@ describe('File connector (drop a file in → transform → write a file out)', (
     await fs.writeFile(path.join(srcDir, 'input.hl7'), 'MSH|^~\\&|FILE|IN');
 
     const outPath = path.join(destDir, '1.out');
-    await waitForAsync(async () => {
-      try { await fs.access(outPath); return true; } catch { return false; }
-    });
+    await vi.waitFor(async () => { await fs.access(outPath); }, DELIVERY_WAIT);
 
     const written = await fs.readFile(outPath, 'utf-8');
     expect(written).toBe('MSH|^~\\&|FILE|IN::processed');
@@ -139,7 +139,7 @@ describe('HTTP connector (POST in → transform → POST out to a downstream ser
     const response = await httpPost(HTTP_SRC_PORT, '/in', 'hello world');
     expect(response.status).toBe(200);
 
-    await waitForSync(() => received.length === 1);
+    await vi.waitFor(() => { expect(received).toHaveLength(1); }, DELIVERY_WAIT);
     expect(received[0]).toBe('HELLO WORLD');
     expect(channel.store.messageCount()).toBe(1);
   }, 15_000);
@@ -165,7 +165,7 @@ describe('FHIR connector (POST a resource in → transform to FHIR → POST to a
     const channel = await deployChannel({
       channelId: '00000000-0000-0000-0000-connfhir0001',
       dataType: 'RAW',
-      source: new TcpMllpReceiver({ host: '127.0.0.1', port: FHIR_SRC_PORT, maxConnections: 10 }),
+      source: mllpSource(FHIR_SRC_PORT, { maxConnections: 10 }),
       // Build a FHIR Patient from the HL7 PID-5 name.
       transformer: [
         "const pid = String(msg).split(String.fromCharCode(13)).find((l) => l.indexOf('PID') === 0) || '';",
@@ -195,7 +195,7 @@ describe('FHIR connector (POST a resource in → transform to FHIR → POST to a
       'PID|||1^^^MRN||DOE^JOHN',
     ].join('\r'));
 
-    await waitForSync(() => received.length === 1);
+    await vi.waitFor(() => { expect(received).toHaveLength(1); }, DELIVERY_WAIT);
     const posted = received[0];
     expect(posted?.path).toBe('/Patient');
     expect(posted?.contentType).toContain('application/fhir+json');
@@ -236,22 +236,4 @@ async function httpPost(port: number, urlPath: string, body: string): Promise<Ht
     req.write(body);
     req.end();
   });
-}
-
-async function waitForSync(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    if (predicate()) return;
-    if (Date.now() - start > timeoutMs) throw new Error('waitForSync: condition not met in time');
-    await new Promise((r) => setTimeout(r, 10));
-  }
-}
-
-async function waitForAsync(predicate: () => Promise<boolean>, timeoutMs = 10_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    if (await predicate()) return;
-    if (Date.now() - start > timeoutMs) throw new Error('waitForAsync: condition not met in time');
-    await new Promise((r) => setTimeout(r, 20));
-  }
 }

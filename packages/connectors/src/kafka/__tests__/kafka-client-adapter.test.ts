@@ -156,7 +156,7 @@ describe('createKafkaProducer', () => {
     const sent = lib.sent[0] as { key: Buffer; headers: Map<Buffer, Buffer> };
     expect(sent.key.toString()).toBe('P42');
     // The client's default serializers need Buffer header names; strings failed to encode.
-    const [[name, value]] = [...sent.headers.entries()];
+    const [name, value] = [...sent.headers.entries()][0] ?? [];
     expect(Buffer.isBuffer(name) && name.toString()).toBe('site');
     expect(value?.toString()).toBe('north');
     expect(written).toEqual({ topic: 'results', partition: 2, offset: '41' });

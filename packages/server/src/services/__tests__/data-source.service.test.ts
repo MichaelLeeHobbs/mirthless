@@ -41,7 +41,7 @@ const { DataSourceService } = await import('../data-source.service.js');
 
 const input = {
   name: 'reporting-db', description: '', driver: 'postgres' as const, host: 'db', port: 5432,
-  database: 'reports', user: 'ro', password: 'secret', readOnly: true,
+  database: 'reports', user: 'ro', password: 'secret', readOnly: true, tls: false,
   maxConnections: 5, statementTimeoutMs: 30_000, maxRows: 10_000,
 };
 

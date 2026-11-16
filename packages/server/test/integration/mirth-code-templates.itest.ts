@@ -28,6 +28,7 @@ describeIntegration('Mirth code template import (real Postgres)', () => {
   const library = (code: string): Parameters<typeof templatesMod.importCodeTemplateLibraries>[0] => [{
     name: libraryName,
     description: 'from Mirth',
+    channelIds: null,
     templates: [{ name: 'stampSite', description: '', type: 'FUNCTION', code, contexts: ['SOURCE_FILTER_TRANSFORMER'] }],
   }];
 

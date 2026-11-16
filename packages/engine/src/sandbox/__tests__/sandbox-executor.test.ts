@@ -218,7 +218,7 @@ describe('VmSandboxExecutor', () => {
       let answered = false;
       const slow = new VmSandboxExecutor({
         httpFetch: () => new Promise((resolve) => {
-          setTimeout(() => { answered = true; resolve({ status: 200, headers: {}, body: 'late' }); }, 400);
+          setTimeout(() => { answered = true; resolve({ status: 200, statusText: 'OK', headers: {}, body: 'late' }); }, 400);
         }),
       });
       const script = makeScript("await httpFetch('https://example.com'); return 'finished';");
@@ -250,7 +250,7 @@ describe('VmSandboxExecutor', () => {
 
     it('still stops when the caller cancels first', async () => {
       const slow = new VmSandboxExecutor({
-        httpFetch: () => new Promise((resolve) => { setTimeout(() => { resolve({ status: 200, headers: {}, body: 'late' }); }, 400); }),
+        httpFetch: () => new Promise((resolve) => { setTimeout(() => { resolve({ status: 200, statusText: 'OK', headers: {}, body: 'late' }); }, 400); }),
       });
       const script = makeScript("await httpFetch('https://example.com'); return 'finished';");
 

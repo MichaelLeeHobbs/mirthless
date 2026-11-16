@@ -45,7 +45,10 @@ vi.mock('../../middleware/auth.middleware.js', async () => {
     // Signs the request in as the role named in x-test-role.
     authenticate: (req: Request, _res: Response, next: NextFunction): void => {
       const role = String(req.headers['x-test-role'] ?? '');
-      (req as Request & { user: unknown }).user = { id: 'u1', role, permissions: names(role) };
+      req.user = {
+        id: 'u1', username: role, email: `${role}@test.local`, role, isActive: true,
+        permissions: names(role), mustChangePassword: false,
+      };
       next();
     },
   };
@@ -147,7 +150,7 @@ function buildApp(): Express {
 
 beforeAll(async () => {
   const app = buildApp();
-  await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
+  await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
   base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
 });
 

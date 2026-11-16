@@ -98,12 +98,22 @@ const {
 
 // ----- Fixtures -----
 
+/** T with every array and object inside it readonly, as an `as const` fixture is. */
+type DeepReadonly<T> = T extends ReadonlyArray<infer U>
+  ? ReadonlyArray<DeepReadonly<U>>
+  : T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]> } : T;
+
 function okResult<T>(value: T): { ok: true; value: T; error: null } {
   return { ok: true, value, error: null };
 }
 
 function errResult(message: string): { ok: false; value: null; error: { message: string } } {
   return { ok: false, value: null, error: { message } };
+}
+
+/** A save refused as a ServiceError, as GlobalScriptService returns it. */
+function refused(code: 'INVALID_INPUT' | 'UNAVAILABLE', message: string): { ok: false; value: null; error: { name: string; code: string; message: string } } {
+  return { ok: false, value: null, error: { name: 'ServiceError', code, message } };
 }
 
 function makeMinimalBackup(overrides?: Partial<ServerBackup>): ServerBackup {
@@ -504,7 +514,7 @@ describe('ServerBackupService', () => {
       const backup = makeMinimalBackup({ globalScripts: { deploy: 'const n: number = "x";', undeploy: 'logger.info(1);', preprocessor: '', postprocessor: '', languages } });
       mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
       mockGlobalScriptUpdate.mockImplementation(async (input: { languages?: Record<string, string> }) =>
-        (input.languages?.['deploy'] === 'TYPESCRIPT' ? errResult('type errors') : okResult(backup.globalScripts)));
+        (input.languages?.['deploy'] === 'TYPESCRIPT' ? refused('INVALID_INPUT', 'type errors') : okResult(backup.globalScripts)));
 
       const result = await ServerBackupService.restoreBackup(backup, 'SKIP');
 
@@ -515,6 +525,28 @@ describe('ServerBackupService', () => {
       expect(section?.errors).toEqual([expect.stringMatching(/^The global deploy script was restored as JavaScript.*type errors/)]);
       expect(mockGlobalScriptUpdate).toHaveBeenCalledWith({ deploy: 'const n: number = "x";', languages: { deploy: 'JAVASCRIPT' } });
       expect(mockGlobalScriptUpdate).toHaveBeenCalledWith({ undeploy: 'logger.info(1);', languages: { undeploy: 'JAVASCRIPT' } });
+    });
+
+    // #228: a refusal that is not about the script (the checker timed out,
+    // crashed or was busy) fell back to JavaScript too, silently dropping the
+    // type check of a script that may have none. It is reported and not restored.
+    it('does not restore a TypeScript global script as JavaScript when the type checker failed', async () => {
+      const languages = { deploy: 'TYPESCRIPT', undeploy: 'JAVASCRIPT', preprocessor: 'JAVASCRIPT', postprocessor: 'JAVASCRIPT' } as const;
+      const backup = makeMinimalBackup({ globalScripts: { deploy: "logger.info('up');", undeploy: 'logger.info(1);', preprocessor: '', postprocessor: '', languages } });
+      mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
+      const timeout = 'Could not type-check the TypeScript scripts: Type-checking took longer than 30000 ms and was stopped.';
+      mockGlobalScriptUpdate.mockImplementation(async (input: { languages?: Record<string, string> }) =>
+        // Only the TypeScript save fails: a JavaScript retry would succeed, so the fallback shows if it runs.
+        (input.languages?.['deploy'] === 'TYPESCRIPT' ? refused('UNAVAILABLE', timeout) : okResult(backup.globalScripts)));
+
+      const result = await ServerBackupService.restoreBackup(backup, 'SKIP');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const section = result.value.sections.find((s) => s.section === 'globalScripts');
+      expect(section?.updated).toBe(3);
+      expect(section?.errors).toEqual([`The global deploy script was not restored: ${timeout}`]);
+      expect(mockGlobalScriptUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ languages: { deploy: 'JAVASCRIPT' } }));
     });
 
     it('reports a global script that fails in either language and restores the rest', async () => {
@@ -653,14 +685,15 @@ describe('ServerBackupService', () => {
   // Every section the shared restore helpers serve, pinned row by row: counts,
   // error text, and the exact values written for each collision mode.
   describe('restore sections', () => {
+    /** The case tables below are `as const`, so their sections arrive deeply readonly. */
     async function restoreSection(
-      overrides: Partial<ServerBackup>,
+      overrides: { readonly [K in keyof ServerBackup]?: DeepReadonly<ServerBackup[K]> },
       mode: 'SKIP' | 'OVERWRITE',
       section: string,
     ): Promise<RestoreSectionResult> {
       mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
       mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
-      const result = await ServerBackupService.restoreBackup(makeMinimalBackup(overrides), mode);
+      const result = await ServerBackupService.restoreBackup(makeMinimalBackup(overrides as Partial<ServerBackup>), mode);
       if (!result.ok) throw new Error('restore failed');
       const found = result.value.sections.find((s) => s.section === section);
       if (!found) throw new Error(`section ${section} missing`);

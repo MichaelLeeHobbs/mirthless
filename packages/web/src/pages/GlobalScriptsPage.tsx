@@ -161,7 +161,9 @@ export function GlobalScriptsPage(): ReactNode {
 
           {/* Editor */}
           <Box sx={{ flexGrow: 1, minHeight: 0, mt: 2 }}>
+            {/* One editor per tab, so undo stays in the tab it was typed in (#228). */}
             <ScriptEditor
+              key={activeKey}
               height="100%"
               label={`Global ${TABS[activeTab]!.label.toLowerCase()} script`}
               surface={TABS[activeTab]!.surface}

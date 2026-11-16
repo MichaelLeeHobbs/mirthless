@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { normalizeEncoding, isKnownEncoding } from '../encoding.js';
 
+/** TextDecoder's options; the DOM lib that names them is not loaded here. */
+type DecoderOptions = ConstructorParameters<typeof TextDecoder>[1];
+
 describe('normalizeEncoding', () => {
   it('maps IANA/human charset names to valid Node Buffer encodings', () => {
     expect(normalizeEncoding('ISO-8859-1')).toBe('latin1');
@@ -51,7 +54,7 @@ describe('decodePayload on a Node without windows-1252 (no full ICU)', () => {
   it('still loads and decodes the other charsets; only windows-1252 fails, when used', async () => {
     const Real = globalThis.TextDecoder;
     vi.stubGlobal('TextDecoder', class extends Real {
-      constructor(label?: string, options?: TextDecoderOptions) {
+      constructor(label?: string, options?: DecoderOptions) {
         if (label === 'windows-1252') throw new RangeError('The "windows-1252" encoding is not supported');
         super(label, options);
       }
@@ -66,7 +69,7 @@ describe('decodePayload on a Node without windows-1252 (no full ICU)', () => {
   it('fails to build a Kafka or AMQP source set to windows-1252, so the deploy fails', async () => {
     const Real = globalThis.TextDecoder;
     vi.stubGlobal('TextDecoder', class extends Real {
-      constructor(label?: string, options?: TextDecoderOptions) {
+      constructor(label?: string, options?: DecoderOptions) {
         if (label === 'windows-1252') throw new RangeError('The "windows-1252" encoding is not supported');
         super(label, options);
       }

@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { stderr } from '@galvaniflow/core-util';
 import type { ConnectorMessage } from '../../base.js';
 import { JavaScriptDispatcher, type JavaScriptDispatcherConfig, type DestScriptRunner } from '../javascript-dispatcher.js';
 
@@ -34,7 +35,7 @@ function makeFailingRunner(message: string): DestScriptRunner {
   return async () => ({
     ok: false as const,
     value: null,
-    error: { name: 'Error', message, code: 'SCRIPT_ERROR' },
+    error: stderr({ name: 'Error', message, code: 'SCRIPT_ERROR' }),
   });
 }
 

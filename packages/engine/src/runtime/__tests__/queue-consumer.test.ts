@@ -2,7 +2,7 @@
 // Queue Consumer Tests
 // ===========================================
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, type Mock } from 'vitest';
 import type { Result } from '@galvaniflow/core-util';
 import { QueueConsumer } from '../queue-consumer.js';
 import type { QueueConsumerConfig } from '../queue-consumer.js';
@@ -742,14 +742,16 @@ describe('QueueConsumer content removal', () => {
   const CH = '00000000-0000-0000-0000-000000000001';
   const queued = { channelId: CH, messageId: 10, metaDataId: 1, sendAttempts: 0 };
 
-  function storeWith(removal: ReturnType<typeof vi.fn>): MessageStore {
+  type Removal = NonNullable<MessageStore['removeContentIfDelivered']>;
+
+  function storeWith(removal: Mock<Removal>): MessageStore {
     const store = { ...makeStore(), removeContentIfDelivered: removal };
     (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([queued]));
     return store;
   }
 
   it('asks the store to apply the removal policy once a queued message is delivered', async () => {
-    const removal = vi.fn().mockResolvedValue(ok(undefined));
+    const removal = vi.fn<Removal>().mockResolvedValue(ok(undefined));
     const store = storeWith(removal);
 
     consumer = new QueueConsumer(makeConfig(), store, makeSendFn());
@@ -760,7 +762,7 @@ describe('QueueConsumer content removal', () => {
   });
 
   it('keeps the content when the delivery fails and will be retried', async () => {
-    const removal = vi.fn().mockResolvedValue(ok(undefined));
+    const removal = vi.fn<Removal>().mockResolvedValue(ok(undefined));
     const store = storeWith(removal);
 
     consumer = new QueueConsumer(makeConfig(), store, makeSendFn({ status: 'ERROR', content: '', errorMessage: 'down' }));
@@ -770,7 +772,7 @@ describe('QueueConsumer content removal', () => {
   });
 
   it('keeps the content when the queue gives up, so the failure can be investigated', async () => {
-    const removal = vi.fn().mockResolvedValue(ok(undefined));
+    const removal = vi.fn<Removal>().mockResolvedValue(ok(undefined));
     const store = storeWith(removal);
 
     (store.dequeue as ReturnType<typeof vi.fn>).mockResolvedValue(ok([{ ...queued, sendAttempts: 1 }]));
@@ -782,7 +784,7 @@ describe('QueueConsumer content removal', () => {
   });
 
   it('keeps the content when SENT could not be saved (the message is delivered again)', async () => {
-    const removal = vi.fn().mockResolvedValue(ok(undefined));
+    const removal = vi.fn<Removal>().mockResolvedValue(ok(undefined));
     const store = storeWith(removal);
     (store.release as ReturnType<typeof vi.fn>).mockResolvedValue(fail('db down'));
 
@@ -793,7 +795,7 @@ describe('QueueConsumer content removal', () => {
   });
 
   it('raises an alert when the removal itself fails', async () => {
-    const removal = vi.fn().mockResolvedValue(fail('delete failed'));
+    const removal = vi.fn<Removal>().mockResolvedValue(fail('delete failed'));
     const store = storeWith(removal);
     const onError = vi.fn().mockResolvedValue(undefined);
 

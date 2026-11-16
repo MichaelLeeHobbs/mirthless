@@ -9,7 +9,7 @@ import {
   type HttpReceiverConfig,
 } from '../http-receiver.js';
 import type { RawMessage, DispatchResult } from '../../base.js';
-import type { Result } from '@galvaniflow/core-util';
+import { stderr, type Result } from '@galvaniflow/core-util';
 import { TEST_CERT_PEM, TEST_KEY_PEM } from '../../__fixtures__/tls-certs.js';
 
 // ----- Helpers -----
@@ -44,7 +44,7 @@ function makeDispatcher(
 
 /** Dispatcher that always returns a failed Result. */
 function failingDispatcher(): (raw: RawMessage) => Promise<Result<DispatchResult>> {
-  return async () => ({ ok: false as const, value: null, error: new Error('pipeline down') });
+  return async () => ({ ok: false as const, value: null, error: stderr('pipeline down') });
 }
 
 async function sendRequest(
@@ -59,7 +59,7 @@ async function sendRequest(
   const { method = 'POST', path = '/', body, headers = {} } = options;
   const response = await fetch(`http://127.0.0.1:${String(port)}${path}`, {
     method,
-    body,
+    ...(body !== undefined ? { body } : {}),
     // Fresh connection per request: a pooled keep-alive socket from a previous
     // test's (now stopped) server on the same port would otherwise be reused.
     headers: { connection: 'close', ...headers },

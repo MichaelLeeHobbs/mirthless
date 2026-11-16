@@ -3,7 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
-import type { Result } from '@galvaniflow/core-util';
+import { stderr, type Result } from '@galvaniflow/core-util';
 import type { DispatchResult, RawMessage } from '../base.js';
 import { QuarantineLedger, dispatchQuarantined, type LedgerStorage, type QuarantinedFile } from '../quarantine-ledger.js';
 import { makeMockLogger, type MockLogger } from '../__fixtures__/mock-logger.js';
@@ -183,7 +183,7 @@ describe('dispatchQuarantined', () => {
 
   it('leaves the file for the next poll when the pipeline did not take it', async () => {
     const { job, calls, log } = makeJob({
-      dispatcher: async () => ({ ok: false, value: null, error: new Error('queue full') }),
+      dispatcher: async () => ({ ok: false, value: null, error: stderr('queue full') }),
     });
     await dispatchQuarantined(job);
     expect(calls).toEqual(['read']);
