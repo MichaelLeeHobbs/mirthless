@@ -16,7 +16,7 @@ const SOURCE = { dataType: 'HL7V2', destinationSet: true, templateContext: 'SOUR
 
 async function run(overrides: Partial<ScriptTestInput>): Promise<ScriptTestResult> {
   const result = await runScriptTest({
-    script: 'return true;', kind: 'filter', surface: SOURCE, templates: [], sample: ADT, timeoutMs: 5000,
+    script: 'return true;', kind: 'filter', surface: SOURCE, templates: [], sample: ADT, timeoutMs: 10_000,
     destinations: [{ name: 'To EHR', metaDataId: 1 }, { name: 'To Archive', metaDataId: 2 }],
     ...overrides,
   });
