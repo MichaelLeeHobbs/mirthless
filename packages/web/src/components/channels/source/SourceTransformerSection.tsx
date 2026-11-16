@@ -19,6 +19,7 @@ import { createDefaultTransformerStep } from './types.js';
 import { TransformerStepEditor } from './TransformerStepEditor.js';
 import { earlierStepNames } from '../../editors/surface-state.js';
 import { DelimitedSettings } from './DelimitedSettings.js';
+import { useListKeys } from '../../../hooks/use-list-keys.js';
 
 /** The source transformer's saved Delimited settings, or none. */
 function delimitedSettings(inboundProperties: Readonly<Record<string, unknown>>): Record<string, unknown> {
@@ -53,9 +54,12 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
     onChange({ ...transformer, steps: updated });
   }, [transformer, onChange]);
 
+  const { keys, remove: removeKey, swap: swapKeys } = useListKeys(transformer.steps.length);
+
   const handleRemove = useCallback((index: number): void => {
+    removeKey(index);
     onChange({ ...transformer, steps: transformer.steps.filter((_, i) => i !== index) });
-  }, [transformer, onChange]);
+  }, [transformer, onChange, removeKey]);
 
   const handleMoveUp = useCallback((index: number): void => {
     if (index <= 0) return;
@@ -63,8 +67,9 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
     const temp = updated[index - 1]!;
     updated[index - 1] = updated[index]!;
     updated[index] = temp;
+    swapKeys(index - 1, index);
     onChange({ ...transformer, steps: updated });
-  }, [transformer, onChange]);
+  }, [transformer, onChange, swapKeys]);
 
   const handleMoveDown = useCallback((index: number): void => {
     if (index >= transformer.steps.length - 1) return;
@@ -72,8 +77,9 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
     const temp = updated[index + 1]!;
     updated[index + 1] = updated[index]!;
     updated[index] = temp;
+    swapKeys(index, index + 1);
     onChange({ ...transformer, steps: updated });
-  }, [transformer, onChange]);
+  }, [transformer, onChange, swapKeys]);
 
   return (
     <Accordion disableGutters>
@@ -101,7 +107,7 @@ export function SourceTransformerSection({ transformer, onChange }: SourceTransf
           <Box sx={{ mb: 2 }}>
             {transformer.steps.map((step, index) => (
               <TransformerStepEditor
-                key={index}
+                key={keys[index]}
                 earlierNames={earlierStepNames(transformer.steps, index)}
                 step={step}
                 index={index}

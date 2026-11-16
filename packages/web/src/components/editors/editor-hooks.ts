@@ -128,7 +128,10 @@ const replacing = new WeakSet<CodeEditor>();
  * Put text the host gave into the editor when it is not what the editor
  * holds. Replacing the model's value clears its undo history, so undo cannot
  * bring back the text of another list item or tab the editor showed before
- * (#183). Returns whether it replaced the text.
+ * (#183). Returns whether it replaced the text. Text equal to the editor's
+ * is not replaced, so a host that shows several documents in turn gives each
+ * its own editor (a React key per tab, template or list item): otherwise two
+ * documents with the same text would share one undo history (#228).
  */
 export function replaceExternalValue(editor: CodeEditor, value: string): boolean {
   if (sameText(editor.getValue(), value)) return false;

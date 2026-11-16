@@ -1,6 +1,6 @@
 // #228: the Global Scripts page with the script editor itself, on a fake
-// Monaco (fake-monaco.tsx). Switching tabs puts the other script into the one
-// editor, and that is not an edit.
+// Monaco (fake-monaco.tsx). Loading the scripts or switching tabs puts text
+// into the editor, and that is not an edit.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
@@ -45,7 +45,7 @@ function renderPage(): void {
 const save = (): HTMLButtonElement => screen.getByRole('button', { name: 'Save' });
 
 describe('GlobalScriptsPage editor', () => {
-  it('stays clean when switching tabs: no Save, no unsaved-changes prompt', () => {
+  it('stays clean when the scripts load and when switching tabs: no Save, no unsaved-changes prompt', () => {
     renderPage();
     fireEvent.click(screen.getByRole('tab', { name: 'Undeploy' }));
     expect(fakeEditor('Global undeploy script').getValue()).toBe('undeploy-src');
@@ -60,5 +60,19 @@ describe('GlobalScriptsPage editor', () => {
     act(() => { fakeEditor('Global undeploy script').type('undeploy-src // edited'); });
     expect(save().disabled).toBe(false);
     expect(blocker.armed).toBe(true);
+  });
+
+  // Two empty scripts: the editor's text did not change going between them, so
+  // it kept the first tab's undo history and Ctrl+Z wrote it into the second.
+  it('gives each tab its own undo history, even when two scripts are the same', () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: 'Preprocessor' }));
+    const pre = fakeEditor('Global preprocessor script');
+    act(() => { pre.type('logger.info(1);'); });
+    act(() => { pre.type(''); });
+    fireEvent.click(screen.getByRole('tab', { name: 'Postprocessor' }));
+    const post = fakeEditor('Global postprocessor script');
+    act(() => { post.undo(); });
+    expect(post.getValue()).toBe('');
   });
 });
