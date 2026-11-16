@@ -1,8 +1,9 @@
 # 12 — Connector Parity Gap Analysis (GalvaniFlow vs Mirth Connect / OIE 4.6.0)
 
-> **Status:** Draft for review · **Date:** 2026-07-14 · **Owner:** Michael Hobbs
+> **Status (2026-11): historical analysis.** Written 2026-07-14 and kept for its reasoning; its status claims are no longer kept current. What ships today, what is missing and the plan for each gap are in [What GalvaniFlow can do](../user/capabilities.md). Still in force: D-182.
+>
 > **Scope:** Connector feature parity only. Engine/pipeline/UI gaps are noted where they block a connector capability but are otherwise out of scope.
-> **Baselines compared:** GalvaniFlow `feature/real-e2e-testing` · Mirth reference source `reference/connect/` · OIE (Open Integration Engine) **4.6.0** at `C:\Users\mhobb\WebstormProjects\_temp\engine`.
+> **Baselines compared:** GalvaniFlow `feature/real-e2e-testing` · Mirth reference source `reference/connect/` · OIE (Open Integration Engine) **4.6.0**.
 
 ---
 
@@ -297,4 +298,4 @@ This matrix moved to the Mirth migration section of [What GalvaniFlow can do](..
 **GalvaniFlow forms:** `packages/web/src/components/channels/source/{ConnectorSettingsSection,connector-defaults}.tsx|ts`, `.../destinations/{DestinationConnectorSettings,connector-defaults}.tsx|ts`
 **Destination transformer flow:** `packages/engine/src/pipeline/message-processor.ts:535-545`
 **Mirth reference:** `reference/connect/server/src/com/mirth/connect/connectors/{tcp,http,file,jdbc,dimse,smtp,vm,js,ws,jms,doc}/**`, `reference/connect/core-server-plugins/.../file/filesystems/*Connection.java`, `reference/connect/.../core/file/FileScheme.java`, `.../DriverInfo.java`
-**OIE 4.6.0:** `C:\Users\mhobb\WebstormProjects\_temp\engine` (Gradle, `server/src/main/java/com/mirth/connect/connectors/**`)
+**OIE 4.6.0:** a local checkout of the OIE 4.6.0 source (Gradle, `server/src/main/java/com/mirth/connect/connectors/**`)
