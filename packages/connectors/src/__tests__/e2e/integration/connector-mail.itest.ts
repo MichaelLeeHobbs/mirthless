@@ -6,25 +6,18 @@
 // A message pushed into A is emailed, picked up over IMAP by B, and delivered.
 // Runs only when SMTP_TEST_HOST is set (docker compose --profile test up mail-test).
 
-import { it, expect, afterEach } from 'vitest';
+import { it, expect, afterEach, vi } from 'vitest';
 import nodemailer from 'nodemailer';
 import {
-  TcpMllpReceiver,
   SmtpDispatcher,
   EmailReceiver,
   clearChannelRegistry,
 } from '../../../index.js';
 import { deployChannel, teardownAll, CaptureDestination, type DeployedChannel } from '../support/e2e-harness.js';
-import { sendMllp } from '../support/tcp-helpers.js';
+import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { describeMail, requireMail } from './gates.js';
 
 const TCP_PORT = 17751;
-
-async function waitFor(check: () => boolean, ms: number): Promise<void> {
-  for (let i = 0; i < ms / 50 && !check(); i++) {
-    await new Promise((r) => setTimeout(r, 50));
-  }
-}
 
 let deployed: DeployedChannel[] = [];
 afterEach(async () => {
@@ -66,7 +59,7 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
     const channelA = await deployChannel({
       channelId: '00000000-0000-0000-0000-connmail000a',
       dataType: 'RAW',
-      source: new TcpMllpReceiver({ host: '127.0.0.1', port: TCP_PORT, maxConnections: 10 }),
+      source: mllpSource(TCP_PORT, { maxConnections: 10 }),
       destinations: [{
         metaDataId: 1,
         name: 'SMTP Out',
@@ -126,8 +119,7 @@ describeMail('SMTP + IMAP connector cascade (real GreenMail)', () => {
 
     const firstSink = new CaptureDestination();
     const first = await deployReceiver(1, firstSink);
-    await waitFor(() => firstSink.received.length > 0, 15_000);
-    expect(firstSink.received).toHaveLength(1);
+    await vi.waitFor(() => { expect(firstSink.received).toHaveLength(1); }, { timeout: 15_000, interval: 50 });
     await first.teardown();
     deployed = deployed.filter((c) => c !== first);
 

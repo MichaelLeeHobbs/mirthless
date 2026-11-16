@@ -6,9 +6,9 @@
 // Runs only when DATABASE_URL points at a *_test database.
 
 import { it, expect, beforeAll, afterAll } from 'vitest';
-import { ConnectionPool, TcpMllpReceiver, DatabaseDispatcher, clearChannelRegistry } from '../../../index.js';
+import { ConnectionPool, DatabaseDispatcher, clearChannelRegistry } from '../../../index.js';
 import { deployChannel, teardownAll } from '../support/e2e-harness.js';
-import { sendMllp } from '../support/tcp-helpers.js';
+import { mllpSource, sendMllp } from '../support/tcp-helpers.js';
 import { describeDb, requireDb } from './gates.js';
 
 const TABLE = 'e2e_db_dest';
@@ -47,7 +47,7 @@ describeDb('Database destination connector (real Postgres)', () => {
     const channel = await deployChannel({
       channelId: '00000000-0000-0000-0000-conndb000001',
       dataType: 'RAW',
-      source: new TcpMllpReceiver({ host: '127.0.0.1', port: PORT, maxConnections: 10 }),
+      source: mllpSource(PORT, { maxConnections: 10 }),
       transformer: "return String(msg) + '::db';",
       destinations: [{ metaDataId: 1, name: 'DB Out', connector: dispatcher }],
     });

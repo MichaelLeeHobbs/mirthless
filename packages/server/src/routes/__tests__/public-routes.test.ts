@@ -39,7 +39,7 @@ interface RouteLayer {
 
 /** The routes a router defines itself, under `prefix`. */
 function routesOf(router: Router, prefix: string): readonly ApiRoute[] {
-  return (router.stack as readonly RouteLayer[]).flatMap((layer) => {
+  return (router.stack as unknown as readonly RouteLayer[]).flatMap((layer) => {
     const route = layer.route;
     if (!route) return [];
     const paths = typeof route.path === 'string' ? [route.path] : route.path;
@@ -94,7 +94,7 @@ beforeAll(async () => {
     apiRateLimiter: (await import('../../middleware/rate-limit.middleware.js')).apiRateLimiter,
     index,
   };
-  await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
+  await new Promise<void>((resolve) => { server = app.listen(0, '127.0.0.1', () => { resolve(); }); });
   base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
 }, 60_000); // Loads the whole app and every router; under a full parallel run that outlasts the 10 s hook default.
 

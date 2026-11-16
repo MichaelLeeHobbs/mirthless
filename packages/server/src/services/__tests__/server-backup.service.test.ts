@@ -98,6 +98,11 @@ const {
 
 // ----- Fixtures -----
 
+/** T with every array and object inside it readonly, as an `as const` fixture is. */
+type DeepReadonly<T> = T extends ReadonlyArray<infer U>
+  ? ReadonlyArray<DeepReadonly<U>>
+  : T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]> } : T;
+
 function okResult<T>(value: T): { ok: true; value: T; error: null } {
   return { ok: true, value, error: null };
 }
@@ -680,14 +685,15 @@ describe('ServerBackupService', () => {
   // Every section the shared restore helpers serve, pinned row by row: counts,
   // error text, and the exact values written for each collision mode.
   describe('restore sections', () => {
+    /** The case tables below are `as const`, so their sections arrive deeply readonly. */
     async function restoreSection(
-      overrides: Partial<ServerBackup>,
+      overrides: { readonly [K in keyof ServerBackup]?: DeepReadonly<ServerBackup[K]> },
       mode: 'SKIP' | 'OVERWRITE',
       section: string,
     ): Promise<RestoreSectionResult> {
       mockChannelImportChannels.mockResolvedValue(okResult({ created: 0, updated: 0, skipped: 0, errors: [] }));
       mockGlobalScriptUpdate.mockResolvedValue(okResult({ deploy: '', undeploy: '', preprocessor: '', postprocessor: '' }));
-      const result = await ServerBackupService.restoreBackup(makeMinimalBackup(overrides), mode);
+      const result = await ServerBackupService.restoreBackup(makeMinimalBackup(overrides as Partial<ServerBackup>), mode);
       if (!result.ok) throw new Error('restore failed');
       const found = result.value.sections.find((s) => s.section === section);
       if (!found) throw new Error(`section ${section} missing`);

@@ -44,7 +44,7 @@ describeIntegration('DataSourceService (real Postgres)', () => {
   async function makeSource(readOnly: boolean, overrides: Record<string, unknown> = {}): Promise<string> {
     const name = `itest-ds-${Math.random().toString(36).slice(2)}`;
     const summary = unwrap(await mods.DataSourceService.create({
-      name, description: '', driver: 'postgres', ...dbParts(), readOnly,
+      name, description: '', driver: 'postgres', ...dbParts(), readOnly, tls: false,
       maxConnections: 2, statementTimeoutMs: 10_000, maxRows: 10_000, ...overrides,
     }));
     created.push(summary.id);

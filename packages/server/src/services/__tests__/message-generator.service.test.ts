@@ -3,6 +3,7 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
+import { generateMessagesInputSchema } from '@galvaniflow/core-models';
 import { MessageGeneratorService } from '../message-generator.service.js';
 
 describe('MessageGeneratorService.generate', () => {
@@ -46,10 +47,10 @@ describe('MessageGeneratorService.generate', () => {
     }
   });
 
-  it('defaults count to 1 when not provided', () => {
-    const result = MessageGeneratorService.generate({
+  it('defaults count to 1 when the request leaves it out', () => {
+    const result = MessageGeneratorService.generate(generateMessagesInputSchema.parse({
       messageType: 'ADT_A01',
-    });
+    }));
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.messages).toHaveLength(1);

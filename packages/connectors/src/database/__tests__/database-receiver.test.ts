@@ -7,7 +7,7 @@ import { DatabaseReceiver, UPDATE_MODE, ROW_FORMAT, appendLockClause, type Datab
 import { ConnectionPool } from '../connection-pool.js';
 import { makeMockLogger } from '../../__fixtures__/mock-logger.js';
 import type { RawMessage, DispatchResult } from '../../base.js';
-import type { Result } from '@galvaniflow/core-util';
+import { stderr, type Result } from '@galvaniflow/core-util';
 
 // ----- Helpers -----
 
@@ -43,7 +43,7 @@ function makeFailDispatcher(): (raw: RawMessage) => Promise<Result<DispatchResul
   return async () => ({
     ok: false as const,
     value: null,
-    error: { name: 'Error', code: 'DISPATCH_FAILED', message: 'dispatch failed' },
+    error: stderr({ name: 'Error', code: 'DISPATCH_FAILED', message: 'dispatch failed' }),
   });
 }
 

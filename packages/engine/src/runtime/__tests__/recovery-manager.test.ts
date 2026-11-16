@@ -158,6 +158,7 @@ describe('RecoveryManager', () => {
       getUnprocessedMessages: vi.fn().mockResolvedValue(ok(msgs)),
       getConnectorMessages: vi.fn().mockResolvedValue(fail('db error')),
       markProcessed: vi.fn().mockResolvedValue(ok(undefined)),
+      finishSource: vi.fn().mockResolvedValue(ok(undefined)),
     };
     const reprocess = vi.fn().mockResolvedValue(ok(undefined));
     const redispatch = vi.fn().mockResolvedValue(ok(undefined));
@@ -203,6 +204,7 @@ describe('RecoveryManager', () => {
       getUnprocessedMessages: vi.fn().mockResolvedValue(fail('db down')),
       getConnectorMessages: vi.fn(),
       markProcessed: vi.fn(),
+      finishSource: vi.fn(),
     };
     const reprocess = vi.fn();
     const redispatch = vi.fn();

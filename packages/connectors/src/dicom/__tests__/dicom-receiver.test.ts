@@ -2,8 +2,8 @@
 // DICOM Receiver Tests
 // ===========================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Result } from '@galvaniflow/core-util';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { stderr, type Result } from '@galvaniflow/core-util';
 import type { MessageDispatcher, RawMessage, DispatchResult } from '../../base.js';
 import {
   DicomReceiver,
@@ -68,8 +68,8 @@ interface MockReceiver extends DcmtkReceiver {
   fileHandler: ((data: DcmtkFileData) => void) | null;
   assocHandler: ((data: DcmtkAssociationData) => void) | null;
   errorHandler: ((data: { readonly error: Error }) => void) | null;
-  start: ReturnType<typeof vi.fn>;
-  stop: ReturnType<typeof vi.fn>;
+  start: Mock<DcmtkReceiver['start']>;
+  stop: Mock<DcmtkReceiver['stop']>;
 }
 
 function makeMockReceiver(): MockReceiver {
@@ -82,8 +82,8 @@ function makeMockReceiver(): MockReceiver {
     onEvent(event, listener) {
       if (event === 'error') mock.errorHandler = listener;
     },
-    start: vi.fn(async () => ({ ok: true as const, value: undefined as void, error: null })),
-    stop: vi.fn(async () => {}),
+    start: vi.fn<DcmtkReceiver['start']>(async () => ({ ok: true as const, value: undefined as void, error: null })),
+    stop: vi.fn<DcmtkReceiver['stop']>(async () => {}),
   };
   return mock;
 }
@@ -93,7 +93,7 @@ function makeMockFactory(mock: MockReceiver): ReceiverFactory {
 }
 
 function makeFailingFactory(message: string): ReceiverFactory {
-  return () => ({ ok: false as const, value: null, error: new Error(message) });
+  return () => ({ ok: false as const, value: null, error: stderr(message) });
 }
 
 function makeDispatcher(response?: Result<DispatchResult>): MessageDispatcher {
@@ -197,7 +197,7 @@ describe('DicomReceiver.onStart', () => {
 
   it('fails when underlying start fails', async () => {
     const mock = makeMockReceiver();
-    mock.start.mockResolvedValue({ ok: false, value: null, error: new Error('Start failed') });
+    mock.start.mockResolvedValue({ ok: false, value: null, error: stderr('Start failed') });
     const receiver = new DicomReceiver(makeConfig(), makeMockFactory(mock));
     receiver.setDispatcher(makeDispatcher());
     const result = await receiver.onStart();
@@ -287,7 +287,7 @@ describe('DicomReceiver post-action', () => {
     const failResult: Result<DispatchResult> = {
       ok: false,
       value: null,
-      error: new Error('Dispatch failed'),
+      error: stderr('Dispatch failed'),
     };
     const dispatcher = makeDispatcher(failResult);
     const receiver = new DicomReceiver(

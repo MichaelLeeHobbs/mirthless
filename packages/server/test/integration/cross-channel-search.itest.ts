@@ -8,6 +8,7 @@
 
 import { beforeAll, afterAll, afterEach, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import type { MessageStatus } from '@galvaniflow/core-models';
 import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
 
 describeIntegration('CrossChannelSearchService (real Postgres)', () => {
@@ -32,7 +33,7 @@ describeIntegration('CrossChannelSearchService (real Postgres)', () => {
   /** Insert a message with the given per-connector statuses. metaDataId 0 = source. */
   async function seedMessage(
     channelId: string,
-    connectors: ReadonlyArray<{ metaDataId: number; name: string; status: string }>,
+    connectors: ReadonlyArray<{ metaDataId: number; name: string; status: MessageStatus }>,
   ): Promise<number> {
     const { db, schema, MessageService } = mods;
     const [row] = await db
