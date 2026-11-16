@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 190" width="800" height="190" role="img" aria-labelledby="t">
+  <title id="t">GalvaniGraph</title>
+  <defs>
+    <linearGradient id="gg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <linearGradient id="pulse" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38bdf8" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#2dd4bf" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <text x="400" y="108" text-anchor="middle" textLength="740" lengthAdjust="spacingAndGlyphs"
+        font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="104" font-weight="800" fill="#e6eaf3"><tspan fill="url(#gg)">G</tspan>alvani<tspan fill="url(#gg)">G</tspan>raph</text>
+  <path d="M30 150 H352 l10 -20 l14 38 l12 -50 l12 44 l8 -12 H770" fill="none" stroke="url(#pulse)"
+        stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="400" y="182" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Consolas, Menlo, monospace"
+        font-size="15" letter-spacing="4" fill="#98a4ba">HEALTHCARE INTEGRATION ENGINE</text>
+</svg>
