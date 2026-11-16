@@ -4,6 +4,8 @@
 // HTTP adapter for channel deployment operations.
 
 import type { Request, Response } from 'express';
+import { AUDIT_ACTION } from '@galvanigraph/core-models';
+import { recordReadOrRefuse } from '../lib/audited-read.js';
 import { DeploymentService } from '../services/deployment.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
@@ -168,6 +170,11 @@ export class DeploymentController {
     }
 
     logger.info({ channelId: id, messageId: result.value.messageId }, 'Message sent');
+    // The response carries the processed message: recorded before it is sent (D-312).
+    const recorded = await recordReadOrRefuse(req, res, {
+      action: AUDIT_ACTION.MESSAGE_SENT, channelId: id, attributes: { messageId: result.value.messageId },
+    });
+    if (!recorded) return;
     res.json({ success: true, data: result.value });
   }
 }

@@ -20,6 +20,9 @@ vi.mock('../../lib/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+const recordReadOrRefuse = vi.fn(async () => true);
+vi.mock('../../lib/audited-read.js', () => ({ recordReadOrRefuse }));
+
 const { EngineManager: RealEngineManager } = await import('../../engine.js');
 const { DeploymentController } = await import('../deployment.controller.js');
 
@@ -44,6 +47,7 @@ function deploy(state: string, processMessage: ReturnType<typeof vi.fn>): void {
 
 beforeEach(() => {
   engine = new RealEngineManager();
+  recordReadOrRefuse.mockClear();
 });
 
 describe('DeploymentController.sendMessage', () => {
@@ -58,6 +62,17 @@ describe('DeploymentController.sendMessage', () => {
     expect(processMessage).toHaveBeenCalledWith('MSH|raw');
     expect(res.status).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ success: true, data: outcome });
+    expect(recordReadOrRefuse).toHaveBeenCalledWith(expect.anything(), res, { action: 'MESSAGE_SENT', channelId: CHANNEL_ID, attributes: { messageId: 42 } });
+  });
+
+  it('sends no response when it cannot be recorded', async () => {
+    deploy('STARTED', vi.fn().mockResolvedValue({ ok: true, value: { messageId: 43 }, error: null }));
+    recordReadOrRefuse.mockResolvedValueOnce(false);
+    const res = makeRes();
+
+    await DeploymentController.sendMessage(makeReq(), res);
+
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('answers 404 NOT_FOUND when the channel is not deployed', async () => {

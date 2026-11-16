@@ -11,6 +11,7 @@ import type { Request, Response } from 'express';
 import { AuditService } from '../services/audit.service.js';
 import { AuditDedupe } from './audit-dedupe.js';
 import { errorResponse, mapErrorToStatus } from './controller-helpers.js';
+import { emitAuditEvent } from './event-emitter.js';
 
 const dedupe = new AuditDedupe();
 
@@ -25,6 +26,31 @@ export interface AuditedRead {
    * every time.
    */
   readonly dedupe?: { readonly key: string; readonly ids: readonly (string | number)[] };
+}
+
+/**
+ * Record `read` for the signed-in caller, best effort: the request goes on
+ * whether or not the row is written, and a lost row is counted for system
+ * info (D-312). For reads the plan does not make fail-closed: the maps,
+ * collections, the server log, unmasked secrets and Events page searches.
+ */
+export function recordReadBestEffort(req: Request, read: AuditedRead): void {
+  const userId = req.user?.id ?? null;
+  let attributes = read.attributes;
+  let key: string | undefined;
+  let ids: readonly (string | number)[] = [];
+  if (read.dedupe !== undefined) {
+    key = `${userId ?? '-'}|${read.dedupe.key}`;
+    const toRecord = dedupe.idsToRecord(key, read.dedupe.ids, Date.now());
+    if (toRecord === null) return;
+    ids = toRecord;
+    if (ids.length > 0) attributes = { ...attributes, ids };
+  }
+  emitAuditEvent({
+    action: read.action, outcome: 'SUCCESS', userId,
+    channelId: read.channelId ?? null, ipAddress: req.ip ?? null, attributes,
+  });
+  if (key !== undefined) dedupe.remember(key, ids, Date.now());
 }
 
 /**

@@ -24,6 +24,23 @@ export const AUDIT_ACTION = {
   ATTACHMENT_DOWNLOADED: 'ATTACHMENT_DOWNLOADED',
   /** A search across channels (the Traffic page). */
   MESSAGES_SEARCHED_ALL_CHANNELS: 'MESSAGES_SEARCHED_ALL_CHANNELS',
+  /** The response of a message sent into a channel from the UI. Fail-closed. */
+  MESSAGE_SENT: 'MESSAGE_SENT',
+  /** A server backup download, with the file's SHA-256. Fail-closed. */
+  SERVER_BACKUP_EXPORTED: 'SERVER_BACKUP_EXPORTED',
+  /** A script run against a sample; fail-closed when it returned a result. */
+  SCRIPT_TEST_RUN: 'SCRIPT_TEST_RUN',
+  // Best-effort reads: a lost record does not refuse the request, and is counted.
+  CONFIG_MAP_READ: 'CONFIG_MAP_READ',
+  GLOBAL_MAP_READ: 'GLOBAL_MAP_READ',
+  COLLECTION_RECORDS_READ: 'COLLECTION_RECORDS_READ',
+  SERVER_LOG_READ: 'SERVER_LOG_READ',
+  /** A channel or revision read with connector secrets unmasked (channels:write). */
+  CHANNEL_SECRETS_READ: 'CHANNEL_SECRETS_READ',
+  EVENTS_SEARCHED: 'EVENTS_SEARCHED',
+  EVENTS_EXPORTED: 'EVENTS_EXPORTED',
+  /** An alert email was sent: who to, never what it said. */
+  ALERT_SENT: 'ALERT_SENT',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];

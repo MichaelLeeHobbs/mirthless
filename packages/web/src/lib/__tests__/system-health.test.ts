@@ -12,7 +12,7 @@ function info(overrides: { [K in keyof SystemInfo]?: Partial<SystemInfo[K]> } = 
     memory: { rss: 512 * MB, heapUsed: 200 * MB, heapTotal: 300 * MB, heapLimit: 4 * GB, external: 12 * MB, ...overrides.memory },
     engine: { deployed: 4, started: 4, stopped: 0, paused: 0, ...overrides.engine },
     database: { connected: true, latencyMs: 3.2, version: '17.2', sizeBytes: 2 * GB, ...overrides.database },
-    audit: { rowsOutsideMonths: 0, ...overrides.audit },
+    audit: { rowsOutsideMonths: 0, lostRecords: 0, ...overrides.audit },
   };
 }
 
@@ -83,6 +83,11 @@ describe('healthCells', () => {
     const c = cell(info({ audit: { rowsOutsideMonths: 3 } }), 'database');
     expect(c).toMatchObject({ level: 'warning', word: 'Attention' });
     expect(c.summary).toBe('3 audit rows outside a monthly partition: see the audit log runbook');
+  });
+
+  it('warns when best-effort audit records were lost', () => {
+    expect(cell(info({ audit: { lostRecords: 3 } }), 'database')).toMatchObject({ level: 'warning', word: 'Attention', summary: '3 audit records could not be written since the server started: see the server log' });
+    expect(cell(info({ audit: { lostRecords: 1 } }), 'database').summary).toMatch(/^1 audit record could/);
   });
 
   it('says one audit row in the singular, and stays healthy when the count is unknown', () => {

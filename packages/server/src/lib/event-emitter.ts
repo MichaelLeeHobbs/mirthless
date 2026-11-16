@@ -37,11 +37,20 @@ export function emitEvent(input: CreateEventInput): void {
 export function emitAuditEvent(input: AuditRecordInput): void {
   AuditService.record(input).then((result) => {
     if (!result.ok) {
+      lostAuditRecords += 1;
       logger.warn({ errMsg: result.error.message, action: input.action }, 'Failed to write audit record');
     }
   }).catch((err: unknown) => {
+    lostAuditRecords += 1;
     logger.warn({ errMsg: err instanceof Error ? err.message : String(err), action: input.action }, 'Failed to write audit record');
   });
+}
+
+let lostAuditRecords = 0;
+
+/** Best-effort audit records this process failed to write since it started. System info shows it. */
+export function lostAuditRecordCount(): number {
+  return lostAuditRecords;
 }
 
 /**

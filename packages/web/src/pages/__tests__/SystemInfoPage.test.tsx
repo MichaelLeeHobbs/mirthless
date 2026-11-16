@@ -23,7 +23,7 @@ const INFO = {
   memory: { rss: 512 * MB, heapUsed: 214 * MB, heapTotal: 300 * MB, heapLimit: 4 * GB, external: 12 * MB },
   engine: { deployed: 6, started: 4, stopped: 1, paused: 1 },
   database: { connected: true, latencyMs: 2.4, version: '17.2', sizeBytes: 3 * GB },
-  audit: { rowsOutsideMonths: 0 },
+  audit: { rowsOutsideMonths: 0, lostRecords: 0 },
 };
 
 function query(overrides: Record<string, unknown> = {}): Record<string, unknown> {

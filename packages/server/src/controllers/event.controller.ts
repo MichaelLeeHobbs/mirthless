@@ -4,10 +4,11 @@
 // Handles HTTP requests for event (audit log) operations.
 
 import type { Request, Response } from 'express';
-import type { EventListQuery, EventIdParam, PurgeEventsQuery } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, type EventListQuery, type EventIdParam, type PurgeEventsQuery } from '@galvanigraph/core-models';
 import { EventService } from '../services/event.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
+import { recordReadBestEffort } from '../lib/audited-read.js';
 
 export class EventController {
   static async list(req: Request, res: Response): Promise<void> {
@@ -20,6 +21,11 @@ export class EventController {
       return;
     }
 
+    // A search of the events table: recorded, best effort (D-312).
+    recordReadBestEffort(req, {
+      action: AUDIT_ACTION.EVENTS_SEARCHED, attributes: { query, total: result.value.pagination.total },
+      dedupe: { key: `events|${JSON.stringify(query)}`, ids: result.value.data.map((e) => e.id) },
+    });
     res.json({ success: true, data: result.value });
   }
 

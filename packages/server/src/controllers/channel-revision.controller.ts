@@ -4,6 +4,8 @@
 // Handles HTTP requests for channel revision history.
 
 import type { Request, Response } from 'express';
+import { AUDIT_ACTION } from '@galvanigraph/core-models';
+import { recordReadBestEffort } from '../lib/audited-read.js';
 import { ChannelRevisionService } from '../services/channel-revision.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
@@ -41,6 +43,12 @@ export class ChannelRevisionController {
     const data = canWrite
       ? result.value
       : { ...result.value, snapshot: redactChannelDetail(result.value.snapshot) };
+    if (canWrite) {
+      recordReadBestEffort(req, {
+        action: AUDIT_ACTION.CHANNEL_SECRETS_READ, channelId, attributes: { revision: rev },
+        dedupe: { key: `channel-secrets|${channelId}|${String(rev)}`, ids: [rev] },
+      });
+    }
 
     res.json({ success: true, data });
   }

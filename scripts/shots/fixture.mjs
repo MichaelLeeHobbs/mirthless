@@ -206,7 +206,7 @@ const systemInfo = {
   memory: { rss: 512 * 2 ** 20, heapUsed: 214 * 2 ** 20, heapTotal: 300 * 2 ** 20, heapLimit: 4144 * 2 ** 20, external: 12 * 2 ** 20 },
   engine: { deployed: 6, started: 4, stopped: 1, paused: 1 },
   database: { connected: true, latencyMs: 2.4, version: '17.2', sizeBytes: 38.6 * 2 ** 30 },
-  audit: { rowsOutsideMonths: 0 },
+  audit: { rowsOutsideMonths: 0, lostRecords: 0 },
 };
 
 const logs = [

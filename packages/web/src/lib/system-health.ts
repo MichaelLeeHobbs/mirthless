@@ -72,6 +72,10 @@ function databaseCell(db: SystemInfo['database'], audit: SystemInfo['audit']): H
     const rows = stray === 1 ? '1 audit row' : stray >= 10_000 ? '10,000+ audit rows' : `${String(stray)} audit rows`;
     return { key: 'database', label: 'Database', level: 'warning', word: 'Attention', summary: `${rows} outside a monthly partition: see the audit log runbook` };
   }
+  if (audit.lostRecords > 0) {
+    const lost = audit.lostRecords === 1 ? '1 audit record' : `${String(audit.lostRecords)} audit records`;
+    return { key: 'database', label: 'Database', level: 'warning', word: 'Attention', summary: `${lost} could not be written since the server started: see the server log` };
+  }
   const version = db.version ? `PostgreSQL ${db.version}` : 'PostgreSQL';
   const latency = db.latencyMs === null ? '' : ` · ${db.latencyMs} ms`;
   const slow = db.latencyMs !== null && db.latencyMs >= SLOW_DB_MS;

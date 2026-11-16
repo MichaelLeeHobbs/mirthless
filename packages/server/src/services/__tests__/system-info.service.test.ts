@@ -10,6 +10,8 @@ const mockExecute = vi.fn();
 const mockGetEngineStats = vi.fn();
 const mockGetMemoryStats = vi.fn();
 
+const lostAuditRecordCount = vi.fn(() => 0);
+vi.mock('../../lib/event-emitter.js', () => ({ lostAuditRecordCount }));
 vi.mock('../../lib/db.js', () => ({ db: { execute: (...args: unknown[]) => mockExecute(...args) } }));
 
 vi.mock('../health.service.js', () => ({
@@ -68,7 +70,7 @@ describe('SystemInfoService.getInfo', () => {
     mockExecute.mockRejectedValue(new Error('ECONNREFUSED'));
     const { value } = await getInfo();
     expect(value.database).toEqual({ connected: false, latencyMs: null, version: null, sizeBytes: null });
-    expect(value.audit).toEqual({ rowsOutsideMonths: null });
+    expect(value.audit).toEqual({ rowsOutsideMonths: null, lostRecords: 0 });
   });
 
   it('counts audit rows that landed in the DEFAULT partition, outside every month', async () => {
@@ -76,7 +78,13 @@ describe('SystemInfoService.getInfo', () => {
       JSON.stringify(query).includes('audit_log_default') ? { rows: [{ n: 3 }] } : { rows: [{ version: '17.2', size: '1' }] },
     ));
     const { value } = await getInfo();
-    expect(value.audit).toEqual({ rowsOutsideMonths: 3 });
+    expect(value.audit).toEqual({ rowsOutsideMonths: 3, lostRecords: 0 });
+  });
+
+  it('reports how many best-effort audit records this process lost', async () => {
+    lostAuditRecordCount.mockReturnValueOnce(4);
+    const { value } = await getInfo();
+    expect(value.audit.lostRecords).toBe(4);
   });
 });
 
