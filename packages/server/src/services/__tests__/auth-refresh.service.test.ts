@@ -1,21 +1,20 @@
 // ===========================================
 // Auth Service — refreshSession re-validation (finding 10)
 // ===========================================
+// The refresh consumes its session with one DELETE ... RETURNING, then checks
+// the user. The single-use guarantee under concurrency is proven against real
+// Postgres in test/integration/auth-concurrency.itest.ts.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-let selectResponses: unknown[] = [];
-let selectIndex = 0;
+let consumed: unknown[] = [];
+let userRows: unknown[] = [];
 
-const mockSelectWhere = vi.fn(() => {
-  const v = selectResponses[selectIndex];
-  selectIndex++;
-  return Promise.resolve(v ?? []);
-});
+const mockSelectWhere = vi.fn(() => Promise.resolve(userRows));
 const mockSelect = vi.fn(() => ({ from: () => ({ where: mockSelectWhere }) }));
 
-const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
-const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }));
+const mockDeleteReturning = vi.fn(() => Promise.resolve(consumed));
+const mockDelete = vi.fn(() => ({ where: () => ({ returning: mockDeleteReturning }) }));
 
 const mockInsertReturning = vi.fn().mockResolvedValue([{ id: 'new-session' }]);
 const mockInsert = vi.fn(() => ({ values: () => ({ returning: mockInsertReturning }) }));
@@ -33,16 +32,12 @@ vi.mock('../../lib/jwt.js', () => ({
 
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn() }));
 
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn((_c: unknown, v: unknown) => ({ type: 'eq', v })),
-}));
-
 const { AuthService } = await import('../auth.service.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
-  selectResponses = [];
-  selectIndex = 0;
+  consumed = [];
+  userRows = [];
   mockInsertReturning.mockResolvedValue([{ id: 'new-session' }]);
 });
 
@@ -50,36 +45,29 @@ const future = new Date(Date.now() + 60_000);
 
 describe('AuthService.refreshSession', () => {
   it('rotates tokens when the session and user are valid + enabled', async () => {
-    selectResponses = [
-      [{ id: 'sess-1', userId: 'user-1', expiresAt: future }], // session lookup
-      [{ id: 'user-1', enabled: true }],                        // user re-validation
-    ];
+    consumed = [{ userId: 'user-1', expiresAt: future }];
+    userRows = [{ id: 'user-1', enabled: true }];
 
     const result = await AuthService.refreshSession('some-token');
 
     expect(result.ok).toBe(true);
-    expect(mockDeleteWhere).toHaveBeenCalled(); // old session rotated out
-    expect(mockInsert).toHaveBeenCalled();       // new session created
+    expect(mockDeleteReturning).toHaveBeenCalled(); // old session consumed
+    expect(mockInsert).toHaveBeenCalled();          // new session created
   });
 
-  it('rejects and drops the session when the user is disabled', async () => {
-    selectResponses = [
-      [{ id: 'sess-1', userId: 'user-1', expiresAt: future }],
-      [{ id: 'user-1', enabled: false }],
-    ];
+  it('rejects when the user is disabled, after consuming the session', async () => {
+    consumed = [{ userId: 'user-1', expiresAt: future }];
+    userRows = [{ id: 'user-1', enabled: false }];
 
     const result = await AuthService.refreshSession('some-token');
 
     expect(result.ok).toBe(false);
-    expect(mockDeleteWhere).toHaveBeenCalled(); // disabled user's session removed
+    expect(mockDeleteReturning).toHaveBeenCalled();
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
   it('rejects when the user no longer exists', async () => {
-    selectResponses = [
-      [{ id: 'sess-1', userId: 'user-1', expiresAt: future }],
-      [], // user gone
-    ];
+    consumed = [{ userId: 'user-1', expiresAt: future }];
 
     const result = await AuthService.refreshSession('some-token');
 
@@ -87,11 +75,20 @@ describe('AuthService.refreshSession', () => {
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
-  it('rejects when no matching session exists', async () => {
-    selectResponses = [[]];
+  it('rejects when no session was consumed (unknown or already used token)', async () => {
+    const result = await AuthService.refreshSession('some-token');
+
+    expect(result.ok).toBe(false);
+    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects an expired session', async () => {
+    consumed = [{ userId: 'user-1', expiresAt: new Date(Date.now() - 1000) }];
 
     const result = await AuthService.refreshSession('some-token');
 
     expect(result.ok).toBe(false);
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 });

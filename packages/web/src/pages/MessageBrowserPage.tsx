@@ -62,8 +62,9 @@ export function MessageBrowserPage(): ReactNode {
   const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null);
   const { notify } = useNotification();
   const { has } = usePermissions();
-  const canReprocess = has(PERMISSION.CHANNELS_DEPLOY);
-  const canDelete = has(PERMISSION.CHANNELS_DELETE);
+  // The same permissions the server checks on the reprocess and delete routes.
+  const canReprocess = has(PERMISSION.MESSAGES_REPROCESS);
+  const canDelete = has(PERMISSION.MESSAGES_DELETE);
   const reprocessMutation = useReprocessMessage();
   const bulkDeleteMutation = useBulkDeleteMessages();
   const { exportMessages, isExporting } = useMessageExport();
@@ -211,7 +212,7 @@ export function MessageBrowserPage(): ReactNode {
         </Menu>
         {selectedMessageId !== null ? (
           <>
-            <Tooltip title={canReprocess ? '' : 'Requires channels:deploy permission'}>
+            <Tooltip title={canReprocess ? '' : 'Requires messages:reprocess permission'}>
               <span>
                 <Button
                   variant="outlined"
@@ -223,7 +224,7 @@ export function MessageBrowserPage(): ReactNode {
                 </Button>
               </span>
             </Tooltip>
-            <Tooltip title={canDelete ? '' : 'Requires channels:delete permission'}>
+            <Tooltip title={canDelete ? '' : 'Requires messages:delete permission'}>
               <span>
                 <Button
                   variant="outlined"
