@@ -55,6 +55,13 @@ describe('runScriptTestIsolated', () => {
     expect(result.logs).toEqual([{ level: 'INFO', message: 'table:codes' }]);
   });
 
+  it("passes a reader's failure back to the script as an error it can catch", async () => {
+    const getResource = vi.fn(async () => { throw new Error('resource store is down'); });
+    const result = await run({ kind: 'script', script: "try { await getResource('codes'); } catch (e) { logger.info('caught: ' + (e as Error).message); }" }, { getResource });
+    expect(result.outcome).toBe('completed');
+    expect(result.logs).toEqual([{ level: 'INFO', message: 'caught: resource store is down' }]);
+  });
+
   it('refuses a read the caller did not provide, as a main-thread test run does', async () => {
     const result = await run({ kind: 'script', script: "await getResource('codes');" });
     expect(result.outcome).toBe('error');

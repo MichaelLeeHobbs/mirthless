@@ -34,12 +34,12 @@ interface Hl7MessageProxy {
   getSegmentString(name: string, index?: number): string | undefined;
 }
 
-/** Logger for sandbox scripts. */
+/** Logger for sandbox scripts. Any value is logged as text (String(value)). */
 interface SandboxLogger {
-  info(message: string): void;
-  warn(message: string): void;
-  error(message: string): void;
-  debug(message: string): void;
+  info(message: unknown): void;
+  warn(message: unknown): void;
+  error(message: unknown): void;
+  debug(message: unknown): void;
 }
 
 // ----- Global Variables -----
@@ -57,8 +57,12 @@ declare var destinationSet: {
   contains(destination: string | number): boolean;
   getConnectorNames(): string[];
 };
-/** Original inbound raw data string. */
+/** Original inbound raw data string. Empty in deploy and undeploy scripts. */
 declare var rawData: string;
+/** The channel's id. Deploy, undeploy and JavaScript connector scripts only. */
+declare var channelId: string;
+/** The channel's name. Deploy, undeploy and JavaScript connector scripts only. */
+declare var channelName: string;
 /** Source system metadata. Propagates through the pipeline. */
 declare var sourceMap: Record<string, unknown>;
 /** Channel-scoped persistent state. Cleared on channel redeploy. */
@@ -156,7 +160,14 @@ declare function httpFetch(
 ): Promise<HttpFetchResult>;
 
 /** Route a raw message into another deployed, started channel by name. */
-declare function routeMessage(channelName: string, rawData: string): Promise<{ success: boolean; response?: string }>;
+declare function routeMessage(channelName: string, rawData: string): Promise<{
+  success: boolean;
+  /** The id the target channel gave the message. */
+  messageId?: number;
+  /** True when the target channel's source filter rejected the message. */
+  filtered?: boolean;
+  response?: string;
+}>;
 
 /** Run a parameterized query against a named Data Source. Use params ($1, $2, …). */
 declare function dbQuery(
