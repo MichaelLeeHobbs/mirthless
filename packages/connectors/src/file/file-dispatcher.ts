@@ -12,6 +12,7 @@ import { fillPlaceholders, placeholderNames, recordLookup, tryCatch, type Result
 import type { DestinationConnectorRuntime, ConnectorMessage, ConnectorResponse } from '../base.js';
 import { normalizeEncoding, isKnownEncoding, unknownEncodingMessage } from '../encoding.js';
 import { createConnectorLogger, type ConnectorLogger } from '../logger.js';
+import { resolveWithinRoots, type FileRoots } from './file-roots.js';
 
 // ----- Config -----
 
@@ -22,6 +23,8 @@ export interface FileDispatcherConfig {
   readonly binary: boolean;
   readonly tempFileEnabled: boolean;
   readonly appendMode: boolean;
+  /** Where the directory and each written file may be (FILE_CONNECTOR_ROOTS, D-310). */
+  readonly roots: FileRoots;
 }
 
 // ----- Pattern Substitution -----
@@ -85,6 +88,7 @@ export class FileDispatcher implements DestinationConnectorRuntime {
       if (!this.config.binary && !isKnownEncoding(this.config.charset)) {
         throw new Error(unknownEncodingMessage(this.config.charset));
       }
+      await resolveWithinRoots(this.config.directory, this.config.roots);
       // Allowed (a "latest result" file is a real use), but said out loud: with
       // the same name for every message, each one replaces the one before it.
       if (!this.config.appendMode && !this.config.outputPattern.includes('${messageId}')) {
@@ -111,8 +115,10 @@ export class FileDispatcher implements DestinationConnectorRuntime {
         throw new Error('Send aborted');
       }
 
-      // Ensure output directory exists
-      await fs.mkdir(this.config.directory, { recursive: true });
+      // Checked on every write, not only at deploy: the directory or the file may
+      // have been replaced by a symlink, and the name pattern may hold `..`.
+      const directory = await resolveWithinRoots(this.config.directory, this.config.roots);
+      await fs.mkdir(directory, { recursive: true });
 
       const context: Record<string, string> = {
         messageId: String(message.messageId),
@@ -120,7 +126,7 @@ export class FileDispatcher implements DestinationConnectorRuntime {
       };
 
       const filename = resolveOutputFilename(this.config.outputPattern, context);
-      const outputPath = path.join(this.config.directory, filename);
+      const outputPath = await resolveWithinRoots(path.join(directory, filename), this.config.roots);
 
       if (this.config.appendMode) {
         await this.appendToFile(outputPath, message.content);

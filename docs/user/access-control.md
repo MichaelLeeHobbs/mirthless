@@ -140,6 +140,8 @@ Scripts run in a `node:vm` sandbox. [SECURITY.md](../../SECURITY.md) says this s
 
 `httpFetch` refuses private and reserved addresses unless the host is listed in `SCRIPT_HTTP_ALLOWED_HOSTS`. Public addresses are always allowed.
 
+File sources and File destinations reach only directories under `FILE_CONNECTOR_ROOTS`, never the server's install, working directory, `/proc`, `/sys` or `/dev`, so a deployer cannot read the server's `.env` or overwrite its code through a channel ([FILE security](connector-reference.md#file-security)). DICOM storage directories are not limited yet.
+
 ## What is not audited
 
 These write no audit event:

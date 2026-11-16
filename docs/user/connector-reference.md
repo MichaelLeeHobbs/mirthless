@@ -10,7 +10,7 @@ Every property below is the key the connector reads from the channel's saved pro
 |---|---|---|---|---|---|---|
 | [TCP_MLLP](#tcp_mllp) | Yes | Yes | HL7 v2 (or other text) over TCP with MLLP or custom frame bytes | Optional TLS from raw PEM in a `tls` block, set through the API or an import (no editor control). A source `tls` block missing its cert or key fails the deploy; the check in [tls-and-phi.md](../ops/tls-and-phi.md#check-tls-is-on) confirms a listener speaks TLS | Mutual TLS only; no other sign-in | TCP Listener / TCP Sender |
 | [HTTP](#http) | Yes | Yes | HTTP and HTTPS requests in either direction | `scheme` HTTPS with certificates from the certificate store. An HTTPS source with no server certificate refuses to deploy. A destination verifies the server certificate by default | Source: Basic or bearer token (API only), client certificates. Destination: Basic, custom headers, client certificate | HTTP Listener / HTTP Sender |
-| [FILE](#file) | Yes | Yes | Local disk and OS mounts only. No SMB, S3, FTP or WebDAV | None in the connector; protect the mount | File system permissions of the server process | File Reader / File Writer |
+| [FILE](#file) | Yes | Yes | Local disk and OS mounts only. No SMB, S3, FTP or WebDAV | None in the connector; protect the mount | Only directories under `FILE_CONNECTOR_ROOTS`, never the server's own; then the server process's file permissions | File Reader / File Writer |
 | [SFTP](#sftp) | Yes | Yes | Files on a remote SFTP server | SSH, with host key checking on by default; an empty `hostKey` refuses to deploy while it is on | Password or private key | File Reader / File Writer with the sftp scheme, imported automatically by the Mirth importer |
 | [DATABASE](#database) | Yes | Yes | PostgreSQL and MySQL/MariaDB only. No SQL Server or Oracle | `tls` flag; when on, the server certificate is verified | Database username and password | Database Reader / Database Writer |
 | [JAVASCRIPT](#javascript) | Yes | Yes | Whatever a sandboxed script can produce or reach through the script bridges | Not applicable (runs in the server) | Not applicable | JavaScript Reader / JavaScript Writer |
@@ -169,13 +169,15 @@ The source leaves alone the files a Mirth File Reader leaves alone. It never rea
 
 ### FILE security
 
-The connector adds no transport security. A network share must be protected where it is mounted, and the server process's file permissions decide what it can read and write. A destination writes through a temporary file and renames it by default, so a partner never reads half a file.
+A File source or destination may use only directories under `FILE_CONNECTOR_ROOTS`, a comma separated list of absolute paths the operator sets in the server's environment ([deployment](../ops/deployment.md)). With it unset, every File connector refuses to deploy, and Test Connection reports the same. The server's install directory (its code and `.env`), its working directory, `/proc`, `/sys` and `/dev` are refused even inside a root. The check runs after symlinks are resolved, at deploy, on every poll, before every move and before every write, so a `..` in `outputPattern` or a directory later replaced by a symlink cannot reach outside the roots. Files in a source directory that are themselves symlinks are skipped. Without this a deployer could read the server's `JWT_SECRET` through a File source or overwrite its code through a File destination (D-310 in [DECISIONS.md](../progress/DECISIONS.md)).
+
+The connector adds no transport security. A network share must be protected where it is mounted, and the server process's file permissions decide what it can read and write inside the roots. A destination writes through a temporary file and renames it by default, so a partner never reads half a file.
 
 ### FILE as a source
 
 | Property | Required | Notes |
 |---|---|---|
-| `directory` | Yes | Directory to poll. |
+| `directory` | Yes | Directory to poll: an absolute path under `FILE_CONNECTOR_ROOTS`. |
 | `fileFilter` | No | Glob (`*`, `?`) for the files to read, `*` by default. Not empty. Case-sensitive on every platform, Windows included, as a Mirth File Reader's filter is: `*.hl7` does not match `A.HL7` (D-304 in [DECISIONS.md](../progress/DECISIONS.md)). |
 | `ignoreDot` | No | On by default: names starting with `.` (editor swap files, partner lock files) are never read or deleted, as in Mirth. `false` reads them. |
 | `pollingIntervalMs` | No | Milliseconds between polls, a whole number from 100 to 2147483647 (about 24.8 days), 5000 by default. |
@@ -185,14 +187,14 @@ The connector adds no transport security. A network share must be protected wher
 | `checkFileAge` | No | On by default: skip files younger than `fileAgeMs`, so a file still being written is not read. |
 | `fileAgeMs` | No | Minimum file age in milliseconds, a whole number from 0, 1000 by default. |
 | `postAction` | No | `DELETE` (default), `MOVE` or `NONE`. The default deletes each file after the pipeline accepts it. `NONE` leaves the file in place, so the next poll reads it again. |
-| `moveToDirectory` | No | Where `MOVE` puts processed files. Required when `postAction` is `MOVE`. |
+| `moveToDirectory` | No | Where `MOVE` puts processed files: an absolute path under `FILE_CONNECTOR_ROOTS`. Required when `postAction` is `MOVE`. |
 
 ### FILE as a destination
 
 | Property | Required | Notes |
 |---|---|---|
-| `directory` | Yes | Directory to write to; created if missing. |
-| `outputPattern` | No | File name, `${messageId}.txt` by default. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. Without `${messageId}` and with append off, each message overwrites the last file of that name (a warning is logged). |
+| `directory` | Yes | Directory to write to, an absolute path under `FILE_CONNECTOR_ROOTS`; created if missing. |
+| `outputPattern` | No | File name, `${messageId}.txt` by default. Only `${messageId}` and `${timestamp}` are filled; any other placeholder refuses to deploy. Without `${messageId}` and with append off, each message overwrites the last file of that name (a warning is logged). A name that resolves outside `FILE_CONNECTOR_ROOTS` is not written and the message errors. |
 | `charset` | No | As for the source: `utf-8` (default), `latin1`, `ascii` or `utf16le`, used to encode the file. |
 | `binary` | No | `true` decodes the content from base64 and writes the bytes. |
 | `tempFileEnabled` | No | On by default: write a temporary file, then rename it. |
@@ -201,6 +203,7 @@ The connector adds no transport security. A network share must be protected wher
 ### FILE limits
 
 - Local paths and OS mounts only. FTP, SMB, S3 and WebDAV are not supported; the Mirth importer warns that such a channel will not deploy.
+- Absolute paths under `FILE_CONNECTOR_ROOTS` only. An imported Mirth channel whose directory is outside the roots refuses to deploy until the path or the roots change.
 - No `${originalFilename}` in `outputPattern`: the destination does not receive the source file name (D-219 in [DECISIONS.md](../progress/DECISIONS.md)).
 
 ## SFTP

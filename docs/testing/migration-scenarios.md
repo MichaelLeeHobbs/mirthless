@@ -14,7 +14,7 @@ docker compose -f docker/docker-compose.yml --profile test up -d sftp-test mail-
 SCENARIO_DATABASE_URL=postgresql://<user>:<password>@localhost:5432/galvanigraph_scenarios_test pnpm test:scenarios
 ```
 
-`pnpm test:scenarios` drops and recreates that database (it must end in `_test`), migrates and seeds it, starts its own server on port 3100, runs [`playwright.scenarios.config.ts`](../../playwright.scenarios.config.ts) and prints the score. It writes `tmp/feature-climb/score.json` and the Playwright report `tmp/feature-climb/results.json`. Pass `--no-reset` to keep the database, and extra Playwright arguments after `--`.
+`pnpm test:scenarios` drops and recreates that database (it must end in `_test`), migrates and seeds it, starts its own server on port 3100, runs [`playwright.scenarios.config.ts`](../../playwright.scenarios.config.ts) and prints the score. It writes `tmp/feature-climb/score.json` and the Playwright report `tmp/feature-climb/results.json`. Pass `--no-reset` to keep the database, and extra Playwright arguments after `--`. File Reader scenarios drop their files under `galvanigraph-scenarios/files` in the system temp folder, which the suite's server gets as `FILE_CONNECTOR_ROOTS`: File connectors may not use the repository, which is the server's install (D-310).
 
 ## How it is built
 

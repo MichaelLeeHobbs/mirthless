@@ -3,6 +3,9 @@
 // ===========================================
 
 import { describe, it, expect } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { createSourceConnector, createDestinationConnector } from '../registry.js';
 
 describe('registry FILE factories', () => {
@@ -42,5 +45,28 @@ describe('registry FILE factories', () => {
 
   it('refuse a switch stored as text rather than reading it as on', () => {
     expect(() => createDestinationConnector('FILE', { directory: '/out', appendMode: 'false' })).toThrow(/appendMode/);
+  });
+});
+
+// GHSA-r434-hwqg-cvcw: a File connector uses only the roots the server passes in.
+describe('registry FILE roots', () => {
+  it('builds File connectors that refuse every path when no roots are passed', async () => {
+    const dir = await fs.realpath(os.tmpdir());
+    const source = createSourceConnector('FILE', { directory: dir, fileFilter: '*' });
+    const dest = createDestinationConnector('FILE', { directory: dir });
+    expect((await source.onDeploy()).error?.message).toMatch(/FILE_CONNECTOR_ROOTS is not set/);
+    expect((await dest.onDeploy()).error?.message).toMatch(/FILE_CONNECTOR_ROOTS is not set/);
+  });
+
+  it('passes the server roots to the File source and destination', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'gg-registry-roots-'));
+    try {
+      const env = { fileRoots: { allowed: [dir], denied: [] } };
+      expect((await createSourceConnector('FILE', { directory: dir, fileFilter: '*' }, env).onDeploy()).ok).toBe(true);
+      expect((await createDestinationConnector('FILE', { directory: dir }, env).onDeploy()).ok).toBe(true);
+      expect((await createSourceConnector('FILE', { directory: os.homedir(), fileFilter: '*' }, env).onDeploy()).ok).toBe(false);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -18,9 +18,11 @@ vi.mock('node:fs/promises', () => ({
   unlink: vi.fn(),
   rename: vi.fn(),
   mkdir: vi.fn(),
+  realpath: vi.fn(),
 }));
 
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 
 const mockReaddir = vi.mocked(fs.readdir);
 const mockReadFile = vi.mocked(fs.readFile);
@@ -29,6 +31,7 @@ const mockStat = vi.mocked(fs.stat);
 const mockUnlink = vi.mocked(fs.unlink);
 const mockRename = vi.mocked(fs.rename);
 const mockMkdir = vi.mocked(fs.mkdir);
+const mockRealpath = vi.mocked(fs.realpath);
 
 const QUARANTINE_LEDGER = '.galvanigraph-quarantine.json';
 /** Ledgers written under the product's earlier names (D-205, D-309). Still read, never written. */
@@ -58,6 +61,7 @@ function makeConfig(overrides?: Partial<FileReceiverConfig>): FileReceiverConfig
     postAction: FILE_POST_ACTION.DELETE,
     moveToDirectory: '',
     ignoreDot: true,
+    roots: { allowed: ['/data'], denied: [] },
     ...overrides,
   };
 }
@@ -92,6 +96,8 @@ beforeEach(() => {
   // Default: no ledger on disk (readFile rejects), writes succeed.
   mockReadFile.mockRejectedValue(enoent());
   mockWriteFile.mockResolvedValue(undefined as never);
+  // No symlinks unless a test says so: every path is its own real path.
+  mockRealpath.mockImplementation(((p: string) => Promise.resolve(p)) as never);
 });
 
 afterEach(async () => {
@@ -183,6 +189,68 @@ describe('FileReceiver', () => {
       receiver = new FileReceiver(makeConfig());
       const result = await receiver.onDeploy();
       expect(result.ok).toBe(true);
+    });
+  });
+
+  // GHSA-r434-hwqg-cvcw: a File source pointed at the server's own directory
+  // turned its .env into messages anyone with messages:read could open.
+  describe('allowed roots', () => {
+    it('refuses to deploy a directory outside FILE_CONNECTOR_ROOTS', async () => {
+      receiver = new FileReceiver(makeConfig({ directory: '/app' }));
+      const result = await receiver.onDeploy();
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toMatch(/outside FILE_CONNECTOR_ROOTS/);
+    });
+
+    it('refuses to deploy a directory in a denied root inside an allowed one', async () => {
+      receiver = new FileReceiver(makeConfig({ roots: { allowed: ['/data'], denied: ['/data/app'] }, directory: '/data/app' }));
+      const result = await receiver.onDeploy();
+      expect(result.error?.message).toMatch(/server's own/);
+    });
+
+    it('refuses to deploy /proc even when every directory is allowed', async () => {
+      receiver = new FileReceiver(makeConfig({ roots: { allowed: ['/'], denied: [] }, directory: '/proc/self' }));
+      const result = await receiver.onDeploy();
+      expect(result.error?.message).toMatch(/server's own/);
+    });
+
+    it('refuses to deploy a move-to directory outside FILE_CONNECTOR_ROOTS', async () => {
+      receiver = new FileReceiver(makeConfig({ postAction: FILE_POST_ACTION.MOVE, moveToDirectory: '/app/packages' }));
+      const result = await receiver.onDeploy();
+      expect(result.error?.message).toMatch(/outside FILE_CONNECTOR_ROOTS/);
+    });
+
+    it('reads nothing on a poll once the directory has become a link out of the roots', async () => {
+      mockReaddir.mockResolvedValue([makeDirent('.env')] as never);
+      mockStat.mockResolvedValue(makeStatResult(Date.now() - 5_000, 100) as never);
+      receiver = new FileReceiver(makeConfig({ fileFilter: '*' }));
+      expect((await receiver.onDeploy()).ok).toBe(true);
+      // Swapped for a symlink to the install directory after deploy.
+      mockRealpath.mockImplementation(((p: string) =>
+        Promise.resolve(p === path.resolve('/data/inbound') ? path.resolve('/app') : p)) as never);
+      const dispatched: RawMessage[] = [];
+      receiver.setDispatcher(makeDispatcher((raw) => { dispatched.push(raw); return { messageId: 1 }; }));
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(mockReaddir).not.toHaveBeenCalled();
+      expect(dispatched).toHaveLength(0);
+    });
+
+    it('leaves the file in place when the move-to directory has become a link out of the roots', async () => {
+      mockReaddir.mockResolvedValue([makeDirent('file.hl7')] as never);
+      mockStat.mockResolvedValue(makeStatResult(Date.now() - 5_000, 100) as never);
+      mockReadFile.mockImplementation(((p: string) =>
+        (String(p).endsWith('file.hl7') ? Promise.resolve('content') : Promise.reject(enoent()))) as never);
+      mockRealpath.mockImplementation(((p: string) =>
+        Promise.resolve(p === path.resolve('/data/processed') ? path.resolve('/app') : p)) as never);
+      receiver = new FileReceiver(makeConfig({ postAction: FILE_POST_ACTION.MOVE, moveToDirectory: '/data/processed' }));
+      receiver.setDispatcher(makeDispatcher());
+      await receiver.onStart();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(mockMkdir).not.toHaveBeenCalled();
+      expect(mockRename).not.toHaveBeenCalled();
     });
   });
 
@@ -445,7 +513,7 @@ describe('FileReceiver', () => {
       await receiver.onStart();
       await vi.advanceTimersByTimeAsync(5_000);
 
-      expect(mockMkdir).toHaveBeenCalledWith('/data/processed', { recursive: true });
+      expect(mockMkdir).toHaveBeenCalledWith(path.resolve('/data/processed'), { recursive: true });
       expect(mockRename).toHaveBeenCalledWith(
         expect.stringContaining('file.hl7'),
         expect.stringContaining('file.hl7'),

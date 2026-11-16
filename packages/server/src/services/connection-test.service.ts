@@ -33,6 +33,7 @@ import {
   createSsh2SftpClient,
   buildNodemailerOptions,
   validateAuth,
+  resolveWithinRoots,
   type DatabasePool,
   type DatabaseVendor,
   type SftpClient,
@@ -41,6 +42,8 @@ import {
   type SftpPathKind,
 } from '@galvanigraph/connectors';
 import { ServiceError } from '../lib/service-error.js';
+import { buildFileRoots } from '../lib/file-roots.js';
+import { config } from '../config/index.js';
 import { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } from './connector-tls-resolver.js';
 
 const nodeRequire = createRequire(import.meta.url);
@@ -358,16 +361,21 @@ const testHttp: Tester = async (mode, props) => {
   }
 };
 
-/** File tester — verifies path exists and is readable/writable. */
+/**
+ * File tester — verifies path exists and is readable/writable. A path outside
+ * FILE_CONNECTOR_ROOTS is refused before it is touched, so the button cannot
+ * tell anyone what exists elsewhere on the server (D-310).
+ */
 const testFile: Tester = async (mode, props) => {
   const directory = requireString(props, 'directory');
   const start = performance.now();
 
   try {
+    const real = await resolveWithinRoots(directory, buildFileRoots(config.FILE_CONNECTOR_ROOTS));
     const accessMode = mode === 'SOURCE'
       ? fs.constants.R_OK
       : fs.constants.R_OK | fs.constants.W_OK;
-    await fs.access(directory, accessMode);
+    await fs.access(real, accessMode);
     const latency = performance.now() - start;
     return successResult(`Path accessible: ${directory}`, latency);
   } catch (err: unknown) {

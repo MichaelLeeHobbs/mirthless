@@ -19,6 +19,7 @@ import {
   isQuarantineLedgerName,
   type LedgerStorage,
 } from '../quarantine-ledger.js';
+import { resolveWithinRoots, type FileRoots } from './file-roots.js';
 
 // ----- Constants -----
 
@@ -66,6 +67,8 @@ export interface FileReceiverConfig {
   readonly moveToDirectory: string;
   /** Leave names starting with `.` alone, as a Mirth File Reader does by default. */
   readonly ignoreDot: boolean;
+  /** Where the directory and move-to directory may be (FILE_CONNECTOR_ROOTS, D-310). */
+  readonly roots: FileRoots;
 }
 
 export { FILE_SORT_BY, FILE_POST_ACTION };
@@ -178,6 +181,10 @@ export class FileReceiver implements SourceConnectorRuntime {
       if (!this.config.binary && !isKnownEncoding(this.config.charset)) {
         throw new Error(unknownEncodingMessage(this.config.charset));
       }
+      await resolveWithinRoots(this.config.directory, this.config.roots);
+      if (this.config.postAction === FILE_POST_ACTION.MOVE) {
+        await resolveWithinRoots(this.config.moveToDirectory, this.config.roots);
+      }
     });
   }
 
@@ -252,9 +259,15 @@ export class FileReceiver implements SourceConnectorRuntime {
     }
   }
 
-  /** List directory entries matching the glob and file-age filter. */
+  /**
+   * List directory entries matching the glob and file-age filter. The directory
+   * is checked against the roots on every poll: it may have been replaced by a
+   * symlink since deploy. Symlinked files in it are skipped (`isFile` is false
+   * for a link), so each file read is the directory's own.
+   */
   private async listMatchingFiles(): Promise<readonly FileEntry[]> {
-    const dirEntries = await fs.readdir(this.config.directory, { withFileTypes: true });
+    const directory = await resolveWithinRoots(this.config.directory, this.config.roots);
+    const dirEntries = await fs.readdir(directory, { withFileTypes: true });
     const listed = new Set(dirEntries.map((e) => e.name));
     const now = Date.now();
     const results: FileEntry[] = [];
@@ -262,7 +275,7 @@ export class FileReceiver implements SourceConnectorRuntime {
     for (const entry of dirEntries) {
       if (!entry.isFile() || !this.takesName(entry.name, listed)) continue;
 
-      const fullPath = path.join(this.config.directory, entry.name);
+      const fullPath = path.join(directory, entry.name);
       const stat = await fs.stat(fullPath).catch(() => null);
       // Gone since the listing (another reader took it): nothing to process.
       if (stat === null) continue;
@@ -351,10 +364,12 @@ export class FileReceiver implements SourceConnectorRuntime {
       case FILE_POST_ACTION.DELETE:
         await fs.unlink(entry.fullPath);
         break;
-      case FILE_POST_ACTION.MOVE:
-        await fs.mkdir(this.config.moveToDirectory, { recursive: true });
-        await fs.rename(entry.fullPath, path.join(this.config.moveToDirectory, entry.name));
+      case FILE_POST_ACTION.MOVE: {
+        const target = await resolveWithinRoots(this.config.moveToDirectory, this.config.roots);
+        await fs.mkdir(target, { recursive: true });
+        await fs.rename(entry.fullPath, path.join(target, entry.name));
         break;
+      }
       case FILE_POST_ACTION.NONE:
         break;
     }

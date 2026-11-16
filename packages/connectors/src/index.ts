@@ -58,6 +58,9 @@ export {
   type FileDispatcherConfig,
   type FileSortBy,
   type FilePostAction,
+  resolveWithinRoots,
+  NO_FILE_ROOTS,
+  type FileRoots,
 } from './file/index.js';
 export {
   prepare,
@@ -191,4 +194,4 @@ export {
 } from './amqp/index.js';
 export { readQueueTls } from './registry.js';
 export { withTimeout, TimeoutError } from './timeout.js';
-export { createSourceConnector, createDestinationConnector } from './registry.js';
+export { createSourceConnector, createDestinationConnector, type ConnectorEnvironment } from './registry.js';

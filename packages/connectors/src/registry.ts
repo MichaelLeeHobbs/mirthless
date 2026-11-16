@@ -14,6 +14,7 @@ import { readTlsServerOptions, readTlsClientOptions } from './tls.js';
 import { HttpDispatcher } from './http/http-dispatcher.js';
 import { FileReceiver } from './file/file-receiver.js';
 import { FileDispatcher } from './file/file-dispatcher.js';
+import { NO_FILE_ROOTS, type FileRoots } from './file/file-roots.js';
 import { DatabaseReceiver } from './database/database-receiver.js';
 import { DatabaseDispatcher } from './database/database-dispatcher.js';
 import { DATABASE_VENDOR, type DatabaseVendor } from './database/database-vendor.js';
@@ -185,16 +186,16 @@ function databaseDispatcher(props: Record<string, unknown>): DatabaseDispatcher 
   return new DatabaseDispatcher({ ...config, ...databaseTarget({ vendor, port }) });
 }
 
-/** A File Reader: schema-checked props. */
-function fileReceiver(props: Record<string, unknown>): FileReceiver {
+/** A File Reader: schema-checked props, limited to the server's File roots. */
+function fileReceiver(props: Record<string, unknown>, env: ConnectorEnvironment): FileReceiver {
   const { processBatch: _processBatch, ...config } = parseProps('FILE', fileSourcePropertiesSchema, props);
-  return new FileReceiver(config);
+  return new FileReceiver({ ...config, roots: env.fileRoots });
 }
 
-/** A File Writer: schema-checked props. */
-function fileDispatcher(props: Record<string, unknown>): FileDispatcher {
+/** A File Writer: schema-checked props, limited to the server's File roots. */
+function fileDispatcher(props: Record<string, unknown>, env: ConnectorEnvironment): FileDispatcher {
   const { template: _template, ...config } = parseProps('FILE', fileDestinationPropertiesSchema, props);
-  return new FileDispatcher(config);
+  return new FileDispatcher({ ...config, roots: env.fileRoots });
 }
 
 /** A JavaScript Reader: schema-checked props. The engine reads the script language and compiles the script. */
@@ -269,7 +270,7 @@ function sftpDispatcher(props: Record<string, unknown>): SftpDispatcher {
 
 // ----- Source Factories -----
 
-type SourceFactory = (properties: Record<string, unknown>) => SourceConnectorRuntime;
+type SourceFactory = (properties: Record<string, unknown>, env: ConnectorEnvironment) => SourceConnectorRuntime;
 
 const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnectorType, SourceFactory>([
   ['TCP_MLLP', tcpMllpReceiver],
@@ -287,7 +288,7 @@ const sourceFactories: ReadonlyMap<string, SourceFactory> = new Map<SourceConnec
 
 // ----- Destination Factories -----
 
-type DestinationFactory = (properties: Record<string, unknown>) => DestinationConnectorRuntime;
+type DestinationFactory = (properties: Record<string, unknown>, env: ConnectorEnvironment) => DestinationConnectorRuntime;
 
 const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<DestinationConnectorType, DestinationFactory>([
   ['TCP_MLLP', tcpMllpDispatcher],
@@ -306,26 +307,37 @@ const destinationFactories: ReadonlyMap<string, DestinationFactory> = new Map<De
 
 // ----- Public API -----
 
+/** What the server tells every connector it builds. */
+export interface ConnectorEnvironment {
+  /** Where File connectors may read and write (FILE_CONNECTOR_ROOTS, D-310). */
+  readonly fileRoots: FileRoots;
+}
+
+/** No File roots: a File connector built without the server's environment can use no path. */
+const DEFAULT_ENVIRONMENT: ConnectorEnvironment = { fileRoots: NO_FILE_ROOTS };
+
 /** Create a source connector by type. */
 export function createSourceConnector(
   connectorType: string,
   properties: Record<string, unknown>,
+  env: ConnectorEnvironment = DEFAULT_ENVIRONMENT,
 ): SourceConnectorRuntime {
   const factory = sourceFactories.get(connectorType);
   if (!factory) {
     throw new Error(`Unknown source connector type: ${connectorType}`);
   }
-  return factory(properties);
+  return factory(properties, env);
 }
 
 /** Create a destination connector by type. */
 export function createDestinationConnector(
   connectorType: string,
   properties: Record<string, unknown>,
+  env: ConnectorEnvironment = DEFAULT_ENVIRONMENT,
 ): DestinationConnectorRuntime {
   const factory = destinationFactories.get(connectorType);
   if (!factory) {
     throw new Error(`Unknown destination connector type: ${connectorType}`);
   }
-  return factory(properties);
+  return factory(properties, env);
 }
