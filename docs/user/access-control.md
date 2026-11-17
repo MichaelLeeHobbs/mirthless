@@ -10,7 +10,7 @@ This page describes who can sign in to GalvaniGraph, how sessions work, how to c
 | SSO (OIDC, SAML) | No | |
 | LDAP or Active Directory | No | |
 | Multi-factor authentication | No | |
-| API keys | Yes | A machine caller sends `Authorization: Bearer gf_<keyId>_<secret>`. Each key holds chosen permissions on every channel or on chosen channel groups, until a required end time, within what its issuer holds; see [API keys](#api-keys). There is no screen for them yet: issue them through `POST /api/v1/api-keys`. |
+| API keys | Yes | A machine caller sends `Authorization: Bearer gf_<keyId>_<secret>`. Each key holds chosen permissions on every channel or on chosen channel groups, until a required end time, within what its issuer holds; see [API keys](#api-keys). They are issued and managed on the API keys page (Administration), or through `/api/v1/api-keys`. |
 | Custom roles | Yes | Roles are stored in the database, and seven are built in: admin (locked), deployer, developer, viewer, channel-viewer, channel-developer and channel-deployer. A user holds a role through an assignment, and the server reads the user's assignments on every request, so a change applies to the next one. Admins create, edit, clone and delete roles on the Roles page (`roles:write`), which shows each role's holders and flags: as strong as admin, runs code, reads PHI, all channels only. The user dialog lists the roles and shows what a role change gives and takes away before it is saved. |
 | Per-channel access | Yes | An assignment gives a role on every channel or on chosen channel groups; see [What scope promises](#what-scope-promises). A channel's Access tab shows who can reach it, now or at a past time. |
 | Idle session timeout | No | An open browser tab keeps refreshing its session. |
@@ -44,7 +44,7 @@ This page describes who can sign in to GalvaniGraph, how sessions work, how to c
 
 ## API keys
 
-A key is its own principal: it holds one set of permissions on every channel or on chosen channel groups, until an end time it must have, and the guards, the audit log and a channel's Access tab treat it like a person. Keys are issued, enabled, disabled and revoked through `/api/v1/api-keys` (`api_keys:manage`) and listed with `api_keys:read`.
+A key is its own principal: it holds one set of permissions on every channel or on chosen channel groups, until an end time it must have, and the guards, the audit log and a channel's Access tab treat it like a person. Keys are issued, replaced, enabled, disabled and revoked on the API keys page or through `/api/v1/api-keys` (`api_keys:manage`), and listed with `api_keys:read`. The page shows each key's status, what it holds and where, who issued it, when it ends and was last used, and for a leaver's key how long until it is disabled unless replaced. From two days before that, holders of `api_keys:manage` see a banner on every page. Disabling a user on the Users page asks a holder of `api_keys:manage` what happens to the keys that user issued.
 
 - **The token is shown once.** The answer to `POST /api/v1/api-keys` carries `gf_<keyId>_<secret>`, a 256-bit secret. The server keeps only the secret's SHA-256 and compares it in constant time.
 - **Bearer only.** Send it in the `Authorization` header. A request with a key in its query string is refused. Every refusal (unknown key, wrong secret, revoked, ended, disabled, an issuer who no longer covers it, in the URL) is the same 401.

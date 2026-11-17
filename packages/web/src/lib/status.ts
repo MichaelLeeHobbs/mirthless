@@ -6,6 +6,7 @@
 // a colour reads the same everywhere in the app. Pure functions — no React — so
 // they are trivially testable.
 
+import type { ApiKeyStatus } from '@galvanigraph/core-models';
 import { ROLE_FLAG } from './role-flags.js';
 
 /** Semantic status levels, keyed to `theme.palette.status`. */
@@ -58,6 +59,24 @@ export function eventLevelLevel(level: string): StatusLevel {
 /** A group a live assignment is scoped to: adding a channel to it gives people access → warning. */
 export function groupAccessLevel(): StatusLevel {
   return 'warning';
+}
+
+/**
+ * An API key's status (D-313): active → healthy; disabled → warning (it can be
+ * switched back on); ended or revoked → neutral (it never works again).
+ * Waiting on a leaver's replacement → warning, whatever else holds.
+ */
+export function apiKeyLevel(status: ApiKeyStatus, waitingOnReplacement: boolean): StatusLevel {
+  switch (status) {
+    case 'active': return waitingOnReplacement ? 'warning' : 'healthy';
+    case 'disabled': return 'warning';
+    case 'expired':
+    case 'revoked': return 'neutral';
+    default: {
+      const unknown: never = status;
+      return unknown;
+    }
+  }
 }
 
 /** An assignment that has expired gives nothing until renewed → warning; a live one → healthy. */

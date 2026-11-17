@@ -28,6 +28,8 @@ interface ConfirmDialogProps {
   readonly isPending?: boolean;
   /** Ask for a reason with this label; Confirm waits for one and passes it on. */
   readonly reasonLabel?: string;
+  /** What happens to the reason; defaults to the export wording. */
+  readonly reasonHelp?: string;
   /** Text the user must type, exactly, before Confirm is enabled. */
   readonly requireTyped?: string;
   readonly onConfirm: (reason?: string) => void;
@@ -49,6 +51,7 @@ export function ConfirmDialog({
   severity = 'warning',
   isPending = false,
   reasonLabel,
+  reasonHelp,
   requireTyped,
   onConfirm,
   onCancel,
@@ -73,7 +76,7 @@ export function ConfirmDialog({
             autoFocus fullWidth required margin="normal" size="small"
             label={reasonLabel} value={reason}
             onChange={(e) => { setReason(e.target.value.replace(/[\r\n]+/g, ' ')); }}
-            helperText="Recorded in the audit log and written into the file."
+            helperText={reasonHelp ?? 'Recorded in the audit log and written into the file.'}
             slotProps={{ htmlInput: { maxLength: 500 } }}
           />
         ) : null}

@@ -4,7 +4,7 @@
 // TanStack Query hooks for user CRUD operations.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateUserInput, UpdateUserInput } from '@galvanigraph/core-models';
+import type { CreateUserInput, IssuedKeysOnLeave, UpdateUserInput } from '@galvanigraph/core-models';
 import { api, type UserSummary, type UserDetail } from '../api/client.js';
 
 // ----- Query Keys -----
@@ -63,6 +63,8 @@ export function useCreateUser(): ReturnType<typeof useMutation<UserDetail, Error
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: USER_KEYS.lists() });
+      // Their API keys were disabled or given a deadline.
+      await queryClient.invalidateQueries({ queryKey: ['api-keys'] });
     },
   });
 }
@@ -88,13 +90,14 @@ export function useUpdateUser(): ReturnType<typeof useMutation<UserDetail, Error
   });
 }
 
-/** Delete (disable) a user. */
-export function useDeleteUser(): ReturnType<typeof useMutation<void, Error, string>> {
+/** Disable (delete) a user; `issuedKeys` says what happens to the API keys they issued (D-313), disabled when left out. */
+export function useDeleteUser(): ReturnType<typeof useMutation<void, Error, { id: string; issuedKeys?: IssuedKeysOnLeave }>> {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (id: string) => {
-      const result = await api.delete<void>(`/users/${id}`);
+    mutationFn: async ({ id, issuedKeys }: { id: string; issuedKeys?: IssuedKeysOnLeave }) => {
+      const query = issuedKeys === undefined ? '' : `?issuedKeys=${issuedKeys}`;
+      const result = await api.delete<void>(`/users/${id}${query}`);
       if (!result.success) {
         throw new Error(result.error.message);
       }

@@ -448,6 +448,7 @@ The debate's first and third slices (one `authenticate` mount and parser order; 
 13. **Keys UI and offboarding dialog**, M.
     - Follows: Screen.
     - Owns: a new `packages/web/src/pages/ApiKeysPage.tsx`, the offboarding step in `packages/web/src/components/users/`.
+    - As built: the API keys page (Administration, `api_keys:read`) lists each key with its status chip, a countdown chip for a leaver's key ("Disabled in 3 days unless replaced"), what it holds and where, its end and last use; `api_keys:manage` holders issue a key (the token is shown once in its own dialog), replace one (leak or planned), switch one off and on, and revoke one with a reason. The day-5 banner sits with the access banners above every page, for `api_keys:manage` holders, when a leaver's key is within two days of its deadline. Disabling a user on the Users page shows `OffboardKeysDialog` to a key manager when the user issued live keys: disable them now (the default) or keep them for 7 days. The dev server's `/api` proxy became `/api/` (as nginx has it), since `/api` also matched the page's `/api-keys` path.
 
 ## Won't build and deferred
 

@@ -189,6 +189,20 @@ const VIEWER_PERMS = ['channels:read', 'messages:read', 'code_templates:read', '
 const DEVELOPER_PERMS = [...VIEWER_PERMS, 'channels:write', 'code_templates:write', 'resources:write', 'collections:write', 'global_scripts:read', 'global_map:read', 'config_map:read'];
 const DEPLOYER_PERMS = [...DEVELOPER_PERMS, 'channels:deploy', 'messages:reprocess', 'code_templates:delete', 'alerts:write', 'alerts:delete', 'resources:delete', 'collections:delete', 'datasources:write', 'datasources:delete', 'system:info'];
 const CHANNEL_ONLY = (list) => list.filter((p) => !['collections:read', 'collections:write', 'collections:delete', 'global_map:read', 'config_map:read', 'system:info', 'resources:write', 'resources:delete', 'datasources:write', 'datasources:delete', 'alerts:write', 'alerts:delete'].includes(p));
+const DAY = 86_400_000;
+const apiKey = (id, name, over) => ({
+  id, name, description: '', permissions: ['channels:read'], groupIds: null, status: 'active',
+  expiresAt: new Date(Date.now() + 90 * DAY).toISOString(), reason: null, issuedBy: { id: 'u1', username: 'admin' },
+  revokedAt: null, revokeReason: null, lastUsedAt: new Date(Date.now() - 3600_000).toISOString(), lastUsedIp: '10.0.0.12',
+  createdAt: new Date(Date.now() - 30 * DAY).toISOString(), replaceBy: null, previousSecretUntil: null, ...over,
+});
+const apiKeys = [
+  apiKey('k1', 'Lab results feed', { permissions: ['channels:read', 'messages:read'], groupIds: ['g1'] }),
+  apiKey('k2', 'CI deploys', { permissions: ['channels:deploy', 'channels:read'], issuedBy: { id: 'u3', username: 'kpatel' }, replaceBy: new Date(Date.now() + 1.5 * DAY).toISOString() }),
+  apiKey('k3', 'Old billing export', { status: 'revoked', revokedAt: new Date(Date.now() - 2 * DAY).toISOString(), revokeReason: 'Leaked in a build log', lastUsedAt: null }),
+  apiKey('k4', 'Nightly extract', { status: 'disabled', permissions: ['messages:read'], reason: 'Nightly warehouse load' }),
+];
+
 const roles = [
   ['r1', 'admin', 'Every permission on every channel. Locked.', true, true, ALL_PERMS, 1],
   ['r2', 'channel-deployer', 'Deployer without the permissions limited to all-channel assignments, for an assignment scoped to channel groups.', true, false, CHANNEL_ONLY(DEPLOYER_PERMS), 0],
@@ -323,6 +337,7 @@ export function route(pathname, search) {
   if (/^\/users\/[^/]+\/assignments$/.test(p)) return assignments;
   if (/^\/channels\/[^/]+\/access$/.test(p)) return channelAccess;
   if (p === '/roles') return roles;
+  if (p === '/api-keys') return apiKeys;
   if (p === '/alerts') return page(alerts);
   if (p === '/events') return page(events);
   if (p === '/audit') return page(auditRows);
