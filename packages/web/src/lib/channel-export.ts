@@ -4,6 +4,7 @@
 // Triggers a browser download of a channel export (single channel or all).
 
 import { api } from '../api/client.js';
+import { saveFile } from './download.js';
 
 /**
  * Fetch a channel export and download it as a JSON file. Pass a channelId to
@@ -16,14 +17,5 @@ export async function downloadChannelExport(channelId?: string): Promise<void> {
     throw new Error(response.error.message);
   }
 
-  const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  try {
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = channelId ? `channel-${channelId}.json` : 'channels-export.json';
-    anchor.click();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  saveFile(channelId ? `channel-${channelId}.json` : 'channels-export.json', JSON.stringify(response.data, null, 2), 'application/json');
 }

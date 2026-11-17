@@ -1,0 +1,33 @@
+// ===========================================
+// Channel access
+// ===========================================
+// Words and CSV for "who can access this channel" (D-310, plan section 8).
+
+import { PERMISSION_CATALOG, type AccessPath, type ChannelAccessView, type Permission } from '@galvanigraph/core-models';
+import { escapeCsvField } from '@galvanigraph/core-util';
+
+/** A permission's label, or its name when this build does not know it. */
+export function permissionLabel(p: string): string {
+  return Object.hasOwn(PERMISSION_CATALOG, p) ? PERMISSION_CATALOG[p as Permission].label : p;
+}
+
+/** One way in, as words: "Lab analyst · Lab, Radiology · until <time>". */
+export function describePath(path: AccessPath, groupName: (id: string) => string, time: (iso: string) => string): string {
+  const scope = path.groupIds === null ? 'All channels' : path.groupIds.map(groupName).join(', ');
+  return [path.role, scope, ...(path.expiresAt ? [`until ${time(path.expiresAt)}`] : [])].join(' · ');
+}
+
+/** The view as CSV: one row per person and way in, then the people who reach every channel another way. */
+export function accessCsv(view: ChannelAccessView, groupName: (id: string) => string): string {
+  const rows: string[][] = [['Person', 'Access', 'Permissions', 'Role', 'Scope', 'Until']];
+  for (const p of view.people) {
+    for (const path of p.through) {
+      const scope = path.groupIds === null ? 'All channels' : path.groupIds.map(groupName).join('; ');
+      // Each row's permissions are that assignment's own, not the person's merged set.
+      rows.push([p.username, 'Assignment', path.permissions.map(permissionLabel).join('; '), path.role, scope, path.expiresAt ?? '']);
+    }
+  }
+  for (const p of view.throughCode) rows.push([p.username, 'Channel code (not recorded)', '', '', 'Every channel', '']);
+  for (const p of view.throughSharedData) rows.push([p.username, 'Shared data and logs', '', '', 'Every channel', '']);
+  return `${rows.map((r) => r.map(escapeCsvField).join(',')).join('\r\n')}\r\n`;
+}

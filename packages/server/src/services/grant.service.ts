@@ -21,13 +21,13 @@
 
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
-  ALL_CHANNELS, AUDIT_ACTION, DEFAULT_GROUP_NAME, PERMISSIONS, allChannelsOnly, can,
-  type AssignmentInput, type AssignmentView, type ChannelGroupId, type CreateRoleInput, type FoldedGrants, type Permission, type UpdateRoleInput,
+  ALL_CHANNELS, AUDIT_ACTION, DEFAULT_GROUP_NAME, PERMISSIONS, PERMISSION_CATALOG, PERMISSION_CLASS, allChannelsOnly, can,
+  type AccessPath, type AssignmentInput, type AssignmentView, type ChannelAccessView, type ChannelGroupId, type CreateRoleInput, type FoldedGrants, type Permission, type UpdateRoleInput,
 } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { isLiveAssignment, queryUserStanding } from '../lib/principal.js';
 import { db } from '../lib/db.js';
-import { assignmentGroups, assignments, channelGroupMembers, channelGroups, rolePermissions, roles, users } from '../db/schema/index.js';
+import { assignmentGroups, assignments, channelGroupMembers, channelGroups, channels, rolePermissions, roles, users } from '../db/schema/index.js';
 import { AuditService, type AuditTransaction } from './audit.service.js';
 
 /** Who made a change, for its audit row. */
@@ -392,6 +392,71 @@ export class GrantService {
       attributes: { targetUserId: userId, before, after: [{ role: roleName, scope: 'all' }] },
     });
     return before;
+  }
+
+  /**
+   * Who can access `channelId` now (plan section 8): each enabled user whose
+   * live assignments cover it, with the channel permissions those give and
+   * through which role and scope; and who reaches every channel anyway, through
+   * code they can change or deploy, or through data every channel shares.
+   */
+  static async channelAccess(reader: Reader, channelId: string): Promise<ChannelAccessView> {
+    const [channel] = await reader.select({ id: channels.id }).from(channels).where(and(eq(channels.id, channelId), isNull(channels.deletedAt)));
+    if (!channel) throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
+    const rows = await reader.select({
+      id: assignments.id, userId: users.id, username: users.username, roleId: roles.id, role: roles.name, admin: roles.admin,
+      allChannels: assignments.allChannels, expiresAt: assignments.expiresAt,
+    }).from(assignments).innerJoin(users, eq(users.id, assignments.userId)).innerJoin(roles, eq(roles.id, assignments.roleId))
+      .where(and(eq(users.enabled, true), isLiveAssignment()));
+    const scoped = rows.filter((r) => !r.allChannels).map((r) => r.id);
+    const groupRows = scoped.length === 0 ? [] : await reader.select({ assignmentId: assignmentGroups.assignmentId, groupId: assignmentGroups.channelGroupId })
+      .from(assignmentGroups).where(inArray(assignmentGroups.assignmentId, scoped));
+    const channelGroupIds = new Set((await reader.select({ groupId: channelGroupMembers.channelGroupId }).from(channelGroupMembers)
+      .where(eq(channelGroupMembers.channelId, channelId))).map((r) => r.groupId));
+    const perms = new Map<string, readonly Permission[]>();
+    for (const r of rows) if (!perms.has(r.roleId)) perms.set(r.roleId, await permissionsOfRole(reader, { id: r.roleId, admin: r.admin }));
+
+    const people = new Map<string, { userId: string; username: string; permissions: Set<string>; through: AccessPath[] }>();
+    const code = new Map<string, string>();
+    const shared = new Map<string, string>();
+    for (const r of rows) {
+      const held = perms.get(r.roleId) ?? [];
+      if (held.some((p) => PERMISSION_CATALOG[p].runsCode)) code.set(r.userId, r.username);
+      if (held.some((p) => PERMISSION_CATALOG[p].readsEveryChannel)) shared.set(r.userId, r.username);
+      const groupIds = r.allChannels ? null : groupRows.filter((g) => g.assignmentId === r.id).map((g) => g.groupId).sort();
+      if (groupIds !== null && !groupIds.some((g) => channelGroupIds.has(g))) continue;
+      const onChannel = held.filter((p) => PERMISSION_CATALOG[p].class === PERMISSION_CLASS.CHANNEL);
+      if (onChannel.length === 0) continue;
+      const person = people.get(r.userId) ?? { userId: r.userId, username: r.username, permissions: new Set<string>(), through: [] };
+      for (const p of onChannel) person.permissions.add(p);
+      person.through.push({ role: r.role, permissions: [...onChannel].sort(), groupIds, expiresAt: r.expiresAt?.toISOString() ?? null });
+      people.set(r.userId, person);
+    }
+    const byName = <T extends { username: string }>(a: T, b: T): number => a.username.localeCompare(b.username);
+    const list = (m: Map<string, string>): Array<{ userId: string; username: string }> => [...m].map(([userId, username]) => ({ userId, username })).sort(byName);
+    return {
+      people: [...people.values()].map((p) => ({ ...p, permissions: [...p.permissions].sort() })).sort(byName),
+      throughCode: list(code),
+      throughSharedData: list(shared),
+    };
+  }
+
+  /**
+   * Add a channel to a group as a backup restore does, and record it like any
+   * other membership change, in one transaction: who could reach what is
+   * rebuilt from these rows. The restore runs under system:restore, which is
+   * all-channel only, so no grant rule applies.
+   */
+  static async restoreMembership(channelId: string, groupId: string, actor: GrantActor): Promise<void> {
+    await db.transaction(async (tx) => {
+      const before = (await tx.select({ groupId: channelGroupMembers.channelGroupId }).from(channelGroupMembers)
+        .where(eq(channelGroupMembers.channelId, channelId))).map((r) => r.groupId).sort();
+      await tx.insert(channelGroupMembers).values({ channelGroupId: groupId, channelId });
+      await AuditService.recordInTx(tx, {
+        action: AUDIT_ACTION.CHANNEL_GROUPS_CHANGED, outcome: 'SUCCESS', userId: actor.userId, channelId, ipAddress: actor.ipAddress ?? null,
+        attributes: { before, after: [...before, groupId].sort(), restored: true },
+      });
+    });
   }
 
   /** The groups a live assignment is scoped to: adding a channel to one gives access (D-310). */

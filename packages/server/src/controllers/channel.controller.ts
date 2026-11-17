@@ -20,6 +20,9 @@ import logger from '../lib/logger.js';
 import { getEngine } from '../engine.js';
 import { channelScopeOf } from '../lib/channel-scope.js';
 import { assertCertificatesInScope } from '../services/connector-tls-resolver.js';
+import { GrantService } from '../services/grant.service.js';
+import { db } from '../lib/db.js';
+import { tryCatch } from 'stderr-lib';
 import { isServiceError } from '../lib/service-error.js';
 import { errorInfo } from '@galvanigraph/core-util';
 
@@ -40,6 +43,19 @@ async function certificatesAllowed(req: Request, res: Response, connectorProps: 
 }
 
 export class ChannelController {
+  /** GET /channels/:id/access: who can access the channel now, and how. */
+  static async access(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const result = await tryCatch(GrantService.channelAccess(db, id));
+    if (!result.ok) {
+      const status = mapErrorToStatus(result.error);
+      if (status === 500) logger.error({ ...errorInfo(result.error), channelId: id }, 'Failed to list who can access a channel');
+      res.status(status).json({ success: false, error: errorResponse(result.error) });
+      return;
+    }
+    res.json({ success: true, data: result.value });
+  }
+
   static async list(req: Request, res: Response): Promise<void> {
     const query = req.query as unknown as ChannelListQuery;
     const result = await ChannelService.list(query, await channelScopeOf(req, 'channels:read'));

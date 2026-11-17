@@ -171,6 +171,16 @@ const assignments = [
   { id: 'a3', roleId: 'r2', roleName: 'channel-deployer', groupIds: ['g2'], expiresAt: ago(3000), reason: null, live: false, createdAt: ago(9000) },
 ];
 
+// Who can access a channel (D-310): through assignments, then through code and shared data.
+const channelAccess = {
+  people: [
+    { userId: 'u1', username: 'admin', permissions: ['channels:deploy', 'channels:read', 'channels:write', 'messages:read'], through: [{ role: 'admin', permissions: ['channels:deploy', 'channels:read', 'channels:write', 'messages:read'], groupIds: null, expiresAt: null }] },
+    { userId: 'u3', username: 'kpatel', permissions: ['channels:read', 'messages:read', 'messages:reprocess'], through: [{ role: 'Lab analyst', permissions: ['channels:read', 'messages:read', 'messages:reprocess'], groupIds: ['g1'], expiresAt: new Date(Date.now() + 8 * 3600_000).toISOString() }] },
+  ],
+  throughCode: [{ userId: 'u1', username: 'admin' }, { userId: 'u2', username: 'jmorales' }],
+  throughSharedData: [{ userId: 'u1', username: 'admin' }],
+};
+
 // Roles (D-310): the seven built in, and one custom role with holders. The
 // server sends the locked admin role with every permission.
 const ALL_PERMS = Object.values(PERMISSIONS);
@@ -310,6 +320,7 @@ export function route(pathname, search) {
   if (p === '/channel-groups/memberships') return [{ channelGroupId: 'g1', channelId: 'c1' }, { channelGroupId: 'g1', channelId: 'c2' }, { channelGroupId: 'g1', channelId: 'c3' }, { channelGroupId: 'g2', channelId: 'c5' }];
   if (p === '/users') return users;
   if (/^\/users\/[^/]+\/assignments$/.test(p)) return assignments;
+  if (/^\/channels\/[^/]+\/access$/.test(p)) return channelAccess;
   if (p === '/roles') return roles;
   if (p === '/alerts') return page(alerts);
   if (p === '/events') return page(events);
