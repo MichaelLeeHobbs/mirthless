@@ -11,6 +11,8 @@ import { AuditService } from './audit.service.js';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { events } from '../db/schema/index.js';
+import { ALL_CHANNELS } from '@galvanigraph/core-models';
+import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 
 // ----- Response Types -----
 
@@ -47,10 +49,14 @@ export type EventFilter = Pick<EventListQuery, 'level' | 'name' | 'outcome' | 'u
 
 /**
  * Builds the WHERE clause for an event query. `level` and `name` are comma-separated lists.
- * Returns undefined when no filter is set.
+ * A scoped caller sees only the events of channels inside `scope`, and no
+ * system-wide events (D-310). Returns undefined when no filter is set.
  */
-export function buildEventWhereConditions(query: EventFilter): ReturnType<typeof and> {
+export function buildEventWhereConditions(query: EventFilter, scope: ChannelScope = ALL_CHANNELS): ReturnType<typeof and> {
   const conditions = [];
+
+  const inScope = channelIdIn(events.channelId, scope);
+  if (inScope !== undefined) conditions.push(inScope);
 
   if (query.level !== undefined) {
     const levels = query.level.split(',').map((s) => s.trim());
@@ -89,10 +95,10 @@ export function buildEventWhereConditions(query: EventFilter): ReturnType<typeof
 
 export class EventService {
   /** List events with pagination and filters. */
-  static async list(query: EventListQuery): Promise<Result<EventListResult>> {
+  static async list(query: EventListQuery, scope: ChannelScope = ALL_CHANNELS): Promise<Result<EventListResult>> {
     return tryCatch(async () => {
       const offset = (query.page - 1) * query.pageSize;
-      const where = buildEventWhereConditions(query);
+      const where = buildEventWhereConditions(query, scope);
 
       const countQuery = db
         .select({ value: count() })
@@ -131,13 +137,13 @@ export class EventService {
     });
   }
 
-  /** Get event by ID with full detail. */
-  static async getById(id: number): Promise<Result<EventDetail>> {
+  /** Get event by ID with full detail; one outside `scope` reads as not found. */
+  static async getById(id: number, scope: ChannelScope = ALL_CHANNELS): Promise<Result<EventDetail>> {
     return tryCatch(async () => {
       const [row] = await db
         .select()
         .from(events)
-        .where(eq(events.id, id));
+        .where(and(eq(events.id, id), channelIdIn(events.channelId, scope)));
 
       if (!row) {
         throw new ServiceError('NOT_FOUND', `Event ${String(id)} not found`);

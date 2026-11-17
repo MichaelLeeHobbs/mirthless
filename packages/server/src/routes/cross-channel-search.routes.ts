@@ -12,7 +12,8 @@ const router: IRouter = Router();
 
 router.get(
   '/',
-  requirePermission('channels:read'),
+  // Lists message ids, status and times from every channel in scope (D-310).
+  requirePermission('messages:read'),
   validate({ query: crossChannelSearchQuerySchema }),
   CrossChannelSearchController.search,
 );

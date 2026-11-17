@@ -7,6 +7,8 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, gte, lte, inArray, desc, sql, type SQL } from 'drizzle-orm';
 import { db } from '../lib/db.js';
 import { messages, connectorMessages, channels } from '../db/schema/index.js';
+import { ALL_CHANNELS } from '@galvanigraph/core-models';
+import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 
 // ----- Types -----
 
@@ -40,10 +42,13 @@ export interface SearchFilters {
 
 export class CrossChannelSearchService {
   /** Search messages across all channels with filters. */
-  static async search(filters: SearchFilters): Promise<Result<SearchResult>> {
+  static async search(filters: SearchFilters, scope: ChannelScope = ALL_CHANNELS): Promise<Result<SearchResult>> {
     return tryCatch(async () => {
       // Build WHERE conditions
       const conditions: SQL[] = [];
+      // Only channels inside the caller's scope (D-310); no filter for every channel.
+      const inScope = channelIdIn(messages.channelId, scope);
+      if (inScope !== undefined) conditions.push(inScope);
 
       if (filters.dateFrom) {
         conditions.push(gte(messages.receivedAt, new Date(filters.dateFrom)));

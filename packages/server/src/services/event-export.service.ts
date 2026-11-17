@@ -11,6 +11,8 @@ import { db } from '../lib/db.js';
 import { escapeCsvField } from '../lib/csv.js';
 import { events } from '../db/schema/index.js';
 import { buildEventWhereConditions } from './event.service.js';
+import { ALL_CHANNELS } from '@galvanigraph/core-models';
+import type { ChannelScope } from '../lib/channel-scope.js';
 
 // ----- Types -----
 
@@ -29,8 +31,8 @@ interface EventRow {
 
 const CSV_COLUMNS = ['id', 'name', 'level', 'outcome', 'userId', 'ipAddress', 'attributes', 'createdAt'] as const;
 
-async function fetchRows(query: EventExportQuery): Promise<readonly EventRow[]> {
-  const where = buildEventWhereConditions(query);
+async function fetchRows(query: EventExportQuery, scope: ChannelScope): Promise<readonly EventRow[]> {
+  const where = buildEventWhereConditions(query, scope);
 
   const dataQuery = db
     .select({
@@ -71,9 +73,9 @@ function rowToCsvFields(row: EventRow): string {
 
 export class EventExportService {
   /** Export matching events as RFC 4180 CSV. */
-  static async exportAsCsv(query: EventExportQuery): Promise<Result<string>> {
+  static async exportAsCsv(query: EventExportQuery, scope: ChannelScope = ALL_CHANNELS): Promise<Result<string>> {
     return tryCatch(async () => {
-      const rows = await fetchRows(query);
+      const rows = await fetchRows(query, scope);
       const header = CSV_COLUMNS.join(',');
       const lines = rows.map(rowToCsvFields);
       return `${header}\r\n${lines.join('\r\n')}${rows.length > 0 ? '\r\n' : ''}`;
@@ -81,9 +83,9 @@ export class EventExportService {
   }
 
   /** Export matching events as JSON array. */
-  static async exportAsJson(query: EventExportQuery): Promise<Result<string>> {
+  static async exportAsJson(query: EventExportQuery, scope: ChannelScope = ALL_CHANNELS): Promise<Result<string>> {
     return tryCatch(async () => {
-      const rows = await fetchRows(query);
+      const rows = await fetchRows(query, scope);
 
       const data = rows.map((row) => ({
         id: row.id,

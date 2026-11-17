@@ -8,6 +8,7 @@ import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { recordReadOrRefuse } from '../lib/audited-read.js';
 import logger from '../lib/logger.js';
+import { channelScopeOf } from '../lib/channel-scope.js';
 
 export class CrossChannelSearchController {
   static async search(req: Request, res: Response): Promise<void> {
@@ -21,7 +22,7 @@ export class CrossChannelSearchController {
       ...(query['channelIds'] ? { channelIds: String(query['channelIds']) } : {}),
     };
 
-    const result = await CrossChannelSearchService.search(filters);
+    const result = await CrossChannelSearchService.search(filters, await channelScopeOf(req, 'messages:read'));
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to search messages across channels');

@@ -18,11 +18,12 @@ import { recordReadBestEffort } from '../lib/audited-read.js';
 import { redactChannelDetail } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
 import { getEngine } from '../engine.js';
+import { channelScopeOf } from '../lib/channel-scope.js';
 
 export class ChannelController {
   static async list(req: Request, res: Response): Promise<void> {
     const query = req.query as unknown as ChannelListQuery;
-    const result = await ChannelService.list(query);
+    const result = await ChannelService.list(query, await channelScopeOf(req, 'channels:read'));
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list channels');

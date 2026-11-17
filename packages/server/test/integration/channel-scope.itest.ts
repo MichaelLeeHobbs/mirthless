@@ -117,6 +117,99 @@ describeIntegration('channel scope on channel routes (real Postgres)', () => {
     }
   });
 
+  /** GET `path` as `token` and return the `data` of a success answer. */
+  async function data<T>(token: string, path: string): Promise<T> {
+    const res = await fetch(`${base}/api/v1${path}`, { headers: { authorization: `Bearer ${token}` } });
+    expect(res.status, path).toBe(200);
+    return ((await res.json()) as { data: T }).data;
+  }
+
+  /** The test channels a list names, by the field it keys them on. */
+  const ours = (ids: readonly (string | null | undefined)[]): string[] =>
+    ids.filter((id): id is string => id === LAB_CHANNEL || id === RAD_CHANNEL).sort();
+
+  it('filters every list to the channels inside the scope (8b)', async () => {
+    await mods.pool.query(
+      `INSERT INTO events (level, name, outcome, channel_id) VALUES ('INFO', 'ITEST_SCOPE', 'SUCCESS', $1), ('INFO', 'ITEST_SCOPE', 'SUCCESS', $2), ('INFO', 'ITEST_SCOPE', 'SUCCESS', NULL)`,
+      [LAB_CHANNEL, RAD_CHANNEL],
+    );
+    try {
+      const lists: readonly (readonly [string, (token: string) => Promise<string[]>])[] = [
+        ['channels', async (t) => ours((await data<{ data: { id: string }[] }>(t, '/channels?pageSize=100')).data.map((c) => c.id))],
+        ['statistics', async (t) => ours((await data<{ channelId: string }[]>(t, '/channels/statistics')).map((s) => s.channelId))],
+        ['memberships', async (t) => ours((await data<{ channelId: string }[]>(t, '/channel-groups/memberships')).map((m) => m.channelId))],
+        ['export', async (t) => ours((await data<{ channels: { id: string }[] }>(t, '/channels/export')).channels.map((c) => c.id))],
+        ['events', async (t) => ours((await data<{ data: { channelId: string | null }[] }>(t, '/events?name=ITEST_SCOPE&pageSize=100')).data.map((e) => e.channelId))],
+      ];
+      for (const [name, list] of lists) {
+        expect(await list(scopedToken), `${name}, scoped`).toEqual([LAB_CHANNEL]);
+        expect(await list(allToken), `${name}, all channels`).toEqual([LAB_CHANNEL, RAD_CHANNEL].sort());
+      }
+      // A system-wide event (no channel) is for all-channel holders only.
+      const scopedEvents = await data<{ data: { channelId: string | null }[] }>(scopedToken, '/events?name=ITEST_SCOPE&pageSize=100');
+      expect(scopedEvents.data.some((e) => e.channelId === null)).toBe(false);
+    } finally {
+      await mods.pool.query(`DELETE FROM events WHERE name = 'ITEST_SCOPE'`);
+    }
+  });
+
+  it('filters statuses and tag assignments, and hides the channels of another group (8b)', async () => {
+    const tag = await mods.pool.query<{ id: string }>('INSERT INTO channel_tags (name) VALUES ($1) RETURNING id', [`itest-scope-${randomUUID().slice(0, 8)}`]);
+    const tagId = tag.rows[0]!.id;
+    await mods.pool.query('INSERT INTO channel_tag_assignments (tag_id, channel_id) VALUES ($1, $2), ($1, $3)', [tagId, LAB_CHANNEL, RAD_CHANNEL]);
+    try {
+      const tagged = (t: string): Promise<string[]> => data<{ tagId: string; channelId: string }[]>(t, '/tags/assignments')
+        .then((rows) => ours(rows.filter((r) => r.tagId === tagId).map((r) => r.channelId)));
+      expect(await tagged(scopedToken)).toEqual([LAB_CHANNEL]);
+      expect(await tagged(allToken)).toEqual([LAB_CHANNEL, RAD_CHANNEL].sort());
+
+      const statuses = await data<{ channelId: string }[]>(scopedToken, '/channels/status');
+      expect(statuses.some((s) => s.channelId === RAD_CHANNEL)).toBe(false);
+
+      const radGroupSeen = await data<{ channels: { id: string }[]; memberCount: number; outsideScope: number }>(scopedToken, `/channel-groups/${radGroup}`);
+      expect(radGroupSeen).toMatchObject({ channels: [], memberCount: 0, outsideScope: 1 });
+    } finally {
+      await mods.pool.query('DELETE FROM channel_tags WHERE id = $1', [tagId]);
+    }
+  });
+
+  it('answers an event of another channel, or a system-wide one, as not found when scoped (8b)', async () => {
+    const { rows } = await mods.pool.query<{ id: string }>(
+      `INSERT INTO events (level, name, outcome, channel_id) VALUES ('INFO', 'ITEST_SCOPE_ONE', 'SUCCESS', $1), ('INFO', 'ITEST_SCOPE_ONE', 'SUCCESS', NULL) RETURNING id`,
+      [RAD_CHANNEL],
+    );
+    try {
+      for (const { id } of rows) {
+        expect((await call(scopedToken, 'GET', `/events/${id}`)).status, id).toBe(404);
+        expect((await call(allToken, 'GET', `/events/${id}`)).status, id).toBe(200);
+      }
+    } finally {
+      await mods.pool.query(`DELETE FROM events WHERE name = 'ITEST_SCOPE_ONE'`);
+    }
+  });
+
+  it('hides the name of a dependent channel outside the scope (8b)', async () => {
+    await mods.pool.query('INSERT INTO channel_dependencies (channel_id, depends_on_channel_id) VALUES ($1, $2)', [RAD_CHANNEL, LAB_CHANNEL]);
+    try {
+      const dependents = await data<{ channelId: string; channelName: string }[]>(scopedToken, `/channels/${LAB_CHANNEL}/dependents`);
+      expect(dependents).toEqual([{ channelId: RAD_CHANNEL, channelName: 'Name unavailable' }]);
+    } finally {
+      await mods.pool.query('DELETE FROM channel_dependencies WHERE channel_id = $1', [RAD_CHANNEL]);
+    }
+  });
+
+  it('keeps a dependency on a hidden channel by id but hides its name', async () => {
+    await mods.pool.query('INSERT INTO channel_dependencies (channel_id, depends_on_channel_id) VALUES ($1, $2)', [LAB_CHANNEL, RAD_CHANNEL]);
+    try {
+      const scoped = await data<{ channelId: string; channelName: string }[]>(scopedToken, `/channels/${LAB_CHANNEL}/dependencies`);
+      expect(scoped).toEqual([{ channelId: RAD_CHANNEL, channelName: 'Name unavailable' }]);
+      const all = await data<{ channelName: string }[]>(allToken, `/channels/${LAB_CHANNEL}/dependencies`);
+      expect(all[0]?.channelName).toBe(`itest-${RAD_CHANNEL}`);
+    } finally {
+      await mods.pool.query('DELETE FROM channel_dependencies WHERE channel_id = $1', [LAB_CHANNEL]);
+    }
+  });
+
   it('lets an all-channel user reach both channels', async () => {
     for (const id of [LAB_CHANNEL, RAD_CHANNEL]) {
       const answer = await call(allToken, 'GET', `/channels/${id}/statistics`);

@@ -9,6 +9,7 @@ import { ChannelExportService } from '../services/channel-export.service.js';
 import { ChannelImportService } from '../services/channel-import.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
+import { channelScopeOf } from '../lib/channel-scope.js';
 
 export class ChannelExportController {
   /** Export a single channel by ID. */
@@ -29,7 +30,7 @@ export class ChannelExportController {
   /** Export all channels. */
   static async exportAll(req: Request, res: Response): Promise<void> {
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
-    const result = await ChannelExportService.exportAll(context);
+    const result = await ChannelExportService.exportAll(context, await channelScopeOf(req, 'channels:read'));
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to export all channels');

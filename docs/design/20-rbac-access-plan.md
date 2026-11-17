@@ -358,11 +358,18 @@ The debate's first and third slices (one `authenticate` mount and parser order; 
        - Channel routes check scope through `scopeToChannel(router)` in `middleware/permission.middleware.ts` rather than a `requireChannel` on each route. It reads the groups of the channel the path names once per request, through Express's `router.param`, and `requirePermission` then checks the permission on that channel, so no route in a scoped router can miss the check.
        - A caller holding the permission elsewhere gets 404 `Channel not found`, as for a channel that does not exist. One holding it nowhere still gets 403.
        - A route whose path also names a record inside the channel (a message, an attachment, a revision) relies on its service reading that record through the channel id, which each already does.
-     - **8b**: the list, statistics, export, tag, dependency, event and cross-channel search filters.
+     - **8b**:
+       - `lib/channel-scope.ts`'s `channelScopeOf(req, permission)` expands the caller's groups to channel ids once per request; "All channels" means no filter.
+       - The paginated lists filter in SQL with `channel_id = ANY(...)` (`channelIdIn`): the channel list, export-all, events (list, detail and export), and cross-channel search, which moves to `messages:read`.
+       - A scoped caller sees no system-wide event (one with no channel).
+       - The full lists are filtered on their channel ids before they are returned; with no paging, that gives the same rows. They are the statistics, the deployment statuses, tag assignments and group memberships.
+       - A dependency on a channel outside the scope keeps its id, so an edit does not drop it, and reads "Name unavailable".
      - **8c**: sockets, Test Connection and test-run.
      - These must land before slice 10 lets anyone write a scoped assignment, because until then a scoped holding is treated as held on every channel:
        - `POST /channels/import` with `collisionMode: OVERWRITE` checks the overwritten channels' scope (slice 9 already owns import);
        - the grant service refuses a scoped assignment of a role holding a permission limited to all-channel assignments (section 1's class rule), so `settings:write` and the other trust and identity permissions, guarded on routes that name no channel, are never held on a group.
+       - the reads a scoped holder of a system-read permission can make show only in-scope channels, or a count of the rest: an alert's `channelIds` (`alerts:read`, section 2), a library's channel links (`code_templates:read`, slice 9), the pruner's per-channel statistics, and tag assignment counts (`settings:read`);
+       - the all-channel statistics filter its QUEUED subquery in SQL rather than after the fact (8b filters the rows, which is correct but still aggregates every channel).
 9. **Membership as a grant on `PUT /channels/:id/groups`, group create/delete rules, create/clone/import/restore into a group, library links**, L.
    - Follows: HTTP route, Tests. Library links keep the existing `channel_ids` column, so no schema change.
    - Membership writes move into `grant.service` with `recordInTx`: `ChannelGroupService.setChannelGroups` and the Default join in `channel.service.ts` both write `channel_group_members` themselves today and record after commit. The move also invalidates the socket channel-to-groups map.

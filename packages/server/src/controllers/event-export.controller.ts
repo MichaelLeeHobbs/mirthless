@@ -10,14 +10,16 @@ import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 import { recordExportOrRefuse } from '../lib/audited-read.js';
 import { csvHeaderLines, exportHeader, wrapJsonExport } from '../lib/export-header.js';
+import { channelScopeOf } from '../lib/channel-scope.js';
 
 export class EventExportController {
   static async exportEvents(req: Request, res: Response): Promise<void> {
     const query = req.query as unknown as EventExportQuery;
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const scope = await channelScopeOf(req, 'events:read');
     const result = query.format === 'csv'
-      ? await EventExportService.exportAsCsv(query)
-      : await EventExportService.exportAsJson(query);
+      ? await EventExportService.exportAsCsv(query, scope)
+      : await EventExportService.exportAsJson(query, scope);
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack, format: query.format }, 'Failed to export events');
