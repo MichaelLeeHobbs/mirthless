@@ -53,6 +53,21 @@ const PAGES = {
   alerts: '/alerts',
   users: '/users',
   'user-edit-role': { url: '/users', click: 'Edit user' },
+  // A scoped user whose temporary access ends in half an hour: the banner, and My access.
+  'my-access': {
+    url: '/',
+    click: ['user menu', 'My access'],
+    user: {
+      role: 'Lab analyst',
+      permissions: ['channels:read', 'messages:read', 'messages:reprocess'],
+      grants: [
+        { permission: 'channels:read', scope: 'all' },
+        { permission: 'messages:read', scope: ['g1'] },
+        { permission: 'messages:reprocess', scope: ['g1', 'g2'] },
+      ],
+      nextExpiryAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+    },
+  },
   roles: '/roles',
   'role-editor': '/roles/r8',
   'role-admin-locked': '/roles/r1',
@@ -126,7 +141,9 @@ async function launch() {
 }
 
 async function shoot(browser, name, target, variantName) {
-  const { url, keys, type, click, fill, scrollTo } = typeof target === 'string' ? { url: target } : target;
+  const { url, keys, type, click, fill, scrollTo, user } = typeof target === 'string' ? { url: target } : target;
+  // `user` replaces fields of the signed-in user, for a page that depends on who is looking.
+  const auth = user ? { ...AUTH, user: { ...AUTH.user, ...user } } : AUTH;
   const v = VARIANTS[variantName];
   const context = await browser.newContext({
     viewport: v.viewport, isMobile: v.isMobile ?? false, deviceScaleFactor: v.deviceScaleFactor ?? 1, reducedMotion: 'reduce',
@@ -152,7 +169,7 @@ async function shoot(browser, name, target, variantName) {
   await page.addInitScript(([auth, mode]) => {
     localStorage.setItem('galvanigraph_theme', mode);
     if (auth) localStorage.setItem('galvanigraph_auth', JSON.stringify(auth));
-  }, [signedIn ? AUTH : null, v.mode]);
+  }, [signedIn ? auth : null, v.mode]);
   await page.goto(opts.base + url, { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);
   if (keys) await page.keyboard.press(keys);

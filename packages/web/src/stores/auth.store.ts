@@ -10,6 +10,8 @@ export interface AuthUser {
   readonly permissions: ReadonlyArray<string>;
   /** Each held permission's scope: every channel, or group ids (D-310). Absent from older servers. */
   readonly grants?: ReadonlyArray<GrantEntry>;
+  /** When the first temporary access ends (ISO), or null; absent from older servers. */
+  readonly nextExpiryAt?: string | null;
 }
 
 interface AuthState {
@@ -23,9 +25,15 @@ interface AuthState {
    * clears the flag server-side; the UI mirrors that via clearMustChangePassword.
    */
   readonly mustChangePassword: boolean;
+  /**
+   * When a refresh found the user's access had changed (ISO), so a 403 or 404
+   * may mean "no longer yours" rather than "deleted" (D-310). Not persisted.
+   */
+  readonly accessChangedAt: string | null;
 }
 
 interface AuthActions {
+  readonly setAccessChanged: (at: string | null) => void;
   readonly setAuth: (user: AuthUser, accessToken: string, mustChangePassword?: boolean) => void;
   readonly setAccessToken: (accessToken: string) => void;
   readonly clearAuth: () => void;
@@ -82,6 +90,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
   isAuthenticated: initialState.isAuthenticated,
   isLoading: false,
   mustChangePassword: initialState.mustChangePassword,
+  accessChangedAt: null,
+
+  setAccessChanged: (at: string | null): void => {
+    set({ accessChangedAt: at });
+  },
 
   setAuth: (user: AuthUser, accessToken: string, mustChangePassword = false): void => {
     persistState(user, accessToken, mustChangePassword);
@@ -97,7 +110,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   clearAuth: (): void => {
     persistState(null, null, false);
-    set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false, mustChangePassword: false });
+    set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false, mustChangePassword: false, accessChangedAt: null });
   },
 
   setLoading: (isLoading: boolean): void => {

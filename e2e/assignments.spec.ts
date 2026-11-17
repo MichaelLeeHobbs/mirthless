@@ -14,7 +14,8 @@ import { API_BASE, adminApi, deleteOk, getData, postData } from './fixtures/api.
 
 const RUN_ID = Date.now().toString(36);
 const USERNAME = `e2e-access-${RUN_ID}`;
-const GROUP = `e2e-lab-${RUN_ID}`;
+// Names of this spec's own: spec files run in parallel against one database (D-289).
+const GROUP = `e2e-assign-lab-${RUN_ID}`;
 
 interface Assignment { readonly roleName: string; readonly groupIds: readonly string[] | null; readonly reason: string | null }
 

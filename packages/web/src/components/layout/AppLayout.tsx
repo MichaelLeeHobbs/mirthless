@@ -38,6 +38,9 @@ import { JumpToButton } from './JumpToButton.js';
 import { HeaderBreadcrumbs } from './HeaderBreadcrumbs.js';
 import { ChangePasswordDialog } from '../account/ChangePasswordDialog.js';
 import { AboutDialog } from '../account/AboutDialog.js';
+import { MyAccessDialog } from '../account/MyAccessDialog.js';
+import { AccessBanners } from '../account/AccessBanners.js';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
 
 const DRAWER_WIDTH = 240;
 const COLLAPSED_DRAWER_WIDTH = 64;
@@ -64,6 +67,7 @@ export function AppLayout(): ReactNode {
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [myAccessOpen, setMyAccessOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const handleHelpOpen = useCallback(() => { setShortcutHelpOpen(true); }, []);
   const handlePaletteOpen = useCallback(() => { setPaletteOpen(true); }, []);
@@ -284,6 +288,12 @@ export function AppLayout(): ReactNode {
                 </ListItemIcon>
                 Change Password
               </MenuItem>
+              <MenuItem onClick={() => { handleUserMenuClose(); setMyAccessOpen(true); }}>
+                <ListItemIcon>
+                  <VpnKeyIcon fontSize="small" />
+                </ListItemIcon>
+                My access
+              </MenuItem>
               <MenuItem onClick={() => { handleUserMenuClose(); setAboutOpen(true); }}>
                 <ListItemIcon>
                   <InfoIcon fontSize="small" />
@@ -336,6 +346,7 @@ export function AppLayout(): ReactNode {
           backgroundColor: 'background.default',
         }}
       >
+        <AccessBanners />
         <Outlet />
       </Box>
       <KeyboardShortcutHelp open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
@@ -344,6 +355,7 @@ export function AppLayout(): ReactNode {
       {/* Mandatory password change blocks the app until completed. */}
       <ChangePasswordDialog forced open={mustChangePassword} onClose={() => { /* cleared via store on success */ }} />
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <MyAccessDialog open={myAccessOpen} onClose={() => setMyAccessOpen(false)} />
     </Box>
   );
 }

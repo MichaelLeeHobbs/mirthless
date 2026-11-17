@@ -619,7 +619,10 @@ export function ChannelEditorPage(): ReactNode {
     return (
       <Box>
         <Alert severity="error" sx={{ mb: 2 }}>
-          Failed to load channel: {loadError instanceof Error ? loadError.message : 'Unknown error'}
+          {/* A channel outside the caller's access answers as not found (D-310), so say both. */}
+          {loadError instanceof Error && /not found/i.test(loadError.message)
+            ? 'This channel was not found, or it is not in your access.'
+            : `Failed to load channel: ${loadError instanceof Error ? loadError.message : 'Unknown error'}`}
         </Alert>
         <Button startIcon={<ArrowBackIcon />} onClick={() => { navigate('/channels'); }}>
           Back to Channels

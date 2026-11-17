@@ -6,8 +6,9 @@
 // permission list follows a role change instead of keeping the sign-in list.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { apiFetch } from '../client.js';
+import { accessKey, apiFetch, checkAccess, isChannelPath, resetAccessCheck } from '../client.js';
 import { useAuthStore } from '../../stores/auth.store.js';
+import type { ChannelGroupId } from '@galvanigraph/core-models';
 
 const SIGNED_IN = {
   id: 'u1', username: 'kpatel', email: 'kpatel@example.test', role: 'deployer',
@@ -101,5 +102,67 @@ describe('apiFetch refresh', () => {
 
     expect(result.success).toBe(false);
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+});
+
+describe('access check (D-310)', () => {
+  const groups = (...ids: string[]): readonly ChannelGroupId[] => ids as ChannelGroupId[];
+  const refreshed = (grants: unknown): Response => json(200, { success: true, data: { accessToken: 'new-token', user: { ...SIGNED_IN, grants } } });
+
+  beforeEach(() => { resetAccessCheck(); });
+
+  it('refreshes after a 404 and notes that the access changed', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json(404, { success: false, error: { code: 'NOT_FOUND', message: 'Channel not found' } }))
+      .mockResolvedValueOnce(refreshed([{ permission: 'channels:read', scope: ['g1'] }]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await apiFetch('/channels/0b6f1c2e-1111-4222-8333-944445555666');
+
+    expect(result.success).toBe(false);
+    await vi.waitFor(() => { expect(useAuthStore.getState().accessChangedAt).not.toBeNull(); });
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/auth/refresh', expect.anything());
+  });
+
+  it('notes nothing when a refresh finds the same access', async () => {
+    useAuthStore.getState().setAccessChanged(null);
+    useAuthStore.getState().setAuth({ ...SIGNED_IN, grants: [{ permission: 'channels:read', scope: groups('g1') }] }, 'old-token');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(refreshed([{ permission: 'channels:read', scope: ['g1'] }])));
+
+    await checkAccess(true);
+
+    expect(useAuthStore.getState().accessChangedAt).toBeNull();
+  });
+
+  it('checks only after a 404 from a route for one channel', () => {
+    expect(isChannelPath('/channels/0b6f1c2e-1111-4222-8333-944445555666')).toBe(true);
+    expect(isChannelPath('/channels/0b6f1c2e-1111-4222-8333-944445555666/messages?limit=25')).toBe(true);
+    expect(isChannelPath('/channels')).toBe(false);
+    expect(isChannelPath('/channels/statistics')).toBe(false);
+    expect(isChannelPath('/alerts/0b6f1c2e-1111-4222-8333-944445555666')).toBe(false);
+  });
+
+  it('retries a 401 with a token a refresh stored meanwhile, before rotating the session again', async () => {
+    const fetchMock = vi.fn().mockImplementationOnce(async () => {
+      // A refresh elsewhere finished while this request was in flight.
+      useAuthStore.getState().setAccessToken('rotated-token');
+      return json(401, { success: false });
+    }).mockResolvedValueOnce(json(200, { success: true, data: { ok: true } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await apiFetch('/channels');
+
+    expect(result.success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/channels', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer rotated-token' }) as unknown,
+    }));
+  });
+
+  it('compares scopes regardless of order', () => {
+    const a = accessKey({ ...SIGNED_IN, grants: [{ permission: 'channels:read', scope: groups('g2', 'g1') }] });
+    const b = accessKey({ ...SIGNED_IN, grants: [{ permission: 'channels:read', scope: groups('g1', 'g2') }] });
+    expect(a).toBe(b);
+    expect(a).not.toBe(accessKey({ ...SIGNED_IN, grants: [{ permission: 'channels:read', scope: 'all' }] }));
   });
 });

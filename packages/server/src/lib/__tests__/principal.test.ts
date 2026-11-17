@@ -12,7 +12,7 @@ vi.mock('../logger.js', () => ({ default: { warn, error, info: vi.fn(), debug: v
 vi.mock('../db.js', () => ({ db: {} }));
 
 import { PERMISSIONS, ALL_CHANNELS } from '@galvanigraph/core-models';
-import { toAssignmentGrants, queryUserStanding, roleLabel } from '../principal.js';
+import { toAssignmentGrants, queryUserStanding, roleLabel, nextExpiryOf } from '../principal.js';
 
 const USER = '00000000-0000-4000-8000-000000000001';
 
@@ -89,6 +89,21 @@ describe('queryUserStanding', () => {
 
   it('returns null for a user that does not exist', async () => {
     expect(await queryUserStanding(executorReturning([]), USER)).toBeNull();
+  });
+});
+
+describe('nextExpiryOf', () => {
+  const now = new Date('2026-11-17T12:00:00Z');
+  const at = (iso: string | null): { permissions: []; scope: typeof ALL_CHANNELS; expiresAt: Date | null } =>
+    ({ permissions: [], scope: ALL_CHANNELS, expiresAt: iso === null ? null : new Date(iso) });
+
+  it('is the earliest end time still ahead', () => {
+    expect(nextExpiryOf([at('2026-11-18T00:00:00Z'), at(null), at('2026-11-17T13:00:00Z')], now)?.toISOString()).toBe('2026-11-17T13:00:00.000Z');
+  });
+
+  it('ignores an end time already past, and is null when nothing ends', () => {
+    expect(nextExpiryOf([at('2026-11-17T11:00:00Z'), at(null)], now)).toBeNull();
+    expect(nextExpiryOf([], now)).toBeNull();
   });
 });
 

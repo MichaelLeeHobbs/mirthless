@@ -29,6 +29,17 @@ export interface UserStanding {
   readonly grants: FoldedGrants;
   /** The permissions held anywhere, sorted: the flat list the web and sockets read. */
   readonly permissions: readonly Permission[];
+  /** When the first live assignment with an end time ends, or null when none has one (D-310). */
+  readonly nextExpiry: Date | null;
+}
+
+/** The earliest end time among assignments still live at `now`, or null. */
+export function nextExpiryOf(grants: readonly AssignmentGrant[], now: Date): Date | null {
+  let next: Date | null = null;
+  for (const { expiresAt } of grants) {
+    if (expiresAt instanceof Date && expiresAt.getTime() > now.getTime() && (next === null || expiresAt < next)) next = expiresAt;
+  }
+  return next;
 }
 
 const ALL_PERMISSIONS: readonly Permission[] = Object.values(PERMISSIONS);
@@ -145,6 +156,7 @@ export async function queryUserStanding(executor: Executor, userId: string, now:
     roles: held.roles,
     grants,
     permissions: [...grants.keys()].sort(),
+    nextExpiry: nextExpiryOf(held.grants, now),
   };
 }
 
