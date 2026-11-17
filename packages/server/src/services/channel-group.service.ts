@@ -21,6 +21,8 @@ export interface ChannelGroupSummary {
   readonly description: string | null;
   readonly revision: number;
   readonly memberCount: number;
+  /** A live assignment is scoped to this group: adding a channel to it gives access (D-310). */
+  readonly givesAccess: boolean;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -86,6 +88,7 @@ export class ChannelGroupService {
         .orderBy(asc(channelGroups.name));
 
       const summaries: ChannelGroupSummary[] = [];
+      const giving = await GrantService.groupsGivingAccess();
 
       for (const group of groups) {
         const [countRow] = await db
@@ -99,6 +102,7 @@ export class ChannelGroupService {
           description: group.description,
           revision: group.revision,
           memberCount: countRow?.value ?? 0,
+          givesAccess: giving.has(group.id),
           createdAt: group.createdAt,
           updatedAt: group.updatedAt,
         });
@@ -149,6 +153,7 @@ export class ChannelGroupService {
         description: group.description,
         revision: group.revision,
         memberCount: members.length,
+        givesAccess: (await GrantService.groupsGivingAccess()).has(group.id),
         createdAt: group.createdAt,
         updatedAt: group.updatedAt,
         channels: members,
@@ -192,6 +197,7 @@ export class ChannelGroupService {
         description: row!.description,
         revision: row!.revision,
         memberCount: 0,
+        givesAccess: false,
         createdAt: row!.createdAt,
         updatedAt: row!.updatedAt,
       };
@@ -272,6 +278,7 @@ export class ChannelGroupService {
         description: row!.description,
         revision: row!.revision,
         memberCount: countRow?.value ?? 0,
+        givesAccess: (await GrantService.groupsGivingAccess()).has(id),
         createdAt: row!.createdAt,
         updatedAt: row!.updatedAt,
       };

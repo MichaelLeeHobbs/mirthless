@@ -112,6 +112,19 @@ describeIntegration('group membership and group rules (real Postgres)', () => {
     expect((await call(scoped.token, 'DELETE', `/channel-groups/${lab}`)).status).toBe(403);
   });
 
+  it('marks the groups a live assignment is scoped to as giving access', async () => {
+    const used = await group();
+    const lapsed = await group();
+    const unused = await group();
+    await userWith('channel-viewer', used);
+    const old = await userWith('channel-viewer', lapsed);
+    await mods.pool.query(`UPDATE assignments SET expires_at = now() - interval '1 day' WHERE user_id = $1`, [old.id]);
+    const admin = await userWith('admin', null);
+    const listed = await call(admin.token, 'GET', '/channel-groups');
+    const byId = new Map((listed.json as { data: Array<{ id: string; givesAccess: boolean }> }).data.map((g) => [g.id, g.givesAccess]));
+    expect([byId.get(used), byId.get(lapsed), byId.get(unused)]).toEqual([true, false, false]);
+  });
+
   it('refuses to delete a group an assignment scopes to', async () => {
     const lab = await group();
     await userWith('channel-viewer', lab);

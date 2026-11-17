@@ -19,6 +19,7 @@ import AddIcon from '@mui/icons-material/Add';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import { LibraryTree } from '../components/code-templates/LibraryTree.js';
 import { TemplateEditor } from '../components/code-templates/TemplateEditor.js';
+import { LibraryLinksField } from '../components/code-templates/LibraryLinksField.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { useNotification } from '../stores/notification.store.js';
 import { PageHeader } from '../components/common/PageHeader.js';
@@ -48,6 +49,14 @@ interface ConfirmState {
 }
 
 const CLOSED_CONFIRM: ConfirmState = { open: false, title: '', message: '', onConfirm: () => {} };
+
+/** Whether the dialog's links differ from the library's (as far as the editor can see them). */
+function linksChanged(lib: CodeTemplateLibrary, links: readonly string[] | null | undefined): boolean {
+  const before = lib.channelIds ?? null;
+  const after = links ?? null;
+  if (before === null || after === null) return before !== after;
+  return before.length !== after.length || before.some((id) => !after.includes(id));
+}
 
 export function CodeTemplatePage(): ReactNode {
   const {
@@ -83,6 +92,8 @@ export function CodeTemplatePage(): ReactNode {
   const [editingLibrary, setEditingLibrary] = useState<CodeTemplateLibrary | null>(null);
   const [dialogName, setDialogName] = useState('');
   const [dialogDescription, setDialogDescription] = useState('');
+  // undefined: a new library's links left to the server's default; null: every channel.
+  const [dialogLinks, setDialogLinks] = useState<readonly string[] | null | undefined>(undefined);
   const [confirm, setConfirm] = useState<ConfirmState>(CLOSED_CONFIRM);
   const [editorDirty, setEditorDirty] = useState(false);
   // undefined = no pending in-page switch; a value = switch target once confirmed.
@@ -133,7 +144,11 @@ export function CodeTemplatePage(): ReactNode {
 
   const handleCreateLibrary = async (): Promise<void> => {
     try {
-      await createLibrary.mutateAsync({ name: dialogName, description: dialogDescription });
+      // Links left alone take the server's default for the writer.
+      await createLibrary.mutateAsync({
+        name: dialogName, description: dialogDescription,
+        ...(dialogLinks === undefined ? {} : { channelIds: dialogLinks === null ? null : [...dialogLinks] }),
+      });
       setDialogMode(null);
       setDialogName('');
       setDialogDescription('');
@@ -148,7 +163,11 @@ export function CodeTemplatePage(): ReactNode {
     try {
       await updateLibrary.mutateAsync({
         id: editingLibrary.id,
-        input: { name: dialogName, description: dialogDescription, revision: editingLibrary.revision },
+        input: {
+          name: dialogName, description: dialogDescription, revision: editingLibrary.revision,
+          // Sent only when changed, so links outside the editor's access are never dropped.
+          ...(linksChanged(editingLibrary, dialogLinks) ? { channelIds: dialogLinks === null || dialogLinks === undefined ? null : [...dialogLinks] } : {}),
+        },
       });
       setDialogMode(null);
       setEditingLibrary(null);
@@ -252,12 +271,14 @@ export function CodeTemplatePage(): ReactNode {
     setEditingLibrary(lib);
     setDialogName(lib.name);
     setDialogDescription(lib.description ?? '');
+    setDialogLinks(lib.channelIds ?? null);
     setDialogMode('edit-library');
   };
 
   const openCreateLibraryDialog = (): void => {
     setDialogName('');
     setDialogDescription('');
+    setDialogLinks(undefined);
     setDialogMode('create-library');
   };
 
@@ -393,6 +414,20 @@ export function CodeTemplatePage(): ReactNode {
             multiline
             minRows={2}
           />
+          <Box sx={{ mt: 2 }}>
+            {dialogLinks === undefined && dialogMode === 'create-library' ? (
+              <Typography variant="body2" color="text.secondary">
+                Linked to every channel, or to your own channels if your access covers some groups only.{' '}
+                <Button size="small" onClick={() => { setDialogLinks([]); }}>Choose channels</Button>
+              </Typography>
+            ) : (
+              <LibraryLinksField
+                value={dialogLinks ?? null}
+                outsideScopeCount={dialogMode === 'edit-library' ? (editingLibrary?.outsideScopeCount ?? 0) : 0}
+                onChange={setDialogLinks}
+              />
+            )}
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => { setDialogMode(null); }}>Cancel</Button>

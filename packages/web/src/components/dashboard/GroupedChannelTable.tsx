@@ -60,8 +60,9 @@ import { ConfirmDialog } from '../common/ConfirmDialog.js';
 import { useContextMenu } from '../../hooks/use-context-menu.js';
 import { useNotification } from '../../stores/notification.store.js';
 import { errorMessage } from '../../lib/error-message.js';
-import { ChannelStateChip, StatusDot } from '../common/StatusChip.js';
-import { channelStateLevel } from '../../lib/status.js';
+import Tooltip from '@mui/material/Tooltip';
+import { ChannelStateChip, StatusChip, StatusDot } from '../common/StatusChip.js';
+import { channelStateLevel, groupAccessLevel } from '../../lib/status.js';
 import { DASHBOARD_COLUMNS, DEFAULT_VISIBLE_COLUMNS, type DashboardColumnId } from '../../lib/dashboard-columns.js';
 import { ChannelBodyCells, GroupTotalCells } from './ChannelColumnCells.js';
 
@@ -100,6 +101,8 @@ const DEFAULT_VISIBLE = new Set<DashboardColumnId>(DEFAULT_VISIBLE_COLUMNS);
 interface GroupSection {
   readonly groupId: string;
   readonly groupName: string;
+  /** A live assignment is scoped to the group (D-310). */
+  readonly givesAccess: boolean;
   readonly channels: readonly ChannelRow[];
   readonly totals: { received: number; filtered: number; sent: number; errored: number; queued: number };
 }
@@ -403,6 +406,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
       result.push({
         groupId: group.id,
         groupName: group.name,
+        givesAccess: group.givesAccess === true,
         channels,
         totals: sumTotals(channels),
       });
@@ -412,6 +416,7 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
       result.push({
         groupId: '__ungrouped__',
         groupName: 'Ungrouped',
+        givesAccess: false,
         channels: ungrouped,
         totals: sumTotals(ungrouped),
       });
@@ -465,6 +470,11 @@ export function GroupedChannelTable({ statistics, deploymentStatuses, groups, me
                           <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                             {section.groupName} ({section.channels.length})
                           </Typography>
+                          {section.givesAccess && (
+                            <Tooltip title="People have access to this group's channels. Adding a channel gives them access to it.">
+                              <span tabIndex={0} aria-label="Gives access: people have access to this group's channels"><StatusChip label="Gives access" level={groupAccessLevel()} /></span>
+                            </Tooltip>
+                          )}
                           {section.groupId !== '__ungrouped__' ? (
                             <IconButton
                               className="group-menu-btn"

@@ -137,6 +137,11 @@ vi.mock('drizzle-orm', () => ({
 const { emitEvent } = vi.hoisted(() => ({ emitEvent: vi.fn() }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent }));
 
+// Which groups give access is read from the assignment tables, which only the
+// grant service reads; covered against Postgres in group-grants.itest.ts.
+const groupsGivingAccess = vi.fn().mockResolvedValue(new Set<string>());
+vi.mock('../grant.service.js', () => ({ GrantService: { groupsGivingAccess, applyChannelGroups: vi.fn() } }));
+
 const { ChannelGroupService } = await import('../channel-group.service.js');
 
 // ----- Fixtures -----
@@ -182,6 +187,17 @@ describe('ChannelGroupService', () => {
       expect(result.value).toHaveLength(1);
       expect(result.value[0]!.name).toBe('HL7 Feeds');
       expect(result.value[0]!.memberCount).toBe(3);
+      expect(result.value[0]!.givesAccess).toBe(false);
+    });
+
+    it('marks a group a live assignment is scoped to as giving access', async () => {
+      groupsGivingAccess.mockResolvedValueOnce(new Set([GROUP_ID]));
+      pushOrderableResponse([makeGroupRow()]);
+      pushResponse([{ value: 0 }]);
+
+      const result = await ChannelGroupService.listGroups();
+
+      expect(result.ok && result.value[0]!.givesAccess).toBe(true);
     });
   });
 

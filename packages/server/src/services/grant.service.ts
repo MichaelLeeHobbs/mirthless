@@ -394,6 +394,14 @@ export class GrantService {
     return before;
   }
 
+  /** The groups a live assignment is scoped to: adding a channel to one gives access (D-310). */
+  static async groupsGivingAccess(reader: Reader = db): Promise<ReadonlySet<string>> {
+    const rows = await reader.select({ groupId: assignmentGroups.channelGroupId }).from(assignmentGroups)
+      .innerJoin(assignments, eq(assignments.id, assignmentGroups.assignmentId))
+      .where(isLiveAssignment());
+    return new Set(rows.map((r) => r.groupId));
+  }
+
   /** A user's assignments, live and expired, oldest first. */
   static listAssignments(reader: Reader, userId: string): Promise<readonly AssignmentView[]> {
     return assignmentsOf(reader, userId);

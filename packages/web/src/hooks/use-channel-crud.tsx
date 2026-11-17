@@ -13,7 +13,10 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
+import Box from '@mui/material/Box';
 import { useDeleteChannel, useCloneChannel } from './use-channels.js';
+import { useNewChannelGroups } from './use-new-channel-groups.js';
+import { NewChannelGroupField } from '../components/channels/NewChannelGroupField.js';
 import { downloadChannelExport } from '../lib/channel-export.js';
 import { useNotification } from '../stores/notification.store.js';
 
@@ -38,10 +41,14 @@ export function useChannelCrud(): ChannelCrud {
   const [deleteTarget, setDeleteTarget] = useState<ChannelRef | null>(null);
   const [cloneTarget, setCloneTarget] = useState<ChannelRef | null>(null);
   const [cloneName, setCloneName] = useState('');
+  // The group the clone joins, asked only of a writer scoped to several groups (D-310).
+  const [cloneGroupId, setCloneGroupId] = useState('');
+  const needsGroup = useNewChannelGroups() !== null;
 
   const onClone = useCallback((id: string, name: string): void => {
     setCloneTarget({ id, name });
     setCloneName(`Copy of ${name}`);
+    setCloneGroupId('');
   }, []);
 
   const onDelete = useCallback((id: string, name: string): void => {
@@ -67,9 +74,10 @@ export function useChannelCrud(): ChannelCrud {
   const handleCloneConfirm = async (): Promise<void> => {
     if (!cloneTarget || !cloneName.trim()) return;
     try {
-      await cloneChannel.mutateAsync({ id: cloneTarget.id, name: cloneName.trim() });
+      await cloneChannel.mutateAsync({ id: cloneTarget.id, name: cloneName.trim(), ...(cloneGroupId === '' ? {} : { groupId: cloneGroupId }) });
       setCloneTarget(null);
       setCloneName('');
+      setCloneGroupId('');
     } catch {
       // Global mutation handler surfaces the error toast; keep the dialog open.
     }
@@ -106,10 +114,11 @@ export function useChannelCrud(): ChannelCrud {
             onChange={(e) => { setCloneName(e.target.value); }}
             slotProps={{ htmlInput: { maxLength: 255 } }}
           />
+          <Box sx={{ mt: 2 }}><NewChannelGroupField value={cloneGroupId} onChange={setCloneGroupId} /></Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => { setCloneTarget(null); }}>Cancel</Button>
-          <Button variant="contained" onClick={handleCloneConfirm} disabled={cloneChannel.isPending || !cloneName.trim()}>
+          <Button variant="contained" onClick={handleCloneConfirm} disabled={cloneChannel.isPending || !cloneName.trim() || (needsGroup && cloneGroupId === '')}>
             Clone
           </Button>
         </DialogActions>

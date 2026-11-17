@@ -1,4 +1,4 @@
-import type { ApiResponse } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, type ApiResponse, type GrantEntry } from '@galvanigraph/core-models';
 import { isPlainObject } from '@galvanigraph/core-util';
 import { useAuthStore, type AuthUser } from '../stores/auth.store.js';
 import { noticeAuditUnavailable } from '../lib/audit-unavailable.js';
@@ -22,13 +22,32 @@ interface FetchOptions {
   readonly signal?: AbortSignal;
 }
 
+/**
+ * The grants in a refresh answer: each permission with every channel or its
+ * group ids (D-310). Undefined when absent or malformed, so the UI falls back
+ * to treating permissions as unscoped, and the server still judges each request.
+ */
+export function readGrants(value: unknown): GrantEntry[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const grants: GrantEntry[] = [];
+  for (const g of value) {
+    if (!isPlainObject(g) || typeof g['permission'] !== 'string') return undefined;
+    const scope = g['scope'];
+    const ok = scope === ALL_CHANNELS || (Array.isArray(scope) && scope.every((id) => typeof id === 'string'));
+    if (!ok) return undefined;
+    grants.push({ permission: g['permission'], scope } as GrantEntry);
+  }
+  return grants;
+}
+
 /** The user in a refresh answer, or null when it is missing or malformed. */
-function readRefreshedUser(value: unknown): RefreshResult['user'] {
+export function readRefreshedUser(value: unknown): RefreshResult['user'] {
   if (!isPlainObject(value)) return null;
   const { id, username, email, role, permissions, mustChangePassword } = value;
   if (typeof id !== 'string' || typeof username !== 'string' || typeof email !== 'string' || typeof role !== 'string') return null;
   if (!Array.isArray(permissions) || !permissions.every((p): p is string => typeof p === 'string')) return null;
-  return { profile: { id, username, email, role, permissions }, mustChangePassword: mustChangePassword === true };
+  const grants = readGrants(value['grants']);
+  return { profile: { id, username, email, role, permissions, ...(grants === undefined ? {} : { grants }) }, mustChangePassword: mustChangePassword === true };
 }
 
 /** Attempt to refresh the session using the refresh endpoint */
@@ -205,6 +224,10 @@ export interface CodeTemplateLibrary {
   readonly description: string | null;
   readonly revision: number;
   readonly templateCount: number;
+  /** The channels whose scripts get the library's templates, as far as the reader may see; null: every channel. */
+  readonly channelIds?: readonly string[] | null;
+  /** Links outside the reader's access, left out of `channelIds`. */
+  readonly outsideScopeCount?: number;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

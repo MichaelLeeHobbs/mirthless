@@ -40,7 +40,7 @@ const tags = [
 ];
 
 const groups = [
-  { id: 'g1', name: 'Clinical', description: 'ADT, results and orders', revision: 2, memberCount: 3, createdAt: ago(9000), updatedAt: ago(600) },
+  { id: 'g1', name: 'Clinical', description: 'ADT, results and orders', revision: 2, memberCount: 3, givesAccess: true, createdAt: ago(9000), updatedAt: ago(600) },
   { id: 'g2', name: 'Imaging', description: null, revision: 1, memberCount: 1, createdAt: ago(9000), updatedAt: ago(900) },
 ];
 
@@ -248,7 +248,7 @@ const logs = [
 ].map(([level, levelLabel, logger, message], i) => ({ timestamp: ago(i * 2), level, levelLabel, logger, message }));
 
 const libraries = [
-  { id: 'l1', name: 'HL7 helpers', description: 'Segment and field utilities', revision: 4, templateCount: 2, createdAt: ago(90000), updatedAt: ago(800) },
+  { id: 'l1', name: 'HL7 helpers', description: 'Segment and field utilities', revision: 4, templateCount: 2, channelIds: ['c1', 'c2'], outsideScopeCount: 3, createdAt: ago(90000), updatedAt: ago(800) },
   { id: 'l2', name: 'Date formatting', description: null, revision: 1, templateCount: 1, createdAt: ago(90000), updatedAt: ago(5000) },
 ];
 const templates = [

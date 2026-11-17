@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { GrantEntry } from '@galvanigraph/core-models';
 
 /** User profile returned from the API at sign-in and with each session refresh */
 export interface AuthUser {
@@ -7,6 +8,8 @@ export interface AuthUser {
   readonly email: string;
   readonly role: string;
   readonly permissions: ReadonlyArray<string>;
+  /** Each held permission's scope: every channel, or group ids (D-310). Absent from older servers. */
+  readonly grants?: ReadonlyArray<GrantEntry>;
 }
 
 interface AuthState {
