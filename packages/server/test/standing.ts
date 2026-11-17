@@ -5,7 +5,7 @@
 // what they hold) with this, giving the user one all-channel assignment of the
 // built-in role named in `role`, or none.
 
-import { ALL_CHANNELS, foldGrants } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, foldGrants, type ChannelGroupId } from '@galvanigraph/core-models';
 import { builtInRolePermissions } from '../src/db/seeds/roles.js';
 import type { UserStanding } from '../src/lib/principal.js';
 
@@ -17,11 +17,14 @@ export interface StandingRow {
   readonly mustChangePassword?: boolean;
   /** A built-in role's name; omitted, the user holds nothing. */
   readonly role?: string;
+  /** The channel groups the assignment covers; omitted, every channel. */
+  readonly groups?: readonly string[];
 }
 
 export function standingFor(row: StandingRow): UserStanding {
   const permissions = row.role === undefined ? [] : builtInRolePermissions(row.role);
-  const grants = foldGrants(row.role === undefined ? [] : [{ permissions, scope: ALL_CHANNELS }], new Date());
+  const scope = row.groups === undefined ? ALL_CHANNELS : (row.groups as readonly ChannelGroupId[]);
+  const grants = foldGrants(row.role === undefined ? [] : [{ permissions, scope }], new Date());
   return {
     id: row.id,
     username: row.username ?? 'user',

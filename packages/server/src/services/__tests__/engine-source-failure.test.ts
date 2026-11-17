@@ -56,7 +56,7 @@ vi.mock('../email.service.js', () => ({ EmailService: { sendMail: alerts.sendMai
 
 const events = vi.hoisted(() => ({ emitEvent: vi.fn(), emitToAll: vi.fn() }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: events.emitEvent }));
-vi.mock('../../lib/socket.js', () => ({ emitToAll: events.emitToAll }));
+vi.mock('../../lib/socket.js', () => ({ emitToChannelAudience: events.emitToAll }));
 
 const mockSelect = vi.fn();
 vi.mock('../../lib/db.js', () => ({ db: { select: mockSelect } }));
@@ -135,7 +135,7 @@ describe('EngineManager source failure', () => {
       level: 'ERROR', name: 'CHANNEL_STOPPED', outcome: 'FAILURE', channelId: CHANNEL_ID,
       attributes: expect.objectContaining({ reason: 'SOURCE_FAILED', error: expect.stringContaining('offset 7') }),
     }));
-    expect(events.emitToAll).toHaveBeenCalledWith('channel:state', { channelId: CHANNEL_ID, state: 'STOPPED' });
+    expect(events.emitToAll).toHaveBeenCalledWith(CHANNEL_ID, 'channel:state', { channelId: CHANNEL_ID, state: 'STOPPED' });
     await vi.waitFor(() => { expect(alerts.sendMail).toHaveBeenCalledTimes(1); }, WAIT);
     expect(alerts.sendMail.mock.calls[0]?.[2]).toContain('offset 7');
     await engine.dispose();

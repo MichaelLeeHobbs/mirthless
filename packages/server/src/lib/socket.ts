@@ -6,13 +6,14 @@
 
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
-import { PERMISSIONS, holdsPermission, type Permission } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, PERMISSIONS, holdsPermission, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
 import { createThrottle, errorInfo, type Throttle } from '@galvanigraph/core-util';
 import { config } from '../config/index.js';
 import { loadUserStanding } from './principal.js';
 import logger from './logger.js';
 import { verifyAccessToken } from './jwt.js';
 import { isSessionLive } from './session-live.js';
+import { channelGroupIds, holdsOnChannel } from './channel-scope.js';
 
 /** User data stored on authenticated sockets. */
 export interface SocketUserData {
@@ -20,7 +21,35 @@ export interface SocketUserData {
   readonly sessionId?: string | undefined;
   readonly type: string;
   readonly permissions: readonly string[];
+  /** What the user holds on which channels (D-310): decides the channel rooms and audience rooms. */
+  readonly grants: FoldedGrants;
 }
+
+/** The room every socket that reads all channels is in. */
+export const ALL_CHANNELS_ROOM = 'scope:all';
+
+/** The room of the sockets that read the channels of one group. */
+export function groupRoom(groupId: string): string {
+  return `group:${groupId}`;
+}
+
+/**
+ * The audience rooms a socket belongs in: where a channel's state changes go
+ * (D-310, plan section 4). Every channel for an all-channel reader; one room
+ * per group for a scoped one; none without channels:read.
+ */
+export function audienceRooms(grants: FoldedGrants): readonly string[] {
+  const scope = grants.get(PERMISSIONS.CHANNELS_READ);
+  if (scope === undefined) return [];
+  if (scope === ALL_CHANNELS) return [ALL_CHANNELS_ROOM];
+  return [...scope].map(groupRoom);
+}
+
+function isAudienceRoom(room: string): boolean {
+  return room === ALL_CHANNELS_ROOM || room.startsWith('group:');
+}
+
+
 
 /** Permission required to join each server-pushed room. */
 const ROOM_PERMISSIONS: Readonly<Record<'channel' | 'dashboard' | 'logs', Permission>> = {
@@ -51,7 +80,7 @@ export async function loadSocketUser(userId: string, sessionId: string | undefin
   const user = await loadUserStanding(userId);
   if (!user || !user.enabled || user.mustChangePassword) return null;
   if (!(await isSessionLive(sessionId, userId))) return null;
-  return { userId, sessionId, type, permissions: user.permissions };
+  return { userId, sessionId, type, permissions: user.permissions, grants: user.grants };
 }
 
 /**
@@ -98,6 +127,7 @@ interface RevalidatableSocket {
   readonly data: Record<string, unknown>;
   readonly rooms: ReadonlySet<string>;
   leave(room: string): unknown;
+  join(room: string): unknown;
   disconnect(close?: boolean): unknown;
 }
 
@@ -116,10 +146,22 @@ export async function revalidateSocket(socket: RevalidatableSocket): Promise<boo
     return false;
   }
   socket.data['user'] = fresh;
-  for (const room of socket.rooms) {
+  const audience = new Set(audienceRooms(fresh.grants));
+  for (const room of [...socket.rooms]) {
+    if (isAudienceRoom(room)) {
+      if (!audience.has(room)) void socket.leave(room);
+      continue;
+    }
     const needed = roomPermission(room);
-    if (needed !== null && !holdsPermission(fresh.permissions, needed)) void socket.leave(room);
+    if (needed === null) continue;
+    if (!holdsPermission(fresh.permissions, needed)) {
+      void socket.leave(room);
+    } else if (room.startsWith('channel:') && !(await holdsOnChannel(fresh.grants, needed, room.slice('channel:'.length)).catch(() => false))) {
+      // Scope narrowed, or the channel left the user's groups.
+      void socket.leave(room);
+    }
   }
+  for (const room of audience) if (!socket.rooms.has(room)) void socket.join(room);
   return true;
 }
 
@@ -129,15 +171,20 @@ export async function revalidateSocket(socket: RevalidatableSocket): Promise<boo
 function registerConnectionHandlers(server: SocketIOServer): void {
   server.on('connection', (socket) => {
     logger.debug({ socketId: socket.id }, 'Socket connected');
+    const user = socket.data['user'] as SocketUserData | undefined;
+    if (user) for (const room of audienceRooms(user.grants)) void socket.join(room);
 
     socket.on('join:channel', async (channelId: unknown) => {
       if (typeof channelId !== 'string' || channelId.length === 0) {
         return;
       }
       if (!(await revalidateSocket(socket))) return;
-      if (!socketHasPermission(socket, ROOM_PERMISSIONS.channel)) {
+      const joiner = socket.data['user'] as SocketUserData | undefined;
+      const allowed = joiner !== undefined && await holdsOnChannel(joiner.grants, ROOM_PERMISSIONS.channel, channelId).catch(() => false);
+      if (!allowed) {
+        // The same answer for a channel outside the scope as for no permission: scope never shows which channels exist.
         socket.emit('error:forbidden', { room: `channel:${channelId}` });
-        logger.warn({ socketId: socket.id, room: `channel:${channelId}` }, 'Denied room join (missing permission)');
+        logger.warn({ socketId: socket.id, room: `channel:${channelId}` }, 'Denied room join (missing permission or outside scope)');
         return;
       }
       const room = `channel:${channelId}`;
@@ -289,15 +336,28 @@ function cancelCoalescedEmits(): void {
 }
 
 /**
- * Emit an event to all connected sockets.
- * No-ops if Socket.IO is not initialized.
+ * Emit an event about one channel to the sockets that may read it (D-310): the
+ * all-channel readers and the readers of each group the channel is in. Best
+ * effort: a failed group lookup is logged and the event is not sent, since a
+ * live update must never reach a socket outside the channel's scope.
  */
-export function emitToAll(event: string, data: unknown): void {
-  if (!io) {
-    return;
-  }
-  io.emit(event, data);
+export function emitToChannelAudience(channelId: string, event: string, data: unknown): void {
+  const server = io;
+  if (!server) return;
+  // Each channel's events wait on the one before, so a STARTED then PAUSED pair
+  // reaches the dashboard in that order whatever order the lookups finish in.
+  const previous = audienceQueues.get(channelId) ?? Promise.resolve();
+  const next = previous.then(() => channelGroupIds(channelId)).then((groups) => {
+    server.to([ALL_CHANNELS_ROOM, ...groups.map(groupRoom)]).emit(event, data);
+  }, (err: unknown) => {
+    logger.warn({ ...errorInfo(err), channelId, event }, 'Could not read a channel\'s groups; live update not sent');
+  });
+  audienceQueues.set(channelId, next);
+  void next.then(() => { if (audienceQueues.get(channelId) === next) audienceQueues.delete(channelId); });
 }
+
+/** The last pending audience emit per channel; cleared once a channel's queue is drained. */
+const audienceQueues = new Map<string, Promise<void>>();
 
 export async function shutdownSocketIO(): Promise<void> {
   if (revalidateTimer) {

@@ -27,6 +27,8 @@ const { ScriptTestRunService, TEST_RUN_TIMEOUT_MS } = await import('../script-te
 
 const ADT = 'MSH|^~\\&|EPIC|HOSP|GF|HOSP|20261115093000||ADT^A01|MSG1|P|2.5.1\rPID|1||4821193^^^HOSP^MR||NGUYEN^AVERY';
 const CHANNEL_ID = '00000000-0000-0000-0000-000000000001';
+/** A caller holding resources:read and collections:read. */
+const BOTH_READS = { resources: true, collections: true } as const;
 
 function ok<T>(value: T): { ok: true; value: T; error: null } {
   return { ok: true, value, error: null };
@@ -49,7 +51,7 @@ describe('ScriptTestRunService.run', () => {
       kind: 'transformer', dataType: 'HL7V2', templateContext: 'SOURCE_FILTER_TRANSFORMER', destinationSet: true,
       channelId: CHANNEL_ID, sample: ADT,
       script: "logger.info(family(msg));\nlogger.info(await getResource('codes'));\ndestinationSet.remove('Archive');",
-    });
+    }, undefined, BOTH_READS);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -59,10 +61,25 @@ describe('ScriptTestRunService.run', () => {
     expect(mockTemplates.listTemplatesForChannel).toHaveBeenCalledWith(CHANNEL_ID);
   });
 
+  it('wires a read only for a caller holding its read permission, and names the one missing (D-310)', async () => {
+    const result = await ScriptTestRunService.run(
+      { kind: 'script', destinationSet: false, sample: '', script: "logger.info(await getResource('codes'));" },
+      { userId: 'u1', ipAddress: null },
+      { resources: false, collections: true },
+    );
+
+    expect(getResource).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.outcome).toBe('error');
+    expect(result.value.error).toContain('resources:read');
+  });
+
   it('audits who ran a script for which channel, never the sample', async () => {
     await ScriptTestRunService.run(
       { kind: 'filter', dataType: 'HL7V2', destinationSet: false, channelId: CHANNEL_ID, sample: ADT, script: 'return true;' },
       { userId: 'u1', ipAddress: '10.0.0.1' },
+      BOTH_READS,
     );
 
     expect(recordOrRefuse).toHaveBeenCalledTimes(1);
@@ -74,7 +91,7 @@ describe('ScriptTestRunService.run', () => {
   it('withholds the result, with AUDIT_UNAVAILABLE, when the run cannot be recorded', async () => {
     recordOrRefuse.mockResolvedValueOnce({ ok: false, error: Object.assign(new Error('audit down'), { name: 'ServiceError', code: 'AUDIT_UNAVAILABLE' }) } as never);
 
-    const result = await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' }, { userId: 'u1', ipAddress: null });
+    const result = await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' }, { userId: 'u1', ipAddress: null }, BOTH_READS);
 
     expect(result.ok).toBe(false);
     expect(result.error).toMatchObject({ code: 'AUDIT_UNAVAILABLE' });
@@ -85,7 +102,7 @@ describe('ScriptTestRunService.run', () => {
     const started = Date.now();
     const result = await ScriptTestRunService.run({
       kind: 'script', dataType: 'HL7V2', destinationSet: false, channelId: CHANNEL_ID, sample: ADT, script: 'while (true) {}',
-    });
+    }, undefined, BOTH_READS);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.outcome).toBe('error');
@@ -94,17 +111,17 @@ describe('ScriptTestRunService.run', () => {
   });
 
   it('runs one test at a time per server, refusing the second instead of queueing it', async () => {
-    const first = ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'while (true) {}' });
-    const second = await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' });
+    const first = ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'while (true) {}' }, undefined, BOTH_READS);
+    const second = await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' }, undefined, BOTH_READS);
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.error).toHaveProperty('code', 'CONFLICT');
     await first;
     // Once the first finishes, the next run is accepted.
-    expect((await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' })).ok).toBe(true);
+    expect((await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' }, undefined, BOTH_READS)).ok).toBe(true);
   });
 
   it('audits a run whose script fails, as well as one that succeeds', async () => {
-    await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: "throw new Error('bad');" }, { userId: 'u1', ipAddress: null });
+    await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: "throw new Error('bad');" }, { userId: 'u1', ipAddress: null }, BOTH_READS);
     expect(recordOrRefuse).toHaveBeenCalledTimes(1);
     expect((recordOrRefuse.mock.calls[0] as unknown[])[0]).toMatchObject({ action: 'SCRIPT_TEST_RUN', outcome: 'FAILURE', userId: 'u1' });
   });
@@ -113,7 +130,7 @@ describe('ScriptTestRunService.run', () => {
     mockChannelService.getById.mockResolvedValue({ ok: false, value: null, error: new Error('missing') });
     const result = await ScriptTestRunService.run({
       kind: 'script', destinationSet: false, channelId: CHANNEL_ID, sample: '', script: 'return 1;',
-    });
+    }, undefined, BOTH_READS);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toHaveProperty('code', 'NOT_FOUND');
@@ -122,7 +139,7 @@ describe('ScriptTestRunService.run', () => {
   });
 
   it('uses every template when no channel is given', async () => {
-    await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' });
+    await ScriptTestRunService.run({ kind: 'script', destinationSet: false, sample: '', script: 'return 1;' }, undefined, BOTH_READS);
     expect(mockTemplates.listTemplates).toHaveBeenCalled();
     expect(mockChannelService.getById).not.toHaveBeenCalled();
   });

@@ -10,12 +10,12 @@ import { SOCKET_EVENT } from '@galvanigraph/core-models';
 
 // ----- Mock Socket -----
 
-const mockEmitToAll = vi.fn();
+const mockEmitToChannel = vi.fn();
 const mockEmitToRoom = vi.fn();
 const mockEmitToRoomCoalesced = vi.fn();
 
 vi.mock('../../lib/socket.js', () => ({
-  emitToAll: (...args: unknown[]) => mockEmitToAll(...args),
+  emitToChannelAudience: (...args: unknown[]) => mockEmitToChannel(...args),
   emitToRoom: (...args: unknown[]) => mockEmitToRoom(...args),
   emitToRoomCoalesced: (...args: unknown[]) => mockEmitToRoomCoalesced(...args),
 }));
@@ -155,7 +155,7 @@ describe('Socket emission on deployment state changes', () => {
     const result = await DeploymentService.deploy(CHANNEL_ID);
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToAll).toHaveBeenCalledWith(SOCKET_EVENT.CHANNEL_STATE, {
+    expect(mockEmitToChannel).toHaveBeenCalledWith(CHANNEL_ID, SOCKET_EVENT.CHANNEL_STATE, {
       channelId: CHANNEL_ID,
       state: 'STOPPED',
     });
@@ -168,7 +168,7 @@ describe('Socket emission on deployment state changes', () => {
     const result = await DeploymentService.start(CHANNEL_ID);
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToAll).toHaveBeenCalledWith(SOCKET_EVENT.CHANNEL_STATE, {
+    expect(mockEmitToChannel).toHaveBeenCalledWith(CHANNEL_ID, SOCKET_EVENT.CHANNEL_STATE, {
       channelId: CHANNEL_ID,
       state: 'STARTED',
     });
@@ -181,7 +181,7 @@ describe('Socket emission on deployment state changes', () => {
     const result = await DeploymentService.stop(CHANNEL_ID);
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToAll).toHaveBeenCalledWith(SOCKET_EVENT.CHANNEL_STATE, {
+    expect(mockEmitToChannel).toHaveBeenCalledWith(CHANNEL_ID, SOCKET_EVENT.CHANNEL_STATE, {
       channelId: CHANNEL_ID,
       state: 'STOPPED',
     });
@@ -193,7 +193,7 @@ describe('Socket emission on deployment state changes', () => {
     const result = await DeploymentService.undeploy(CHANNEL_ID);
 
     expect(result.ok).toBe(true);
-    expect(mockEmitToAll).toHaveBeenCalledWith(SOCKET_EVENT.CHANNEL_STATE, {
+    expect(mockEmitToChannel).toHaveBeenCalledWith(CHANNEL_ID, SOCKET_EVENT.CHANNEL_STATE, {
       channelId: CHANNEL_ID,
       state: 'UNDEPLOYED',
     });
@@ -204,7 +204,7 @@ describe('Socket emission on deployment state changes', () => {
     const result = await DeploymentService.start(CHANNEL_ID);
 
     expect(result.ok).toBe(false);
-    expect(mockEmitToAll).not.toHaveBeenCalled();
+    expect(mockEmitToChannel).not.toHaveBeenCalled();
   });
 });
 

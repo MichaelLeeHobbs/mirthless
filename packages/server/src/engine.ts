@@ -72,7 +72,7 @@ import { channelFilters, filterRules, channelTransformers, transformerSteps } fr
 import { encryptContent, isContentEncryptionConfigured } from './lib/content-crypto.js';
 import logger from './lib/logger.js';
 import { emitAuditEvent, emitEvent } from './lib/event-emitter.js';
-import { emitToAll } from './lib/socket.js';
+import { emitToChannelAudience } from './lib/socket.js';
 import type { ChannelDetail } from './services/channel.service.js';
 
 // ----- Types -----
@@ -934,7 +934,7 @@ export class EngineManager {
     if (!stopped.ok) {
       logger.error({ channelId, errMsg: stopped.error.message }, 'Could not stop the channel after its source failed');
     }
-    emitToAll(SOCKET_EVENT.CHANNEL_STATE, { channelId, state: deployed.runtime.getState() });
+    emitToChannelAudience(channelId, SOCKET_EVENT.CHANNEL_STATE, { channelId, state: deployed.runtime.getState() });
   }
 
   /**
