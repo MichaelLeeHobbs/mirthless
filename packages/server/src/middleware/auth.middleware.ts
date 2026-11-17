@@ -4,6 +4,7 @@
 // Verifies JWT tokens and attaches user info to request.
 
 import type { Request, Response, NextFunction } from 'express';
+import type { ChannelGroupId, FoldedGrants } from '@galvanigraph/core-models';
 import { verifyAccessToken } from '../lib/jwt.js';
 import { isSessionLive } from '../lib/session-live.js';
 import { loadUserStanding, roleLabel } from '../lib/principal.js';
@@ -26,6 +27,13 @@ declare global {
         mustChangePassword: boolean;
       };
       sessionId?: string;
+      /** Who is acting and what they hold on which channels (D-310). Set by authenticate. */
+      principal?: {
+        readonly userId: string;
+        readonly grants: FoldedGrants;
+      };
+      /** The groups of the channel the route names, read by scopeToChannel; absent when no check is needed. */
+      channelScope?: readonly ChannelGroupId[];
     }
   }
 }
@@ -99,6 +107,7 @@ export async function authenticate(
       mustChangePassword: user.mustChangePassword,
     };
     req.sessionId = payload.sessionId;
+    req.principal = { userId: user.id, grants: user.grants };
     next();
   } catch (error) {
     logger.debug({ errMsg: error instanceof Error ? error.message : String(error) }, 'Token verification failed');

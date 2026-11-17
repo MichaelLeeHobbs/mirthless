@@ -11,9 +11,9 @@
 import { eq, gt, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod/v4';
 import {
-  ALL_CHANNELS, PERMISSIONS, foldGrants, type AssignmentGrant, type FoldedGrants, type Permission,
+  ALL_CHANNELS, PERMISSIONS, foldGrants, type ChannelGroupId, type AssignmentGrant, type FoldedGrants, type Permission,
 } from '@galvanigraph/core-models';
-import { users, assignments, roles, rolePermissions } from '../db/schema/index.js';
+import { users, assignments, assignmentGroups, roles, rolePermissions } from '../db/schema/index.js';
 import { db } from './db.js';
 import logger from './logger.js';
 
@@ -39,6 +39,9 @@ const assignmentRowSchema = z.object({
   admin: z.boolean(),
   permissions: z.array(z.string()),
   expiresAt: z.string().nullable(),
+  /** Every channel, or only the groups in `groupIds` (D-310). Required: a row without it fails closed, never widens to every channel. */
+  allChannels: z.boolean(),
+  groupIds: z.array(z.string()).default([]),
 });
 const assignmentRowsSchema = z.array(assignmentRowSchema);
 
@@ -84,7 +87,9 @@ function liveAssignments(): SQL<unknown> {
     'role', r.name,
     'admin', r.admin,
     'permissions', coalesce((SELECT json_agg(rp.permission) FROM ${rolePermissions} rp WHERE rp.role_id = r.id), '[]'::json),
-    'expiresAt', a.expires_at
+    'expiresAt', a.expires_at,
+    'allChannels', a.all_channels,
+    'groupIds', coalesce((SELECT json_agg(ag.channel_group_id) FROM ${assignmentGroups} ag WHERE ag.assignment_id = a.id), '[]'::json)
   ))
   FROM ${assignments} a JOIN ${roles} r ON r.id = a.role_id
   WHERE a.user_id = ${users}.id AND ${liveOnAliasA()}
@@ -108,7 +113,8 @@ export function toAssignmentGrants(userId: string, raw: unknown): { readonly rol
     roles: [...new Set(parsed.data.map((a) => a.role))].sort(),
     grants: parsed.data.map((a) => ({
       permissions: a.admin ? ALL_PERMISSIONS : a.permissions.filter(isPermission),
-      scope: ALL_CHANNELS,
+      // A scoped assignment with no groups covers nothing (foldGrants drops it).
+      scope: a.allChannels ? ALL_CHANNELS : (a.groupIds as ChannelGroupId[]),
       expiresAt: a.expiresAt === null ? null : new Date(a.expiresAt),
     })),
   };

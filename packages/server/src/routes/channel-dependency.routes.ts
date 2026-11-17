@@ -10,11 +10,13 @@ import {
 } from '@galvanigraph/core-models';
 import { ChannelDependencyService } from '../services/channel-dependency.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
-import { requirePermission } from '../middleware/permission.middleware.js';
+import { requirePermission, scopeToChannel } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 import logger from '../lib/logger.js';
 
 const router: IRouter = Router();
+// Every route here that names a channel checks its permission on that channel (D-310).
+scopeToChannel(router);
 
 router.get(
   '/:id/dependencies',

@@ -7,7 +7,7 @@ import { z } from 'zod/v4';
 import { channelImportSchema } from '@galvanigraph/core-models';
 import { ChannelExportController } from '../controllers/channel-export.controller.js';
 import { largeJsonBody } from '../middleware/body-limit.middleware.js';
-import { requirePermission } from '../middleware/permission.middleware.js';
+import { requirePermission, scopeToChannel } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const uuidParamsSchema = z.object({
@@ -15,6 +15,8 @@ const uuidParamsSchema = z.object({
 });
 
 const router: IRouter = Router();
+// Every route here that names a channel checks its permission on that channel (D-310).
+scopeToChannel(router);
 
 // Large bodies are parsed here, after authentication, never before it.
 router.use(largeJsonBody);

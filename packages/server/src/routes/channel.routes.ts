@@ -13,7 +13,7 @@ import {
 } from '@galvanigraph/core-models';
 import { ChannelController } from '../controllers/channel.controller.js';
 import { ChannelGroupController } from '../controllers/channel-group.controller.js';
-import { requirePermission } from '../middleware/permission.middleware.js';
+import { requirePermission, scopeToChannel } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const uuidParamsSchema = z.object({
@@ -21,6 +21,8 @@ const uuidParamsSchema = z.object({
 });
 
 const router: IRouter = Router();
+// Every route here that names a channel checks its permission on that channel (D-310).
+scopeToChannel(router);
 
 router.get(
   '/',
