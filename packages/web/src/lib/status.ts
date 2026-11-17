@@ -55,6 +55,11 @@ export function eventLevelLevel(level: string): StatusLevel {
   }
 }
 
+/** An assignment that has expired gives nothing until renewed → warning; a live one → healthy. */
+export function assignmentLevel(expired: boolean): StatusLevel {
+  return expired ? 'warning' : 'healthy';
+}
+
 /**
  * Map a role flag (lib/role-flags.ts) to a semantic level. As strong as admin →
  * critical; runs code or reads PHI → warning; all channels only → info.

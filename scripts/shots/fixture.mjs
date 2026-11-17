@@ -163,6 +163,14 @@ const users = [
   lastLoginAt: lastLogin === null ? null : ago(lastLogin), createdAt: ago(200000),
 }));
 
+// A user's access (D-310): a role on every channel, one on a group until a
+// time with a reason, and one that has expired.
+const assignments = [
+  { id: 'a1', roleId: 'r7', roleName: 'viewer', groupIds: null, expiresAt: null, reason: null, live: true, createdAt: ago(90000) },
+  { id: 'a2', roleId: 'r8', roleName: 'Lab analyst', groupIds: ['g1'], expiresAt: new Date(Date.now() + 8 * 3600_000).toISOString(), reason: 'On call, INC-4411', live: true, createdAt: ago(120) },
+  { id: 'a3', roleId: 'r2', roleName: 'channel-deployer', groupIds: ['g2'], expiresAt: ago(3000), reason: null, live: false, createdAt: ago(9000) },
+];
+
 // Roles (D-310): the seven built in, and one custom role with holders. The
 // server sends the locked admin role with every permission.
 const ALL_PERMS = Object.values(PERMISSIONS);
@@ -301,6 +309,7 @@ export function route(pathname, search) {
   if (p === '/channel-groups') return groups;
   if (p === '/channel-groups/memberships') return [{ channelGroupId: 'g1', channelId: 'c1' }, { channelGroupId: 'g1', channelId: 'c2' }, { channelGroupId: 'g1', channelId: 'c3' }, { channelGroupId: 'g2', channelId: 'c5' }];
   if (p === '/users') return users;
+  if (/^\/users\/[^/]+\/assignments$/.test(p)) return assignments;
   if (p === '/roles') return roles;
   if (p === '/alerts') return page(alerts);
   if (p === '/events') return page(events);
