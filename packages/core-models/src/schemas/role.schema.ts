@@ -76,5 +76,30 @@ export interface AssignmentView {
   readonly createdAt: string;
 }
 
+/** One way a person reaches a channel: an assignment of a role over a scope that covers it. */
+export interface AccessPath {
+  readonly role: string;
+  /** The channel permissions this assignment gives on the channel. */
+  readonly permissions: readonly string[];
+  /** null: every channel. */
+  readonly groupIds: readonly string[] | null;
+  readonly expiresAt: string | null;
+}
+
+/** Who can access one channel now, and how (D-310, plan section 8). */
+export interface ChannelAccessView {
+  /** Each enabled person whose live assignments cover the channel, with the channel permissions those give. */
+  readonly people: ReadonlyArray<{
+    readonly userId: string;
+    readonly username: string;
+    readonly permissions: readonly string[];
+    readonly through: readonly AccessPath[];
+  }>;
+  /** People who can change or deploy code in any scope: through that code they reach every channel, unrecorded. */
+  readonly throughCode: ReadonlyArray<{ readonly userId: string; readonly username: string }>;
+  /** People who read data every channel shares (server log, maps, collections). */
+  readonly throughSharedData: ReadonlyArray<{ readonly userId: string; readonly username: string }>;
+}
+
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;

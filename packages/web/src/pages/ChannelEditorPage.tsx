@@ -28,6 +28,7 @@ import { type CreateChannelInput, type ScriptLanguageCode, type UpdateChannelInp
 import { useChannel, useCreateChannel, useUpdateChannel, type ChannelDetail } from '../hooks/use-channels.js';
 import { useNewChannelGroups } from '../hooks/use-new-channel-groups.js';
 import { NewChannelGroupField } from '../components/channels/NewChannelGroupField.js';
+import { AccessTab } from '../components/channels/AccessTab.js';
 import type { ScriptsFormValues } from '../components/channels/ScriptsTab.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
@@ -171,6 +172,8 @@ export function ChannelEditorPage(): ReactNode {
   const isSaving = createChannel.isPending || updateChannel.isPending;
   const { has: hasPermission } = usePermissions();
   const canWrite = hasPermission(PERMISSION.CHANNELS_WRITE);
+  // Who can access a channel lists people and their roles: users:read (D-310).
+  const canSeeAccess = hasPermission(PERMISSION.USERS_READ);
 
   // Form
   const {
@@ -688,6 +691,7 @@ export function ChannelEditorPage(): ReactNode {
         <Tab label="Source" />
         <Tab label="Destinations" />
         <Tab label="Scripts" />
+        {isEditMode && canSeeAccess ? <Tab label="Access" /> : null}
       </Tabs>
 
       {/* Tab content. Script editors type msg from the channel's inbound data type. */}
@@ -728,6 +732,11 @@ export function ChannelEditorPage(): ReactNode {
         <TabPanel value={activeTab} index={3}>
           <ScriptsTab scripts={scripts} onChange={handleScriptsChange} />
         </TabPanel>
+        {isEditMode && canSeeAccess && id ? (
+          <TabPanel value={activeTab} index={4}>
+            <AccessTab channelId={id} channelName={channel?.name ?? id} />
+          </TabPanel>
+        ) : null}
       </Paper>
       </ScriptTestSampleContext.Provider>
       </ScriptDataTypeContext.Provider>

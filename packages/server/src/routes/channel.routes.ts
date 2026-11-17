@@ -66,6 +66,14 @@ router.patch(
   ChannelController.setEnabled
 );
 
+// Who can access the channel: people and how they hold access, so users:read (D-310).
+router.get(
+  '/:id/access',
+  requirePermission('users:read'),
+  validate({ params: uuidParamsSchema }),
+  ChannelController.access
+);
+
 // Replaces the channel's group memberships in one transaction (#223).
 router.put(
   '/:id/groups',

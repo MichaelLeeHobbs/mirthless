@@ -9,6 +9,7 @@ import type { ServerBackup, RestoreSectionResult } from '@galvanigraph/core-mode
 
 const mockChannelExportAll = vi.fn();
 const mockChannelImportChannels = vi.fn();
+const mockRestoreMembership = vi.fn().mockResolvedValue(undefined);
 const mockListLibraries = vi.fn();
 const mockListTemplates = vi.fn();
 const mockAlertList = vi.fn();
@@ -61,6 +62,10 @@ vi.mock('../channel-export.service.js', () => ({
 }));
 vi.mock('../channel-import.service.js', () => ({
   ChannelImportService: { importChannels: mockChannelImportChannels },
+}));
+// A restored membership is a grant, written and recorded by the grant service.
+vi.mock('../grant.service.js', () => ({
+  GrantService: { restoreMembership: mockRestoreMembership },
 }));
 vi.mock('../code-template.service.js', () => ({
   CodeTemplateService: { listLibraries: mockListLibraries, listTemplates: mockListTemplates },
@@ -833,17 +838,29 @@ describe('ServerBackupService', () => {
       });
     });
 
+    describe('group memberships', () => {
+      it.each(['SKIP', 'OVERWRITE'] as const)('restores a missing membership through the grant service in %s mode', async (mode) => {
+        mockSelectWhere.mockResolvedValue([]);
+        const backup = { groupMemberships: [{ channelGroupId: 'g-1', channelId: 'ch-1' }] };
+        expect(await restoreSection(backup, mode, 'groupMemberships')).toEqual({ section: 'groupMemberships', ...counts(1, 0, 0) });
+        expect(mockRestoreMembership).toHaveBeenCalledWith('ch-1', 'g-1', expect.objectContaining({ userId: null }));
+        expect(mockInsert).not.toHaveBeenCalledWith(channelGroupMembers);
+      });
+
+      it('skips a membership that exists, without writing', async () => {
+        mockSelectWhere.mockResolvedValue([{ channelGroupId: 'g-1' }]);
+        const backup = { groupMemberships: [{ channelGroupId: 'g-1', channelId: 'ch-1' }] };
+        expect(await restoreSection(backup, 'OVERWRITE', 'groupMemberships')).toEqual({ section: 'groupMemberships', ...counts(0, 0, 1) });
+        expect(mockRestoreMembership).not.toHaveBeenCalled();
+      });
+    });
+
     describe('composite-key pair sections', () => {
       const cases = [
         {
           section: 'channelDependencies', table: channelDependencies, label: 'Dependency ch-1 -> ch-2',
           backup: { channelDependencies: [{ channelId: 'ch-1', dependsOnChannelId: 'ch-2' }] },
           row: { channelId: 'ch-1', dependsOnChannelId: 'ch-2' },
-        },
-        {
-          section: 'groupMemberships', table: channelGroupMembers, label: 'Membership g-1/ch-1',
-          backup: { groupMemberships: [{ channelGroupId: 'g-1', channelId: 'ch-1' }] },
-          row: { channelGroupId: 'g-1', channelId: 'ch-1' },
         },
         {
           section: 'tagAssignments', table: channelTagAssignments, label: 'Tag assignment t-1/ch-1',

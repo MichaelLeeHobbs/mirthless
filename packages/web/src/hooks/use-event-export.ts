@@ -7,6 +7,7 @@ import { useState, useCallback } from 'react';
 import { useAuthStore } from '../stores/auth.store.js';
 import { definedSearchParams } from '../lib/search-params.js';
 import { downloadFailure } from '../lib/audit-unavailable.js';
+import { saveBlob } from '../lib/download.js';
 
 const BASE_URL = '/api/v1';
 
@@ -71,13 +72,7 @@ export function useEventExport(): EventExportState {
       const filenameMatch = /filename="([^"]+)"/.exec(contentDisposition);
       const filename = filenameMatch?.[1] ?? `events-export.${params.format}`;
 
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = blobUrl;
-      anchor.download = filename;
-      anchor.click();
-      URL.revokeObjectURL(blobUrl);
+      saveBlob(filename, await response.blob());
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Export failed';
       setError(message);

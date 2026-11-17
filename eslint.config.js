@@ -11,7 +11,8 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 const SHARED_HELPERS = [
   { names: 'mapErrorToStatus|errorResponse', home: 'packages/server/src/lib/controller-helpers.ts' },
   { names: 'errorMessage|errorCode', home: 'packages/server/src/lib/controller-helpers.ts (errorResponse(error).message or .code) on the server, packages/web/src/lib/error-message.ts (errorMessage) in web' },
-  { names: 'escapeCsvField', home: 'packages/server/src/lib/csv.ts' },
+  { names: 'escapeCsvField', home: '@galvanigraph/core-util (csv.ts)' },
+  { names: 'saveFile|saveBlob|downloadText|downloadBlob|triggerDownload', home: 'packages/web/src/lib/download.ts' },
   { names: 'isBlockedIp|isBlockedHost|isBlockedHostname|isBlockedAddress|isReservedHostname|isReservedAddress', home: 'packages/engine/src/sandbox/ssrf.ts' },
   { names: 'isPlainObject|isRecord', home: '@galvanigraph/core-util (validation.ts)' },
   { names: 'errorInfo', home: '@galvanigraph/core-util (error-info.ts)' },

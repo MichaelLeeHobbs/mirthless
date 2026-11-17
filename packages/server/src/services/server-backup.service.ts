@@ -22,6 +22,7 @@ import { AuditService } from './audit.service.js';
 import { db } from '../lib/db.js';
 import { ChannelExportService } from './channel-export.service.js';
 import { ChannelImportService } from './channel-import.service.js';
+import { GrantService } from './grant.service.js';
 import { CodeTemplateService } from './code-template.service.js';
 import { AlertService } from './alert.service.js';
 import { GlobalScriptService } from './global-script.service.js';
@@ -291,7 +292,7 @@ export class ServerBackupService {
       sections.push(await restoreChannelDependencies(backup.channelDependencies));
       sections.push(await restoreConfigMap(backup.configMap, collisionMode));
       sections.push(await restoreGlobalMap(backup.globalMap, collisionMode));
-      sections.push(await restoreGroupMemberships(backup.groupMemberships));
+      sections.push(await restoreGroupMemberships(backup.groupMemberships, context));
       sections.push(await restoreTagAssignments(backup.tagAssignments));
 
       const totals = sections.reduce(
@@ -653,6 +654,7 @@ async function restoreGlobalMap(
 
 async function restoreGroupMemberships(
   items: ServerBackup['groupMemberships'],
+  context?: AuditContext,
 ): Promise<RestoreSectionResult> {
   return restoreEach(
     'groupMemberships', items,
@@ -662,9 +664,9 @@ async function restoreGroupMemberships(
         eq(channelGroupMembers.channelGroupId, item.channelGroupId),
         eq(channelGroupMembers.channelId, item.channelId),
       )),
-      insert: () => db.insert(channelGroupMembers).values({
-        channelGroupId: item.channelGroupId,
-        channelId: item.channelId,
+      // A membership is a grant: recorded with the insert, like every other change (D-310).
+      insert: () => GrantService.restoreMembership(item.channelId, item.channelGroupId, {
+        userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null,
       }),
     }),
   );

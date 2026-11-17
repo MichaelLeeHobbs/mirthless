@@ -19,6 +19,7 @@ import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { useHistoricalLogs, useLogStream, type LogEntry } from '../../hooks/use-logs.js';
 import { FONT_FAMILY_MONO } from '../../styles/tokens.js';
 import { formatTimestampWith } from '../../lib/format.js';
+import { saveFile } from '../../lib/download.js';
 
 // ----- Constants -----
 
@@ -139,15 +140,8 @@ export function LogViewer(): ReactNode {
   };
 
   const handleDownload = (): void => {
-    const lines = filteredEntries.map(formatLogLine).join('\n');
-    const blob = new Blob([lines], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    a.download = `galvanigraph-logs-${timestamp}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
+    saveFile(`galvanigraph-logs-${timestamp}.log`, filteredEntries.map(formatLogLine).join('\n'), 'text/plain');
   };
 
   return (
