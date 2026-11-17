@@ -11,6 +11,7 @@ import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { channelGroups, channelGroupMembers, channels } from '../db/schema/index.js';
+import { GrantService } from './grant.service.js';
 
 // ----- Response Types -----
 
@@ -287,9 +288,19 @@ export class ChannelGroupService {
         throw new ServiceError('FORBIDDEN', `The "${DEFAULT_GROUP_NAME}" channel group cannot be deleted`);
       }
 
+      // A group an assignment scopes to cannot go (assignment_groups restricts it):
+      // deleting it would silently take that access away (D-310).
       await db
         .delete(channelGroups)
-        .where(eq(channelGroups.id, id));
+        .where(eq(channelGroups.id, id))
+        .catch((err: unknown) => {
+          const pg = (err as { cause?: { code?: unknown; table?: unknown; constraint?: unknown } }).cause ?? (err as { code?: unknown; table?: unknown; constraint?: unknown });
+          const fromAssignments = pg.table === 'assignment_groups' || (typeof pg.constraint === 'string' && pg.constraint.startsWith('assignment_groups_'));
+          if (pg.code === '23503' && fromAssignments) {
+            throw new ServiceError('CONFLICT', 'This group is the scope of an assignment; change those assignments first');
+          }
+          throw err;
+        });
 
       emitEvent({
         level: 'INFO', name: 'CHANNEL_GROUP_UPDATED', outcome: 'SUCCESS',
@@ -316,16 +327,8 @@ export class ChannelGroupService {
       const previous = await db.transaction(async (tx) => {
         await lockLiveChannel(tx, channelId);
         await assertGroupsExist(tx, wanted);
-        const removed = await tx
-          .delete(channelGroupMembers)
-          .where(eq(channelGroupMembers.channelId, channelId))
-          .returning({ channelGroupId: channelGroupMembers.channelGroupId });
-        if (wanted.length > 0) {
-          await tx
-            .insert(channelGroupMembers)
-            .values(wanted.map((channelGroupId) => ({ channelGroupId, channelId })));
-        }
-        return removed.map((r) => r.channelGroupId);
+        // The grant rule and the write, with its audit row (grant.service).
+        return GrantService.applyChannelGroups(tx, channelId, wanted, { userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null });
       });
 
       // The channel column is set so filtering events by channel shows the change.

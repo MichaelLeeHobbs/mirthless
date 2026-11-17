@@ -376,8 +376,18 @@ The debate's first and third slices (one `authenticate` mount and parser order; 
        - the reads a scoped holder of a system-read permission can make show only in-scope channels, or a count of the rest: an alert's `channelIds` (`alerts:read`, section 2), a library's channel links (`code_templates:read`, slice 9), the pruner's per-channel statistics, and tag assignment counts (`settings:read`);
        - the all-channel statistics filter its QUEUED subquery in SQL rather than after the fact (8b filters the rows, which is correct but still aggregates every channel).
        - Test Connection takes the channel it is for, and a scoped writer may reference only certificates already used in their scope.
+       - the scoped-assignment writer locks the group row FOR UPDATE, so it queues against a membership change on that group (which holds KEY SHARE through its existence check) and neither commits on a state the other did not see;
+       - a role edit's within rule checks each added permission on the role's assignments' scopes (section 5), not on the actor's flat list: today an actor holding a permission on one group can add it to a role scoped to another;
+       - `Default` cannot be a scope, so the Default join on create (`channel.service.ts`, outside the grant service until 9b) never hands anyone a permission.
 9. **Membership as a grant on `PUT /channels/:id/groups`, group create/delete rules, create/clone/import/restore into a group, library links**, L.
    - Follows: HTTP route, Tests. Library links keep the existing `channel_ids` column, so no schema change.
+   - As built, in three pull requests:
+     - **9a**:
+       - `PUT /channels/:id/groups` writes through `GrantService.applyChannelGroups`, in its transaction, with a `CHANNEL_GROUPS_CHANGED` audit row. Adding a group needs, on that channel, every permission the group's live assignments grant; the refusal names what is missing. Removing needs only the route's `channels:write` on the channel.
+       - Group create, rename and delete need `channels:write` on all channels. A group an assignment scopes to cannot be deleted (409).
+       - The preview of who gains and loses access belongs to the scope UI (slice 10). The Default join moves with create in 9b. The lint rule for the membership table is not added: several services read it, and an import rule cannot tell a read from a write.
+     - **9b**: create, clone, JSON import, Mirth import and restore put channels in an in-scope group, and import overwrite needs scope on each overwritten channel.
+     - **9c**: library channel links.
    - Membership writes move into `grant.service` with `recordInTx`: `ChannelGroupService.setChannelGroups` and the Default join in `channel.service.ts` both write `channel_group_members` themselves today and record after commit. The move also invalidates the socket channel-to-groups map.
    - Owns: `routes/channel-group.routes.ts`, `controllers/channel-group.controller.ts`, `services/channel-group.service.ts`, the groups route in `routes/channel.routes.ts`, the create and clone parts of `services/channel.service.ts`, the import services, `services/code-template.service.ts`.
 10. **Scope UI**, L.

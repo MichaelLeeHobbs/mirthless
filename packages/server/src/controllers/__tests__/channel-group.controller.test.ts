@@ -20,7 +20,11 @@ function makeRes(): Response {
 }
 
 function makeReq(): Request {
-  return { params: { id: 'g1' }, query: {}, body: {}, ip: '10.0.0.1', user: { id: 'u1' } } as unknown as Request;
+  // As authenticate does: channels:write on every channel, which a group change needs (D-310).
+  return {
+    params: { id: 'g1' }, query: {}, body: {}, ip: '10.0.0.1', user: { id: 'u1' },
+    principal: { userId: 'u1', grants: new Map([['channels:write', 'all']]) },
+  } as unknown as Request;
 }
 
 describe('ChannelGroupController.delete', () => {

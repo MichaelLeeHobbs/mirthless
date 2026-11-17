@@ -7,8 +7,21 @@ import type { Request, Response } from 'express';
 import type { CreateChannelGroupInput, UpdateChannelGroupInput, SetChannelGroupsInput } from '@galvanigraph/core-models';
 import { ChannelGroupService } from '../services/channel-group.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
+import { isServiceError } from '../lib/service-error.js';
 import logger from '../lib/logger.js';
 import { channelScopeOf, inScope } from '../lib/channel-scope.js';
+import { ALL_CHANNELS } from '@galvanigraph/core-models';
+import { deny, DENY_REASON } from '../middleware/permission.middleware.js';
+
+/**
+ * Groups are now an access boundary (D-310, plan section 2): creating, renaming
+ * or deleting one needs channels:write on every channel. Refuses otherwise.
+ */
+function writesEveryChannel(req: Request, res: Response): boolean {
+  if (req.principal?.grants.get('channels:write') === ALL_CHANNELS) return true;
+  deny(req, res, DENY_REASON.NO_PERMISSION);
+  return false;
+}
 
 export class ChannelGroupController {
   static async listGroups(_req: Request, res: Response): Promise<void> {
@@ -57,6 +70,7 @@ export class ChannelGroupController {
   }
 
   static async create(req: Request, res: Response): Promise<void> {
+    if (!writesEveryChannel(req, res)) return;
     const input = req.body as CreateChannelGroupInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await ChannelGroupService.create(input, context);
@@ -73,6 +87,7 @@ export class ChannelGroupController {
   }
 
   static async update(req: Request, res: Response): Promise<void> {
+    if (!writesEveryChannel(req, res)) return;
     const id = req.params['id'] as string;
     const input = req.body as UpdateChannelGroupInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
@@ -90,6 +105,7 @@ export class ChannelGroupController {
   }
 
   static async delete(req: Request, res: Response): Promise<void> {
+    if (!writesEveryChannel(req, res)) return;
     const id = req.params['id'] as string;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await ChannelGroupService.delete(id, context);
@@ -115,7 +131,9 @@ export class ChannelGroupController {
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       logger.warn({ errMsg: result.error.message, channelId }, 'Failed to set channel groups');
-      res.status(status).json({ success: false, error: errorResponse(result.error) });
+      // A refused grant names the permissions the actor lacks on the channel.
+      const details = isServiceError(result.error) ? result.error.details : undefined;
+      res.status(status).json({ success: false, error: { ...errorResponse(result.error), ...(details ? { details } : {}) } });
       return;
     }
 
