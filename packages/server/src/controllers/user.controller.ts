@@ -4,7 +4,7 @@
 // Handles HTTP requests for user management.
 
 import type { Request, Response } from 'express';
-import { holdsPermission, type SetAssignmentsInput, type CreateUserInput, type UpdateUserInput, type ChangePasswordInput, type ChangeOwnPasswordInput } from '@galvanigraph/core-models';
+import { holdsPermission, type SetAssignmentsInput, type CreateUserInput, type UpdateUserInput, type ChangePasswordInput, type ChangeOwnPasswordInput, type DeleteUserQuery, type IssuedKeysOnLeave } from '@galvanigraph/core-models';
 import { UserService } from '../services/user.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { isServiceError } from '../lib/service-error.js';
@@ -17,6 +17,17 @@ import logger from '../lib/logger.js';
 function userErrorStatus(error: unknown): number {
   if (isServiceError(error, 'INVALID_CREDENTIALS')) return 400;
   return mapErrorToStatus(error);
+}
+
+/**
+ * Keeping a leaver's API keys running for 7 days is a decision about keys, so
+ * it needs api_keys:manage as well as the right to disable the user (D-313).
+ * Answers 403 and returns false when the caller lacks it.
+ */
+function mayKeepKeysRunning(req: Request, res: Response, issuedKeys: IssuedKeysOnLeave | undefined): boolean {
+  if (issuedKeys !== 'replace_within_7_days' || holdsPermission(req.user?.permissions, 'api_keys:manage')) return true;
+  res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Keeping a leaver\'s API keys running needs api_keys:manage; leave issuedKeys out to disable them' } });
+  return false;
 }
 
 export class UserController {
@@ -64,6 +75,7 @@ export class UserController {
   static async update(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const input = req.body as UpdateUserInput;
+    if (!mayKeepKeysRunning(req, res, input.issuedKeys)) return;
     const actorId = req.user!.id;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await UserService.updateUser(id, input, actorId, context);
@@ -83,7 +95,9 @@ export class UserController {
     const id = req.params['id'] as string;
     const actorId = req.user!.id;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
-    const result = await UserService.deleteUser(id, actorId, context);
+    const { issuedKeys } = req.query as unknown as DeleteUserQuery;
+    if (!mayKeepKeysRunning(req, res, issuedKeys)) return;
+    const result = await UserService.deleteUser(id, actorId, context, issuedKeys ?? 'disable');
 
     if (!result.ok) {
       const status = userErrorStatus(result.error);

@@ -78,6 +78,7 @@ const ENDPOINTS: readonly Endpoint[] = [
   { method: 'POST', path: '/api/v1/api-keys', permission: 'api_keys:manage', handler: ApiKeyController.issue },
   { method: 'PATCH', path: '/api/v1/api-keys/:id/enabled', permission: 'api_keys:manage', handler: ApiKeyController.setEnabled },
   { method: 'POST', path: '/api/v1/api-keys/:id/revoke', permission: 'api_keys:manage', handler: ApiKeyController.revoke },
+  { method: 'POST', path: '/api/v1/api-keys/:id/replace', permission: 'api_keys:manage', handler: ApiKeyController.replace },
   // A role change changes what every holder may do (D-310).
   { method: 'POST', path: '/api/v1/roles', permission: 'roles:write', handler: RoleController.create },
   { method: 'PUT', path: '/api/v1/roles/:id', permission: 'roles:write', handler: RoleController.update },

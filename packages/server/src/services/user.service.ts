@@ -14,7 +14,7 @@ import { heldRoleNamesSql, loadUserStanding, roleLabel } from '../lib/principal.
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
 import { GrantService } from './grant.service.js';
-import { USER_KIND } from '@galvanigraph/core-models';
+import { USER_KIND, type IssuedKeysOnLeave } from '@galvanigraph/core-models';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -229,6 +229,9 @@ export class UserService {
         // Who could act is replayed from the audit log (grant.service channelAccessAsOf).
         if (input.enabled !== undefined && input.enabled !== target.enabled) {
           await GrantService.recordEnabledChange(tx, id, input.enabled, actor);
+          // The keys this user issued: disabled with them unless asked to wait for a replacement (D-313).
+          if (!input.enabled) await GrantService.offboardKeys(tx, id, input.issuedKeys ?? 'disable', actor);
+          else await GrantService.cancelKeyReplacement(tx, id);
         }
         const before = input.role !== undefined ? await GrantService.setUserRole(tx, id, input.role, actor) : null;
 
@@ -265,7 +268,7 @@ export class UserService {
   }
 
   /** Soft-delete: disable user. Cannot delete self or last admin. */
-  static async deleteUser(id: string, actorId: string, context?: AuditContext): Promise<Result<void>> {
+  static async deleteUser(id: string, actorId: string, context?: AuditContext, issuedKeys: IssuedKeysOnLeave = 'disable'): Promise<Result<void>> {
     return tryCatch(async () => {
       if (id === actorId) {
         throw new ServiceError('SELF_ACTION', 'Cannot delete your own account');
@@ -282,7 +285,9 @@ export class UserService {
           .set({ enabled: false, updatedAt: new Date() })
           .where(eq(users.id, id));
         if (target.enabled) {
-          await GrantService.recordEnabledChange(tx, id, false, { userId: context?.userId ?? actorId, ipAddress: context?.ipAddress ?? null });
+          const actor = { userId: context?.userId ?? actorId, ipAddress: context?.ipAddress ?? null };
+          await GrantService.recordEnabledChange(tx, id, false, actor);
+          await GrantService.offboardKeys(tx, id, issuedKeys, actor);
         }
         await revokeSessions(tx, id);
       });
