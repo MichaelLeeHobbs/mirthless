@@ -10,6 +10,7 @@ import type {
   UpdateChannelInput,
   ChannelListQuery,
   PatchChannelEnabledInput,
+  ChannelAccessQuery,
 } from '@galvanigraph/core-models';
 import { AUDIT_ACTION, holdsPermission } from '@galvanigraph/core-models';
 import { ChannelService } from '../services/channel.service.js';
@@ -43,10 +44,11 @@ async function certificatesAllowed(req: Request, res: Response, connectorProps: 
 }
 
 export class ChannelController {
-  /** GET /channels/:id/access: who can access the channel now, and how. */
+  /** GET /channels/:id/access: who can access the channel now, or as of `asOf`, and how. */
   static async access(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await tryCatch(GrantService.channelAccess(db, id));
+    const { asOf } = req.query as unknown as ChannelAccessQuery;
+    const result = await tryCatch(asOf === undefined ? GrantService.channelAccess(db, id) : GrantService.channelAccessAsOf(db, id, new Date(asOf)));
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);
       if (status === 500) logger.error({ ...errorInfo(result.error), channelId: id }, 'Failed to list who can access a channel');

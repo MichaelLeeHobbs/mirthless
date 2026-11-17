@@ -86,8 +86,17 @@ export interface AccessPath {
   readonly expiresAt: string | null;
 }
 
-/** Who can access one channel now, and how (D-310, plan section 8). */
+/** GET /channels/:id/access query: `asOf` rebuilds the answer for a past time from the audit log. */
+export const channelAccessQuerySchema = z.object({
+  asOf: z.string().datetime({ offset: true }).optional(),
+});
+
+export type ChannelAccessQuery = z.infer<typeof channelAccessQuerySchema>;
+
+/** Who can access one channel, now or as of a past time, and how (D-310, plan section 8). */
 export interface ChannelAccessView {
+  /** The time the answer was rebuilt for; null for now. */
+  readonly asOf: string | null;
   /** Each enabled person whose live assignments cover the channel, with the channel permissions those give. */
   readonly people: ReadonlyArray<{
     readonly userId: string;

@@ -1,17 +1,19 @@
 // ===========================================
 // Access Tab
 // ===========================================
-// Who can access this channel now, and how (D-310, plan section 8): people
+// Who can access this channel, now or as of a past time rebuilt from the
+// audit log (D-310, plan section 8), and how: people
 // whose assignments cover it, with their permissions and the role and scope
 // that give them; then the people who reach every channel through code they
 // can change or deploy (not recorded), or through data every channel shares.
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
+import TextField from '@mui/material/TextField';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
@@ -25,20 +27,24 @@ import { useChannelGroups } from '../../hooks/use-channel-groups.js';
 import { accessCsv, describePath, permissionLabel } from '../../lib/channel-access.js';
 import { saveFile } from '../../lib/download.js';
 import { formatTimestamp } from '../../lib/format.js';
+import { fromDateTimeLocal } from '../../lib/collections.js';
+import { definedSearchParams } from '../../lib/search-params.js';
 import { EmptyState } from '../common/states/EmptyState.js';
 import { ErrorState } from '../common/states/ErrorState.js';
-import { TableSkeleton } from '../common/states/LoadingState.js';
+import { LoadingBlock } from '../common/states/LoadingState.js';
 
 interface AccessTabProps {
   readonly channelId: string;
   readonly channelName: string;
 }
 
-function useChannelAccess(channelId: string): ReturnType<typeof useQuery<ChannelAccessView>> {
+/** `asOf`: an ISO time to rebuild the answer for, or undefined for now. */
+function useChannelAccess(channelId: string, asOf: string | undefined): ReturnType<typeof useQuery<ChannelAccessView>> {
   return useQuery({
-    queryKey: ['channel-access', channelId],
+    queryKey: ['channel-access', channelId, asOf ?? 'now'],
     queryFn: async () => {
-      const result = await api.get<ChannelAccessView>(`/channels/${channelId}/access`);
+      const query = definedSearchParams({ asOf }).toString();
+      const result = await api.get<ChannelAccessView>(`/channels/${channelId}/access${query ? `?${query}` : ''}`);
       if (!result.success) throw new Error(result.error.message);
       return result.data;
     },
@@ -56,25 +62,70 @@ function OtherWays({ title, note, people }: { readonly title: string; readonly n
   );
 }
 
+/** The As of field: blank for now, or a local date and time. */
+function AsOfField({ value, onChange }: { readonly value: string; readonly onChange: (value: string) => void }): ReactNode {
+  return (
+    <Stack direction="row" sx={{ alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+      <TextField
+        label="As of" type="datetime-local" size="small" value={value}
+        onChange={(e) => { onChange(e.target.value); }}
+        // To the second: grants change seconds apart, and an audit question names the moment.
+        slotProps={{ inputLabel: { shrink: true }, htmlInput: { step: 1 } }}
+        helperText={value === '' ? 'Now. Pick a past time to see who had access then.' : 'Rebuilt from the audit log.'}
+      />
+      {value !== '' && <Button size="small" onClick={() => { onChange(''); }}>Now</Button>}
+    </Stack>
+  );
+}
+
 export function AccessTab({ channelId, channelName }: AccessTabProps): ReactNode {
-  const { data, isLoading, error, refetch } = useChannelAccess(channelId);
+  const [asOfInput, setAsOfInput] = useState('');
+  // Unreadable or partly typed: keep asking for now until it reads as a time.
+  const asOf = fromDateTimeLocal(asOfInput) ?? undefined;
+  const { data, isLoading, error, refetch, dataUpdatedAt } = useChannelAccess(channelId, asOf);
+  // The live answer is as of when it was fetched, not when Export is clicked.
+  const fetchedAt = new Date(dataUpdatedAt).toISOString();
   const { data: groups } = useChannelGroups();
   const groupName = (id: string): string => groups?.find((g) => g.id === id)?.name ?? id;
   const time = (iso: string): string => formatTimestamp(iso);
 
-  if (isLoading) return <TableSkeleton rows={4} columns={3} />;
-  if (error || !data) return <ErrorState title="Access could not load" error={error} onRetry={() => { void refetch(); }} />;
+  return (
+    <Stack spacing={2}>
+      <AsOfField value={asOfInput} onChange={setAsOfInput} />
+      <AccessBody {...{ data, isLoading, error, groupName, time, channelName, fetchedAt }} onRetry={() => { void refetch(); }} />
+    </Stack>
+  );
+}
+
+interface AccessBodyProps {
+  readonly data: ChannelAccessView | undefined;
+  readonly isLoading: boolean;
+  readonly error: Error | null;
+  readonly groupName: (id: string) => string;
+  readonly time: (iso: string) => string;
+  readonly channelName: string;
+  readonly onRetry: () => void;
+  /** When the shown answer was fetched: the As of of a live answer's CSV. */
+  readonly fetchedAt: string;
+}
+
+function AccessBody({ data, isLoading, error, groupName, time, channelName, fetchedAt, onRetry }: AccessBodyProps): ReactNode {
+  if (isLoading) return <LoadingBlock label="Loading access" />;
+  if (error || !data) return <ErrorState title="Access could not load" error={error} onRetry={onRetry} />;
+  const stamp = data.asOf === null ? 'now' : data.asOf.replace(/[:.]/g, '-');
 
   return (
     <Stack spacing={2}>
       <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-        <Typography variant="subtitle1">Through GalvaniGraph (message reads are recorded)</Typography>
-        <Button size="small" startIcon={<DownloadIcon />} onClick={() => { saveFile(`access-${channelName}.csv`, accessCsv(data, groupName), 'text/csv'); }}>
+        <Typography variant="subtitle1">
+          {data.asOf === null ? 'Through GalvaniGraph (message reads are recorded)' : `Through GalvaniGraph, as of ${time(data.asOf)}`}
+        </Typography>
+        <Button size="small" startIcon={<DownloadIcon />} onClick={() => { saveFile(`access-${channelName}-${stamp}.csv`, accessCsv(data, groupName, fetchedAt), 'text/csv'); }}>
           Export CSV
         </Button>
       </Stack>
       {data.people.length === 0 ? (
-        <EmptyState title="Nobody has access through an assignment" description="Give a role on a group this channel is in, or on every channel, from the Users page." />
+        <EmptyState title={data.asOf === null ? 'Nobody has access through an assignment' : 'Nobody had access through an assignment then'} description="Give a role on a group this channel is in, or on every channel, from the Users page." />
       ) : (
         <TableContainer>
           <Table size="small">

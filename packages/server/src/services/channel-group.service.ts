@@ -302,10 +302,14 @@ export class ChannelGroupService {
       }
 
       // A group an assignment scopes to cannot go (assignment_groups restricts it):
-      // deleting it would silently take that access away (D-310).
-      await db
-        .delete(channelGroups)
-        .where(eq(channelGroups.id, id))
+      // deleting it would silently take that access away (D-310). Its
+      // memberships are taken out and recorded first, so the access replay
+      // does not keep them (D-319); the delete refuses, and rolls that back,
+      // when an assignment uses the group.
+      await db.transaction(async (tx) => {
+        await GrantService.removeGroupMemberships(tx, id, { userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null });
+        await tx.delete(channelGroups).where(eq(channelGroups.id, id));
+      })
         .catch((err: unknown) => {
           const pg = (err as { cause?: { code?: unknown; table?: unknown; constraint?: unknown } }).cause ?? (err as { code?: unknown; table?: unknown; constraint?: unknown });
           const fromAssignments = pg.table === 'assignment_groups' || (typeof pg.constraint === 'string' && pg.constraint.startsWith('assignment_groups_'));

@@ -173,6 +173,7 @@ const assignments = [
 
 // Who can access a channel (D-310): through assignments, then through code and shared data.
 const channelAccess = {
+  asOf: null,
   people: [
     { userId: 'u1', username: 'admin', permissions: ['channels:deploy', 'channels:read', 'channels:write', 'messages:read'], through: [{ role: 'admin', permissions: ['channels:deploy', 'channels:read', 'channels:write', 'messages:read'], groupIds: null, expiresAt: null }] },
     { userId: 'u3', username: 'kpatel', permissions: ['channels:read', 'messages:read', 'messages:reprocess'], through: [{ role: 'Lab analyst', permissions: ['channels:read', 'messages:read', 'messages:reprocess'], groupIds: ['g1'], expiresAt: new Date(Date.now() + 8 * 3600_000).toISOString() }] },

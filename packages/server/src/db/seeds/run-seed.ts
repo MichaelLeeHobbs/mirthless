@@ -14,7 +14,7 @@
 import { config as loadEnv } from 'dotenv';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 
 import { DEFAULT_GROUP_NAME } from '@galvanigraph/core-models';
@@ -121,6 +121,9 @@ async function seed(): Promise<void> {
         .where(eq(schema.assignments.userId, adminId));
       if (!held) {
         await tx.insert(schema.assignments).values({ userId: adminId, roleId: adminRole.id, reason: 'Seeded admin' });
+        // Written here directly, not through GrantService, so the access replay
+        // starts again from a baseline that includes it (migration 0022).
+        await tx.execute(sql`SELECT public.record_grant_baseline('seed: admin assignment')`);
         // eslint-disable-next-line no-console
         console.log('  + admin');
       } else {
@@ -161,6 +164,8 @@ async function seed(): Promise<void> {
     const { seedExampleChannels } = await import('./seed-examples.js');
     const exampleDb = drizzle(pool, { schema });
     await seedExampleChannels(exampleDb);
+    // The example channels joined groups directly; start the access replay after them.
+    await exampleDb.execute(sql`SELECT public.record_grant_baseline('seed: example channels')`);
 
     // Seed showcase example data for otherwise-empty feature pages
     const { seedShowcase } = await import('./seed-showcase.js');

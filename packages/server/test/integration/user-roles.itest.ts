@@ -96,7 +96,7 @@ describeIntegration('UserService roles (real Postgres)', () => {
       created.push(result.value.id);
       expect(result.value).toMatchObject({ role: 'channel-viewer', roles: ['channel-viewer'] });
       expect(await heldRoles(result.value.id)).toEqual(['channel-viewer']);
-      expect(await assignmentAudits(result.value.id)).toEqual([{ targetUserId: result.value.id, before: [], after: [{ role: 'channel-viewer', scope: 'all' }] }]);
+      expect(await assignmentAudits(result.value.id)).toEqual([{ targetUserId: result.value.id, before: [], after: [{ roleId: expect.any(String), role: 'channel-viewer', scope: 'all' }] }]);
     });
 
     it('refuses a role that does not exist and creates no user', async () => {
@@ -117,7 +117,7 @@ describeIntegration('UserService roles (real Postgres)', () => {
       const result = await UserService.updateUser(target, { role: 'viewer' }, actor, { userId: actor, ipAddress: null });
       expect(result.ok).toBe(true);
       expect(await heldRoles(target)).toEqual(['viewer']);
-      expect(await assignmentAudits(target)).toEqual([{ targetUserId: target, before: ['developer'], after: [{ role: 'viewer', scope: 'all' }] }]);
+      expect(await assignmentAudits(target)).toEqual([{ targetUserId: target, before: ['developer'], after: [{ roleId: expect.any(String), role: 'viewer', scope: 'all' }] }]);
     });
 
     it('writes nothing when the role is the one already held', async () => {

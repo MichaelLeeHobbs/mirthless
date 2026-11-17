@@ -19,7 +19,7 @@
 //   are all among the actor's own;
 // - nobody changes their own role (user.service), and the admin role is locked.
 
-import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import {
   ALL_CHANNELS, AUDIT_ACTION, DEFAULT_GROUP_NAME, PERMISSIONS, PERMISSION_CATALOG, PERMISSION_CLASS, allChannelsOnly, can,
   type AccessPath, type AssignmentInput, type AssignmentView, type ChannelAccessView, type ChannelGroupId, type CreateRoleInput, type FoldedGrants, type Permission, type UpdateRoleInput,
@@ -27,8 +27,9 @@ import {
 import { ServiceError } from '../lib/service-error.js';
 import { isLiveAssignment, queryUserStanding } from '../lib/principal.js';
 import { db } from '../lib/db.js';
-import { assignmentGroups, assignments, channelGroupMembers, channelGroups, channels, rolePermissions, roles, users } from '../db/schema/index.js';
+import { assignmentGroups, assignments, auditLog, channelGroupMembers, channelGroups, channels, rolePermissions, roles, users } from '../db/schema/index.js';
 import { AuditService, type AuditTransaction } from './audit.service.js';
+import { GRANT_REPLAY_ACTIONS, replayGrants } from '../lib/grant-replay.js';
 
 /** Who made a change, for its audit row. */
 export interface GrantActor {
@@ -117,8 +118,7 @@ async function assertWithin(reader: Reader, actorId: string | null, permissions:
 async function permissionsOfRole(tx: Reader, role: { readonly id: string; readonly admin: boolean }): Promise<readonly Permission[]> {
   if (role.admin) return ALL_PERMISSIONS;
   const rows = await tx.select({ permission: rolePermissions.permission }).from(rolePermissions).where(eq(rolePermissions.roleId, role.id));
-  const known = new Set<string>(ALL_PERMISSIONS);
-  return rows.map((r) => r.permission).filter((p): p is Permission => known.has(p)).sort();
+  return knownPermissions(rows.map((r) => r.permission));
 }
 
 /**
@@ -185,13 +185,19 @@ async function roleByName(tx: AuditTransaction, name: string): Promise<{ readonl
 
 const PG_UNIQUE_VIOLATION = '23505';
 const PG_FOREIGN_KEY_VIOLATION = '23503';
+const PG_LOCK_NOT_AVAILABLE = '55P03';
+
+/** The Postgres error code of `err`, or of the error a Drizzle error wraps. */
+function pgCode(err: unknown): unknown {
+  return (err as { code?: unknown }).code ?? (err as { cause?: { code?: unknown } }).cause?.code;
+}
 
 /**
  * Turn a constraint a concurrent change hit into the answer the checks would
  * have given: a name taken in the meantime, or a role assigned in the meantime.
  */
 function asConflict(err: unknown): unknown {
-  const code = (err as { code?: unknown; cause?: { code?: unknown } }).code ?? (err as { cause?: { code?: unknown } }).cause?.code;
+  const code = pgCode(err);
   if (code === PG_UNIQUE_VIOLATION) return new ServiceError('ALREADY_EXISTS', 'A role with that name was just created');
   if (code === PG_FOREIGN_KEY_VIOLATION) return new ServiceError('CONFLICT', 'The role was just assigned; remove that assignment first');
   return err;
@@ -347,6 +353,73 @@ async function heldRoleNames(tx: AuditTransaction, userId: string): Promise<read
   return rows.map((r) => r.name).sort();
 }
 
+/** NOT_FOUND unless `channelId` is a channel that has not been deleted. */
+async function assertLiveChannel(reader: Reader, channelId: string): Promise<void> {
+  const [channel] = await reader.select({ id: channels.id }).from(channels).where(and(eq(channels.id, channelId), isNull(channels.deletedAt)));
+  if (!channel) throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
+}
+
+/** The latest grant baseline at or before `at`, or INVALID_INPUT naming when the history starts. */
+async function baselineBefore(reader: Reader, at: Date): Promise<{ id: number; occurredAt: Date; attributes: unknown }> {
+  const pick = { id: auditLog.id, occurredAt: auditLog.occurredAt, attributes: auditLog.attributes };
+  const [row] = await reader.select(pick).from(auditLog)
+    .where(and(eq(auditLog.action, AUDIT_ACTION.GRANT_BASELINE), lte(auditLog.occurredAt, at)))
+    .orderBy(desc(auditLog.id)).limit(1);
+  if (row) return row;
+  const [first] = await reader.select(pick).from(auditLog).where(eq(auditLog.action, AUDIT_ACTION.GRANT_BASELINE))
+    .orderBy(asc(auditLog.id)).limit(1);
+  throw new ServiceError('INVALID_INPUT', first
+    ? `Access history starts at ${first.occurredAt.toISOString()}; pick a later time`
+    : 'No access history has been recorded');
+}
+
+/** The permission names of the current catalog among `names`, sorted. */
+function knownPermissions(names: readonly string[]): readonly Permission[] {
+  const known = new Set<string>(ALL_PERMISSIONS);
+  return names.filter((p): p is Permission => known.has(p)).sort();
+}
+
+/** One assignment, as the access view reads it. */
+interface HeldPath {
+  readonly userId: string;
+  readonly username: string;
+  readonly role: string;
+  /** Every permission the role gives. */
+  readonly held: readonly Permission[];
+  readonly groupIds: readonly string[] | null;
+  readonly expiresAt: string | null;
+}
+
+/**
+ * The access view from live assignments (`paths`) and the groups the channel
+ * is in: who reaches it, with the channel permissions each way in gives, and
+ * who reaches every channel through code or shared data.
+ */
+function accessViewOf(paths: readonly HeldPath[], channelGroupIds: ReadonlySet<string>, asOf: string | null): ChannelAccessView {
+  const people = new Map<string, { userId: string; username: string; permissions: Set<string>; through: AccessPath[] }>();
+  const code = new Map<string, string>();
+  const shared = new Map<string, string>();
+  for (const r of paths) {
+    if (r.held.some((p) => PERMISSION_CATALOG[p].runsCode)) code.set(r.userId, r.username);
+    if (r.held.some((p) => PERMISSION_CATALOG[p].readsEveryChannel)) shared.set(r.userId, r.username);
+    if (r.groupIds !== null && !r.groupIds.some((g) => channelGroupIds.has(g))) continue;
+    const onChannel = r.held.filter((p) => PERMISSION_CATALOG[p].class === PERMISSION_CLASS.CHANNEL);
+    if (onChannel.length === 0) continue;
+    const person = people.get(r.userId) ?? { userId: r.userId, username: r.username, permissions: new Set<string>(), through: [] };
+    for (const p of onChannel) person.permissions.add(p);
+    person.through.push({ role: r.role, permissions: [...onChannel].sort(), groupIds: r.groupIds, expiresAt: r.expiresAt });
+    people.set(r.userId, person);
+  }
+  const byName = <T extends { username: string }>(a: T, b: T): number => a.username.localeCompare(b.username);
+  const list = (m: Map<string, string>): Array<{ userId: string; username: string }> => [...m].map(([userId, username]) => ({ userId, username })).sort(byName);
+  return {
+    asOf,
+    people: [...people.values()].map((p) => ({ ...p, permissions: [...p.permissions].sort() })).sort(byName),
+    throughCode: list(code),
+    throughSharedData: list(shared),
+  };
+}
+
 export class GrantService {
   /**
    * Refuse a change that would leave no enabled user holding the admin role.
@@ -389,7 +462,7 @@ export class GrantService {
     await AuditService.recordInTx(tx, {
       action: AUDIT_ACTION.ASSIGNMENTS_CHANGED, outcome: 'SUCCESS',
       userId: actor.userId, ipAddress: actor.ipAddress ?? null,
-      attributes: { targetUserId: userId, before, after: [{ role: roleName, scope: 'all' }] },
+      attributes: { targetUserId: userId, before, after: [{ roleId: role.id, role: roleName, scope: 'all' }] },
     });
     return before;
   }
@@ -401,8 +474,7 @@ export class GrantService {
    * code they can change or deploy, or through data every channel shares.
    */
   static async channelAccess(reader: Reader, channelId: string): Promise<ChannelAccessView> {
-    const [channel] = await reader.select({ id: channels.id }).from(channels).where(and(eq(channels.id, channelId), isNull(channels.deletedAt)));
-    if (!channel) throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
+    await assertLiveChannel(reader, channelId);
     const rows = await reader.select({
       id: assignments.id, userId: users.id, username: users.username, roleId: roles.id, role: roles.name, admin: roles.admin,
       allChannels: assignments.allChannels, expiresAt: assignments.expiresAt,
@@ -415,30 +487,81 @@ export class GrantService {
       .where(eq(channelGroupMembers.channelId, channelId))).map((r) => r.groupId));
     const perms = new Map<string, readonly Permission[]>();
     for (const r of rows) if (!perms.has(r.roleId)) perms.set(r.roleId, await permissionsOfRole(reader, { id: r.roleId, admin: r.admin }));
+    const paths = rows.map((r) => ({
+      userId: r.userId, username: r.username, role: r.role, held: perms.get(r.roleId) ?? [],
+      groupIds: r.allChannels ? null : groupRows.filter((g) => g.assignmentId === r.id).map((g) => g.groupId).sort(),
+      expiresAt: r.expiresAt?.toISOString() ?? null,
+    }));
+    return accessViewOf(paths, channelGroupIds, null);
+  }
 
-    const people = new Map<string, { userId: string; username: string; permissions: Set<string>; through: AccessPath[] }>();
-    const code = new Map<string, string>();
-    const shared = new Map<string, string>();
-    for (const r of rows) {
-      const held = perms.get(r.roleId) ?? [];
-      if (held.some((p) => PERMISSION_CATALOG[p].runsCode)) code.set(r.userId, r.username);
-      if (held.some((p) => PERMISSION_CATALOG[p].readsEveryChannel)) shared.set(r.userId, r.username);
-      const groupIds = r.allChannels ? null : groupRows.filter((g) => g.assignmentId === r.id).map((g) => g.groupId).sort();
-      if (groupIds !== null && !groupIds.some((g) => channelGroupIds.has(g))) continue;
-      const onChannel = held.filter((p) => PERMISSION_CATALOG[p].class === PERMISSION_CLASS.CHANNEL);
-      if (onChannel.length === 0) continue;
-      const person = people.get(r.userId) ?? { userId: r.userId, username: r.username, permissions: new Set<string>(), through: [] };
-      for (const p of onChannel) person.permissions.add(p);
-      person.through.push({ role: r.role, permissions: [...onChannel].sort(), groupIds, expiresAt: r.expiresAt?.toISOString() ?? null });
-      people.set(r.userId, person);
+  /**
+   * Who could access `channelId` at `at` (plan section 8, slice 11b): the grant
+   * tables rebuilt from the latest GRANT_BASELINE at or before `at` and the
+   * grant audit rows after it (lib/grant-replay.ts), then read as
+   * channelAccess reads the live ones. INVALID_INPUT for a time in the future
+   * or before the first baseline; NOT_FOUND for a channel that is gone now.
+   */
+  static async channelAccessAsOf(reader: Reader, channelId: string, at: Date): Promise<ChannelAccessView> {
+    if (at.getTime() > Date.now()) throw new ServiceError('INVALID_INPUT', 'Pick a time that has passed');
+    await assertLiveChannel(reader, channelId);
+    const baseline = await baselineBefore(reader, at);
+    const rows = await reader.select({ id: auditLog.id, action: auditLog.action, channelId: auditLog.channelId, attributes: auditLog.attributes })
+      .from(auditLog).where(and(
+        inArray(auditLog.action, GRANT_REPLAY_ACTIONS.filter((a) => a !== AUDIT_ACTION.GRANT_BASELINE)),
+        // occurred_at is when a row's transaction began, so it only bounds the
+        // end; ids are drawn as each writer inserts, after it holds its locks,
+        // so id order is the order the changes took effect. A writer that began
+        // before the baseline but waited on its locks has a larger id and an
+        // earlier time, so the start is bounded by id alone.
+        lte(auditLog.occurredAt, at),
+        gt(auditLog.id, baseline.id),
+        or(ne(auditLog.action, AUDIT_ACTION.CHANNEL_GROUPS_CHANGED), eq(auditLog.channelId, channelId)),
+      )).orderBy(asc(auditLog.id));
+    const state = replayGrants(baseline.attributes, rows);
+    const userIds = [...state.assignments.keys()];
+    const names = new Map((userIds.length === 0 ? [] : await reader.select({ id: users.id, username: users.username }).from(users)
+      .where(inArray(users.id, userIds))).map((u) => [u.id, u.username]));
+    const paths: HeldPath[] = [];
+    for (const [userId, list] of state.assignments) {
+      if (state.disabled.has(userId)) continue;
+      for (const a of list) {
+        if (a.expiresAt !== null && new Date(a.expiresAt).getTime() <= at.getTime()) continue;
+        const role = state.roles.get(a.roleId);
+        if (!role) throw new ServiceError('INTERNAL', `The access history cannot be rebuilt: an assignment names role ${a.roleId}, which it does not hold`);
+        paths.push({ userId, username: names.get(userId) ?? userId, role: role.name, held: role.admin ? ALL_PERMISSIONS : knownPermissions(role.permissions), groupIds: a.groupIds, expiresAt: a.expiresAt });
+      }
     }
-    const byName = <T extends { username: string }>(a: T, b: T): number => a.username.localeCompare(b.username);
-    const list = (m: Map<string, string>): Array<{ userId: string; username: string }> => [...m].map(([userId, username]) => ({ userId, username })).sort(byName);
-    return {
-      people: [...people.values()].map((p) => ({ ...p, permissions: [...p.permissions].sort() })).sort(byName),
-      throughCode: list(code),
-      throughSharedData: list(shared),
-    };
+    return accessViewOf(paths, new Set(state.memberships.get(channelId) ?? []), at.toISOString());
+  }
+
+  /**
+   * Write this month's grant baseline unless it has one (D-319). Retention
+   * drops whole months, so a month with no baseline would leave every later
+   * time with nothing to replay from once the months before it are gone.
+   * Runs at start and daily with the audit partitions. 'deferred' when grant
+   * changes held their tables past the function's lock timeout; the next
+   * day's run retries.
+   */
+  static async ensureMonthlyBaseline(): Promise<'exists' | 'written' | 'deferred'> {
+    const [has] = await db.select({ id: auditLog.id }).from(auditLog)
+      .where(and(eq(auditLog.action, AUDIT_ACTION.GRANT_BASELINE), gte(auditLog.occurredAt, sql`date_trunc('month', now())`))).limit(1);
+    if (has) return 'exists';
+    try {
+      await db.execute(sql`SELECT public.record_grant_baseline('monthly')`);
+      return 'written';
+    } catch (err: unknown) {
+      if (pgCode(err) === PG_LOCK_NOT_AVAILABLE) return 'deferred';
+      throw err;
+    }
+  }
+
+  /** Record a user being enabled or disabled, in the change's transaction, for the access replay. */
+  static async recordEnabledChange(tx: AuditTransaction, userId: string, enabled: boolean, actor: GrantActor): Promise<void> {
+    await AuditService.recordInTx(tx, {
+      action: AUDIT_ACTION.USER_ENABLED_CHANGED, outcome: 'SUCCESS', userId: actor.userId, ipAddress: actor.ipAddress ?? null,
+      attributes: { targetUserId: userId, enabled },
+    });
   }
 
   /**
@@ -468,6 +591,29 @@ export class GrantService {
         attributes: { before, after: [...before, groupId].sort(), restored: true },
       });
     });
+  }
+
+  /**
+   * Take every channel out of `groupId` before the group is deleted, recording
+   * each channel's change like any other membership change, so the access
+   * replay does not keep links to a group that is gone (D-319). Locks the
+   * channels in id order, as a save of a channel's groups locks its channel.
+   */
+  static async removeGroupMemberships(tx: AuditTransaction, groupId: string, actor: GrantActor): Promise<void> {
+    const members = await tx.select({ channelId: channelGroupMembers.channelId }).from(channelGroupMembers)
+      .where(eq(channelGroupMembers.channelGroupId, groupId));
+    const channelIds = members.map((m) => m.channelId).sort();
+    if (channelIds.length === 0) return;
+    await tx.select({ id: channels.id }).from(channels).where(inArray(channels.id, channelIds)).orderBy(asc(channels.id)).for('no key update');
+    for (const channelId of channelIds) {
+      const before = (await tx.select({ groupId: channelGroupMembers.channelGroupId }).from(channelGroupMembers)
+        .where(eq(channelGroupMembers.channelId, channelId))).map((r) => r.groupId).sort();
+      await tx.delete(channelGroupMembers).where(and(eq(channelGroupMembers.channelId, channelId), eq(channelGroupMembers.channelGroupId, groupId)));
+      await AuditService.recordInTx(tx, {
+        action: AUDIT_ACTION.CHANNEL_GROUPS_CHANGED, outcome: 'SUCCESS', userId: actor.userId, channelId, ipAddress: actor.ipAddress ?? null,
+        attributes: { before, after: before.filter((g) => g !== groupId), groupDeleted: groupId },
+      });
+    }
   }
 
   /** The groups a live assignment is scoped to: adding a channel to one gives access (D-310). */
@@ -512,7 +658,7 @@ export class GrantService {
       if (a.input.groupIds !== null) await tx.insert(assignmentGroups).values(a.input.groupIds.map((channelGroupId) => ({ assignmentId: row!.id, channelGroupId })));
     }
     const after = await assignmentsOf(tx, userId);
-    const summary = (list: readonly AssignmentView[]): unknown[] => list.map((a) => ({ role: a.roleName, scope: a.groupIds ?? 'all', expiresAt: a.expiresAt, reason: a.reason }));
+    const summary = (list: readonly AssignmentView[]): unknown[] => list.map((a) => ({ roleId: a.roleId, role: a.roleName, scope: a.groupIds ?? 'all', expiresAt: a.expiresAt, reason: a.reason }));
     await AuditService.recordInTx(tx, {
       action: AUDIT_ACTION.ASSIGNMENTS_CHANGED, outcome: 'SUCCESS', userId: actor.userId, ipAddress: actor.ipAddress ?? null,
       attributes: { targetUserId: userId, before: summary(before), after: summary(after) },

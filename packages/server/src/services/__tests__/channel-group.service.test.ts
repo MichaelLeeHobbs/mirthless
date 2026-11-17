@@ -140,7 +140,8 @@ vi.mock('../../lib/event-emitter.js', () => ({ emitEvent }));
 // Which groups give access is read from the assignment tables, which only the
 // grant service reads; covered against Postgres in group-grants.itest.ts.
 const groupsGivingAccess = vi.fn().mockResolvedValue(new Set<string>());
-vi.mock('../grant.service.js', () => ({ GrantService: { groupsGivingAccess, applyChannelGroups: vi.fn() } }));
+const removeGroupMemberships = vi.fn().mockResolvedValue(undefined);
+vi.mock('../grant.service.js', () => ({ GrantService: { groupsGivingAccess, applyChannelGroups: vi.fn(), removeGroupMemberships } }));
 
 const { ChannelGroupService } = await import('../channel-group.service.js');
 
@@ -361,13 +362,26 @@ describe('ChannelGroupService', () => {
   });
 
   describe('delete', () => {
-    it('succeeds', async () => {
+    it('takes the channels out through the grant service, then deletes, in one transaction', async () => {
       pushResponse([{ id: GROUP_ID }]);
 
       const result = await ChannelGroupService.delete(GROUP_ID);
 
       expect(result.ok).toBe(true);
-      expect(mockDelete).toHaveBeenCalled();
+      expect(removeGroupMemberships).toHaveBeenCalledWith(mockTx, GROUP_ID, expect.objectContaining({ userId: null }));
+      expect(mockTx.delete).toHaveBeenCalled();
+      expect(removeGroupMemberships.mock.invocationCallOrder[0]!).toBeLessThan(mockTx.delete.mock.invocationCallOrder.at(-1)!);
+    });
+
+    it('answers CONFLICT when an assignment is scoped to the group', async () => {
+      pushResponse([{ id: GROUP_ID }]);
+      txDeleteWhere.mockImplementationOnce(() => Promise.reject(Object.assign(new Error('fk'), { code: '23503', table: 'assignment_groups' })));
+
+      const result = await ChannelGroupService.delete(GROUP_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'CONFLICT');
     });
 
     it('returns NOT_FOUND for missing id', async () => {

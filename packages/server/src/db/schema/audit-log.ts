@@ -12,6 +12,7 @@
 // deleted, which the triggers refuse. user_id and channel_id keep the id the
 // row was written with.
 
+import { sql } from 'drizzle-orm';
 import { pgTable, uuid, varchar, timestamp, bigserial, jsonb, index, primaryKey } from 'drizzle-orm/pg-core';
 
 export const auditLog = pgTable('audit_log', {
@@ -30,6 +31,9 @@ export const auditLog = pgTable('audit_log', {
   index('audit_log_user_idx').on(table.userId, table.occurredAt),
   index('audit_log_channel_idx').on(table.channelId, table.occurredAt),
   index('audit_log_action_idx').on(table.action, table.occurredAt),
+  // The grant rows the access replay reads (lib/grant-replay.ts GRANT_REPLAY_ACTIONS,
+  // keep the two lists the same), so a lookup by date never walks the PHI-read rows.
+  index('audit_log_grant_idx').on(table.occurredAt, table.id).where(sql`${table.action} IN ('GRANT_BASELINE', 'ASSIGNMENTS_CHANGED', 'CHANNEL_GROUPS_CHANGED', 'ROLE_CREATED', 'ROLE_UPDATED', 'ROLE_DELETED', 'USER_ENABLED_CHANGED')`),
 ]);
 
 export type AuditLogRow = typeof auditLog.$inferSelect;
