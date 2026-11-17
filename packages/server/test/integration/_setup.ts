@@ -108,6 +108,58 @@ export async function adminActor(pool: ServerModules['pool']): Promise<TestActor
   return { userId, ipAddress: null };
 }
 
+/** A signed-in test user: their id and an access token for the API. */
+export interface TestUser {
+  readonly id: string;
+  readonly token: string;
+}
+
+/**
+ * A new user holding `role` on every channel (`groupIds` null) or on each of
+ * `groupIds` (one assignment per group), with a live session and token.
+ * The caller deletes the user (assignments and sessions cascade).
+ */
+export async function userWithRole(pool: ServerModules['pool'], role: string, groupIds: readonly string[] | null): Promise<TestUser> {
+  const { signAccessToken } = await import('../../src/lib/jwt.js');
+  const name = `itest-user-${randomUUID().slice(0, 8)}`;
+  const { rows } = await pool.query<{ id: string }>(
+    `INSERT INTO users (username, email, password_hash) VALUES ($1, $2, 'not-a-hash') RETURNING id`, [name, `${name}@example.test`],
+  );
+  const id = rows[0]!.id;
+  for (const groupId of groupIds ?? [null]) {
+    const assigned = await pool.query<{ id: string }>(
+      `INSERT INTO assignments (user_id, role_id, all_channels) SELECT $1, id, $3 FROM roles WHERE name = $2 RETURNING id`,
+      [id, role, groupId === null],
+    );
+    if (groupId !== null) await pool.query('INSERT INTO assignment_groups (assignment_id, channel_group_id) VALUES ($1, $2)', [assigned.rows[0]!.id, groupId]);
+  }
+  const session = await pool.query<{ id: string }>(
+    `INSERT INTO sessions (user_id, refresh_token, expires_at) VALUES ($1, $2, now() + interval '1 hour') RETURNING id`, [id, `itest-${randomUUID()}`],
+  );
+  return { id, token: signAccessToken({ userId: id, sessionId: session.rows[0]!.id }) };
+}
+
+/** A new channel group; the caller deletes it. */
+export async function insertTestGroup(pool: ServerModules['pool']): Promise<string> {
+  const { rows } = await pool.query<{ id: string }>('INSERT INTO channel_groups (name) VALUES ($1) RETURNING id', [`itest-group-${randomUUID().slice(0, 8)}`]);
+  return rows[0]!.id;
+}
+
+/** An API answer: its status and parsed JSON body (empty for 204). */
+export interface ApiAnswer<T> {
+  readonly status: number;
+  readonly json: { readonly data?: T; readonly error?: { readonly code?: string; readonly message?: string; readonly details?: { readonly missing?: string[] } } };
+}
+
+/** Call `/api/v1<path>` on a test server at `base` as the holder of `token`. */
+export async function apiCall<T = unknown>(base: string, token: string, method: string, path: string, body?: unknown): Promise<ApiAnswer<T>> {
+  const res = await fetch(`${base}/api/v1${path}`, {
+    method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  return { status: res.status, json: res.status === 204 ? {} : await res.json() as ApiAnswer<T>['json'] };
+}
+
 /** Delete a channel row made by `insertTestChannel`. */
 export async function deleteTestChannel(mods: ServerModules, id: string): Promise<void> {
   await mods.db.execute(mods.sql`DELETE FROM channels WHERE id = ${id}`);

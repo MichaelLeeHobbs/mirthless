@@ -29,8 +29,9 @@ function pushOrderableResponse(value: unknown): void {
 const mockSelectWhere = vi.fn().mockImplementation(() => {
   const fn = selectResponses[selectCallIndex];
   selectCallIndex++;
-  if (fn) return fn();
-  return [];
+  const value: unknown = fn ? fn() : [];
+  // A locking read (`.where(...).for(mode)`) answers the same rows.
+  return Object.assign(Promise.resolve(value), { for: vi.fn().mockResolvedValue(value) });
 });
 
 const mockSelectFrom = vi.fn().mockImplementation(() => ({
@@ -57,19 +58,34 @@ const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
 
-const mockDb = {
+const mockDb: Record<string, unknown> = {
   select: mockSelect,
   insert: mockInsert,
   update: mockUpdate,
   delete: mockDelete,
 };
+mockDb['transaction'] = vi.fn((fn: (tx: unknown) => Promise<unknown>) => fn(mockDb));
 
 vi.mock('../../lib/db.js', () => ({
   db: mockDb,
   default: mockDb,
 }));
 
+// Whether the writer holds the permission on a library's links is covered
+// against Postgres (library-scope.itest.ts); here every writer does, unless a
+// test says otherwise.
+const mockHoldsOnEveryChannel = vi.fn().mockResolvedValue(true);
+vi.mock('../../lib/channel-scope.js', () => ({
+  holdsOnEveryChannel: mockHoldsOnEveryChannel,
+  grantedChannels: vi.fn().mockResolvedValue('all'),
+  inScope: vi.fn().mockReturnValue(true),
+}));
+vi.mock('../../lib/principal.js', () => ({
+  queryUserStanding: vi.fn().mockResolvedValue({ enabled: true, grants: new Map() }),
+}));
+
 vi.mock('drizzle-orm', () => ({
+  and: vi.fn((...conds: unknown[]) => ({ type: 'and', conds })),
   eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
   count: vi.fn(() => 'count_agg'),
   asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
@@ -384,6 +400,7 @@ describe('CodeTemplateService', () => {
 
     it('refuses an update that breaks an existing FUNCTION template', async () => {
       pushResponse([makeTmplRow()]);
+      pushResponse([makeLibRow()]); // the template's library, locked for the write
 
       const result = await CodeTemplateService.updateTemplate(TMPL_ID, { revision: 1, code: 'function x( {' });
 
@@ -398,6 +415,7 @@ describe('CodeTemplateService', () => {
       const tmpl = makeTmplRow();
       const updated = makeTmplRow({ name: 'renamedHelper', revision: 2 });
       pushResponse([tmpl]);
+      pushResponse([makeLibRow()]); // the template's library, locked for the write
       mockUpdateReturning.mockResolvedValueOnce([updated]);
 
       const result = await CodeTemplateService.updateTemplate(TMPL_ID, {
@@ -424,6 +442,7 @@ describe('CodeTemplateService', () => {
 
     it('returns CONFLICT when revision mismatch', async () => {
       pushResponse([makeTmplRow({ revision: 5 })]);
+      pushResponse([makeLibRow()]); // the template's library, locked for the write
 
       const result = await CodeTemplateService.updateTemplate(TMPL_ID, {
         code: 'x',
@@ -436,9 +455,25 @@ describe('CodeTemplateService', () => {
     });
   });
 
+  describe('library scope', () => {
+    it('refuses a template write when the writer does not hold the permission on the library\'s links', async () => {
+      mockHoldsOnEveryChannel.mockResolvedValueOnce(false);
+      pushResponse([makeTmplRow()]);
+      pushResponse([makeLibRow()]); // the template's library, locked for the write
+
+      const result = await CodeTemplateService.deleteTemplate(TMPL_ID, { userId: 'u-1', ipAddress: null });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'FORBIDDEN');
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deleteTemplate', () => {
     it('deletes existing template', async () => {
-      pushResponse([{ id: TMPL_ID }]);
+      pushResponse([makeTmplRow()]);
+      pushResponse([makeLibRow()]); // the template's library, locked for the write
 
       const result = await CodeTemplateService.deleteTemplate(TMPL_ID);
 

@@ -10,7 +10,9 @@ import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { describeIntegration, loadServerModules, type ServerModules } from './_setup.js';
+import {
+  apiCall, describeIntegration, insertTestGroup, loadServerModules, userWithRole, type ApiAnswer, type ServerModules, type TestUser,
+} from './_setup.js';
 
 describeIntegration('new channels land in the creator\'s scope (real Postgres)', () => {
   let mods: ServerModules;
@@ -20,40 +22,20 @@ describeIntegration('new channels land in the creator\'s scope (real Postgres)',
   const groups: string[] = [];
   const channelIds: string[] = [];
 
-  async function userWith(role: string, groupIds: readonly string[] | null): Promise<{ id: string; token: string }> {
-    const { signAccessToken } = await import('../../src/lib/jwt.js');
-    const name = `itest-cis-${randomUUID().slice(0, 8)}`;
-    const { rows } = await mods.pool.query<{ id: string }>(
-      `INSERT INTO users (username, email, password_hash) VALUES ($1, $2, 'not-a-hash') RETURNING id`, [name, `${name}@example.test`],
-    );
-    const id = rows[0]!.id;
-    users.push(id);
-    for (const groupId of groupIds ?? [null]) {
-      const assigned = await mods.pool.query<{ id: string }>(
-        `INSERT INTO assignments (user_id, role_id, all_channels) SELECT $1, id, $3 FROM roles WHERE name = $2 RETURNING id`,
-        [id, role, groupId === null],
-      );
-      if (groupId !== null) await mods.pool.query('INSERT INTO assignment_groups (assignment_id, channel_group_id) VALUES ($1, $2)', [assigned.rows[0]!.id, groupId]);
-    }
-    const session = await mods.pool.query<{ id: string }>(
-      `INSERT INTO sessions (user_id, refresh_token, expires_at) VALUES ($1, $2, now() + interval '1 hour') RETURNING id`, [id, `itest-${randomUUID()}`],
-    );
-    return { id, token: signAccessToken({ userId: id, sessionId: session.rows[0]!.id }) };
+  async function userWith(role: string, groupIds: readonly string[] | null): Promise<TestUser> {
+    const made = await userWithRole(mods.pool, role, groupIds);
+    users.push(made.id);
+    return made;
   }
 
   async function group(): Promise<string> {
-    const { rows } = await mods.pool.query<{ id: string }>('INSERT INTO channel_groups (name) VALUES ($1) RETURNING id', [`itest-cis-${randomUUID().slice(0, 8)}`]);
-    groups.push(rows[0]!.id);
-    return rows[0]!.id;
+    const id = await insertTestGroup(mods.pool);
+    groups.push(id);
+    return id;
   }
 
-  async function call(token: string, method: string, path: string, body?: unknown): Promise<{ status: number; json: { data?: { id?: string; created?: number; updated?: number; errors?: string[] }; error?: { code?: string } } }> {
-    const res = await fetch(`${base}/api/v1${path}`, {
-      method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
-    return { status: res.status, json: await res.json() as never };
-  }
+  const call = (token: string, method: string, path: string, body?: unknown): Promise<ApiAnswer<{ id?: string; created?: number; updated?: number; errors?: string[] }>> =>
+    apiCall(base, token, method, path, body);
 
   async function groupsOf(channelId: string): Promise<string[]> {
     const { rows } = await mods.pool.query<{ id: string }>('SELECT channel_group_id AS id FROM channel_group_members WHERE channel_id = $1 ORDER BY 1', [channelId]);

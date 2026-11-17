@@ -14,12 +14,13 @@ import type {
 import { CodeTemplateService } from '../services/code-template.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
+import { channelScopeOf } from '../lib/channel-scope.js';
 
 export class CodeTemplateController {
   // ===== Libraries =====
 
-  static async listLibraries(_req: Request, res: Response): Promise<void> {
-    const result = await CodeTemplateService.listLibraries();
+  static async listLibraries(req: Request, res: Response): Promise<void> {
+    const result = await CodeTemplateService.listLibraries(await channelScopeOf(req, 'code_templates:read'));
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list libraries');

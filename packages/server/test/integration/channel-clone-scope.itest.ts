@@ -25,13 +25,13 @@ describeIntegration('Channel clone keeps code template library scope (real Postg
   });
 
   afterAll(async () => {
-    for (const id of libraryIds) await templates.deleteLibrary(id);
+    for (const id of libraryIds) await templates.deleteLibrary(id, actor);
     for (const id of channelIds) await mods.ChannelService.delete(id);
     await mods?.pool.end();
   });
 
   const library = async (name: string, ids: string[] | null): Promise<string> => {
-    const lib = unwrap(await templates.createLibrary({ name: `${name}-${tag}`, description: '', channelIds: ids }));
+    const lib = unwrap(await templates.createLibrary({ name: `${name}-${tag}`, description: '', channelIds: ids }, actor));
     libraryIds.push(lib.id);
     return lib.id;
   };

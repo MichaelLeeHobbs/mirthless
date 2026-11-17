@@ -6,10 +6,11 @@
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
+import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
 
 describeIntegration('Code template library scope (real Postgres)', () => {
   let mods: ServerModules;
+  let actor: TestActor;
   let service: typeof import('../../src/services/code-template.service.js').CodeTemplateService;
   const north = randomUUID();
   const south = randomUUID();
@@ -18,14 +19,15 @@ describeIntegration('Code template library scope (real Postgres)', () => {
 
   beforeAll(async () => {
     mods = await loadServerModules();
+    actor = await adminActor(mods.pool);
     ({ CodeTemplateService: service } = await import('../../src/services/code-template.service.js'));
     const add = async (name: string, channelIds: string[] | null): Promise<void> => {
-      const lib = unwrap(await service.createLibrary({ name: `${name}-${tag}`, description: '', channelIds }));
+      const lib = unwrap(await service.createLibrary({ name: `${name}-${tag}`, description: '', channelIds }, actor));
       libraryIds.push(lib.id);
       unwrap(await service.createTemplate({
         libraryId: lib.id, name: `${name}-${tag}`, description: '', type: 'FUNCTION', language: 'JAVASCRIPT',
         code: `function f_${name}_${tag.replace(/-/g, '')}() { return 1; }`, contexts: ['SOURCE_FILTER_TRANSFORMER'],
-      }));
+      }, actor));
     };
     await add('everyone', null);
     await add('north', [north]);
@@ -33,7 +35,7 @@ describeIntegration('Code template library scope (real Postgres)', () => {
   });
 
   afterAll(async () => {
-    for (const id of libraryIds) await service.deleteLibrary(id);
+    for (const id of libraryIds) await service.deleteLibrary(id, actor);
     await mods?.pool.end();
   });
 
@@ -49,7 +51,7 @@ describeIntegration('Code template library scope (real Postgres)', () => {
   it('returns the scope with the library and lets an update change it', async () => {
     const lib = unwrap(await service.listLibraries()).find((l) => l.name === `north-${tag}`)!;
     expect(lib.channelIds).toEqual([north]);
-    unwrap(await service.updateLibrary(lib.id, { channelIds: null, revision: lib.revision }));
+    unwrap(await service.updateLibrary(lib.id, { channelIds: null, revision: lib.revision }, actor));
     expect(await names(south)).toContain(`north-${tag}`);
   });
 });

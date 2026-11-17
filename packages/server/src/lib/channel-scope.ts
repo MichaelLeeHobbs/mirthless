@@ -46,7 +46,12 @@ export async function holdsOnChannel(grants: FoldedGrants, permission: Permissio
  * still show), the channels in its groups when scoped, none when not held.
  */
 export async function channelScopeOf(req: Request, permission: Permission): Promise<ChannelScope> {
-  const scope = req.principal?.grants.get(permission);
+  return grantedChannels(req.principal?.grants, permission);
+}
+
+/** The channels `grants` hold `permission` on, as `channelScopeOf` gives them for a request. */
+export async function grantedChannels(grants: FoldedGrants | undefined, permission: Permission): Promise<ChannelScope> {
+  const scope = grants?.get(permission);
   if (scope === undefined) return [];
   if (scope === ALL_CHANNELS) return ALL_CHANNELS;
   if (scope.size === 0) return [];
@@ -54,6 +59,26 @@ export async function channelScopeOf(req: Request, permission: Permission): Prom
     .from(channelGroupMembers)
     .where(inArray(channelGroupMembers.channelGroupId, [...scope]));
   return rows.map((r) => r.channelId);
+}
+
+/**
+ * Whether `grants` hold `permission` on every channel in `channelIds`. A list
+ * naming no channel, and null (every channel, as a library's links), need it
+ * on all channels; a value that is not a channel id, or a channel in no group,
+ * is held only by an all-channel holder.
+ */
+export async function holdsOnEveryChannel(
+  grants: FoldedGrants, permission: Permission, channelIds: readonly string[] | null, reader: Pick<typeof db, 'select'> = db,
+): Promise<boolean> {
+  const scope = grants.get(permission);
+  if (scope === undefined) return false;
+  if (scope === ALL_CHANNELS) return true;
+  if (channelIds === null || channelIds.length === 0 || !channelIds.every((id) => CHANNEL_ID.test(id))) return false;
+  const rows = await reader.select({ channelId: channelGroupMembers.channelId, groupId: channelGroupMembers.channelGroupId })
+    .from(channelGroupMembers)
+    .where(inArray(channelGroupMembers.channelId, [...channelIds]));
+  const held = new Set(rows.filter((r) => scope.has(r.groupId as ChannelGroupId)).map((r) => r.channelId));
+  return channelIds.every((id) => held.has(id));
 }
 
 /**
