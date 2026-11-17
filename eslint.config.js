@@ -13,6 +13,7 @@ const SHARED_HELPERS = [
   { names: 'errorMessage|errorCode', home: 'packages/server/src/lib/controller-helpers.ts (errorResponse(error).message or .code) on the server, packages/web/src/lib/error-message.ts (errorMessage) in web' },
   { names: 'escapeCsvField', home: '@galvanigraph/core-util (csv.ts)' },
   { names: 'saveFile|saveBlob|downloadText|downloadBlob|triggerDownload', home: 'packages/web/src/lib/download.ts' },
+  { names: 'hashToken|matchesTokenHash|hashSecret|hashApiKey', home: 'packages/server/src/lib/token-hash.ts' },
   { names: 'isBlockedIp|isBlockedHost|isBlockedHostname|isBlockedAddress|isReservedHostname|isReservedAddress', home: 'packages/engine/src/sandbox/ssrf.ts' },
   { names: 'isPlainObject|isRecord', home: '@galvanigraph/core-util (validation.ts)' },
   { names: 'errorInfo', home: '@galvanigraph/core-util (error-info.ts)' },
@@ -169,6 +170,8 @@ export default tseslint.config(
     files: ['packages/server/src/**/*.ts'],
     ignores: [
       'packages/server/src/services/grant.service.ts',
+      // Issues keys and writes their principal, role and assignment, recorded as the grant service records them (D-313).
+      'packages/server/src/services/api-key.service.ts',
       'packages/server/src/lib/principal.ts',
       // The Drizzle client takes the whole schema to build its query API.
       'packages/server/src/lib/db.ts',
@@ -178,8 +181,8 @@ export default tseslint.config(
     rules: {
       'no-restricted-imports': ['error', {
         patterns: [{
-          group: ['**/db/schema/index.js', '**/db/schema/roles.js', '**/db/schema/assignments.js'],
-          importNames: ['roles', 'rolePermissions', 'assignments'],
+          group: ['**/db/schema/index.js', '**/db/schema/roles.js', '**/db/schema/assignments.js', '**/db/schema/api-keys.js'],
+          importNames: ['roles', 'rolePermissions', 'assignments', 'apiKeys'],
           message: 'Read and change roles and assignments through GrantService (services/grant.service.ts).',
         }],
       }],

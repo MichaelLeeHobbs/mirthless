@@ -346,8 +346,20 @@ export const PERMISSIONS = {
   ROLES_READ: 'roles:read',
   /** Create, edit, clone and delete roles, within what the editor holds (D-310). */
   ROLES_WRITE: 'roles:write',
+
+  /** See API keys: name, issuer, grants, expiry and last use, never the secret (D-313). */
+  API_KEYS_READ: 'api_keys:read',
+  /** Issue, replace, enable, disable and revoke API keys, within what the holder holds (D-313). */
+  API_KEYS_MANAGE: 'api_keys:manage',
 } as const;
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+/** What a users row is: a person, or the principal behind an API key (D-313, D-320). */
+export const USER_KIND = {
+  PERSON: 'person',
+  API_KEY: 'api_key',
+} as const;
+export type UserKind = (typeof USER_KIND)[keyof typeof USER_KIND];
 
 // --- Event Levels ---
 

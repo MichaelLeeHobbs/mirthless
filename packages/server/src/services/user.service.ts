@@ -6,7 +6,7 @@
 
 import bcrypt from 'bcryptjs';
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, ne, asc } from 'drizzle-orm';
+import { eq, and, ne, asc, type SQL } from 'drizzle-orm';
 import type { AssignmentInput, AssignmentView, CreateUserInput, UpdateUserInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -14,6 +14,7 @@ import { heldRoleNamesSql, loadUserStanding, roleLabel } from '../lib/principal.
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
 import { GrantService } from './grant.service.js';
+import { USER_KIND } from '@galvanigraph/core-models';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -25,13 +26,18 @@ async function revokeSessions(tx: DbExecutor, userId: string): Promise<void> {
   await tx.delete(sessions).where(eq(sessions.userId, userId));
 }
 
+/** A person, not the principal behind an API key, which is managed with its key (D-313). */
+function isPerson(): SQL {
+  return eq(users.kind, USER_KIND.PERSON);
+}
+
 /**
  * Lock the target user's row for the rest of the transaction, or NOT_FOUND.
  * FOR NO KEY UPDATE serialises changes to one user without blocking inserts
- * whose foreign keys point at the row (sessions, events).
+ * whose foreign keys point at the row (sessions, events). Never a key's user.
  */
 async function lockTarget(tx: DbExecutor, id: string): Promise<{ readonly enabled: boolean }> {
-  const [row] = await tx.select({ enabled: users.enabled }).from(users).where(eq(users.id, id)).for('no key update');
+  const [row] = await tx.select({ enabled: users.enabled }).from(users).where(and(eq(users.id, id), isPerson())).for('no key update');
   if (!row) {
     throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
   }
@@ -97,6 +103,7 @@ export class UserService {
           createdAt: users.createdAt,
         })
         .from(users)
+        .where(isPerson())
         .orderBy(asc(users.username));
 
       return rows.map(withRoles);
@@ -123,7 +130,7 @@ export class UserService {
           updatedAt: users.updatedAt,
         })
         .from(users)
-        .where(eq(users.id, id));
+        .where(and(eq(users.id, id), isPerson()));
 
       if (!user) {
         throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
@@ -302,7 +309,7 @@ export class UserService {
       const [user] = await db
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.id, id));
+        .where(and(eq(users.id, id), isPerson()));
 
       if (!user) {
         throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
@@ -383,7 +390,8 @@ export class UserService {
   /** Effective permission names for a user, resolved from their live assignments. */
   static async getPermissions(id: string): Promise<Result<{ readonly role: string; readonly roles: readonly string[]; readonly permissions: readonly string[] }>> {
     return tryCatch(async () => {
-      const standing = await loadUserStanding(id);
+      const [person] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, id), isPerson()));
+      const standing = person ? await loadUserStanding(id) : null;
       if (!standing) {
         throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
       }
@@ -395,7 +403,7 @@ export class UserService {
   /** A user's assignments, live and expired; NOT_FOUND for no such user. */
   static async getAssignments(id: string): Promise<Result<readonly AssignmentView[]>> {
     return tryCatch(async () => {
-      const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, id));
+      const [user] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, id), isPerson()));
       if (!user) throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
       return GrantService.listAssignments(db, id);
     });
@@ -415,7 +423,7 @@ export class UserService {
       const [user] = await db
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.id, id));
+        .where(and(eq(users.id, id), isPerson()));
 
       if (!user) {
         throw new ServiceError('NOT_FOUND', `User not found: ${id}`);

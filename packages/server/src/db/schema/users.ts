@@ -2,7 +2,8 @@
 // Users Table Schema
 // ===========================================
 
-import { pgTable, uuid, varchar, text, timestamp, boolean, integer, index } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { pgTable, uuid, varchar, text, timestamp, boolean, integer, index, check } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -13,6 +14,12 @@ export const users = pgTable('users', {
   lastName: varchar('last_name', { length: 100 }),
   description: text('description'),
   // A user's roles are assignments (db/schema/assignments.ts, D-310).
+  /**
+   * 'person', or 'api_key': the principal behind an API key (db/schema/api-keys.ts,
+   * D-313). A key's user never signs in with a password, is never listed or
+   * picked as a person, and its enabled flag is the key's.
+   */
+  kind: varchar('kind', { length: 16 }).notNull().default('person'),
   enabled: boolean('enabled').notNull().default(true),
   mustChangePassword: boolean('must_change_password').notNull().default(false),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
@@ -22,6 +29,7 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('users_enabled_idx').on(table.enabled),
+  check('users_kind_check', sql`${table.kind} IN ('person', 'api_key')`),
 ]);
 
 export type User = typeof users.$inferSelect;

@@ -5,6 +5,8 @@
 
 import { Router, type IRouter } from 'express';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { apiKeyRateLimiter } from '../middleware/rate-limit.middleware.js';
+import apiKeyRoutes from './api-key.routes.js';
 import { jsonBody } from '../middleware/body-limit.middleware.js';
 import alertRoutes from './alert.routes.js';
 import auditRoutes from './audit.routes.js';
@@ -64,10 +66,13 @@ router.use('/auth', authRoutes);
 // One guard for the whole API. Routers must not add their own: ten routers share
 // the /channels mount, and each one's guard would run again (#217).
 router.use(authenticate);
+// Counted per API key once the key is known; a person's request skips it.
+router.use(apiKeyRateLimiter);
 // Bodies are read only now, after the guard (#157); large-body routers parse their own.
 router.use(jsonBody);
 
 router.use('/alerts', alertRoutes);
+router.use('/api-keys', apiKeyRoutes);
 router.use('/audit', auditRoutes);
 // Mount specific /channels sub-routes BEFORE channelRoutes — channelRoutes
 // defines GET /:id which greedily matches any single-segment path like

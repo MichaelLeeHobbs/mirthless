@@ -79,6 +79,31 @@ const apiRateLimitMax = ((): number => {
   return isProduction ? 600 : 1000;
 })();
 
+// ===========================================
+// API Key Rate Limiter
+// ===========================================
+// A second limit, counted per API key (D-313), so one leaked or runaway key
+// slows down without the people behind the same address sharing its bucket.
+// Requests signed in as a person skip it. API_KEY_RATE_LIMIT_MAX overrides.
+const apiKeyRateLimitMax = ((): number => {
+  const configured = Number(process.env['API_KEY_RATE_LIMIT_MAX']);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  return isProduction ? 300 : 1000;
+})();
+
+export const apiKeyRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: apiKeyRateLimitMax,
+  skip: (req) => (req as { apiKeyId?: string }).apiKeyId === undefined,
+  keyGenerator: (req) => `api-key:${(req as { apiKeyId?: string }).apiKeyId ?? ''}`,
+  message: {
+    success: false,
+    error: { code: 'RATE_LIMITED', message: 'Too many requests with this API key. Please slow down.' },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export const apiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: apiRateLimitMax,

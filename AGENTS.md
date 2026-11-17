@@ -39,6 +39,7 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `mapErrorToStatus` and `errorResponse` in `server/src/lib/controller-helpers.ts`: ServiceError code to HTTP status (500 otherwise), and the `{ code, message }` body (`INTERNAL` otherwise). A controller with a different status for one code wraps `mapErrorToStatus`, as `user.controller.ts` does.
   - `escapeCsvField` in `core-util` (CSV field escaping with the formula-injection guard; `server/src/lib/csv.ts` re-exports it), and `saveFile` and `saveBlob` in `web/src/lib/download.ts` (a file made in the page, or a Blob the server sent, downloaded).
   - `isBlockedHostname`/`isBlockedAddress` (script `httpFetch`) and `isReservedHostname`/`isReservedAddress` (Test Connection) in `engine/src/sandbox/ssrf.ts`: both SSRF policies, built from one set of ranges.
+  - `hashToken` and `matchesTokenHash` in `server/src/lib/token-hash.ts`: how a refresh token or API key secret is stored (SHA-256) and checked (constant time).
   - `isPlainObject` and `errorInfo` in `core-util`. `errorInfo` builds the `{ errMsg, name, stack }` log record for any thrown value.
   - `formatBytes` in `web/src/lib/system-health.ts`, `formatTimestamp` in `web/src/lib/format.ts` (the caller passes the label for a missing time), and the certificate `expiry*` helpers in `web/src/lib/certificate-expiry.ts`.
   - `getStr`, `getNum`, `getBool`, `getTls*` and `propertyUpdaters` in `web/src/components/channels/common/connector-properties.ts` for connector forms.

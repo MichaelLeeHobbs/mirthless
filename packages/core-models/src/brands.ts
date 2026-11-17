@@ -29,6 +29,8 @@ export type TagId = BrandedString<'TagId'>;
 export type ServerId = BrandedString<'ServerId'>;
 export type CollectionId = BrandedString<'CollectionId'>;
 export type DataSourceId = BrandedString<'DataSourceId'>;
+/** An API key's id: the middle of gf_<keyId>_<secret> (D-313). */
+export type ApiKeyId = BrandedString<'ApiKeyId'>;
 
 // --- Branded Number Types ---
 
@@ -80,6 +82,7 @@ export const createTagId = makeStringFactory('TagId');
 export const createServerId = makeStringFactory('ServerId');
 export const createCollectionId = makeStringFactory('CollectionId');
 export const createDataSourceId = makeStringFactory('DataSourceId');
+export const createApiKeyId = makeStringFactory('ApiKeyId');
 
 /** Creates a MetaDataId (0 = source, 1+ = destination) */
 export function createMetaDataId(value: number): MetaDataId {

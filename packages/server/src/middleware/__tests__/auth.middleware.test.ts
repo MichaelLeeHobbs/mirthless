@@ -32,7 +32,14 @@ vi.mock('../../lib/principal.js', async () => {
 // Session liveness has its own tests (session-live.test.ts, forged-token.routes.test.ts).
 vi.mock('../../lib/session-live.js', () => ({ isSessionLive: vi.fn(() => Promise.resolve(true)) }));
 
-const { authenticate } = await import('../auth.middleware.js');
+// The key lookup is the database boundary for API keys (api-key.service.ts, api-keys.itest.ts).
+const mockResolveKey = vi.fn();
+const mockTouchKey = vi.fn((_id: string, _ip: string | null) => Promise.resolve());
+vi.mock('../../services/api-key.service.js', () => ({
+  ApiKeyService: { resolve: (token: string) => mockResolveKey(token), touch: (id: string, ip: string | null) => mockTouchKey(id, ip) },
+}));
+
+const { authenticate, keyInQuery } = await import('../auth.middleware.js');
 
 // ----- Helpers -----
 
@@ -133,5 +140,74 @@ describe('authenticate — refusals are recorded through deny()', () => {
 
     expect(res.statusCode).toBe(401);
     expect(recorded()).toMatchObject({ userId: null, attributes: { reason: 'bad_token', principal: 'anonymous' } });
+  });
+});
+
+describe('authenticate: API keys (D-313)', () => {
+  const KEY = 'gf_0f8fad5b-d9cb-469f-a165-70867728950e_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ';
+
+  function keyReq(originalUrl = '/api/v1/channels', token = KEY): Request {
+    return { method: 'GET', originalUrl, ip: '10.0.0.9', headers: { authorization: `Bearer ${token}` } } as unknown as Request;
+  }
+
+  it('signs in as the key\'s principal, without a session, and never tries the token as a JWT', async () => {
+    const { standingFor } = await import('../../../test/standing.js');
+    mockResolveKey.mockResolvedValue({ keyId: 'k1', standing: standingFor({ id: 'key-user', username: 'api-key:k1', role: 'viewer' }) });
+    const req = keyReq();
+    const next = vi.fn();
+    await authenticate(req, makeRes(), next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(req.apiKeyId).toBe('k1');
+    expect(req.principal?.userId).toBe('key-user');
+    expect(req.sessionId).toBeUndefined();
+  });
+
+  it('answers a key it cannot resolve with the same 401 as a bad token', async () => {
+    mockResolveKey.mockResolvedValue(null);
+    const keyRes = makeRes();
+    await authenticate(keyReq(), keyRes, vi.fn());
+    mockVerify.mockImplementation(() => { throw new Error('bad'); });
+    const jwtRes = makeRes();
+    await authenticate(makeReq('GET', '/api/v1/channels'), jwtRes, vi.fn());
+    expect(keyRes.statusCode).toBe(401);
+    expect(keyRes.body).toEqual(jwtRes.body);
+  });
+
+  it('refuses a key in the query string, encoded or not, before looking anything up', async () => {
+    for (const url of [`/api/v1/channels?k=${KEY}`, `/api/v1/channels?k=${encodeURIComponent(KEY)}`, `/api/v1/channels?a=1&k=${KEY.toUpperCase()}`]) {
+      const res = makeRes();
+      const next = vi.fn();
+      await authenticate(keyReq(url), res, next);
+      expect(res.statusCode).toBe(401);
+      expect(next).not.toHaveBeenCalled();
+    }
+    expect(mockResolveKey).not.toHaveBeenCalled();
+  });
+
+  it('writes a key\'s last use at most once a minute', async () => {
+    const { standingFor } = await import('../../../test/standing.js');
+    mockResolveKey.mockResolvedValue({ keyId: 'k-throttle', standing: standingFor({ id: 'key-user', role: 'viewer' }) });
+    vi.useFakeTimers({ now: new Date('2026-11-17T10:00:00Z') });
+    try {
+      await authenticate(keyReq(), makeRes(), vi.fn());
+      await authenticate(keyReq(), makeRes(), vi.fn());
+      expect(mockTouchKey).toHaveBeenCalledTimes(1);
+      expect(mockTouchKey).toHaveBeenCalledWith('k-throttle', '10.0.0.9');
+      vi.setSystemTime(new Date('2026-11-17T10:01:01Z'));
+      await authenticate(keyReq(), makeRes(), vi.fn());
+      expect(mockTouchKey).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('keyInQuery', () => {
+  it('looks only at the query string', () => {
+    expect(keyInQuery('/api/v1/channels/gf_0f8fad5b-d9cb-469f')).toBe(false);
+    expect(keyInQuery('/api/v1/channels')).toBe(false);
+    expect(keyInQuery('/api/v1/messages?q=gf_0f8fad5b-d9cb-469f-a165')).toBe(true);
+    expect(keyInQuery('/api/v1/messages?q=%gf')).toBe(false);
   });
 });

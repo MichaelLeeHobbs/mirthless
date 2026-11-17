@@ -31,6 +31,7 @@ import { CollectionController } from '../../controllers/collection.controller.js
 import { CodeTemplateController } from '../../controllers/code-template.controller.js';
 import { AuditController } from '../../controllers/audit.controller.js';
 import { RoleController } from '../../controllers/role.controller.js';
+import { ApiKeyController } from '../../controllers/api-key.controller.js';
 import { CrossChannelSearchController } from '../../controllers/cross-channel-search.controller.js';
 
 interface Endpoint extends ApiRoute {
@@ -72,6 +73,11 @@ const ENDPOINTS: readonly Endpoint[] = [
   { method: 'GET', path: '/api/v1/audit/:id', permission: 'audit:read', handler: AuditController.getById },
   // Message ids, status and times from every channel in scope (D-310).
   { method: 'GET', path: '/api/v1/messages', permission: 'messages:read', handler: CrossChannelSearchController.search },
+  // A key acts as a principal of its own; issuing, enabling and revoking one change who can reach what (D-313).
+  { method: 'GET', path: '/api/v1/api-keys', permission: 'api_keys:read', handler: ApiKeyController.list },
+  { method: 'POST', path: '/api/v1/api-keys', permission: 'api_keys:manage', handler: ApiKeyController.issue },
+  { method: 'PATCH', path: '/api/v1/api-keys/:id/enabled', permission: 'api_keys:manage', handler: ApiKeyController.setEnabled },
+  { method: 'POST', path: '/api/v1/api-keys/:id/revoke', permission: 'api_keys:manage', handler: ApiKeyController.revoke },
   // A role change changes what every holder may do (D-310).
   { method: 'POST', path: '/api/v1/roles', permission: 'roles:write', handler: RoleController.create },
   { method: 'PUT', path: '/api/v1/roles/:id', permission: 'roles:write', handler: RoleController.update },

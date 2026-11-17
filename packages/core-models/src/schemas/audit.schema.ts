@@ -49,6 +49,10 @@ export const AUDIT_ACTION = {
   ROLE_DELETED: 'ROLE_DELETED',
   /** A channel's group memberships changed: who can reach it changed (D-310). Written in the change's transaction. */
   CHANNEL_GROUPS_CHANGED: 'CHANNEL_GROUPS_CHANGED',
+  /** An API key was issued, with its permissions, scope and end (D-313); its role and assignment rows follow the usual grant actions. */
+  API_KEY_ISSUED: 'API_KEY_ISSUED',
+  /** An API key was revoked, with the reason. Revoking also disables the key's user (USER_ENABLED_CHANGED). */
+  API_KEY_REVOKED: 'API_KEY_REVOKED',
   /** A user was enabled or disabled (deleting one disables it); written in the change's transaction. */
   USER_ENABLED_CHANGED: 'USER_ENABLED_CHANGED',
   /** Every role, assignment, membership and disabled user, from record_grant_baseline() (migration 0022, the seed): where the access replay starts. */

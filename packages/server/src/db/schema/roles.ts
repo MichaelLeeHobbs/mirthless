@@ -17,6 +17,8 @@ export const roles = pgTable('roles', {
   builtIn: boolean('built_in').notNull().default(false),
   /** The locked admin role: every permission, never edited or deleted. */
   admin: boolean('admin').notNull().default(false),
+  /** One API key's private role (D-313): never listed with the roles, edited through the role routes or given to a person. */
+  keyRole: boolean('key_role').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
