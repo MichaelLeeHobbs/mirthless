@@ -32,6 +32,9 @@ vi.mock('../../lib/logger.js', () => ({
   },
 }));
 
+// Placing a new channel in a group is covered against Postgres (create-in-scope.itest.ts).
+vi.mock('../grant.service.js', () => ({ GrantService: { placeNewChannel: vi.fn().mockResolvedValue(null), newChannelGroup: vi.fn().mockResolvedValue(null) } }));
+
 vi.mock('../partition-manager.service.js', () => ({
   PartitionManagerService: {
     createPartitions: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
@@ -51,6 +54,7 @@ vi.mock('../../db/schema/index.js', () => ({
 
 import { ChannelImportService, stripRedactedProperties, connectorDirectionError } from '../channel-import.service.js';
 import { PartitionManagerService } from '../partition-manager.service.js';
+import { GrantService } from '../grant.service.js';
 import { db } from '../../lib/db.js';
 import { StdError } from 'stderr-lib';
 
@@ -161,6 +165,21 @@ describe('ChannelImportService.importChannels', () => {
         errors: [],
       });
     }
+  });
+
+  it('checks the group for new channels once before importing, and refuses the whole import when it fails', async () => {
+    const actor = { userId: 'user-1', ipAddress: null };
+    vi.mocked(GrantService.newChannelGroup).mockRejectedValueOnce(new Error('You can only put a new channel in a group where you can change channels'));
+    const refused = await ChannelImportService.importChannels([makeEntry()], 'SKIP', actor, { groupId: 'g-1' });
+    expect(refused.ok).toBe(false);
+    expect(GrantService.newChannelGroup).toHaveBeenCalledWith(db, 'g-1', { userId: 'user-1' });
+    expect(PartitionManagerService.createPartitions).not.toHaveBeenCalled();
+  });
+
+  it('places nothing for a backup restore, whose memberships come from the backup', async () => {
+    await ChannelImportService.importChannels([makeEntry()], 'SKIP', undefined, 'restore');
+    expect(GrantService.newChannelGroup).not.toHaveBeenCalled();
+    expect(GrantService.placeNewChannel).not.toHaveBeenCalled();
   });
 
   it('handles empty entries array', async () => {

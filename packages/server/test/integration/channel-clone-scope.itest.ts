@@ -8,10 +8,11 @@
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createChannelSchema } from '@galvanigraph/core-models';
-import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
+import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
 
 describeIntegration('Channel clone keeps code template library scope (real Postgres)', () => {
   let mods: ServerModules;
+  let actor: TestActor;
   let templates: typeof import('../../src/services/code-template.service.js').CodeTemplateService;
   const channelIds: string[] = [];
   const libraryIds: string[] = [];
@@ -19,6 +20,7 @@ describeIntegration('Channel clone keeps code template library scope (real Postg
 
   beforeAll(async () => {
     mods = await loadServerModules();
+    actor = await adminActor(mods.pool);
     ({ CodeTemplateService: templates } = await import('../../src/services/code-template.service.js'));
   });
 
@@ -38,14 +40,14 @@ describeIntegration('Channel clone keeps code template library scope (real Postg
     const original = unwrap(await mods.ChannelService.create(createChannelSchema.parse({
       name: `itest-clone-src-${tag}`, enabled: false, inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'AUTO_AFTER_DESTINATIONS',
-    })));
+    }), actor));
     channelIds.push(original.id);
     const other = randomUUID();
     const listing = await library('listing', [other, original.id]);
     const everyone = await library('everyone', null);
     const elsewhere = await library('elsewhere', [other]);
 
-    const clone = unwrap(await mods.ChannelService.clone(original.id, `itest-clone-copy-${tag}`));
+    const clone = unwrap(await mods.ChannelService.clone(original.id, `itest-clone-copy-${tag}`, actor));
     channelIds.push(clone.id);
 
     const byId = new Map(unwrap(await templates.listLibraries()).map((l) => [l.id, l]));

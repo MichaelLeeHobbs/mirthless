@@ -26,7 +26,7 @@ curl -sS --fail-with-body "$GALVANIGRAPH_URL/api/v1/channels/$CHANNEL_ID/export"
 
 ## Import it on another server
 
-The import body is the exported file plus `collisionMode`: `OVERWRITE` replaces a channel with the same ID, `SKIP` leaves it, `CREATE_NEW` imports a copy.
+The import body is the exported file plus `collisionMode`: `OVERWRITE` replaces a channel with the same ID, `SKIP` leaves it, `CREATE_NEW` imports a copy. New channels join the channel group named in an optional `groupId`, or Default when the caller can change every channel; a caller who can change channels in several groups but not all of them must name one. `OVERWRITE` needs `channels:write` on each channel it replaces; one outside the caller's scope is listed in `errors` and left as it was ([access control](../user/access-control.md)).
 
 ```bash
 jq '. + {collisionMode: "OVERWRITE"}' channels/my-channel.json | \

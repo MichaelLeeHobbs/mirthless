@@ -14,12 +14,7 @@ export class MirthImportController {
     const input = req.body as MirthImportInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
 
-    const result = await MirthImportService.importFromXml(
-      input.xml,
-      input.collisionMode,
-      input.dryRun,
-      context,
-    );
+    const result = await MirthImportService.importFromXml(input.xml, input, context);
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Mirth Connect XML import failed');

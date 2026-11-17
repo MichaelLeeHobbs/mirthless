@@ -13,6 +13,7 @@ import {
   charsetSchema,
   type ChannelExportEntry,
   type ImportResult,
+  type MirthImportInput,
   type SourceConnectorType,
   type DestinationConnectorType,
 } from '@galvanigraph/core-models';
@@ -130,10 +131,10 @@ export class MirthImportService {
   /** Convert Mirth XML then import via ChannelImportService. */
   static async importFromXml(
     xml: string,
-    collisionMode: 'SKIP' | 'OVERWRITE' | 'RENAME',
-    dryRun: boolean,
+    options: Pick<MirthImportInput, 'collisionMode' | 'dryRun' | 'groupId'>,
     context?: AuditContext,
   ): Promise<Result<MirthImportResult>> {
+    const { collisionMode, dryRun, groupId } = options;
     return tryCatch(async () => {
       const convertResult = MirthImportService.convertXml(xml);
       if (!convertResult.ok) throw convertResult.error;
@@ -157,6 +158,7 @@ export class MirthImportService {
         convertResult.value.channels,
         galvanigraphCollisionMode,
         context,
+        groupId === undefined ? {} : { groupId },
       );
       if (!importResult.ok) throw importResult.error;
 

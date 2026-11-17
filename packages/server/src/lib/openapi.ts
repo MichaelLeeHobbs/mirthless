@@ -24,6 +24,12 @@ interface OpenAPISpec {
   };
 }
 
+/** The optional group a new channel joins (D-310). */
+const NEW_CHANNEL_GROUP = {
+  type: 'string', format: 'uuid',
+  description: 'The channel group new channels join; needs channels:write in it. Without it: Default for a caller who can change every channel, else their only such group.',
+} as const;
+
 /** Standard success response wrapper. */
 function successResponse(description: string, dataSchema: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -267,6 +273,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
                   required: ['name'],
                   properties: {
                     name: { type: 'string', minLength: 1, maxLength: 255 },
+                    groupId: NEW_CHANNEL_GROUP,
                   },
                 },
               },
@@ -363,6 +370,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
                   required: ['xml'],
                   properties: {
                     xml: { type: 'string', description: 'Mirth Connect channel XML' },
+                    groupId: NEW_CHANNEL_GROUP,
                   },
                 },
               },
@@ -1085,6 +1093,7 @@ export function generateOpenAPISpec(): OpenAPISpec {
             description: { type: 'string' },
             sourceConnector: { type: 'object', description: 'Source connector configuration' },
             destinationConnectors: { type: 'array', items: { type: 'object' } },
+            groupId: NEW_CHANNEL_GROUP,
           },
         },
         UpdateChannel: {

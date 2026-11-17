@@ -19,11 +19,11 @@
 // - nobody changes their own role (user.service), and the admin role is locked.
 
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
-import { AUDIT_ACTION, PERMISSIONS, can, type ChannelGroupId, type CreateRoleInput, type Permission, type UpdateRoleInput } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, AUDIT_ACTION, DEFAULT_GROUP_NAME, PERMISSIONS, can, type ChannelGroupId, type CreateRoleInput, type Permission, type UpdateRoleInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { isLiveAssignment, queryUserStanding } from '../lib/principal.js';
 import { db } from '../lib/db.js';
-import { assignmentGroups, assignments, channelGroupMembers, rolePermissions, roles, users } from '../db/schema/index.js';
+import { assignmentGroups, assignments, channelGroupMembers, channelGroups, rolePermissions, roles, users } from '../db/schema/index.js';
 import { AuditService, type AuditTransaction } from './audit.service.js';
 
 /** Who made a change, for its audit row. */
@@ -153,6 +153,25 @@ async function permissionsGrantedThrough(tx: AuditTransaction, groupIds: readonl
   return [...all];
 }
 
+/** The Default group's id, or null when there is none. */
+async function defaultGroupId(reader: Reader): Promise<string | null> {
+  const [row] = await reader.select({ id: channelGroups.id }).from(channelGroups).where(eq(channelGroups.name, DEFAULT_GROUP_NAME));
+  return row?.id ?? null;
+}
+
+/** The group a scoped writer's new channel joins: `groupId` when it is theirs, else their only write group. */
+function scopedTarget(writeGroups: ReadonlySet<ChannelGroupId>, groupId: string | undefined): string {
+  if (groupId !== undefined) {
+    if (!writeGroups.has(groupId as ChannelGroupId)) throw new ServiceError('FORBIDDEN', 'You can only put a new channel in a group where you can change channels');
+    return groupId;
+  }
+  const [only, ...more] = [...writeGroups];
+  if (only === undefined || more.length > 0) {
+    throw new ServiceError('INVALID_INPUT', 'You can change channels in more than one group; name the group for the new channel (groupId)');
+  }
+  return only;
+}
+
 /** The role named `name`, locked for the assignment, or an INVALID_INPUT error. */
 async function roleByName(tx: AuditTransaction, name: string): Promise<{ readonly id: string; readonly admin: boolean }> {
   const [row] = await tx.select({ id: roles.id }).from(roles).where(eq(roles.name, name));
@@ -264,6 +283,47 @@ export class GrantService {
       attributes: { before: [...before].sort(), after: [...wanted].sort() },
     });
     return before;
+  }
+
+  /**
+   * The group a new channel of `actor`'s joins, by the rules of
+   * `placeNewChannel`, or null; FORBIDDEN, INVALID_INPUT or NOT_FOUND when it
+   * has none. Inside a transaction the group row is locked FOR KEY SHARE, so a
+   * group deleted at the same time waits for the insert, or is gone here. An
+   * import calls it once before its first channel, so a bad group fails the
+   * request rather than every channel in it.
+   */
+  static async newChannelGroup(reader: Reader, groupId: string | undefined, actor: GrantActor): Promise<string | null> {
+    const standing = actor.userId === null ? null : await queryUserStanding(reader, actor.userId);
+    const scope = standing?.enabled === true ? standing.grants.get(PERMISSIONS.CHANNELS_WRITE) : undefined;
+    if (scope === undefined) throw new ServiceError('FORBIDDEN', 'Creating a channel needs channels:write');
+    const target = scope === ALL_CHANNELS ? groupId ?? await defaultGroupId(reader) : scopedTarget(scope, groupId);
+    if (target === null) return null;
+    const [found] = await reader.select({ id: channelGroups.id }).from(channelGroups).where(eq(channelGroups.id, target)).for('key share');
+    if (!found) throw new ServiceError('NOT_FOUND', `Channel group not found: ${target}`);
+    return target;
+  }
+
+  /**
+   * Put a channel created in this transaction into a group, and record it
+   * (D-310, plan section 2). A new channel has no access to give away yet, so
+   * this is not judged as a grant: the group must be inside the creator's
+   * channels:write scope, which keeps the channel in their own reach.
+   * - An all-channel writer's channel joins `groupId`, or Default when none is
+   *   named (none at all when there is no Default group).
+   * - A scoped writer's joins `groupId`, which must be one of their write
+   *   groups, or their only write group; with several they must name one.
+   * Returns the group joined, or null.
+   */
+  static async placeNewChannel(tx: AuditTransaction, channelId: string, groupId: string | undefined, actor: GrantActor): Promise<string | null> {
+    const target = await GrantService.newChannelGroup(tx, groupId, actor);
+    if (target === null) return null;
+    await tx.insert(channelGroupMembers).values({ channelGroupId: target, channelId });
+    await AuditService.recordInTx(tx, {
+      action: AUDIT_ACTION.CHANNEL_GROUPS_CHANGED, outcome: 'SUCCESS', userId: actor.userId, channelId, ipAddress: actor.ipAddress ?? null,
+      attributes: { before: [], after: [target], created: true },
+    });
+    return target;
   }
 
   /**

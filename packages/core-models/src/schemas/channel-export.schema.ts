@@ -176,6 +176,8 @@ export const channelImportSchema = z.object({
   exportedAt: z.string(),
   channels: z.array(channelExportEntrySchema.superRefine(checkImportConnectorTypes)),
   collisionMode: z.enum(['SKIP', 'OVERWRITE', 'CREATE_NEW']),
+  /** The group new channels join; see GrantService.placeNewChannel (D-310). */
+  groupId: z.string().uuid().optional(),
 });
 
 export type ChannelImportInput = z.infer<typeof channelImportSchema>;
