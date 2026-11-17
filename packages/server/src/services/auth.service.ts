@@ -96,6 +96,8 @@ export interface UserResponse {
   permissions: readonly string[];
   /** Each held permission with the scope it covers (D-310). */
   grants: readonly GrantEntry[];
+  /** When the first live assignment with an end time ends (ISO), or null: the web warns an hour before. */
+  nextExpiryAt: string | null;
   /** True when the user must change their password before proceeding. */
   mustChangePassword: boolean;
 }
@@ -122,6 +124,7 @@ async function currentUserResponse(userId: string): Promise<UserResponse | null>
     role: roleLabel(standing.roles),
     permissions: standing.permissions,
     grants: serializeGrants(standing.grants),
+    nextExpiryAt: standing.nextExpiry?.toISOString() ?? null,
     mustChangePassword: standing.mustChangePassword,
   };
 }

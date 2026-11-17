@@ -8,6 +8,7 @@ import { createThrottle } from '@galvanigraph/core-util';
 import { useAuthStore } from '../stores/auth.store.js';
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socket.js';
 import { queryClient } from '../providers/QueryProvider.js';
+import { refreshOrSignOut } from '../api/client.js';
 
 /**
  * Manages the socket.io connection lifecycle tied to authentication state.
@@ -23,10 +24,11 @@ export function useSocketConnection(): void {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const accessToken = useAuthStore((state) => state.accessToken);
   const mustChangePassword = useAuthStore((state) => state.mustChangePassword);
-  const clearAuth = useAuthStore((state) => state.clearAuth);
 
   // Track whether this is a reconnection (not the initial connect)
   const hasConnectedOnce = useRef(false);
+  // The token the last socket-triggered refresh gave, so a refused one is not refreshed again.
+  const refreshedFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated || !accessToken || mustChangePassword) {
@@ -50,7 +52,15 @@ export function useSocketConnection(): void {
       const message = err.message.toLowerCase();
       if (message.includes('auth') || message.includes('unauthorized') || message.includes('jwt')) {
         socket.disconnect();
-        clearAuth();
+        // The token may be one a refresh just rotated (a background access check,
+        // or a 401 elsewhere): refresh, and sign out only if that is refused. A new
+        // token re-runs this effect and reconnects. A token a refresh just gave
+        // that is refused too will not be fixed by another refresh: sign out.
+        if (refreshedFor.current === accessToken) {
+          useAuthStore.getState().clearAuth();
+          return;
+        }
+        void refreshOrSignOut().then((fresh) => { refreshedFor.current = fresh; });
       }
     };
 
@@ -63,7 +73,7 @@ export function useSocketConnection(): void {
       disconnectSocket();
       hasConnectedOnce.current = false;
     };
-  }, [isAuthenticated, accessToken, mustChangePassword, clearAuth]);
+  }, [isAuthenticated, accessToken, mustChangePassword]);
 }
 
 /**

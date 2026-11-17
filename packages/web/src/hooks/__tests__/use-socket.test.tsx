@@ -39,6 +39,7 @@ describe('useSocketConnection', () => {
   afterEach(() => {
     useAuthStore.getState().clearAuth();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('does not open a socket while a forced password change is pending', () => {
@@ -59,13 +60,38 @@ describe('useSocketConnection', () => {
     expect(io).toHaveBeenCalledTimes(1);
   });
 
-  it('logs out when the server rejects the socket for an auth reason', () => {
+  it('logs out when the server rejects the socket for an auth reason and the refresh is refused', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 401 })));
     useAuthStore.getState().setAuth(USER, 'token', false);
     renderHook(() => { useSocketConnection(); });
 
     act(() => { fakeSocket.listeners.get('connect_error')?.(new Error('Authentication required')); });
 
+    await vi.waitFor(() => { expect(useAuthStore.getState().isAuthenticated).toBe(false); });
+  });
+
+  it('signs out rather than refreshing again when the token a refresh just gave is refused too', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: { accessToken: 'fresh-token' } }), { status: 200 })));
+    useAuthStore.getState().setAuth(USER, 'token', false);
+    renderHook(() => { useSocketConnection(); });
+    act(() => { fakeSocket.listeners.get('connect_error')?.(new Error('Authentication required')); });
+    await vi.waitFor(() => { expect(useAuthStore.getState().accessToken).toBe('fresh-token'); });
+
+    // The reconnect with the fresh token is refused as well.
+    act(() => { fakeSocket.listeners.get('connect_error')?.(new Error('Authentication required')); });
+
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it('stays signed in when a refresh replaces a token the server had just rotated', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: { accessToken: 'fresh-token' } }), { status: 200 })));
+    useAuthStore.getState().setAuth(USER, 'token', false);
+    renderHook(() => { useSocketConnection(); });
+
+    act(() => { fakeSocket.listeners.get('connect_error')?.(new Error('Authentication required')); });
+
+    await vi.waitFor(() => { expect(useAuthStore.getState().accessToken).toBe('fresh-token'); });
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
   });
 });
 

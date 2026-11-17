@@ -34,5 +34,6 @@ export function standingFor(row: StandingRow): UserStanding {
     roles: row.role === undefined ? [] : [row.role],
     grants,
     permissions: [...grants.keys()].sort(),
+    nextExpiry: null,
   };
 }

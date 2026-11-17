@@ -33,8 +33,8 @@ let libraryId: string | undefined;
 test.describe.serial('Scoped creation and library links', () => {
   test.beforeAll(async () => {
     api = await adminApi();
-    labId = (await postData<{ id: string }>(api, '/channel-groups', { name: `e2e-lab-${RUN_ID}`, description: '' })).id;
-    radId = (await postData<{ id: string }>(api, '/channel-groups', { name: `e2e-rad-${RUN_ID}`, description: '' })).id;
+    labId = (await postData<{ id: string }>(api, '/channel-groups', { name: `e2e-scoped-lab-${RUN_ID}`, description: '' })).id;
+    radId = (await postData<{ id: string }>(api, '/channel-groups', { name: `e2e-scoped-rad-${RUN_ID}`, description: '' })).id;
     userId = (await postData<{ id: string }>(api, '/users', {
       username: USERNAME, email: `${USERNAME}@example.test`, password: PASSWORD, role: 'viewer',
     })).id;
@@ -66,7 +66,7 @@ test.describe.serial('Scoped creation and library links', () => {
     // Without a group the server would refuse, so the dialog does not offer Create yet.
     await expect(create).toBeDisabled();
     await dialog.getByRole('combobox', { name: 'Group' }).click();
-    await page.getByRole('option', { name: `e2e-rad-${RUN_ID}` }).click();
+    await page.getByRole('option', { name: `e2e-scoped-rad-${RUN_ID}` }).click();
     await create.click();
 
     await expect(page).toHaveURL(/\/channels\/[0-9a-f-]{36}$/);

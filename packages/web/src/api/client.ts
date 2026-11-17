@@ -47,7 +47,74 @@ export function readRefreshedUser(value: unknown): RefreshResult['user'] {
   if (typeof id !== 'string' || typeof username !== 'string' || typeof email !== 'string' || typeof role !== 'string') return null;
   if (!Array.isArray(permissions) || !permissions.every((p): p is string => typeof p === 'string')) return null;
   const grants = readGrants(value['grants']);
-  return { profile: { id, username, email, role, permissions, ...(grants === undefined ? {} : { grants }) }, mustChangePassword: mustChangePassword === true };
+  const next = value['nextExpiryAt'];
+  const nextExpiryAt = typeof next === 'string' && !Number.isNaN(Date.parse(next)) ? next : null;
+  return {
+    profile: { id, username, email, role, permissions, nextExpiryAt, ...(grants === undefined ? {} : { grants }) },
+    mustChangePassword: mustChangePassword === true,
+  };
+}
+
+/** What the access check compares: the grants, or the flat permissions from a server that sends none. */
+export function accessKey(user: AuthUser | null): string {
+  if (!user) return '';
+  const grants = user.grants?.map((g) => `${g.permission}=${g.scope === ALL_CHANNELS ? ALL_CHANNELS : [...g.scope].sort().join(',')}`).sort();
+  return JSON.stringify(grants ?? [...user.permissions].sort());
+}
+
+/**
+ * Refresh the session, sharing one refresh among concurrent callers, and store
+ * the result; sign out when the refresh is refused. Returns the new access
+ * token, or null when signed out. A refresh rotates the session, so another
+ * caller still holding the old token (a socket mid-handshake) comes here too
+ * rather than signing out on the spot.
+ */
+export async function refreshOrSignOut(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = refreshSession().finally(() => { refreshPromise = null; });
+  }
+  const refreshed = await refreshPromise;
+  if (refreshed) {
+    applyRefresh(refreshed);
+    return refreshed.accessToken;
+  }
+  useAuthStore.getState().clearAuth();
+  return null;
+}
+
+/** A request for one channel or a record in it: the routes that answer 404 outside the caller's access. */
+export function isChannelPath(path: string): boolean {
+  return /^\/channels\/[0-9a-f-]{36}(\/|\?|$)/i.test(path);
+}
+
+/** At most one access check every 30 seconds, so a page of refused requests refreshes once. */
+const ACCESS_CHECK_INTERVAL_MS = 30_000;
+let lastAccessCheck = 0;
+
+/** Forget when the access was last checked (tests). */
+export function resetAccessCheck(): void {
+  lastAccessCheck = 0;
+}
+
+/**
+ * Refresh the session and note when the user's access has changed (D-310,
+ * plan section 4). A 403 or 404 from a scoped route may mean the record is
+ * now outside the caller's access rather than deleted; the layout then says
+ * "Your access changed" so nobody recreates a channel they merely lost.
+ * `force` skips the throttle (an expiry timer).
+ */
+export async function checkAccess(force = false): Promise<void> {
+  const now = Date.now();
+  if (!force && now - lastAccessCheck < ACCESS_CHECK_INTERVAL_MS) return;
+  lastAccessCheck = now;
+  const before = accessKey(useAuthStore.getState().user);
+  if (!refreshPromise) {
+    refreshPromise = refreshSession().finally(() => { refreshPromise = null; });
+  }
+  const refreshed = await refreshPromise;
+  if (!refreshed?.user) return;
+  applyRefresh(refreshed);
+  if (accessKey(refreshed.user.profile) !== before) useAuthStore.getState().setAccessChanged(new Date().toISOString());
 }
 
 /** Attempt to refresh the session using the refresh endpoint */
@@ -123,19 +190,20 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
 
   // Handle 401 — attempt token refresh with mutex
   if (response.status === 401 && token) {
-    if (!refreshPromise) {
-      refreshPromise = refreshSession().finally(() => {
-        refreshPromise = null;
-      });
+    // A refresh that finished while this request was in flight rotated the session
+    // and stored a new token: try that first rather than rotating again.
+    const current = useAuthStore.getState().accessToken;
+    if (current && current !== token) {
+      response = await makeRequest(current);
     }
+  }
 
-    const refreshed = await refreshPromise;
+  if (response.status === 401 && token) {
+    const refreshedToken = await refreshOrSignOut();
 
-    if (refreshed) {
-      applyRefresh(refreshed);
-      response = await makeRequest(refreshed.accessToken);
+    if (refreshedToken) {
+      response = await makeRequest(refreshedToken);
     } else {
-      useAuthStore.getState().clearAuth();
       return {
         success: false,
         error: { code: 'UNAUTHORIZED', message: 'Session expired. Please log in again.' },
@@ -144,6 +212,11 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
   }
 
   if (!response.ok && response.status !== 401) {
+    // A channel outside the caller's access answers 404, so a missing channel may be
+    // access that changed; check in the background. Only for a channel route: a 403
+    // for a permission the user never held is not news, and every refresh rotates
+    // the session, which a page leaving mid-refresh can turn into a sign-out.
+    if (response.status === 404 && token && isChannelPath(path)) void checkAccess();
     try {
       const errorJson = (await response.json()) as ApiResponse<T>;
       // A body without the usual error object still keeps the server's message.
