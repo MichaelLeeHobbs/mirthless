@@ -1,7 +1,8 @@
 // ===========================================
 // Auth Middleware
 // ===========================================
-// Verifies JWT tokens and attaches user info to request.
+// Verifies the bearer token, a person's JWT or an API key (D-313), and
+// attaches who is acting to the request.
 
 import type { Request, Response, NextFunction } from 'express';
 import type { ChannelGroupId, FoldedGrants } from '@galvanigraph/core-models';
@@ -10,6 +11,9 @@ import { isSessionLive } from '../lib/session-live.js';
 import { loadUserStanding, roleLabel } from '../lib/principal.js';
 import logger from '../lib/logger.js';
 import { deny, DENY_REASON } from './permission.middleware.js';
+import { looksLikeKeyToken } from '../lib/api-key-token.js';
+import { ApiKeyService } from '../services/api-key.service.js';
+import type { UserStanding } from '../lib/principal.js';
 
 // Extend Express Request type
 declare global {
@@ -27,6 +31,8 @@ declare global {
         mustChangePassword: boolean;
       };
       sessionId?: string;
+      /** The API key the request signed in with, when it did (D-313). */
+      apiKeyId?: string;
       /** Who is acting and what they hold on which channels (D-310). Set by authenticate. */
       principal?: {
         readonly userId: string;
@@ -50,11 +56,77 @@ function isPasswordChangeExempt(req: Request): boolean {
   return false;
 }
 
+/** A key token in a query string: it would land in proxy and server logs. */
+const KEY_IN_URL = /gf_[0-9a-f]{8}-[0-9a-f]{4}-/i;
+
+/** Whether the query string carries something shaped like a key token, encoded or not. */
+export function keyInQuery(originalUrl: string): boolean {
+  const at = originalUrl.indexOf('?');
+  if (at < 0) return false;
+  const query = originalUrl.slice(at + 1);
+  if (KEY_IN_URL.test(query)) return true;
+  try {
+    return KEY_IN_URL.test(decodeURIComponent(query));
+  } catch {
+    return false;
+  }
+}
+
+/** When each key's last use was written, so it is written at most once a minute. */
+const lastTouched = new Map<string, number>();
+const TOUCH_INTERVAL_MS = 60_000;
+
+function noteKeyUse(keyId: string, ip: string | undefined): void {
+  const now = Date.now();
+  if (now - (lastTouched.get(keyId) ?? 0) < TOUCH_INTERVAL_MS) return;
+  lastTouched.set(keyId, now);
+  ApiKeyService.touch(keyId, ip ?? null).catch((err: unknown) => {
+    logger.warn({ errMsg: err instanceof Error ? err.message : String(err), apiKeyId: keyId }, 'Could not record an API key\'s last use');
+  });
+}
+
+/** Attach a resolved principal, a person's or a key's, to the request. */
+function attach(req: Request, user: UserStanding): void {
+  // Grants are resolved live from the principal's assignments on every request,
+  // so a role edit, an assignment change or an expiry takes effect at once.
+  req.user = {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: roleLabel(user.roles),
+    isActive: user.enabled,
+    permissions: user.permissions,
+    mustChangePassword: user.mustChangePassword,
+  };
+  req.principal = { userId: user.id, grants: user.grants };
+}
+
+/**
+ * Sign the request in with an API key. Every failure answers the same 401: a
+ * caller learns nothing about which part was wrong.
+ */
+async function authenticateKey(req: Request, res: Response, next: NextFunction, token: string): Promise<void> {
+  const key = await ApiKeyService.resolve(token);
+  if (!key) {
+    deny(req, res, DENY_REASON.BAD_TOKEN);
+    return;
+  }
+  attach(req, key.standing);
+  req.apiKeyId = key.keyId;
+  noteKeyUse(key.keyId, req.ip);
+  next();
+}
+
 export async function authenticate(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  if (keyInQuery(req.originalUrl)) {
+    deny(req, res, DENY_REASON.BAD_TOKEN);
+    return;
+  }
+
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -65,6 +137,11 @@ export async function authenticate(
   const token = authHeader.slice(7);
 
   try {
+    if (looksLikeKeyToken(token)) {
+      await authenticateKey(req, res, next, token);
+      return;
+    }
+
     const payload = verifyAccessToken(token);
 
     // The user's current standing and grants, in one query (lib/principal.ts).
@@ -95,19 +172,8 @@ export async function authenticate(
       return;
     }
 
-    // Grants are resolved live from the user's assignments on every request, so
-    // a role edit, an assignment change or an expiry takes effect at once.
-    req.user = {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      role: roleLabel(user.roles),
-      isActive: user.enabled,
-      permissions: user.permissions,
-      mustChangePassword: user.mustChangePassword,
-    };
+    attach(req, user);
     req.sessionId = payload.sessionId;
-    req.principal = { userId: user.id, grants: user.grants };
     next();
   } catch (error) {
     logger.debug({ errMsg: error instanceof Error ? error.message : String(error) }, 'Token verification failed');

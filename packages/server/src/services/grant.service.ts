@@ -21,13 +21,13 @@
 
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import {
-  ALL_CHANNELS, AUDIT_ACTION, DEFAULT_GROUP_NAME, PERMISSIONS, PERMISSION_CATALOG, PERMISSION_CLASS, allChannelsOnly, can,
+  ALL_CHANNELS, AUDIT_ACTION, DEFAULT_GROUP_NAME, USER_KIND, PERMISSIONS, PERMISSION_CATALOG, PERMISSION_CLASS, allChannelsOnly, can,
   type AccessPath, type AssignmentInput, type AssignmentView, type ChannelAccessView, type ChannelGroupId, type CreateRoleInput, type FoldedGrants, type Permission, type UpdateRoleInput,
 } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { isLiveAssignment, queryUserStanding } from '../lib/principal.js';
 import { db } from '../lib/db.js';
-import { assignmentGroups, assignments, auditLog, channelGroupMembers, channelGroups, channels, rolePermissions, roles, users } from '../db/schema/index.js';
+import { apiKeys, assignmentGroups, assignments, auditLog, channelGroupMembers, channelGroups, channels, rolePermissions, roles, users } from '../db/schema/index.js';
 import { AuditService, type AuditTransaction } from './audit.service.js';
 import { GRANT_REPLAY_ACTIONS, replayGrants } from '../lib/grant-replay.js';
 
@@ -80,8 +80,9 @@ async function otherLastingAdmins(tx: AuditTransaction, adminRoleId: string, use
 
 const ALL_PERMISSIONS: readonly Permission[] = Object.values(PERMISSIONS);
 
+
 /** Drizzle's db or a transaction: what the rule checks read through. */
-type Reader = Pick<typeof db, 'select'>;
+export type Reader = Pick<typeof db, 'select'>;
 
 /** A role as the API shows it. */
 export interface RoleSummary {
@@ -125,10 +126,12 @@ async function permissionsOfRole(tx: Reader, role: { readonly id: string; readon
  * Lock a role row for the rest of the transaction, or NOT_FOUND. An edit or a
  * delete takes FOR NO KEY UPDATE; an assignment takes FOR SHARE, so the two
  * queue and an assignment never gives a role's old permissions after an edit
- * has taken them away.
+ * has taken them away. An API key's private role is not found here: it is
+ * never edited, deleted or given to anyone through these paths (D-313).
  */
 async function lockRole(tx: AuditTransaction, id: string, mode: 'no key update' | 'share' = 'no key update'): Promise<{ readonly id: string; readonly name: string; readonly admin: boolean }> {
-  const [row] = await tx.select({ id: roles.id, name: roles.name, admin: roles.admin }).from(roles).where(eq(roles.id, id)).for(mode);
+  const [row] = await tx.select({ id: roles.id, name: roles.name, admin: roles.admin }).from(roles)
+    .where(and(eq(roles.id, id), eq(roles.keyRole, false))).for(mode);
   if (!row) throw new ServiceError('NOT_FOUND', `Role not found: ${id}`);
   return row;
 }
@@ -178,7 +181,7 @@ function scopedTarget(writeGroups: ReadonlySet<ChannelGroupId>, groupId: string 
 
 /** The role named `name`, locked for the assignment, or an INVALID_INPUT error. */
 async function roleByName(tx: AuditTransaction, name: string): Promise<{ readonly id: string; readonly admin: boolean }> {
-  const [row] = await tx.select({ id: roles.id }).from(roles).where(eq(roles.name, name));
+  const [row] = await tx.select({ id: roles.id }).from(roles).where(and(eq(roles.name, name), eq(roles.keyRole, false)));
   if (!row) throw new ServiceError('INVALID_INPUT', `No role is named ${name}`);
   return lockRole(tx, row.id, 'share');
 }
@@ -219,10 +222,10 @@ async function assertCanManageHolders(tx: AuditTransaction, roleId: string, acto
 // ----- Scoped assignments (plan sections 1 and 5) -----
 
 /** A scope as the rules compare it: every channel, or these groups. */
-type ScopeIds = readonly string[] | null;
+export type ScopeIds = readonly string[] | null;
 
 /** Whether `grants` hold `permission` over all of `scope`: on every channel, or on each of its groups. */
-function holdsOver(grants: FoldedGrants, permission: Permission, scope: ScopeIds): boolean {
+export function holdsOver(grants: FoldedGrants, permission: Permission, scope: ScopeIds): boolean {
   const held = grants.get(permission);
   if (held === undefined) return false;
   if (held === ALL_CHANNELS) return true;
@@ -230,14 +233,14 @@ function holdsOver(grants: FoldedGrants, permission: Permission, scope: ScopeIds
 }
 
 /** The actor's grants, or none for no actor or a disabled one. */
-async function actorGrants(reader: Reader, actorId: string | null): Promise<FoldedGrants> {
+export async function actorGrants(reader: Reader, actorId: string | null): Promise<FoldedGrants> {
   if (actorId === null) throw new ServiceError('FORBIDDEN', 'A change to access needs a signed-in actor');
   const standing = await queryUserStanding(reader, actorId);
   return standing?.enabled === true ? standing.grants : new Map();
 }
 
 /** Refuse a scoped assignment of a role holding a permission limited to all-channel assignments (plan section 1). */
-function assertScopeAllowed(roleName: string, permissions: readonly Permission[], scope: ScopeIds): void {
+export function assertScopeAllowed(roleName: string, permissions: readonly Permission[], scope: ScopeIds): void {
   if (scope === null) return;
   const limited = permissions.filter(allChannelsOnly).sort();
   if (limited.length > 0) {
@@ -246,7 +249,7 @@ function assertScopeAllowed(roleName: string, permissions: readonly Permission[]
 }
 
 /** The within rule for an assignment: the actor holds every one of the role's permissions over its scope. */
-function assertActorHoldsOver(grants: FoldedGrants, roleName: string, permissions: readonly Permission[], scope: ScopeIds): void {
+export function assertActorHoldsOver(grants: FoldedGrants, roleName: string, permissions: readonly Permission[], scope: ScopeIds): void {
   const missing = permissions.filter((p) => !holdsOver(grants, p, scope)).sort();
   if (missing.length > 0) {
     const where = scope === null ? 'every channel' : 'each group of the scope';
@@ -259,7 +262,7 @@ function assertActorHoldsOver(grants: FoldedGrants, roleName: string, permission
  * than deadlock (plan section 5: role rows, then group rows). A missing group
  * is NOT_FOUND; Default cannot be a scope, since every new channel may join it.
  */
-async function lockScopeGroups(tx: AuditTransaction, scopes: readonly ScopeIds[]): Promise<void> {
+export async function lockScopeGroups(tx: AuditTransaction, scopes: readonly ScopeIds[]): Promise<void> {
   const ids = [...new Set(scopes.flatMap((s) => s ?? []))].sort();
   if (ids.length === 0) return;
   const found = await tx.select({ id: channelGroups.id, name: channelGroups.name }).from(channelGroups)
@@ -351,6 +354,14 @@ async function heldRoleNames(tx: AuditTransaction, userId: string): Promise<read
     .innerJoin(roles, eq(roles.id, assignments.roleId))
     .where(and(eq(assignments.userId, userId), isLiveAssignment()));
   return rows.map((r) => r.name).sort();
+}
+
+/** How the access view names an API key's private role. */
+const KEY_ROLE_LABEL = 'API key';
+
+/** How the access view names a principal: a person by username, an API key by its name (D-313). */
+function shownName(username: string, keyName: string | null): string {
+  return keyName === null ? username : `API key: ${keyName}`;
 }
 
 /** NOT_FOUND unless `channelId` is a channel that has not been deleted. */
@@ -476,9 +487,10 @@ export class GrantService {
   static async channelAccess(reader: Reader, channelId: string): Promise<ChannelAccessView> {
     await assertLiveChannel(reader, channelId);
     const rows = await reader.select({
-      id: assignments.id, userId: users.id, username: users.username, roleId: roles.id, role: roles.name, admin: roles.admin,
+      id: assignments.id, userId: users.id, username: users.username, keyName: apiKeys.name, roleId: roles.id, role: roles.name, admin: roles.admin,
       allChannels: assignments.allChannels, expiresAt: assignments.expiresAt,
     }).from(assignments).innerJoin(users, eq(users.id, assignments.userId)).innerJoin(roles, eq(roles.id, assignments.roleId))
+      .leftJoin(apiKeys, eq(apiKeys.userId, users.id))
       .where(and(eq(users.enabled, true), isLiveAssignment()));
     const scoped = rows.filter((r) => !r.allChannels).map((r) => r.id);
     const groupRows = scoped.length === 0 ? [] : await reader.select({ assignmentId: assignmentGroups.assignmentId, groupId: assignmentGroups.channelGroupId })
@@ -488,7 +500,7 @@ export class GrantService {
     const perms = new Map<string, readonly Permission[]>();
     for (const r of rows) if (!perms.has(r.roleId)) perms.set(r.roleId, await permissionsOfRole(reader, { id: r.roleId, admin: r.admin }));
     const paths = rows.map((r) => ({
-      userId: r.userId, username: r.username, role: r.role, held: perms.get(r.roleId) ?? [],
+      userId: r.userId, username: shownName(r.username, r.keyName), role: r.keyName === null ? r.role : KEY_ROLE_LABEL, held: perms.get(r.roleId) ?? [],
       groupIds: r.allChannels ? null : groupRows.filter((g) => g.assignmentId === r.id).map((g) => g.groupId).sort(),
       expiresAt: r.expiresAt?.toISOString() ?? null,
     }));
@@ -520,8 +532,10 @@ export class GrantService {
       )).orderBy(asc(auditLog.id));
     const state = replayGrants(baseline.attributes, rows);
     const userIds = [...state.assignments.keys()];
-    const names = new Map((userIds.length === 0 ? [] : await reader.select({ id: users.id, username: users.username }).from(users)
-      .where(inArray(users.id, userIds))).map((u) => [u.id, u.username]));
+    const named = userIds.length === 0 ? [] : await reader.select({ id: users.id, username: users.username, keyName: apiKeys.name }).from(users)
+      .leftJoin(apiKeys, eq(apiKeys.userId, users.id)).where(inArray(users.id, userIds));
+    const names = new Map(named.map((u) => [u.id, shownName(u.username, u.keyName)]));
+    const keyUsers = new Set(named.filter((u) => u.keyName !== null).map((u) => u.id));
     const paths: HeldPath[] = [];
     for (const [userId, list] of state.assignments) {
       if (state.disabled.has(userId)) continue;
@@ -529,7 +543,7 @@ export class GrantService {
         if (a.expiresAt !== null && new Date(a.expiresAt).getTime() <= at.getTime()) continue;
         const role = state.roles.get(a.roleId);
         if (!role) throw new ServiceError('INTERNAL', `The access history cannot be rebuilt: an assignment names role ${a.roleId}, which it does not hold`);
-        paths.push({ userId, username: names.get(userId) ?? userId, role: role.name, held: role.admin ? ALL_PERMISSIONS : knownPermissions(role.permissions), groupIds: a.groupIds, expiresAt: a.expiresAt });
+        paths.push({ userId, username: names.get(userId) ?? userId, role: keyUsers.has(userId) ? KEY_ROLE_LABEL : role.name, held: role.admin ? ALL_PERMISSIONS : knownPermissions(role.permissions), groupIds: a.groupIds, expiresAt: a.expiresAt });
       }
     }
     return accessViewOf(paths, new Set(state.memberships.get(channelId) ?? []), at.toISOString());
@@ -640,7 +654,8 @@ export class GrantService {
   static async setAssignments(tx: AuditTransaction, userId: string, wanted: readonly AssignmentInput[], actor: GrantActor): Promise<readonly AssignmentView[]> {
     if (actor.userId === userId) throw new ServiceError('FORBIDDEN', 'You cannot change your own access');
     const adminRoleId = await lockAdminRole(tx);
-    const [target] = await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('no key update');
+    // A key's assignment is managed with the key (api-key.service.ts), not here.
+    const [target] = await tx.select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.kind, USER_KIND.PERSON))).for('no key update');
     if (!target) throw new ServiceError('NOT_FOUND', `User not found: ${userId}`);
     const grants = await actorGrants(tx, actor.userId);
     await GrantService.assertCanManage(tx, actor.userId!, userId);
@@ -763,7 +778,8 @@ export class GrantService {
 
   /** Every role with its permissions and how many users hold it, by name. */
   static async listRoles(reader: Reader = db): Promise<readonly RoleSummary[]> {
-    const rows = await reader.select().from(roles).orderBy(asc(roles.name));
+    // A key's private role is not a role anyone picks or edits (D-313).
+    const rows = await reader.select().from(roles).where(eq(roles.keyRole, false)).orderBy(asc(roles.name));
     const perms = await reader.select().from(rolePermissions);
     const counts = await reader
       .select({ roleId: assignments.roleId, n: sql<number>`count(DISTINCT ${assignments.userId})::int` })
@@ -789,7 +805,7 @@ export class GrantService {
     await assertWithin(tx, actor.userId, input.permissions, 'create a role');
     await assertNameFree(tx, input.name);
     if (input.clonedFrom !== undefined) {
-      const [source] = await tx.select({ id: roles.id }).from(roles).where(eq(roles.id, input.clonedFrom));
+      const [source] = await tx.select({ id: roles.id }).from(roles).where(and(eq(roles.id, input.clonedFrom), eq(roles.keyRole, false)));
       if (!source) throw new ServiceError('INVALID_INPUT', `No role to clone: ${input.clonedFrom}`);
     }
     const [row] = await tx.insert(roles).values({ name: input.name, description: input.description }).returning({ id: roles.id })

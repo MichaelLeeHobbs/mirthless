@@ -360,6 +360,8 @@ describe('UserService', () => {
 
   describe('getPermissions', () => {
     it('returns the permissions the user\'s live assignments grant', async () => {
+      // The person lookup (an API key's user is not answered here, D-320), then the standing.
+      pushResponse([{ id: USER_ID }]);
       pushResponse([{
         id: USER_ID, username: 'jsmith', email: 'jsmith@test.com', enabled: true, mustChangePassword: false,
         assignments: [{ role: 'viewer', admin: false, permissions: ['messages:read', 'channels:read'], expiresAt: null, allChannels: true }],
@@ -376,6 +378,18 @@ describe('UserService', () => {
       pushResponse([]);
 
       const result = await UserService.getPermissions('nonexistent');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+    });
+
+    it('returns NOT_FOUND for an API key\'s user without reading its standing', async () => {
+      // The person filter leaves the key's user out, so the lookup comes back empty.
+      pushResponse([]);
+      pushResponse([{ id: USER_ID, username: 'api-key:k', email: 'k@api-key.invalid', enabled: true, mustChangePassword: false, assignments: [] }]);
+
+      const result = await UserService.getPermissions(USER_ID);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;

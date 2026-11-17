@@ -10,9 +10,9 @@ This page describes who can sign in to GalvaniGraph, how sessions work, how to c
 | SSO (OIDC, SAML) | No | |
 | LDAP or Active Directory | No | |
 | Multi-factor authentication | No | |
-| API tokens or service accounts | No | Every API caller, scripts and CI jobs included, signs in as a user with a password and gets the same short-lived access token. API keys are planned ([#144](https://github.com/MichaelLeeHobbs/mirthless/issues/144)). |
+| API keys | Yes | A machine caller sends `Authorization: Bearer gf_<keyId>_<secret>`. Each key holds chosen permissions on every channel or on chosen channel groups, until a required end time, within what its issuer holds; see [API keys](#api-keys). There is no screen for them yet: issue them through `POST /api/v1/api-keys`. |
 | Custom roles | Yes | Roles are stored in the database, and seven are built in: admin (locked), deployer, developer, viewer, channel-viewer, channel-developer and channel-deployer. A user holds a role through an assignment, and the server reads the user's assignments on every request, so a change applies to the next one. Admins create, edit, clone and delete roles on the Roles page (`roles:write`), which shows each role's holders and flags: as strong as admin, runs code, reads PHI, all channels only. The user dialog lists the roles and shows what a role change gives and takes away before it is saved. |
-| Per-channel access | No | Every assignment covers every channel. Assignments scoped to channel groups are planned ([#266](https://github.com/MichaelLeeHobbs/mirthless/issues/266)). |
+| Per-channel access | Yes | An assignment gives a role on every channel or on chosen channel groups; see [What scope promises](#what-scope-promises). A channel's Access tab shows who can reach it, now or at a past time. |
 | Idle session timeout | No | An open browser tab keeps refreshing its session. |
 | Maximum session length | No | Each refresh deletes the session and starts a new one lasting `JWT_REFRESH_EXPIRES_IN` (default 7 days), so a session that keeps refreshing never ends. |
 
@@ -42,6 +42,20 @@ This page describes who can sign in to GalvaniGraph, how sessions work, how to c
 
 **Lifetimes.** `JWT_ACCESS_EXPIRES_IN` (default `15m`) and `JWT_REFRESH_EXPIRES_IN` (default `7d`) set the token lifetimes, and the session row and the refresh cookie follow the refresh token's expiry. Both need a unit (`15m`, `12h`, `7d`), and the server refuses to start when the refresh lifetime is shorter than the access lifetime.
 
+## API keys
+
+A key is its own principal: it holds one set of permissions on every channel or on chosen channel groups, until an end time it must have, and the guards, the audit log and a channel's Access tab treat it like a person. Keys are issued, enabled, disabled and revoked through `/api/v1/api-keys` (`api_keys:manage`) and listed with `api_keys:read`.
+
+- **The token is shown once.** The answer to `POST /api/v1/api-keys` carries `gf_<keyId>_<secret>`, a 256-bit secret. The server keeps only the secret's SHA-256 and compares it in constant time.
+- **Bearer only.** Send it in the `Authorization` header. A request with a key in its query string is refused. Every refusal (unknown key, wrong secret, revoked, ended, disabled, an issuer who no longer covers it, in the URL) is the same 401.
+- **Within its issuer.** The issuer must hold every permission the key gets on the key's scope, now and still just before the key ends. Every request with the key checks this again: a key stops working as soon as its issuer is disabled or no longer holds what the key holds, and works again if the issuer gets it back. A key never holds a permission over users, roles, keys, the audit log, backups or restores.
+- **Not yet `messages:read`.** A key cannot hold `messages:read` until the daily row ceiling that must come with it is built ([#267](https://github.com/MichaelLeeHobbs/mirthless/issues/267)).
+- **Limits.** Each key has its own rate limit, `API_KEY_RATE_LIMIT_MAX` requests a minute (300 in production by default), on top of the per-address limit.
+- **Last use.** The key's last-used time and client address are written at most once a minute.
+- **Not a person.** A key does not sign in with a password, is not listed on the Users page, and its private role is not a role anyone can pick or edit.
+
+Issuing, disabling, enabling and revoking a key are recorded in the audit log, in the same rows a person's access changes use, so a channel's Access tab can rebuild a key's access at a past time.
+
 ## Cutting someone off
 
 | Action | How | REST API | Open Socket.IO connections |
@@ -49,6 +63,7 @@ This page describes who can sign in to GalvaniGraph, how sessions work, how to c
 | Disable the user | Users page, or `PUT /api/v1/users/:id` with `enabled: false` (`users:write`) | All of the user's sessions are deleted. The next request fails, and refresh fails. | Disconnected at the next re-check |
 | Reset the password | `POST /api/v1/users/:id/password` (`users:write`) | All of the user's sessions are deleted. The account stays enabled, and the user can sign in with the new password without being made to change it. | Disconnected at the next re-check |
 | Delete the user | `DELETE /api/v1/users/:id` (`users:delete`) | Same as disabling: the account is disabled and its sessions deleted. The row stays, so the audit log keeps the identity. | Disconnected at the next re-check |
+| Disable or revoke an API key | `PATCH /api/v1/api-keys/:id/enabled` with `enabled: false`, or `POST /api/v1/api-keys/:id/revoke` with a reason (`api_keys:manage`) | The key's next request fails. A revoked or ended key can never be enabled again. Disabling a user, or taking away what their keys hold, also stops the keys they issued at their next request. | Keys do not use Socket.IO |
 | Change the access | Users page, editing the user, or `PUT /api/v1/users/:id/assignments` (`users:write`) | Sessions are kept. The new access applies from the next request. An open web UI shows the new role's pages and buttons at the first request after its access token expires, which refreshes the session (at most `JWT_ACCESS_EXPIRES_IN`, default 15 minutes). Reloading the page does not refresh it sooner. | Leaves any room the new role may not join, at the next re-check |
 
 The server re-checks every open Socket.IO connection against the database every 60 seconds, and again whenever the connection asks to join a room. So a cut-off user can keep receiving live updates for up to a minute.
@@ -114,6 +129,8 @@ Every user had one of the first four roles before roles were stored in the datab
 | `system:restore` | Yes | No | No | No | No | No | No | Overwrites channels, code templates and global scripts from a file, so it runs code at the next deploy. Also restores settings and both maps. |
 | `roles:read` | Yes | No | No | No | No | No | No | Lists every role with its permissions and how many users hold it (`GET /api/v1/roles`). |
 | `roles:write` | Yes | No | No | No | No | No | No | Creates, edits, clones and deletes roles. A change to a role changes what every holder may do, so it is as strong as admin, up to the permissions the editor holds: a role can only gain a permission its editor holds. The admin role cannot be changed or deleted, and a role still assigned cannot be deleted. |
+| `api_keys:read` | Yes | No | No | No | No | No | No | Lists API keys (`GET /api/v1/api-keys`): name, issuer, permissions, scope, end time, status and last use. Never a key's secret. |
+| `api_keys:manage` | Yes | No | No | No | No | No | No | Issues, enables, disables and revokes API keys. A key holds at most what its issuer holds, on the issuer's scope, checked at issue for the key's whole life and again on every request; enabling a key needs the same of the person enabling it. A key can never hold a permission from this group (users, roles, keys, the audit log, backup and restore). |
 | `audit:read` | Yes | No | No | No | No | No | No | Reads the protected audit log (`GET /api/v1/audit`): sign-ins and failed sign-ins with client addresses, refused requests and purges. |
 
 ## Who can run code on the server

@@ -72,7 +72,7 @@ describe('PERMISSION_CATALOG', () => {
       'resources:delete', 'resources:write', 'settings:write',
     ]);
     expect(byClass(PERMISSION_CLASS.IDENTITY)).toEqual([
-      'audit:read', 'roles:read', 'roles:write', 'system:backup', 'system:restore', 'users:delete', 'users:read', 'users:write',
+      'api_keys:manage', 'api_keys:read', 'audit:read', 'roles:read', 'roles:write', 'system:backup', 'system:restore', 'users:delete', 'users:read', 'users:write',
     ]);
   });
 });

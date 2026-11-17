@@ -4,8 +4,8 @@
 // Handles user login, token refresh, and logout.
 // All methods return Result<T> using tryCatch from stderr-lib.
 
-import { createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
+import { hashToken } from '../lib/token-hash.js';
 import { tryCatch, type Result } from 'stderr-lib';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
@@ -14,7 +14,7 @@ import { loadUserStanding, roleLabel } from '../lib/principal.js';
 import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { signAccessToken, signRefreshToken, tokenExpiresAt, verifyRefreshToken } from '../lib/jwt.js';
 import { emitAuditEvent } from '../lib/event-emitter.js';
-import { AUDIT_ACTION, serializeGrants, type GrantEntry } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, USER_KIND, serializeGrants, type GrantEntry } from '@galvanigraph/core-models';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
@@ -24,10 +24,6 @@ const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
  * takes as long as a login for one that does.
  */
 const UNKNOWN_USER_HASH = '$2b$12$HhlOWRMeDl0myMDRClZP7e/jD1W8DQWGrtRSTDJK5m6T22C3vyJLG';
-
-function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
-}
 
 /** The longest username (users.username is varchar(100)). */
 const MAX_USERNAME_LENGTH = 100;
@@ -140,7 +136,8 @@ export class AuthService {
       const [user] = await db
         .select()
         .from(users)
-        .where(eq(users.username, username));
+        // An API key's principal never signs in with a password (D-313).
+        .where(and(eq(users.username, username), eq(users.kind, USER_KIND.PERSON)));
 
       if (!user) {
         // Spend the same time as a real password check, so the response time

@@ -111,6 +111,8 @@ export const PERMISSION_CATALOG: Readonly<Record<Permission, PermissionInfo>> = 
   'system:restore': info('System', 'Restore backups', 'Overwrite channels, templates and scripts from a file; restored code runs at the next deploy.', IDENTITY, CODE),
   'roles:read': info('Roles', 'Read roles', 'See roles, their permissions and how many users hold each.', IDENTITY),
   'roles:write': info('Roles', 'Change roles', 'Create, edit, clone and delete roles. A change to a role changes what everyone holding it may do.', IDENTITY, { adminEquivalent: true }),
+  'api_keys:read': info('API keys', 'Read API keys', 'See API keys: who issued them, what they hold, when they end and when they were last used. Never their secrets.', IDENTITY),
+  'api_keys:manage': info('API keys', 'Manage API keys', 'Issue, replace, enable, disable and revoke API keys. A key holds at most what its issuer holds.', IDENTITY),
   'audit:read': info('Audit', 'Read the audit log', 'Read the protected audit log: sign-ins, PHI reads, refusals and grant changes.', IDENTITY, { readsEveryChannel: true }),
 };
 
