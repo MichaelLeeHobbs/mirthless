@@ -45,6 +45,14 @@ export const createApiKeySchema = z.strictObject({
 /** POST /api-keys/:id/revoke. */
 export const revokeApiKeySchema = z.strictObject({ reason: reasonSchema });
 
+/**
+ * POST /api-keys/:id/replace. A leak ends the old secret at once; a planned
+ * change keeps it working for 7 days (or until the key ends) so the caller
+ * can switch. Replacing makes the caller the key's issuer.
+ */
+export const replaceApiKeySchema = z.strictObject({ mode: z.enum(['leak', 'planned']) });
+export type ReplaceApiKeyInput = z.infer<typeof replaceApiKeySchema>;
+
 /** PATCH /api-keys/:id/enabled. */
 export const setApiKeyEnabledSchema = z.strictObject({ enabled: z.boolean() });
 
@@ -76,6 +84,10 @@ export interface ApiKeyView {
   readonly lastUsedAt: string | null;
   readonly lastUsedIp: string | null;
   readonly createdAt: string;
+  /** Its issuer left: the key stops at this time unless someone replaces it (D-313). */
+  readonly replaceBy: string | null;
+  /** After a planned replace, the old secret still works until this time. */
+  readonly previousSecretUntil: string | null;
 }
 
 /** The answer to an issue: the key, and its token, shown this once. */

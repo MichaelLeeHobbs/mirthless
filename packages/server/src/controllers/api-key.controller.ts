@@ -6,7 +6,7 @@
 
 import type { Request, Response } from 'express';
 import { tryCatch } from 'stderr-lib';
-import type { CreateApiKeyInput, RevokeApiKeyInput } from '@galvanigraph/core-models';
+import type { CreateApiKeyInput, ReplaceApiKeyInput, RevokeApiKeyInput } from '@galvanigraph/core-models';
 import { ApiKeyService } from '../services/api-key.service.js';
 import type { GrantActor } from '../services/grant.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
@@ -46,6 +46,12 @@ export class ApiKeyController {
   static async setEnabled(req: Request, res: Response): Promise<void> {
     const { enabled } = req.body as { enabled: boolean };
     await answer(res, ApiKeyService.setEnabled(req.params['id'] as string, enabled, actorOf(req)), 'change an API key');
+  }
+
+  static async replace(req: Request, res: Response): Promise<void> {
+    const { mode } = req.body as ReplaceApiKeyInput;
+    // 201 with the new token, kept out of caches like an issue's.
+    await answer(res, ApiKeyService.replace(req.params['id'] as string, mode, actorOf(req)), 'replace an API key', 201);
   }
 
   static async revoke(req: Request, res: Response): Promise<void> {

@@ -7,7 +7,7 @@
 
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
-import { createApiKeySchema, revokeApiKeySchema, setApiKeyEnabledSchema } from '@galvanigraph/core-models';
+import { createApiKeySchema, replaceApiKeySchema, revokeApiKeySchema, setApiKeyEnabledSchema } from '@galvanigraph/core-models';
 import { ApiKeyController } from '../controllers/api-key.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
@@ -25,5 +25,8 @@ router.post('/', requirePermission('api_keys:manage'), validate({ body: createAp
 router.patch('/:id/enabled', requirePermission('api_keys:manage'), validate({ params: idParams, body: setApiKeyEnabledSchema }), ApiKeyController.setEnabled);
 
 router.post('/:id/revoke', requirePermission('api_keys:manage'), validate({ params: idParams, body: revokeApiKeySchema }), ApiKeyController.revoke);
+
+// A new secret, and the caller becomes the issuer, within what they hold (D-313).
+router.post('/:id/replace', requirePermission('api_keys:manage'), validate({ params: idParams, body: replaceApiKeySchema }), ApiKeyController.replace);
 
 export default router;

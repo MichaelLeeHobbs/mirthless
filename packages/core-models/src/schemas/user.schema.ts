@@ -40,7 +40,19 @@ export const updateUserSchema = z.object({
   lastName: z.string().max(100).nullable().optional(),
   role: z.string().min(1).max(100).optional(),
   enabled: z.boolean().optional(),
+  /** When disabling: what happens to the API keys this user issued (D-313). Disabled with them unless asked otherwise. */
+  issuedKeys: z.enum(['disable', 'replace_within_7_days']).optional(),
 });
+
+/** DELETE /users/:id query: what happens to the API keys the user issued (D-313). */
+export const deleteUserQuerySchema = z.object({
+  issuedKeys: z.enum(['disable', 'replace_within_7_days']).optional(),
+});
+
+export type DeleteUserQuery = z.infer<typeof deleteUserQuerySchema>;
+
+/** What happens to a leaver's API keys: disabled now, or kept working until someone replaces them, for 7 days at most. */
+export type IssuedKeysOnLeave = 'disable' | 'replace_within_7_days';
 
 export const changePasswordSchema = z.object({
   newPassword: passwordSchema,

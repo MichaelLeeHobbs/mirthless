@@ -10,6 +10,7 @@ import {
   changeOwnPasswordSchema,
   userIdParamSchema,
   setAssignmentsSchema,
+  deleteUserQuerySchema,
 } from '@galvanigraph/core-models';
 import { UserController } from '../controllers/user.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
@@ -77,7 +78,7 @@ router.put(
 router.delete(
   '/:id',
   requirePermission('users:delete'),
-  validate({ params: userIdParamSchema }),
+  validate({ params: userIdParamSchema, query: deleteUserQuerySchema }),
   UserController.delete,
 );
 
