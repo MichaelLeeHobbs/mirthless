@@ -18,7 +18,7 @@ vi.mock('../logger.js', () => ({ default: { error: vi.fn(), warn: vi.fn(), info:
 const emitAuditEvent = vi.fn();
 vi.mock('../event-emitter.js', () => ({ emitAuditEvent }));
 
-const { recordReadOrRefuse, recordReadBestEffort, recordExportOrRefuse } = await import('../audited-read.js');
+const { recordReadOrRefuse, recordReadBestEffort, recordExportOrRefuse, recordCountedRead } = await import('../audited-read.js');
 
 function makeRes(): Response & { statusCode?: number; body?: unknown } {
   const res = {} as Response & { statusCode?: number; body?: unknown };
@@ -210,7 +210,24 @@ describe('reads made with an API key (D-313)', () => {
     const res = makeRes();
     expect(await recordExportOrRefuse(keyReq('key-big'), res, { action: 'MESSAGES_EXPORTED', attributes: {}, rows: 6000 })).toBeNull();
     expect(res.statusCode).toBe(429);
-    expect((res.body as { error: { message: string } }).error.message).toMatch(/6000 message rows, more than an API key may read in a day/);
+    expect((res.body as { error: { message: string } }).error.message).toMatch(/6000 rows, more than an API key may read in a day/);
+  });
+
+  it('counts collection records against the same ceiling, fail-closed, for a key', async () => {
+    const read = { action: 'COLLECTION_RECORDS_READ', attributes: { collectionId: 'c1' }, dedupe: { key: 'collection|c1|{}', ids: ['r1', 'r2'] }, rows: 2 };
+    expect(await recordCountedRead(keyReq('key-near3'), makeRes(), read)).toBe(true);
+    expect(recordOrRefuse).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'COLLECTION_RECORDS_READ', attributes: expect.objectContaining({ rows: 2 }) }));
+    const over = makeRes();
+    expect(await recordCountedRead(keyReq('key-near3'), over, { ...read, rows: 4999 })).toBe(false);
+    expect(over.statusCode).toBe(429);
+    expect(emitAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('keeps a person\'s collection read best effort and uncounted', async () => {
+    const read = { action: 'COLLECTION_RECORDS_READ', attributes: { collectionId: 'c1' }, rows: 2 };
+    expect(await recordCountedRead(req('person-a'), makeRes(), read)).toBe(true);
+    expect(recordOrRefuse).not.toHaveBeenCalled();
+    expect(emitAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'COLLECTION_RECORDS_READ', attributes: { collectionId: 'c1' } }), expect.any(Function));
   });
 
   it('counts nothing for a read that returns no message rows', async () => {

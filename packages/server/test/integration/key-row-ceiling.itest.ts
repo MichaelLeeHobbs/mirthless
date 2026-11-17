@@ -76,7 +76,7 @@ describeIntegration('API key daily row ceiling (real Postgres)', () => {
 
     const again = await apiCall(base, key.token, 'GET', `/channels/${CHANNEL}/messages`);
     expect(again.status).toBe(429);
-    expect(again.json.error?.message).toMatch(/3 message rows for today/);
+    expect(again.json.error?.message).toMatch(/3 rows \(messages and collection records\) for today/);
     // One more row is too many too, whatever the read.
     expect((await apiCall(base, key.token, 'GET', `/channels/${CHANNEL}/messages/${String(messageIds[0])}`)).status).toBe(429);
 
@@ -92,6 +92,38 @@ describeIntegration('API key daily row ceiling (real Postgres)', () => {
       `SELECT attributes->>'rows' AS rows FROM audit_log WHERE action = 'MESSAGE_SEARCHED' AND user_id = $1`, [keyUser],
     );
     expect(searched.rows).toEqual([{ rows: '3' }]);
+  });
+
+  it('counts collection records against the same ceiling, and records each read with its rows', async () => {
+    const collection = await apiCall<{ id: string }>(base, admin.token, 'POST', '/collections', {
+      name: `itest-ceiling-${randomUUID().slice(0, 8)}`, indexedFields: ['mrn'],
+    });
+    expect(collection.status).toBe(201);
+    const collectionId = collection.json.data!.id;
+    try {
+      for (let i = 0; i < 3; i++) {
+        expect((await apiCall(base, admin.token, 'POST', `/collections/${collectionId}/records`, { fields: { mrn: `M${String(i)}` }, payload: '{}' })).status).toBe(201);
+      }
+      const reader = await apiCall<IssuedApiKey>(base, admin.token, 'POST', '/api-keys', {
+        name: 'Collections', permissions: ['collections:read'], groupIds: null, expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      });
+      expect(reader.status).toBe(201);
+      const token = reader.json.data!.token;
+      const readerUser = (await mods.pool.query<{ user_id: string }>('SELECT user_id FROM api_keys WHERE id = $1', [reader.json.data!.key.id])).rows[0]!.user_id;
+
+      const first = await apiCall<{ items: unknown[] }>(base, token, 'GET', `/collections/${collectionId}/records`);
+      expect(first.status).toBe(200);
+      expect(first.json.data!.items).toHaveLength(3);
+      expect((await apiCall(base, token, 'GET', `/collections/${collectionId}/records`)).status).toBe(429);
+      const recorded = await mods.pool.query<{ rows: string }>(
+        `SELECT attributes->>'rows' AS rows FROM audit_log WHERE action = 'COLLECTION_RECORDS_READ' AND user_id = $1`, [readerUser],
+      );
+      expect(recorded.rows).toEqual([{ rows: '3' }]);
+      // A person's read of the same records is not counted, and still recorded best effort.
+      expect((await apiCall(base, admin.token, 'GET', `/collections/${collectionId}/records`)).status).toBe(200);
+    } finally {
+      await mods.pool.query('DELETE FROM collections WHERE id = $1', [collectionId]);
+    }
   });
 
   it('leaves a person\'s reads alone', async () => {

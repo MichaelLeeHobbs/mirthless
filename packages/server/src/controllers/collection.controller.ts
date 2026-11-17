@@ -15,7 +15,7 @@ import type {
 import { AUDIT_ACTION } from '@galvanigraph/core-models';
 import { CollectionService } from '../services/collection.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
-import { recordReadBestEffort } from '../lib/audited-read.js';
+import { recordCountedRead } from '../lib/audited-read.js';
 import logger from '../lib/logger.js';
 
 export class CollectionController {
@@ -94,12 +94,15 @@ export class CollectionController {
       res.status(status).json({ success: false, error: errorResponse(result.error) });
       return;
     }
-    // Records often hold PHI from many channels: recorded, best effort (D-312).
-    recordReadBestEffort(req, {
+    // Records often hold PHI from many channels: recorded best effort (D-312), and for
+    // an API key counted against its daily ceiling, fail-closed (D-313).
+    const recorded = await recordCountedRead(req, res, {
       action: AUDIT_ACTION.COLLECTION_RECORDS_READ,
       attributes: { collectionId: id, query, total: result.value.total },
       dedupe: { key: `collection|${id}|${JSON.stringify(query)}`, ids: result.value.items.map((r) => r.id) },
+      rows: result.value.items.length,
     });
+    if (!recorded) return;
     res.json({ success: true, data: result.value });
   }
 
