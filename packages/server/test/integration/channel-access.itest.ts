@@ -83,8 +83,40 @@ describeIntegration('who can access a channel (real Postgres)', () => {
     expect(view.throughCode.map((p) => p.userId)).not.toContain(labViewer.id);
   });
 
+  it('lists each way in of a person with several assignments, each with its own permissions', async () => {
+    const both = await user('channel-viewer', [groups[0]!]);
+    await mods.pool.query(
+      `INSERT INTO assignments (user_id, role_id, all_channels, expires_at) SELECT $1, id, true, now() + interval '1 day' FROM roles WHERE name = 'deployer'`,
+      [both.id],
+    );
+    const view = (await apiCall<ChannelAccessView>(base, admin.token, 'GET', `/channels/${CHANNEL}/access`)).json.data!;
+    const person = view.people.filter((p) => p.userId === both.id);
+    expect(person).toHaveLength(1);
+    const through = [...person[0]!.through].sort((a, b) => a.role.localeCompare(b.role));
+    expect(through.map((t) => [t.role, t.groupIds])).toEqual([['channel-viewer', [groups[0]]], ['deployer', null]]);
+    expect(through[0]!.permissions).not.toContain('channels:deploy');
+    expect(through[1]!.permissions).toContain('channels:deploy');
+    expect(through[1]!.expiresAt).not.toBeNull();
+    expect(person[0]!.permissions).toEqual(expect.arrayContaining(['messages:read', 'channels:deploy']));
+  });
+
   it('answers 404 for a channel that does not exist', async () => {
     expect((await apiCall(base, admin.token, 'GET', `/channels/${randomUUID()}/access`)).status).toBe(404);
+  });
+
+  it('answers 404 for a deleted channel, and a restore will not add one to a group', async () => {
+    const gone = randomUUID();
+    await insertTestChannel(mods, gone);
+    try {
+      await mods.pool.query('UPDATE channels SET deleted_at = now() WHERE id = $1', [gone]);
+      expect((await apiCall(base, admin.token, 'GET', `/channels/${gone}/access`)).status).toBe(404);
+      const { GrantService } = await import('../../src/services/grant.service.js');
+      await expect(GrantService.restoreMembership(gone, groups[0]!, { userId: admin.id })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      const rows = await mods.pool.query('SELECT 1 FROM channel_group_members WHERE channel_id = $1', [gone]);
+      expect(rows.rowCount).toBe(0);
+    } finally {
+      await deleteTestChannel(mods, gone);
+    }
   });
 
   it('is for people who may read users', async () => {

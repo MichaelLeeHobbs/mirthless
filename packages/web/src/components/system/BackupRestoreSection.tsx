@@ -4,6 +4,7 @@
 // Download backup and upload restore with collision mode selector.
 
 import { useState, useRef, type ReactNode, type ChangeEvent } from 'react';
+import { saveBlob } from '../../lib/download.js';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
@@ -63,13 +64,8 @@ export function BackupRestoreSection(): ReactNode {
     setBackupDialogOpen(false);
     backupMutation.mutate(reason, {
       onSuccess: (blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        a.download = `galvanigraph-backup-${timestamp}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        saveBlob(`galvanigraph-backup-${timestamp}.json`, blob);
       },
     });
   };

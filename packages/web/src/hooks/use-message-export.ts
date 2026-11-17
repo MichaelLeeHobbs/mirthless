@@ -10,6 +10,7 @@ import { useState, useCallback } from 'react';
 import { useAuthStore } from '../stores/auth.store.js';
 import { messageFilterParts, type MessageFilters } from '../lib/message-filter-query.js';
 import { downloadFailure } from '../lib/audit-unavailable.js';
+import { saveBlob } from '../lib/download.js';
 
 export type ExportFormat = 'csv' | 'json';
 
@@ -38,17 +39,6 @@ interface UseMessageExportResult {
   readonly error: string | null;
 }
 
-function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-}
-
 export function useMessageExport(): UseMessageExportResult {
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +59,7 @@ export function useMessageExport(): UseMessageExportResult {
       const blob = await response.blob();
       const safeName = channelName.replace(/[^a-z0-9_-]+/gi, '_') || 'channel';
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      triggerDownload(blob, `${safeName}-messages-${stamp}.${format}`);
+      saveBlob(`${safeName}-messages-${stamp}.${format}`, blob);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Export failed');
       throw err;

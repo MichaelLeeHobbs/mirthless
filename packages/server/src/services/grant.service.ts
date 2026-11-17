@@ -444,11 +444,22 @@ export class GrantService {
   /**
    * Add a channel to a group as a backup restore does, and record it like any
    * other membership change, in one transaction: who could reach what is
-   * rebuilt from these rows. The restore runs under system:restore, which is
-   * all-channel only, so no grant rule applies.
+   * rebuilt from these rows.
+   *
+   * The channel row is locked first, as ChannelGroupService.setChannelGroups
+   * locks it, so a restore and a save of the same channel's groups queue and
+   * each records the before the other left. A deleted channel is NOT_FOUND.
+   *
+   * No grant rule applies: system:restore runs code (it can replace any
+   * channel's scripts), so its holder already reaches every channel, and a
+   * restore may give a group's members permissions on the channel that the
+   * restorer does not hold themselves.
    */
   static async restoreMembership(channelId: string, groupId: string, actor: GrantActor): Promise<void> {
     await db.transaction(async (tx) => {
+      const [channel] = await tx.select({ id: channels.id }).from(channels)
+        .where(and(eq(channels.id, channelId), isNull(channels.deletedAt))).for('no key update');
+      if (!channel) throw new ServiceError('NOT_FOUND', `Channel not found: ${channelId}`);
       const before = (await tx.select({ groupId: channelGroupMembers.channelGroupId }).from(channelGroupMembers)
         .where(eq(channelGroupMembers.channelId, channelId))).map((r) => r.groupId).sort();
       await tx.insert(channelGroupMembers).values({ channelGroupId: groupId, channelId });
