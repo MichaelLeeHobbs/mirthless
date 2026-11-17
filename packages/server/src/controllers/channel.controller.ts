@@ -19,6 +19,25 @@ import { redactChannelDetail } from '../lib/secret-redaction.js';
 import logger from '../lib/logger.js';
 import { getEngine } from '../engine.js';
 import { channelScopeOf } from '../lib/channel-scope.js';
+import { assertCertificatesInScope } from '../services/connector-tls-resolver.js';
+import { isServiceError } from '../lib/service-error.js';
+import { errorInfo } from '@galvanigraph/core-util';
+
+/**
+ * Refuse a save that puts a store certificate's private key to use outside
+ * the writer's channels (D-310). Answers the request and returns false when
+ * refused; an unexpected failure is logged and answered as a server fault.
+ */
+async function certificatesAllowed(req: Request, res: Response, connectorProps: readonly unknown[]): Promise<boolean> {
+  try {
+    await assertCertificatesInScope(req.principal?.grants, 'channels:write', connectorProps);
+    return true;
+  } catch (err: unknown) {
+    if (!isServiceError(err)) logger.error(errorInfo(err), 'Certificate scope check failed');
+    res.status(mapErrorToStatus(err)).json({ success: false, error: errorResponse(err) });
+    return false;
+  }
+}
 
 export class ChannelController {
   static async list(req: Request, res: Response): Promise<void> {
@@ -66,6 +85,7 @@ export class ChannelController {
   static async create(req: Request, res: Response): Promise<void> {
     const input = req.body as CreateChannelInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    if (!(await certificatesAllowed(req, res, [input.sourceConnectorProperties, ...(input.destinations ?? []).map((d) => d.properties)]))) return;
     const result = await ChannelService.create(input, context);
 
     if (!result.ok) {
@@ -83,6 +103,7 @@ export class ChannelController {
     const id = req.params['id'] as string;
     const input = req.body as UpdateChannelInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
+    if (!(await certificatesAllowed(req, res, [input.sourceConnectorProperties, ...(input.destinations ?? []).map((d) => d.properties)]))) return;
     const result = await ChannelService.update(id, input, context);
 
     if (!result.ok) {

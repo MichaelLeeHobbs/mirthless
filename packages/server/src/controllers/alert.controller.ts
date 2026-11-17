@@ -10,9 +10,11 @@ import type {
   AlertListQuery,
   PatchAlertEnabledInput,
 } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, holdsPermission } from '@galvanigraph/core-models';
 import { AlertService } from '../services/alert.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
+import { channelScopeOf, linksInScope } from '../lib/channel-scope.js';
 
 export class AlertController {
   static async list(req: Request, res: Response): Promise<void> {
@@ -39,7 +41,12 @@ export class AlertController {
       return;
     }
 
-    res.json({ success: true, data: result.value });
+    // A scoped reader sees the alert's channels in scope and a count of the rest (D-310).
+    // An alerts:write holder (all channels only) sees them all: the editor saves the
+    // list back, and a filtered list would silently drop channels from the alert.
+    const scope = holdsPermission(req.user?.permissions, 'alerts:write') ? ALL_CHANNELS : await channelScopeOf(req, 'alerts:read');
+    const { shown, outsideScopeCount } = linksInScope(result.value.channelIds, scope);
+    res.json({ success: true, data: { ...result.value, channelIds: shown, outsideScopeCount } });
   }
 
   static async create(req: Request, res: Response): Promise<void> {

@@ -15,6 +15,8 @@ export const connectionTestSchema = z.object({
   connectorType: z.enum(CONNECTOR_TYPES),
   mode: z.enum(CONNECTOR_MODE_VALUES),
   properties: z.record(z.string(), z.unknown()),
+  /** The channel the test is for; required of a deployer scoped to some groups (D-310). */
+  channelId: z.string().uuid().optional(),
 });
 
 export type ConnectionTestInput = z.infer<typeof connectionTestSchema>;

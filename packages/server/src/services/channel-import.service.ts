@@ -22,6 +22,7 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
 import { GrantService } from './grant.service.js';
+import { assertCertificatesInScope } from './connector-tls-resolver.js';
 import { queryUserStanding } from '../lib/principal.js';
 import { REDACTED } from '../lib/secret-redaction.js';
 import {
@@ -99,6 +100,10 @@ export class ChannelImportService {
       // A group the importer cannot use fails the request, not each channel in it.
       if (placement !== 'restore') {
         await GrantService.newChannelGroup(db, placement.groupId, { userId: context?.userId ?? null });
+        // Every certificate private key the file would put to use must already be used in the importer's channels.
+        const standing = context?.userId ? await queryUserStanding(db, context.userId) : null;
+        await assertCertificatesInScope(standing?.enabled === true ? standing.grants : undefined, PERMISSIONS.CHANNELS_WRITE,
+          entries.flatMap((e) => [e.sourceConnectorProperties, ...e.destinations.map((d) => d.properties)]));
       }
 
       for (const entry of entries) {

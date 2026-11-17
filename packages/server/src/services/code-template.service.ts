@@ -17,7 +17,7 @@ import {
   type FoldedGrants,
   type Permission,
 } from '@galvanigraph/core-models';
-import { grantedChannels, holdsOnEveryChannel, inScope, type ChannelScope } from '../lib/channel-scope.js';
+import { grantedChannels, holdsOnEveryChannel, linksInScope, type ChannelScope } from '../lib/channel-scope.js';
 import { queryUserStanding } from '../lib/principal.js';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
@@ -159,16 +159,15 @@ export class CodeTemplateService {
           .from(codeTemplates)
           .where(eq(codeTemplates.libraryId, lib.id));
 
-        const links = lib.channelIds ?? null;
-        const shown = links === null ? null : links.filter((id) => inScope(scope, id));
+        const links = lib.channelIds ? linksInScope(lib.channelIds, scope) : null;
         summaries.push({
           id: lib.id,
           name: lib.name,
           description: lib.description,
           revision: lib.revision,
           templateCount: countRow?.value ?? 0,
-          channelIds: shown,
-          outsideScopeCount: links === null || shown === null ? 0 : links.length - shown.length,
+          channelIds: links?.shown ?? null,
+          outsideScopeCount: links?.outsideScopeCount ?? 0,
           createdAt: lib.createdAt,
           updatedAt: lib.updatedAt,
         });

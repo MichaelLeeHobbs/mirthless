@@ -11,8 +11,8 @@ import logger from '../lib/logger.js';
 import { channelScopeOf, inScope } from '../lib/channel-scope.js';
 
 export class TagController {
-  static async listTags(_req: Request, res: Response): Promise<void> {
-    const result = await TagService.listTags();
+  static async listTags(req: Request, res: Response): Promise<void> {
+    const result = await TagService.listTags(await channelScopeOf(req, 'settings:read'));
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list tags');

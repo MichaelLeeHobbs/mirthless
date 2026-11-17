@@ -13,7 +13,7 @@ vi.mock('../db.js', () => ({
   db: { selectDistinct: () => ({ from: () => ({ where: () => rows() }) }) },
 }));
 
-const { channelScopeOf, inScope, channelIdIn } = await import('../channel-scope.js');
+const { channelScopeOf, inScope, channelIdIn, linksInScope } = await import('../channel-scope.js');
 
 const LAB = 'g-lab' as ChannelGroupId;
 
@@ -61,5 +61,15 @@ describe('channelIdIn', () => {
 
   it('matches nothing for an empty scope', () => {
     expect(channelIdIn({} as never, [])).toBeDefined();
+  });
+});
+
+describe('linksInScope', () => {
+  it('keeps every link for every channel', () => {
+    expect(linksInScope(['a', 'b'], ALL_CHANNELS)).toEqual({ shown: ['a', 'b'], outsideScopeCount: 0 });
+  });
+
+  it('keeps the links in scope and counts the rest', () => {
+    expect(linksInScope(['a', 'b', 'c'], ['b'])).toEqual({ shown: ['b'], outsideScopeCount: 2 });
   });
 });
