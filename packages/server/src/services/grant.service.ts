@@ -19,11 +19,11 @@
 // - nobody changes their own role (user.service), and the admin role is locked.
 
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
-import { AUDIT_ACTION, PERMISSIONS, type CreateRoleInput, type Permission, type UpdateRoleInput } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, PERMISSIONS, can, type ChannelGroupId, type CreateRoleInput, type Permission, type UpdateRoleInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { isLiveAssignment, queryUserStanding } from '../lib/principal.js';
 import { db } from '../lib/db.js';
-import { assignments, rolePermissions, roles, users } from '../db/schema/index.js';
+import { assignmentGroups, assignments, channelGroupMembers, rolePermissions, roles, users } from '../db/schema/index.js';
 import { AuditService, type AuditTransaction } from './audit.service.js';
 
 /** Who made a change, for its audit row. */
@@ -136,6 +136,23 @@ async function assertNameFree(tx: AuditTransaction, name: string, exceptId?: str
   if (row && row.id !== exceptId) throw new ServiceError('ALREADY_EXISTS', `A role is already named ${row.name}`);
 }
 
+/**
+ * Every permission a live assignment scoped to one of `groupIds` grants: what
+ * a channel joining those groups gives the assignments' holders.
+ */
+async function permissionsGrantedThrough(tx: AuditTransaction, groupIds: readonly string[]): Promise<readonly Permission[]> {
+  const rows = await tx.selectDistinct({ roleId: assignments.roleId, admin: roles.admin })
+    .from(assignmentGroups)
+    .innerJoin(assignments, eq(assignments.id, assignmentGroups.assignmentId))
+    .innerJoin(roles, eq(roles.id, assignments.roleId))
+    .where(and(inArray(assignmentGroups.channelGroupId, [...groupIds]), isLiveAssignment()));
+  const all = new Set<Permission>();
+  for (const row of rows) {
+    for (const p of await permissionsOfRole(tx, { id: row.roleId, admin: row.admin })) all.add(p);
+  }
+  return [...all];
+}
+
 /** The role named `name`, locked for the assignment, or an INVALID_INPUT error. */
 async function roleByName(tx: AuditTransaction, name: string): Promise<{ readonly id: string; readonly admin: boolean }> {
   const [row] = await tx.select({ id: roles.id }).from(roles).where(eq(roles.name, name));
@@ -215,6 +232,36 @@ export class GrantService {
       action: AUDIT_ACTION.ASSIGNMENTS_CHANGED, outcome: 'SUCCESS',
       userId: actor.userId, ipAddress: actor.ipAddress ?? null,
       attributes: { targetUserId: userId, before, after: [{ role: roleName, scope: 'all' }] },
+    });
+    return before;
+  }
+
+  /**
+   * Replace a channel's group memberships and record the change, in the
+   * caller's transaction (D-310, plan section 2). Adding a channel to a group is
+   * a grant: everyone the group's live assignments cover gains those
+   * permissions on the channel, so the actor must already hold every one of
+   * them on that channel. Removing a channel from a group narrows access and
+   * needs only the channel route's own channels:write. Returns the groups before.
+   */
+  static async applyChannelGroups(tx: AuditTransaction, channelId: string, wanted: readonly string[], actor: GrantActor): Promise<readonly string[]> {
+    const before = (await tx.select({ groupId: channelGroupMembers.channelGroupId }).from(channelGroupMembers)
+      .where(eq(channelGroupMembers.channelId, channelId))).map((r) => r.groupId);
+    const added = wanted.filter((g) => !before.includes(g));
+    if (added.length > 0) {
+      const granted = await permissionsGrantedThrough(tx, added);
+      const held = actor.userId === null ? undefined : await queryUserStanding(tx, actor.userId);
+      const groupIds = before as ChannelGroupId[];
+      const missing = granted.filter((p) => !(held?.enabled === true && can(held.grants, p, { groupIds }))).sort();
+      if (missing.length > 0) {
+        throw new ServiceError('FORBIDDEN', `Adding this channel to that group gives its members permissions you do not hold on the channel: ${missing.join(', ')}`, { missing });
+      }
+    }
+    await tx.delete(channelGroupMembers).where(eq(channelGroupMembers.channelId, channelId));
+    if (wanted.length > 0) await tx.insert(channelGroupMembers).values(wanted.map((channelGroupId) => ({ channelGroupId, channelId })));
+    await AuditService.recordInTx(tx, {
+      action: AUDIT_ACTION.CHANNEL_GROUPS_CHANGED, outcome: 'SUCCESS', userId: actor.userId, channelId, ipAddress: actor.ipAddress ?? null,
+      attributes: { before: [...before].sort(), after: [...wanted].sort() },
     });
     return before;
   }
