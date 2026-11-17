@@ -38,6 +38,9 @@ vi.mock('../../lib/logger.js', () => ({
   },
 }));
 
+// Placing a new channel in a group is covered against Postgres (create-in-scope.itest.ts).
+vi.mock('../grant.service.js', () => ({ GrantService: { placeNewChannel: vi.fn().mockResolvedValue(null), newChannelGroup: vi.fn().mockResolvedValue(null) } }));
+
 vi.mock('../partition-manager.service.js', () => ({
   PartitionManagerService: {
     createPartitions: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),
@@ -1509,7 +1512,7 @@ describe('MirthImportService.convertXml with a Mirth 4.x export', () => {
 describe('MirthImportService.importFromXml', () => {
   it('converts and imports channels from XML', async () => {
     const xml = loadFixture('mirth-channel-basic.xml');
-    const result = await MirthImportService.importFromXml(xml, 'SKIP', false);
+    const result = await MirthImportService.importFromXml(xml, { collisionMode: 'SKIP', dryRun: false });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -1519,7 +1522,7 @@ describe('MirthImportService.importFromXml', () => {
 
   it('returns preview without saving on dry run', async () => {
     const xml = loadFixture('mirth-channel-basic.xml');
-    const result = await MirthImportService.importFromXml(xml, 'SKIP', true);
+    const result = await MirthImportService.importFromXml(xml, { collisionMode: 'SKIP', dryRun: true });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -1530,7 +1533,7 @@ describe('MirthImportService.importFromXml', () => {
   });
 
   it('returns error for invalid XML input', async () => {
-    const result = await MirthImportService.importFromXml('<foo>bar</foo>', 'SKIP', false);
+    const result = await MirthImportService.importFromXml('<foo>bar</foo>', { collisionMode: 'SKIP', dryRun: false });
 
     expect(result.ok).toBe(false);
   });
@@ -1543,7 +1546,7 @@ describe('MirthImportService.importFromXml', () => {
     } as never);
     const listLibraries = vi.spyOn(CodeTemplateService, 'listLibraries');
     try {
-      const result = await MirthImportService.importFromXml(backup, 'OVERWRITE', false);
+      const result = await MirthImportService.importFromXml(backup, { collisionMode: 'OVERWRITE', dryRun: false });
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -1558,7 +1561,7 @@ describe('MirthImportService.importFromXml', () => {
 
   it('maps RENAME collision mode to CREATE_NEW', async () => {
     const xml = loadFixture('mirth-channel-basic.xml');
-    const result = await MirthImportService.importFromXml(xml, 'RENAME', false);
+    const result = await MirthImportService.importFromXml(xml, { collisionMode: 'RENAME', dryRun: false });
 
     // Should succeed — the internal mapping to CREATE_NEW is transparent
     expect(result.ok).toBe(true);

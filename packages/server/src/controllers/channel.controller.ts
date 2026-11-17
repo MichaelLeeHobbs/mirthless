@@ -120,9 +120,9 @@ export class ChannelController {
 
   static async clone(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const { name } = req.body as { name: string };
+    const { name, groupId } = req.body as { name: string; groupId?: string };
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
-    const result = await ChannelService.clone(id, name, context);
+    const result = await ChannelService.clone(id, name, context, groupId);
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);

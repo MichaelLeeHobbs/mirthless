@@ -488,6 +488,7 @@ describe('ServerBackupService', () => {
         backup.channels,
         'SKIP',
         undefined,
+        'restore',
       );
     });
 

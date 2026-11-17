@@ -386,12 +386,20 @@ The debate's first and third slices (one `authenticate` mount and parser order; 
        - `PUT /channels/:id/groups` writes through `GrantService.applyChannelGroups`, in its transaction, with a `CHANNEL_GROUPS_CHANGED` audit row. Adding a group needs, on that channel, every permission the group's live assignments grant; the refusal names what is missing. Removing needs only the route's `channels:write` on the channel.
        - Group create, rename and delete need `channels:write` on all channels. A group an assignment scopes to cannot be deleted (409).
        - The preview of who gains and loses access belongs to the scope UI (slice 10). The Default join moves with create in 9b. The lint rule for the membership table is not added: several services read it, and an import rule cannot tell a read from a write.
-     - **9b**: create, clone, JSON import, Mirth import and restore put channels in an in-scope group, and import overwrite needs scope on each overwritten channel.
+     - **9b**:
+       - `GrantService.placeNewChannel` puts a channel into a group in the transaction that creates it, with a `CHANNEL_GROUPS_CHANGED` audit row. Create, clone, JSON import and Mirth import call it, and take an optional `groupId`. This replaces the Default join that ran after commit and swallowed its errors.
+       - A new channel has no access to give away yet, so placing it is not judged as a grant: the group must be inside the creator's `channels:write` scope. An all-channel writer's channel joins the named group, or Default. A scoped writer's joins the named group, which must be one of their write groups (403 otherwise), or their only write group; with several and none named, 400.
+       - JSON and Mirth import with `OVERWRITE` need `channels:write` on each channel they replace; a channel outside it is reported in the import's errors and left as it was.
+       - Restore keeps the backup's memberships and places nothing: it runs under `system:restore`, which is all-channel only and covers every channel. Its membership section still writes `channel_group_members` itself, the one writer outside the grant service, for the same reason.
+       - An import resolves its group once, before its first channel, so a group the importer cannot use refuses the request (403, 400 or 404). The overwrite check runs in the overwrite's transaction after locking the channel row, which a membership change also locks.
+       - `PUT /channels/:id` does not take `groupId`; groups change only through `PUT /channels/:id/groups`.
+       - The web UI sends no `groupId` yet, so someone holding `channels:write` in several groups but not on every channel gets 400 from New channel, Clone and both imports. Nobody can be given such an assignment until slice 10, which adds the group picker to those four screens.
      - **9c**: library channel links.
-   - Membership writes move into `grant.service` with `recordInTx`: `ChannelGroupService.setChannelGroups` and the Default join in `channel.service.ts` both write `channel_group_members` themselves today and record after commit. The move also invalidates the socket channel-to-groups map.
+   - Membership writes move into `grant.service` with `recordInTx` (done in 9a and 9b; restore is the exception above). The socket channel-to-groups lookup is a query (8c), so there is no map to invalidate.
    - Owns: `routes/channel-group.routes.ts`, `controllers/channel-group.controller.ts`, `services/channel-group.service.ts`, the groups route in `routes/channel.routes.ts`, the create and clone parts of `services/channel.service.ts`, the import services, `services/code-template.service.ts`.
 10. **Scope UI**, L.
     - Follows: Screen.
+    - A group picker (`groupId`) on New channel, Clone, JSON import and Mirth import, for a writer scoped to several groups (9b).
     - The client's refresh-on-404/403 and the expiry timer from section 4 live here, in `packages/web/src/api/client.ts` and `packages/web/src/stores/auth.store.ts`.
     - Owns: `packages/web/src/components/dashboard/GroupedChannelTable.tsx`; `packages/web/src/components/common/AssignGroupDialog.tsx`; `packages/web/src/pages/CodeTemplatePage.tsx`; `packages/web/src/pages/ChannelEditorPage.tsx`, for access-changed handling; the "Your access changed at 13:02" line in the message browser and statistics.
 11. **Who can access, now and as of a date, with CSV**, M.

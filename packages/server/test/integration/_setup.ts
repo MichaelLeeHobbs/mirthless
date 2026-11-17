@@ -10,6 +10,7 @@
 // on a machine without Postgres). CI sets DATABASE_URL to the `galvanigraph_test`
 // service DB, so the suites run there.
 
+import { randomUUID } from 'node:crypto';
 import { describe } from 'vitest';
 
 /** True when DATABASE_URL targets a `*_test` database. */
@@ -88,6 +89,23 @@ export async function insertTestChannel(mods: ServerModules, id: string): Promis
   await mods.db.execute(mods.sql`
     INSERT INTO channels (id, name, inbound_data_type, outbound_data_type, source_connector_type, source_connector_properties)
     VALUES (${id}, ${`itest-${id}`}, 'RAW', 'RAW', 'CHANNEL', '{}'::jsonb)`);
+}
+
+/** Who a suite acts as: services that create channels place them in the actor's scope (D-310). */
+export interface TestActor {
+  readonly userId: string;
+  readonly ipAddress: null;
+}
+
+/** A new user holding the admin role on every channel, to act as. */
+export async function adminActor(pool: ServerModules['pool']): Promise<TestActor> {
+  const name = `itest-admin-${randomUUID().slice(0, 8)}`;
+  const { rows } = await pool.query<{ id: string }>(
+    `INSERT INTO users (username, email, password_hash) VALUES ($1, $2, 'not-a-hash') RETURNING id`, [name, `${name}@example.test`],
+  );
+  const userId = rows[0]!.id;
+  await pool.query(`INSERT INTO assignments (user_id, role_id, all_channels) SELECT $1, id, true FROM roles WHERE admin`, [userId]);
+  return { userId, ipAddress: null };
 }
 
 /** Delete a channel row made by `insertTestChannel`. */

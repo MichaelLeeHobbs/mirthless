@@ -9,16 +9,18 @@
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createChannelSchema, updateChannelSchema } from '@galvanigraph/core-models';
-import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
+import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
 
 describeIntegration('Channel export and import (real Postgres)', () => {
   let mods: ServerModules;
+  let actor: TestActor;
   let exportMod: typeof import('../../src/services/channel-export.service.js');
   let importMod: typeof import('../../src/services/channel-import.service.js');
   const created: string[] = [];
 
   beforeAll(async () => {
     mods = await loadServerModules();
+    actor = await adminActor(mods.pool);
     exportMod = await import('../../src/services/channel-export.service.js');
     importMod = await import('../../src/services/channel-import.service.js');
   });
@@ -45,7 +47,7 @@ describeIntegration('Channel export and import (real Postgres)', () => {
       ],
       filters: [{ metaDataId: 2, rules: [{ name: 'Second only', type: 'JAVASCRIPT', operator: 'AND', script: 'return true;' }] }],
       transformers: [{ metaDataId: 2, inboundDataType: 'RAW', outboundDataType: 'RAW', steps: [{ name: 'Stamp', type: 'JAVASCRIPT', script: 'msg = msg;' }] }],
-    })));
+    }), actor));
     created.push(source.id);
 
     const exported = unwrap(await exportMod.ChannelExportService.exportChannel(source.id));
@@ -53,7 +55,7 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     const copyId = randomUUID();
     created.push(copyId);
     const result = unwrap(await importMod.ChannelImportService.importChannels(
-      [{ ...entry, id: copyId, name: `${name}-copy` }], 'CREATE_NEW',
+      [{ ...entry, id: copyId, name: `${name}-copy` }], 'CREATE_NEW', actor,
     ));
     expect(result.errors).toEqual([]);
 
@@ -61,7 +63,7 @@ describeIntegration('Channel export and import (real Postgres)', () => {
 
     // Importing over the existing channel replaces its destination rows too.
     const again = unwrap(await importMod.ChannelImportService.importChannels(
-      [{ ...entry, id: copyId, name: `${name}-copy` }], 'OVERWRITE',
+      [{ ...entry, id: copyId, name: `${name}-copy` }], 'OVERWRITE', actor,
     ));
     expect(again.errors).toEqual([]);
     await expectAttachedToSecond(copyId);
@@ -107,18 +109,18 @@ describeIntegration('Channel export and import (real Postgres)', () => {
   it('creates, clones and imports channels with their own partitions (#260)', async () => {
     const { ChannelService, PartitionManagerService } = mods;
     const name = `itest-partitions-${randomUUID()}`;
-    const source = unwrap(await ChannelService.create(rawChannel(name)));
+    const source = unwrap(await ChannelService.create(rawChannel(name), actor));
     created.push(source.id);
     expect(unwrap(await PartitionManagerService.partitionExists(source.id))).toBe(true);
 
-    const clone = unwrap(await ChannelService.clone(source.id, `${name}-clone`));
+    const clone = unwrap(await ChannelService.clone(source.id, `${name}-clone`, actor));
     created.push(clone.id);
     expect(unwrap(await PartitionManagerService.partitionExists(clone.id))).toBe(true);
 
     const entry = unwrap(await exportMod.ChannelExportService.exportChannel(source.id)).channels[0]!;
     const copyId = randomUUID();
     created.push(copyId);
-    const result = unwrap(await importMod.ChannelImportService.importChannels([{ ...entry, id: copyId, name: `${name}-copy` }], 'CREATE_NEW'));
+    const result = unwrap(await importMod.ChannelImportService.importChannels([{ ...entry, id: copyId, name: `${name}-copy` }], 'CREATE_NEW', actor));
     expect(result.errors).toEqual([]);
     expect(unwrap(await PartitionManagerService.partitionExists(copyId))).toBe(true);
   });
@@ -126,29 +128,29 @@ describeIntegration('Channel export and import (real Postgres)', () => {
   it('leaves no channel row when the partitions cannot be created (#260)', async () => {
     const { ChannelService } = mods;
     const name = `itest-refused-${randomUUID()}`;
-    const source = unwrap(await ChannelService.create(rawChannel(name)));
+    const source = unwrap(await ChannelService.create(rawChannel(name), actor));
     created.push(source.id);
     const entry = unwrap(await exportMod.ChannelExportService.exportChannel(source.id)).channels[0]!;
     const copyId = randomUUID();
 
     await withPartitionsRefused(async () => {
-      const refused = await ChannelService.create(rawChannel(`${name}-new`));
+      const refused = await ChannelService.create(rawChannel(`${name}-new`), actor);
       expect(refused.ok).toBe(false);
       expect(refused.error?.message).toContain(`Channel "${name}-new" was not created: its message partitions could not be created`);
       expect(await channelRows('name', `${name}-new`)).toBe(0);
 
-      const cloned = await ChannelService.clone(source.id, `${name}-clone`);
+      const cloned = await ChannelService.clone(source.id, `${name}-clone`, actor);
       expect(cloned.ok).toBe(false);
       expect(await channelRows('name', `${name}-clone`)).toBe(0);
 
-      const imported = unwrap(await importMod.ChannelImportService.importChannels([{ ...entry, id: copyId, name: `${name}-copy` }], 'CREATE_NEW'));
+      const imported = unwrap(await importMod.ChannelImportService.importChannels([{ ...entry, id: copyId, name: `${name}-copy` }], 'CREATE_NEW', actor));
       expect(imported.created).toBe(0);
       expect(imported.errors).toEqual([expect.stringContaining(`Error importing "${name}-copy": its message partitions could not be created, so it was not imported`)]);
       expect(await channelRows('id', copyId)).toBe(0);
     });
 
     // The real function is back: a channel can be created again.
-    const after = unwrap(await ChannelService.create(rawChannel(`${name}-after`)));
+    const after = unwrap(await ChannelService.create(rawChannel(`${name}-after`), actor));
     created.push(after.id);
     expect(unwrap(await mods.PartitionManagerService.partitionExists(after.id))).toBe(true);
   });
@@ -171,7 +173,7 @@ describeIntegration('Channel export and import (real Postgres)', () => {
       }],
       filters: [{ rules: [{ name: 'TS rule', type: 'JAVASCRIPT', operator: 'AND', script: 'return true;', language: 'TYPESCRIPT' }] }],
       transformers: [{ inboundDataType: 'HL7V2', outboundDataType: 'HL7V2', steps: [{ name: 'JS step', type: 'JAVASCRIPT', script: 'msg = msg;' }] }],
-    })));
+    }), actor));
     created.push(source.id);
 
     const expectLanguages = async (id: string): Promise<void> => {
@@ -190,7 +192,7 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     const copyId = randomUUID();
     created.push(copyId);
     const result = unwrap(await importMod.ChannelImportService.importChannels(
-      [{ ...exported.channels[0]!, id: copyId, name: `${name}-copy` }], 'CREATE_NEW',
+      [{ ...exported.channels[0]!, id: copyId, name: `${name}-copy` }], 'CREATE_NEW', actor,
     ));
     expect(result.errors).toEqual([]);
     await expectLanguages(copyId);
@@ -201,7 +203,7 @@ describeIntegration('Channel export and import (real Postgres)', () => {
     const created1 = unwrap(await ChannelService.create(createChannelSchema.parse({
       name: `itest-lang-update-${randomUUID()}`, enabled: false, inboundDataType: 'RAW', outboundDataType: 'RAW',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'NONE',
-    })));
+    }), actor));
     created.push(created1.id);
     const before = unwrap(await ChannelService.getById(created1.id));
 
@@ -240,7 +242,7 @@ describeIntegration('Channel export and import (real Postgres)', () => {
       metadataColumns: [],
       filters: [{ connectorId: randomUUID(), rules: [] }],
       transformers: [],
-    }], 'CREATE_NEW'));
+    }], 'CREATE_NEW', actor));
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('export the channel again');
     expect((await mods.ChannelService.getById(id)).ok).toBe(false);

@@ -79,7 +79,7 @@ router.post(
   requirePermission('channels:write'),
   validate({
     params: uuidParamsSchema,
-    body: z.object({ name: z.string().min(1).max(255) }),
+    body: z.object({ name: z.string().min(1).max(255), groupId: z.string().uuid().optional() }),
   }),
   ChannelController.clone
 );

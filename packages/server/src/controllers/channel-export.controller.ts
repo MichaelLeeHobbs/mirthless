@@ -45,11 +45,14 @@ export class ChannelExportController {
   static async importChannels(req: Request, res: Response): Promise<void> {
     const input = req.body as ChannelImportInput;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
-    const result = await ChannelImportService.importChannels(input.channels, input.collisionMode, context);
+    const placement = input.groupId === undefined ? {} : { groupId: input.groupId };
+    const result = await ChannelImportService.importChannels(input.channels, input.collisionMode, context, placement);
 
     if (!result.ok) {
+      // A group the caller cannot use answers 400/403/404; anything else is 500.
+      const status = mapErrorToStatus(result.error);
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to import channels');
-      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: 'Import failed' } });
+      res.status(status).json({ success: false, error: status === 500 ? { code: 'INTERNAL', message: 'Import failed' } : errorResponse(result.error) });
       return;
     }
 

@@ -112,6 +112,8 @@ export const createChannelSchema = z.object({
   metadataColumns: z.array(metadataColumnInputSchema).optional(),
   filters: z.array(filterInputSchema).optional(),
   transformers: z.array(transformerInputSchema).optional(),
+  /** The group the new channel joins; see GrantService.placeNewChannel (D-310). */
+  groupId: z.string().uuid().optional(),
 });
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
@@ -138,7 +140,8 @@ function updateScripts(input: z.infer<typeof updateChannelBaseSchema>): Readonly
   return found;
 }
 
-const updateChannelBaseSchema = createChannelSchema.partial().extend({
+// Groups change through PUT /channels/:id/groups, which judges the grant.
+const updateChannelBaseSchema = createChannelSchema.omit({ groupId: true }).partial().extend({
   revision: z.number().int().positive(),
 });
 

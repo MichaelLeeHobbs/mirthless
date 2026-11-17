@@ -34,7 +34,7 @@
 import { beforeAll, afterAll, afterEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createChannelSchema } from '@galvanigraph/core-models';
-import { describeIntegration, unwrap } from './_setup.js';
+import { adminActor, describeIntegration, unwrap, type TestActor } from './_setup.js';
 
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
 
@@ -44,11 +44,13 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
   let pool: typeof import('../../src/lib/db.js').pool;
   let groupIds: string[] = [];
   let channelIds: string[] = [];
+  let actor: TestActor;
 
   beforeAll(async () => {
     ({ ChannelGroupService } = await import('../../src/services/channel-group.service.js'));
     ({ ChannelService } = await import('../../src/services/channel.service.js'));
     ({ pool } = await import('../../src/lib/db.js'));
+    actor = await adminActor(pool);
   });
 
   afterEach(async () => {
@@ -95,7 +97,7 @@ describeIntegration('ChannelGroupService (real Postgres)', () => {
     const channel = unwrap(await ChannelService.create(createChannelSchema.parse({
       name: `itest-groups-${randomUUID().slice(0, 8)}`, enabled: false, inboundDataType: 'HL7V2', outboundDataType: 'HL7V2',
       sourceConnectorType: 'JAVASCRIPT', sourceConnectorProperties: {}, responseMode: 'AUTO_AFTER_DESTINATIONS',
-    })));
+    }), actor));
     channelIds.push(channel.id);
     return channel.id;
   }

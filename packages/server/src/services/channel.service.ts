@@ -9,7 +9,6 @@ import { eq, isNull, and, count, asc, sql } from 'drizzle-orm';
 import { ALL_CHANNELS } from '@galvanigraph/core-models';
 import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 import {
-  DEFAULT_GROUP_NAME,
   DEFAULT_STORED_SCRIPT_LANGUAGE,
   toScriptLanguage,
   type ScriptLanguageCode,
@@ -25,6 +24,7 @@ import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
 import { ChannelRevisionService } from './channel-revision.service.js';
+import { GrantService } from './grant.service.js';
 import logger from '../lib/logger.js';
 import {
   channels,
@@ -37,8 +37,6 @@ import {
   filterRules,
   channelTransformers,
   transformerSteps,
-  channelGroups,
-  channelGroupMembers,
   codeTemplateLibraries,
 } from '../db/schema/index.js';
 
@@ -850,6 +848,9 @@ export class ChannelService {
           await syncTransformers(tx, channelId, input.transformers, destIdByMetaDataId);
         }
         if (cloneOf !== undefined) await addCloneToLibraries(tx, cloneOf, channelId);
+        // Into a group inside the creator's channels:write scope (D-310), or the
+        // channel would be out of a scoped creator's own reach.
+        await GrantService.placeNewChannel(tx, channelId, input.groupId, { userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null });
 
         // Partitions in the same transaction: a channel without them would put
         // its messages in the default partitions, so a failure rolls it back
@@ -874,23 +875,6 @@ export class ChannelService {
         serverId: null, ipAddress: context?.ipAddress ?? null,
         attributes: { channelName: input.name },
       });
-
-      // Auto-assign to "Default" channel group (non-blocking — skip silently if group doesn't exist)
-      try {
-        const [defaultGroup] = await db
-          .select({ id: channelGroups.id })
-          .from(channelGroups)
-          .where(eq(channelGroups.name, DEFAULT_GROUP_NAME));
-
-        if (defaultGroup) {
-          await db.insert(channelGroupMembers).values({
-            channelGroupId: defaultGroup.id,
-            channelId: channel.id,
-          });
-        }
-      } catch {
-        logger.warn({ channelId: channel.id }, 'Failed to auto-assign channel to Default group');
-      }
 
       return detail;
     });
@@ -1087,7 +1071,7 @@ export class ChannelService {
   }
 
   /** Clone an existing channel with a new name. */
-  static async clone(id: string, newName: string, context?: AuditContext): Promise<Result<ChannelDetail>> {
+  static async clone(id: string, newName: string, context?: AuditContext, groupId?: string): Promise<Result<ChannelDetail>> {
     return tryCatch(async () => {
       const sourceResult = await ChannelService.getById(id);
       if (!sourceResult.ok) throw sourceResult.error;
@@ -1096,7 +1080,7 @@ export class ChannelService {
         throw new ServiceError('INVALID_INPUT', `Channel "${source.name}" has a connector in the wrong direction; change its type before cloning it`);
       }
 
-      const input = buildCloneInput(source, newName);
+      const input = { ...buildCloneInput(source, newName), ...(groupId === undefined ? {} : { groupId }) };
       const createResult = await ChannelService.create(input, context, id);
       if (!createResult.ok) throw createResult.error;
 

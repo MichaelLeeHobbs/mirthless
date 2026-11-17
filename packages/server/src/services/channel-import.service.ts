@@ -8,6 +8,9 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { randomUUID } from 'node:crypto';
 import { eq, isNull, and } from 'drizzle-orm';
 import {
+  PERMISSIONS,
+  can,
+  type ChannelGroupId,
   isSourceConnectorType,
   isDestinationConnectorType,
   toScriptLanguage,
@@ -18,6 +21,8 @@ import {
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
 import { PartitionManagerService } from './partition-manager.service.js';
+import { GrantService } from './grant.service.js';
+import { queryUserStanding } from '../lib/principal.js';
 import { REDACTED } from '../lib/secret-redaction.js';
 import {
   channels,
@@ -28,6 +33,7 @@ import {
   filterRules,
   channelTransformers,
   transformerSteps,
+  channelGroupMembers,
 } from '../db/schema/index.js';
 import { isPlainObject } from '@galvanigraph/core-util';
 
@@ -66,6 +72,15 @@ export function stripRedactedProperties(props: unknown): Record<string, unknown>
   return root;
 }
 
+/**
+ * Where an import puts channels (D-310): new channels join `groupId` or the
+ * importer's default group (GrantService.placeNewChannel), and an overwrite
+ * needs channels:write on the channel it replaces. A backup restore brings its
+ * own memberships and runs under system:restore, which covers every channel,
+ * so it does neither.
+ */
+export type ImportPlacement = { readonly groupId?: string } | 'restore';
+
 // ----- Service -----
 
 export class ChannelImportService {
@@ -74,15 +89,20 @@ export class ChannelImportService {
     entries: readonly ChannelExportEntry[],
     collisionMode: CollisionMode,
     context?: AuditContext,
+    placement: ImportPlacement = {},
   ): Promise<Result<ImportResult>> {
     return tryCatch(async () => {
       let created = 0;
       let updated = 0;
       let skipped = 0;
       const errors: string[] = [];
+      // A group the importer cannot use fails the request, not each channel in it.
+      if (placement !== 'restore') {
+        await GrantService.newChannelGroup(db, placement.groupId, { userId: context?.userId ?? null });
+      }
 
       for (const entry of entries) {
-        const result = await importSingleChannel(entry, collisionMode, context);
+        const result = await importSingleChannel(entry, collisionMode, { context, placement });
         if (result === 'created') created++;
         else if (result === 'updated') updated++;
         else if (result === 'skipped') skipped++;
@@ -121,10 +141,18 @@ export function connectorDirectionError(entry: ChannelExportEntry): string | nul
   return null;
 }
 
+/** Who imports, and where their channels go. */
+interface ImportRun {
+  readonly context: AuditContext | undefined;
+  readonly placement: ImportPlacement;
+}
+
+type ImportTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 async function importSingleChannel(
   entry: ChannelExportEntry,
   mode: CollisionMode,
-  context?: AuditContext,
+  run: ImportRun,
 ): Promise<ImportOutcome> {
   const directionError = connectorDirectionError(entry);
   if (directionError) return directionError;
@@ -137,16 +165,13 @@ async function importSingleChannel(
 
     if (existing) {
       if (mode === 'SKIP') return 'skipped';
-      if (mode === 'OVERWRITE') {
-        await overwriteChannel(entry);
-        return 'updated';
-      }
+      if (mode === 'OVERWRITE') return await overwriteChannel(entry, run);
       // CREATE_NEW: assign a new ID
-      return await createChannel({ ...entry, id: randomUUID() }, context);
+      return await createChannel({ ...entry, id: randomUUID() }, run);
     }
 
     // No collision — create directly
-    return await createChannel(entry, context);
+    return await createChannel(entry, run);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return `Error importing "${entry.name}": ${msg}`;
@@ -155,7 +180,7 @@ async function importSingleChannel(
 
 async function createChannel(
   entry: ChannelExportEntry,
-  _context?: AuditContext,
+  run: ImportRun,
 ): Promise<'created'> {
   const now = new Date();
 
@@ -186,6 +211,9 @@ async function createChannel(
     });
 
     await insertRelations(tx, entry.id, entry);
+    if (run.placement !== 'restore') {
+      await GrantService.placeNewChannel(tx, entry.id, run.placement.groupId, { userId: run.context?.userId ?? null, ipAddress: run.context?.ipAddress ?? null });
+    }
 
     // Partitions in the same transaction: a channel without them would put its
     // messages in the default partitions, so a failure rolls it back (#260).
@@ -199,10 +227,30 @@ async function createChannel(
   return 'created';
 }
 
-async function overwriteChannel(entry: ChannelExportEntry): Promise<void> {
+/**
+ * Whether the importer may replace `channelId`, judged in the overwrite's own
+ * transaction after the channel row is locked FOR UPDATE: a membership change
+ * locks the same row, so the channel cannot leave the importer's scope between
+ * this check and the write. A restore may replace any channel.
+ */
+async function mayOverwrite(tx: ImportTx, channelId: string, run: ImportRun): Promise<boolean> {
+  await tx.select({ id: channels.id }).from(channels).where(eq(channels.id, channelId)).for('update');
+  if (run.placement === 'restore') return true;
+  const userId = run.context?.userId;
+  const standing = userId ? await queryUserStanding(tx, userId) : null;
+  if (standing?.enabled !== true) return false;
+  const groupIds = (await tx.select({ id: channelGroupMembers.channelGroupId }).from(channelGroupMembers)
+    .where(eq(channelGroupMembers.channelId, channelId))).map((r) => r.id as ChannelGroupId);
+  return can(standing.grants, PERMISSIONS.CHANNELS_WRITE, { groupIds });
+}
+
+async function overwriteChannel(entry: ChannelExportEntry, run: ImportRun): Promise<ImportOutcome> {
   const now = new Date();
 
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
+    if (!(await mayOverwrite(tx, entry.id, run))) {
+      return `Channel "${entry.name}": not imported; it would replace a channel you cannot change`;
+    }
     // Update channel core fields
     await tx.update(channels).set({
       name: entry.name,
@@ -233,6 +281,7 @@ async function overwriteChannel(entry: ChannelExportEntry): Promise<void> {
     await tx.delete(channelTransformers).where(eq(channelTransformers.channelId, entry.id));
 
     await insertRelations(tx, entry.id, entry);
+    return 'updated';
   });
 }
 

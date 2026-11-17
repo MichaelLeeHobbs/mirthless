@@ -269,6 +269,7 @@ export class ServerBackupService {
         backup.channels,
         collisionMode === 'OVERWRITE' ? 'OVERWRITE' : 'SKIP',
         context,
+        'restore',
       );
       if (channelResult.ok) {
         sections.push({

@@ -89,6 +89,9 @@ vi.mock('../../lib/event-emitter.js', () => ({
   emitEvent: vi.fn(),
 }));
 
+// Placing a new channel in a group is covered against Postgres (create-in-scope.itest.ts).
+vi.mock('../grant.service.js', () => ({ GrantService: { placeNewChannel: vi.fn().mockResolvedValue(null), newChannelGroup: vi.fn().mockResolvedValue(null) } }));
+
 vi.mock('../partition-manager.service.js', () => ({
   PartitionManagerService: {
     createPartitions: vi.fn().mockResolvedValue({ ok: true, value: undefined, error: null }),

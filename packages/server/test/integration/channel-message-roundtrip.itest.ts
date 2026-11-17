@@ -10,13 +10,15 @@ import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { CreateChannelInput } from '@galvanigraph/core-models';
 import { createChannelSchema } from '@galvanigraph/core-models';
-import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
+import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
 
 describeIntegration('Channel CRUD + message round trip (real Postgres)', () => {
   let mods: ServerModules;
+  let actor: TestActor;
 
   beforeAll(async () => {
     mods = await loadServerModules();
+    actor = await adminActor(mods.pool);
   });
 
   afterAll(async () => {
@@ -41,7 +43,7 @@ describeIntegration('Channel CRUD + message round trip (real Postgres)', () => {
     const input = makeChannelInput();
 
     // Create — real multi-table transaction.
-    const created = unwrap(await ChannelService.create(input));
+    const created = unwrap(await ChannelService.create(input, actor));
     expect(created.name).toBe(input.name);
     const channelId = created.id;
 
@@ -69,8 +71,8 @@ describeIntegration('Channel CRUD + message round trip (real Postgres)', () => {
     const { ChannelService } = mods;
     const input = makeChannelInput();
 
-    unwrap(await ChannelService.create(input));
-    const dup = await ChannelService.create({ ...input });
+    unwrap(await ChannelService.create(input, actor));
+    const dup = await ChannelService.create({ ...input }, actor);
     expect(dup.ok).toBe(false);
   });
 
@@ -89,7 +91,7 @@ describeIntegration('Channel CRUD + message round trip (real Postgres)', () => {
       transformers: [{ steps: [{ type: 'JAVASCRIPT', script: "msg = String(msg) + '::x';" }] }],
     });
 
-    const created = unwrap(await ChannelService.create(input));
+    const created = unwrap(await ChannelService.create(input, actor));
     const detail = unwrap(await ChannelService.getById(created.id));
 
     expect(detail.transformers).toHaveLength(1);
