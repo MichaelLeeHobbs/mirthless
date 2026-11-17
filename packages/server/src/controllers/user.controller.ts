@@ -4,7 +4,7 @@
 // Handles HTTP requests for user management.
 
 import type { Request, Response } from 'express';
-import { holdsPermission, type CreateUserInput, type UpdateUserInput, type ChangePasswordInput, type ChangeOwnPasswordInput } from '@galvanigraph/core-models';
+import { holdsPermission, type SetAssignmentsInput, type CreateUserInput, type UpdateUserInput, type ChangePasswordInput, type ChangeOwnPasswordInput } from '@galvanigraph/core-models';
 import { UserService } from '../services/user.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { isServiceError } from '../lib/service-error.js';
@@ -140,6 +140,31 @@ export class UserController {
       return;
     }
 
+    res.json({ success: true, data: result.value });
+  }
+
+  static async getAssignments(req: Request, res: Response): Promise<void> {
+    const result = await UserService.getAssignments(req.params['id'] as string);
+    if (!result.ok) {
+      res.status(userErrorStatus(result.error)).json({ success: false, error: errorResponse(result.error) });
+      return;
+    }
+    res.json({ success: true, data: result.value });
+  }
+
+  static async setAssignments(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const input = req.body as SetAssignmentsInput;
+    const result = await UserService.setAssignments(id, input.assignments, { userId: req.user!.id, ipAddress: req.ip ?? null });
+    if (!result.ok) {
+      const status = userErrorStatus(result.error);
+      logger.warn({ errMsg: result.error.message, userId: id }, 'Failed to set assignments');
+      // The details name what is missing; they hold permission names and assignment ids only.
+      const details = isServiceError(result.error) ? result.error.details : undefined;
+      res.status(status).json({ success: false, error: { ...errorResponse(result.error), ...(details === undefined ? {} : { details }) } });
+      return;
+    }
+    logger.info({ userId: id }, 'Assignments set');
     res.json({ success: true, data: result.value });
   }
 

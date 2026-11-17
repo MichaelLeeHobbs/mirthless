@@ -9,6 +9,7 @@ import {
   changePasswordSchema,
   changeOwnPasswordSchema,
   userIdParamSchema,
+  setAssignmentsSchema,
 } from '@galvanigraph/core-models';
 import { UserController } from '../controllers/user.controller.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
@@ -50,6 +51,20 @@ router.get(
   requirePermission('users:read'),
   validate({ params: userIdParamSchema }),
   UserController.getPermissions,
+);
+
+router.get(
+  '/:id/assignments',
+  requirePermission('users:read'),
+  validate({ params: userIdParamSchema }),
+  UserController.getAssignments,
+);
+
+router.put(
+  '/:id/assignments',
+  requirePermission('users:write'),
+  validate({ params: userIdParamSchema, body: setAssignmentsSchema }),
+  UserController.setAssignments,
 );
 
 router.put(

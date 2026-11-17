@@ -116,17 +116,18 @@ export interface TestUser {
 
 /**
  * A new user holding `role` on every channel (`groupIds` null) or on each of
- * `groupIds` (one assignment per group), with a live session and token.
+ * `groupIds` (one assignment per group), or nothing (`role` null), with a
+ * live session and token.
  * The caller deletes the user (assignments and sessions cascade).
  */
-export async function userWithRole(pool: ServerModules['pool'], role: string, groupIds: readonly string[] | null): Promise<TestUser> {
+export async function userWithRole(pool: ServerModules['pool'], role: string | null, groupIds: readonly string[] | null): Promise<TestUser> {
   const { signAccessToken } = await import('../../src/lib/jwt.js');
   const name = `itest-user-${randomUUID().slice(0, 8)}`;
   const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO users (username, email, password_hash) VALUES ($1, $2, 'not-a-hash') RETURNING id`, [name, `${name}@example.test`],
   );
   const id = rows[0]!.id;
-  for (const groupId of groupIds ?? [null]) {
+  for (const groupId of role === null ? [] : groupIds ?? [null]) {
     const assigned = await pool.query<{ id: string }>(
       `INSERT INTO assignments (user_id, role_id, all_channels) SELECT $1, id, $3 FROM roles WHERE name = $2 RETURNING id`,
       [id, role, groupId === null],

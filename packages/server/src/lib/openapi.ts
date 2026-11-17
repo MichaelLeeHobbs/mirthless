@@ -4,7 +4,7 @@
 // Generates the OpenAPI spec object for Swagger UI.
 // Documents key API endpoints across 8 tag groups.
 
-import { SET_CHANNEL_GROUPS_MAX } from '@galvanigraph/core-models';
+import { MAX_ASSIGNMENTS_PER_USER, SET_CHANNEL_GROUPS_MAX } from '@galvanigraph/core-models';
 
 /** OpenAPI spec type — minimal structural typing for the spec object. */
 interface OpenAPISpec {
@@ -716,6 +716,63 @@ export function generateOpenAPISpec(): OpenAPISpec {
           },
         },
       },
+      '/users/{id}/assignments': {
+        get: {
+          tags: ['Users'],
+          summary: "List a user's assignments, live and expired",
+          operationId: 'userListAssignments',
+          security: bearerSecurity,
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            '200': successResponse('Assignments', { type: 'array', items: { $ref: '#/components/schemas/Assignment' } }),
+            '401': openApiErrorResponse('Not authenticated'),
+            '403': openApiErrorResponse('Missing users:read'),
+            '404': openApiErrorResponse('User not found'),
+          },
+        },
+        put: {
+          tags: ['Users'],
+          summary: "Replace a user's assignments",
+          description: 'Each assignment gives a role on every channel (groupIds null) or on a set of channel groups, with an optional expiry and reason. Needs users:write, and every permission of each role over its scope. A role holding a permission limited to all-channel assignments cannot be given on groups; the Default group cannot be a scope; nobody changes their own access.',
+          operationId: 'userSetAssignments',
+          security: bearerSecurity,
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['assignments'],
+                  properties: {
+                    assignments: {
+                      type: 'array', maxItems: MAX_ASSIGNMENTS_PER_USER,
+                      items: {
+                        type: 'object',
+                        required: ['roleId', 'groupIds'],
+                        properties: {
+                          roleId: { type: 'string', format: 'uuid' },
+                          groupIds: { type: ['array', 'null'], items: { type: 'string', format: 'uuid' }, description: 'null: every channel' },
+                          expiresAt: { type: ['string', 'null'], format: 'date-time' },
+                          reason: { type: ['string', 'null'], maxLength: 500 },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': successResponse('Assignments after the change', { type: 'array', items: { $ref: '#/components/schemas/Assignment' } }),
+            '400': openApiErrorResponse('A scope the role cannot have, the Default group, or an expiry in the past'),
+            '401': openApiErrorResponse('Not authenticated'),
+            '403': openApiErrorResponse('Your own access, a user you cannot manage, or a role you do not hold over the scope'),
+            '404': openApiErrorResponse('User, role or group not found'),
+            '409': openApiErrorResponse('Would leave no lasting admin'),
+          },
+        },
+      },
       '/users/{id}/unlock': {
         post: {
           tags: ['Users'],
@@ -1094,6 +1151,19 @@ export function generateOpenAPISpec(): OpenAPISpec {
             sourceConnector: { type: 'object', description: 'Source connector configuration' },
             destinationConnectors: { type: 'array', items: { type: 'object' } },
             groupId: NEW_CHANNEL_GROUP,
+          },
+        },
+        Assignment: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            roleId: { type: 'string', format: 'uuid' },
+            roleName: { type: 'string' },
+            groupIds: { type: ['array', 'null'], items: { type: 'string', format: 'uuid' }, description: 'null: every channel' },
+            expiresAt: { type: ['string', 'null'], format: 'date-time' },
+            reason: { type: ['string', 'null'] },
+            live: { type: 'boolean', description: 'Not yet expired' },
+            createdAt: { type: 'string', format: 'date-time' },
           },
         },
         UpdateChannel: {

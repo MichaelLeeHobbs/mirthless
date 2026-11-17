@@ -35,5 +35,46 @@ export const roleIdParamSchema = z.object({
   id: z.string().uuid(),
 });
 
+// ----- Assignments -----
+
+/** The most assignments one user may hold; a person has a handful of jobs. */
+export const MAX_ASSIGNMENTS_PER_USER = 50;
+
+/**
+ * One assignment: a role over every channel (`groupIds` null) or over the
+ * channels in a set of groups, chosen explicitly (plan section 1), until an
+ * optional expiry, with an optional reason recorded with it.
+ */
+export const assignmentInputSchema = z.strictObject({
+  roleId: z.string().uuid(),
+  groupIds: z.array(z.string().uuid()).min(1).max(100)
+    .refine((list) => new Set(list).size === list.length, 'A group is listed twice.')
+    .nullable(),
+  expiresAt: z.string().datetime({ offset: true }).nullable().default(null),
+  reason: z.string().trim().max(500).nullable().default(null).transform((v) => (v === '' ? null : v)),
+});
+
+/** Every assignment a user should hold, replacing what they hold now. */
+export const setAssignmentsSchema = z.strictObject({
+  assignments: z.array(assignmentInputSchema).max(MAX_ASSIGNMENTS_PER_USER),
+});
+
+export type AssignmentInput = z.infer<typeof assignmentInputSchema>;
+export type SetAssignmentsInput = z.infer<typeof setAssignmentsSchema>;
+
+/** An assignment as the API returns it. */
+export interface AssignmentView {
+  readonly id: string;
+  readonly roleId: string;
+  readonly roleName: string;
+  /** null: every channel. */
+  readonly groupIds: readonly string[] | null;
+  readonly expiresAt: string | null;
+  readonly reason: string | null;
+  /** Not yet expired. */
+  readonly live: boolean;
+  readonly createdAt: string;
+}
+
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
