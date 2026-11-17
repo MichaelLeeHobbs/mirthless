@@ -6,6 +6,8 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, isNull, and, count, asc, sql } from 'drizzle-orm';
+import { ALL_CHANNELS } from '@galvanigraph/core-models';
+import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 import {
   DEFAULT_GROUP_NAME,
   DEFAULT_STORED_SCRIPT_LANGUAGE,
@@ -665,10 +667,11 @@ async function addCloneToLibraries(tx: ChannelTx, sourceId: string, cloneId: str
 // ----- Service -----
 
 export class ChannelService {
-  /** List channels with pagination. */
-  static async list(query: ChannelListQuery): Promise<Result<ChannelListResult>> {
+  /** List the channels inside `scope` with pagination (D-310: every channel unless scoped). */
+  static async list(query: ChannelListQuery, scope: ChannelScope = ALL_CHANNELS): Promise<Result<ChannelListResult>> {
     return tryCatch(async () => {
       const offset = (query.page - 1) * query.pageSize;
+      const visible = and(isNull(channels.deletedAt), channelIdIn(channels.id, scope));
 
       const [rows, [countRow]] = await Promise.all([
         db
@@ -685,14 +688,14 @@ export class ChannelService {
             updatedAt: channels.updatedAt,
           })
           .from(channels)
-          .where(isNull(channels.deletedAt))
+          .where(visible)
           .orderBy(channels.name)
           .limit(query.pageSize)
           .offset(offset),
         db
           .select({ total: count() })
           .from(channels)
-          .where(isNull(channels.deletedAt)),
+          .where(visible),
       ]);
 
       const total = countRow?.total ?? 0;

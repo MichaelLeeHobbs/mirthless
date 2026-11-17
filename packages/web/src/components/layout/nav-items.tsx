@@ -44,7 +44,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     heading: 'Overview',
     items: [
       { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
-      { label: 'Traffic', path: '/messages', icon: <MessageIcon /> },
+      { label: 'Traffic', path: '/messages', icon: <MessageIcon />, anyOf: [PERMISSION.MESSAGES_READ] },
       { label: 'System Info', path: '/system', icon: <InfoOutlinedIcon />, anyOf: [PERMISSION.SYSTEM_INFO] },
     ],
   },

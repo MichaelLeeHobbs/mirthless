@@ -8,6 +8,7 @@ import type { CreateChannelGroupInput, UpdateChannelGroupInput, SetChannelGroups
 import { ChannelGroupService } from '../services/channel-group.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
+import { channelScopeOf, inScope } from '../lib/channel-scope.js';
 
 export class ChannelGroupController {
   static async listGroups(_req: Request, res: Response): Promise<void> {
@@ -22,8 +23,9 @@ export class ChannelGroupController {
     res.json({ success: true, data: result.value });
   }
 
-  static async listMemberships(_req: Request, res: Response): Promise<void> {
+  static async listMemberships(req: Request, res: Response): Promise<void> {
     const result = await ChannelGroupService.listMemberships();
+    const scope = await channelScopeOf(req, 'channels:read');
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list group memberships');
@@ -31,7 +33,7 @@ export class ChannelGroupController {
       return;
     }
 
-    res.json({ success: true, data: result.value });
+    res.json({ success: true, data: result.value.filter((m) => inScope(scope, m.channelId)) });
   }
 
   static async getById(req: Request, res: Response): Promise<void> {
@@ -45,7 +47,13 @@ export class ChannelGroupController {
       return;
     }
 
-    res.json({ success: true, data: result.value });
+    // Channels outside the caller's scope show only as a count (D-310).
+    const scope = await channelScopeOf(req, 'channels:read');
+    const visible = result.value.channels.filter((c) => inScope(scope, c.id));
+    res.json({
+      success: true,
+      data: { ...result.value, channels: visible, memberCount: visible.length, outsideScope: result.value.channels.length - visible.length },
+    });
   }
 
   static async create(req: Request, res: Response): Promise<void> {

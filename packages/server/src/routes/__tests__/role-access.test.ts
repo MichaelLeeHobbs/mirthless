@@ -31,6 +31,7 @@ import { CollectionController } from '../../controllers/collection.controller.js
 import { CodeTemplateController } from '../../controllers/code-template.controller.js';
 import { AuditController } from '../../controllers/audit.controller.js';
 import { RoleController } from '../../controllers/role.controller.js';
+import { CrossChannelSearchController } from '../../controllers/cross-channel-search.controller.js';
 
 interface Endpoint extends ApiRoute {
   /** The permission docs/user/access-control.md says guards it. */
@@ -68,6 +69,8 @@ const ENDPOINTS: readonly Endpoint[] = [
   { method: 'GET', path: '/api/v1/events/export', permission: 'events:read', handler: EventExportController.exportEvents },
   { method: 'GET', path: '/api/v1/audit', permission: 'audit:read', handler: AuditController.list },
   { method: 'GET', path: '/api/v1/audit/:id', permission: 'audit:read', handler: AuditController.getById },
+  // Message ids, status and times from every channel in scope (D-310).
+  { method: 'GET', path: '/api/v1/messages', permission: 'messages:read', handler: CrossChannelSearchController.search },
   // A role change changes what every holder may do (D-310).
   { method: 'POST', path: '/api/v1/roles', permission: 'roles:write', handler: RoleController.create },
   { method: 'PUT', path: '/api/v1/roles/:id', permission: 'roles:write', handler: RoleController.update },

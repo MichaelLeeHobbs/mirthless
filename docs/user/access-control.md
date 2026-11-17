@@ -75,11 +75,11 @@ Every user had one of the first four roles before roles were stored in the datab
 
 | Permission | admin | deployer | developer | viewer | channel-viewer | channel-developer | channel-deployer | Also allows |
 |---|---|---|---|---|---|---|---|---|
-| `channels:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Reads every channel's scripts and connector settings (secret fields masked) and exports channels. Lists message IDs, status and times across all channels (cross-channel search). Validates scripts, previews Mirth imports, generates sample messages, and joins the dashboard and channel live feeds. |
+| `channels:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Reads every channel's scripts and connector settings (secret fields masked) and exports channels. Validates scripts, previews Mirth imports, generates sample messages, and joins the dashboard and channel live feeds. |
 | `channels:write` | Yes | Yes | Yes | No | No | Yes | Yes | Runs code on the server: the channel's scripts, filters and transformers run at its next deploy, and the server deploys every enabled channel when it starts. Also runs a script against a sample message on demand from the editor (a test run: in a worker with memory and time limits, one at a time, audited, with no sends, writes or routing). Also imports channels (including Mirth XML), clones them, enables and disables them, and manages channel groups. Reads every channel's connector settings and revisions with secret fields unmasked (passwords, keys, tokens); those reads write no audit event. |
 | `channels:deploy` | Yes | Yes | No | No | No | No | Yes | Deploying runs the channel's code. Also sends test messages into a channel, runs Test Connection (the server connects to the host in the form), resets statistics and edits channel dependencies. |
 | `channels:delete` | Yes | No | No | No | No | No | No | Deleting hides the channel; its messages are kept. |
-| `messages:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Bulk message export and attachment download, on every channel. |
+| `messages:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Bulk message export and attachment download, on every channel. Lists message IDs, status and times across channels (cross-channel search, the Traffic page). |
 | `messages:reprocess` | Yes | Yes | No | No | No | No | Yes | Reprocessing and resending send stored message content to destinations again. |
 | `messages:delete` | Yes | No | No | No | No | No | No | Bulk delete as well as single messages. |
 | `code_templates:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | |
@@ -134,7 +134,7 @@ Scripts run in a `node:vm` sandbox. [SECURITY.md](../../SECURITY.md) says this s
 | Message search and message detail | `messages:read` | All four | Yes, fail-closed in the audit log: `MESSAGE_SEARCHED`, `MESSAGE_CONTENT_VIEWED` |
 | Message export (`GET /api/v1/channels/:id/messages/export`) | `messages:read` | All four | Yes, fail-closed in the audit log, with every exported id: `MESSAGES_EXPORTED` |
 | Attachment download | `messages:read` | All four | Yes, fail-closed in the audit log: `ATTACHMENT_DOWNLOADED`. Listing a message's attachments is not. |
-| Cross-channel message search (Traffic, `GET /api/v1/messages`) | `channels:read` | All four | Yes, fail-closed in the audit log: `MESSAGES_SEARCHED_ALL_CHANNELS` |
+| Cross-channel message search (Traffic, `GET /api/v1/messages`) | `messages:read` | All four | Yes, fail-closed in the audit log: `MESSAGES_SEARCHED_ALL_CHANNELS` |
 | Reprocess and resend to destinations | `messages:reprocess` | admin, deployer | Yes: `MESSAGE_REPROCESSED`, `MESSAGES_REPROCESSED`, `MESSAGE_RESEND_QUEUED` |
 | Collection records | `collections:read` | All four | Best effort: `COLLECTION_RECORDS_READ` |
 | Global map and configuration map values | `global_map:read`, `config_map:read` | admin, deployer, developer | Best effort: `GLOBAL_MAP_READ`, `CONFIG_MAP_READ` |

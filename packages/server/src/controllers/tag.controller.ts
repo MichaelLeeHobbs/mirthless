@@ -8,6 +8,7 @@ import type { CreateTagInput, UpdateTagInput, AssignTagInput } from '@galvanigra
 import { TagService } from '../services/tag.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
+import { channelScopeOf, inScope } from '../lib/channel-scope.js';
 
 export class TagController {
   static async listTags(_req: Request, res: Response): Promise<void> {
@@ -22,8 +23,9 @@ export class TagController {
     res.json({ success: true, data: result.value });
   }
 
-  static async listAssignments(_req: Request, res: Response): Promise<void> {
+  static async listAssignments(req: Request, res: Response): Promise<void> {
     const result = await TagService.listAssignments();
+    const scope = await channelScopeOf(req, 'channels:read');
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list tag assignments');
@@ -31,7 +33,7 @@ export class TagController {
       return;
     }
 
-    res.json({ success: true, data: result.value });
+    res.json({ success: true, data: result.value.filter((a) => inScope(scope, a.channelId)) });
   }
 
   static async create(req: Request, res: Response): Promise<void> {

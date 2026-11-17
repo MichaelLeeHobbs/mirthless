@@ -9,6 +9,7 @@ import { recordReadOrRefuse } from '../lib/audited-read.js';
 import { DeploymentService } from '../services/deployment.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
+import { channelScopeOf, inScope } from '../lib/channel-scope.js';
 
 export class DeploymentController {
   static async deploy(req: Request, res: Response): Promise<void> {
@@ -146,7 +147,7 @@ export class DeploymentController {
     res.json({ success: true, data: result.value });
   }
 
-  static async getAllStatuses(_req: Request, res: Response): Promise<void> {
+  static async getAllStatuses(req: Request, res: Response): Promise<void> {
     const result = await DeploymentService.getAllStatuses();
 
     if (!result.ok) {
@@ -154,7 +155,8 @@ export class DeploymentController {
       return;
     }
 
-    res.json({ success: true, data: result.value });
+    const scope = await channelScopeOf(req, 'channels:read');
+    res.json({ success: true, data: result.value.filter((s) => inScope(scope, s.channelId)) });
   }
 
   static async sendMessage(req: Request, res: Response): Promise<void> {

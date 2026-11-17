@@ -4,10 +4,11 @@
 // Exports channels as structured JSON for backup/migration.
 
 import { tryCatch, type Result } from 'stderr-lib';
-import { toScriptLanguage, type ChannelExport, type ChannelExportEntry } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, toScriptLanguage, type ChannelExport, type ChannelExportEntry } from '@galvanigraph/core-models';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { redactConnectorProperties } from '../lib/secret-redaction.js';
 import { ChannelService, type ChannelDetail } from './channel.service.js';
+import type { ChannelScope } from '../lib/channel-scope.js';
 
 // ----- Helpers -----
 
@@ -129,10 +130,10 @@ export class ChannelExportService {
   }
 
   /** Export all channels. */
-  static async exportAll(context?: AuditContext): Promise<Result<ChannelExport>> {
+  static async exportAll(context?: AuditContext, scope: ChannelScope = ALL_CHANNELS): Promise<Result<ChannelExport>> {
     return tryCatch(async () => {
-      // Load all channels (up to 10000 — reasonable upper bound)
-      const listResult = await ChannelService.list({ page: 1, pageSize: 10000 });
+      // Load every channel inside the caller's scope (up to 10000 — reasonable upper bound)
+      const listResult = await ChannelService.list({ page: 1, pageSize: 10000 }, scope);
       if (!listResult.ok) throw listResult.error;
 
       const entries: ChannelExportEntry[] = [];

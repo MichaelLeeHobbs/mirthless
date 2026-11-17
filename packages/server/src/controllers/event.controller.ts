@@ -9,11 +9,12 @@ import { EventService } from '../services/event.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
 import { recordReadBestEffort } from '../lib/audited-read.js';
+import { channelScopeOf } from '../lib/channel-scope.js';
 
 export class EventController {
   static async list(req: Request, res: Response): Promise<void> {
     const query = req.query as unknown as EventListQuery;
-    const result = await EventService.list(query);
+    const result = await EventService.list(query, await channelScopeOf(req, 'events:read'));
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to list events');
@@ -31,7 +32,7 @@ export class EventController {
 
   static async getById(req: Request, res: Response): Promise<void> {
     const { id } = req.params as unknown as EventIdParam;
-    const result = await EventService.getById(id);
+    const result = await EventService.getById(id, await channelScopeOf(req, 'events:read'));
 
     if (!result.ok) {
       const status = mapErrorToStatus(result.error);

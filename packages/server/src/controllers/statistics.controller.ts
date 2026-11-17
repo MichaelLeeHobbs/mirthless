@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import { StatisticsService } from '../services/statistics.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
+import { channelScopeOf, inScope } from '../lib/channel-scope.js';
 
 export class StatisticsController {
   /** GET /channels/:id/statistics — Per-channel statistics with connector breakdown. */
@@ -24,8 +25,9 @@ export class StatisticsController {
   }
 
   /** GET /channels/statistics — All channels summary for dashboard. */
-  static async getAllStats(_req: Request, res: Response): Promise<void> {
+  static async getAllStats(req: Request, res: Response): Promise<void> {
     const result = await StatisticsService.getAllChannelStatistics();
+    const scope = await channelScopeOf(req, 'channels:read');
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to get all channel statistics');
@@ -33,7 +35,7 @@ export class StatisticsController {
       return;
     }
 
-    res.json({ success: true, data: result.value });
+    res.json({ success: true, data: result.value.filter((s) => inScope(scope, s.channelId)) });
   }
 
   /** POST /channels/:id/statistics/reset — Reset current-window counters. */
