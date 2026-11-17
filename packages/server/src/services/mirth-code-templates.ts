@@ -132,6 +132,15 @@ export async function importCodeTemplateLibraries(
     if (libraries.length === 0) return counts;
     const existingLibraries = await CodeTemplateService.listLibraries();
     if (!existingLibraries.ok) throw existingLibraries.error;
+    // Every library this import would write, checked before the first write, so
+    // a refused one does not leave the others half applied (D-310).
+    const touched = libraries.flatMap((lib) => {
+      const found = existingLibraries.value.find((l) => l.name === lib.name);
+      if (!found) return [lib.channelIds];
+      return overwrite ? [found.channelIds, lib.channelIds] : [found.channelIds];
+    });
+    const allowed = await CodeTemplateService.assertCanWriteLinks(touched, context);
+    if (!allowed.ok) throw allowed.error;
     for (const lib of libraries) {
       const found = existingLibraries.value.find((l) => l.name === lib.name);
       if (found && overwrite) await rescopeLibrary(found.id, found.revision, lib.channelIds, context);

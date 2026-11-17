@@ -82,9 +82,9 @@ Every user had one of the first four roles before roles were stored in the datab
 | `messages:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Bulk message export and attachment download, on every channel. Lists message IDs, status and times across channels (cross-channel search, the Traffic page). |
 | `messages:reprocess` | Yes | Yes | No | No | No | No | Yes | Reprocessing and resending send stored message content to destinations again. |
 | `messages:delete` | Yes | No | No | No | No | No | No | Bulk delete as well as single messages. |
-| `code_templates:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | |
-| `code_templates:write` | Yes | Yes | Yes | No | No | Yes | Yes | Runs code on the server: a template reaches every channel that includes it at that channel's next deploy. |
-| `code_templates:delete` | Yes | Yes | No | No | No | No | Yes | |
+| `code_templates:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Someone holding it on some groups sees only the library links to their channels, and a count of the rest. |
+| `code_templates:write` | Yes | Yes | Yes | No | No | Yes | Yes | Runs code on the server: a template reaches every channel that includes it at that channel's next deploy. A library, and each template in it, can be changed only by someone holding this permission on every channel the library links to, before and after the change; a library linked to every channel, or to none, needs it on all channels. Without links, a new library links to the channels in its writer's groups at that moment (channels added to those groups later are not added), or to every channel for someone who holds it on all of them. A link to a channel that does not exist counts as outside every group. Importing Mirth code templates checks every library in the file before writing any. |
+| `code_templates:delete` | Yes | Yes | No | No | No | No | Yes | Deleting a library or a template needs it on every channel the library links to; a library linked to every channel, or to none, needs it on all channels. |
 | `alerts:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | |
 | `alerts:write` | Yes | Yes | No | No | No | No | No | Alert emails carry the error text of the failure that triggered them to any address the alert names. |
 | `alerts:delete` | Yes | Yes | No | No | No | No | No | |

@@ -4,16 +4,18 @@
 
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { describeIntegration, loadServerModules, unwrap, type ServerModules } from './_setup.js';
+import { adminActor, describeIntegration, loadServerModules, unwrap, type ServerModules, type TestActor } from './_setup.js';
 
 describeIntegration('Mirth code template import (real Postgres)', () => {
   let mods: ServerModules;
+  let actor: TestActor;
   let templatesMod: typeof import('../../src/services/mirth-code-templates.js');
   let serviceMod: typeof import('../../src/services/code-template.service.js');
   const libraryName = `itest-lib-${randomUUID()}`;
 
   beforeAll(async () => {
     mods = await loadServerModules();
+    actor = await adminActor(mods.pool);
     templatesMod = await import('../../src/services/mirth-code-templates.js');
     serviceMod = await import('../../src/services/code-template.service.js');
   });
@@ -21,7 +23,7 @@ describeIntegration('Mirth code template import (real Postgres)', () => {
   afterAll(async () => {
     const libs = await serviceMod?.CodeTemplateService.listLibraries();
     const lib = libs?.ok ? libs.value.find((l) => l.name === libraryName) : undefined;
-    if (lib) await serviceMod.CodeTemplateService.deleteLibrary(lib.id);
+    if (lib) await serviceMod.CodeTemplateService.deleteLibrary(lib.id, actor);
     await mods?.pool.end();
   });
 
@@ -41,15 +43,15 @@ describeIntegration('Mirth code template import (real Postgres)', () => {
   }
 
   it('creates the library and template, skips them on a second import, and replaces them on OVERWRITE', async () => {
-    expect(unwrap(await templatesMod.importCodeTemplateLibraries(library('function stampSite() { return 1; }'), false)))
+    expect(unwrap(await templatesMod.importCodeTemplateLibraries(library('function stampSite() { return 1; }'), false, actor)))
       .toEqual({ created: 1, updated: 0, skipped: 0 });
     expect(await stored()).toMatchObject({ code: 'function stampSite() { return 1; }', contexts: ['SOURCE_FILTER_TRANSFORMER'] });
 
-    expect(unwrap(await templatesMod.importCodeTemplateLibraries(library('function stampSite() { return 2; }'), false)))
+    expect(unwrap(await templatesMod.importCodeTemplateLibraries(library('function stampSite() { return 2; }'), false, actor)))
       .toEqual({ created: 0, updated: 0, skipped: 1 });
     expect((await stored())?.code).toBe('function stampSite() { return 1; }');
 
-    expect(unwrap(await templatesMod.importCodeTemplateLibraries(library('function stampSite() { return 3; }'), true)))
+    expect(unwrap(await templatesMod.importCodeTemplateLibraries(library('function stampSite() { return 3; }'), true, actor)))
       .toEqual({ created: 0, updated: 1, skipped: 0 });
     expect((await stored())?.code).toBe('function stampSite() { return 3; }');
   });

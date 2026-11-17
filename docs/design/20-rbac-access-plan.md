@@ -373,7 +373,7 @@ The debate's first and third slices (one `authenticate` mount and parser order; 
      - These must land before slice 10 lets anyone write a scoped assignment, because until then a scoped holding is treated as held on every channel:
        - `POST /channels/import` with `collisionMode: OVERWRITE` checks the overwritten channels' scope (slice 9 already owns import);
        - the grant service refuses a scoped assignment of a role holding a permission limited to all-channel assignments (section 1's class rule), so `settings:write` and the other trust and identity permissions, guarded on routes that name no channel, are never held on a group.
-       - the reads a scoped holder of a system-read permission can make show only in-scope channels, or a count of the rest: an alert's `channelIds` (`alerts:read`, section 2), a library's channel links (`code_templates:read`, slice 9), the pruner's per-channel statistics, and tag assignment counts (`settings:read`);
+       - the reads a scoped holder of a system-read permission can make show only in-scope channels, or a count of the rest: an alert's `channelIds` (`alerts:read`, section 2), a library's channel links (`code_templates:read`, done in 9c), the pruner's per-channel statistics, and tag assignment counts (`settings:read`);
        - the all-channel statistics filter its QUEUED subquery in SQL rather than after the fact (8b filters the rows, which is correct but still aggregates every channel).
        - Test Connection takes the channel it is for, and a scoped writer may reference only certificates already used in their scope.
        - the scoped-assignment writer locks the group row FOR UPDATE, so it queues against a membership change on that group (which holds KEY SHARE through its existence check) and neither commits on a state the other did not see;
@@ -394,7 +394,15 @@ The debate's first and third slices (one `authenticate` mount and parser order; 
        - An import resolves its group once, before its first channel, so a group the importer cannot use refuses the request (403, 400 or 404). The overwrite check runs in the overwrite's transaction after locking the channel row, which a membership change also locks.
        - `PUT /channels/:id` does not take `groupId`; groups change only through `PUT /channels/:id/groups`.
        - The web UI sends no `groupId` yet, so someone holding `channels:write` in several groups but not on every channel gets 400 from New channel, Clone and both imports. Nobody can be given such an assignment until slice 10, which adds the group picker to those four screens.
-     - **9c**: library channel links.
+     - **9c**:
+       - A library write needs `code_templates:write` on every channel it links to, before and after the change; a library delete, and a template delete, need `code_templates:delete` on them. A template create or update is judged on its library's links. "Every channel" (null) and an empty list need the permission on all channels.
+       - Library and template writes run in a transaction that locks the library row (FOR UPDATE for a library write, FOR SHARE for a template write), so the library's links cannot change between the check and the write. Group memberships are not locked: a membership change can still commit between the check and the write, as it can for any channel route. A template update compiles before the transaction and carries its revision in the UPDATE.
+       - Mirth import checks every library it would write (its new links, and an existing library's current links) before writing the first, so a refused library does not leave the others half applied.
+       - A scoped writer's new library without links links to the channels in their write groups; an all-channel writer's still links to every channel.
+       - A scoped `code_templates:read` holder sees only the links in scope, and `outsideScopeCount` for the rest.
+       - Mirth import writes templates through the same service, so its libraries follow the same rule: importing templates now needs `code_templates:write` on their links, not only the import route's `channels:write`. Restore writes its rows itself under `system:restore`.
+       - Clone still adds the clone to the libraries that list the original, without this check: the clone runs the templates its original already ran.
+       - The "Review links" list for admins and showing the count on the page belong to the scope UI (slice 10).
    - Membership writes move into `grant.service` with `recordInTx` (done in 9a and 9b; restore is the exception above). The socket channel-to-groups lookup is a query (8c), so there is no map to invalidate.
    - Owns: `routes/channel-group.routes.ts`, `controllers/channel-group.controller.ts`, `services/channel-group.service.ts`, the groups route in `routes/channel.routes.ts`, the create and clone parts of `services/channel.service.ts`, the import services, `services/code-template.service.ts`.
 10. **Scope UI**, L.
