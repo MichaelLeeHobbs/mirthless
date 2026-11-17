@@ -9,7 +9,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 
 const recordReadBestEffort = vi.fn();
-vi.mock('../../lib/audited-read.js', () => ({ recordReadBestEffort, recordReadOrRefuse: vi.fn() }));
+// A person's counted read is best effort (a key's is covered by audited-read.test.ts).
+const recordCountedRead = vi.fn((req: unknown, _res: unknown, read: unknown) => { recordReadBestEffort(req, read); return Promise.resolve(true); });
+vi.mock('../../lib/audited-read.js', () => ({ recordReadBestEffort, recordReadOrRefuse: vi.fn(), recordCountedRead }));
 vi.mock('../../lib/logger.js', () => ({ default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 
 const ok = <T>(value: T): { ok: true; value: T; error: null } => ({ ok: true, value, error: null });
@@ -67,7 +69,7 @@ describe('best-effort reads', () => {
   it('records a page of collection records with the record ids', async () => {
     collections.listRecords.mockResolvedValue(ok({ items: [{ id: 'r1' }, { id: 'r2' }], total: 2 }));
     await CollectionController.listRecords(req({ params: { id: 'k1' }, query: { limit: 25 } }), makeRes());
-    expect(recorded()).toMatchObject({ action: 'COLLECTION_RECORDS_READ', attributes: { collectionId: 'k1', total: 2 }, dedupe: { ids: ['r1', 'r2'] } });
+    expect(recorded()).toMatchObject({ action: 'COLLECTION_RECORDS_READ', attributes: { collectionId: 'k1', total: 2 }, dedupe: { ids: ['r1', 'r2'] }, rows: 2 });
   });
 
   it('records a server log read with its query', () => {

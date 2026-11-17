@@ -44,7 +44,7 @@ export interface AuditedRead {
    * that can themselves be PHI (global map keys) or are not ids (log lines).
    */
   readonly dedupe?: { readonly key: string; readonly ids: readonly (string | number)[]; readonly idsOnlyForDedupe?: boolean };
-  /** The message rows the read returns, counted against an API key's daily ceiling. Omit for a read that returns none. */
+  /** The rows the read returns (messages, collection records), counted against an API key's daily ceiling. Omit for a read that returns none. */
   readonly rows?: number;
 }
 
@@ -79,8 +79,8 @@ async function recordKeyRead(req: Request, res: Response, read: Omit<AuditedRead
   if (ticket === null) {
     await recordCeilingRefusal(req, userId, read, rows);
     const message = rows > keyCeiling.limit
-      ? `This read returns ${String(rows)} message rows, more than an API key may read in a day (${String(keyCeiling.limit)}). Ask for fewer.`
-      : `This API key has read its ${String(keyCeiling.limit)} message rows for today (UTC). It can read more tomorrow.`;
+      ? `This read returns ${String(rows)} rows, more than an API key may read in a day (${String(keyCeiling.limit)}). Ask for fewer.`
+      : `This API key has read its ${String(keyCeiling.limit)} rows (messages and collection records) for today (UTC). It can read more tomorrow.`;
     res.status(429).json({ success: false, error: { code: 'RATE_LIMITED', message } });
     return null;
   }
@@ -137,6 +137,21 @@ export function recordReadBestEffort(req: Request, read: AuditedRead): void {
     // Only a written record holds back the repeats; a lost one leaves them to be recorded.
     if (remembered !== undefined) dedupe.remember(remembered, ids, Date.now());
   });
+}
+
+/**
+ * A best-effort read whose rows an API key may not take without limit:
+ * collection records, which can hold PHI from many channels. A person's read
+ * is recorded best effort, as before; a key's is counted against its daily
+ * ceiling and recorded fail-closed, like a message read (D-313). Returns false
+ * when the request has been answered (429 or 503).
+ */
+export async function recordCountedRead(req: Request, res: Response, read: AuditedRead): Promise<boolean> {
+  if (req.apiKeyId === undefined) {
+    recordReadBestEffort(req, read);
+    return true;
+  }
+  return recordReadOrRefuse(req, res, read);
 }
 
 /**
