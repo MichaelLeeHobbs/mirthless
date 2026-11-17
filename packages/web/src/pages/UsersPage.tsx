@@ -24,6 +24,8 @@ import LockOpenIcon from '@mui/icons-material/LockOpen';
 import PeopleIcon from '@mui/icons-material/People';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useChangePassword, useUnlockUser } from '../hooks/use-users.js';
 import { UserDialog, type UserFormData } from '../components/users/UserDialog.js';
+import { useSetAssignments } from '../hooks/use-assignments.js';
+import { toSend } from '../lib/assignments.js';
 import { ConfirmDialog } from '../components/common/ConfirmDialog.js';
 import { formatTimestamp, humanize } from '../lib/format.js';
 import { errorMessage } from '../lib/error-message.js';
@@ -41,7 +43,7 @@ function changedFields(user: UserSummary, data: UserFormData): Record<string, un
   if (data.email !== user.email) input['email'] = data.email;
   if (data.firstName !== (user.firstName ?? '')) input['firstName'] = data.firstName || null;
   if (data.lastName !== (user.lastName ?? '')) input['lastName'] = data.lastName || null;
-  if (data.role !== user.role) input['role'] = data.role;
+  // An existing user's access changes through their assignments, never the single role.
   return input;
 }
 
@@ -52,6 +54,7 @@ export function UsersPage(): ReactNode {
   const deleteUser = useDeleteUser();
   const changePassword = useChangePassword();
   const unlockUser = useUnlockUser();
+  const setAssignments = useSetAssignments();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserSummary | null>(null);
@@ -101,6 +104,14 @@ export function UsersPage(): ReactNode {
     } catch (err) {
       const reason = errorMessage(err, 'The password could not be changed.');
       setDialogError(hasUpdates ? `The details were saved, but the password was not changed: ${reason}` : reason);
+      return;
+    }
+    try {
+      // The server judges the whole list; a refusal names what the editor lacks.
+      if (data.assignments !== null) await setAssignments.mutateAsync({ id: user.id, assignments: toSend(data.assignments) });
+    } catch (err) {
+      const reason = errorMessage(err, 'The access could not be changed.');
+      setDialogError(hasUpdates || data.password.length > 0 ? `The other changes were saved, but the access was not: ${reason}` : reason);
       return;
     }
     handleClose();

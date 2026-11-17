@@ -1,6 +1,8 @@
 // ===========================================
 // User Create/Edit Dialog
 // ===========================================
+// A new user gets one role on every channel; an existing user's access is the
+// list of assignments (a role on every channel or on chosen groups, D-310).
 
 import { useState, useEffect, type ReactNode, type ChangeEvent } from 'react';
 import Button from '@mui/material/Button';
@@ -12,7 +14,11 @@ import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import Grid from '@mui/material/Grid';
 import type { UserSummary } from '../../api/client.js';
+import { useAssignments } from '../../hooks/use-assignments.js';
+import { sameAssignments, toDraft, type AssignmentDraft } from '../../lib/assignments.js';
+import { LoadingBlock } from '../common/states/LoadingState.js';
 import { RoleAccessSection } from './RoleAccessSection.js';
+import { AssignmentsEditor } from './AssignmentsEditor.js';
 
 interface UserDialogProps {
   readonly open: boolean;
@@ -29,7 +35,10 @@ export interface UserFormData {
   readonly password: string;
   readonly firstName: string;
   readonly lastName: string;
+  /** The one role a new user gets; an existing user keeps theirs here. */
   readonly role: string;
+  /** An existing user's access after the edit, or null when it did not change. */
+  readonly assignments: readonly AssignmentDraft[] | null;
 }
 
 export function UserDialog({ open, user, onClose, onSave, error, saving }: UserDialogProps): ReactNode {
@@ -40,35 +49,62 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [role, setRole] = useState('viewer');
+  const held = useAssignments(open && user ? user.id : null);
+  // The list being edited, and the list it started from: what Save compares against.
+  const [access, setAccess] = useState<readonly AssignmentDraft[] | null>(null);
+  const [baseline, setBaseline] = useState<readonly AssignmentDraft[] | null>(null);
+  const [openedAt, setOpenedAt] = useState(0);
 
-  useEffect(() => {
-    if (open) {
-      if (user) {
-        setUsername(user.username);
-        setEmail(user.email);
-        setPassword('');
-        setFirstName(user.firstName ?? '');
-        setLastName(user.lastName ?? '');
-        setRole(user.role);
-      } else {
-        setUsername('');
-        setEmail('');
-        setPassword('');
-        setFirstName('');
-        setLastName('');
-        setRole('viewer');
-      }
+  // Reset when the dialog opens or moves to another user, never when the page
+  // replaces the user object after a partial save: that would throw away edits
+  // the server has not taken yet.
+  const formFor = open ? (user?.id ?? 'new') : null;
+  const [resetFor, setResetFor] = useState<string | null>(null);
+  const [savedUser, setSavedUser] = useState<UserSummary | null>(user);
+  if (user !== savedUser) {
+    // The page replaced the user after saving the details: a retry should not
+    // send the refused password again, but the other edits stay.
+    setSavedUser(user);
+    setPassword('');
+  }
+  if (formFor !== resetFor) {
+    setResetFor(formFor);
+    if (formFor !== null) {
+      setUsername(user?.username ?? '');
+      setEmail(user?.email ?? '');
+      setPassword('');
+      setFirstName(user?.firstName ?? '');
+      setLastName(user?.lastName ?? '');
+      setRole(user?.role ?? 'viewer');
+      setAccess(null);
+      setBaseline(null);
+      setOpenedAt(Date.now());
     }
-  }, [open, user]);
+  }
+
+  // Seed the list from data fetched after the dialog opened, never from a cached
+  // copy that a save or another admin has since changed.
+  const fresh = held.data !== undefined && held.dataUpdatedAt >= openedAt ? held.data : undefined;
+  useEffect(() => {
+    if (fresh && access === null) {
+      const drafts = fresh.map(toDraft);
+      setAccess(drafts);
+      setBaseline(drafts);
+    }
+  }, [fresh, access]);
+
+  const accessChanged = isEdit && access !== null && baseline !== null && !sameAssignments(access, baseline);
+  const accessComplete = access === null || access.every((d) => d.roleId !== '' && (d.expired || d.groupIds === null || d.groupIds.length > 0));
 
   const handleSave = (): void => {
-    onSave({ username, email, password, firstName, lastName, role });
+    onSave({ username, email, password, firstName, lastName, role, assignments: accessChanged ? access : null });
   };
 
-  const isValid = username.length > 0 && email.length > 0 && (isEdit || password.length >= 8);
+  // The other fields can be saved while the access list is loading or failed to load.
+  const isValid = username.length > 0 && email.length > 0 && (isEdit || password.length >= 8) && accessComplete;
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>{isEdit ? 'Edit User' : 'Create User'}</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -104,7 +140,7 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
               required={!isEdit}
             />
           </Grid>
-          <Grid size={6}>
+          <Grid size={{ xs: 12, sm: 6 }}>
             <TextField
               label="First Name"
               value={firstName}
@@ -112,7 +148,7 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
               fullWidth
             />
           </Grid>
-          <Grid size={6}>
+          <Grid size={{ xs: 12, sm: 6 }}>
             <TextField
               label="Last Name"
               value={lastName}
@@ -121,7 +157,10 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
             />
           </Grid>
           <Grid size={12}>
-            <RoleAccessSection value={role} current={user ? (user.roles ?? [user.role]) : []} onChange={setRole} />
+            {!isEdit && <RoleAccessSection value={role} current={[]} onChange={setRole} />}
+            {isEdit && held.isError && <Alert severity="error">This user's access could not load, so it cannot be changed here. The other fields can still be saved.</Alert>}
+            {isEdit && !held.isError && access === null && <LoadingBlock label="Loading access" py={2} />}
+            {isEdit && access !== null && <AssignmentsEditor value={access} onChange={setAccess} />}
           </Grid>
         </Grid>
       </DialogContent>

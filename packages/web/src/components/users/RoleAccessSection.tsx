@@ -74,7 +74,7 @@ export function RoleAccessSection({ value, current, onChange }: RoleAccessSectio
         value={value}
         onChange={(e: ChangeEvent<HTMLInputElement>) => { onChange(e.target.value); }}
         fullWidth
-        helperText={options ? 'Every role covers all channels until group scope arrives.' : 'The built-in roles are listed: the full role list needs the Read roles permission, or could not load.'}
+        helperText={options ? 'A new user gets this role on every channel. To give access on chosen groups, edit the user after creating them.' : 'The built-in roles are listed: the full role list needs the Read roles permission, or could not load.'}
       >
         {options
           ? options.map((r) => (

@@ -32,6 +32,14 @@ vi.mock('../../hooks/use-roles.js', () => ({
   useRoles: () => ({ data: undefined, error: null }),
 }));
 
+// The access list stays loading: these tests are about the details and password,
+// which save without it. The access list is covered by e2e/assignments.spec.ts.
+const setAssignmentsAsync = vi.fn();
+vi.mock('../../hooks/use-assignments.js', () => ({
+  useAssignments: () => ({ data: undefined, isError: false, dataUpdatedAt: 0 }),
+  useSetAssignments: () => ({ mutateAsync: setAssignmentsAsync, isPending: false }),
+}));
+
 vi.mock('../../hooks/use-users.js', () => ({
   useUsers: () => ({ data: [user('u1', 'jmorales', true), user('u2', 'kpatel', false)], isLoading: false, error: null, isFetching: false, refetch: vi.fn() }),
   useCreateUser: () => mutation(),
