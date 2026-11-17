@@ -341,6 +341,11 @@ export const PERMISSIONS = {
 
   /** Read the protected audit log (D-312): PHI reads, grant changes, sign-ins, refusals. Admin only. */
   AUDIT_READ: 'audit:read',
+
+  /** See roles and their permissions (D-310). */
+  ROLES_READ: 'roles:read',
+  /** Create, edit, clone and delete roles, within what the editor holds (D-310). */
+  ROLES_WRITE: 'roles:write',
 } as const;
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 

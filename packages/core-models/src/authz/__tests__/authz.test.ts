@@ -51,7 +51,7 @@ describe('PERMISSION_CATALOG', () => {
 
   it('calls only a change to who holds what as strong as admin', () => {
     const adminEquivalent = Object.entries(PERMISSION_CATALOG).filter(([, i]) => i.adminEquivalent).map(([p]) => p);
-    expect(adminEquivalent).toEqual(['users:write']);
+    expect(adminEquivalent.sort()).toEqual(['roles:write', 'users:write']);
   });
 
   it('marks backups and the audit log as reading every channel', () => {
@@ -72,7 +72,7 @@ describe('PERMISSION_CATALOG', () => {
       'resources:delete', 'resources:write', 'settings:write',
     ]);
     expect(byClass(PERMISSION_CLASS.IDENTITY)).toEqual([
-      'audit:read', 'system:backup', 'system:restore', 'users:delete', 'users:read', 'users:write',
+      'audit:read', 'roles:read', 'roles:write', 'system:backup', 'system:restore', 'users:delete', 'users:read', 'users:write',
     ]);
   });
 });

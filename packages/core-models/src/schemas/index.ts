@@ -15,6 +15,7 @@ export * from './transformer.schema.js';
 export * from './user.schema.js';
 export * from './channel-group.schema.js';
 export * from './tag.schema.js';
+export * from './role.schema.js';
 export * from './channel-dependency.schema.js';
 export * from './resource.schema.js';
 export * from './collection.schema.js';

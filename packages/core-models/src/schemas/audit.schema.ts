@@ -43,6 +43,10 @@ export const AUDIT_ACTION = {
   ALERT_SENT: 'ALERT_SENT',
   /** A user's assignments changed, with the role names before and after; written in the change's transaction. */
   ASSIGNMENTS_CHANGED: 'ASSIGNMENTS_CHANGED',
+  /** A role was created (with the role it was cloned from), changed, or deleted; written in the change's transaction. */
+  ROLE_CREATED: 'ROLE_CREATED',
+  ROLE_UPDATED: 'ROLE_UPDATED',
+  ROLE_DELETED: 'ROLE_DELETED',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];

@@ -209,6 +209,8 @@ export class UserService {
             throw new ServiceError('SELF_ACTION', 'Cannot change your own role');
           }
         }
+        // The target rule: only a user whose access is within the actor's own.
+        await GrantService.assertCanManage(tx, actorId, id);
         if (beingDisabled || input.role !== undefined) {
           await GrantService.assertKeepsAnAdmin(tx, {
             userId: id, disabling: beingDisabled, ...(input.role !== undefined ? { newRoleName: input.role } : {}),
@@ -259,6 +261,7 @@ export class UserService {
 
       await db.transaction(async (tx) => {
         // Cannot remove the last ENABLED admin: a disabled admin does not count.
+        await GrantService.assertCanManage(tx, actorId, id);
         await GrantService.assertKeepsAnAdmin(tx, { userId: id, disabling: true });
         await lockTarget(tx, id);
 
@@ -283,6 +286,9 @@ export class UserService {
     return tryCatch(async () => {
       if (!actorMayManageUsers && id !== actorId) {
         throw new ServiceError('FORBIDDEN', 'Cannot change another user\'s password');
+      }
+      if (id !== actorId) {
+        await GrantService.assertCanManage(db, actorId, id);
       }
 
       const [user] = await db
@@ -379,8 +385,9 @@ export class UserService {
   }
 
   /** Unlock a locked account. Resets failed attempts and lockout. */
-  static async unlockUser(id: string): Promise<Result<void>> {
+  static async unlockUser(id: string, actorId: string): Promise<Result<void>> {
     return tryCatch(async () => {
+      await GrantService.assertCanManage(db, actorId, id);
       const [user] = await db
         .select({ id: users.id })
         .from(users)

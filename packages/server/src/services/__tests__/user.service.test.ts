@@ -111,6 +111,20 @@ function makeUser(overrides?: Partial<Record<string, unknown>>): Record<string, 
   };
 }
 
+/** A user's standing row as the resolver's query returns it. */
+function standingRow(id: string, permissions: readonly string[]): Record<string, unknown> {
+  return {
+    id, username: 'u', email: 'u@test.com', enabled: true, mustChangePassword: false,
+    assignments: permissions.length === 0 ? [] : [{ role: 'r', admin: false, permissions, expiresAt: null }],
+  };
+}
+
+/** The target rule's two reads: the target's standing, then the actor's. */
+function pushTargetRule(targetPermissions: readonly string[], actorPermissions: readonly string[]): void {
+  pushResponse([standingRow(USER_ID, targetPermissions)]);
+  pushResponse([standingRow(ADMIN_ID, actorPermissions)]);
+}
+
 // ----- Setup -----
 
 beforeEach(() => {
@@ -212,6 +226,7 @@ describe('UserService', () => {
 
   describe('updateUser', () => {
     it('updates user fields without touching roles or the admin lock', async () => {
+      pushTargetRule(['channels:read'], ['channels:read', 'users:write']);
       pushResponse([{ id: USER_ID }], { forUpdate: true }); // the target, under lock
       pushResponse([makeUser({ email: 'updated@test.com' })]); // getUser after update
 
@@ -224,13 +239,27 @@ describe('UserService', () => {
     });
 
     it('returns NOT_FOUND for missing user', async () => {
-      pushResponse([], { forUpdate: true });
+      pushResponse([]); // the target rule finds no such user
 
       const result = await UserService.updateUser('nonexistent', { email: 'x@y.com' }, ADMIN_ID);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateUser: the target rule', () => {
+    it('refuses a change to a user who holds more than the actor, and writes nothing', async () => {
+      pushTargetRule(['channels:read', 'channels:deploy'], ['channels:read', 'users:write']);
+
+      const result = await UserService.updateUser(USER_ID, { email: 'x@y.com' }, ADMIN_ID);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'FORBIDDEN');
+      expect(result.error).toHaveProperty('details', { missing: ['channels:deploy'] });
       expect(mockUpdate).not.toHaveBeenCalled();
     });
   });
@@ -247,6 +276,7 @@ describe('UserService', () => {
 
   describe('changePassword', () => {
     it('lets an actor who may manage users change another user\'s password', async () => {
+      pushTargetRule(['channels:read'], ['channels:read', 'users:write']);
       pushResponse([{ id: USER_ID }]);
 
       const result = await UserService.changePassword(USER_ID, 'newpass123', ADMIN_ID, true);
@@ -269,6 +299,17 @@ describe('UserService', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'FORBIDDEN');
+    });
+
+    it('refuses another user\'s password when that user holds more than the actor (the target rule)', async () => {
+      pushTargetRule(['channels:read', 'users:write'], ['users:write']);
+
+      const result = await UserService.changePassword(USER_ID, 'newpass123', ADMIN_ID, true);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'FORBIDDEN');
+      expect(mockUpdate).not.toHaveBeenCalled();
     });
 
     it('returns NOT_FOUND for missing user', async () => {
@@ -344,9 +385,10 @@ describe('UserService', () => {
 
   describe('unlockUser', () => {
     it('resets lockout state', async () => {
+      pushTargetRule([], ['users:write']);
       pushResponse([{ id: USER_ID }]);
 
-      const result = await UserService.unlockUser(USER_ID);
+      const result = await UserService.unlockUser(USER_ID, ADMIN_ID);
 
       expect(result.ok).toBe(true);
       expect(mockUpdate).toHaveBeenCalled();
@@ -355,7 +397,7 @@ describe('UserService', () => {
     it('returns NOT_FOUND for missing user', async () => {
       pushResponse([]);
 
-      const result = await UserService.unlockUser('nonexistent');
+      const result = await UserService.unlockUser('nonexistent', ADMIN_ID);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
