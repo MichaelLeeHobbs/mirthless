@@ -12,6 +12,10 @@ const rowsReadSince = vi.fn(async (userId: string) => {
   return userId === 'key-near' ? 4998 : 0;
 });
 vi.mock('../../services/audit.service.js', () => ({ AuditService: { recordOrRefuse, rowsReadSince } }));
+// The 80% warning (#301) is an events row: whether one was written today, and the write.
+const createEvent = vi.fn().mockResolvedValue({ ok: true, value: {} });
+const hasEventSince = vi.fn().mockResolvedValue({ ok: true, value: false });
+vi.mock('../../services/event.service.js', () => ({ EventService: { create: createEvent, hasEventSince } }));
 
 vi.mock('../logger.js', () => ({ default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 
@@ -32,6 +36,7 @@ const UNAVAILABLE = { name: 'ServiceError', code: 'AUDIT_UNAVAILABLE', message: 
 
 beforeEach(() => {
   emitAuditEvent.mockReset();
+  createEvent.mockClear();
   recordOrRefuse.mockReset();
   recordOrRefuse.mockResolvedValue({ ok: true, value: undefined });
 });
@@ -233,5 +238,65 @@ describe('reads made with an API key (D-313)', () => {
   it('counts nothing for a read that returns no message rows', async () => {
     expect(await recordExportOrRefuse(keyReq('key-c'), makeRes(), { action: 'EVENTS_EXPORTED', attributes: { reason: 'r' } })).not.toBeNull();
     expect(recordOrRefuse).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: { reason: 'r' } }));
+  });
+});
+
+describe('the 80% warning for an API key (#301)', () => {
+  // The warning is written beside the response; let its write settle.
+  const settle = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve); });
+  const keyReq = (userId: string): Request => ({ user: { id: userId }, apiKeyId: `k-${userId}`, ip: '10.0.0.9' }) as unknown as Request;
+  const read = (rows: number): Parameters<typeof recordReadOrRefuse>[2] => ({ action: 'MESSAGE_SEARCHED', channelId: 'c1', attributes: {}, rows });
+
+  it('writes one WARN event when a key\'s count first reaches 80% of the ceiling, naming the key, its count and the ceiling', async () => {
+    expect(await recordReadOrRefuse(keyReq('warn-a'), makeRes(), read(3999))).toBe(true);
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(await recordReadOrRefuse(keyReq('warn-a'), makeRes(), read(1))).toBe(true);
+    expect(createEvent).toHaveBeenCalledOnce();
+    expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({
+      level: 'WARN', name: 'API_KEY_ROW_CEILING_WARNING', userId: 'warn-a',
+      attributes: { apiKeyId: 'k-warn-a', used: 4000, limit: 5000 },
+    }));
+    await recordReadOrRefuse(keyReq('warn-a'), makeRes(), read(10));
+    expect(createEvent).toHaveBeenCalledOnce();
+  });
+
+  it('tries the warning again on the next read when the write failed', async () => {
+    createEvent.mockResolvedValueOnce({ ok: false, error: new Error('db down') });
+    await recordReadOrRefuse(keyReq('warn-b'), makeRes(), read(4500));
+    await settle();
+    await recordReadOrRefuse(keyReq('warn-b'), makeRes(), read(1));
+    expect(createEvent).toHaveBeenCalledTimes(2);
+    expect(createEvent).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: expect.objectContaining({ used: 4501 }) }));
+  });
+
+  it('does not warn again on a day the events table says it already warned', async () => {
+    hasEventSince.mockResolvedValueOnce({ ok: true, value: true });
+    await recordReadOrRefuse(keyReq('warn-d'), makeRes(), read(4500));
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(hasEventSince).toHaveBeenLastCalledWith('API_KEY_ROW_CEILING_WARNING', 'warn-d', expect.any(Date));
+  });
+
+  it('lets the read through and warns when the events table cannot be read', async () => {
+    hasEventSince.mockResolvedValueOnce({ ok: false, error: new Error('db down') });
+    expect(await recordReadOrRefuse(keyReq('warn-e'), makeRes(), read(4500))).toBe(true);
+    expect(createEvent).toHaveBeenCalledOnce();
+  });
+
+  it('still warns a key whose every read after a failed write is refused at the ceiling', async () => {
+    createEvent.mockResolvedValueOnce({ ok: false, error: new Error('db down') });
+    expect(await recordReadOrRefuse(keyReq('warn-f'), makeRes(), read(5000))).toBe(true);
+    await settle();
+    const res = makeRes();
+    expect(await recordReadOrRefuse(keyReq('warn-f'), res, read(1))).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(createEvent).toHaveBeenCalledTimes(2);
+    expect(createEvent).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: { apiKeyId: 'k-warn-f', used: 5000, limit: 5000 } }));
+  });
+
+  it('never warns for a read that was not recorded, nor for a person', async () => {
+    recordOrRefuse.mockResolvedValueOnce({ ok: false, error: UNAVAILABLE });
+    await recordReadOrRefuse(keyReq('warn-c'), makeRes(), read(4500));
+    await recordReadOrRefuse(req('person-w'), makeRes(), read(4500));
+    expect(createEvent).not.toHaveBeenCalled();
   });
 });

@@ -35,6 +35,8 @@ export const EVENT_NAME = {
   MESSAGE_REPROCESSED: 'MESSAGE_REPROCESSED',
   MESSAGES_REPROCESSED: 'MESSAGES_REPROCESSED',
   MESSAGE_RESEND_QUEUED: 'MESSAGE_RESEND_QUEUED',
+  // An API key has read 80% of its daily row ceiling (#301); once per key per UTC day.
+  API_KEY_ROW_CEILING_WARNING: 'API_KEY_ROW_CEILING_WARNING',
   // Backup downloads and script test runs are in audit_log (AUDIT_ACTION).
 } as const;
 

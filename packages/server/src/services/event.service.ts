@@ -7,7 +7,7 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, count, desc, and, inArray, gte, lte, sql } from 'drizzle-orm';
 import { AUDIT_ACTION, type CreateEventInput, type EventListQuery } from '@galvanigraph/core-models';
-import { AuditService } from './audit.service.js';
+import { AUDIT_WRITE_TIMEOUT_MS, AuditService } from './audit.service.js';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { events } from '../db/schema/index.js';
@@ -162,6 +162,21 @@ export class EventService {
         createdAt: row.createdAt,
       };
     });
+  }
+
+  /**
+   * Whether an event named `name` was recorded for `userId` at or after
+   * `since`. A key's first read of the day waits on this, so it gets the
+   * audit write's short limit.
+   */
+  static async hasEventSince(name: string, userId: string, since: Date): Promise<Result<boolean>> {
+    return tryCatch(db.transaction(async (tx) => {
+      await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${String(AUDIT_WRITE_TIMEOUT_MS)}`));
+      const [row] = await tx.select({ id: events.id }).from(events)
+        .where(and(gte(events.createdAt, since), eq(events.name, name), eq(events.userId, userId)))
+        .limit(1);
+      return row !== undefined;
+    }));
   }
 
   /** Create a new audit event. Internal use only. */

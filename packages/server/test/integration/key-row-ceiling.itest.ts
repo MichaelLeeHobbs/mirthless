@@ -84,6 +84,17 @@ describeIntegration('API key daily row ceiling (real Postgres)', () => {
     expect(reached.rowCount).toBe(1);
   });
 
+  it('writes one WARN event when a key first reaches 80% of its ceiling, naming the key, its count and the ceiling (#301)', async () => {
+    // The first test's 3-row read took the key to its ceiling of 3, past 80%. The event is written beside the response.
+    const warnings = async (): Promise<unknown[]> => (await mods.pool.query(
+      `SELECT level, attributes FROM events WHERE name = 'API_KEY_ROW_CEILING_WARNING' AND user_id = $1`, [keyUser],
+    )).rows;
+    await expect.poll(warnings).toEqual([{ level: 'WARN', attributes: { apiKeyId: key.key.id, used: 3, limit: CEILING } }]);
+    // The refused reads that followed did not warn again.
+    expect((await apiCall(base, key.token, 'GET', `/channels/${CHANNEL}/messages`)).status).toBe(429);
+    expect(await warnings()).toHaveLength(1);
+  });
+
   it('records the rows of every counted read, so the day survives a restart', async () => {
     const { AuditService } = await import('../../src/services/audit.service.js');
     const since = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
