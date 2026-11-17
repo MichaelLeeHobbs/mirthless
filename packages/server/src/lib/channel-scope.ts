@@ -9,9 +9,12 @@
 
 import { eq, inArray, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import type { Request } from 'express';
-import { ALL_CHANNELS, type ChannelGroupId, type Permission } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, can, type ChannelGroupId, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
 import { channelGroupMembers } from '../db/schema/index.js';
 import { db } from './db.js';
+
+/** A channel id: a path or body value that is not one names no channel, so no group. */
+export const CHANNEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Every channel, or the ids of the channels a list may show. */
 export type ChannelScope = typeof ALL_CHANNELS | readonly string[];
@@ -22,6 +25,19 @@ export async function channelGroupIds(channelId: string): Promise<readonly Chann
     .from(channelGroupMembers)
     .where(eq(channelGroupMembers.channelId, channelId));
   return rows.map((r) => r.groupId as ChannelGroupId);
+}
+
+/**
+ * Whether `grants` hold `permission` on the channel `channelId`. Looks the
+ * channel's groups up only when the permission is scoped; a value that is not
+ * a channel id is in no group.
+ */
+export async function holdsOnChannel(grants: FoldedGrants, permission: Permission, channelId: string): Promise<boolean> {
+  const scope = grants.get(permission);
+  if (scope === undefined) return false;
+  if (scope === ALL_CHANNELS) return true;
+  if (!CHANNEL_ID.test(channelId)) return false;
+  return can(grants, permission, { groupIds: await channelGroupIds(channelId) });
 }
 
 /**

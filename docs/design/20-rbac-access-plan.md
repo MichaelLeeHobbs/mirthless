@@ -364,12 +364,18 @@ The debate's first and third slices (one `authenticate` mount and parser order; 
        - A scoped caller sees no system-wide event (one with no channel).
        - The full lists are filtered on their channel ids before they are returned; with no paging, that gives the same rows. They are the statistics, the deployment statuses, tag assignments and group memberships.
        - A dependency on a channel outside the scope keeps its id, so an edit does not drop it, and reads "Name unavailable".
-     - **8c**: sockets, Test Connection and test-run.
+     - **8c**:
+       - Sockets join audience rooms on connect: `scope:all` for an all-channel reader, `group:<id>` for each group of a scoped one. A channel's state changes go to `scope:all` and the channel's groups, never to every socket.
+       - Joining a channel's live feed checks the channel's groups. The 60-second re-check moves a socket between audience rooms, and out of a channel room, when access changes.
+       - The channel-to-groups lookup is a query per emit and per join, not the in-memory map the plan describes. Channel state changes are rare, and a query keeps one source of truth.
+       - A test run naming a channel needs `channels:write` on it, and answers as a missing channel outside the scope. Its resource and collection reads are wired only for a caller holding `resources:read` or `collections:read`; otherwise the script gets an error naming the permission (amends D-286).
+       - Test Connection is unchanged: it reads no channel data. Its certificate rule moves to the list below.
      - These must land before slice 10 lets anyone write a scoped assignment, because until then a scoped holding is treated as held on every channel:
        - `POST /channels/import` with `collisionMode: OVERWRITE` checks the overwritten channels' scope (slice 9 already owns import);
        - the grant service refuses a scoped assignment of a role holding a permission limited to all-channel assignments (section 1's class rule), so `settings:write` and the other trust and identity permissions, guarded on routes that name no channel, are never held on a group.
        - the reads a scoped holder of a system-read permission can make show only in-scope channels, or a count of the rest: an alert's `channelIds` (`alerts:read`, section 2), a library's channel links (`code_templates:read`, slice 9), the pruner's per-channel statistics, and tag assignment counts (`settings:read`);
        - the all-channel statistics filter its QUEUED subquery in SQL rather than after the fact (8b filters the rows, which is correct but still aggregates every channel).
+       - Test Connection takes the channel it is for, and a scoped writer may reference only certificates already used in their scope.
 9. **Membership as a grant on `PUT /channels/:id/groups`, group create/delete rules, create/clone/import/restore into a group, library links**, L.
    - Follows: HTTP route, Tests. Library links keep the existing `channel_ids` column, so no schema change.
    - Membership writes move into `grant.service` with `recordInTx`: `ChannelGroupService.setChannelGroups` and the Default join in `channel.service.ts` both write `channel_group_members` themselves today and record after commit. The move also invalidates the socket channel-to-groups map.

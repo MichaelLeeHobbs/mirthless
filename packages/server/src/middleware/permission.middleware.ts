@@ -7,7 +7,7 @@
 
 import type { NextFunction, Request, Response, Router } from 'express';
 import { ALL_CHANNELS, AUDIT_ACTION, can, holdsPermission, type ChannelGroupId, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
-import { channelGroupIds } from '../lib/channel-scope.js';
+import { CHANNEL_ID, channelGroupIds } from '../lib/channel-scope.js';
 import { errorInfo } from '@galvanigraph/core-util';
 import { ServiceError, type ServiceErrorCode } from '../lib/service-error.js';
 import { errorResponse, mapErrorToStatus } from '../lib/controller-helpers.js';
@@ -213,8 +213,6 @@ export function requireAllPermissions(...permissions: readonly Permission[]): Gu
   );
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Scope every route of `router` that has `param` to the channel it names
  * (D-310, plan section 4). Before the route's guard runs, the channel's groups
@@ -232,7 +230,7 @@ export function scopeToChannel(router: Router, param = 'id'): void {
       next();
       return;
     }
-    if (typeof value !== 'string' || !UUID.test(value)) {
+    if (typeof value !== 'string' || !CHANNEL_ID.test(value)) {
       // Not a channel id: in no group, so out of scope unless held on every channel.
       req.channelScope = [];
       next();

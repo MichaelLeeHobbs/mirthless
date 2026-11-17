@@ -75,9 +75,20 @@ async function audit(input: ScriptTestRunInput, context: AuditContext | undefine
   if (!recorded.ok) throw recorded.error;
 }
 
+/** Which reads a test run may make: each bridge only with its read permission (D-310, amends D-286). */
+export interface TestRunReads {
+  readonly resources: boolean;
+  readonly collections: boolean;
+}
+
+/** A reader the caller may not use: the script gets an error naming the permission it lacks. */
+function refused(label: string, permission: string): () => Promise<never> {
+  return () => Promise.reject(new Error(`This test run cannot read ${label}: it needs the ${permission} permission.`));
+}
+
 export class ScriptTestRunService {
   /** Run a script against a sample message. A failing script is an outcome, not an error. */
-  static async run(input: ScriptTestRunInput, context?: AuditContext): Promise<Result<ScriptTestResult>> {
+  static async run(input: ScriptTestRunInput, context: AuditContext | undefined, reads: TestRunReads): Promise<Result<ScriptTestResult>> {
     return tryCatch(async () => {
       if (running) throw new ServiceError('CONFLICT', 'Another test run is in progress on this server. Try again in a few seconds.');
       running = true;
@@ -96,7 +107,10 @@ export class ScriptTestRunService {
               sample: input.sample,
               destinations: scope.destinations,
             },
-            { getResource: createResourceBridge(), collectionFind: collections.find },
+            {
+              getResource: reads.resources ? createResourceBridge() : refused('resources', 'resources:read'),
+              collectionFind: reads.collections ? collections.find : refused('collections', 'collections:read'),
+            },
             { timeoutMs: scope.timeoutMs, maxOldGenerationSizeMb: TEST_RUN_HEAP_MB, maxMemoryGrowthMb: TEST_RUN_MEMORY_GROWTH_MB },
           );
         } catch (err: unknown) {

@@ -12,7 +12,10 @@ import type { NextFunction, Request, Response, Router } from 'express';
 import { ALL_CHANNELS, foldGrants, type AssignmentGrant, type ChannelGroupId } from '@galvanigraph/core-models';
 
 const { groupsOf } = vi.hoisted(() => ({ groupsOf: vi.fn<(id: string) => Promise<readonly string[]>>() }));
-vi.mock('../../lib/channel-scope.js', () => ({ channelGroupIds: groupsOf }));
+vi.mock('../../lib/channel-scope.js', () => ({
+  channelGroupIds: groupsOf,
+  CHANNEL_ID: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+}));
 vi.mock('../../lib/event-emitter.js', () => ({ emitAuditEvent: vi.fn() }));
 vi.mock('../../lib/logger.js', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 

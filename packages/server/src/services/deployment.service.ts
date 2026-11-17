@@ -8,7 +8,7 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { CHANNEL_STATE, SOCKET_EVENT, type ChannelState } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
-import { emitToAll } from '../lib/socket.js';
+import { emitToChannelAudience } from '../lib/socket.js';
 import { ChannelService, type ChannelDetail, type ChannelDeployEntry } from './channel.service.js';
 import { ChannelDependencyService, orderByDependencies } from './channel-dependency.service.js';
 import { validateConnectorProperties } from './connector-validation.service.js';
@@ -52,7 +52,7 @@ export interface ChannelStatus {
 
 /** Emit a channel state change event to all connected sockets. */
 function emitStateChange(channelId: string, state: ChannelState): void {
-  emitToAll(SOCKET_EVENT.CHANNEL_STATE, { channelId, state });
+  emitToChannelAudience(channelId, SOCKET_EVENT.CHANNEL_STATE, { channelId, state });
 }
 
 /**

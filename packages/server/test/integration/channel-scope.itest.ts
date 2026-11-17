@@ -210,6 +210,18 @@ describeIntegration('channel scope on channel routes (real Postgres)', () => {
     }
   });
 
+  it('answers a test run for a channel outside the scope as not found (8c)', async () => {
+    const run = (token: string, channelId: string): Promise<Response> => fetch(`${base}/api/v1/scripts/test-run`, {
+      method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'script', sample: '', script: 'return 1;', channelId }),
+    });
+    const outside = await run(scopedToken, RAD_CHANNEL);
+    expect(outside.status).toBe(404);
+    expect(((await outside.json()) as { error: { message: string } }).error.message).toBe('Channel not found');
+    const inside = await run(scopedToken, LAB_CHANNEL);
+    expect(inside.status).toBe(200);
+  });
+
   it('lets an all-channel user reach both channels', async () => {
     for (const id of [LAB_CHANNEL, RAD_CHANNEL]) {
       const answer = await call(allToken, 'GET', `/channels/${id}/statistics`);

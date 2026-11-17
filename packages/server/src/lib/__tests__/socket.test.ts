@@ -35,6 +35,22 @@ vi.mock('../principal.js', async () => {
   return { loadUserStanding: vi.fn(() => Promise.resolve(userRow ? standingFor(userRow) : null)) };
 });
 
+// A channel's groups (lib/channel-scope.ts), by channel id.
+const channelGroups = vi.hoisted(() => new Map<string, string[]>());
+vi.mock('../channel-scope.js', async () => {
+  const { ALL_CHANNELS, can } = await import('@galvanigraph/core-models');
+  const groupsOf = vi.fn((id: string) => Promise.resolve(channelGroups.get(id) ?? []));
+  return {
+    channelGroupIds: groupsOf,
+    holdsOnChannel: async (grants: Map<string, unknown>, permission: string, channelId: string): Promise<boolean> => {
+      const scope = grants.get(permission);
+      if (scope === undefined) return false;
+      if (scope === ALL_CHANNELS) return true;
+      return can(grants as never, permission as never, { groupIds: (await groupsOf(channelId)) as never });
+    },
+  };
+});
+
 // Session liveness is its own module (shared with the REST middleware).
 const session = vi.hoisted(() => ({ live: true }));
 const { mockIsSessionLive } = vi.hoisted(() => ({ mockIsSessionLive: vi.fn() }));
@@ -43,8 +59,8 @@ vi.mock('../session-live.js', () => ({ isSessionLive: mockIsSessionLive }));
 // ----- Import after mocks -----
 
 import {
-  authMiddleware, revalidateSocket, emitToRoom, emitToRoomCoalesced, emitToAll, shutdownSocketIO,
-  LIVE_EVENT_COALESCE_MS, _resetIO,
+  authMiddleware, revalidateSocket, emitToRoom, emitToRoomCoalesced, emitToChannelAudience, shutdownSocketIO,
+  LIVE_EVENT_COALESCE_MS, _resetIO, audienceRooms, ALL_CHANNELS_ROOM,
 } from '../socket.js';
 import { builtInRolePermissions } from '../../db/seeds/roles.js';
 import type { Server as SocketIOServer } from 'socket.io';
@@ -230,13 +246,14 @@ describe('Socket.IO Auth & Room Management', () => {
 
     function connectedSocket(rooms: string[]): {
       id: string; data: Record<string, unknown>; rooms: Set<string>;
-      leave: Mock<(room: string) => unknown>; disconnect: Mock<(close?: boolean) => unknown>;
+      leave: Mock<(room: string) => unknown>; join: Mock<(room: string) => unknown>; disconnect: Mock<(close?: boolean) => unknown>;
     } {
       return {
         id: 'sock-1',
         data: { user: { userId: 'user-1', sessionId: 's1', type: 'access', permissions: builtInRolePermissions('admin') } },
         rooms: new Set(['sock-1', ...rooms]),
         leave: vi.fn<(room: string) => unknown>(),
+        join: vi.fn<(room: string) => unknown>(),
         disconnect: vi.fn<(close?: boolean) => unknown>(),
       };
     }
@@ -258,6 +275,21 @@ describe('Socket.IO Auth & Room Management', () => {
 
       expect(await revalidateSocket(socket)).toBe(false);
       expect(socket.disconnect).toHaveBeenCalled();
+    });
+
+    it('moves a socket whose access narrowed to groups: out of the all-channel room and a channel outside them', async () => {
+      const LAB = '3f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0c';
+      const RAD = '4f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0d';
+      channelGroups.set(LAB, ['g-lab']).set(RAD, ['g-rad']);
+      userRow = { id: 'user-1', enabled: true, role: 'viewer', groups: ['g-lab'] };
+      const socket = connectedSocket([ALL_CHANNELS_ROOM, `channel:${LAB}`, `channel:${RAD}`]);
+
+      expect(await revalidateSocket(socket)).toBe(true);
+
+      expect(socket.leave).toHaveBeenCalledWith(ALL_CHANNELS_ROOM);
+      expect(socket.join).toHaveBeenCalledWith('group:g-lab');
+      expect(socket.leave).toHaveBeenCalledWith(`channel:${RAD}`);
+      expect(socket.leave).not.toHaveBeenCalledWith(`channel:${LAB}`);
     });
 
     it('leaves rooms the user lost permission for after a role change', async () => {
@@ -454,22 +486,45 @@ describe('Socket.IO Auth & Room Management', () => {
     });
   });
 
-  // ----- emitToAll -----
+  // ----- emitToChannelAudience -----
 
-  describe('emitToAll', () => {
-    it('no-ops when io is null', () => {
-      expect(() => emitToAll('test:event', { foo: 'bar' })).not.toThrow();
+  describe('emitToChannelAudience', () => {
+    it('sends a channel\'s event to the all-channel room and the rooms of its groups only', async () => {
+      const CHANNEL = '5f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0e';
+      channelGroups.set(CHANNEL, ['g-lab', 'g-icu']);
+      const emit = vi.fn();
+      const to = vi.fn(() => ({ emit }));
+      _resetIO({ to } as unknown as SocketIOServer);
+
+      emitToChannelAudience(CHANNEL, 'channel:state', { channelId: CHANNEL, state: 'STARTED' });
+      await vi.waitFor(() => { expect(emit).toHaveBeenCalled(); });
+
+      expect(to).toHaveBeenCalledWith(['scope:all', 'group:g-lab', 'group:g-icu']);
+      expect(emit).toHaveBeenCalledWith('channel:state', { channelId: CHANNEL, state: 'STARTED' });
     });
 
-    it('broadcasts to all connected sockets when io is available', () => {
-      const mockEmit = vi.fn();
-      const mockIO = { emit: mockEmit } as unknown as SocketIOServer;
+    it('keeps a channel\'s events in order however its lookups finish', async () => {
+      const CHANNEL = '6f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0f';
+      const seen: string[] = [];
+      _resetIO({ to: () => ({ emit: (_e: string, d: { state: string }) => { seen.push(d.state); } }) } as unknown as SocketIOServer);
 
-      _resetIO(mockIO);
+      emitToChannelAudience(CHANNEL, 'channel:state', { state: 'STARTED' });
+      emitToChannelAudience(CHANNEL, 'channel:state', { state: 'PAUSED' });
+      await vi.waitFor(() => { expect(seen).toHaveLength(2); });
 
-      emitToAll('system:alert', { message: 'shutdown in 5m' });
+      expect(seen).toEqual(['STARTED', 'PAUSED']);
+    });
 
-      expect(mockEmit).toHaveBeenCalledWith('system:alert', { message: 'shutdown in 5m' });
+    it('sends nothing when the channel\'s groups cannot be read', async () => {
+      const { channelGroupIds } = await import('../channel-scope.js');
+      vi.mocked(channelGroupIds).mockRejectedValueOnce(new Error('connection lost'));
+      const to = vi.fn();
+      _resetIO({ to } as unknown as SocketIOServer);
+
+      emitToChannelAudience('7f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b00', 'channel:state', {});
+      await new Promise((r) => { setTimeout(r, 0); });
+
+      expect(to).not.toHaveBeenCalled();
     });
   });
 
@@ -477,5 +532,14 @@ describe('Socket.IO Auth & Room Management', () => {
 
   afterEach(() => {
     _resetIO(null);
+  });
+
+  describe('audienceRooms', () => {
+    it('puts an all-channel reader in the all-channel room, a scoped one in its groups, and others nowhere', async () => {
+      const { standingFor } = await import('../../../test/standing.js');
+      expect(audienceRooms(standingFor({ id: 'u', role: 'viewer' }).grants)).toEqual([ALL_CHANNELS_ROOM]);
+      expect(audienceRooms(standingFor({ id: 'u', role: 'viewer', groups: ['g1', 'g2'] }).grants)).toEqual(['group:g1', 'group:g2']);
+      expect(audienceRooms(standingFor({ id: 'u' }).grants)).toEqual([]);
+    });
   });
 });
