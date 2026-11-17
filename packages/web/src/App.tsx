@@ -38,6 +38,7 @@ const EventsPage = page(() => import('./pages/EventsPage.js'), 'EventsPage');
 const SettingsPage = page(() => import('./pages/SettingsPage.js'), 'SettingsPage');
 const UsersPage = page(() => import('./pages/UsersPage.js'), 'UsersPage');
 const RolesPage = page(() => import('./pages/RolesPage.js'), 'RolesPage');
+const ApiKeysPage = page(() => import('./pages/ApiKeysPage.js'), 'ApiKeysPage');
 const RoleEditorPage = page(() => import('./pages/RoleEditorPage.js'), 'RoleEditorPage');
 const TagsPage = page(() => import('./pages/TagsPage.js'), 'TagsPage');
 const ResourcesPage = page(() => import('./pages/ResourcesPage.js'), 'ResourcesPage');
@@ -120,6 +121,10 @@ const router = createBrowserRouter([
           {
             element: <RequirePermission anyOf={[PERMISSION.ROLES_READ]} />,
             children: [{ path: 'roles', element: lazyRoute(<RolesPage />) }],
+          },
+          {
+            element: <RequirePermission anyOf={[PERMISSION.API_KEYS_READ]} />,
+            children: [{ path: 'api-keys', element: lazyRoute(<ApiKeysPage />) }],
           },
           {
             // The editor changes roles; readers see them in the list.

@@ -23,6 +23,10 @@ import EditIcon from '@mui/icons-material/Edit';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
 import PeopleIcon from '@mui/icons-material/People';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useChangePassword, useUnlockUser } from '../hooks/use-users.js';
+import { useApiKeys } from '../hooks/use-api-keys.js';
+import { liveKeysIssuedBy } from '../lib/api-keys.js';
+import { OffboardKeysDialog } from '../components/users/OffboardKeysDialog.js';
+import type { IssuedKeysOnLeave } from '@galvanigraph/core-models';
 import { UserDialog, type UserFormData } from '../components/users/UserDialog.js';
 import { useSetAssignments } from '../hooks/use-assignments.js';
 import { toSend } from '../lib/assignments.js';
@@ -63,6 +67,9 @@ export function UsersPage(): ReactNode {
   const { has } = usePermissions();
   const canWrite = has(PERMISSION.USERS_WRITE);
   const canDelete = has(PERMISSION.USERS_DELETE);
+  // Reading the keys needs api_keys:read; choosing their fate needs api_keys:manage.
+  const canManageKeys = has(PERMISSION.API_KEYS_MANAGE) && has(PERMISSION.API_KEYS_READ);
+  const { data: keys } = useApiKeys(canManageKeys);
 
   const handleOpenCreate = (): void => {
     setEditingUser(null);
@@ -151,11 +158,14 @@ export function UsersPage(): ReactNode {
     }
   };
 
-  const handleConfirmDisable = (): void => {
+  const handleConfirmDisable = (issuedKeys?: IssuedKeysOnLeave): void => {
     if (!disableTarget) return;
-    deleteUser.mutate(disableTarget.id);
+    deleteUser.mutate(issuedKeys === undefined ? { id: disableTarget.id } : { id: disableTarget.id, issuedKeys });
     setDisableTarget(null);
   };
+  // The API keys the user being disabled issued: a key manager chooses what happens to them (D-313).
+  const targetKeys = disableTarget && keys ? liveKeysIssuedBy(keys, disableTarget.id) : [];
+  const offboarding = canManageKeys && targetKeys.length > 0;
 
   const handleUnlock = (user: UserSummary): void => {
     unlockUser.mutate(user.id);
@@ -270,14 +280,22 @@ export function UsersPage(): ReactNode {
         saving={createUser.isPending || updateUser.isPending || changePassword.isPending}
       />
 
+      <OffboardKeysDialog
+        // A fresh dialog for each user, so the choice starts at "disable" every time.
+        key={disableTarget?.id ?? 'closed'}
+        target={offboarding && disableTarget ? { username: disableTarget.username, keys: targetKeys } : null}
+        isPending={deleteUser.isPending}
+        onConfirm={handleConfirmDisable}
+        onCancel={() => { setDisableTarget(null); }}
+      />
       <ConfirmDialog
-        open={disableTarget !== null}
+        open={disableTarget !== null && !offboarding}
         title="Disable User"
         message={`Disable ${disableTarget?.username ?? ''}? They will no longer be able to sign in.`}
         confirmLabel="Disable"
         severity="warning"
         isPending={deleteUser.isPending}
-        onConfirm={handleConfirmDisable}
+        onConfirm={() => { handleConfirmDisable(); }}
         onCancel={() => { setDisableTarget(null); }}
       />
     </Box>

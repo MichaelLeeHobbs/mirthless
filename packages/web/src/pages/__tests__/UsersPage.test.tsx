@@ -40,6 +40,12 @@ vi.mock('../../hooks/use-assignments.js', () => ({
   useSetAssignments: () => ({ mutateAsync: setAssignmentsAsync, isPending: false }),
 }));
 
+// The keys a user issued, for the offboarding step: jmorales issued one.
+let issuedKeys: readonly Record<string, unknown>[] = [];
+vi.mock('../../hooks/use-api-keys.js', () => ({
+  useApiKeys: (enabled: boolean) => ({ data: enabled ? issuedKeys : undefined }),
+}));
+
 vi.mock('../../hooks/use-users.js', () => ({
   useUsers: () => ({ data: [user('u1', 'jmorales', true), user('u2', 'kpatel', false)], isLoading: false, error: null, isFetching: false, refetch: vi.fn() }),
   useCreateUser: () => mutation(),
@@ -63,6 +69,7 @@ function renderPage(permissions: readonly string[] = ALL): void {
 const switchFor = (name: string): HTMLInputElement => screen.getByRole('switch', { name }) as HTMLInputElement;
 
 beforeEach(() => {
+  issuedKeys = [];
   updateMutate.mockReset();
   deleteMutate.mockReset();
   // The server answers an update with the saved user.
@@ -157,6 +164,32 @@ describe('UsersPage enabled switch', () => {
     fireEvent.click(switchFor('Disable jmorales'));
     expect(deleteMutate).not.toHaveBeenCalled();
     expect(screen.getByText(/Disable jmorales\?/)).toBeTruthy();
+  });
+
+  it('disables a user with no choice about keys when they issued none, or the admin cannot manage keys', () => {
+    renderPage();
+    fireEvent.click(switchFor('Disable jmorales'));
+    fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
+    expect(deleteMutate).toHaveBeenCalledWith({ id: 'u1' });
+  });
+
+  it('asks a key manager nothing about keys when the user issued none', () => {
+    issuedKeys = [{ id: 'k1', name: 'Other feed', status: 'active', issuedBy: { id: 'u9', username: 'someone' } }];
+    renderPage([...ALL, 'api_keys:read', 'api_keys:manage']);
+    fireEvent.click(switchFor('Disable jmorales'));
+    expect(screen.queryByText(/They issued/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
+    expect(deleteMutate).toHaveBeenCalledWith({ id: 'u1' });
+  });
+
+  it('asks a key manager what happens to the keys a leaver issued, and sends the choice', () => {
+    issuedKeys = [{ id: 'k1', name: 'Lab feed', status: 'active', issuedBy: { id: 'u1', username: 'jmorales' } }];
+    renderPage([...ALL, 'api_keys:read', 'api_keys:manage']);
+    fireEvent.click(switchFor('Disable jmorales'));
+    expect(screen.getByText(/They issued an API key: Lab feed/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Keep them working for 7 days/));
+    fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
+    expect(deleteMutate).toHaveBeenCalledWith({ id: 'u1', issuedKeys: 'replace_within_7_days' });
   });
 
   it('locks disabling without users:delete and enabling without users:write', () => {

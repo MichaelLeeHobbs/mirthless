@@ -38,7 +38,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': {
+      // With the slash, as nginx has it (docker/nginx/default.conf): a bare '/api'
+      // would also send the app's own /api-keys page to the server.
+      '/api/': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/api-docs': {
         target: 'http://localhost:3000',
         changeOrigin: true,
       },
