@@ -75,7 +75,9 @@ describeIntegration('UserService last enabled admin (real Postgres)', () => {
 
     expect(results.filter((r) => r.ok), `round ${String(i)}: exactly one ${change} succeeds`).toHaveLength(1);
     const refused = results.find((r) => !r.ok);
-    expect(refused && !refused.ok ? (refused.error as { code?: string }).code : undefined).toBe('CONFLICT');
+    // CONFLICT when the loser's check ran after the winner committed; FORBIDDEN
+    // when it saw its own actor already disabled or demoted (the target rule).
+    expect(['CONFLICT', 'FORBIDDEN']).toContain(refused && !refused.ok ? (refused.error as { code?: string }).code : undefined);
     expect(await enabledAdminCount()).toBe(1);
 
     await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [[a, b]]);
@@ -100,7 +102,7 @@ describeIntegration('UserService last enabled admin (real Postgres)', () => {
 
       expect(results.filter((r) => r.ok), `round ${String(i)}: exactly one removal succeeds`).toHaveLength(1);
       const refused = results.find((r) => !r.ok);
-      expect(refused && !refused.ok ? (refused.error as { code?: string }).code : undefined).toBe('CONFLICT');
+      expect(['CONFLICT', 'FORBIDDEN']).toContain(refused && !refused.ok ? (refused.error as { code?: string }).code : undefined);
       expect(await enabledAdminCount()).toBe(1);
       await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [[a, b]]);
       created.length = 0;

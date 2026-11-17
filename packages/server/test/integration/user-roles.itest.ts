@@ -135,9 +135,12 @@ describeIntegration('UserService roles (real Postgres)', () => {
       expect(await heldRoles(actor)).toEqual(['admin']);
     });
 
+    /** An actor who may act on an admin (the target rule) but does not count as the admin who remains. */
+    const temporaryAdmin = (): Promise<string> => createUser('admin', { expiresAt: new Date(Date.now() + 3_600_000) });
+
     it('refuses to demote or disable the last enabled admin, and writes nothing', async () => {
       const only = await createUser('admin');
-      const actor = await createUser('deployer');
+      const actor = await temporaryAdmin();
       for (const input of [{ role: 'viewer' }, { enabled: false }]) {
         const result = await UserService.updateUser(only, input, actor);
         expect(!result.ok && (result.error as { code?: string }).code, JSON.stringify(input)).toBe('CONFLICT');
@@ -149,8 +152,8 @@ describeIntegration('UserService roles (real Postgres)', () => {
 
     it('does not count an expired admin assignment as another admin', async () => {
       const only = await createUser('admin');
-      const lapsed = await createUser('admin', { expiresAt: new Date(Date.now() - 60_000) });
-      const result = await UserService.updateUser(only, { enabled: false }, lapsed);
+      await createUser('admin', { expiresAt: new Date(Date.now() - 60_000) });
+      const result = await UserService.updateUser(only, { enabled: false }, await temporaryAdmin());
       expect(!result.ok && (result.error as { code?: string }).code).toBe('CONFLICT');
     });
 
@@ -180,7 +183,7 @@ describeIntegration('UserService roles (real Postgres)', () => {
   describe('deleteUser', () => {
     it('refuses to delete the last enabled admin', async () => {
       const only = await createUser('admin');
-      const actor = await createUser('viewer');
+      const actor = await createUser('admin', { expiresAt: new Date(Date.now() + 3_600_000) });
       const result = await UserService.deleteUser(only, actor);
       expect(!result.ok && (result.error as { code?: string }).code).toBe('CONFLICT');
     });

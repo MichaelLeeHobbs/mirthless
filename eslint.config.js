@@ -157,6 +157,33 @@ export default tseslint.config(
       ],
     },
   },
+  // services/grant.service.ts is the only writer of roles, role permissions and
+  // assignments (D-310): it applies the within, target and last-admin rules and
+  // records each change. lib/principal.ts reads them for every request; the
+  // schema and seeds define them. Everywhere else goes through GrantService.
+  // The rule sees imports only: it cannot see db.query.roles (read-only, built
+  // from the whole schema in lib/db.ts) or a raw db.execute(sql`...`). Review
+  // catches those.
+  {
+    files: ['packages/server/src/**/*.ts'],
+    ignores: [
+      'packages/server/src/services/grant.service.ts',
+      'packages/server/src/lib/principal.ts',
+      // The Drizzle client takes the whole schema to build its query API.
+      'packages/server/src/lib/db.ts',
+      'packages/server/src/db/**',
+      '**/__tests__/**',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['**/db/schema/index.js', '**/db/schema/roles.js', '**/db/schema/assignments.js'],
+          importNames: ['roles', 'rolePermissions', 'assignments'],
+          message: 'Read and change roles and assignments through GrantService (services/grant.service.ts).',
+        }],
+      }],
+    },
+  },
   // JSX accessibility rules (only for web package)
   {
     files: ['packages/web/**/*.{ts,tsx}'],

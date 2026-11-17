@@ -36,7 +36,10 @@ export interface PermissionInfo {
    * "what scope promises").
    */
   readonly runsCode: boolean;
-  /** As strong as admin: its holder can change who holds which permission, themselves included. */
+  /**
+   * As strong as admin: its holder can change who holds which permission,
+   * themselves included, up to everything they hold (the within rule).
+   */
   readonly adminEquivalent: boolean;
   /** Its holder can read message content or other PHI, or send it somewhere they choose. */
   readonly readsPhi: boolean;
@@ -106,6 +109,8 @@ export const PERMISSION_CATALOG: Readonly<Record<Permission, PermissionInfo>> = 
   'system:info': info('System', 'Read system information', 'See server health, the server log and metrics. Log lines can hold PHI.', EVERY_CHANNEL_READ, PHI),
   'system:backup': info('System', 'Download backups', 'Download the server configuration, which holds scripts, both maps and users.', IDENTITY, { readsPhi: true, readsEveryChannel: true }),
   'system:restore': info('System', 'Restore backups', 'Overwrite channels, templates and scripts from a file; restored code runs at the next deploy.', IDENTITY, CODE),
+  'roles:read': info('Roles', 'Read roles', 'See roles, their permissions and how many users hold each.', IDENTITY),
+  'roles:write': info('Roles', 'Change roles', 'Create, edit, clone and delete roles. A change to a role changes what everyone holding it may do.', IDENTITY, { adminEquivalent: true }),
   'audit:read': info('Audit', 'Read the audit log', 'Read the protected audit log: sign-ins, PHI reads, refusals and grant changes.', IDENTITY, { readsEveryChannel: true }),
 };
 

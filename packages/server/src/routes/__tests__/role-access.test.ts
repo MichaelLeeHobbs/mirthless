@@ -30,6 +30,7 @@ import { LogController } from '../../controllers/log.controller.js';
 import { CollectionController } from '../../controllers/collection.controller.js';
 import { CodeTemplateController } from '../../controllers/code-template.controller.js';
 import { AuditController } from '../../controllers/audit.controller.js';
+import { RoleController } from '../../controllers/role.controller.js';
 
 interface Endpoint extends ApiRoute {
   /** The permission docs/user/access-control.md says guards it. */
@@ -67,6 +68,10 @@ const ENDPOINTS: readonly Endpoint[] = [
   { method: 'GET', path: '/api/v1/events/export', permission: 'events:read', handler: EventExportController.exportEvents },
   { method: 'GET', path: '/api/v1/audit', permission: 'audit:read', handler: AuditController.list },
   { method: 'GET', path: '/api/v1/audit/:id', permission: 'audit:read', handler: AuditController.getById },
+  // A role change changes what every holder may do (D-310).
+  { method: 'POST', path: '/api/v1/roles', permission: 'roles:write', handler: RoleController.create },
+  { method: 'PUT', path: '/api/v1/roles/:id', permission: 'roles:write', handler: RoleController.update },
+  { method: 'DELETE', path: '/api/v1/roles/:id', permission: 'roles:write', handler: RoleController.delete },
   { method: 'GET', path: '/api/v1/system/backup', permission: 'system:backup', handler: ServerBackupController.exportBackup },
   { method: 'POST', path: '/api/v1/system/backup', permission: 'system:restore', handler: ServerBackupController.restoreBackup },
   { method: 'GET', path: '/api/v1/system/logs', permission: 'system:info', handler: LogController.getEntries },

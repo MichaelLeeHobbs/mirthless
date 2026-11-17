@@ -30,6 +30,14 @@ describe('the permission-check lint rule', () => {
     expect(await permissionFindings(code)).toBe(1);
   }, 30_000);
 
+  it('keeps the role and assignment tables to GrantService and the resolver (D-310)', async () => {
+    const code = "import { assignments } from '../db/schema/index.js';\nexport const t = assignments;";
+    const [elsewhere] = await eslint.lintText(code, { filePath: path.join(repoRoot, 'packages/server/src/services/probe.ts') });
+    expect(elsewhere?.messages.map((m) => m.ruleId)).toContain('no-restricted-imports');
+    const [writer] = await eslint.lintText(code, { filePath: path.join(repoRoot, 'packages/server/src/services/grant.service.ts') });
+    expect(writer?.messages.map((m) => m.ruleId)).not.toContain('no-restricted-imports');
+  }, 30_000);
+
   it('allows holdsPermission', async () => {
     const code = "import { holdsPermission } from '@galvanigraph/core-models';\nexport const f = (u: { permissions: string[] }): boolean => holdsPermission(u.permissions, 'channels:read');";
     expect(await permissionFindings(code)).toBe(0);

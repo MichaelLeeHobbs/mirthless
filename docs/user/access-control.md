@@ -11,7 +11,7 @@ This page describes who can sign in to GalvaniGraph, how sessions work, how to c
 | LDAP or Active Directory | No | |
 | Multi-factor authentication | No | |
 | API tokens or service accounts | No | Every API caller, scripts and CI jobs included, signs in as a user with a password and gets the same short-lived access token. API keys are planned ([#144](https://github.com/MichaelLeeHobbs/mirthless/issues/144)). |
-| Custom roles | No | Roles are stored in the database, and seven are built in: admin (locked), deployer, developer, viewer, channel-viewer, channel-developer and channel-deployer. A user holds a role through an assignment, and the server reads the user's assignments on every request, so a change applies to the next one. Creating, editing and cloning roles is planned ([#265](https://github.com/MichaelLeeHobbs/mirthless/issues/265)). |
+| Custom roles | No | Roles are stored in the database, and seven are built in: admin (locked), deployer, developer, viewer, channel-viewer, channel-developer and channel-deployer. A user holds a role through an assignment, and the server reads the user's assignments on every request, so a change applies to the next one. Roles can be created, edited, cloned and deleted through the API (`/api/v1/roles`, `roles:write`); the screen for it is planned ([#265](https://github.com/MichaelLeeHobbs/mirthless/issues/265)). |
 | Per-channel access | No | Every assignment covers every channel. Assignments scoped to channel groups are planned ([#266](https://github.com/MichaelLeeHobbs/mirthless/issues/266)). |
 | Idle session timeout | No | An open browser tab keeps refreshing its session. |
 | Maximum session length | No | Each refresh deletes the session and starts a new one lasting `JWT_REFRESH_EXPIRES_IN` (default 7 days), so a session that keeps refreshing never ends. |
@@ -89,7 +89,7 @@ Every user had one of the first four roles before roles were stored in the datab
 | `alerts:write` | Yes | Yes | No | No | No | No | No | Alert emails carry the error text of the failure that triggered them to any address the alert names. |
 | `alerts:delete` | Yes | Yes | No | No | No | No | No | |
 | `users:read` | Yes | No | No | No | No | No | No | Lists every user's email address, role and lock state. |
-| `users:write` | Yes | No | No | No | No | No | No | Creates users with any role, including admin, and changes any other user's role, so it is as strong as admin. Also disables users, resets passwords and unlocks accounts. |
+| `users:write` | Yes | No | No | No | No | No | No | Creates users and changes other users' roles, so it is as strong as admin, up to the permissions its holder has: a role can be given only by someone holding every permission in it, and a user can be changed, disabled, deleted, unlocked or given a new password only by someone holding every permission that user holds. Nobody can change their own role. |
 | `users:delete` | Yes | No | No | No | No | No | No | Deleting disables the account and ends its sessions; the row is kept. |
 | `settings:read` | Yes | No | No | No | No | No | No | Also reads certificates (not private keys), tags, extensions, and the pruner schedule and statistics. Secret settings are masked. |
 | `settings:write` | Yes | No | No | No | No | No | No | Purges audit events older than a chosen number of days (minimum 1). Runs the message pruner now, for all channels or for one channel with any age of 1 day or more, which deletes messages, and changes its schedule. Also uploads certificates and private keys, manages tags and enables or disables extensions. |
@@ -112,6 +112,8 @@ Every user had one of the first four roles before roles were stored in the datab
 | `system:info` | Yes | Yes | No | No | No | No | No | Also reads the server log and the live log stream, `/metrics` and `/health/full`. Error text in the log, from scripts and connectors, can hold PHI. |
 | `system:backup` | Yes | No | No | No | No | No | No | The backup holds every channel's scripts, the global and configuration map values, resources, and every user's name and email address. Secret settings and secret connector fields are masked. |
 | `system:restore` | Yes | No | No | No | No | No | No | Overwrites channels, code templates and global scripts from a file, so it runs code at the next deploy. Also restores settings and both maps. |
+| `roles:read` | Yes | No | No | No | No | No | No | Lists every role with its permissions and how many users hold it (`GET /api/v1/roles`). |
+| `roles:write` | Yes | No | No | No | No | No | No | Creates, edits, clones and deletes roles. A change to a role changes what every holder may do, so it is as strong as admin, up to the permissions the editor holds: a role can only gain a permission its editor holds. The admin role cannot be changed or deleted, and a role still assigned cannot be deleted. |
 | `audit:read` | Yes | No | No | No | No | No | No | Reads the protected audit log (`GET /api/v1/audit`): sign-ins and failed sign-ins with client addresses, refused requests and purges. |
 
 ## Who can run code on the server

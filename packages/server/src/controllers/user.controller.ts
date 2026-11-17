@@ -145,7 +145,7 @@ export class UserController {
 
   static async unlock(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
-    const result = await UserService.unlockUser(id);
+    const result = await UserService.unlockUser(id, req.user!.id);
 
     if (!result.ok) {
       const status = userErrorStatus(result.error);
