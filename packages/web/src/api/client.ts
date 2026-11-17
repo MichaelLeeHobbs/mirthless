@@ -165,7 +165,10 @@ export interface UserSummary {
   readonly email: string;
   readonly firstName: string | null;
   readonly lastName: string | null;
+  /** The held role names joined. */
   readonly role: string;
+  /** The role names the user holds; absent from servers before roles were rows. */
+  readonly roles?: readonly string[];
   readonly enabled: boolean;
   readonly lastLoginAt: string | null;
   readonly createdAt: string;
@@ -175,6 +178,22 @@ export interface UserDetail extends UserSummary {
   readonly description: string | null;
   readonly failedLoginAttempts: number;
   readonly lockedUntil: string | null;
+  readonly updatedAt: string;
+}
+
+// ----- Role Types -----
+
+/** A role (GET /roles, roles:read). The admin role is locked and holds every permission. */
+export interface RoleSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly builtIn: boolean;
+  readonly admin: boolean;
+  readonly permissions: readonly string[];
+  /** Users holding the role through a live assignment. */
+  readonly holders: number;
+  readonly createdAt: string;
   readonly updatedAt: string;
 }
 

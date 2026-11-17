@@ -11,6 +11,7 @@ import CodeIcon from '@mui/icons-material/Code';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import EventIcon from '@mui/icons-material/Event';
 import PeopleIcon from '@mui/icons-material/People';
+import BadgeIcon from '@mui/icons-material/Badge';
 import JavascriptIcon from '@mui/icons-material/Javascript';
 import SettingsIcon from '@mui/icons-material/Settings';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -72,6 +73,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     heading: 'Administration',
     items: [
       { label: 'Users', path: '/users', icon: <PeopleIcon />, anyOf: [PERMISSION.USERS_READ] },
+      { label: 'Roles', path: '/roles', icon: <BadgeIcon />, anyOf: [PERMISSION.ROLES_READ] },
       { label: 'Events', path: '/events', icon: <EventIcon />, anyOf: [PERMISSION.EVENTS_READ] },
     ],
   },

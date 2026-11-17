@@ -33,7 +33,6 @@ import { ErrorState } from '../components/common/states/ErrorState.js';
 import { TableSkeleton } from '../components/common/states/LoadingState.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
-import type { UserRole } from '@galvanigraph/core-models';
 import type { UserSummary } from '../api/client.js';
 
 /** The fields of an edited user that differ from the stored ones, as an update request. */
@@ -118,7 +117,7 @@ export function UsersPage(): ReactNode {
         password: data.password,
         firstName: data.firstName || null,
         lastName: data.lastName || null,
-        role: data.role as UserRole,
+        role: data.role,
       }, {
         onSuccess: () => { handleClose(); },
         onError: (err) => { setDialogError(err.message); },

@@ -37,6 +37,8 @@ const AlertEditorPage = page(() => import('./pages/AlertEditorPage.js'), 'AlertE
 const EventsPage = page(() => import('./pages/EventsPage.js'), 'EventsPage');
 const SettingsPage = page(() => import('./pages/SettingsPage.js'), 'SettingsPage');
 const UsersPage = page(() => import('./pages/UsersPage.js'), 'UsersPage');
+const RolesPage = page(() => import('./pages/RolesPage.js'), 'RolesPage');
+const RoleEditorPage = page(() => import('./pages/RoleEditorPage.js'), 'RoleEditorPage');
 const TagsPage = page(() => import('./pages/TagsPage.js'), 'TagsPage');
 const ResourcesPage = page(() => import('./pages/ResourcesPage.js'), 'ResourcesPage');
 const CollectionsPage = page(() => import('./pages/CollectionsPage.js'), 'CollectionsPage');
@@ -114,6 +116,18 @@ const router = createBrowserRouter([
           {
             element: <RequirePermission anyOf={[PERMISSION.USERS_READ]} />,
             children: [{ path: 'users', element: lazyRoute(<UsersPage />) }],
+          },
+          {
+            element: <RequirePermission anyOf={[PERMISSION.ROLES_READ]} />,
+            children: [{ path: 'roles', element: lazyRoute(<RolesPage />) }],
+          },
+          {
+            // The editor changes roles; readers see them in the list.
+            element: <RequirePermission anyOf={[PERMISSION.ROLES_WRITE]} />,
+            children: [
+              { path: 'roles/new', element: lazyRoute(<RoleEditorPage />) },
+              { path: 'roles/:id', element: lazyRoute(<RoleEditorPage />) },
+            ],
           },
         ],
       },

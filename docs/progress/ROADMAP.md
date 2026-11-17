@@ -68,7 +68,7 @@ What already ships is listed, with the tests that prove it, in [What GalvaniGrap
 - [ ] **[N10] Per-connector connection monitoring** (Mirth dashboardstatus) + per-channel Prometheus labels — 🔴 ops triage visibility.
 - [ ] **[N11] Iterator transformer step** (+ XSLT / External Script) — 🟡 repeating-segment mapping UX.
 - [ ] **[N12] Code-template per-channel library scoping: editor control** — the engine, API, backup and Mirth import scope libraries to channels (2026-11-12, D-249); the Code Templates page cannot set the scope yet.
-- [ ] **[N13] Custom RBAC roles** (roles as permission sets vs 4 fixed) — 🟡 "dev who can't deploy to prod".
+- [x] **[N13] Custom RBAC roles** (roles as permission sets vs 4 fixed), shipped in #265 (#280, #281 and the Roles screen) — 🟡 "dev who can't deploy to prod".
 - [ ] **Channel-scoped permissions** (not built): the `user_permissions` table has a `scope` column, but the seed writes `'all'` and nothing reads it; `requirePermission` checks only the permission string. Every grant covers every channel, so any user with `messages:read` can read, export and download attachments from every channel's messages. Whether to build it is a separate product decision. 🟡
 - [ ] **[N14] Export completeness** (templates/deps/groups/tags + set export) — 🟡
 - [ ] **[N15] Alert per-connector scope + error-stage granularity** — 🟡

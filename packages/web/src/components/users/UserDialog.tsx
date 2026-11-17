@@ -9,19 +9,10 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
-import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import Grid from '@mui/material/Grid';
-import { USER_ROLE, type UserRole } from '@galvanigraph/core-models';
 import type { UserSummary } from '../../api/client.js';
-
-/** Menu label per role; the role list itself comes from core-models. */
-const ROLE_LABELS: Readonly<Record<UserRole, string>> = {
-  admin: 'Admin',
-  deployer: 'Deployer',
-  developer: 'Developer',
-  viewer: 'Viewer',
-};
+import { RoleAccessSection } from './RoleAccessSection.js';
 
 interface UserDialogProps {
   readonly open: boolean;
@@ -130,17 +121,7 @@ export function UserDialog({ open, user, onClose, onSave, error, saving }: UserD
             />
           </Grid>
           <Grid size={12}>
-            <TextField
-              label="Role"
-              select
-              value={role}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => { setRole(e.target.value); }}
-              fullWidth
-            >
-              {Object.values(USER_ROLE).map((r) => (
-                <MenuItem key={r} value={r}>{ROLE_LABELS[r]}</MenuItem>
-              ))}
-            </TextField>
+            <RoleAccessSection value={role} current={user ? (user.roles ?? [user.role]) : []} onChange={setRole} />
           </Grid>
         </Grid>
       </DialogContent>
