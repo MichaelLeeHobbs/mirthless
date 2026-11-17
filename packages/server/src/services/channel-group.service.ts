@@ -218,6 +218,12 @@ export class ChannelGroupService {
         throw new ServiceError('CONFLICT', 'Channel group has been modified by another user');
       }
 
+      // Default is the group new channels join, and it cannot be a scope (D-310):
+      // renaming another group to it, or it to something else, would move both.
+      if (input.name !== undefined && input.name !== existing.name && (input.name === DEFAULT_GROUP_NAME || existing.name === DEFAULT_GROUP_NAME)) {
+        throw new ServiceError('INVALID_INPUT', `The ${DEFAULT_GROUP_NAME} group keeps its name, and no other group can take it`);
+      }
+
       if (input.name && input.name !== existing.name) {
         const [dup] = await db
           .select({ id: channelGroups.id })
