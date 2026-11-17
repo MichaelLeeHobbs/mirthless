@@ -6,13 +6,14 @@
 
 import bcrypt from 'bcryptjs';
 import { tryCatch, type Result } from 'stderr-lib';
-import { eq, and, ne, or, asc } from 'drizzle-orm';
+import { eq, and, ne, asc } from 'drizzle-orm';
 import type { CreateUserInput, UpdateUserInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
-import { permissionNamesForRole } from '../lib/role-permissions.js';
+import { heldRoleNamesSql, loadUserStanding, roleLabel } from '../lib/principal.js';
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
+import { GrantService } from './grant.service.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -24,34 +25,22 @@ async function revokeSessions(tx: DbExecutor, userId: string): Promise<void> {
   await tx.delete(sessions).where(eq(sessions.userId, userId));
 }
 
-/** A user being changed, read under lock, and how many other enabled admins there are. */
-interface LockedTarget {
-  readonly role: string;
-  readonly otherEnabledAdmins: number;
-}
-
 /**
- * Lock the target user and every enabled admin in one statement, in id order,
- * so concurrent callers queue rather than deadlock, and read the target's role
- * under that lock. Call it in the transaction that writes the change. A second
- * change waits for the first to commit, and Postgres then re-reads the locked
- * rows, so an admin the first change disabled or demoted no longer counts
- * (#218). FOR NO KEY UPDATE still serialises these callers but does not block
- * inserts whose foreign keys point at the rows (sessions, events).
+ * Lock the target user's row for the rest of the transaction, or NOT_FOUND.
+ * FOR NO KEY UPDATE serialises changes to one user without blocking inserts
+ * whose foreign keys point at the row (sessions, events).
  */
-async function lockTargetAndAdmins(tx: DbExecutor, id: string): Promise<LockedTarget> {
-  const rows = await tx
-    .select({ id: users.id, role: users.role, enabled: users.enabled })
-    .from(users)
-    .where(or(eq(users.id, id), and(eq(users.role, 'admin'), eq(users.enabled, true))))
-    .orderBy(asc(users.id))
-    .for('no key update');
-  const target = rows.find((row) => row.id === id);
-  if (!target) {
+async function lockTarget(tx: DbExecutor, id: string): Promise<void> {
+  const [row] = await tx.select({ id: users.id }).from(users).where(eq(users.id, id)).for('no key update');
+  if (!row) {
     throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
   }
-  const otherEnabledAdmins = rows.filter((row) => row.id !== id && row.role === 'admin' && row.enabled).length;
-  return { role: target.role, otherEnabledAdmins };
+}
+
+/** A row with its held role names, as the API shows it: `role` is the names joined, `roles` the list. */
+function withRoles<T extends { readonly roleNames: readonly string[] }>(row: T): Omit<T, 'roleNames'> & { readonly role: string; readonly roles: readonly string[] } {
+  const { roleNames, ...rest } = row;
+  return { ...rest, role: roleLabel(roleNames), roles: roleNames };
 }
 
 /** The columns an update request changes, plus the update time. */
@@ -60,7 +49,6 @@ function userUpdates(input: UpdateUserInput): Record<string, unknown> {
   if (input.email !== undefined) updates['email'] = input.email;
   if (input.firstName !== undefined) updates['firstName'] = input.firstName;
   if (input.lastName !== undefined) updates['lastName'] = input.lastName;
-  if (input.role !== undefined) updates['role'] = input.role;
   if (input.enabled !== undefined) updates['enabled'] = input.enabled;
   return updates;
 }
@@ -73,7 +61,10 @@ export interface UserSummary {
   readonly email: string;
   readonly firstName: string | null;
   readonly lastName: string | null;
+  /** The held role names joined, for screens that show one role. */
   readonly role: string;
+  /** The role names the user holds through live assignments, sorted. */
+  readonly roles: readonly string[];
   readonly enabled: boolean;
   readonly lastLoginAt: Date | null;
   readonly createdAt: Date;
@@ -99,7 +90,7 @@ export class UserService {
           email: users.email,
           firstName: users.firstName,
           lastName: users.lastName,
-          role: users.role,
+          roleNames: heldRoleNamesSql(),
           enabled: users.enabled,
           lastLoginAt: users.lastLoginAt,
           createdAt: users.createdAt,
@@ -107,7 +98,7 @@ export class UserService {
         .from(users)
         .orderBy(asc(users.username));
 
-      return rows as readonly UserSummary[];
+      return rows.map(withRoles);
     });
   }
 
@@ -122,7 +113,7 @@ export class UserService {
           firstName: users.firstName,
           lastName: users.lastName,
           description: users.description,
-          role: users.role,
+          roleNames: heldRoleNamesSql(),
           enabled: users.enabled,
           lastLoginAt: users.lastLoginAt,
           failedLoginAttempts: users.failedLoginAttempts,
@@ -137,7 +128,7 @@ export class UserService {
         throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
       }
 
-      return user as UserDetail;
+      return withRoles(user);
     });
   }
 
@@ -167,9 +158,9 @@ export class UserService {
       const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
       const role = input.role ?? 'viewer';
 
-      // Insert the user. Permissions are not stored per user: each request
-      // derives them from the role (lib/role-permissions.ts).
-      const created = await db.transaction(async (tx) => {
+      // The user and their one all-channel assignment commit together, with
+      // the assignment's audit row (grant.service).
+      const createdId = await db.transaction(async (tx) => {
         const [row] = await tx
           .insert(users)
           .values({
@@ -178,39 +169,27 @@ export class UserService {
             passwordHash,
             ...(input.firstName != null ? { firstName: input.firstName } : {}),
             ...(input.lastName != null ? { lastName: input.lastName } : {}),
-            role,
           })
-          .returning({
-            id: users.id,
-            username: users.username,
-            email: users.email,
-            firstName: users.firstName,
-            lastName: users.lastName,
-            description: users.description,
-            role: users.role,
-            enabled: users.enabled,
-            lastLoginAt: users.lastLoginAt,
-            failedLoginAttempts: users.failedLoginAttempts,
-            lockedUntil: users.lockedUntil,
-            createdAt: users.createdAt,
-            updatedAt: users.updatedAt,
-          });
+          .returning({ id: users.id });
 
         if (!row) {
           throw new ServiceError('INTERNAL', 'Failed to create user');
         }
-
-        return row;
+        await GrantService.setUserRole(tx, row.id, role, { userId: context?.userId ?? null, ipAddress: context?.ipAddress ?? null });
+        return row.id;
       });
+
+      const created = await this.getUser(createdId);
+      if (!created.ok) throw created.error;
 
       emitEvent({
         level: 'INFO', name: 'USER_CREATED', outcome: 'SUCCESS',
         userId: context?.userId ?? null, channelId: null,
         serverId: null, ipAddress: context?.ipAddress ?? null,
-        attributes: { createdUserId: (created as UserDetail).id, username: input.username },
+        attributes: { createdUserId: createdId, username: input.username },
       });
 
-      return created as UserDetail;
+      return created.value;
     });
   }
 
@@ -219,32 +198,35 @@ export class UserService {
     return tryCatch(async () => {
       const beingDisabled = input.enabled === false;
 
-      const oldRole = await db.transaction(async (tx) => {
-        const existing = await lockTargetAndAdmins(tx, id);
-        const roleChanged = input.role !== undefined && input.role !== existing.role;
-
-        if (id === actorId && roleChanged) {
-          throw new ServiceError('SELF_ACTION', 'Cannot change your own role');
+      const actor = { userId: context?.userId ?? actorId, ipAddress: context?.ipAddress ?? null };
+      const oldRoles = await db.transaction(async (tx) => {
+        // The admin role lock comes first, before the user row lock, in every
+        // path that can remove an admin (grant.service), so concurrent changes
+        // queue and each sees the last one's result.
+        if (id === actorId && input.role !== undefined) {
+          const current = await GrantService.heldRoleNames(tx, id);
+          if (!(current.length === 1 && current[0] === input.role)) {
+            throw new ServiceError('SELF_ACTION', 'Cannot change your own role');
+          }
         }
-        // Disabling (or demoting) the last enabled admin would lock everyone out.
-        const removesAdmin = existing.role === 'admin' && (beingDisabled || (roleChanged && input.role !== 'admin'));
-        if (removesAdmin && existing.otherEnabledAdmins === 0) {
-          throw new ServiceError('CONFLICT', 'Cannot disable or demote the last enabled admin user');
+        if (beingDisabled || input.role !== undefined) {
+          await GrantService.assertKeepsAnAdmin(tx, {
+            userId: id, disabling: beingDisabled, ...(input.role !== undefined ? { newRoleName: input.role } : {}),
+          });
         }
-
+        await lockTarget(tx, id);
         await tx.update(users).set(userUpdates(input)).where(eq(users.id, id));
-
-        // Permissions are resolved live from the role at request time (single
-        // source of truth), so a role change needs no permission re-sync here.
+        const before = input.role !== undefined ? await GrantService.setUserRole(tx, id, input.role, actor) : null;
 
         // Disabling a user must revoke their sessions — otherwise a disabled user
         // keeps a valid refresh token and can rotate indefinitely.
         if (beingDisabled) {
           await revokeSessions(tx, id);
         }
-        return existing.role;
+        return before;
       });
-      const roleChanged = input.role !== undefined && input.role !== oldRole;
+      const oldRole = oldRoles === null ? null : roleLabel(oldRoles);
+      const roleChanged = oldRole !== null && oldRole !== input.role;
 
       // Fetch and return updated user
       const result = await this.getUser(id);
@@ -276,11 +258,9 @@ export class UserService {
       }
 
       await db.transaction(async (tx) => {
-        const user = await lockTargetAndAdmins(tx, id);
-        // Cannot remove the last ENABLED admin: a disabled admin row does not count.
-        if (user.role === 'admin' && user.otherEnabledAdmins === 0) {
-          throw new ServiceError('CONFLICT', 'Cannot delete the last enabled admin user');
-        }
+        // Cannot remove the last ENABLED admin: a disabled admin does not count.
+        await GrantService.assertKeepsAnAdmin(tx, { userId: id, disabling: true });
+        await lockTarget(tx, id);
 
         await tx
           .update(users)
@@ -298,11 +278,10 @@ export class UserService {
     });
   }
 
-  /** Change a user's password. Admin can change any, non-admin can only change own. */
-  static async changePassword(id: string, newPassword: string, actorId: string, actorRole: string): Promise<Result<void>> {
+  /** Change a user's password. Only an actor who may manage users may change another's. */
+  static async changePassword(id: string, newPassword: string, actorId: string, actorMayManageUsers: boolean): Promise<Result<void>> {
     return tryCatch(async () => {
-      // Non-admin can only change own password
-      if (actorRole !== 'admin' && id !== actorId) {
+      if (!actorMayManageUsers && id !== actorId) {
         throw new ServiceError('FORBIDDEN', 'Cannot change another user\'s password');
       }
 
@@ -387,19 +366,15 @@ export class UserService {
     });
   }
 
-  /** Effective permission names for a user, resolved from their role. */
-  static async getPermissions(id: string): Promise<Result<{ readonly role: string; readonly permissions: readonly string[] }>> {
+  /** Effective permission names for a user, resolved from their live assignments. */
+  static async getPermissions(id: string): Promise<Result<{ readonly role: string; readonly roles: readonly string[]; readonly permissions: readonly string[] }>> {
     return tryCatch(async () => {
-      const [user] = await db
-        .select({ role: users.role })
-        .from(users)
-        .where(eq(users.id, id));
-
-      if (!user) {
+      const standing = await loadUserStanding(id);
+      if (!standing) {
         throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
       }
 
-      return { role: user.role, permissions: permissionNamesForRole(user.role) };
+      return { role: roleLabel(standing.roles), roles: standing.roles, permissions: standing.permissions };
     });
   }
 

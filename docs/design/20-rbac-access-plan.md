@@ -332,6 +332,14 @@ The debate's first and third slices (one `authenticate` mount and parser order; 
    - Owns: `db/schema/roles.ts`, `db/schema/assignments.ts`; `db/seeds/roles.ts`; `services/grant.service.ts`, `services/user.service.ts` and `controllers/user.controller.ts` (the last-admin check moves into the grant service under the admin role row lock; password reset checks a permission instead of `actorRole`); `services/server-backup.service.ts` (exports assignments, not `u.role`); `db/seeds/run-seed.ts`; `middleware/auth.middleware.ts`; `services/auth.service.ts` (the refresh answer, D-298); the resolver in `lib/socket.ts`; `lib/openapi.ts`, `packages/core-models/src/schemas/user.schema.ts`; `test/integration/role-migration.itest.ts`, proving every user's permissions are the same before and after the migration.
    - Deletes `lib/role-permissions.ts` and `db/schema/user-permissions.ts`.
    - Closes #159 and #140 item 6.
+   - As built, in two pull requests:
+     - **6a**:
+       - Migration 0018 creates `roles`, `role_permissions` and `assignments`, writes the seven built-in roles (`db/seeds/roles.ts`; the channel roles are named `channel-viewer`, `channel-developer` and `channel-deployer`) and gives each user one all-channel assignment of the role in `users.role`. Migration 0019 drops `users.role` and `user_permissions`.
+       - `lib/principal.ts` is the one resolver. `authenticate`, sockets, login and refresh call it.
+       - `services/grant.service.ts` writes assignments, with their audit rows, in the change's transaction, and holds the last-admin lock.
+       - The user API keeps one `role` per request and the web is unchanged until slice 7. The refresh answer carries `grants`.
+       - Guards keep reading the flat permission list the resolver folds. `req.principal` arrives with `requireChannel` in slice 8, the first code that needs a scope.
+     - **6b**: the `/roles` routes, `roles:read` and `roles:write`, the within, target and self rules, and the `no-restricted-imports` rule.
 7. **Roles UI**, L.
    - Follows: Screen, Tests.
    - Owns: `packages/web/src/pages/UsersPage.tsx`, a new `RoleEditorPage.tsx`, `packages/web/src/components/users/`, `packages/web/src/stores/auth.store.ts` (stores folded grants), `packages/web/src/lib/status.ts`, `e2e/roles.spec.ts` (signs in as a non-admin).

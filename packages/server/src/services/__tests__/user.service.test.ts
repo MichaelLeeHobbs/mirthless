@@ -1,10 +1,13 @@
 // ===========================================
 // User Service Tests
 // ===========================================
+// The paths that touch no roles, against a faked database. Roles, the last
+// admin, and session revocation on disable or delete run through the grant
+// service's queries and locks, and are proven against Postgres in
+// test/integration/user-roles.itest.ts and last-admin.itest.ts.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import bcrypt from 'bcryptjs';
-import { permissionNamesForRole } from '../../lib/role-permissions.js';
 
 // ----- Mock DB -----
 
@@ -16,14 +19,13 @@ function resetSelectState(): void {
   selectResponses = [];
 }
 
-function pushResponse(value: unknown, opts?: { orderable?: boolean; locked?: boolean }): void {
-  const orderable = opts?.orderable ?? false;
+function pushResponse(value: unknown, opts?: { orderable?: boolean; forUpdate?: boolean }): void {
   selectResponses.push(() => {
-    // The last-admin check: select ... order by id ... for update.
-    if (opts?.locked) {
-      return { orderBy: vi.fn(() => ({ for: vi.fn().mockResolvedValue(value) })) };
+    // A row read under lock: select ... where ... for no key update.
+    if (opts?.forUpdate) {
+      return { for: vi.fn().mockResolvedValue(value) };
     }
-    if (orderable) {
+    if (opts?.orderable) {
       return Object.assign(Promise.resolve(value), {
         orderBy: vi.fn().mockResolvedValue(value),
       });
@@ -32,32 +34,19 @@ function pushResponse(value: unknown, opts?: { orderable?: boolean; locked?: boo
   });
 }
 
-const mockSelectWhere = vi.fn().mockImplementation(() => {
+function nextResponse(): unknown {
   const fn = selectResponses[selectCallIndex];
   selectCallIndex++;
-  if (fn) return fn();
-  return [];
-});
+  return fn ? fn() : [];
+}
 
-const mockSelectFrom = vi.fn().mockImplementation(() => ({
-  where: mockSelectWhere,
-  orderBy: vi.fn().mockImplementation(() => {
-    const fn = selectResponses[selectCallIndex];
-    selectCallIndex++;
-    if (fn) return fn();
-    return [];
-  }),
-}));
-
+const mockSelectWhere = vi.fn().mockImplementation(nextResponse);
+const mockSelectFrom = vi.fn().mockImplementation(() => ({ where: mockSelectWhere, orderBy: vi.fn().mockImplementation(nextResponse) }));
 const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
 
 const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
 const mockSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
 const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
-
-const mockInsertReturning = vi.fn();
-const mockInsertValues = vi.fn().mockReturnValue({ returning: mockInsertReturning });
-const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
@@ -67,7 +56,6 @@ const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => f
 
 const mockDb = {
   select: mockSelect,
-  insert: mockInsert,
   update: mockUpdate,
   delete: mockDelete,
   transaction: mockTransaction,
@@ -78,12 +66,8 @@ vi.mock('../../lib/db.js', () => ({
   default: mockDb,
 }));
 
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn((_col: unknown, val: unknown) => ({ type: 'eq', val })),
-  ne: vi.fn((_col: unknown, val: unknown) => ({ type: 'ne', val })),
-  and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
-  or: vi.fn((...args: unknown[]) => ({ type: 'or', args })),
-  asc: vi.fn((_col: unknown) => ({ type: 'asc' })),
+vi.mock('../../lib/logger.js', () => ({
+  default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('bcryptjs', () => ({
@@ -107,6 +91,7 @@ const ADMIN_ID = '00000000-0000-0000-0000-000000000001';
 const USER_ID = '00000000-0000-0000-0000-000000000002';
 const OTHER_ID = '00000000-0000-0000-0000-000000000003';
 
+/** A user row as the select returns it, with the held role names aggregated. */
 function makeUser(overrides?: Partial<Record<string, unknown>>): Record<string, unknown> {
   return {
     id: USER_ID,
@@ -115,7 +100,7 @@ function makeUser(overrides?: Partial<Record<string, unknown>>): Record<string, 
     firstName: 'John',
     lastName: 'Smith',
     description: null,
-    role: 'developer',
+    roleNames: ['developer'],
     enabled: true,
     lastLoginAt: null,
     failedLoginAttempts: 0,
@@ -137,8 +122,8 @@ beforeEach(() => {
 
 describe('UserService', () => {
   describe('listUsers', () => {
-    it('returns all users ordered by username', async () => {
-      const userList = [makeUser(), makeUser({ id: ADMIN_ID, username: 'admin', role: 'admin' })];
+    it('returns all users ordered by username, each with the roles they hold', async () => {
+      const userList = [makeUser(), makeUser({ id: ADMIN_ID, username: 'admin', roleNames: ['admin', 'viewer'] })];
       pushResponse(userList, { orderable: true });
 
       const result = await UserService.listUsers();
@@ -146,6 +131,8 @@ describe('UserService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value).toHaveLength(2);
+      expect(result.value[1]).toMatchObject({ role: 'admin, viewer', roles: ['admin', 'viewer'] });
+      expect(result.value[1]).not.toHaveProperty('roleNames');
     });
 
     it('returns empty array when no users', async () => {
@@ -168,6 +155,15 @@ describe('UserService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.username).toBe('jsmith');
+      expect(result.value.role).toBe('developer');
+    });
+
+    it('shows a user with no live assignment as holding no role', async () => {
+      pushResponse([makeUser({ roleNames: [] })]);
+
+      const result = await UserService.getUser(USER_ID);
+
+      expect(result.ok && result.value.role).toBe('');
     });
 
     it('returns NOT_FOUND for missing user', async () => {
@@ -182,27 +178,6 @@ describe('UserService', () => {
   });
 
   describe('createUser', () => {
-    it('creates user with hashed password', async () => {
-      // Username check
-      pushResponse([]);
-      // Email check
-      pushResponse([]);
-      // Insert returning
-      const newUser = makeUser({ username: 'newuser', email: 'new@test.com' });
-      mockInsertReturning.mockResolvedValueOnce([newUser]);
-
-      const result = await UserService.createUser({
-        username: 'newuser',
-        email: 'new@test.com',
-        password: 'password123',
-        role: 'developer',
-      });
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.username).toBe('newuser');
-    });
-
     it('returns ALREADY_EXISTS for duplicate username', async () => {
       pushResponse([{ id: USER_ID }]); // Username exists
 
@@ -236,84 +211,31 @@ describe('UserService', () => {
   });
 
   describe('updateUser', () => {
-    it('updates user fields', async () => {
-      // Target and enabled admins, read under lock
-      pushResponse([{ id: USER_ID, role: 'developer', enabled: true }], { locked: true });
-      // getUser for return (after update)
-      pushResponse([makeUser({ email: 'updated@test.com' })]);
+    it('updates user fields without touching roles or the admin lock', async () => {
+      pushResponse([{ id: USER_ID }], { forUpdate: true }); // the target, under lock
+      pushResponse([makeUser({ email: 'updated@test.com' })]); // getUser after update
 
       const result = await UserService.updateUser(USER_ID, { email: 'updated@test.com' }, ADMIN_ID);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.email).toBe('updated@test.com');
+      expect(mockDelete).not.toHaveBeenCalled();
     });
 
     it('returns NOT_FOUND for missing user', async () => {
-      pushResponse([{ id: ADMIN_ID, role: 'admin', enabled: true }], { locked: true }); // only admins came back
+      pushResponse([], { forUpdate: true });
 
       const result = await UserService.updateUser('nonexistent', { email: 'x@y.com' }, ADMIN_ID);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
-    });
-
-    it('returns CONFLICT and writes nothing when demoting the last enabled admin', async () => {
-      pushResponse([{ id: ADMIN_ID, role: 'admin', enabled: true }], { locked: true }); // Only this admin is enabled
-
-      const result = await UserService.updateUser(ADMIN_ID, { role: 'viewer' }, OTHER_ID);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'CONFLICT');
       expect(mockUpdate).not.toHaveBeenCalled();
-    });
-
-    it('disables an admin when another enabled admin exists, and revokes their sessions', async () => {
-      pushResponse([
-        { id: ADMIN_ID, role: 'admin', enabled: true },
-        { id: OTHER_ID, role: 'admin', enabled: true },
-      ], { locked: true }); // Another enabled admin
-      pushResponse([makeUser({ id: ADMIN_ID, role: 'admin', enabled: false })]); // getUser
-
-      const result = await UserService.updateUser(ADMIN_ID, { enabled: false }, OTHER_ID);
-
-      expect(result.ok).toBe(true);
-      expect(mockDeleteWhere).toHaveBeenCalled();
-    });
-
-    it('decides from the role read under lock, not an earlier read', async () => {
-      // The target was demoted by a concurrent request before this one got the lock.
-      pushResponse([{ id: ADMIN_ID, role: 'viewer', enabled: true }], { locked: true });
-      pushResponse([makeUser({ id: ADMIN_ID, role: 'viewer', enabled: false })]); // getUser
-
-      const result = await UserService.updateUser(ADMIN_ID, { enabled: false }, OTHER_ID);
-
-      expect(result.ok).toBe(true); // disabling a viewer needs no other admin
-    });
-
-    it('returns SELF_ACTION when changing own role', async () => {
-      pushResponse([{ id: ADMIN_ID, role: 'admin', enabled: true }], { locked: true });
-
-      const result = await UserService.updateUser(ADMIN_ID, { role: 'developer' }, ADMIN_ID);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'SELF_ACTION');
     });
   });
 
   describe('deleteUser', () => {
-    it('soft-deletes user', async () => {
-      pushResponse([{ id: USER_ID, role: 'developer', enabled: true }], { locked: true });
-
-      const result = await UserService.deleteUser(USER_ID, ADMIN_ID);
-
-      expect(result.ok).toBe(true);
-      expect(mockUpdate).toHaveBeenCalled();
-    });
-
     it('returns SELF_ACTION when deleting self', async () => {
       const result = await UserService.deleteUser(ADMIN_ID, ADMIN_ID);
 
@@ -321,59 +243,28 @@ describe('UserService', () => {
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'SELF_ACTION');
     });
-
-    it('returns CONFLICT when deleting the last enabled admin', async () => {
-      pushResponse([{ id: ADMIN_ID, role: 'admin', enabled: true }], { locked: true }); // Only this admin is enabled
-
-      const result = await UserService.deleteUser(ADMIN_ID, OTHER_ID);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'CONFLICT');
-    });
-
-    it('allows deleting an admin when another enabled admin exists', async () => {
-      pushResponse([
-        { id: ADMIN_ID, role: 'admin', enabled: true },
-        { id: OTHER_ID, role: 'admin', enabled: true },
-      ], { locked: true }); // Another enabled admin exists
-
-      const result = await UserService.deleteUser(ADMIN_ID, OTHER_ID);
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('returns NOT_FOUND for missing user', async () => {
-      pushResponse([], { locked: true });
-
-      const result = await UserService.deleteUser('nonexistent', ADMIN_ID);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
-    });
   });
 
   describe('changePassword', () => {
-    it('admin changes other user password', async () => {
+    it('lets an actor who may manage users change another user\'s password', async () => {
       pushResponse([{ id: USER_ID }]);
 
-      const result = await UserService.changePassword(USER_ID, 'newpass123', ADMIN_ID, 'admin');
+      const result = await UserService.changePassword(USER_ID, 'newpass123', ADMIN_ID, true);
 
       expect(result.ok).toBe(true);
       expect(mockUpdate).toHaveBeenCalled();
     });
 
-    it('user changes own password', async () => {
+    it('lets a user change their own password', async () => {
       pushResponse([{ id: USER_ID }]);
 
-      const result = await UserService.changePassword(USER_ID, 'newpass123', USER_ID, 'developer');
+      const result = await UserService.changePassword(USER_ID, 'newpass123', USER_ID, false);
 
       expect(result.ok).toBe(true);
     });
 
-    it('non-admin cannot change other user password', async () => {
-      const result = await UserService.changePassword(OTHER_ID, 'newpass123', USER_ID, 'developer');
+    it('refuses another user\'s password to an actor who may not manage users', async () => {
+      const result = await UserService.changePassword(OTHER_ID, 'newpass123', USER_ID, false);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -383,74 +274,11 @@ describe('UserService', () => {
     it('returns NOT_FOUND for missing user', async () => {
       pushResponse([]);
 
-      const result = await UserService.changePassword('nonexistent', 'newpass123', ADMIN_ID, 'admin');
+      const result = await UserService.changePassword('nonexistent', 'newpass123', ADMIN_ID, true);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toHaveProperty('code', 'NOT_FOUND');
-    });
-  });
-
-  // ----- RBAC: role → permission assignment (finding 1) -----
-  describe('role-derived permissions (live resolution)', () => {
-    function permissionCalls(): unknown[][] {
-      // Calls to insert().values() whose argument is an array of permission rows.
-      return mockInsertValues.mock.calls.filter(
-        (c) => Array.isArray(c[0]) && (c[0] as unknown[]).length > 0 &&
-          typeof (c[0] as Record<string, unknown>[])[0]?.['resource'] === 'string',
-      );
-    }
-
-    it('does NOT snapshot permissions when creating a user (authz resolves live from the role)', async () => {
-      pushResponse([]); // username
-      pushResponse([]); // email
-      mockInsertReturning.mockResolvedValueOnce([makeUser({ id: USER_ID, role: 'developer' })]);
-
-      const result = await UserService.createUser({
-        username: 'dev', email: 'dev@test.com', password: 'password123', role: 'developer',
-      });
-
-      expect(result.ok).toBe(true);
-      // No per-user permission rows are written — the role is the single source of truth.
-      expect(permissionCalls()).toHaveLength(0);
-      // The developer role is what actually grants access at request time.
-      expect(permissionNamesForRole('developer')).toContain('channels:write');
-      expect(permissionNamesForRole('developer')).not.toContain('users:write');
-    });
-
-    it('does NOT re-sync a permission snapshot when a role changes (resolved live from the new role)', async () => {
-      pushResponse([{ id: USER_ID, role: 'developer', enabled: true }], { locked: true }); // existing, under lock
-      pushResponse([makeUser({ role: 'viewer' })]);        // getUser after update
-
-      const result = await UserService.updateUser(USER_ID, { role: 'viewer' }, ADMIN_ID);
-
-      expect(result.ok).toBe(true);
-      // No permission-table writes; the next request resolves the viewer set from the role.
-      expect(permissionCalls()).toHaveLength(0);
-      expect(permissionNamesForRole('viewer')).toContain('channels:read');
-      expect(permissionNamesForRole('viewer')).not.toContain('channels:write');
-    });
-  });
-
-  // ----- Session revocation on disable (finding 10) -----
-  describe('session revocation', () => {
-    it('revokes sessions when a user is disabled via update', async () => {
-      pushResponse([{ id: USER_ID, role: 'developer', enabled: true }], { locked: true });
-      pushResponse([makeUser({ enabled: false })]);
-
-      const result = await UserService.updateUser(USER_ID, { enabled: false }, ADMIN_ID);
-
-      expect(result.ok).toBe(true);
-      expect(mockDelete).toHaveBeenCalled();
-    });
-
-    it('revokes sessions when a user is soft-deleted', async () => {
-      pushResponse([{ id: USER_ID, role: 'developer', enabled: true }], { locked: true });
-
-      const result = await UserService.deleteUser(USER_ID, ADMIN_ID);
-
-      expect(result.ok).toBe(true);
-      expect(mockDelete).toHaveBeenCalled();
     });
   });
 
@@ -490,15 +318,27 @@ describe('UserService', () => {
   });
 
   describe('getPermissions', () => {
-    it('returns the effective permission names for a role', async () => {
-      pushResponse([{ role: 'viewer' }]);
+    it('returns the permissions the user\'s live assignments grant', async () => {
+      pushResponse([{
+        id: USER_ID, username: 'jsmith', email: 'jsmith@test.com', enabled: true, mustChangePassword: false,
+        assignments: [{ role: 'viewer', admin: false, permissions: ['messages:read', 'channels:read'], expiresAt: null }],
+      }]);
 
       const result = await UserService.getPermissions(USER_ID);
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.role).toBe('viewer');
-      expect(result.value.permissions).toContain('channels:read');
+      expect(result.value).toEqual({ role: 'viewer', roles: ['viewer'], permissions: ['channels:read', 'messages:read'] });
+    });
+
+    it('returns NOT_FOUND for missing user', async () => {
+      pushResponse([]);
+
+      const result = await UserService.getPermissions('nonexistent');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toHaveProperty('code', 'NOT_FOUND');
     });
   });
 

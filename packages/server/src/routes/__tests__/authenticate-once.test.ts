@@ -16,13 +16,13 @@ import type { AddressInfo } from 'node:net';
 const calls = vi.hoisted(() => ({ authenticate: 0 }));
 
 vi.mock('../../middleware/auth.middleware.js', async () => {
-  const { permissionNamesForRole } = await import('../../lib/role-permissions.js');
+  const { builtInRolePermissions } = await import('../../db/seeds/roles.js');
   return {
     authenticate: (req: Request, _res: Response, next: NextFunction): void => {
       calls.authenticate++;
       req.user = {
         id: 'u1', username: 'admin', email: 'admin@test.local', role: 'admin', isActive: true,
-        permissions: permissionNamesForRole('admin'), mustChangePassword: false,
+        permissions: builtInRolePermissions('admin'), mustChangePassword: false,
       };
       next();
     },

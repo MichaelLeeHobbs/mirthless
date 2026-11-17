@@ -27,25 +27,18 @@ vi.mock('../logger.js', () => ({
   },
 }));
 
-// db.select().from().where() — first call returns the user row, second the
-// permission rows. Controlled per-test via `userRow` / `permRows`.
-let userRow: Record<string, unknown> | undefined = { id: 'user-1', enabled: true, role: 'viewer' };
-let permRows: { resource: string; action: string }[] = [];
-let dbSelectCall = 0;
-const mockWhere = vi.fn(() => {
-  dbSelectCall += 1;
-  return Promise.resolve(dbSelectCall === 1 ? (userRow ? [userRow] : []) : permRows);
+// The resolver (lib/principal.ts) is the database boundary here: the user as
+// it would load them, holding the built-in role named in `userRow.role`.
+let userRow: import('../../../test/standing.js').StandingRow | undefined = { id: 'user-1', enabled: true, role: 'viewer' };
+vi.mock('../principal.js', async () => {
+  const { standingFor } = await import('../../../test/standing.js');
+  return { loadUserStanding: vi.fn(() => Promise.resolve(userRow ? standingFor(userRow) : null)) };
 });
-vi.mock('../db.js', () => ({
-  db: { select: () => ({ from: () => ({ where: mockWhere }) }) },
-}));
-vi.mock('../../db/schema/index.js', () => ({ users: {}, userPermissions: {} }));
 
 // Session liveness is its own module (shared with the REST middleware).
 const session = vi.hoisted(() => ({ live: true }));
 const { mockIsSessionLive } = vi.hoisted(() => ({ mockIsSessionLive: vi.fn() }));
 vi.mock('../session-live.js', () => ({ isSessionLive: mockIsSessionLive }));
-vi.mock('drizzle-orm', () => ({ eq: vi.fn() }));
 
 // ----- Import after mocks -----
 
@@ -53,7 +46,7 @@ import {
   authMiddleware, revalidateSocket, emitToRoom, emitToRoomCoalesced, emitToAll, shutdownSocketIO,
   LIVE_EVENT_COALESCE_MS, _resetIO,
 } from '../socket.js';
-import { permissionNamesForRole } from '../role-permissions.js';
+import { builtInRolePermissions } from '../../db/seeds/roles.js';
 import type { Server as SocketIOServer } from 'socket.io';
 
 // ----- Helpers -----
@@ -81,8 +74,6 @@ describe('Socket.IO Auth & Room Management', () => {
     vi.clearAllMocks();
     _resetIO(null);
     userRow = { id: 'user-1', enabled: true };
-    permRows = [];
-    dbSelectCall = 0;
     session.live = true;
     mockIsSessionLive.mockImplementation(async () => session.live);
   });
@@ -210,7 +201,7 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(userData.userId).toBe('user-42');
       expect(userData.sessionId).toBe('sess-7');
       expect(userData.type).toBe('access');
-      expect(userData.permissions).toEqual(permissionNamesForRole('viewer'));
+      expect(userData.permissions).toEqual([...builtInRolePermissions('viewer')].sort());
       expect(userData.permissions).toContain('channels:read');
       expect(userData.permissions).not.toContain('users:delete');
     });
@@ -243,7 +234,7 @@ describe('Socket.IO Auth & Room Management', () => {
     } {
       return {
         id: 'sock-1',
-        data: { user: { userId: 'user-1', sessionId: 's1', type: 'access', permissions: permissionNamesForRole('admin') } },
+        data: { user: { userId: 'user-1', sessionId: 's1', type: 'access', permissions: builtInRolePermissions('admin') } },
         rooms: new Set(['sock-1', ...rooms]),
         leave: vi.fn<(room: string) => unknown>(),
         disconnect: vi.fn<(close?: boolean) => unknown>(),
@@ -279,7 +270,7 @@ describe('Socket.IO Auth & Room Management', () => {
       expect(socket.leave).not.toHaveBeenCalledWith('dashboard');
       expect(socket.leave).not.toHaveBeenCalledWith('channel:abc');
       expect(socket.leave).not.toHaveBeenCalledWith('sock-1');
-      expect((socket.data['user'] as { permissions: string[] }).permissions).toEqual(permissionNamesForRole('viewer'));
+      expect((socket.data['user'] as { permissions: string[] }).permissions).toEqual([...builtInRolePermissions('viewer')].sort());
     });
   });
 

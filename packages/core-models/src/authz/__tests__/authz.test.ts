@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { PERMISSIONS, type Permission } from '../../constants.js';
 import type { ChannelGroupId } from '../../brands.js';
 import {
-  PERMISSION_CATALOG, PERMISSION_CLASS, ALL_CHANNELS, foldGrants, can, holdsPermission, allChannelsOnly,
+  PERMISSION_CATALOG, PERMISSION_CLASS, ALL_CHANNELS, foldGrants, can, holdsPermission, allChannelsOnly, serializeGrants,
 } from '../index.js';
 
 const NOW = new Date('2026-11-16T12:00:00Z');
@@ -162,6 +162,19 @@ describe('can', () => {
 
   it('allows every channel for an all-channel grant, groups or not', () => {
     expect(can(grants, 'channels:read', { groupIds: [] })).toBe(true);
+  });
+});
+
+describe('serializeGrants', () => {
+  it('lists each held permission with its scope, sorted, as JSON can carry it', () => {
+    const grants = foldGrants([
+      { permissions: ['messages:read', 'channels:read'], scope: [RAD, LAB] },
+      { permissions: ['channels:read'], scope: ALL_CHANNELS },
+    ], NOW);
+    expect(serializeGrants(grants)).toEqual([
+      { permission: 'channels:read', scope: 'all' },
+      { permission: 'messages:read', scope: [LAB, RAD] },
+    ]);
   });
 });
 

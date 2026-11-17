@@ -1,6 +1,6 @@
 # Access control
 
-This page describes who can sign in to GalvaniGraph, how sessions work, how to cut someone off, what each of the four roles can do, which roles can run code on the server or take PHI and secrets out of it, what the audit log does not record, and which endpoints need no permission. It describes the code as it is today. For the operator's side (TLS, encryption at rest, backups), see the [HIPAA / security checklist](../ops/hipaa-security-checklist.md).
+This page describes who can sign in to GalvaniGraph, how sessions work, how to cut someone off, what each built-in role can do, which roles can run code on the server or take PHI and secrets out of it, what the audit log does not record, and which endpoints need no permission. It describes the code as it is today. For the operator's side (TLS, encryption at rest, backups), see the [HIPAA / security checklist](../ops/hipaa-security-checklist.md).
 
 ## What is supported and what is not
 
@@ -11,8 +11,8 @@ This page describes who can sign in to GalvaniGraph, how sessions work, how to c
 | LDAP or Active Directory | No | |
 | Multi-factor authentication | No | |
 | API tokens or service accounts | No | Every API caller, scripts and CI jobs included, signs in as a user with a password and gets the same short-lived access token. API keys are planned ([#144](https://github.com/MichaelLeeHobbs/mirthless/issues/144)). |
-| Custom roles | No | Four fixed roles: admin, deployer, developer, viewer. A user's permissions come from their role in code at every request, not from the database. |
-| Per-channel access | No | Every permission covers every channel. The `user_permissions` table, including its `scope` column, is written by the seed for the first admin but nothing reads it, so editing it restricts nobody ([#94](https://github.com/MichaelLeeHobbs/mirthless/issues/94)). |
+| Custom roles | No | Roles are stored in the database, and seven are built in: admin (locked), deployer, developer, viewer, channel-viewer, channel-developer and channel-deployer. A user holds a role through an assignment, and the server reads the user's assignments on every request, so a change applies to the next one. Creating, editing and cloning roles is planned ([#265](https://github.com/MichaelLeeHobbs/mirthless/issues/265)). |
+| Per-channel access | No | Every assignment covers every channel. Assignments scoped to channel groups are planned ([#266](https://github.com/MichaelLeeHobbs/mirthless/issues/266)). |
 | Idle session timeout | No | An open browser tab keeps refreshing its session. |
 | Maximum session length | No | Each refresh deletes the session and starts a new one lasting `JWT_REFRESH_EXPIRES_IN` (default 7 days), so a session that keeps refreshing never ends. |
 
@@ -67,48 +67,52 @@ None of these actions changes a secret the person knew. Rotate them yourself: da
 
 **viewer** reads channels, messages, code templates, alerts, events, resources, collections and data source settings. Reading messages includes exporting them in bulk and downloading attachments, on every channel.
 
+**channel-viewer**, **channel-developer** and **channel-deployer** are viewer, developer and deployer without the permissions that only an all-channel assignment may hold: the reads that reach every channel's data (collections, both maps, system information) and the system-wide writes (resources, collections, data sources, alerts). They are for assignments scoped to channel groups ([#266](https://github.com/MichaelLeeHobbs/mirthless/issues/266)). Until scope arrives, an assignment of one covers every channel. Nobody holds them after an upgrade.
+
+Every user had one of the first four roles before roles were stored in the database. The upgrade gave each user an all-channel assignment of that role, so nobody's access changed. A user whose role named none of them held no permissions before, and holds no assignment after.
+
 ## Role and permission matrix
 
-| Permission | admin | deployer | developer | viewer | Also allows |
-|---|---|---|---|---|---|
-| `channels:read` | Yes | Yes | Yes | Yes | Reads every channel's scripts and connector settings (secret fields masked) and exports channels. Lists message IDs, status and times across all channels (cross-channel search). Validates scripts, previews Mirth imports, generates sample messages, and joins the dashboard and channel live feeds. |
-| `channels:write` | Yes | Yes | Yes | No | Runs code on the server: the channel's scripts, filters and transformers run at its next deploy, and the server deploys every enabled channel when it starts. Also runs a script against a sample message on demand from the editor (a test run: in a worker with memory and time limits, one at a time, audited, with no sends, writes or routing). Also imports channels (including Mirth XML), clones them, enables and disables them, and manages channel groups. Reads every channel's connector settings and revisions with secret fields unmasked (passwords, keys, tokens); those reads write no audit event. |
-| `channels:deploy` | Yes | Yes | No | No | Deploying runs the channel's code. Also sends test messages into a channel, runs Test Connection (the server connects to the host in the form), resets statistics and edits channel dependencies. |
-| `channels:delete` | Yes | No | No | No | Deleting hides the channel; its messages are kept. |
-| `messages:read` | Yes | Yes | Yes | Yes | Bulk message export and attachment download, on every channel. |
-| `messages:reprocess` | Yes | Yes | No | No | Reprocessing and resending send stored message content to destinations again. |
-| `messages:delete` | Yes | No | No | No | Bulk delete as well as single messages. |
-| `code_templates:read` | Yes | Yes | Yes | Yes | |
-| `code_templates:write` | Yes | Yes | Yes | No | Runs code on the server: a template reaches every channel that includes it at that channel's next deploy. |
-| `code_templates:delete` | Yes | Yes | No | No | |
-| `alerts:read` | Yes | Yes | Yes | Yes | |
-| `alerts:write` | Yes | Yes | No | No | Alert emails carry the error text of the failure that triggered them to any address the alert names. |
-| `alerts:delete` | Yes | Yes | No | No | |
-| `users:read` | Yes | No | No | No | Lists every user's email address, role and lock state. |
-| `users:write` | Yes | No | No | No | Creates users with any role, including admin, and changes any other user's role, so it is as strong as admin. Also disables users, resets passwords and unlocks accounts. |
-| `users:delete` | Yes | No | No | No | Deleting disables the account and ends its sessions; the row is kept. |
-| `settings:read` | Yes | No | No | No | Also reads certificates (not private keys), tags, extensions, and the pruner schedule and statistics. Secret settings are masked. |
-| `settings:write` | Yes | No | No | No | Purges audit events older than a chosen number of days (minimum 1). Runs the message pruner now, for all channels or for one channel with any age of 1 day or more, which deletes messages, and changes its schedule. Also uploads certificates and private keys, manages tags and enables or disables extensions. |
-| `events:read` | Yes | Yes | Yes | Yes | Reads and exports the whole audit log, including every user's sign-ins and client addresses. Searches are recorded in the audit log, best effort; exports fail-closed, with a reason. |
-| `resources:read` | Yes | Yes | Yes | Yes | |
-| `resources:write` | Yes | Yes | Yes | No | Channel scripts read resources with `getResource`, so an edit changes what they receive. |
-| `resources:delete` | Yes | Yes | No | No | |
-| `collections:read` | Yes | Yes | Yes | Yes | Reads collection records, which channel scripts write and which can hold PHI. Viewers have it, and reads are recorded in the audit log, best effort. |
-| `collections:write` | Yes | Yes | Yes | No | Adds and edits records that running channels read. |
-| `collections:delete` | Yes | Yes | No | No | |
-| `datasources:read` | Yes | Yes | Yes | Yes | Shows each data source's host, port, database and user name. The password is never returned. |
-| `datasources:write` | Yes | Yes | No | No | Channel scripts query data sources with `dbQuery`, using the stored credentials. Also runs a data source connection test from the server. |
-| `datasources:delete` | Yes | Yes | No | No | |
-| `global_scripts:read` | Yes | Yes | Yes | No | |
-| `global_scripts:write` | Yes | No | No | No | Runs code on the server: global deploy and undeploy scripts run with every channel, and the global preprocessor and postprocessor run on every message. |
-| `global_map:read` | Yes | Yes | Yes | No | Values are returned in full. Scripts can store PHI or credentials there. Reads are recorded in the audit log, best effort. |
-| `global_map:write` | Yes | No | No | No | Can clear the whole map, which running scripts read. |
-| `config_map:read` | Yes | Yes | Yes | No | Values are returned in full, and the configuration map often holds credentials. Reads are recorded in the audit log, best effort. |
-| `config_map:write` | Yes | No | No | No | Channel scripts read these values. |
-| `system:info` | Yes | Yes | No | No | Also reads the server log and the live log stream, `/metrics` and `/health/full`. Error text in the log, from scripts and connectors, can hold PHI. |
-| `system:backup` | Yes | No | No | No | The backup holds every channel's scripts, the global and configuration map values, resources, and every user's name and email address. Secret settings and secret connector fields are masked. |
-| `system:restore` | Yes | No | No | No | Overwrites channels, code templates and global scripts from a file, so it runs code at the next deploy. Also restores settings and both maps. |
-| `audit:read` | Yes | No | No | No | Reads the protected audit log (`GET /api/v1/audit`): sign-ins and failed sign-ins with client addresses, refused requests and purges. |
+| Permission | admin | deployer | developer | viewer | channel-viewer | channel-developer | channel-deployer | Also allows |
+|---|---|---|---|---|---|---|---|---|
+| `channels:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Reads every channel's scripts and connector settings (secret fields masked) and exports channels. Lists message IDs, status and times across all channels (cross-channel search). Validates scripts, previews Mirth imports, generates sample messages, and joins the dashboard and channel live feeds. |
+| `channels:write` | Yes | Yes | Yes | No | No | Yes | Yes | Runs code on the server: the channel's scripts, filters and transformers run at its next deploy, and the server deploys every enabled channel when it starts. Also runs a script against a sample message on demand from the editor (a test run: in a worker with memory and time limits, one at a time, audited, with no sends, writes or routing). Also imports channels (including Mirth XML), clones them, enables and disables them, and manages channel groups. Reads every channel's connector settings and revisions with secret fields unmasked (passwords, keys, tokens); those reads write no audit event. |
+| `channels:deploy` | Yes | Yes | No | No | No | No | Yes | Deploying runs the channel's code. Also sends test messages into a channel, runs Test Connection (the server connects to the host in the form), resets statistics and edits channel dependencies. |
+| `channels:delete` | Yes | No | No | No | No | No | No | Deleting hides the channel; its messages are kept. |
+| `messages:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Bulk message export and attachment download, on every channel. |
+| `messages:reprocess` | Yes | Yes | No | No | No | No | Yes | Reprocessing and resending send stored message content to destinations again. |
+| `messages:delete` | Yes | No | No | No | No | No | No | Bulk delete as well as single messages. |
+| `code_templates:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | |
+| `code_templates:write` | Yes | Yes | Yes | No | No | Yes | Yes | Runs code on the server: a template reaches every channel that includes it at that channel's next deploy. |
+| `code_templates:delete` | Yes | Yes | No | No | No | No | Yes | |
+| `alerts:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | |
+| `alerts:write` | Yes | Yes | No | No | No | No | No | Alert emails carry the error text of the failure that triggered them to any address the alert names. |
+| `alerts:delete` | Yes | Yes | No | No | No | No | No | |
+| `users:read` | Yes | No | No | No | No | No | No | Lists every user's email address, role and lock state. |
+| `users:write` | Yes | No | No | No | No | No | No | Creates users with any role, including admin, and changes any other user's role, so it is as strong as admin. Also disables users, resets passwords and unlocks accounts. |
+| `users:delete` | Yes | No | No | No | No | No | No | Deleting disables the account and ends its sessions; the row is kept. |
+| `settings:read` | Yes | No | No | No | No | No | No | Also reads certificates (not private keys), tags, extensions, and the pruner schedule and statistics. Secret settings are masked. |
+| `settings:write` | Yes | No | No | No | No | No | No | Purges audit events older than a chosen number of days (minimum 1). Runs the message pruner now, for all channels or for one channel with any age of 1 day or more, which deletes messages, and changes its schedule. Also uploads certificates and private keys, manages tags and enables or disables extensions. |
+| `events:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Reads and exports the whole audit log, including every user's sign-ins and client addresses. Searches are recorded in the audit log, best effort; exports fail-closed, with a reason. |
+| `resources:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | |
+| `resources:write` | Yes | Yes | Yes | No | No | No | No | Channel scripts read resources with `getResource`, so an edit changes what they receive. |
+| `resources:delete` | Yes | Yes | No | No | No | No | No | |
+| `collections:read` | Yes | Yes | Yes | Yes | No | No | No | Reads collection records, which channel scripts write and which can hold PHI. Viewers have it, and reads are recorded in the audit log, best effort. |
+| `collections:write` | Yes | Yes | Yes | No | No | No | No | Adds and edits records that running channels read. |
+| `collections:delete` | Yes | Yes | No | No | No | No | No | |
+| `datasources:read` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Shows each data source's host, port, database and user name. The password is never returned. |
+| `datasources:write` | Yes | Yes | No | No | No | No | No | Channel scripts query data sources with `dbQuery`, using the stored credentials. Also runs a data source connection test from the server. |
+| `datasources:delete` | Yes | Yes | No | No | No | No | No | |
+| `global_scripts:read` | Yes | Yes | Yes | No | No | Yes | Yes | |
+| `global_scripts:write` | Yes | No | No | No | No | No | No | Runs code on the server: global deploy and undeploy scripts run with every channel, and the global preprocessor and postprocessor run on every message. |
+| `global_map:read` | Yes | Yes | Yes | No | No | No | No | Values are returned in full. Scripts can store PHI or credentials there. Reads are recorded in the audit log, best effort. |
+| `global_map:write` | Yes | No | No | No | No | No | No | Can clear the whole map, which running scripts read. |
+| `config_map:read` | Yes | Yes | Yes | No | No | No | No | Values are returned in full, and the configuration map often holds credentials. Reads are recorded in the audit log, best effort. |
+| `config_map:write` | Yes | No | No | No | No | No | No | Channel scripts read these values. |
+| `system:info` | Yes | Yes | No | No | No | No | No | Also reads the server log and the live log stream, `/metrics` and `/health/full`. Error text in the log, from scripts and connectors, can hold PHI. |
+| `system:backup` | Yes | No | No | No | No | No | No | The backup holds every channel's scripts, the global and configuration map values, resources, and every user's name and email address. Secret settings and secret connector fields are masked. |
+| `system:restore` | Yes | No | No | No | No | No | No | Overwrites channels, code templates and global scripts from a file, so it runs code at the next deploy. Also restores settings and both maps. |
+| `audit:read` | Yes | No | No | No | No | No | No | Reads the protected audit log (`GET /api/v1/audit`): sign-ins and failed sign-ins with client addresses, refused requests and purges. |
 
 ## Who can run code on the server
 

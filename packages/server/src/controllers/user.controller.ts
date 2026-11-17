@@ -4,7 +4,7 @@
 // Handles HTTP requests for user management.
 
 import type { Request, Response } from 'express';
-import type { CreateUserInput, UpdateUserInput, ChangePasswordInput, ChangeOwnPasswordInput } from '@galvanigraph/core-models';
+import { holdsPermission, type CreateUserInput, type UpdateUserInput, type ChangePasswordInput, type ChangeOwnPasswordInput } from '@galvanigraph/core-models';
 import { UserService } from '../services/user.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { isServiceError } from '../lib/service-error.js';
@@ -100,8 +100,7 @@ export class UserController {
     const id = req.params['id'] as string;
     const { newPassword } = req.body as ChangePasswordInput;
     const actorId = req.user!.id;
-    const actorRole = req.user!.role;
-    const result = await UserService.changePassword(id, newPassword, actorId, actorRole);
+    const result = await UserService.changePassword(id, newPassword, actorId, holdsPermission(req.user?.permissions, 'users:write'));
 
     if (!result.ok) {
       const status = userErrorStatus(result.error);

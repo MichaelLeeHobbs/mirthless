@@ -2,7 +2,8 @@
 // Database Seed Script
 // ===========================================
 // Idempotent seed: safe to run multiple times.
-// Seeds: settings -> permissions -> roles -> admin user -> default group.
+// Seeds: settings -> admin user and their admin assignment -> default group.
+// The built-in roles are rows written by migration 0018 (db/seeds/roles.ts).
 // Demo content (example channels, showcase data, example messages) is seeded
 // only when demoDataEnabled() says so — never by default in production, where
 // it would add a global preprocessor that runs on every channel, a data source
@@ -19,7 +20,6 @@ import bcrypt from 'bcryptjs';
 import { DEFAULT_GROUP_NAME } from '@galvanigraph/core-models';
 import * as schema from '../schema/index.js';
 import { defaultSettings } from './settings.js';
-import { defaultPermissions } from './permissions.js';
 import { demoDataEnabled } from './seed-options.js';
 
 loadEnv({ path: '../../.env', quiet: true });
@@ -90,7 +90,6 @@ async function seed(): Promise<void> {
             username: ADMIN_USERNAME,
             email: ADMIN_EMAIL,
             passwordHash,
-            role: 'admin',
             enabled: true,
             // Force the default admin to set a new password on first login.
             mustChangePassword: true,
@@ -111,33 +110,22 @@ async function seed(): Promise<void> {
       }
 
       // eslint-disable-next-line no-console
-      console.log('\nSeeding permissions for admin...');
-
-      // Load existing admin permissions once
-      const existingPerms = await tx
-        .select({ resource: schema.userPermissions.resource, action: schema.userPermissions.action })
-        .from(schema.userPermissions)
-        .where(eq(schema.userPermissions.userId, adminId));
-
-      const existingPermSet = new Set(
-        existingPerms.map((p) => `${p.resource}:${p.action}`)
-      );
-
-      for (const permDef of defaultPermissions) {
-        if (existingPermSet.has(permDef.name)) {
-          // eslint-disable-next-line no-console
-          console.log(`  = ${permDef.name} (exists)`);
-          continue;
-        }
-
-        await tx.insert(schema.userPermissions).values({
-          userId: adminId,
-          resource: permDef.resource,
-          action: permDef.action,
-          scope: 'all',
-        });
+      console.log('\nSeeding the admin assignment...');
+      const [adminRole] = await tx.select({ id: schema.roles.id }).from(schema.roles).where(eq(schema.roles.admin, true));
+      if (!adminRole) {
+        throw new Error('The admin role is missing; run the migrations first');
+      }
+      const [held] = await tx
+        .select({ id: schema.assignments.id })
+        .from(schema.assignments)
+        .where(eq(schema.assignments.userId, adminId));
+      if (!held) {
+        await tx.insert(schema.assignments).values({ userId: adminId, roleId: adminRole.id, reason: 'Seeded admin' });
         // eslint-disable-next-line no-console
-        console.log(`  + ${permDef.name}`);
+        console.log('  + admin');
+      } else {
+        // eslint-disable-next-line no-console
+        console.log('  = admin user already holds a role');
       }
 
       // eslint-disable-next-line no-console

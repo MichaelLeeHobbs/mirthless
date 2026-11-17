@@ -4,7 +4,8 @@
 
 export * from './users.js';
 export * from './sessions.js';
-export * from './user-permissions.js';
+export * from './roles.js';
+export * from './assignments.js';
 export * from './user-preferences.js';
 export * from './channels.js';
 export * from './channel-connectors.js';

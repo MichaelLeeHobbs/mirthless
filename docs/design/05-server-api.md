@@ -72,7 +72,7 @@ Built-in from day one. Not a commercial add-on.
 
 ### Permissions Model
 
-A permission is a `resource:action` string, such as `channels:read` or `code_templates:delete`. The full list is `PERMISSIONS` in `packages/core-models/src/constants.ts`. Permissions are not stored in the access token: on every request the auth middleware (`packages/server/src/middleware/auth.middleware.ts`) loads the user and works out their permissions from their current role with `permissionNamesForRole` (`packages/server/src/lib/role-permissions.ts`), so a role change takes effect on the next request.
+A permission is a `resource:action` string, such as `channels:read` or `code_templates:delete`. The full list is `PERMISSIONS` in `packages/core-models/src/constants.ts`. Permissions are not stored in the access token: on every request the auth middleware (`packages/server/src/middleware/auth.middleware.ts`) loads the user and their live assignments in one query (`loadUserStanding` in `packages/server/src/lib/principal.ts`) and folds each assignment's role permissions into grants (`foldGrants`, D-310), so a role or assignment change, or an expiry, takes effect on the next request.
 
 Channel-scoped permissions are not built. The `user_permissions` table has a `scope` column that an early design meant to hold a list of channel ids, but the seed writes `'all'` and nothing reads it. Every permission applies to every channel: a user with `messages:read` can read the messages of all channels. ROADMAP lists this as an open gap.
 

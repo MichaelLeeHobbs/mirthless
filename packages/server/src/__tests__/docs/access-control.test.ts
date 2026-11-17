@@ -2,18 +2,18 @@
 // Docs guard: docs/user/access-control.md
 // ===========================================
 // Admins decide who gets which role from this page, so its role matrix must be
-// the seed's role map, cell for cell. That every permission guards some route is
+// the built-in roles as migration 0018 writes them (db/seeds/roles.ts), cell for cell. That every permission guards some route is
 // checked in routes/__tests__/route-permissions.test.ts; how each PHI or
 // destructive endpoint answers each role is tested over HTTP in
 // routes/__tests__/role-access.test.ts.
 
 import { describe, it, expect } from 'vitest';
-import { PERMISSIONS, SCOPE_PROMISE, USER_ROLE } from '@galvanigraph/core-models';
-import { permissionNamesForRole } from '../../lib/role-permissions.js';
+import { PERMISSIONS, SCOPE_PROMISE } from '@galvanigraph/core-models';
+import { builtInRolePermissions, defaultRoles } from '../../db/seeds/roles.js';
 import { readRepoFile, tables, brokenRelativeLinks } from '../../../test/markdown.js';
 
 const DOC = 'docs/user/access-control.md';
-const ROLES = Object.values(USER_ROLE);
+const ROLES = defaultRoles.map((r) => r.name);
 
 function matrix(): readonly (readonly string[])[] {
   const table = tables(readRepoFile(DOC)).find((t) => t.under?.text === 'Role and permission matrix');
@@ -38,7 +38,7 @@ describe('access control: role and permission matrix', () => {
     for (const row of matrix()) {
       const permission = (row[0] ?? '').replaceAll('`', '');
       ROLES.forEach((role, i) => {
-        expect(row[i + 1], `${permission} for ${role}`).toBe(permissionNamesForRole(role).includes(permission) ? 'Yes' : 'No');
+        expect(row[i + 1], `${permission} for ${role}`).toBe((builtInRolePermissions(role) as readonly string[]).includes(permission) ? 'Yes' : 'No');
       });
     }
   });

@@ -10,11 +10,11 @@ import { tryCatch, type Result } from 'stderr-lib';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
-import { permissionNamesForRole } from '../lib/role-permissions.js';
+import { loadUserStanding, roleLabel } from '../lib/principal.js';
 import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { signAccessToken, signRefreshToken, tokenExpiresAt, verifyRefreshToken } from '../lib/jwt.js';
 import { emitAuditEvent } from '../lib/event-emitter.js';
-import { AUDIT_ACTION } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, serializeGrants, type GrantEntry } from '@galvanigraph/core-models';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
@@ -90,8 +90,12 @@ export interface UserResponse {
   id: string;
   username: string;
   email: string;
+  /** The held role names joined. */
   role: string;
+  /** The permissions held anywhere, sorted: what the web gates its controls on. */
   permissions: readonly string[];
+  /** Each held permission with the scope it covers (D-310). */
+  grants: readonly GrantEntry[];
   /** True when the user must change their password before proceeding. */
   mustChangePassword: boolean;
 }
@@ -104,20 +108,21 @@ export interface LoginResult {
 }
 
 /**
- * The user as the web sees them. Permissions are resolved live from the role
- * (single source of truth), so each login and refresh carries the current list.
+ * The user as the web sees them, resolved live from their assignments, so each
+ * login and refresh carries their current access (D-298). Null when the user is
+ * gone or disabled.
  */
-function toUserResponse(user: {
-  readonly id: string; readonly username: string; readonly email: string;
-  readonly role: string; readonly mustChangePassword: boolean;
-}): UserResponse {
+async function currentUserResponse(userId: string): Promise<UserResponse | null> {
+  const standing = await loadUserStanding(userId);
+  if (!standing || !standing.enabled) return null;
   return {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    role: user.role,
-    permissions: permissionNamesForRole(user.role),
-    mustChangePassword: user.mustChangePassword,
+    id: standing.id,
+    username: standing.username,
+    email: standing.email,
+    role: roleLabel(standing.roles),
+    permissions: standing.permissions,
+    grants: serializeGrants(standing.grants),
+    mustChangePassword: standing.mustChangePassword,
   };
 }
 
@@ -185,6 +190,11 @@ export class AuthService {
         })
         .where(eq(users.id, user.id));
 
+      const response = await currentUserResponse(user.id);
+      if (!response) {
+        throw new ServiceError('ACCOUNT_DEACTIVATED', 'Account is deactivated');
+      }
+
       // Create session and tokens
       const tokens = await this.createTokens(user.id, metadata);
 
@@ -194,7 +204,7 @@ export class AuthService {
         attributes: { username: user.username },
       });
 
-      return { user: toUserResponse(user), ...tokens };
+      return { user: response, ...tokens };
     });
   }
 
@@ -222,20 +232,13 @@ export class AuthService {
 
       // Re-validate the user on every refresh: a disabled or deleted user must not
       // be able to keep rotating tokens. Their session is already gone.
-      const [user] = await db
-        .select({
-          id: users.id, username: users.username, email: users.email, role: users.role,
-          enabled: users.enabled, mustChangePassword: users.mustChangePassword,
-        })
-        .from(users)
-        .where(eq(users.id, session.userId));
-
-      if (!user || !user.enabled) {
+      const user = await currentUserResponse(session.userId);
+      if (!user) {
         throw new Error('Invalid refresh token');
       }
 
       const tokens = await this.createTokens(session.userId, metadata);
-      return { user: toUserResponse(user), ...tokens };
+      return { user, ...tokens };
     });
   }
 
