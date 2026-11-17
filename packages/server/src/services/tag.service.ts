@@ -6,7 +6,8 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, count, asc } from 'drizzle-orm';
-import type { CreateTagInput, UpdateTagInput } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, type CreateTagInput, type UpdateTagInput } from '@galvanigraph/core-models';
+import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { db } from '../lib/db.js';
@@ -24,8 +25,8 @@ export interface TagSummary {
 // ----- Service -----
 
 export class TagService {
-  /** List all tags with assignment counts. */
-  static async listTags(): Promise<Result<readonly TagSummary[]>> {
+  /** List all tags with how many channels inside `scope` (the reader's settings:read channels) carry each. */
+  static async listTags(scope: ChannelScope = ALL_CHANNELS): Promise<Result<readonly TagSummary[]>> {
     return tryCatch(async () => {
       const tags = await db
         .select()
@@ -38,7 +39,7 @@ export class TagService {
         const [countRow] = await db
           .select({ value: count() })
           .from(channelTagAssignments)
-          .where(eq(channelTagAssignments.tagId, tag.id));
+          .where(and(eq(channelTagAssignments.tagId, tag.id), channelIdIn(channelTagAssignments.channelId, scope)));
 
         summaries.push({
           id: tag.id,

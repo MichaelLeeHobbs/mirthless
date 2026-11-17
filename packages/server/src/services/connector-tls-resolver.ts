@@ -14,7 +14,11 @@
 
 import { tryCatch, type Result } from 'stderr-lib';
 import { isPlainObject } from '@galvanigraph/core-util';
+import { sql } from 'drizzle-orm';
+import { ALL_CHANNELS, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
+import { db } from '../lib/db.js';
+import { grantedChannels } from '../lib/channel-scope.js';
 
 /** Error text for a stored `tls` value that is present but not a plain object (D-277). */
 const TLS_NOT_AN_OBJECT = 'Connector tls settings must be an object';
@@ -51,6 +55,63 @@ function optionalId(bag: Record<string, unknown>, key: string): string | undefin
 }
 
 // ----- Public API -----
+
+/**
+ * The tls bag keys that load a certificate's private key: a client
+ * certificate for mutual TLS, and a listener's server certificate. A CA
+ * (`caCertId`) is public, so naming any one is harmless.
+ */
+const PRIVATE_KEY_CERT_KEYS = ['clientCertId', 'serverCertId'] as const;
+
+/** The store certificates whose private keys a connector's properties would use. */
+export function privateKeyCertificateIds(props: unknown): readonly string[] {
+  if (!isPlainObject(props)) return [];
+  const bag = readTlsBag(props);
+  return [...new Set(PRIVATE_KEY_CERT_KEYS.map((k) => optionalId(bag, k)).filter((id): id is string => id !== undefined))];
+}
+
+/**
+ * Of `certificateIds`, the ones no live connector of `channelIds` uses with
+ * its private key (as a client or server certificate). Matched key to key on
+ * the parsed tls bag, so a certificate pinned as a CA does not count.
+ */
+export async function certificatesNotUsedBy(channelIds: readonly string[], certificateIds: readonly string[]): Promise<readonly string[]> {
+  if (certificateIds.length === 0) return [];
+  if (channelIds.length === 0) return certificateIds;
+  const ids = sql.join(channelIds.map((id) => sql`${id}::uuid`), sql`, `);
+  const used = await db.execute<{ props: unknown }>(sql`
+    SELECT c.source_connector_properties AS props FROM channels c WHERE c.id IN (${ids}) AND c.deleted_at IS NULL
+    UNION ALL
+    SELECT cc.properties AS props FROM channel_connectors cc JOIN channels c ON c.id = cc.channel_id
+      WHERE cc.channel_id IN (${ids}) AND c.deleted_at IS NULL
+  `);
+  const inUse = new Set<string>();
+  for (const row of used.rows) {
+    try {
+      for (const id of privateKeyCertificateIds(row.props)) inUse.add(id);
+    } catch {
+      // A stored tls value that is not an object references no certificate.
+    }
+  }
+  return certificateIds.filter((id) => !inUse.has(id));
+}
+
+/**
+ * A writer or deployer holding `permission` on some groups only may put a
+ * certificate's private key to use only where their channels already use it
+ * (D-310): the store's keys could otherwise authenticate as another group's
+ * client or listener. `connectorProps` are every connector's properties the
+ * request would save or test. An all-channel holder passes.
+ */
+export async function assertCertificatesInScope(grants: FoldedGrants | undefined, permission: Permission, connectorProps: readonly unknown[]): Promise<void> {
+  const scope = await grantedChannels(grants, permission);
+  if (scope === ALL_CHANNELS) return;
+  const wanted = [...new Set(connectorProps.flatMap((p) => privateKeyCertificateIds(p)))];
+  const unused = await certificatesNotUsedBy(scope, wanted);
+  if (unused.length > 0) {
+    throw new ServiceError('FORBIDDEN', 'A client or server certificate can be used only where the channels in your access already use it');
+  }
+}
 
 /**
  * Resolve an HTTP DESTINATION connector's id-based TLS references to PEM material.

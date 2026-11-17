@@ -13,7 +13,7 @@ vi.mock('../certificate.service.js', () => ({
   CertificateService: { getMaterialById: (...args: unknown[]) => mockGetMaterialById(...args) },
 }));
 
-const { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls } = await import('../connector-tls-resolver.js');
+const { resolveHttpDestinationTls, resolveHttpSourceTls, resolveQueueTls, privateKeyCertificateIds } = await import('../connector-tls-resolver.js');
 
 // ----- Helpers -----
 
@@ -270,5 +270,22 @@ describe('reading the stored tls bag', () => {
     mockGetMaterialById.mockResolvedValueOnce(okMaterial('CA-PEM', null));
     const result = await resolveHttpDestinationTls({ scheme: 'HTTPS', url: 'https://x', tls: { caCertId: CA_ID, cert: 'C', note: 'x' } });
     expect(result.ok && result.value['tls']).toEqual({ rejectUnauthorized: true, ca: 'CA-PEM' });
+  });
+});
+
+describe('privateKeyCertificateIds', () => {
+  it('names the client and server certificates, once each, and never a CA', () => {
+    expect(privateKeyCertificateIds({ tls: { clientCertId: 'c1', serverCertId: 'c1', caCertId: 'ca' } })).toEqual(['c1']);
+    expect(privateKeyCertificateIds({ tls: { serverCertId: 's1', clientCertId: 'c1' } })).toEqual(['c1', 's1']);
+  });
+
+  it('names nothing for properties without a tls bag, or that are not an object', () => {
+    expect(privateKeyCertificateIds({})).toEqual([]);
+    expect(privateKeyCertificateIds(null)).toEqual([]);
+    expect(privateKeyCertificateIds({ tls: { clientCertId: '' } })).toEqual([]);
+  });
+
+  it('fails loud on a tls value that is not an object', () => {
+    expect(() => privateKeyCertificateIds({ tls: 'yes' })).toThrow();
   });
 });

@@ -11,6 +11,8 @@ import { db } from '../lib/db.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import logger from '../lib/logger.js';
 import { channels } from '../db/schema/index.js';
+import { ALL_CHANNELS } from '@galvanigraph/core-models';
+import { channelIdIn, type ChannelScope } from '../lib/channel-scope.js';
 import { deleteMessagesByIds, DELETE_BATCH_SIZE } from './message-delete-helper.js';
 
 // ----- Constants -----
@@ -177,8 +179,9 @@ export class DataPrunerService {
    * Get prunable message counts per channel.
    * Returns counts of messages older than each channel's pruning threshold.
    */
-  static async getStatistics(): Promise<Result<ReadonlyArray<PrunableChannelStats>>> {
+  static async getStatistics(scope: ChannelScope = ALL_CHANNELS): Promise<Result<ReadonlyArray<PrunableChannelStats>>> {
     return tryCatch(async () => {
+      // Only the channels inside `scope` (the reader's settings:read channels, D-310).
       const prunableChannels = await db
         .select({
           id: channels.id,
@@ -189,6 +192,7 @@ export class DataPrunerService {
           and(
             eq(channels.pruningEnabled, true),
             isNull(channels.deletedAt),
+            channelIdIn(channels.id, scope),
           ),
         );
 

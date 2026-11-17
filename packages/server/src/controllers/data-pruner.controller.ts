@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import { DataPrunerService } from '../services/data-pruner.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import logger from '../lib/logger.js';
+import { channelScopeOf } from '../lib/channel-scope.js';
 
 function auditContext(req: Request): { userId: string | null; ipAddress: string | null } {
   return {
@@ -61,8 +62,8 @@ export class DataPrunerController {
   }
 
   /** GET /admin/prune/statistics — Get prunable message counts per channel. */
-  static async getStatistics(_req: Request, res: Response): Promise<void> {
-    const result = await DataPrunerService.getStatistics();
+  static async getStatistics(req: Request, res: Response): Promise<void> {
+    const result = await DataPrunerService.getStatistics(await channelScopeOf(req, 'settings:read'));
 
     if (!result.ok) {
       logger.error({ errMsg: result.error.message, stack: result.error.stack }, 'Failed to get pruner statistics');

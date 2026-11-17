@@ -91,6 +91,15 @@ export function channelIdIn(column: AnyColumn, scope: ChannelScope): SQL | undef
   return inArray(column, [...scope]);
 }
 
+/**
+ * A record's channel links as a scoped reader may see them: the ones inside
+ * `scope`, and how many were left out (plan section 2: "+N outside your access").
+ */
+export function linksInScope(channelIds: readonly string[], scope: ChannelScope): { readonly shown: string[]; readonly outsideScopeCount: number } {
+  const shown = channelIds.filter((id) => inScope(scope, id));
+  return { shown, outsideScopeCount: channelIds.length - shown.length };
+}
+
 /** Whether `channelId` is inside `scope`. */
 export function inScope(scope: ChannelScope, channelId: string | null): boolean {
   if (scope === ALL_CHANNELS) return true;

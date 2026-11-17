@@ -6,6 +6,8 @@
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../lib/db.js';
+import { ALL_CHANNELS } from '@galvanigraph/core-models';
+import type { ChannelScope } from '../lib/channel-scope.js';
 import {
   messageStatistics,
 } from '../db/schema/index.js';
@@ -76,9 +78,17 @@ export class StatisticsService {
     });
   }
 
-  /** Get summary statistics for all channels (for dashboard). */
-  static async getAllChannelStatistics(): Promise<Result<readonly ChannelStatisticsSummary[]>> {
+  /**
+   * Summary statistics for the channels inside `scope` (for the dashboard).
+   * The scope filters the QUEUED count in SQL too, so a scoped reader's
+   * request never aggregates other channels' queues (D-310).
+   */
+  static async getAllChannelStatistics(scope: ChannelScope = ALL_CHANNELS): Promise<Result<readonly ChannelStatisticsSummary[]>> {
     return tryCatch(async () => {
+      if (scope !== ALL_CHANNELS && scope.length === 0) return [];
+      const ids = scope === ALL_CHANNELS ? null : sql.join(scope.map((id) => sql`${id}::uuid`), sql`, `);
+      const inChannels = ids === null ? sql`` : sql`AND c.id IN (${ids})`;
+      const inQueued = ids === null ? sql`` : sql`AND channel_id IN (${ids})`;
       const result = await db.execute<{
         channel_id: string;
         channel_name: string;
@@ -113,10 +123,10 @@ export class StatisticsService {
         LEFT JOIN (
           SELECT channel_id, COUNT(*) as queued
           FROM connector_messages
-          WHERE status = 'QUEUED'
+          WHERE status = 'QUEUED' ${inQueued}
           GROUP BY channel_id
         ) q ON q.channel_id = c.id
-        WHERE c.deleted_at IS NULL
+        WHERE c.deleted_at IS NULL ${inChannels}
         GROUP BY c.id, c.name, c.enabled, c.source_connector_type,
           c.inbound_data_type, c.outbound_data_type, c.revision, c.updated_at, q.queued
         ORDER BY c.name ASC
