@@ -31,8 +31,9 @@ export interface KeyRowCeilingOptions {
   readonly now?: () => Date;
 }
 
-/** A warning that is due: the day's count and the ceiling it is measured against. */
+/** A warning that is due: its day, the day's count and the ceiling it is measured against. */
 export interface RowWarning {
+  readonly day: string;
   readonly used: number;
   readonly limit: number;
 }
@@ -78,8 +79,9 @@ export class KeyRowCeiling {
     let pending = this.seeding.get(key);
     if (pending === undefined) {
       const since = new Date(`${day}T00:00:00Z`);
-      const seedWarned = this.options.seedWarned ?? ((): Promise<boolean> => Promise.resolve(false));
-      pending = Promise.all([this.options.seed(principalId, since), seedWarned(principalId, since)])
+      // The warning is advice: when whether it was sent cannot be read, it may be sent again.
+      const warned = (this.options.seedWarned?.(principalId, since) ?? Promise.resolve(false)).catch(() => false);
+      pending = Promise.all([this.options.seed(principalId, since), warned])
         .then(([used, warned]) => {
           const entry: Day = { day, used, refusalNoted: false, warned };
           // A slow read for an earlier day never replaces a later day's count.
@@ -139,11 +141,12 @@ export class KeyRowCeiling {
     if (!entry || entry.day !== dayOf(this.now()) || entry.warned) return null;
     if (entry.used < this.options.limit * KEY_ROWS_WARN_FRACTION) return null;
     entry.warned = true;
-    return { used: entry.used, limit: this.options.limit };
+    return { day: entry.day, used: entry.used, limit: this.options.limit };
   }
 
-  releaseWarning(principalId: string): void {
+  /** Undo a claim whose write failed, unless the day it was claimed on has passed. */
+  releaseWarning(principalId: string, warning: RowWarning): void {
     const entry = this.days.get(principalId);
-    if (entry) entry.warned = false;
+    if (entry?.day === warning.day) entry.warned = false;
   }
 }

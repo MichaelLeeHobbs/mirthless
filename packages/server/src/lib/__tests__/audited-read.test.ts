@@ -242,6 +242,8 @@ describe('reads made with an API key (D-313)', () => {
 });
 
 describe('the 80% warning for an API key (#301)', () => {
+  // The warning is written beside the response; let its write settle.
+  const settle = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve); });
   const keyReq = (userId: string): Request => ({ user: { id: userId }, apiKeyId: `k-${userId}`, ip: '10.0.0.9' }) as unknown as Request;
   const read = (rows: number): Parameters<typeof recordReadOrRefuse>[2] => ({ action: 'MESSAGE_SEARCHED', channelId: 'c1', attributes: {}, rows });
 
@@ -261,6 +263,7 @@ describe('the 80% warning for an API key (#301)', () => {
   it('tries the warning again on the next read when the write failed', async () => {
     createEvent.mockResolvedValueOnce({ ok: false, error: new Error('db down') });
     await recordReadOrRefuse(keyReq('warn-b'), makeRes(), read(4500));
+    await settle();
     await recordReadOrRefuse(keyReq('warn-b'), makeRes(), read(1));
     expect(createEvent).toHaveBeenCalledTimes(2);
     expect(createEvent).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: expect.objectContaining({ used: 4501 }) }));
@@ -277,6 +280,17 @@ describe('the 80% warning for an API key (#301)', () => {
     hasEventSince.mockResolvedValueOnce({ ok: false, error: new Error('db down') });
     expect(await recordReadOrRefuse(keyReq('warn-e'), makeRes(), read(4500))).toBe(true);
     expect(createEvent).toHaveBeenCalledOnce();
+  });
+
+  it('still warns a key whose every read after a failed write is refused at the ceiling', async () => {
+    createEvent.mockResolvedValueOnce({ ok: false, error: new Error('db down') });
+    expect(await recordReadOrRefuse(keyReq('warn-f'), makeRes(), read(5000))).toBe(true);
+    await settle();
+    const res = makeRes();
+    expect(await recordReadOrRefuse(keyReq('warn-f'), res, read(1))).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(createEvent).toHaveBeenCalledTimes(2);
+    expect(createEvent).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: { apiKeyId: 'k-warn-f', used: 5000, limit: 5000 } }));
   });
 
   it('never warns for a read that was not recorded, nor for a person', async () => {

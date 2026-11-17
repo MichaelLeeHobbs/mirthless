@@ -116,9 +116,10 @@ describe('KeyRowCeiling', () => {
 });
 
 describe('KeyRowCeiling: the 80% warning (#301)', () => {
-  function warned(limit: number, seeded = 0, alreadyWarned = false): { c: KeyRowCeiling; clock: { now: Date } } {
+  function warned(limit: number, seeded = 0, alreadyWarned: boolean | Error = false): { c: KeyRowCeiling; clock: { now: Date } } {
     const clock = { now: new Date('2026-11-17T10:00:00Z') };
-    const c = new KeyRowCeiling({ limit, seed: async () => seeded, seedWarned: async () => alreadyWarned, now: () => clock.now });
+    const seedWarned = async (): Promise<boolean> => { if (alreadyWarned instanceof Error) throw alreadyWarned; return alreadyWarned; };
+    const c = new KeyRowCeiling({ limit, seed: async () => seeded, seedWarned, now: () => clock.now });
     return { c, clock };
   }
 
@@ -127,7 +128,7 @@ describe('KeyRowCeiling: the 80% warning (#301)', () => {
     await c.take('k', 7);
     expect(c.claimWarning('k')).toBeNull();
     await c.take('k', 1);
-    expect(c.claimWarning('k')).toEqual({ used: 8, limit: 10 });
+    expect(c.claimWarning('k')).toEqual({ day: '2026-11-17', used: 8, limit: 10 });
   });
 
   it('is claimed once a day: a second claim gets nothing, a new day starts again', async () => {
@@ -138,15 +139,16 @@ describe('KeyRowCeiling: the 80% warning (#301)', () => {
     expect(c.claimWarning('k')).toBeNull();
     clock.now = new Date('2026-11-18T00:00:01Z');
     await c.take('k', 8);
-    expect(c.claimWarning('k')).toEqual({ used: 8, limit: 10 });
+    expect(c.claimWarning('k')).toEqual({ day: '2026-11-18', used: 8, limit: 10 });
   });
 
   it('is claimed again after a write that failed is released', async () => {
     const { c } = warned(10);
     await c.take('k', 9);
-    expect(c.claimWarning('k')).not.toBeNull();
-    c.releaseWarning('k');
-    expect(c.claimWarning('k')).toEqual({ used: 9, limit: 10 });
+    const claimed = c.claimWarning('k');
+    expect(claimed).not.toBeNull();
+    c.releaseWarning('k', claimed!);
+    expect(c.claimWarning('k')).toEqual({ day: '2026-11-17', used: 9, limit: 10 });
   });
 
   it('remembers a warning already written today, across a restart', async () => {
@@ -158,12 +160,31 @@ describe('KeyRowCeiling: the 80% warning (#301)', () => {
   it('is due when the day starts past 80% from the audit log', async () => {
     const { c } = warned(10, 9, false);
     await c.take('k', 0);
-    expect(c.claimWarning('k')).toEqual({ used: 9, limit: 10 });
+    expect(c.claimWarning('k')).toEqual({ day: '2026-11-17', used: 9, limit: 10 });
   });
 
-  it('says nothing for a key it has not seen', () => {
+  it('counts the day and owes the warning when whether it was sent cannot be read', async () => {
+    const { c } = warned(10, 9, new Error('events unreadable'));
+    expect(await c.take('k', 0)).not.toBeNull();
+    expect(c.claimWarning('k')).toEqual({ day: '2026-11-17', used: 9, limit: 10 });
+  });
+
+  it('does not let a failed write from yesterday reopen today\'s warning', async () => {
+    const { c, clock } = warned(10);
+    await c.take('k', 9);
+    const yesterday = c.claimWarning('k');
+    clock.now = new Date('2026-11-18T00:00:01Z');
+    await c.take('k', 9);
+    expect(c.claimWarning('k')).not.toBeNull();
+    c.releaseWarning('k', yesterday!);
+    expect(c.claimWarning('k')).toBeNull();
+  });
+
+  it('says nothing for a key it has not seen, and releasing one changes nothing', async () => {
     const { c } = warned(10);
     expect(c.claimWarning('nobody')).toBeNull();
-    c.releaseWarning('nobody');
+    c.releaseWarning('nobody', { day: '2026-11-17', used: 9, limit: 10 });
+    await c.take('nobody', 9);
+    expect(c.claimWarning('nobody')).toEqual({ day: '2026-11-17', used: 9, limit: 10 });
   });
 });
