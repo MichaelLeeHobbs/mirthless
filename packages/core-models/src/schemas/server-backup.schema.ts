@@ -27,7 +27,10 @@ const backupUserSchema = z.object({
   firstName: z.string().nullable(),
   lastName: z.string().nullable(),
   description: z.string().nullable(),
-  role: z.string(),
+  /** The roles the user held (D-310). */
+  roles: z.array(z.string()).optional(),
+  /** The one role a user held in a backup made before roles were rows. */
+  role: z.string().optional(),
   enabled: z.boolean(),
 });
 

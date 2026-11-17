@@ -2,8 +2,9 @@
 // Session Lifetime Tests
 // ===========================================
 // JWT_REFRESH_EXPIRES_IN sets the refresh JWT's exp, the session row's expiry
-// and the refresh cookie's max age (issue #99). Only the database is faked:
-// the real jwt and cookie helpers run against a 30-day setting.
+// and the refresh cookie's max age (issue #99). Only the database and the
+// resolver that reads the user are faked: the real jwt and cookie helpers run
+// against a 30-day setting.
 
 import { describe, it, expect, vi } from 'vitest';
 import jwt from 'jsonwebtoken';
@@ -34,6 +35,13 @@ const mockDb = {
 };
 vi.mock('../../lib/db.js', () => ({ db: mockDb, default: mockDb }));
 vi.mock('../../lib/event-emitter.js', () => ({ emitEvent: vi.fn(), emitAuditEvent: vi.fn() }));
+vi.mock('../../lib/principal.js', async () => {
+  const { standingFor } = await import('../../../test/standing.js');
+  return {
+    loadUserStanding: vi.fn(() => Promise.resolve(standingFor({ id: 'user-1', role: 'viewer' }))),
+    roleLabel: (names: readonly string[]) => names.join(', '),
+  };
+});
 
 const { AuthService } = await import('../auth.service.js');
 const { signRefreshToken } = await import('../../lib/jwt.js');
@@ -48,8 +56,6 @@ function expectAbout(actualMs: number, expectedMs: number): void {
 
 describe('session lifetime from JWT_REFRESH_EXPIRES_IN', () => {
   it('uses the configured 30 days for the JWT exp, the session row and the cookie', async () => {
-    selectResponses.push([{ id: 'user-1', enabled: true }]);
-
     const result = await AuthService.refreshSession(signRefreshToken({ userId: 'user-1' }));
     expect(result.ok).toBe(true);
     if (!result.ok) return;

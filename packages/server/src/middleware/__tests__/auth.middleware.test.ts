@@ -20,19 +20,15 @@ vi.mock('../../lib/logger.js', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-// db.select().from().where() — first call returns the user row, second returns
-// the permission rows.
-let userRow: Record<string, unknown> | undefined;
-const mockWhere = vi.fn();
-const mockFrom = vi.fn(() => ({ where: mockWhere }));
-const mockSelect = vi.fn((..._args: unknown[]) => ({ from: mockFrom }));
-vi.mock('../../lib/db.js', () => ({
-  db: { select: (...args: unknown[]) => mockSelect(...args) },
-}));
-vi.mock('../../db/schema/index.js', () => ({
-  users: {}, userPermissions: {},
-}));
-vi.mock('drizzle-orm', () => ({ eq: vi.fn() }));
+// The resolver is the database boundary: the user as it would load them.
+let userRow: import('../../../test/standing.js').StandingRow | undefined;
+vi.mock('../../lib/principal.js', async () => {
+  const { standingFor } = await import('../../../test/standing.js');
+  return {
+    loadUserStanding: vi.fn(() => Promise.resolve(userRow ? standingFor(userRow) : null)),
+    roleLabel: (names: readonly string[]) => names.join(', '),
+  };
+});
 // Session liveness has its own tests (session-live.test.ts, forged-token.routes.test.ts).
 vi.mock('../../lib/session-live.js', () => ({ isSessionLive: vi.fn(() => Promise.resolve(true)) }));
 
@@ -57,8 +53,6 @@ function makeReq(method: string, originalUrl: string): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   mockVerify.mockReturnValue({ userId: 'u1', sessionId: 's1', type: 'access' });
-  // First where() call -> user row; subsequent -> permission rows.
-  mockWhere.mockImplementation(() => (userRow ? Promise.resolve([userRow]) : Promise.resolve([])));
 });
 
 describe('authenticate — forced password change gate', () => {

@@ -3,7 +3,7 @@
 // ===========================================
 // Two admins disabling or demoting each other at the same moment must not both
 // succeed: the check for another enabled admin and the write happen in one
-// transaction that locks the enabled admin rows. Each round starts with exactly
+// transaction that holds the lock on the admin role row (grant.service). Each round starts with exactly
 // two enabled admins (any other enabled admin is set aside for the test and
 // put back after), fires both changes with Promise.all, and expects exactly one
 // to succeed and one enabled admin to remain.
@@ -12,6 +12,9 @@ import { beforeAll, afterAll, beforeEach, afterEach, expect, it } from 'vitest';
 import { describeIntegration } from './_setup.js';
 
 const ROUNDS = 10;
+/** Users holding the admin role through a live assignment. */
+const ADMIN_HOLDERS = `SELECT a.user_id FROM assignments a JOIN roles r ON r.id = a.role_id
+  WHERE r.admin AND (a.expires_at IS NULL OR a.expires_at > now())`;
 
 describeIntegration('UserService last enabled admin (real Postgres)', () => {
   let UserService: typeof import('../../src/services/user.service.js').UserService;
@@ -26,7 +29,7 @@ describeIntegration('UserService last enabled admin (real Postgres)', () => {
 
   beforeEach(async () => {
     const { rows } = await pool.query<{ id: string }>(
-      `UPDATE users SET enabled = false WHERE role = 'admin' AND enabled = true RETURNING id`,
+      `UPDATE users SET enabled = false WHERE enabled = true AND id IN (${ADMIN_HOLDERS}) RETURNING id`,
     );
     setAside = rows.map((r) => r.id);
   });
@@ -43,18 +46,19 @@ describeIntegration('UserService last enabled admin (real Postgres)', () => {
 
   async function createAdmin(name: string): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO users (username, email, password_hash, role, enabled)
-       VALUES ($1, $2, 'not-a-real-hash', 'admin', true) RETURNING id`,
+      `INSERT INTO users (username, email, password_hash, enabled)
+       VALUES ($1, $2, 'not-a-real-hash', true) RETURNING id`,
       [name, `${name}@example.test`],
     );
     const id = rows[0]?.id;
     if (!id) throw new Error('admin insert returned no id');
+    await pool.query(`INSERT INTO assignments (user_id, role_id) SELECT $1, id FROM roles WHERE admin`, [id]);
     created.push(id);
     return id;
   }
 
   async function enabledAdminCount(): Promise<number> {
-    const { rows } = await pool.query<{ n: string }>(`SELECT count(*) AS n FROM users WHERE role = 'admin' AND enabled = true`);
+    const { rows } = await pool.query<{ n: string }>(`SELECT count(*) AS n FROM users WHERE enabled = true AND id IN (${ADMIN_HOLDERS})`);
     return Number(rows[0]?.n ?? 0);
   }
 

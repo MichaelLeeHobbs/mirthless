@@ -446,6 +446,13 @@ describeIntegration('Runtime database role (real Postgres)', () => {
     );
     expect(Number(counts.rows[0]?.users)).toBeGreaterThan(0);
     expect(Number(counts.rows[0]?.messages)).toBeGreaterThan(0);
+
+    // The first admin holds the admin role the migration created (D-310).
+    const admin = await owner.query<{ name: string }>(
+      `SELECT r.name FROM users u JOIN assignments a ON a.user_id = u.id JOIN roles r ON r.id = a.role_id
+       WHERE u.username = 'admin' AND r.admin`,
+    );
+    expect(admin.rows.map((r) => r.name)).toEqual(['admin']);
   }, 120_000);
 
   it('PartitionManagerService creates a channel\'s partitions as the runtime role', async () => {

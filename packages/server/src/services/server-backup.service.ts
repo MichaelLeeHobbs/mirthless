@@ -192,7 +192,8 @@ export class ServerBackupService {
           firstName: u.firstName,
           lastName: u.lastName,
           description: null,
-          role: u.role,
+          // The roles the user holds; assignments carry the scope from #266 on.
+          roles: [...u.roles],
           enabled: u.enabled,
         })),
         settings: settingsResult.value.map((s) => ({

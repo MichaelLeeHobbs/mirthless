@@ -30,14 +30,15 @@ export const createUserSchema = z.object({
   password: passwordSchema,
   firstName: z.string().max(100).nullable().optional(),
   lastName: z.string().max(100).nullable().optional(),
-  role: z.enum(USER_ROLE).default(USER_ROLE.VIEWER),
+  // A role's name (roles are rows, D-310); the server refuses a name with no role.
+  role: z.string().min(1).max(100).default(USER_ROLE.VIEWER),
 });
 
 export const updateUserSchema = z.object({
   email: z.string().email().max(255).optional(),
   firstName: z.string().max(100).nullable().optional(),
   lastName: z.string().max(100).nullable().optional(),
-  role: z.enum(USER_ROLE).optional(),
+  role: z.string().min(1).max(100).optional(),
   enabled: z.boolean().optional(),
 });
 

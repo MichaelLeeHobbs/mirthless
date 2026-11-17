@@ -216,7 +216,7 @@ describe('ServerBackupService', () => {
       setupExportMocks();
       const user = {
         id: 'u-1', username: 'admin', email: 'a@b.com',
-        firstName: 'A', lastName: 'B', role: 'admin', enabled: true,
+        firstName: 'A', lastName: 'B', role: 'admin', roles: ['admin'], enabled: true,
       };
       mockUserListUsers.mockResolvedValue(okResult([user]));
 
@@ -226,6 +226,9 @@ describe('ServerBackupService', () => {
       if (!result.ok) return;
       expect(result.value.backup.users).toHaveLength(1);
       expect(result.value.backup.users[0]).not.toHaveProperty('passwordHash');
+      // The roles the user holds, from their assignments (D-310), not users.role.
+      expect(result.value.backup.users[0]?.roles).toEqual(['admin']);
+      expect(result.value.backup.users[0]).not.toHaveProperty('role');
     });
 
     it('returns error when channel export fails, without recording an export', async () => {

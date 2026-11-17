@@ -22,12 +22,14 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { USER_ROLE } from '@galvanigraph/core-models';
+import { builtInRolePermissions, defaultRoles } from '../../src/db/seeds/roles.js';
 import { describeIntegration } from './_setup.js';
 import type { ApiRoute, WalkedRoute } from '../../src/routes/__tests__/api-routes.js';
 
 const ID = '3f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0c';
 const NOT_AN_ID = 'route-walk-not-an-id';
-const ROLES = Object.values(USER_ROLE);
+/** Every built-in role, the channel roles included (D-310). */
+const ROLES = defaultRoles.map((r) => r.name);
 /** What authenticate still lets through for a user who must change their password. */
 const PASSWORD_CHANGE_EXEMPT: readonly ApiRoute[] = [
   { method: 'POST', path: '/api/v1/users/me/password' },
@@ -65,7 +67,6 @@ describeIntegration('route walk per principal (real authenticate)', () => {
   let pool: typeof import('../../src/lib/db.js').pool;
   let permissionsOfGuard: typeof import('../../src/middleware/permission.middleware.js').permissionsOfGuard;
   let isValidator: typeof import('../../src/middleware/validate.middleware.js').isValidator;
-  let permissionNamesForRole: typeof import('../../src/lib/role-permissions.js').permissionNamesForRole;
   let server: Server;
   let base: string;
   let routes: readonly WalkedRoute[];
@@ -75,11 +76,15 @@ describeIntegration('route walk per principal (real authenticate)', () => {
     const { signAccessToken } = await import('../../src/lib/jwt.js');
     const username = `itest-walk-${name}-${randomUUID().slice(0, 8)}`;
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO users (username, email, password_hash, role, enabled, must_change_password)
-       VALUES ($1, $2, 'not-a-hash', $3, $4, $5) RETURNING id`,
-      [username, `${username}@example.test`, role, flags.enabled ?? true, flags.mustChange ?? false],
+      `INSERT INTO users (username, email, password_hash, enabled, must_change_password)
+       VALUES ($1, $2, 'not-a-hash', $3, $4) RETURNING id`,
+      [username, `${username}@example.test`, flags.enabled ?? true, flags.mustChange ?? false],
     );
     const id = rows[0]?.id ?? '';
+    await pool.query(
+      `INSERT INTO assignments (user_id, role_id) SELECT $1, id FROM roles WHERE name = $2`,
+      [id, role],
+    );
     const session = await pool.query<{ id: string }>(
       `INSERT INTO sessions (user_id, refresh_token, expires_at) VALUES ($1, $2, now() + interval '1 hour') RETURNING id`,
       [id, `itest-walk-${randomUUID()}`],
@@ -95,7 +100,6 @@ describeIntegration('route walk per principal (real authenticate)', () => {
     ({ pool } = await import('../../src/lib/db.js'));
     ({ permissionsOfGuard } = await import('../../src/middleware/permission.middleware.js'));
     ({ isValidator } = await import('../../src/middleware/validate.middleware.js'));
-    ({ permissionNamesForRole } = await import('../../src/lib/role-permissions.js'));
     const { walkApiRoutes, isPublic, SESSION_ONLY_ROUTES } = await import('../../src/routes/__tests__/api-routes.js');
     const app = (await import('../../src/app.js')).default;
     routes = (await walkApiRoutes((await import('../../src/routes/index.js')).default)).filter((r) => !isPublic(r));
@@ -138,7 +142,7 @@ describeIntegration('route walk per principal (real authenticate)', () => {
   }
 
   const guardOf = (r: WalkedRoute): readonly string[] => permissionsOfGuard(r.handlers[0]) ?? [];
-  const holds = (role: string, r: WalkedRoute): boolean => guardOf(r).some((p) => permissionNamesForRole(role).includes(p));
+  const holds = (role: string, r: WalkedRoute): boolean => guardOf(r).some((p) => (builtInRolePermissions(role) as readonly string[]).includes(p));
   /** A non-GET route the walk may call as a role that passes its guard: one whose validator refuses the walk's input first. */
   const safeToPass = (r: WalkedRoute): boolean =>
     r.method === 'GET' || (r.handlers.some((h) => isValidator(h)) && !NOT_CALLED_WHEN_ALLOWED.some(same(r)));

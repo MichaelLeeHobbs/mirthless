@@ -37,8 +37,8 @@ describeIntegration('AuthService concurrency (real Postgres)', () => {
     const username = `itest-auth-${String(Date.now())}-${String(created.length)}`;
     const hash = await bcrypt.hash(PASSWORD, 4);
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO users (username, email, password_hash, role, failed_login_attempts, locked_until)
-       VALUES ($1, $2, $3, 'viewer', $4, $5) RETURNING id`,
+      `INSERT INTO users (username, email, password_hash, failed_login_attempts, locked_until)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
       [username, `${username}@example.test`, hash, lock?.attempts ?? 0, lock?.lockedUntil ?? null],
     );
     const id = rows[0]?.id;

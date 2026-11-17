@@ -6,13 +6,10 @@
 
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
-import { eq } from 'drizzle-orm';
 import { PERMISSIONS, holdsPermission, type Permission } from '@galvanigraph/core-models';
 import { createThrottle, errorInfo, type Throttle } from '@galvanigraph/core-util';
 import { config } from '../config/index.js';
-import { db } from './db.js';
-import { users } from '../db/schema/index.js';
-import { permissionNamesForRole } from './role-permissions.js';
+import { loadUserStanding } from './principal.js';
 import logger from './logger.js';
 import { verifyAccessToken } from './jwt.js';
 import { isSessionLive } from './session-live.js';
@@ -51,13 +48,10 @@ function socketHasPermission(socket: { data: Record<string, unknown> }, permissi
  * authenticate middleware so the websocket cannot outlive what REST would allow.
  */
 export async function loadSocketUser(userId: string, sessionId: string | undefined, type: string): Promise<SocketUserData | null> {
-  const [user] = await db
-    .select({ id: users.id, enabled: users.enabled, role: users.role, mustChangePassword: users.mustChangePassword })
-    .from(users)
-    .where(eq(users.id, userId));
-  if (!user || !user.enabled || user.mustChangePassword === true) return null;
+  const user = await loadUserStanding(userId);
+  if (!user || !user.enabled || user.mustChangePassword) return null;
   if (!(await isSessionLive(sessionId, userId))) return null;
-  return { userId, sessionId, type, permissions: permissionNamesForRole(user.role) };
+  return { userId, sessionId, type, permissions: user.permissions };
 }
 
 /**

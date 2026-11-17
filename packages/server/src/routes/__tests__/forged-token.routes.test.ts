@@ -4,7 +4,8 @@
 // Anyone holding JWT_SECRET could sign { userId: <an admin>, type: 'access' }
 // with no sessionId, and the revocation check let it through. The request here
 // goes through the real authenticate middleware and the real token checks; only
-// the database is fake, and it answers that the admin and a live session exist.
+// the database and the resolver are fake, and they answer that the admin and a
+// live session exist.
 
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import express from 'express';
@@ -23,11 +24,18 @@ vi.mock('../../lib/db.js', async () => {
   const db = {
     select: () => ({
       from: (table: unknown) => ({
-        where: () => Promise.resolve(table === schema.sessions ? [{ id: SESSION_ID }] : [ADMIN]),
+        where: () => Promise.resolve(table === schema.sessions ? [{ id: SESSION_ID }] : []),
       }),
     }),
   };
   return { db, default: db };
+});
+vi.mock('../../lib/principal.js', async () => {
+  const { standingFor } = await import('../../../test/standing.js');
+  return {
+    loadUserStanding: vi.fn(() => Promise.resolve(standingFor(ADMIN))),
+    roleLabel: (names: readonly string[]) => names.join(', '),
+  };
 });
 
 const { authenticate } = await import('../../middleware/auth.middleware.js');

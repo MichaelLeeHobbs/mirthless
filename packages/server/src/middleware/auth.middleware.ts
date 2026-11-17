@@ -5,11 +5,8 @@
 
 import type { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../lib/jwt.js';
-import { db } from '../lib/db.js';
-import { users } from '../db/schema/index.js';
-import { eq } from 'drizzle-orm';
 import { isSessionLive } from '../lib/session-live.js';
-import { permissionNamesForRole } from '../lib/role-permissions.js';
+import { loadUserStanding, roleLabel } from '../lib/principal.js';
 import logger from '../lib/logger.js';
 import { deny, DENY_REASON } from './permission.middleware.js';
 
@@ -22,6 +19,7 @@ declare global {
         id: string;
         username: string;
         email: string;
+        /** The held role names joined, for records and screens that show one role. */
         role: string;
         isActive: boolean;
         permissions: readonly string[];
@@ -61,18 +59,8 @@ export async function authenticate(
   try {
     const payload = verifyAccessToken(token);
 
-    // Fetch user from database to get current status
-    const [user] = await db
-      .select({
-        id: users.id,
-        username: users.username,
-        email: users.email,
-        role: users.role,
-        enabled: users.enabled,
-        mustChangePassword: users.mustChangePassword,
-      })
-      .from(users)
-      .where(eq(users.id, payload.userId));
+    // The user's current standing and grants, in one query (lib/principal.ts).
+    const user = await loadUserStanding(payload.userId);
 
     if (!user) {
       deny(req, res, DENY_REASON.USER_NOT_FOUND);
@@ -99,17 +87,15 @@ export async function authenticate(
       return;
     }
 
-    // Resolve permissions live from the user's role (single source of truth —
-    // adding a permission to a role reaches existing users without a re-sync).
-    const permissions = permissionNamesForRole(user.role);
-
+    // Grants are resolved live from the user's assignments on every request, so
+    // a role edit, an assignment change or an expiry takes effect at once.
     req.user = {
       id: user.id,
       username: user.username,
       email: user.email,
-      role: user.role,
+      role: roleLabel(user.roles),
       isActive: user.enabled,
-      permissions,
+      permissions: user.permissions,
       mustChangePassword: user.mustChangePassword,
     };
     req.sessionId = payload.sessionId;

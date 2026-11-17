@@ -59,6 +59,7 @@ Do NOT build features, abstractions, or flexibility that aren't explicitly requi
   - `createThrottle` in `core-util/src/throttle.ts`: run a function at most once per interval, at once for the first call and once at the window's end for the calls after it (D-306). The server coalesces live socket events with it (`emitToRoomCoalesced` in `server/src/lib/socket.ts`) and the web throttles their refetches (`useThrottledSocketEvent` in `web/src/hooks/use-socket.ts`).
   - `GlobalChannelMap` in `engine/src/runtime/global-channel-map.ts` is the in-memory script map; `GlobalMapProxy` keeps its entries in one rather than its own `Map`.
   - `PERMISSION_CATALOG`, `foldGrants`, `can` and `holdsPermission` in `core-models/src/authz/` (D-310): what each permission is and where it may be held, how assignments combine, and the one permission check. Lint fails `permissions.includes` anywhere else.
+  - `loadUserStanding` in `server/src/lib/principal.ts`: a user, whether they may act, and their folded grants, in one query. `authenticate`, sockets, login and refresh all read a user through it. `GrantService` in `server/src/services/grant.service.ts` is the only writer of roles and assignments, and holds the last-admin check. Unit tests fake the resolver with `standingFor` in `server/test/standing.ts`.
 - No speculative generalization — design for today's requirements, not hypothetical futures
 - If you find yourself saying "this might be useful later" — stop and don't build it
 

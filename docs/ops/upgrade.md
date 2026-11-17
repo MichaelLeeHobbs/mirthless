@@ -364,6 +364,12 @@ WHERE connector_type IN ('KAFKA','AMQP') AND jsonb_typeof(properties->'tls') = '
   AND k NOT IN ('caCertId','clientCertId','rejectUnauthorized');
 ```
 
+## Roles become rows (#265)
+
+Migrations 0018 to 0020 move roles from code into the database (D-310). 0018 creates the `roles`, `role_permissions` and `assignments` tables, writes the built-in roles, and gives every user one all-channel assignment of the role in `users.role`, so nobody's access changes. 0019 drops `users.role` and the unused `user_permissions` table, and 0020 allows only one admin role.
+
+The previous version reads `users.role` on every request, so it cannot run against an upgraded database. Going back needs the pre-upgrade dump (see [Rollback](#rollback)). Server backups made after the upgrade list each user's `roles` instead of one `role`, and an older server refuses to restore them.
+
 ## Standard upgrade (Docker)
 
 ```bash

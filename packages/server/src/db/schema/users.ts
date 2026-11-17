@@ -12,7 +12,7 @@ export const users = pgTable('users', {
   firstName: varchar('first_name', { length: 100 }),
   lastName: varchar('last_name', { length: 100 }),
   description: text('description'),
-  role: varchar('role', { length: 50 }).notNull().default('viewer'),
+  // A user's roles are assignments (db/schema/assignments.ts, D-310).
   enabled: boolean('enabled').notNull().default(true),
   mustChangePassword: boolean('must_change_password').notNull().default(false),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
