@@ -9,6 +9,8 @@
 // { success: true, data } envelope, or `undefined` for an empty list. Add a
 // branch here when a page needs data it doesn't get yet.
 
+import { PERMISSIONS } from '../../packages/core-models/dist/index.js';
+
 const NOW = Date.parse('2026-10-26T14:00:00Z');
 const ago = (minutes) => new Date(NOW - minutes * 60_000).toISOString();
 
@@ -161,6 +163,26 @@ const users = [
   lastLoginAt: lastLogin === null ? null : ago(lastLogin), createdAt: ago(200000),
 }));
 
+// Roles (D-310): the seven built in, and one custom role with holders. The
+// server sends the locked admin role with every permission.
+const ALL_PERMS = Object.values(PERMISSIONS);
+const VIEWER_PERMS = ['channels:read', 'messages:read', 'code_templates:read', 'alerts:read', 'events:read', 'resources:read', 'collections:read', 'datasources:read'];
+const DEVELOPER_PERMS = [...VIEWER_PERMS, 'channels:write', 'code_templates:write', 'resources:write', 'collections:write', 'global_scripts:read', 'global_map:read', 'config_map:read'];
+const DEPLOYER_PERMS = [...DEVELOPER_PERMS, 'channels:deploy', 'messages:reprocess', 'code_templates:delete', 'alerts:write', 'alerts:delete', 'resources:delete', 'collections:delete', 'datasources:write', 'datasources:delete', 'system:info'];
+const CHANNEL_ONLY = (list) => list.filter((p) => !['collections:read', 'collections:write', 'collections:delete', 'global_map:read', 'config_map:read', 'system:info', 'resources:write', 'resources:delete', 'datasources:write', 'datasources:delete', 'alerts:write', 'alerts:delete'].includes(p));
+const roles = [
+  ['r1', 'admin', 'Every permission on every channel. Locked.', true, true, ALL_PERMS, 1],
+  ['r2', 'channel-deployer', 'Deployer without the permissions limited to all-channel assignments, for an assignment scoped to channel groups.', true, false, CHANNEL_ONLY(DEPLOYER_PERMS), 0],
+  ['r3', 'channel-developer', 'Developer without the permissions limited to all-channel assignments, for an assignment scoped to channel groups.', true, false, CHANNEL_ONLY(DEVELOPER_PERMS), 0],
+  ['r4', 'channel-viewer', 'Viewer without the reads that reach every channel, for an assignment scoped to channel groups.', true, false, CHANNEL_ONLY(VIEWER_PERMS), 0],
+  ['r5', 'deployer', 'Builds, deploys and runs channels, and manages the shared areas they use.', true, false, DEPLOYER_PERMS, 1],
+  ['r6', 'developer', 'Builds channels and code templates; cannot deploy.', true, false, DEVELOPER_PERMS, 1],
+  ['r8', 'Lab analyst', 'Reads lab messages and reprocesses failed results.', false, false, ['channels:read', 'messages:read', 'messages:reprocess', 'events:read'], 6],
+  ['r7', 'viewer', 'Reads channels, messages and settings; changes nothing.', true, false, VIEWER_PERMS, 1],
+].map(([id, name, description, builtIn, admin, permissions, holders]) => ({
+  id, name, description, builtIn, admin, permissions, holders, createdAt: ago(200000), updatedAt: ago(3000),
+}));
+
 const alerts = [
   ['a1', 'Channel errors', 'Any errored message on a production channel', true, 'CHANNEL_ERROR', 4, 2],
   ['a2', 'Queue backlog', null, true, 'QUEUE_THRESHOLD', 2, 1],
@@ -279,6 +301,7 @@ export function route(pathname, search) {
   if (p === '/channel-groups') return groups;
   if (p === '/channel-groups/memberships') return [{ channelGroupId: 'g1', channelId: 'c1' }, { channelGroupId: 'g1', channelId: 'c2' }, { channelGroupId: 'g1', channelId: 'c3' }, { channelGroupId: 'g2', channelId: 'c5' }];
   if (p === '/users') return users;
+  if (p === '/roles') return roles;
   if (p === '/alerts') return page(alerts);
   if (p === '/events') return page(events);
   if (p === '/audit') return page(auditRows);

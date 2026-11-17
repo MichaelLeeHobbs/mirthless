@@ -8,6 +8,14 @@ const PAGES = [
   { label: 'Tools', path: '/tools/message-generator' },
 ];
 
+describe('role trails', () => {
+  it('links back to the roles list from the editor', () => {
+    expect(breadcrumbsFor('/roles/new', [], undefined)).toEqual([{ label: 'Dashboard', href: '/' }, { label: 'Roles', href: '/roles' }, { label: 'New role' }]);
+    expect(breadcrumbsFor('/roles/abc', [], undefined).at(-1)).toEqual({ label: 'Edit role' });
+    expect(breadcrumbsFor('/roles', [], undefined).at(-1)).toEqual({ label: 'Roles' });
+  });
+});
+
 describe('crumbEntity', () => {
   it('finds the channel or alert a URL is about', () => {
     expect(crumbEntity('/channels/abc')).toEqual({ kind: 'channel', id: 'abc' });

@@ -24,7 +24,12 @@ function user(id: string, username: string, enabled: boolean): Record<string, un
 }
 
 vi.mock('../../hooks/use-permissions.js', () => ({
-  usePermissions: () => ({ has: (p: string) => granted.includes(p) }),
+  usePermissions: () => ({ has: (p: string) => granted.includes(p), permissions: new Set(granted) }),
+}));
+
+// The role picker's list; these tests are about the password, not the role.
+vi.mock('../../hooks/use-roles.js', () => ({
+  useRoles: () => ({ data: undefined, error: null }),
 }));
 
 vi.mock('../../hooks/use-users.js', () => ({

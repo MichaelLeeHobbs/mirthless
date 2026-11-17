@@ -52,6 +52,11 @@ const PAGES = {
   traffic: '/messages',
   alerts: '/alerts',
   users: '/users',
+  'user-edit-role': { url: '/users', click: 'Edit user' },
+  roles: '/roles',
+  'role-editor': '/roles/r8',
+  'role-admin-locked': '/roles/r1',
+  'role-clone': '/roles/new?from=r4',
   events: '/events',
   'events-access': { url: '/events', click: 'Access records' },
   settings: '/settings',
@@ -152,8 +157,10 @@ async function shoot(browser, name, target, variantName) {
   if (keys) await page.keyboard.press(keys);
   if (type) await page.keyboard.type(type);
   // `click` is one label or several, clicked in order (a tab, then a section in it).
+  // A label no visible text carries is looked up as an accessible name (an icon button).
   for (const label of [click ?? []].flat()) {
-    await page.getByText(label, { exact: true }).first().click();
+    const byText = page.getByText(label, { exact: true });
+    await ((await byText.count()) > 0 ? byText : page.getByLabel(label, { exact: true })).first().click();
     await page.waitForTimeout(200);
   }
   for (const [label, value] of Object.entries(fill ?? {})) await page.getByLabel(label, { exact: true }).fill(value);

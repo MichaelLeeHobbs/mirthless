@@ -6,6 +6,8 @@
 // a colour reads the same everywhere in the app. Pure functions — no React — so
 // they are trivially testable.
 
+import { ROLE_FLAG } from './role-flags.js';
+
 /** Semantic status levels, keyed to `theme.palette.status`. */
 export type StatusLevel = 'healthy' | 'warning' | 'critical' | 'info' | 'neutral';
 
@@ -49,6 +51,20 @@ export function eventLevelLevel(level: string): StatusLevel {
     case 'ERROR': return 'critical';
     case 'WARN': return 'warning';
     case 'INFO': return 'info';
+    default: return 'neutral';
+  }
+}
+
+/**
+ * Map a role flag (lib/role-flags.ts) to a semantic level. As strong as admin →
+ * critical; runs code or reads PHI → warning; all channels only → info.
+ */
+export function roleFlagLevel(flag: string): StatusLevel {
+  switch (flag) {
+    case ROLE_FLAG.ADMIN_EQUIVALENT: return 'critical';
+    case ROLE_FLAG.RUNS_CODE:
+    case ROLE_FLAG.READS_PHI: return 'warning';
+    case ROLE_FLAG.ALL_CHANNELS_ONLY: return 'info';
     default: return 'neutral';
   }
 }

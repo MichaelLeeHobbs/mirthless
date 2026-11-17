@@ -343,6 +343,7 @@ The debate's first and third slices (one `authenticate` mount and parser order; 
 7. **Roles UI**, L.
    - Follows: Screen, Tests.
    - Owns: `packages/web/src/pages/UsersPage.tsx`, a new `RoleEditorPage.tsx`, `packages/web/src/components/users/`, `packages/web/src/stores/auth.store.ts` (stores folded grants), `packages/web/src/lib/status.ts`, `e2e/roles.spec.ts` (signs in as a non-admin).
+   - As built: Roles is its own page in the Administration section, next to Users, and is not a tab on Users. The role picker and the access preview live in `components/users/RoleAccessSection.tsx`; the role flags are in `lib/role-flags.ts`, and their levels in `lib/status.ts`. The web keeps reading the flat permission list. Storing folded grants in `auth.store.ts` moves to slice 10, which is the first to show a scope or an expiry.
 
 ### Epic 4: Group scope (#266)
 

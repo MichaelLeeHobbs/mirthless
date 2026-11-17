@@ -55,6 +55,12 @@ function alertTrail(rest: readonly string[], name: string | undefined): readonly
   return [HOME, alerts, { label: id === 'new' ? 'New alert' : (name ?? 'Alert') }];
 }
 
+function roleTrail(rest: readonly string[]): readonly Crumb[] {
+  const [id] = rest;
+  if (id === undefined) return [HOME, { label: 'Roles' }];
+  return [HOME, { label: 'Roles', href: '/roles' }, { label: id === 'new' ? 'New role' : 'Edit role' }];
+}
+
 function collectionTrail(rest: readonly string[], name: string | undefined): readonly Crumb[] {
   const [, sub] = rest;
   if (sub !== 'records') return [HOME, { label: 'Collections' }];
@@ -77,6 +83,7 @@ export function breadcrumbsFor(
   if (area === 'channels') return channelTrail(rest, entityName);
   if (area === 'alerts') return alertTrail(rest, entityName);
   if (area === 'collections') return collectionTrail(rest, entityName);
+  if (area === 'roles') return roleTrail(rest);
   const normalized = `/${[area, ...rest].join('/')}`;
   const page = pages.find((p) => p.path === normalized);
   return page ? [HOME, { label: page.label }] : [HOME];
