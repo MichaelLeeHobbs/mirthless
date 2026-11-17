@@ -18,16 +18,18 @@ export function describePath(path: AccessPath, groupName: (id: string) => string
 }
 
 /** The view as CSV: one row per person and way in, then the people who reach every channel another way. */
-export function accessCsv(view: ChannelAccessView, groupName: (id: string) => string): string {
-  const rows: string[][] = [['Person', 'Access', 'Permissions', 'Role', 'Scope', 'Until']];
+export function accessCsv(view: ChannelAccessView, groupName: (id: string) => string, now: string): string {
+  // Every row carries the time it describes, so a row copied out of the file still says when.
+  const at = view.asOf ?? now;
+  const rows: string[][] = [['As of', 'Person', 'Access', 'Permissions', 'Role', 'Scope', 'Until']];
   for (const p of view.people) {
     for (const path of p.through) {
       const scope = path.groupIds === null ? 'All channels' : path.groupIds.map(groupName).join('; ');
       // Each row's permissions are that assignment's own, not the person's merged set.
-      rows.push([p.username, 'Assignment', path.permissions.map(permissionLabel).join('; '), path.role, scope, path.expiresAt ?? '']);
+      rows.push([at, p.username, 'Assignment', path.permissions.map(permissionLabel).join('; '), path.role, scope, path.expiresAt ?? '']);
     }
   }
-  for (const p of view.throughCode) rows.push([p.username, 'Channel code (not recorded)', '', '', 'Every channel', '']);
-  for (const p of view.throughSharedData) rows.push([p.username, 'Shared data and logs', '', '', 'Every channel', '']);
+  for (const p of view.throughCode) rows.push([at, p.username, 'Channel code (not recorded)', '', '', 'Every channel', '']);
+  for (const p of view.throughSharedData) rows.push([at, p.username, 'Shared data and logs', '', '', 'Every channel', '']);
   return `${rows.map((r) => r.map(escapeCsvField).join(',')).join('\r\n')}\r\n`;
 }

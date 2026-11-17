@@ -10,6 +10,7 @@ import {
   channelListQuerySchema,
   patchChannelEnabledSchema,
   setChannelGroupsSchema,
+  channelAccessQuerySchema,
 } from '@galvanigraph/core-models';
 import { ChannelController } from '../controllers/channel.controller.js';
 import { ChannelGroupController } from '../controllers/channel-group.controller.js';
@@ -66,11 +67,12 @@ router.patch(
   ChannelController.setEnabled
 );
 
-// Who can access the channel: people and how they hold access, so users:read (D-310).
+// Who can access the channel, now or as of a past time (rebuilt from the audit
+// log): people and how they hold access, so users:read (D-310).
 router.get(
   '/:id/access',
   requirePermission('users:read'),
-  validate({ params: uuidParamsSchema }),
+  validate({ params: uuidParamsSchema, query: channelAccessQuerySchema }),
   ChannelController.access
 );
 

@@ -20,6 +20,7 @@ import { installFatalHandlers } from './lib/fatal-handlers.js';
 import { rerunStep, runStartupSteps, startupStatus, STARTUP_STEP } from './lib/startup-steps.js';
 import { emitEvent } from './lib/event-emitter.js';
 import { PartitionManagerService } from './services/partition-manager.service.js';
+import { GrantService } from './services/grant.service.js';
 import { tryCatch, type Result } from 'stderr-lib';
 
 const PORT = config.PORT;
@@ -45,6 +46,11 @@ const ensureAuditPartitions = (): Promise<Result<void>> =>
   tryCatch(async () => {
     const made = await PartitionManagerService.ensureAuditPartitions();
     if (!made.ok) throw made.error;
+    // After the partitions, so the row lands in this month's: each month the
+    // retention keeps needs a grant baseline for the access replay (D-319).
+    if (await GrantService.ensureMonthlyBaseline() === 'deferred') {
+      logger.warn('This month\'s grant baseline waited too long on grant changes; the daily run retries it');
+    }
   });
 const startupDeps = {
   logger,

@@ -30,11 +30,12 @@ async function revokeSessions(tx: DbExecutor, userId: string): Promise<void> {
  * FOR NO KEY UPDATE serialises changes to one user without blocking inserts
  * whose foreign keys point at the row (sessions, events).
  */
-async function lockTarget(tx: DbExecutor, id: string): Promise<void> {
-  const [row] = await tx.select({ id: users.id }).from(users).where(eq(users.id, id)).for('no key update');
+async function lockTarget(tx: DbExecutor, id: string): Promise<{ readonly enabled: boolean }> {
+  const [row] = await tx.select({ enabled: users.enabled }).from(users).where(eq(users.id, id)).for('no key update');
   if (!row) {
     throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
   }
+  return row;
 }
 
 /** A row with its held role names, as the API shows it: `role` is the names joined, `roles` the list. */
@@ -216,8 +217,12 @@ export class UserService {
             userId: id, disabling: beingDisabled, ...(input.role !== undefined ? { newRoleName: input.role } : {}),
           });
         }
-        await lockTarget(tx, id);
+        const target = await lockTarget(tx, id);
         await tx.update(users).set(userUpdates(input)).where(eq(users.id, id));
+        // Who could act is replayed from the audit log (grant.service channelAccessAsOf).
+        if (input.enabled !== undefined && input.enabled !== target.enabled) {
+          await GrantService.recordEnabledChange(tx, id, input.enabled, actor);
+        }
         const before = input.role !== undefined ? await GrantService.setUserRole(tx, id, input.role, actor) : null;
 
         // Disabling a user must revoke their sessions — otherwise a disabled user
@@ -263,12 +268,15 @@ export class UserService {
         // Cannot remove the last ENABLED admin: a disabled admin does not count.
         await GrantService.assertCanManage(tx, actorId, id);
         await GrantService.assertKeepsAnAdmin(tx, { userId: id, disabling: true });
-        await lockTarget(tx, id);
+        const target = await lockTarget(tx, id);
 
         await tx
           .update(users)
           .set({ enabled: false, updatedAt: new Date() })
           .where(eq(users.id, id));
+        if (target.enabled) {
+          await GrantService.recordEnabledChange(tx, id, false, { userId: context?.userId ?? actorId, ipAddress: context?.ipAddress ?? null });
+        }
         await revokeSessions(tx, id);
       });
 

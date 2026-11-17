@@ -24,9 +24,13 @@ export interface RuntimeRole {
 /** Where the upgrade steps for this live, for the error texts. */
 const DOC = 'docs/ops/upgrade.md#database-roles';
 
-/** The owner functions the runtime role may call (migrations 0016 and 0017). */
+/**
+ * The owner functions the runtime role may call (migrations 0016, 0017 and
+ * 0022). The seed, which runs as this role, records a grant baseline.
+ */
 const OWNER_FUNCTIONS = [
   'public.create_channel_partitions(uuid)', 'public.purge_events(integer)', 'public.ensure_audit_partitions()',
+  'public.record_grant_baseline(text)',
 ] as const;
 
 /**

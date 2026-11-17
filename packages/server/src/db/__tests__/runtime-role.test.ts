@@ -59,7 +59,7 @@ describe('provisionRuntimeRole', () => {
     ]);
     expect(statements).toContain('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO galvanigraph_app');
     expect(statements).toContain('REVOKE UPDATE, DELETE ON TABLE public.events FROM galvanigraph_app');
-    for (const fn of ['public.create_channel_partitions(uuid)', 'public.purge_events(integer)', 'public.ensure_audit_partitions()']) {
+    for (const fn of ['public.create_channel_partitions(uuid)', 'public.purge_events(integer)', 'public.ensure_audit_partitions()', 'public.record_grant_baseline(text)']) {
       expect(statements).toContain(`REVOKE ALL ON FUNCTION ${fn} FROM PUBLIC`);
       expect(statements).toContain(`GRANT EXECUTE ON FUNCTION ${fn} TO galvanigraph_app`);
     }

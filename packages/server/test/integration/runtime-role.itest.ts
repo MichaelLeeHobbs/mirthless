@@ -453,6 +453,14 @@ describeIntegration('Runtime database role (real Postgres)', () => {
        WHERE u.username = 'admin' AND r.admin`,
     );
     expect(admin.rows.map((r) => r.name)).toEqual(['admin']);
+
+    // The seed wrote that assignment directly, so it recorded a grant baseline holding it
+    // (migration 0022): the access replay starts from there.
+    const baseline = await owner.query<{ held: boolean }>(
+      `SELECT l.attributes->'assignments' @> jsonb_build_array(jsonb_build_object('userId', u.id)) AS held
+       FROM audit_log l, users u WHERE l.action = 'GRANT_BASELINE' AND u.username = 'admin' ORDER BY l.occurred_at DESC, l.id DESC LIMIT 1`,
+    );
+    expect(baseline.rows[0]?.held).toBe(true);
   }, 120_000);
 
   it('PartitionManagerService creates a channel\'s partitions as the runtime role', async () => {

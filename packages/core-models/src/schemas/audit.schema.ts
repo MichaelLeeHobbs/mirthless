@@ -49,6 +49,10 @@ export const AUDIT_ACTION = {
   ROLE_DELETED: 'ROLE_DELETED',
   /** A channel's group memberships changed: who can reach it changed (D-310). Written in the change's transaction. */
   CHANNEL_GROUPS_CHANGED: 'CHANNEL_GROUPS_CHANGED',
+  /** A user was enabled or disabled (deleting one disables it); written in the change's transaction. */
+  USER_ENABLED_CHANGED: 'USER_ENABLED_CHANGED',
+  /** Every role, assignment, membership and disabled user, from record_grant_baseline() (migration 0022, the seed): where the access replay starts. */
+  GRANT_BASELINE: 'GRANT_BASELINE',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];
