@@ -42,6 +42,7 @@ export class MessageExportController {
         includeContent: query.includeContent,
         messageIds: data.rows.map((r) => r.messageId),
       },
+      rows: data.rows.length,
     });
     if (auditRecordId === null) return;
     const header = exportHeader(req, auditRecordId, query.reason);

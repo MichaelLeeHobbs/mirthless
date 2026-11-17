@@ -6,14 +6,31 @@
 // (D-312). Repeats of the same read by the same caller are deduped
 // (audit-dedupe.ts); exports and attachment downloads pass no dedupe key, so
 // they are recorded every time.
+//
+// A read by an API key is never deduped: it records the message rows it
+// returns, and those count against the key's daily row ceiling
+// (key-row-ceiling.ts, D-313). A read that would pass the ceiling is refused
+// with 429 before anything is sent.
 
 import type { Request, Response } from 'express';
 import { AuditService } from '../services/audit.service.js';
 import { AuditDedupe } from './audit-dedupe.js';
 import { errorResponse, mapErrorToStatus } from './controller-helpers.js';
 import { emitAuditEvent } from './event-emitter.js';
+import { DEFAULT_KEY_DAILY_ROWS, KeyRowCeiling, type RowTicket } from './key-row-ceiling.js';
+import { ServiceError } from './service-error.js';
+import logger from './logger.js';
+import { errorInfo } from '@galvanigraph/core-util';
+import { AUDIT_ACTION } from '@galvanigraph/core-models';
 
 const dedupe = new AuditDedupe();
+
+const keyDailyRows = ((): number => {
+  const configured = Number(process.env['API_KEY_DAILY_ROWS']);
+  return Number.isInteger(configured) && configured > 0 ? configured : DEFAULT_KEY_DAILY_ROWS;
+})();
+
+const keyCeiling = new KeyRowCeiling({ limit: keyDailyRows, seed: (userId, since) => AuditService.rowsReadSince(userId, since) });
 
 export interface AuditedRead {
   readonly action: string;
@@ -27,6 +44,71 @@ export interface AuditedRead {
    * that can themselves be PHI (global map keys) or are not ids (log lines).
    */
   readonly dedupe?: { readonly key: string; readonly ids: readonly (string | number)[]; readonly idsOnlyForDedupe?: boolean };
+  /** The message rows the read returns, counted against an API key's daily ceiling. Omit for a read that returns none. */
+  readonly rows?: number;
+}
+
+/** Answer `res` with the refusal `error` carries. */
+function refuse(res: Response, error: unknown): void {
+  res.status(mapErrorToStatus(error)).json({ success: false, error: errorResponse(error) });
+}
+
+/**
+ * Record a read made with an API key, every time and with its rows, after
+ * counting the rows against the key's ceiling. Returns the record's id, or
+ * null when the request has been answered: 429 over the ceiling (recorded
+ * once a day per key), 503 when today's count or the record could not be
+ * read or written.
+ */
+async function recordKeyRead(req: Request, res: Response, read: Omit<AuditedRead, 'dedupe'>, attributes: Record<string, unknown>): Promise<number | null> {
+  const userId = req.user?.id;
+  if (userId === undefined) {
+    refuse(res, new ServiceError('UNAUTHORIZED', 'Sign in to read this'));
+    return null;
+  }
+  const rows = read.rows ?? 0;
+  let ticket: RowTicket | null;
+  try {
+    ticket = await keyCeiling.take(userId, rows);
+  } catch (err: unknown) {
+    // Today's count could not be read from the audit log: refuse, as any read the log cannot account for is.
+    logger.error({ ...errorInfo(err), apiKeyId: req.apiKeyId }, 'Could not read an API key\'s rows for today; refusing the read');
+    refuse(res, new ServiceError('AUDIT_UNAVAILABLE', 'The audit log could not be read to count this API key\'s rows, so the read was refused. Try again, and tell an administrator if it keeps happening.'));
+    return null;
+  }
+  if (ticket === null) {
+    await recordCeilingRefusal(req, userId, read, rows);
+    const message = rows > keyCeiling.limit
+      ? `This read returns ${String(rows)} message rows, more than an API key may read in a day (${String(keyCeiling.limit)}). Ask for fewer.`
+      : `This API key has read its ${String(keyCeiling.limit)} message rows for today (UTC). It can read more tomorrow.`;
+    res.status(429).json({ success: false, error: { code: 'RATE_LIMITED', message } });
+    return null;
+  }
+  const recorded = await AuditService.recordOrRefuse({
+    action: read.action, outcome: 'SUCCESS', userId, channelId: read.channelId ?? null, ipAddress: req.ip ?? null,
+    attributes: read.rows === undefined ? attributes : { ...attributes, rows },
+  });
+  if (!recorded.ok) {
+    keyCeiling.giveBack(ticket);
+    refuse(res, recorded.error);
+    return null;
+  }
+  return recorded.value;
+}
+
+/**
+ * Record, once a day per key, that a read was refused at the ceiling. A day's
+ * count is rebuilt from each record's `rows`, so the refused read's are named
+ * refusedRows. When the record cannot be written the next refusal tries again.
+ */
+async function recordCeilingRefusal(req: Request, userId: string, read: Omit<AuditedRead, 'dedupe'>, rows: number): Promise<void> {
+  if (!keyCeiling.firstRefusalToday(userId)) return;
+  const recorded = await AuditService.recordOrRefuse({
+    action: AUDIT_ACTION.API_KEY_ROW_CEILING_REACHED, outcome: 'FAILURE', userId, channelId: read.channelId ?? null,
+    ipAddress: req.ip ?? null,
+    attributes: { apiKeyId: req.apiKeyId, limit: keyCeiling.limit, refusedRead: read.action, refusedRows: rows },
+  });
+  if (!recorded.ok) keyCeiling.forgetRefusal(userId);
 }
 
 /**
@@ -64,6 +146,7 @@ export function recordReadBestEffort(req: Request, read: AuditedRead): void {
  * 503 and the caller must send nothing more.
  */
 export async function recordExportOrRefuse(req: Request, res: Response, read: Omit<AuditedRead, 'dedupe'>): Promise<number | null> {
+  if (req.apiKeyId !== undefined) return recordKeyRead(req, res, read, read.attributes);
   const recorded = await AuditService.recordOrRefuse({
     action: read.action, outcome: 'SUCCESS', userId: req.user?.id ?? null,
     channelId: read.channelId ?? null, ipAddress: req.ip ?? null, attributes: read.attributes,
@@ -83,6 +166,10 @@ export async function recordExportOrRefuse(req: Request, res: Response, read: Om
  * and the caller must send nothing more.
  */
 export async function recordReadOrRefuse(req: Request, res: Response, read: AuditedRead): Promise<boolean> {
+  if (req.apiKeyId !== undefined) {
+    const ids = read.dedupe !== undefined && read.dedupe.idsOnlyForDedupe !== true ? { messageIds: read.dedupe.ids } : {};
+    return (await recordKeyRead(req, res, read, { ...read.attributes, ...ids })) !== null;
+  }
   const userId = req.user?.id ?? null;
   const key = read.dedupe === undefined ? undefined : `${userId ?? '-'}|${read.dedupe.key}`;
   let attributes = read.attributes;

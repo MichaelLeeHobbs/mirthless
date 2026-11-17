@@ -40,7 +40,7 @@ export class AttachmentController {
 
     // Attachment content is PHI: recorded before it is sent, every time.
     const recorded = await recordReadOrRefuse(req, res, {
-      action: AUDIT_ACTION.ATTACHMENT_DOWNLOADED, channelId, attributes: { messageId, attachmentId },
+      action: AUDIT_ACTION.ATTACHMENT_DOWNLOADED, channelId, attributes: { messageId, attachmentId }, rows: 1,
     });
     if (!recorded) return;
 

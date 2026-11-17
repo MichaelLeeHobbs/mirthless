@@ -80,6 +80,22 @@ function whereFor(query: AuditListQuery): ReturnType<typeof and> {
 }
 
 export class AuditService {
+  /**
+   * The message rows `userId` has read through fail-closed reads since
+   * `since`: the sum of the `rows` each record carries. Only an API key's
+   * reads carry it (lib/key-row-ceiling.ts, D-313).
+   */
+  static async rowsReadSince(userId: string, since: Date): Promise<number> {
+    // A key's read waits on this, so it gets the same short limit as an audit write.
+    return db.transaction(async (tx) => {
+      await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${String(AUDIT_WRITE_TIMEOUT_MS)}`));
+      const [row] = await tx.select({ rows: sql<number>`coalesce(sum((${auditLog.attributes}->>'rows')::int), 0)::int` })
+        .from(auditLog)
+        .where(and(eq(auditLog.userId, userId), gte(auditLog.occurredAt, since), sql`${auditLog.attributes} ? 'rows'`));
+      return row?.rows ?? 0;
+    });
+  }
+
   /** Write one row on the shared connection. */
   static async record(input: AuditRecordInput): Promise<Result<void>> {
     return tryCatch(async () => { await insertRow(db, input); });

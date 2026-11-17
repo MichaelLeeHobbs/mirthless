@@ -165,7 +165,7 @@ export class DeploymentController {
     // The response carries the processed message, so the send is recorded first
     // (D-312): a refusal then means nothing was sent, and a retry is safe.
     const recorded = await recordReadOrRefuse(req, res, {
-      action: AUDIT_ACTION.MESSAGE_SENT, channelId: id, attributes: { contentLength: content.length },
+      action: AUDIT_ACTION.MESSAGE_SENT, channelId: id, attributes: { contentLength: content.length }, rows: 1,
     });
     if (!recorded) return;
     const result = await DeploymentService.sendMessage(id, content);

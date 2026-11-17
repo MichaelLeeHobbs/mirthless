@@ -251,14 +251,15 @@ describeIntegration('API keys (real Postgres)', () => {
       expect((await issue(temporary, { name: 'Brief', permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() + 1_800_000).toISOString() })).status).toBe(201);
     });
 
-    it('refuses identity permissions, a past end, and messages:read until the row ceiling exists', async () => {
+    it('refuses identity permissions, a past end, and every-channel messages without a reason', async () => {
       expect((await issue(admin, { name: 'Id', permissions: ['users:read'], groupIds: null, expiresAt: inDays(1) })).status).toBe(400);
       expect((await issue(admin, { name: 'Past', permissions: ['channels:read'], groupIds: null, expiresAt: new Date(Date.now() - 1000).toISOString() })).status).toBe(400);
       expect((await issue(admin, { name: 'Wide', permissions: ['messages:read'], groupIds: null, expiresAt: inDays(1) })).status).toBe(400);
-      const later = await issue(admin, { name: 'Wide', permissions: ['messages:read'], groupIds: null, expiresAt: inDays(1), reason: 'Nightly extract' });
-      expect(later.status).toBe(400);
-      expect(later.message).toMatch(/daily row ceiling/);
-      expect((await issue(admin, { name: 'Scoped', permissions: ['messages:read'], groupIds: [lab], expiresAt: inDays(1) })).status).toBe(400);
+      const wide = await issue(admin, { name: 'Wide', permissions: ['messages:read'], groupIds: null, expiresAt: inDays(1), reason: 'Nightly extract' });
+      expect(wide.status).toBe(201);
+      expect(wide.data!.key.reason).toBe('Nightly extract');
+      // Scoped to groups, it needs no reason.
+      expect((await issue(admin, { name: 'Scoped', permissions: ['messages:read'], groupIds: [lab], expiresAt: inDays(1) })).status).toBe(201);
     });
 
     it('lets only api_keys:manage holders issue, and api_keys:read holders list', async () => {

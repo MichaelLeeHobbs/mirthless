@@ -92,12 +92,6 @@ async function assertActorCovers(tx: AuditTransaction, actorId: string | null, p
   }
 }
 
-/**
- * Keys may not hold messages:read until the daily row ceiling that D-313
- * makes a condition of it is built (#267 slice 12b).
- */
-const NOT_YET_ON_KEYS: ReadonlySet<string> = new Set(['messages:read']);
-
 /** Whether `issuer` holds every permission `key` holds, each over the key's scope for it. */
 function issuerCovers(issuer: FoldedGrants, key: FoldedGrants): boolean {
   for (const [permission, scope] of key) {
@@ -170,10 +164,6 @@ export class ApiKeyService {
     const expiresAt = new Date(input.expiresAt);
     if (expiresAt.getTime() <= Date.now()) throw new ServiceError('INVALID_INPUT', 'Pick an end time in the future');
     if (actor.userId === null) throw new ServiceError('FORBIDDEN', 'Issuing a key needs a signed-in actor');
-    const notYet = input.permissions.filter((p) => NOT_YET_ON_KEYS.has(p));
-    if (notYet.length > 0) {
-      throw new ServiceError('INVALID_INPUT', `An API key cannot hold ${notYet.join(', ')} yet: it needs the daily row ceiling, which is still to come (#267)`);
-    }
     const actorId = actor.userId;
     const keyId = randomUUID();
     const secret = newKeySecret();
