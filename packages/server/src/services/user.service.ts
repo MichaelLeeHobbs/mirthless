@@ -7,7 +7,7 @@
 import bcrypt from 'bcryptjs';
 import { tryCatch, type Result } from 'stderr-lib';
 import { eq, and, ne, asc } from 'drizzle-orm';
-import type { CreateUserInput, UpdateUserInput } from '@galvanigraph/core-models';
+import type { AssignmentInput, AssignmentView, CreateUserInput, UpdateUserInput } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { emitEvent, type AuditContext } from '../lib/event-emitter.js';
 import { heldRoleNamesSql, loadUserStanding, roleLabel } from '../lib/principal.js';
@@ -382,6 +382,22 @@ export class UserService {
 
       return { role: roleLabel(standing.roles), roles: standing.roles, permissions: standing.permissions };
     });
+  }
+
+  /** A user's assignments, live and expired; NOT_FOUND for no such user. */
+  static async getAssignments(id: string): Promise<Result<readonly AssignmentView[]>> {
+    return tryCatch(async () => {
+      const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, id));
+      if (!user) throw new ServiceError('NOT_FOUND', `User not found: ${id}`);
+      return GrantService.listAssignments(db, id);
+    });
+  }
+
+  /** Replace a user's assignments through the grant service, which judges and records the change. */
+  static async setAssignments(id: string, wanted: readonly AssignmentInput[], context: AuditContext): Promise<Result<readonly AssignmentView[]>> {
+    return tryCatch(async () => db.transaction(async (tx) => GrantService.setAssignments(tx, id, wanted, {
+      userId: context.userId ?? null, ipAddress: context.ipAddress ?? null,
+    })));
   }
 
   /** Unlock a locked account. Resets failed attempts and lockout. */

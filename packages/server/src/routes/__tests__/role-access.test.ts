@@ -62,6 +62,7 @@ const ENDPOINTS: readonly Endpoint[] = [
   { method: 'PUT', path: `${C}/groups`, permission: 'channels:write', handler: ChannelGroupController.setChannelGroups },
   { method: 'POST', path: '/api/v1/users', permission: 'users:write', handler: UserController.create },
   { method: 'PUT', path: '/api/v1/users/:id', permission: 'users:write', handler: UserController.update },
+  { method: 'PUT', path: '/api/v1/users/:id/assignments', permission: 'users:write', handler: UserController.setAssignments },
   { method: 'POST', path: '/api/v1/users/:id/password', permission: 'users:write', handler: UserController.changePassword },
   { method: 'DELETE', path: '/api/v1/users/:id', permission: 'users:delete', handler: UserController.delete },
   { method: 'PUT', path: '/api/v1/settings/bulk', permission: 'settings:write', handler: SettingsController.bulkUpsert },

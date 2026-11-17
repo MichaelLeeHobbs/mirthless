@@ -11,15 +11,19 @@
 // takes a lock on the admin role row, so two such changes queue and the second
 // sees the first's result. This replaces the user-row lock of #218/#234.
 //
-// Anti-escalation (plan section 5), while every assignment covers all channels:
-// - within rule: an actor may assign a role, or add a permission to a role,
-//   only when they hold every permission it gives;
+// Anti-escalation (plan section 5):
+// - within rule: an actor may assign a role only when they hold every
+//   permission it gives over the assignment's scope, and may add a permission
+//   to a role only when they hold it over every scope the role is assigned on;
 // - target rule: an actor may act on a user only when that user's permissions
 //   are all among the actor's own;
 // - nobody changes their own role (user.service), and the admin role is locked.
 
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
-import { ALL_CHANNELS, AUDIT_ACTION, DEFAULT_GROUP_NAME, PERMISSIONS, can, type ChannelGroupId, type CreateRoleInput, type Permission, type UpdateRoleInput } from '@galvanigraph/core-models';
+import {
+  ALL_CHANNELS, AUDIT_ACTION, DEFAULT_GROUP_NAME, PERMISSIONS, allChannelsOnly, can,
+  type AssignmentInput, type AssignmentView, type ChannelGroupId, type CreateRoleInput, type FoldedGrants, type Permission, type UpdateRoleInput,
+} from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { isLiveAssignment, queryUserStanding } from '../lib/principal.js';
 import { db } from '../lib/db.js';
@@ -206,6 +210,135 @@ async function assertCanManageHolders(tx: AuditTransaction, roleId: string, acto
   }
 }
 
+// ----- Scoped assignments (plan sections 1 and 5) -----
+
+/** A scope as the rules compare it: every channel, or these groups. */
+type ScopeIds = readonly string[] | null;
+
+/** Whether `grants` hold `permission` over all of `scope`: on every channel, or on each of its groups. */
+function holdsOver(grants: FoldedGrants, permission: Permission, scope: ScopeIds): boolean {
+  const held = grants.get(permission);
+  if (held === undefined) return false;
+  if (held === ALL_CHANNELS) return true;
+  return scope !== null && scope.every((g) => held.has(g as ChannelGroupId));
+}
+
+/** The actor's grants, or none for no actor or a disabled one. */
+async function actorGrants(reader: Reader, actorId: string | null): Promise<FoldedGrants> {
+  if (actorId === null) throw new ServiceError('FORBIDDEN', 'A change to access needs a signed-in actor');
+  const standing = await queryUserStanding(reader, actorId);
+  return standing?.enabled === true ? standing.grants : new Map();
+}
+
+/** Refuse a scoped assignment of a role holding a permission limited to all-channel assignments (plan section 1). */
+function assertScopeAllowed(roleName: string, permissions: readonly Permission[], scope: ScopeIds): void {
+  if (scope === null) return;
+  const limited = permissions.filter(allChannelsOnly).sort();
+  if (limited.length > 0) {
+    throw new ServiceError('INVALID_INPUT', `${roleName} can only be given on every channel: it holds ${limited.join(', ')}`, { allChannelsOnly: limited });
+  }
+}
+
+/** The within rule for an assignment: the actor holds every one of the role's permissions over its scope. */
+function assertActorHoldsOver(grants: FoldedGrants, roleName: string, permissions: readonly Permission[], scope: ScopeIds): void {
+  const missing = permissions.filter((p) => !holdsOver(grants, p, scope)).sort();
+  if (missing.length > 0) {
+    const where = scope === null ? 'every channel' : 'each group of the scope';
+    throw new ServiceError('FORBIDDEN', `You can only give ${roleName} on ${where} where you hold its permissions. Missing: ${missing.join(', ')}`, { missing });
+  }
+}
+
+/**
+ * Lock the groups of every scope, in id order so two writers queue rather
+ * than deadlock (plan section 5: role rows, then group rows). A missing group
+ * is NOT_FOUND; Default cannot be a scope, since every new channel may join it.
+ */
+async function lockScopeGroups(tx: AuditTransaction, scopes: readonly ScopeIds[]): Promise<void> {
+  const ids = [...new Set(scopes.flatMap((s) => s ?? []))].sort();
+  if (ids.length === 0) return;
+  const found = await tx.select({ id: channelGroups.id, name: channelGroups.name }).from(channelGroups)
+    .where(inArray(channelGroups.id, ids)).orderBy(asc(channelGroups.id)).for('update');
+  const missing = ids.filter((id) => !found.some((g) => g.id === id));
+  if (missing.length > 0) throw new ServiceError('NOT_FOUND', `Channel group not found: ${missing.join(', ')}`);
+  if (found.some((g) => g.name === DEFAULT_GROUP_NAME)) {
+    throw new ServiceError('INVALID_INPUT', `The ${DEFAULT_GROUP_NAME} group cannot be a scope: every new channel may join it`);
+  }
+}
+
+/** A user's assignments, oldest first, as the API and the audit log show them. */
+async function assignmentsOf(reader: Reader, userId: string): Promise<AssignmentView[]> {
+  const rows = await reader.select({
+    id: assignments.id, roleId: assignments.roleId, roleName: roles.name, allChannels: assignments.allChannels,
+    expiresAt: assignments.expiresAt, reason: assignments.reason, createdAt: assignments.createdAt,
+  }).from(assignments).innerJoin(roles, eq(roles.id, assignments.roleId))
+    .where(eq(assignments.userId, userId)).orderBy(asc(assignments.createdAt), asc(assignments.id));
+  const groupRows = rows.length === 0 ? [] : await reader.select({ assignmentId: assignmentGroups.assignmentId, groupId: assignmentGroups.channelGroupId })
+    .from(assignmentGroups).where(inArray(assignmentGroups.assignmentId, rows.map((r) => r.id)));
+  const now = Date.now();
+  return rows.map((r) => ({
+    id: r.id, roleId: r.roleId, roleName: r.roleName,
+    groupIds: r.allChannels ? null : groupRows.filter((g) => g.assignmentId === r.id).map((g) => g.groupId).sort(),
+    expiresAt: r.expiresAt?.toISOString() ?? null, reason: r.reason,
+    live: r.expiresAt === null || r.expiresAt.getTime() > now, createdAt: r.createdAt.toISOString(),
+  }));
+}
+
+/** A wanted assignment with its role locked and its permissions read. */
+interface ResolvedAssignment {
+  readonly input: AssignmentInput;
+  readonly role: { readonly id: string; readonly name: string; readonly admin: boolean };
+  readonly permissions: readonly Permission[];
+  readonly expiresAt: Date | null;
+}
+
+/** Lock each wanted role (FOR SHARE, in id order) and check its expiry, scope class and the within rule. */
+async function resolveAssignments(tx: AuditTransaction, wanted: readonly AssignmentInput[], grants: FoldedGrants): Promise<ResolvedAssignment[]> {
+  const roleIds = [...new Set(wanted.map((a) => a.roleId))].sort();
+  const locked = new Map<string, { id: string; name: string; admin: boolean }>();
+  for (const id of roleIds) locked.set(id, await lockRole(tx, id, 'share'));
+  await lockScopeGroups(tx, wanted.map((a) => a.groupIds));
+  const now = Date.now();
+  const resolved: ResolvedAssignment[] = [];
+  for (const input of wanted) {
+    const role = locked.get(input.roleId)!;
+    const expiresAt = input.expiresAt === null ? null : new Date(input.expiresAt);
+    if (expiresAt !== null && expiresAt.getTime() <= now) throw new ServiceError('INVALID_INPUT', `An assignment of ${role.name} would already have expired`);
+    const permissions = await permissionsOfRole(tx, role);
+    assertScopeAllowed(role.name, permissions, input.groupIds);
+    assertActorHoldsOver(grants, role.name, permissions, input.groupIds);
+    resolved.push({ input, role, permissions, expiresAt });
+  }
+  return resolved;
+}
+
+/**
+ * The scope-aware within rule for a role edit (plan section 5): each added
+ * permission must be held over the scope of every assignment of the role,
+ * expired ones included, since renewing one restores it. A permission limited
+ * to all-channel assignments cannot join a role assigned over a group (409).
+ */
+async function assertRoleEditWithin(tx: AuditTransaction, roleId: string, added: readonly Permission[], actorId: string | null): Promise<void> {
+  if (added.length === 0) return;
+  const grants = await actorGrants(tx, actorId);
+  const rows = await tx.select({ id: assignments.id, allChannels: assignments.allChannels, groupId: assignmentGroups.channelGroupId })
+    .from(assignments).leftJoin(assignmentGroups, eq(assignmentGroups.assignmentId, assignments.id))
+    .where(eq(assignments.roleId, roleId));
+  const scopes = new Map<string, string[] | null>();
+  for (const r of rows) {
+    if (r.allChannels) scopes.set(r.id, null);
+    else scopes.set(r.id, [...(scopes.get(r.id) ?? []), ...(r.groupId === null ? [] : [r.groupId])]);
+  }
+  const scoped = [...scopes.entries()].filter(([, s]) => s !== null).map(([id]) => id);
+  const limited = added.filter(allChannelsOnly);
+  if (limited.length > 0 && scoped.length > 0) {
+    throw new ServiceError('CONFLICT', `${limited.join(', ')} can only be held on every channel, and this role is assigned over groups`, { assignments: scoped });
+  }
+  const missing = added.filter((p) => !grants.has(p) || [...scopes.values()].some((s) => !holdsOver(grants, p, s))).sort();
+  if (missing.length > 0) {
+    throw new ServiceError('FORBIDDEN', `You can only add permissions you hold over every scope the role is assigned on. Missing: ${missing.join(', ')}`, { missing });
+  }
+}
+
 /** The names of the roles `userId` holds through live assignments, sorted. */
 async function heldRoleNames(tx: AuditTransaction, userId: string): Promise<readonly string[]> {
   const rows = await tx.selectDistinct({ name: roles.name }).from(assignments)
@@ -241,9 +374,15 @@ export class GrantService {
    */
   static async setUserRole(tx: AuditTransaction, userId: string, roleName: string, actor: GrantActor): Promise<readonly string[]> {
     const role = await roleByName(tx, roleName);
+    // Access set per group or until a time is changed on the assignments; this
+    // path would replace it with one lasting all-channel role without saying so.
+    const held = await assignmentsOf(tx, userId);
+    if (held.some((a) => a.groupIds !== null || a.expiresAt !== null)) {
+      throw new ServiceError('CONFLICT', 'This user\'s access is set per group or until a time; change it on their assignments');
+    }
     const before = await heldRoleNames(tx, userId);
     if (before.length === 1 && before[0] === roleName) return before;
-    await assertWithin(tx, actor.userId, await permissionsOfRole(tx, role), 'assign a role');
+    assertActorHoldsOver(await actorGrants(tx, actor.userId), roleName, await permissionsOfRole(tx, role), null);
     const current = await tx.select({ id: assignments.id }).from(assignments).where(eq(assignments.userId, userId));
     if (current.length > 0) await tx.delete(assignments).where(inArray(assignments.id, current.map((a) => a.id)));
     await tx.insert(assignments).values({ userId, roleId: role.id, createdBy: actor.userId });
@@ -253,6 +392,48 @@ export class GrantService {
       attributes: { targetUserId: userId, before, after: [{ role: roleName, scope: 'all' }] },
     });
     return before;
+  }
+
+  /** A user's assignments, live and expired, oldest first. */
+  static listAssignments(reader: Reader, userId: string): Promise<readonly AssignmentView[]> {
+    return assignmentsOf(reader, userId);
+  }
+
+  /**
+   * Replace every assignment `userId` holds with `wanted`, and record it
+   * (plan sections 1 and 5). Refused for the actor's own access, for a user
+   * the actor could not act on (target rule), for a role or scope the actor
+   * does not hold (within rule), for a scope the role cannot have, for the
+   * Default group, for an expiry already past, and when it would leave no
+   * lasting admin. Locks the admin role, then each role, then each group.
+   */
+  static async setAssignments(tx: AuditTransaction, userId: string, wanted: readonly AssignmentInput[], actor: GrantActor): Promise<readonly AssignmentView[]> {
+    if (actor.userId === userId) throw new ServiceError('FORBIDDEN', 'You cannot change your own access');
+    const adminRoleId = await lockAdminRole(tx);
+    const [target] = await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('no key update');
+    if (!target) throw new ServiceError('NOT_FOUND', `User not found: ${userId}`);
+    const grants = await actorGrants(tx, actor.userId);
+    await GrantService.assertCanManage(tx, actor.userId!, userId);
+    const resolved = await resolveAssignments(tx, wanted, grants);
+    const keepsAdmin = resolved.some((a) => a.role.id === adminRoleId && a.input.groupIds === null && a.expiresAt === null);
+    if (!keepsAdmin && await holdsAdmin(tx, adminRoleId, userId) && (await otherLastingAdmins(tx, adminRoleId, userId)) === 0) {
+      throw new ServiceError('CONFLICT', 'Cannot take the admin role from the last enabled admin user');
+    }
+    const before = await assignmentsOf(tx, userId);
+    await tx.delete(assignments).where(eq(assignments.userId, userId));
+    for (const a of resolved) {
+      const [row] = await tx.insert(assignments).values({
+        userId, roleId: a.role.id, allChannels: a.input.groupIds === null, expiresAt: a.expiresAt, reason: a.input.reason, createdBy: actor.userId,
+      }).returning({ id: assignments.id });
+      if (a.input.groupIds !== null) await tx.insert(assignmentGroups).values(a.input.groupIds.map((channelGroupId) => ({ assignmentId: row!.id, channelGroupId })));
+    }
+    const after = await assignmentsOf(tx, userId);
+    const summary = (list: readonly AssignmentView[]): unknown[] => list.map((a) => ({ role: a.roleName, scope: a.groupIds ?? 'all', expiresAt: a.expiresAt, reason: a.reason }));
+    await AuditService.recordInTx(tx, {
+      action: AUDIT_ACTION.ASSIGNMENTS_CHANGED, outcome: 'SUCCESS', userId: actor.userId, ipAddress: actor.ipAddress ?? null,
+      attributes: { targetUserId: userId, before: summary(before), after: summary(after) },
+    });
+    return after;
   }
 
   /**
@@ -266,8 +447,12 @@ export class GrantService {
   static async applyChannelGroups(tx: AuditTransaction, channelId: string, wanted: readonly string[], actor: GrantActor): Promise<readonly string[]> {
     const before = (await tx.select({ groupId: channelGroupMembers.channelGroupId }).from(channelGroupMembers)
       .where(eq(channelGroupMembers.channelId, channelId))).map((r) => r.groupId);
-    const added = wanted.filter((g) => !before.includes(g));
+    const added = wanted.filter((g) => !before.includes(g)).sort();
     if (added.length > 0) {
+      // FOR SHARE in id order before reading what the groups grant: an
+      // assignment writer holds FOR UPDATE on its groups, so the two queue and
+      // this check never misses an assignment committed meanwhile.
+      await tx.select({ id: channelGroups.id }).from(channelGroups).where(inArray(channelGroups.id, added)).orderBy(asc(channelGroups.id)).for('share');
       const granted = await permissionsGrantedThrough(tx, added);
       const held = actor.userId === null ? undefined : await queryUserStanding(tx, actor.userId);
       const groupIds = before as ChannelGroupId[];
@@ -277,7 +462,8 @@ export class GrantService {
       }
     }
     await tx.delete(channelGroupMembers).where(eq(channelGroupMembers.channelId, channelId));
-    if (wanted.length > 0) await tx.insert(channelGroupMembers).values(wanted.map((channelGroupId) => ({ channelGroupId, channelId })));
+    // In id order, so the foreign-key locks queue in the same order as the assignment writer's.
+    if (wanted.length > 0) await tx.insert(channelGroupMembers).values([...wanted].sort().map((channelGroupId) => ({ channelGroupId, channelId })));
     await AuditService.recordInTx(tx, {
       action: AUDIT_ACTION.CHANNEL_GROUPS_CHANGED, outcome: 'SUCCESS', userId: actor.userId, channelId, ipAddress: actor.ipAddress ?? null,
       attributes: { before: [...before].sort(), after: [...wanted].sort() },
@@ -334,7 +520,15 @@ export class GrantService {
   static async assertCanManage(reader: Reader, actorId: string, targetId: string): Promise<void> {
     const target = await queryUserStanding(reader, targetId);
     if (!target) throw new ServiceError('NOT_FOUND', `User not found: ${targetId}`);
-    await assertWithin(reader, actorId, target.permissions, 'manage users');
+    // Scope-aware: each permission over the target's scope for it, so holding
+    // a permission on one group does not reach someone who holds it on all.
+    const grants = await actorGrants(reader, actorId);
+    const missing = [...target.grants.entries()]
+      .filter(([p, scope]) => !holdsOver(grants, p, scope === ALL_CHANNELS ? null : [...scope]))
+      .map(([p]) => p).sort();
+    if (missing.length > 0) {
+      throw new ServiceError('FORBIDDEN', `You can only manage users whose access is within your own. Missing: ${missing.join(', ')}`, { missing });
+    }
   }
 
   /** Every role with its permissions and how many users hold it, by name. */
@@ -392,7 +586,7 @@ export class GrantService {
     await assertCanManageHolders(tx, id, actor.userId);
     const before = await permissionsOfRole(tx, role);
     const after = input.permissions ? [...input.permissions].sort() : before;
-    await assertWithin(tx, actor.userId, after.filter((p) => !before.includes(p)), 'add permissions to a role');
+    await assertRoleEditWithin(tx, id, after.filter((p) => !before.includes(p)), actor.userId);
     if (input.name !== undefined) await assertNameFree(tx, input.name, id);
     await tx.update(roles).set({
       ...(input.name !== undefined ? { name: input.name } : {}),
