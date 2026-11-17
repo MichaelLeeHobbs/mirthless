@@ -58,6 +58,7 @@ describe('MessageExportController.exportMessages', () => {
     expect(recordExportOrRefuse).toHaveBeenCalledWith(expect.anything(), res, {
       action: 'MESSAGES_EXPORTED', channelId: 'ch-1',
       attributes: { reason: 'Quarterly review', format: 'csv', exported: 1, total: 1, truncated: false, includeContent: false, messageIds: [1] },
+      rows: 1,
     });
     expect(recordExportOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.send).mock.invocationCallOrder[0] ?? 0);
   });

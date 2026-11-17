@@ -62,7 +62,7 @@ describe('DeploymentController.sendMessage', () => {
     expect(processMessage).toHaveBeenCalledWith('MSH|raw');
     expect(res.status).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ success: true, data: outcome });
-    expect(recordReadOrRefuse).toHaveBeenCalledWith(expect.anything(), res, { action: 'MESSAGE_SENT', channelId: CHANNEL_ID, attributes: { contentLength: 7 } });
+    expect(recordReadOrRefuse).toHaveBeenCalledWith(expect.anything(), res, { action: 'MESSAGE_SENT', channelId: CHANNEL_ID, attributes: { contentLength: 7 }, rows: 1 });
     // Recorded before the channel saw the message.
     expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(processMessage.mock.invocationCallOrder[0] ?? 0);
   });

@@ -51,6 +51,8 @@ export const AUDIT_ACTION = {
   CHANNEL_GROUPS_CHANGED: 'CHANNEL_GROUPS_CHANGED',
   /** An API key was issued, with its permissions, scope and end (D-313); its role and assignment rows follow the usual grant actions. */
   API_KEY_ISSUED: 'API_KEY_ISSUED',
+  /** An API key's read was refused at its daily row ceiling; recorded once a day per key (D-313). */
+  API_KEY_ROW_CEILING_REACHED: 'API_KEY_ROW_CEILING_REACHED',
   /** An API key was revoked, with the reason. Revoking also disables the key's user (USER_ENABLED_CHANGED). */
   API_KEY_REVOKED: 'API_KEY_REVOKED',
   /** A user was enabled or disabled (deleting one disables it); written in the change's transaction. */

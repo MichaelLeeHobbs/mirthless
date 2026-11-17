@@ -34,6 +34,7 @@ export class CrossChannelSearchController {
     const recorded = await recordReadOrRefuse(req, res, {
       action: AUDIT_ACTION.MESSAGES_SEARCHED_ALL_CHANNELS,
       attributes: { filters, total: result.value.total },
+      rows: result.value.items.length,
       dedupe: { key: `traffic|${JSON.stringify(filters)}`, ids: result.value.items.map((i) => `${i.channelId}:${String(i.messageId)}`) },
     });
     if (!recorded) return;

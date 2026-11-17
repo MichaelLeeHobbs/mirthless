@@ -61,7 +61,7 @@ describe('MessageController.getDetail', () => {
 
     expect(recordReadOrRefuse).toHaveBeenCalledWith(expect.anything(), res, {
       action: 'MESSAGE_CONTENT_VIEWED', channelId: 'ch-1', attributes: { messageId: 5 },
-      dedupe: { key: 'detail|ch-1|5', ids: [5] },
+      dedupe: { key: 'detail|ch-1|5', ids: [5] }, rows: 1,
     });
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { messageId: 5, connectors: [] } });
     expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.json).mock.invocationCallOrder[0] ?? 0);
@@ -97,7 +97,7 @@ describe('MessageController.search', () => {
     expect(recordReadOrRefuse).toHaveBeenCalledWith(expect.anything(), res, {
       action: 'MESSAGE_SEARCHED', channelId: 'ch-1',
       attributes: { term: 'Smith', filters: { status: ['ERROR'], limit: 25, offset: 0 }, total: 2 },
-      dedupe: { key: `search|ch-1|${JSON.stringify(query)}`, ids: [3, 9] },
+      dedupe: { key: `search|ch-1|${JSON.stringify(query)}`, ids: [3, 9] }, rows: 2,
     });
     expect(res.json).toHaveBeenCalledOnce();
     expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.json).mock.invocationCallOrder[0] ?? 0);

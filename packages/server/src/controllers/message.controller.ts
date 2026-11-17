@@ -30,6 +30,7 @@ export class MessageController {
     const recorded = await recordReadOrRefuse(req, res, {
       action: AUDIT_ACTION.MESSAGE_SEARCHED, channelId,
       attributes: { term: contentSearch ?? null, filters: rest, total: result.value.total },
+      rows: result.value.items.length,
       dedupe: { key: `search|${channelId}|${JSON.stringify(filters)}`, ids: result.value.items.map((m) => m.messageId) },
     });
     if (!recorded) return;
@@ -54,6 +55,7 @@ export class MessageController {
       action: AUDIT_ACTION.MESSAGE_CONTENT_VIEWED, channelId,
       attributes: { messageId: msgId },
       dedupe: { key: `detail|${channelId}|${String(msgId)}`, ids: [msgId] },
+      rows: 1,
     });
     if (!recorded) return;
 

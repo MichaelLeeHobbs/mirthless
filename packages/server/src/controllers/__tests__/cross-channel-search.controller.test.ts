@@ -37,7 +37,7 @@ describe('CrossChannelSearchController.search', () => {
     const filters = { limit: 25, offset: 0, status: 'ERROR' };
     expect(recordReadOrRefuse).toHaveBeenCalledWith(expect.anything(), res, {
       action: 'MESSAGES_SEARCHED_ALL_CHANNELS', attributes: { filters, total: 2 },
-      dedupe: { key: `traffic|${JSON.stringify(filters)}`, ids: ['c1:4', 'c2:4'] },
+      dedupe: { key: `traffic|${JSON.stringify(filters)}`, ids: ['c1:4', 'c2:4'] }, rows: 2,
     });
     expect(res.json).toHaveBeenCalledWith({ success: true, data: RESULT });
     expect(recordReadOrRefuse.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(res.json).mock.invocationCallOrder[0] ?? 0);

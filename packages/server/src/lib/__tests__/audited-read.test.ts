@@ -6,7 +6,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 
 const recordOrRefuse = vi.fn();
-vi.mock('../../services/audit.service.js', () => ({ AuditService: { recordOrRefuse } }));
+// The rows a key has read today, as the audit log holds them: the ceiling starts from here (default 5000).
+const rowsReadSince = vi.fn(async (userId: string) => {
+  if (userId === 'key-unreadable') throw new Error('audit_log unreadable');
+  return userId === 'key-near' ? 4998 : 0;
+});
+vi.mock('../../services/audit.service.js', () => ({ AuditService: { recordOrRefuse, rowsReadSince } }));
+
+vi.mock('../logger.js', () => ({ default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 
 const emitAuditEvent = vi.fn();
 vi.mock('../event-emitter.js', () => ({ emitAuditEvent }));
@@ -144,5 +151,70 @@ describe('recordReadBestEffort', () => {
 
     expect(emitAuditEvent.mock.calls[0]?.[0]).toMatchObject({ attributes: { entries: 1 } });
     expect(JSON.stringify(emitAuditEvent.mock.calls[0]?.[0])).not.toContain('mrn_12345');
+  });
+});
+
+describe('reads made with an API key (D-313)', () => {
+  const keyReq = (userId: string): Request => ({ user: { id: userId }, apiKeyId: `k-${userId}`, ip: '10.0.0.8' }) as unknown as Request;
+  const search = { action: 'MESSAGE_SEARCHED', channelId: 'c1', attributes: { total: 2 }, dedupe: { key: 'search|c1|x', ids: [1, 2] }, rows: 2 };
+
+  it('records every read with its rows and the ids it returned, never deduped', async () => {
+    for (let i = 0; i < 2; i += 1) expect(await recordReadOrRefuse(keyReq('key-a'), makeRes(), search)).toBe(true);
+    expect(recordOrRefuse).toHaveBeenCalledTimes(2);
+    expect(recordOrRefuse).toHaveBeenLastCalledWith(expect.objectContaining({
+      action: 'MESSAGE_SEARCHED', userId: 'key-a', attributes: { total: 2, messageIds: [1, 2], rows: 2 },
+    }));
+  });
+
+  it('refuses with 429 the read that would pass the day\'s ceiling, records that once, and sends nothing', async () => {
+    const first = makeRes();
+    expect(await recordReadOrRefuse(keyReq('key-near'), first, { ...search, rows: 2 })).toBe(true);
+    const over = makeRes();
+    expect(await recordReadOrRefuse(keyReq('key-near'), over, { ...search, rows: 1 })).toBe(false);
+    expect(over.statusCode).toBe(429);
+    expect(await recordReadOrRefuse(keyReq('key-near'), makeRes(), { ...search, rows: 1 })).toBe(false);
+    const ceilingRecords = recordOrRefuse.mock.calls.filter(([r]) => (r as { action: string }).action === 'API_KEY_ROW_CEILING_REACHED');
+    expect(ceilingRecords).toHaveLength(1);
+    expect(ceilingRecords[0]![0]).toMatchObject({ attributes: { apiKeyId: 'k-key-near', limit: 5000, refusedRows: 1 } });
+    expect((ceilingRecords[0]![0] as { attributes: Record<string, unknown> }).attributes).not.toHaveProperty('rows');
+  });
+
+  it('gives the rows back when the record fails, so the refused read does not use the day up', async () => {
+    recordOrRefuse.mockResolvedValueOnce({ ok: false, error: UNAVAILABLE });
+    const failed = makeRes();
+    expect(await recordExportOrRefuse(keyReq('key-b'), failed, { action: 'MESSAGES_EXPORTED', attributes: {}, rows: 5000 })).toBeNull();
+    expect(failed.statusCode).toBe(503);
+    recordOrRefuse.mockResolvedValueOnce({ ok: true, value: 41 });
+    expect(await recordExportOrRefuse(keyReq('key-b'), makeRes(), { action: 'MESSAGES_EXPORTED', attributes: {}, rows: 5000 })).toBe(41);
+  });
+
+  it('refuses with a logged 503 when today\'s count cannot be read, and records nothing', async () => {
+    const res = makeRes();
+    expect(await recordReadOrRefuse(keyReq('key-unreadable'), res, search)).toBe(false);
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({ error: { code: 'AUDIT_UNAVAILABLE' } });
+    expect(recordOrRefuse).not.toHaveBeenCalled();
+  });
+
+  it('tries the ceiling record again when it could not be written', async () => {
+    // key-near starts at 4998 of 5000: two rows fit, the next read is refused.
+    expect(await recordReadOrRefuse(keyReq('key-near2'), makeRes(), { ...search, rows: 5000 })).toBe(true);
+    recordOrRefuse.mockResolvedValueOnce({ ok: false, error: UNAVAILABLE });
+    expect(await recordReadOrRefuse(keyReq('key-near2'), makeRes(), { ...search, rows: 1 })).toBe(false);
+    expect(await recordReadOrRefuse(keyReq('key-near2'), makeRes(), { ...search, rows: 1 })).toBe(false);
+    const attempts = recordOrRefuse.mock.calls.filter(([r]) => (r as { action: string }).action === 'API_KEY_ROW_CEILING_REACHED');
+    expect(attempts).toHaveLength(2);
+  });
+
+  it('says so when one read is bigger than a whole day\'s ceiling', async () => {
+    const res = makeRes();
+    expect(await recordExportOrRefuse(keyReq('key-big'), res, { action: 'MESSAGES_EXPORTED', attributes: {}, rows: 6000 })).toBeNull();
+    expect(res.statusCode).toBe(429);
+    expect((res.body as { error: { message: string } }).error.message).toMatch(/6000 message rows, more than an API key may read in a day/);
+  });
+
+  it('counts nothing for a read that returns no message rows', async () => {
+    expect(await recordExportOrRefuse(keyReq('key-c'), makeRes(), { action: 'EVENTS_EXPORTED', attributes: { reason: 'r' } })).not.toBeNull();
+    expect(recordOrRefuse).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: { reason: 'r' } }));
   });
 });
