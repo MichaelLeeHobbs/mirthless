@@ -24,6 +24,8 @@ vi.mock('../../middleware/auth.middleware.js', async () => {
         id: 'u1', username: 'admin', email: 'admin@test.local', role: 'admin', isActive: true,
         permissions: builtInRolePermissions('admin'), mustChangePassword: false,
       };
+      // As authenticate does: the same permissions, on every channel.
+      req.principal = { userId: 'u1', grants: new Map(builtInRolePermissions('admin').map((p) => [p, 'all' as const])) };
       next();
     },
   };

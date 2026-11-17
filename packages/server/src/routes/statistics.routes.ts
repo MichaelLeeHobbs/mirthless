@@ -5,7 +5,7 @@
 import { Router, type IRouter } from 'express';
 import { z } from 'zod/v4';
 import { StatisticsController } from '../controllers/statistics.controller.js';
-import { requirePermission } from '../middleware/permission.middleware.js';
+import { requirePermission, scopeToChannel } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const uuidParamsSchema = z.object({
@@ -13,6 +13,8 @@ const uuidParamsSchema = z.object({
 });
 
 const router: IRouter = Router();
+// Every route here that names a channel checks its permission on that channel (D-310).
+scopeToChannel(router);
 
 // All channels summary (must come before /:id to avoid route conflict)
 router.get(

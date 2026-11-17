@@ -5,8 +5,9 @@
 // answers through errorResponse and records the refusal as an ACCESS_DENIED
 // event, once a minute per caller, route and reason (#158).
 
-import type { NextFunction, Request, Response } from 'express';
-import { AUDIT_ACTION, holdsPermission, type Permission } from '@galvanigraph/core-models';
+import type { NextFunction, Request, Response, Router } from 'express';
+import { ALL_CHANNELS, AUDIT_ACTION, can, holdsPermission, type ChannelGroupId, type FoldedGrants, type Permission } from '@galvanigraph/core-models';
+import { channelGroupIds } from '../lib/channel-scope.js';
 import { errorInfo } from '@galvanigraph/core-util';
 import { ServiceError, type ServiceErrorCode } from '../lib/service-error.js';
 import { errorResponse, mapErrorToStatus } from '../lib/controller-helpers.js';
@@ -22,6 +23,8 @@ export const DENY_REASON = {
   ACCOUNT_DISABLED: 'account_disabled',
   PASSWORD_CHANGE_REQUIRED: 'password_change_required',
   NO_PERMISSION: 'no_permission',
+  /** The permission is held, but not on this channel's groups. Answered as not found (D-310). */
+  OUT_OF_SCOPE: 'out_of_scope',
 } as const;
 export type DenyReason = (typeof DENY_REASON)[keyof typeof DENY_REASON];
 
@@ -34,6 +37,9 @@ const REFUSALS: Readonly<Record<DenyReason, readonly [ServiceErrorCode, string]>
   account_disabled: ['ACCOUNT_DEACTIVATED', 'Account is deactivated'],
   password_change_required: ['PASSWORD_CHANGE_REQUIRED', 'You must change your password before continuing.'],
   no_permission: ['FORBIDDEN', 'Forbidden'],
+  // The same answer a channel that does not exist gets, so scope never shows
+  // which channels exist outside it.
+  out_of_scope: ['NOT_FOUND', 'Channel not found'],
 };
 
 // ----- Coalescing -----
@@ -154,7 +160,14 @@ export function permissionsOfGuard(handler: unknown): readonly Permission[] | un
 
 type Guard = (req: Request, res: Response, next: NextFunction) => void;
 
-function guard(permissions: readonly Permission[], passes: (held: readonly string[]) => boolean): Guard {
+/**
+ * Whether the scoped part of a check passes: when the route names a channel
+ * (scopeToChannel read its groups into req.channelScope), the caller must hold
+ * the permission on that channel, not merely somewhere.
+ */
+type OnChannel = (grants: FoldedGrants, groupIds: readonly ChannelGroupId[]) => boolean;
+
+function guard(permissions: readonly Permission[], passes: (held: readonly string[]) => boolean, onChannel: OnChannel): Guard {
   const check: Guard = (req, res, next) => {
     if (!req.user) {
       deny(req, res, DENY_REASON.NO_CREDENTIALS);
@@ -164,6 +177,11 @@ function guard(permissions: readonly Permission[], passes: (held: readonly strin
       deny(req, res, DENY_REASON.NO_PERMISSION);
       return;
     }
+    const scope = req.channelScope;
+    if (scope !== undefined && (!req.principal || !onChannel(req.principal.grants, scope))) {
+      deny(req, res, DENY_REASON.OUT_OF_SCOPE);
+      return;
+    }
     next();
   };
   guardPermissions.set(check, permissions);
@@ -171,16 +189,61 @@ function guard(permissions: readonly Permission[], passes: (held: readonly strin
 }
 
 /**
- * Require user to have at least one of the specified permissions.
+ * Require user to have at least one of the specified permissions; on a route
+ * that names a channel, on that channel.
  * Typed by the core-models list, so an unknown permission is a compile error.
  */
 export function requirePermission(...permissions: readonly Permission[]): Guard {
-  return guard(permissions, (held) => permissions.some((p) => holdsPermission(held, p)));
+  return guard(
+    permissions,
+    (held) => permissions.some((p) => holdsPermission(held, p)),
+    (grants, groupIds) => permissions.some((p) => can(grants, p, { groupIds })),
+  );
 }
 
 /**
- * Require user to have all of the specified permissions.
+ * Require user to have all of the specified permissions; on a route that
+ * names a channel, all of them on that channel.
  */
 export function requireAllPermissions(...permissions: readonly Permission[]): Guard {
-  return guard(permissions, (held) => permissions.every((p) => holdsPermission(held, p)));
+  return guard(
+    permissions,
+    (held) => permissions.every((p) => holdsPermission(held, p)),
+    (grants, groupIds) => permissions.every((p) => can(grants, p, { groupIds })),
+  );
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Scope every route of `router` that has `param` to the channel it names
+ * (D-310, plan section 4). Before the route's guard runs, the channel's groups
+ * are read from the database into req.channelScope, so requirePermission
+ * checks the permission on that channel; a caller holding it only on other
+ * groups gets the answer a missing channel gets. The channel comes from the
+ * path, never the body. A caller whose every grant covers all channels needs no
+ * lookup. A lookup that fails answers 500: no answer about the channel without
+ * its groups.
+ */
+export function scopeToChannel(router: Router, param = 'id'): void {
+  router.param(param, (req, _res, next, value: unknown) => {
+    const grants = req.principal?.grants;
+    if (grants !== undefined && [...grants.values()].every((s) => s === ALL_CHANNELS)) {
+      next();
+      return;
+    }
+    if (typeof value !== 'string' || !UUID.test(value)) {
+      // Not a channel id: in no group, so out of scope unless held on every channel.
+      req.channelScope = [];
+      next();
+      return;
+    }
+    channelGroupIds(value).then((groupIds) => {
+      req.channelScope = groupIds;
+      next();
+    }, (err: unknown) => {
+      logger.error({ ...errorInfo(err), channelId: value }, 'Could not read a channel\'s groups for a scope check');
+      next(err);
+    });
+  });
 }

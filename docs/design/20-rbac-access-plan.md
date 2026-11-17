@@ -351,6 +351,18 @@ The debate's first and third slices (one `authenticate` mount and parser order; 
    - Follows: HTTP route, Live updates, Tests (integration test per filtered route).
    - Owns: a new `lib/channel-scope.ts`, the list and search services, the room logic in `lib/socket.ts`, `services/connection-test.service.ts`, test-run's message naming the missing read permission, and `test/integration/channel-scope.itest.ts` covering each filtered route.
    - Closes #160.
+   - As built, in three pull requests. Nothing writes a group-scoped assignment until the scope picker (slice 10), so each lands safely on its own:
+     - **8a**:
+       - Migration 0021 stores scope: `assignments.all_channels`, and `assignment_groups` for a scoped assignment's groups. A group in use can't be deleted.
+       - The resolver folds scope. `req.principal` carries the folded grants.
+       - Channel routes check scope through `scopeToChannel(router)` in `middleware/permission.middleware.ts` rather than a `requireChannel` on each route. It reads the groups of the channel the path names once per request, through Express's `router.param`, and `requirePermission` then checks the permission on that channel, so no route in a scoped router can miss the check.
+       - A caller holding the permission elsewhere gets 404 `Channel not found`, as for a channel that does not exist. One holding it nowhere still gets 403.
+       - A route whose path also names a record inside the channel (a message, an attachment, a revision) relies on its service reading that record through the channel id, which each already does.
+     - **8b**: the list, statistics, export, tag, dependency, event and cross-channel search filters.
+     - **8c**: sockets, Test Connection and test-run.
+     - These must land before slice 10 lets anyone write a scoped assignment, because until then a scoped holding is treated as held on every channel:
+       - `POST /channels/import` with `collisionMode: OVERWRITE` checks the overwritten channels' scope (slice 9 already owns import);
+       - the grant service refuses a scoped assignment of a role holding a permission limited to all-channel assignments (section 1's class rule), so `settings:write` and the other trust and identity permissions, guarded on routes that name no channel, are never held on a group.
 9. **Membership as a grant on `PUT /channels/:id/groups`, group create/delete rules, create/clone/import/restore into a group, library links**, L.
    - Follows: HTTP route, Tests. Library links keep the existing `channel_ids` column, so no schema change.
    - Membership writes move into `grant.service` with `recordInTx`: `ChannelGroupService.setChannelGroups` and the Default join in `channel.service.ts` both write `channel_group_members` themselves today and record after commit. The move also invalidates the socket channel-to-groups map.

@@ -7,7 +7,7 @@ import { z } from 'zod/v4';
 import { messageSearchQuerySchema, messageExportQuerySchema } from '@galvanigraph/core-models';
 import { MessageController } from '../controllers/message.controller.js';
 import { MessageExportController } from '../controllers/message-export.controller.js';
-import { requirePermission } from '../middleware/permission.middleware.js';
+import { requirePermission, scopeToChannel } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const channelIdParamsSchema = z.object({
@@ -20,6 +20,8 @@ const messageParamsSchema = z.object({
 });
 
 const router: IRouter = Router();
+// Every route here that names a channel checks its permission on that channel (D-310).
+scopeToChannel(router);
 
 router.get(
   '/:id/messages',

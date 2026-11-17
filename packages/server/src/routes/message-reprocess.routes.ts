@@ -11,10 +11,12 @@ import {
   resendParamsSchema,
 } from '@galvanigraph/core-models';
 import { MessageReprocessController } from '../controllers/message-reprocess.controller.js';
-import { requirePermission } from '../middleware/permission.middleware.js';
+import { requirePermission, scopeToChannel } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const router: IRouter = Router();
+// Every route here that names a channel checks its permission on that channel (D-310).
+scopeToChannel(router);
 
 // Specific/static routes are declared before the greedy `/:msgId` patterns so
 // literal segments (bulk, bulk-reprocess) are not captured as message ids.

@@ -9,10 +9,12 @@ import {
   attachmentGetParamsSchema,
 } from '@galvanigraph/core-models';
 import { AttachmentController } from '../controllers/attachment.controller.js';
-import { requirePermission } from '../middleware/permission.middleware.js';
+import { requirePermission, scopeToChannel } from '../middleware/permission.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
 const router: IRouter = Router();
+// Every route here that names a channel checks its permission on that channel (D-310).
+scopeToChannel(router);
 
 router.get(
   '/:id/messages/:msgId/attachments',

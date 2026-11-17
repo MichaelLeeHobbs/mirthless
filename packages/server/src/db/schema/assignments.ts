@@ -1,14 +1,15 @@
 // ===========================================
 // Assignments Table Schema
 // ===========================================
-// An assignment gives a user a role (D-310). Until group scope arrives (#266)
-// every assignment covers all channels. An expired assignment counts for
-// nothing: the resolver filters on expires_at, so an expiry takes effect with
-// no background job. Only services/grant.service.ts writes this table.
+// An assignment gives a user a role over a scope (D-310): every channel, or
+// the channels in a set of groups. An expired assignment counts for nothing:
+// the resolver filters on expires_at, so an expiry takes effect with no
+// background job. Only services/grant.service.ts writes these tables.
 
-import { pgTable, uuid, text, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, boolean, index, primaryKey } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 import { roles } from './roles.js';
+import { channelGroups } from './channel-groups.js';
 
 export const assignments = pgTable('assignments', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -18,6 +19,8 @@ export const assignments = pgTable('assignments', {
   roleId: uuid('role_id')
     .notNull()
     .references(() => roles.id, { onDelete: 'restrict' }),
+  /** Every channel. When false, the scope is the groups in assignment_groups. */
+  allChannels: boolean('all_channels').notNull().default(true),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   reason: text('reason'),
   createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -27,5 +30,23 @@ export const assignments = pgTable('assignments', {
   index('assignments_role_idx').on(table.roleId),
 ]);
 
+/**
+ * The channel groups a scoped assignment covers. A group in use cannot be
+ * deleted (restrict): plan section 2, "deleting a group is refused while any
+ * assignment uses it".
+ */
+export const assignmentGroups = pgTable('assignment_groups', {
+  assignmentId: uuid('assignment_id')
+    .notNull()
+    .references(() => assignments.id, { onDelete: 'cascade' }),
+  channelGroupId: uuid('channel_group_id')
+    .notNull()
+    .references(() => channelGroups.id, { onDelete: 'restrict' }),
+}, (table) => [
+  primaryKey({ columns: [table.assignmentId, table.channelGroupId] }),
+  index('assignment_groups_group_idx').on(table.channelGroupId),
+]);
+
 export type Assignment = typeof assignments.$inferSelect;
 export type NewAssignment = typeof assignments.$inferInsert;
+export type AssignmentGroup = typeof assignmentGroups.$inferSelect;

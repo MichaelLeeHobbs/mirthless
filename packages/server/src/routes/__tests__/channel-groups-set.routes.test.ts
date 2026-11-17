@@ -23,6 +23,8 @@ vi.mock('../../middleware/auth.middleware.js', () => ({
       permissions: header === '' ? [] : header.split(','),
       mustChangePassword: false,
     };
+    // As authenticate does: the same permissions, on every channel.
+    req.principal = { userId: 'user-1', grants: new Map(req.user.permissions.map((p) => [p as never, 'all' as const])) };
     next();
   }),
 }));

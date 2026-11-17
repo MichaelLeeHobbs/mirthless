@@ -148,6 +148,13 @@
       "when": 1794874810251,
       "tag": "0020_one_admin_role",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794879894134,
+      "tag": "0021_assignment_scope",
+      "breakpoints": true
     }
   ]
 }

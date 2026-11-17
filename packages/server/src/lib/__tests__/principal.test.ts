@@ -29,14 +29,14 @@ beforeEach(() => {
 
 describe('toAssignmentGrants', () => {
   it('gives the admin role every permission, whatever rows it has', () => {
-    const held = toAssignmentGrants(USER, [{ role: 'admin', admin: true, permissions: [], expiresAt: null }]);
+    const held = toAssignmentGrants(USER, [{ role: 'admin', admin: true, permissions: [], expiresAt: null, allChannels: true }]);
     expect(held.grants[0]?.permissions).toEqual(Object.values(PERMISSIONS));
     expect(held.grants[0]?.scope).toBe(ALL_CHANNELS);
     expect(held.roles).toEqual(['admin']);
   });
 
   it('ignores and logs a permission the server does not know', () => {
-    const held = toAssignmentGrants(USER, [{ role: 'old', admin: false, permissions: ['channels:read', 'tags:write'], expiresAt: null }]);
+    const held = toAssignmentGrants(USER, [{ role: 'old', admin: false, permissions: ['channels:read', 'tags:write'], expiresAt: null, allChannels: true }]);
     expect(held.grants[0]?.permissions).toEqual(['channels:read']);
     expect(warn).toHaveBeenCalledWith(expect.objectContaining({ unknown: ['tags:write'] }), expect.any(String));
   });
@@ -47,10 +47,19 @@ describe('toAssignmentGrants', () => {
     expect(error).toHaveBeenCalledTimes(2);
   });
 
+  it('scopes a group assignment to its groups', () => {
+    const held = toAssignmentGrants(USER, [{ role: 'lab', admin: false, permissions: ['messages:read'], expiresAt: null, allChannels: false, groupIds: ['g-lab'] }]);
+    expect(held.grants[0]?.scope).toEqual(['g-lab']);
+  });
+
+  it('fails closed on a row that does not say whether it covers every channel', () => {
+    expect(toAssignmentGrants(USER, [{ role: 'lab', admin: false, permissions: ['messages:read'], expiresAt: null }])).toEqual({ roles: [], grants: [] });
+  });
+
   it('carries each assignment\'s expiry, and names each role once', () => {
     const held = toAssignmentGrants(USER, [
-      { role: 'viewer', admin: false, permissions: ['channels:read'], expiresAt: '2026-12-01T00:00:00Z' },
-      { role: 'viewer', admin: false, permissions: ['channels:read'], expiresAt: null },
+      { role: 'viewer', admin: false, permissions: ['channels:read'], expiresAt: '2026-12-01T00:00:00Z', allChannels: true },
+      { role: 'viewer', admin: false, permissions: ['channels:read'], expiresAt: null, allChannels: true },
     ]);
     expect(held.grants.map((g) => g.expiresAt)).toEqual([new Date('2026-12-01T00:00:00Z'), null]);
     expect(held.roles).toEqual(['viewer']);
@@ -61,8 +70,8 @@ describe('queryUserStanding', () => {
   const row = {
     id: USER, username: 'ann', email: 'ann@example.test', enabled: true, mustChangePassword: false,
     assignments: [
-      { role: 'viewer', admin: false, permissions: ['messages:read', 'channels:read'], expiresAt: null },
-      { role: 'deployer', admin: false, permissions: ['channels:deploy'], expiresAt: '2026-11-16T11:00:00Z' },
+      { role: 'viewer', admin: false, permissions: ['messages:read', 'channels:read'], expiresAt: null, allChannels: true },
+      { role: 'deployer', admin: false, permissions: ['channels:deploy'], expiresAt: '2026-11-16T11:00:00Z', allChannels: true },
     ],
   };
 

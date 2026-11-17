@@ -115,7 +115,7 @@ function makeUser(overrides?: Partial<Record<string, unknown>>): Record<string, 
 function standingRow(id: string, permissions: readonly string[]): Record<string, unknown> {
   return {
     id, username: 'u', email: 'u@test.com', enabled: true, mustChangePassword: false,
-    assignments: permissions.length === 0 ? [] : [{ role: 'r', admin: false, permissions, expiresAt: null }],
+    assignments: permissions.length === 0 ? [] : [{ role: 'r', admin: false, permissions, expiresAt: null, allChannels: true }],
   };
 }
 
@@ -362,7 +362,7 @@ describe('UserService', () => {
     it('returns the permissions the user\'s live assignments grant', async () => {
       pushResponse([{
         id: USER_ID, username: 'jsmith', email: 'jsmith@test.com', enabled: true, mustChangePassword: false,
-        assignments: [{ role: 'viewer', admin: false, permissions: ['messages:read', 'channels:read'], expiresAt: null }],
+        assignments: [{ role: 'viewer', admin: false, permissions: ['messages:read', 'channels:read'], expiresAt: null, allChannels: true }],
       }]);
 
       const result = await UserService.getPermissions(USER_ID);
