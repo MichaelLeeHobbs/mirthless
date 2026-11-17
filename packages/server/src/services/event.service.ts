@@ -164,6 +164,16 @@ export class EventService {
     });
   }
 
+  /** Whether an event named `name` was recorded for `userId` at or after `since`. */
+  static async hasEventSince(name: string, userId: string, since: Date): Promise<Result<boolean>> {
+    return tryCatch(async () => {
+      const [row] = await db.select({ id: events.id }).from(events)
+        .where(and(eq(events.name, name), eq(events.userId, userId), gte(events.createdAt, since)))
+        .limit(1);
+      return row !== undefined;
+    });
+  }
+
   /** Create a new audit event. Internal use only. */
   static async create(input: CreateEventInput): Promise<Result<EventDetail>> {
     return tryCatch(async () => {

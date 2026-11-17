@@ -14,6 +14,7 @@
 
 import type { Request, Response } from 'express';
 import { AuditService } from '../services/audit.service.js';
+import { EventService } from '../services/event.service.js';
 import { AuditDedupe } from './audit-dedupe.js';
 import { errorResponse, mapErrorToStatus } from './controller-helpers.js';
 import { emitAuditEvent } from './event-emitter.js';
@@ -21,7 +22,7 @@ import { DEFAULT_KEY_DAILY_ROWS, KeyRowCeiling, type RowTicket } from './key-row
 import { ServiceError } from './service-error.js';
 import logger from './logger.js';
 import { errorInfo } from '@galvanigraph/core-util';
-import { AUDIT_ACTION } from '@galvanigraph/core-models';
+import { AUDIT_ACTION, EVENT_NAME } from '@galvanigraph/core-models';
 
 const dedupe = new AuditDedupe();
 
@@ -30,7 +31,17 @@ const keyDailyRows = ((): number => {
   return Number.isInteger(configured) && configured > 0 ? configured : DEFAULT_KEY_DAILY_ROWS;
 })();
 
-const keyCeiling = new KeyRowCeiling({ limit: keyDailyRows, seed: (userId, since) => AuditService.rowsReadSince(userId, since) });
+const keyCeiling = new KeyRowCeiling({
+  limit: keyDailyRows,
+  seed: (userId, since) => AuditService.rowsReadSince(userId, since),
+  seedWarned: async (userId, since) => {
+    // The warning is advice: when the events table cannot be read, warn again rather than refuse the read.
+    const found = await EventService.hasEventSince(EVENT_NAME.API_KEY_ROW_CEILING_WARNING, userId, since);
+    if (found.ok) return found.value;
+    logger.warn({ ...errorInfo(found.error) }, 'Could not read whether an API key was warned today; it may be warned again');
+    return false;
+  },
+});
 
 export interface AuditedRead {
   readonly action: string;
@@ -93,7 +104,28 @@ async function recordKeyRead(req: Request, res: Response, read: Omit<AuditedRead
     refuse(res, recorded.error);
     return null;
   }
+  await warnNearCeiling(req, userId);
   return recorded.value;
+}
+
+/**
+ * Once a day per key, when its count first reaches 80% of the ceiling, write a
+ * WARN event naming the key, its count and the ceiling (#301). The claim is
+ * released when the write fails, so the next read tries again. The read itself
+ * is not refused: the warning is advice, the ceiling is the limit.
+ */
+async function warnNearCeiling(req: Request, userId: string): Promise<void> {
+  const due = keyCeiling.claimWarning(userId);
+  if (due === null) return;
+  const written = await EventService.create({
+    level: 'WARN', name: EVENT_NAME.API_KEY_ROW_CEILING_WARNING, outcome: 'SUCCESS', userId,
+    channelId: null, serverId: null, ipAddress: req.ip ?? null,
+    attributes: { apiKeyId: req.apiKeyId, used: due.used, limit: due.limit },
+  });
+  if (!written.ok) {
+    keyCeiling.releaseWarning(userId);
+    logger.warn({ ...errorInfo(written.error), apiKeyId: req.apiKeyId }, 'Could not write an API key\'s 80% row warning; the next read tries again');
+  }
 }
 
 /**

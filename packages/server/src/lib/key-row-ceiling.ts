@@ -8,23 +8,40 @@
 // restart neither resets it nor loses it. A leaked key with messages:read can
 // then take at most a day's ceiling.
 //
+// At 80% of the ceiling the key's owner is warned once a day (#301): the
+// caller claims the warning, writes it, and releases the claim if the write
+// failed, so the next read tries again. Whether today's warning was already
+// written is read back with the count, so a restart does not warn twice.
+//
 // One server process holds the count: a second process would rebuild its own
 // from the audit log once a day and then count apart (the plan runs one).
 
 /** The rows a key may read in a day, unless API_KEY_DAILY_ROWS sets another. */
 export const DEFAULT_KEY_DAILY_ROWS = 5000;
 
+/** The share of the ceiling at which a key's day is warned about. */
+export const KEY_ROWS_WARN_FRACTION = 0.8;
+
 export interface KeyRowCeilingOptions {
   readonly limit: number;
   /** The rows the audit log already holds for this principal since `since`. */
   readonly seed: (principalId: string, since: Date) => Promise<number>;
+  /** Whether today's 80% warning for this principal was already written since `since`. */
+  readonly seedWarned?: (principalId: string, since: Date) => Promise<boolean>;
   readonly now?: () => Date;
+}
+
+/** A warning that is due: the day's count and the ceiling it is measured against. */
+export interface RowWarning {
+  readonly used: number;
+  readonly limit: number;
 }
 
 interface Day {
   readonly day: string;
   used: number;
   refusalNoted: boolean;
+  warned: boolean;
 }
 
 /** Rows counted for a read, kept so they go back to the day they were taken from. */
@@ -60,9 +77,11 @@ export class KeyRowCeiling {
     const key = `${principalId}|${day}`;
     let pending = this.seeding.get(key);
     if (pending === undefined) {
-      pending = this.options.seed(principalId, new Date(`${day}T00:00:00Z`))
-        .then((used) => {
-          const entry: Day = { day, used, refusalNoted: false };
+      const since = new Date(`${day}T00:00:00Z`);
+      const seedWarned = this.options.seedWarned ?? ((): Promise<boolean> => Promise.resolve(false));
+      pending = Promise.all([this.options.seed(principalId, since), seedWarned(principalId, since)])
+        .then(([used, warned]) => {
+          const entry: Day = { day, used, refusalNoted: false, warned };
           // A slow read for an earlier day never replaces a later day's count.
           const stored = this.days.get(principalId);
           if (stored === undefined || stored.day < day) this.days.set(principalId, entry);
@@ -108,5 +127,23 @@ export class KeyRowCeiling {
   forgetRefusal(principalId: string): void {
     const entry = this.days.get(principalId);
     if (entry) entry.refusalNoted = false;
+  }
+
+  /**
+   * The warning to write when today's count has reached 80% of the ceiling and
+   * none was claimed yet today, or null. Claiming marks it sent; call
+   * `releaseWarning` when the write failed.
+   */
+  claimWarning(principalId: string): RowWarning | null {
+    const entry = this.days.get(principalId);
+    if (!entry || entry.day !== dayOf(this.now()) || entry.warned) return null;
+    if (entry.used < this.options.limit * KEY_ROWS_WARN_FRACTION) return null;
+    entry.warned = true;
+    return { used: entry.used, limit: this.options.limit };
+  }
+
+  releaseWarning(principalId: string): void {
+    const entry = this.days.get(principalId);
+    if (entry) entry.warned = false;
   }
 }

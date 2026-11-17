@@ -84,6 +84,13 @@ describeIntegration('API key daily row ceiling (real Postgres)', () => {
     expect(reached.rowCount).toBe(1);
   });
 
+  it('writes one WARN event when a key first reaches 80% of its ceiling, naming the key, its count and the ceiling (#301)', async () => {
+    const warned = await mods.pool.query<{ level: string; attributes: Record<string, unknown> }>(
+      `SELECT level, attributes FROM events WHERE name = 'API_KEY_ROW_CEILING_WARNING' AND user_id = $1`, [keyUser],
+    );
+    expect(warned.rows).toEqual([{ level: 'WARN', attributes: { apiKeyId: key.key.id, used: 3, limit: CEILING } }]);
+  });
+
   it('records the rows of every counted read, so the day survives a restart', async () => {
     const { AuditService } = await import('../../src/services/audit.service.js');
     const since = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);

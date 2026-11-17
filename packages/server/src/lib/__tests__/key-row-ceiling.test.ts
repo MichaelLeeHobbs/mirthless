@@ -114,3 +114,56 @@ describe('KeyRowCeiling', () => {
     expect(c.limit).toBe(5);
   });
 });
+
+describe('KeyRowCeiling: the 80% warning (#301)', () => {
+  function warned(limit: number, seeded = 0, alreadyWarned = false): { c: KeyRowCeiling; clock: { now: Date } } {
+    const clock = { now: new Date('2026-11-17T10:00:00Z') };
+    const c = new KeyRowCeiling({ limit, seed: async () => seeded, seedWarned: async () => alreadyWarned, now: () => clock.now });
+    return { c, clock };
+  }
+
+  it('is due once the day\'s count reaches 80%, and not before', async () => {
+    const { c } = warned(10);
+    await c.take('k', 7);
+    expect(c.claimWarning('k')).toBeNull();
+    await c.take('k', 1);
+    expect(c.claimWarning('k')).toEqual({ used: 8, limit: 10 });
+  });
+
+  it('is claimed once a day: a second claim gets nothing, a new day starts again', async () => {
+    const { c, clock } = warned(10);
+    await c.take('k', 9);
+    expect(c.claimWarning('k')).not.toBeNull();
+    await c.take('k', 1);
+    expect(c.claimWarning('k')).toBeNull();
+    clock.now = new Date('2026-11-18T00:00:01Z');
+    await c.take('k', 8);
+    expect(c.claimWarning('k')).toEqual({ used: 8, limit: 10 });
+  });
+
+  it('is claimed again after a write that failed is released', async () => {
+    const { c } = warned(10);
+    await c.take('k', 9);
+    expect(c.claimWarning('k')).not.toBeNull();
+    c.releaseWarning('k');
+    expect(c.claimWarning('k')).toEqual({ used: 9, limit: 10 });
+  });
+
+  it('remembers a warning already written today, across a restart', async () => {
+    const { c } = warned(10, 9, true);
+    await c.take('k', 0);
+    expect(c.claimWarning('k')).toBeNull();
+  });
+
+  it('is due when the day starts past 80% from the audit log', async () => {
+    const { c } = warned(10, 9, false);
+    await c.take('k', 0);
+    expect(c.claimWarning('k')).toEqual({ used: 9, limit: 10 });
+  });
+
+  it('says nothing for a key it has not seen', () => {
+    const { c } = warned(10);
+    expect(c.claimWarning('nobody')).toBeNull();
+    c.releaseWarning('nobody');
+  });
+});
