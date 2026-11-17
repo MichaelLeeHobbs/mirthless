@@ -2,8 +2,7 @@
 // API Keys Page
 // ===========================================
 // Keys for machine callers (D-313, RBAC plan section 7): what each holds and
-// where, who issued it, when it ends and was last used, and, for a leaver's
-// key, how long until it is disabled unless someone replaces it. Holders of
+// where, who issued it, when it ends and was last used. Holders of
 // api_keys:manage issue, replace, disable and revoke keys here.
 
 import { useState, type ReactNode } from 'react';
@@ -32,11 +31,12 @@ import AutorenewIcon from '@mui/icons-material/Autorenew';
 import BlockIcon from '@mui/icons-material/Block';
 import KeyIcon from '@mui/icons-material/Key';
 import type { ApiKeyView } from '@galvanigraph/core-models';
+import { useAuthStore } from '../stores/auth.store.js';
 import { useApiKeys, useIssueApiKey, useReplaceApiKey, useRevokeApiKey, useSetApiKeyEnabled } from '../hooks/use-api-keys.js';
 import { useChannelGroups } from '../hooks/use-channel-groups.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
-import { keyScopeLabel, replacementCountdown } from '../lib/api-keys.js';
+import { keyScopeLabel } from '../lib/api-keys.js';
 import { permissionLabel } from '../lib/channel-access.js';
 import { apiKeyLevel } from '../lib/status.js';
 import { formatTimestamp, humanize } from '../lib/format.js';
@@ -65,12 +65,10 @@ interface RowProps {
 }
 
 function KeyRow({ apiKey: k, canManage, groupName, onToggle, replacing, onReplace, onRevoke }: RowProps): ReactNode {
-  const countdown = replacementCountdown(k, Date.now());
   const ended = k.status === 'revoked' || k.status === 'expired';
   const status = (
     <Stack spacing={0.5} sx={{ alignItems: 'flex-start' }}>
-      <StatusChip label={humanize(k.status)} level={apiKeyLevel(k.status, countdown !== null)} />
-      {countdown && <StatusChip label={countdown} level="warning" />}
+      <StatusChip label={humanize(k.status)} level={apiKeyLevel(k.status)} />
     </Stack>
   );
   return (
@@ -118,21 +116,24 @@ function KeyRow({ apiKey: k, canManage, groupName, onToggle, replacing, onReplac
 }
 
 /** Ask how a key is being replaced: a leak ends the old secret now, a planned change keeps it for 7 days. */
-function ReplaceDialog({ target, onChoose, onCancel }: { readonly target: ApiKeyView | null; readonly onChoose: (mode: 'leak' | 'planned') => void; readonly onCancel: () => void }): ReactNode {
-  const leaving = target?.replaceBy !== null && target?.replaceBy !== undefined;
+/**
+ * Ask how a key is being replaced. Only its own issuer may keep the old secret
+ * for 7 days: anyone else may be replacing it because its owner is leaving (D-322).
+ */
+function ReplaceDialog({ target, isOwner, onChoose, onCancel }: { readonly target: ApiKeyView | null; readonly isOwner: boolean; readonly onChoose: (mode: 'leak' | 'planned') => void; readonly onCancel: () => void }): ReactNode {
   return (
     <Dialog open={target !== null} onClose={onCancel} maxWidth="sm" fullWidth>
       <DialogTitle>Replace {target?.name}</DialogTitle>
       <DialogContent>
         <DialogContentText>
           The key gets a new secret and you become its issuer, so you must hold what it holds until it ends.
-          {leaving ? ' Its issuer has left, so the old secret stops at once either way.' : ''}
+          {isOwner ? '' : ` You did not issue it, so its old secret stops at once.`}
         </DialogContentText>
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel}>Cancel</Button>
         <Button color="warning" onClick={() => { onChoose('leak'); }}>It leaked: end the old secret now</Button>
-        <Button variant="contained" onClick={() => { onChoose('planned'); }}>Planned: keep the old one 7 days</Button>
+        {isOwner && <Button variant="contained" onClick={() => { onChoose('planned'); }}>Planned: keep the old one 7 days</Button>}
       </DialogActions>
     </Dialog>
   );
@@ -143,6 +144,7 @@ export function ApiKeysPage(): ReactNode {
   const { data: groups } = useChannelGroups();
   const { has } = usePermissions();
   const canManage = has(PERMISSION.API_KEYS_MANAGE);
+  const myId = useAuthStore((s) => s.user?.id);
   const issue = useIssueApiKey();
   const replace = useReplaceApiKey();
   const setEnabled = useSetApiKeyEnabled();
@@ -214,7 +216,7 @@ export function ApiKeysPage(): ReactNode {
             });
           }} />
       )}
-      <ReplaceDialog target={replaceTarget} onCancel={() => { setReplaceTarget(null); }}
+      <ReplaceDialog target={replaceTarget} isOwner={replaceTarget?.issuedBy.id === myId} onCancel={() => { setReplaceTarget(null); }}
         onChoose={(mode) => {
           if (!replaceTarget) return;
           replace.mutate({ id: replaceTarget.id, mode }, {

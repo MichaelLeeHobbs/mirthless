@@ -40,19 +40,27 @@ export const updateUserSchema = z.object({
   lastName: z.string().max(100).nullable().optional(),
   role: z.string().min(1).max(100).optional(),
   enabled: z.boolean().optional(),
-  /** When disabling: what happens to the API keys this user issued (D-313). Disabled with them unless asked otherwise. */
-  issuedKeys: z.enum(['disable', 'replace_within_7_days']).optional(),
 });
 
-/** DELETE /users/:id query: what happens to the API keys the user issued (D-313). */
+/**
+ * DELETE /users/:id query. Every working API key the user issued is disabled
+ * with them (D-322); `takeOwnership` (comma-separated key ids) names keys the
+ * caller takes over instead, each replaced as a leak with a new token.
+ */
 export const deleteUserQuerySchema = z.object({
-  issuedKeys: z.enum(['disable', 'replace_within_7_days']).optional(),
+  takeOwnership: z.string().max(4000).optional()
+    .transform((v) => (v === undefined || v === '' ? [] : v.split(',')))
+    .pipe(z.array(z.string().uuid()).max(100)),
 });
 
 export type DeleteUserQuery = z.infer<typeof deleteUserQuerySchema>;
 
-/** What happens to a leaver's API keys: disabled now, or kept working until someone replaces them, for 7 days at most. */
-export type IssuedKeysOnLeave = 'disable' | 'replace_within_7_days';
+/** A key taken over when its issuer was deleted: its new token, shown once. */
+export interface TakenOverKey {
+  readonly keyId: string;
+  readonly name: string;
+  readonly token: string;
+}
 
 export const changePasswordSchema = z.object({
   newPassword: passwordSchema,

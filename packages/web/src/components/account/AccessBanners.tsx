@@ -6,8 +6,6 @@
 //   the user's grants had changed, so "not found" may mean "not yours now".
 // - "Your temporary access ends at ...": an hour before a time-limited grant
 //   ends. When it ends the client refreshes, which updates the screens.
-// - For holders of api_keys:manage, from day 5 of a leaver's 7: their API keys
-//   will be disabled unless someone replaces them (D-313).
 
 import { useEffect, useState, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
@@ -16,12 +14,6 @@ import { useAuthStore } from '../../stores/auth.store.js';
 import { checkAccess } from '../../api/client.js';
 import { MAX_TIMER_MS, expiryState, nextTimerDelay } from '../../lib/access-expiry.js';
 import { formatTimestamp } from '../../lib/format.js';
-import { Link as RouterLink } from 'react-router';
-import Link from '@mui/material/Link';
-import { usePermissions } from '../../hooks/use-permissions.js';
-import { useApiKeys } from '../../hooks/use-api-keys.js';
-import { keysDueSoon } from '../../lib/api-keys.js';
-import { PERMISSION } from '../../lib/permissions.js';
 
 /** The refresh at the end is spread over this long, so open tabs do not rotate the shared session together. */
 const EXPIRY_JITTER_MS = 30_000;
@@ -65,25 +57,6 @@ function useRefreshAtExpiry(nextExpiryAt: string | null | undefined): void {
   }, [nextExpiryAt]);
 }
 
-/** Leavers' API keys within two days of being disabled, for those who can replace them. */
-function KeysDueBanner(): ReactNode {
-  const { has } = usePermissions();
-  // The list needs api_keys:read; the banner is for those who can act on it.
-  const canManage = has(PERMISSION.API_KEYS_MANAGE) && has(PERMISSION.API_KEYS_READ);
-  const { data: keys } = useApiKeys(canManage);
-  if (!canManage || !keys) return null;
-  const due = keysDueSoon(keys, Date.now());
-  if (due.length === 0) return null;
-  return (
-    <Alert severity="warning">
-      {due.length === 1
-        ? `The API key ${due[0]!.name} will be disabled soon: its issuer left and nobody has replaced it.`
-        : `${String(due.length)} API keys will be disabled soon: their issuers left and nobody has replaced them.`}{' '}
-      <Link component={RouterLink} to="/api-keys">Replace {due.length === 1 ? 'it' : 'them'} on the API keys page</Link>.
-    </Alert>
-  );
-}
-
 export function AccessBanners(): ReactNode {
   const nextExpiryAt = useAuthStore((s) => s.user?.nextExpiryAt);
   const accessChangedAt = useAuthStore((s) => s.accessChangedAt);
@@ -95,7 +68,6 @@ export function AccessBanners(): ReactNode {
   return (
     // Hidden when no banner shows, so it takes no room.
     <Stack spacing={1} sx={{ mb: 2, '&:empty': { display: 'none' } }}>
-      <KeysDueBanner />
       {accessChangedAt !== null && (
         <Alert severity="info" onClose={() => { setAccessChanged(null); }}>
           Your access changed at {formatTimestamp(accessChangedAt, { empty: 'just now' })}. A page or channel that is not found may now be outside your access.

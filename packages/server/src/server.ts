@@ -21,7 +21,6 @@ import { rerunStep, runStartupSteps, startupStatus, STARTUP_STEP } from './lib/s
 import { emitEvent } from './lib/event-emitter.js';
 import { PartitionManagerService } from './services/partition-manager.service.js';
 import { GrantService } from './services/grant.service.js';
-import { ApiKeyService } from './services/api-key.service.js';
 import { tryCatch, type Result } from 'stderr-lib';
 
 const PORT = config.PORT;
@@ -52,11 +51,6 @@ const ensureAuditPartitions = (): Promise<Result<void>> =>
     if (await GrantService.ensureMonthlyBaseline() === 'deferred') {
       logger.warn('This month\'s grant baseline waited too long on grant changes; the daily run retries it');
     }
-    // A leaver's API keys that nobody replaced in time are disabled; ones due soon are warned about (D-313).
-    // Its own failure is logged, not the partition step's: requests stop at the deadline either way (resolve).
-    const keys = await tryCatch(ApiKeyService.enforceReplacementDeadlines());
-    if (!keys.ok) logger.error({ errMsg: keys.error.message }, 'Could not check API key replacement deadlines; the daily run retries');
-    else if (keys.value > 0) logger.warn({ disabled: keys.value }, 'Disabled API keys whose issuer left and nobody replaced them in time');
   });
 const startupDeps = {
   logger,

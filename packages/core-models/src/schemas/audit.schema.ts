@@ -55,7 +55,7 @@ export const AUDIT_ACTION = {
   API_KEY_ROW_CEILING_REACHED: 'API_KEY_ROW_CEILING_REACHED',
   /** An API key's secret was replaced, by whom (now its issuer), and whether the old one still works for a while. */
   API_KEY_REPLACED: 'API_KEY_REPLACED',
-  /** A user who issued API keys was disabled or deleted: their keys were disabled, or given 7 days to be replaced. */
+  /** A user who issued API keys was disabled or deleted: every key they still issued was disabled, after any taken over (D-322). */
   API_KEYS_OFFBOARDED: 'API_KEYS_OFFBOARDED',
   /** An API key was revoked, with the reason. Revoking also disables the key's user (USER_ENABLED_CHANGED). */
   API_KEY_REVOKED: 'API_KEY_REVOKED',

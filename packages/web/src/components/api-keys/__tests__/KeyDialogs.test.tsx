@@ -52,22 +52,38 @@ describe('KeyTokenDialog', () => {
 });
 
 describe('OffboardKeysDialog', () => {
-  const target = { username: 'jmorales', keys: [{ id: 'k1', name: 'Lab feed' }] as never };
-
-  it('starts at disabling the keys', () => {
+  const keys = [
+    { id: 'k1', name: 'Lab feed', permissions: ['channels:read'] },
+    { id: 'k2', name: 'CI deploys', permissions: ['channels:deploy'] },
+  ] as never;
+  const open = (over: Partial<Parameters<typeof OffboardKeysDialog>[0]> = {}): ReturnType<typeof vi.fn> => {
     const onConfirm = vi.fn();
-    themed(<OffboardKeysDialog target={target} isPending={false} onConfirm={onConfirm} onCancel={vi.fn()} />);
+    themed(<OffboardKeysDialog target={{ username: 'jmorales', keys }} canTakeOver={() => true} isPending={false} error={null} onConfirm={onConfirm} onCancel={vi.fn()} {...over} />);
+    return onConfirm;
+  };
+
+  it('warns that every key stops, names them, and takes none over unless asked', () => {
+    const onConfirm = open();
+    expect(screen.getByText(/2 API keys they issued will stop now/)).toBeTruthy();
+    expect(screen.getByText('Lab feed')).toBeTruthy();
+    expect(screen.getByText('CI deploys')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
-    expect(onConfirm).toHaveBeenCalledWith('disable');
+    expect(onConfirm).toHaveBeenCalledWith([]);
   });
 
-  it('sends the 7-day choice when picked, and names the keys', () => {
-    const onConfirm = vi.fn();
-    themed(<OffboardKeysDialog target={target} isPending={false} onConfirm={onConfirm} onCancel={vi.fn()} />);
-    expect(screen.getByText(/They issued an API key: Lab feed/)).toBeTruthy();
-    fireEvent.click(screen.getByLabelText(/Keep them working for 7 days/));
+  it('sends the keys taken over', () => {
+    const onConfirm = open();
+    fireEvent.click(screen.getByLabelText('Take ownership of CI deploys'));
+    expect(screen.getByText(/1 API key they issued will stop now/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
-    expect(onConfirm).toHaveBeenCalledWith('replace_within_7_days');
+    expect(onConfirm).toHaveBeenCalledWith(['k2']);
+  });
+
+  it('offers no take-over for a key the admin does not cover, and shows a refusal', () => {
+    open({ canTakeOver: (k: { id: string }) => k.id === 'k1', error: 'A key cannot outlast your own access' } as never);
+    expect(screen.queryByLabelText('Take ownership of CI deploys')).toBeNull();
+    expect(screen.getByLabelText('Take ownership of Lab feed')).toBeTruthy();
+    expect(screen.getByText(/cannot outlast your own access/)).toBeTruthy();
   });
 });
 

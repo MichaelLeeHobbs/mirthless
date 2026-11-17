@@ -194,11 +194,11 @@ const apiKey = (id, name, over) => ({
   id, name, description: '', permissions: ['channels:read'], groupIds: null, status: 'active',
   expiresAt: new Date(Date.now() + 90 * DAY).toISOString(), reason: null, issuedBy: { id: 'u1', username: 'admin' },
   revokedAt: null, revokeReason: null, lastUsedAt: new Date(Date.now() - 3600_000).toISOString(), lastUsedIp: '10.0.0.12',
-  createdAt: new Date(Date.now() - 30 * DAY).toISOString(), replaceBy: null, previousSecretUntil: null, ...over,
+  createdAt: new Date(Date.now() - 30 * DAY).toISOString(), previousSecretUntil: null, ...over,
 });
 const apiKeys = [
   apiKey('k1', 'Lab results feed', { permissions: ['channels:read', 'messages:read'], groupIds: ['g1'] }),
-  apiKey('k2', 'CI deploys', { permissions: ['channels:deploy', 'channels:read'], issuedBy: { id: 'u3', username: 'kpatel' }, replaceBy: new Date(Date.now() + 1.5 * DAY).toISOString() }),
+  apiKey('k2', 'CI deploys', { permissions: ['channels:deploy', 'channels:read'], issuedBy: { id: 'u3', username: 'kpatel' }, previousSecretUntil: new Date(Date.now() + 5 * DAY).toISOString() }),
   apiKey('k3', 'Old billing export', { status: 'revoked', revokedAt: new Date(Date.now() - 2 * DAY).toISOString(), revokeReason: 'Leaked in a build log', lastUsedAt: null }),
   apiKey('k4', 'Nightly extract', { status: 'disabled', permissions: ['messages:read'], reason: 'Nightly warehouse load' }),
 ];

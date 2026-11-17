@@ -24,9 +24,11 @@ import LockOpenIcon from '@mui/icons-material/LockOpen';
 import PeopleIcon from '@mui/icons-material/People';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useChangePassword, useUnlockUser } from '../hooks/use-users.js';
 import { useApiKeys } from '../hooks/use-api-keys.js';
-import { liveKeysIssuedBy } from '../lib/api-keys.js';
+import { coversKey, liveKeysIssuedBy } from '../lib/api-keys.js';
 import { OffboardKeysDialog } from '../components/users/OffboardKeysDialog.js';
-import type { IssuedKeysOnLeave } from '@galvanigraph/core-models';
+import { KeyTokenDialog } from '../components/api-keys/KeyTokenDialog.js';
+import { useAuthStore } from '../stores/auth.store.js';
+import type { TakenOverKey } from '@galvanigraph/core-models';
 import { UserDialog, type UserFormData } from '../components/users/UserDialog.js';
 import { useSetAssignments } from '../hooks/use-assignments.js';
 import { toSend } from '../lib/assignments.js';
@@ -68,8 +70,14 @@ export function UsersPage(): ReactNode {
   const canWrite = has(PERMISSION.USERS_WRITE);
   const canDelete = has(PERMISSION.USERS_DELETE);
   // Reading the keys needs api_keys:read; choosing their fate needs api_keys:manage.
-  const canManageKeys = has(PERMISSION.API_KEYS_MANAGE) && has(PERMISSION.API_KEYS_READ);
-  const { data: keys } = useApiKeys(canManageKeys);
+  // Reading the keys a leaver issued needs api_keys:read; taking one over needs api_keys:manage too.
+  const canReadKeys = has(PERMISSION.API_KEYS_READ);
+  const canManageKeys = has(PERMISSION.API_KEYS_MANAGE) && canReadKeys;
+  const { data: keys } = useApiKeys(canReadKeys);
+  const grants = useAuthStore((s) => s.user?.grants);
+  // The tokens of keys taken over, shown one at a time, once.
+  const [newTokens, setNewTokens] = useState<readonly TakenOverKey[]>([]);
+  const [offboardError, setOffboardError] = useState<string | null>(null);
 
   const handleOpenCreate = (): void => {
     setEditingUser(null);
@@ -158,14 +166,22 @@ export function UsersPage(): ReactNode {
     }
   };
 
-  const handleConfirmDisable = (issuedKeys?: IssuedKeysOnLeave): void => {
+  const handleConfirmDisable = (): void => {
     if (!disableTarget) return;
-    deleteUser.mutate(issuedKeys === undefined ? { id: disableTarget.id } : { id: disableTarget.id, issuedKeys });
+    deleteUser.mutate({ id: disableTarget.id });
     setDisableTarget(null);
   };
-  // The API keys the user being disabled issued: a key manager chooses what happens to them (D-313).
+  // The working keys the user being disabled issued: they stop with them (D-322), so the dialog says so first.
   const targetKeys = disableTarget && keys ? liveKeysIssuedBy(keys, disableTarget.id) : [];
-  const offboarding = canManageKeys && targetKeys.length > 0;
+  const offboarding = targetKeys.length > 0;
+  const handleConfirmOffboard = (takeOwnership: readonly string[]): void => {
+    if (!disableTarget) return;
+    deleteUser.mutate({ id: disableTarget.id, takeOwnership }, {
+      // Kept open on a refusal (such as a key the admin cannot keep until it ends): nothing changed.
+      onSuccess: (taken) => { setDisableTarget(null); setOffboardError(null); setNewTokens(taken); deleteUser.reset(); },
+      onError: (err) => { setOffboardError(err.message); },
+    });
+  };
 
   const handleUnlock = (user: UserSummary): void => {
     unlockUser.mutate(user.id);
@@ -281,17 +297,24 @@ export function UsersPage(): ReactNode {
       />
 
       <OffboardKeysDialog
-        // A fresh dialog for each user, so the choice starts at "disable" every time.
+        // A fresh dialog for each user, so nothing starts ticked.
         key={disableTarget?.id ?? 'closed'}
         target={offboarding && disableTarget ? { username: disableTarget.username, keys: targetKeys } : null}
+        canTakeOver={(key) => canManageKeys && coversKey(grants, key)}
         isPending={deleteUser.isPending}
-        onConfirm={handleConfirmDisable}
-        onCancel={() => { setDisableTarget(null); }}
+        error={offboardError}
+        onConfirm={handleConfirmOffboard}
+        onCancel={() => { setDisableTarget(null); setOffboardError(null); }}
+      />
+      <KeyTokenDialog
+        shown={newTokens[0] ? { name: newTokens[0].name, token: newTokens[0].token, oldSecretUntil: null } : null}
+        onClose={() => { setNewTokens(newTokens.slice(1)); }}
       />
       <ConfirmDialog
         open={disableTarget !== null && !offboarding}
         title="Disable User"
-        message={`Disable ${disableTarget?.username ?? ''}? They will no longer be able to sign in.`}
+        // Without the key list (no api_keys:read, or not loaded yet) the warning is still given in words.
+        message={`Disable ${disableTarget?.username ?? ''}? They will no longer be able to sign in${canReadKeys && keys !== undefined ? '' : ', and any API keys they issued stop too'}.`}
         confirmLabel="Disable"
         severity="warning"
         isPending={deleteUser.isPending}

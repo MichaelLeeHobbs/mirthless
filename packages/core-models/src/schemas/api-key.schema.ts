@@ -84,8 +84,6 @@ export interface ApiKeyView {
   readonly lastUsedAt: string | null;
   readonly lastUsedIp: string | null;
   readonly createdAt: string;
-  /** Its issuer left: the key stops at this time unless someone replaces it (D-313). */
-  readonly replaceBy: string | null;
   /** After a planned replace, the old secret still works until this time. */
   readonly previousSecretUntil: string | null;
 }

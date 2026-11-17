@@ -31,10 +31,6 @@ export const apiKeys = pgTable('api_keys', {
   /** Written at most once a minute per key (middleware/auth.middleware.ts). */
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
   lastUsedIp: varchar('last_used_ip', { length: 45 }),
-  /** Its issuer left: the key keeps working until this time unless replaced, then is disabled (D-313). */
-  replaceBy: timestamp('replace_by', { withTimezone: true }),
-  /** When holders of api_keys:manage were warned that replaceBy is near. */
-  replaceWarnedAt: timestamp('replace_warned_at', { withTimezone: true }),
   /** After a planned replace: the old secret's hash, working until previousSecretUntil. */
   previousSecretHash: varchar('previous_secret_hash', { length: 64 }),
   previousSecretUntil: timestamp('previous_secret_until', { withTimezone: true }),

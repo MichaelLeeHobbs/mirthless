@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiKeyView } from '@galvanigraph/core-models';
-import { draftProblem, keyScopeLabel, keysDueSoon, liveKeysIssuedBy, needsReason, replacementCountdown, toIssueInput, type KeyDraft } from '../api-keys.js';
+import { coversKey, draftProblem, keyScopeLabel, liveKeysIssuedBy, needsReason, toIssueInput, type KeyDraft } from '../api-keys.js';
 
 const NOW = Date.parse('2026-11-17T12:00:00Z');
 const DAY = 86_400_000;
@@ -10,7 +10,7 @@ function key(over: Partial<ApiKeyView>): ApiKeyView {
     id: 'k', name: 'Feed', description: '', permissions: ['channels:read'], groupIds: null, status: 'active',
     expiresAt: '2027-01-01T00:00:00.000Z', reason: null, issuedBy: { id: 'u1', username: 'priya' },
     revokedAt: null, revokeReason: null, lastUsedAt: null, lastUsedIp: null, createdAt: '2026-11-01T00:00:00.000Z',
-    replaceBy: null, previousSecretUntil: null, ...over,
+    previousSecretUntil: null, ...over,
   };
 }
 
@@ -20,30 +20,6 @@ function local(ms: number): string {
   return new Date(ms - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
-describe('replacementCountdown', () => {
-  it('counts down days, then hours, for a key waiting on a leaver\'s replacement', () => {
-    expect(replacementCountdown(key({ replaceBy: new Date(NOW + 3 * DAY - 1000).toISOString() }), NOW)).toBe('Disabled in 3 days unless replaced');
-    expect(replacementCountdown(key({ replaceBy: new Date(NOW + 1 * DAY + 1000).toISOString() }), NOW)).toBe('Disabled in 2 days unless replaced');
-    expect(replacementCountdown(key({ replaceBy: new Date(NOW + 5 * 3_600_000).toISOString() }), NOW)).toBe('Disabled in 5 hours unless replaced');
-    expect(replacementCountdown(key({ replaceBy: new Date(NOW + 60_000).toISOString() }), NOW)).toBe('Disabled in 1 hour unless replaced');
-    expect(replacementCountdown(key({ replaceBy: new Date(NOW - 1).toISOString() }), NOW)).toBe('Disabled: not replaced in time');
-  });
-
-  it('says nothing for a key with no deadline, or one already off', () => {
-    expect(replacementCountdown(key({}), NOW)).toBeNull();
-    expect(replacementCountdown(key({ replaceBy: new Date(NOW + DAY).toISOString(), status: 'disabled' }), NOW)).toBeNull();
-  });
-});
-
-describe('keysDueSoon', () => {
-  it('lists the active keys within two days of their deadline', () => {
-    const soon = key({ id: 'soon', replaceBy: new Date(NOW + DAY).toISOString() });
-    const later = key({ id: 'later', replaceBy: new Date(NOW + 4 * DAY).toISOString() });
-    const off = key({ id: 'off', status: 'revoked', replaceBy: new Date(NOW + DAY).toISOString() });
-    expect(keysDueSoon([soon, later, off, key({ id: 'none' })], NOW).map((k) => k.id)).toEqual(['soon']);
-  });
-});
-
 describe('liveKeysIssuedBy', () => {
   it('lists the working keys a user issued: offboarding acts on no other', () => {
     const keys = [
@@ -51,6 +27,27 @@ describe('liveKeysIssuedBy', () => {
       key({ id: 'd', status: 'expired' }), key({ id: 'e', issuedBy: { id: 'u2', username: 'x' } }),
     ];
     expect(liveKeysIssuedBy(keys, 'u1').map((k) => k.id)).toEqual(['a']);
+  });
+});
+
+/** coversKey over plain group ids, as the sign-in answer carries them. */
+const covers = coversKey as (grants: ReadonlyArray<{ permission: string; scope: 'all' | readonly string[] }> | undefined, key: ApiKeyView) => boolean;
+
+describe('coversKey', () => {
+  const lab = key({ permissions: ['channels:read', 'channels:deploy'], groupIds: ['g1'] });
+
+  it('needs every permission the key holds, over its scope', () => {
+    expect(covers([{ permission: 'channels:read', scope: 'all' }, { permission: 'channels:deploy', scope: 'all' }], lab)).toBe(true);
+    expect(covers([{ permission: 'channels:read', scope: ['g1', 'g2'] }, { permission: 'channels:deploy', scope: ['g1'] }], lab)).toBe(true);
+    expect(covers([{ permission: 'channels:read', scope: 'all' }], lab)).toBe(false);
+    expect(covers([{ permission: 'channels:read', scope: ['g2'] }, { permission: 'channels:deploy', scope: ['g1'] }], lab)).toBe(false);
+  });
+
+  it('needs every channel for a key on every channel, and nothing without grants', () => {
+    const everywhere = key({ permissions: ['channels:read'], groupIds: null });
+    expect(covers([{ permission: 'channels:read', scope: ['g1'] }], everywhere)).toBe(false);
+    expect(covers([{ permission: 'channels:read', scope: 'all' }], everywhere)).toBe(true);
+    expect(covers(undefined, everywhere)).toBe(false);
   });
 });
 

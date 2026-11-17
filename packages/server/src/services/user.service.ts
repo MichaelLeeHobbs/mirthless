@@ -14,7 +14,8 @@ import { heldRoleNamesSql, loadUserStanding, roleLabel } from '../lib/principal.
 import { db } from '../lib/db.js';
 import { users, sessions } from '../db/schema/index.js';
 import { GrantService } from './grant.service.js';
-import { USER_KIND, type IssuedKeysOnLeave } from '@galvanigraph/core-models';
+import { USER_KIND, type TakenOverKey } from '@galvanigraph/core-models';
+import { ApiKeyService } from './api-key.service.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -229,9 +230,8 @@ export class UserService {
         // Who could act is replayed from the audit log (grant.service channelAccessAsOf).
         if (input.enabled !== undefined && input.enabled !== target.enabled) {
           await GrantService.recordEnabledChange(tx, id, input.enabled, actor);
-          // The keys this user issued: disabled with them unless asked to wait for a replacement (D-313).
-          if (!input.enabled) await GrantService.offboardKeys(tx, id, input.issuedKeys ?? 'disable', actor);
-          else await GrantService.cancelKeyReplacement(tx, id);
+          // The keys this user issued stop with them: they know the secrets (D-322).
+          if (!input.enabled) await GrantService.offboardKeys(tx, id, actor);
         }
         const before = input.role !== undefined ? await GrantService.setUserRole(tx, id, input.role, actor) : null;
 
@@ -267,14 +267,20 @@ export class UserService {
     });
   }
 
-  /** Soft-delete: disable user. Cannot delete self or last admin. */
-  static async deleteUser(id: string, actorId: string, context?: AuditContext, issuedKeys: IssuedKeysOnLeave = 'disable'): Promise<Result<void>> {
+  /**
+   * Soft-delete: disable user. Cannot delete self or last admin. Every working
+   * API key the user issued is disabled in the same transaction (D-322),
+   * except those in `takeOwnership`: each of those is replaced as a leak by
+   * the actor, who becomes its issuer and must cover it, and its new token is
+   * returned, once.
+   */
+  static async deleteUser(id: string, actorId: string, context?: AuditContext, takeOwnership: readonly string[] = []): Promise<Result<readonly TakenOverKey[]>> {
     return tryCatch(async () => {
       if (id === actorId) {
         throw new ServiceError('SELF_ACTION', 'Cannot delete your own account');
       }
 
-      await db.transaction(async (tx) => {
+      const taken = await db.transaction(async (tx) => {
         // Cannot remove the last ENABLED admin: a disabled admin does not count.
         await GrantService.assertCanManage(tx, actorId, id);
         await GrantService.assertKeepsAnAdmin(tx, { userId: id, disabling: true });
@@ -284,12 +290,19 @@ export class UserService {
           .update(users)
           .set({ enabled: false, updatedAt: new Date() })
           .where(eq(users.id, id));
-        if (target.enabled) {
-          const actor = { userId: context?.userId ?? actorId, ipAddress: context?.ipAddress ?? null };
-          await GrantService.recordEnabledChange(tx, id, false, actor);
-          await GrantService.offboardKeys(tx, id, issuedKeys, actor);
+        const actor = { userId: context?.userId ?? actorId, ipAddress: context?.ipAddress ?? null };
+        const takenOver: TakenOverKey[] = [];
+        // Taken over first, so they are the actor's when the rest are disabled.
+        const toTake = [...new Set(takeOwnership)].sort();
+        if (toTake.length > 0) await ApiKeyService.lockForTakeover(tx, toTake, actorId);
+        for (const keyId of toTake) {
+          const next = await ApiKeyService.replaceInTx(tx, keyId, 'leak', actor, id);
+          takenOver.push({ keyId, name: next.name, token: next.token });
         }
+        if (target.enabled) await GrantService.recordEnabledChange(tx, id, false, actor);
+        await GrantService.offboardKeys(tx, id, actor, takenOver.map((k) => k.keyId));
         await revokeSessions(tx, id);
+        return takenOver;
       });
 
       emitEvent({
@@ -298,6 +311,7 @@ export class UserService {
         serverId: null, ipAddress: context?.ipAddress ?? null,
         attributes: { deletedUserId: id },
       });
+      return taken;
     });
   }
 

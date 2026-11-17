@@ -64,11 +64,10 @@ export function groupAccessLevel(): StatusLevel {
 /**
  * An API key's status (D-313): active → healthy; disabled → warning (it can be
  * switched back on); ended or revoked → neutral (it never works again).
- * Waiting on a leaver's replacement → warning, whatever else holds.
  */
-export function apiKeyLevel(status: ApiKeyStatus, waitingOnReplacement: boolean): StatusLevel {
+export function apiKeyLevel(status: ApiKeyStatus): StatusLevel {
   switch (status) {
-    case 'active': return waitingOnReplacement ? 'warning' : 'healthy';
+    case 'active': return 'healthy';
     case 'disabled': return 'warning';
     case 'expired':
     case 'revoked': return 'neutral';

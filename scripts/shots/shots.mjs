@@ -70,7 +70,6 @@ const PAGES = {
     },
   },
   roles: '/roles',
-  // A leaver's key two days from being disabled: the countdown chip and the banner above every page.
   'api-keys': '/api-keys',
   'role-editor': '/roles/r8',
   'role-admin-locked': '/roles/r1',

@@ -176,6 +176,13 @@
       "when": 1794904363988,
       "tag": "0024_api_key_replacement",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794938913616,
+      "tag": "0025_drop_key_replacement_window",
+      "breakpoints": true
     }
   ]
 }

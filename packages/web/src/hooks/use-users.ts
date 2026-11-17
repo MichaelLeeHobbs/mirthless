@@ -4,7 +4,7 @@
 // TanStack Query hooks for user CRUD operations.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateUserInput, IssuedKeysOnLeave, UpdateUserInput } from '@galvanigraph/core-models';
+import type { CreateUserInput, TakenOverKey, UpdateUserInput } from '@galvanigraph/core-models';
 import { api, type UserSummary, type UserDetail } from '../api/client.js';
 
 // ----- Query Keys -----
@@ -63,7 +63,7 @@ export function useCreateUser(): ReturnType<typeof useMutation<UserDetail, Error
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: USER_KEYS.lists() });
-      // Their API keys were disabled or given a deadline.
+      // Their API keys were disabled or taken over.
       await queryClient.invalidateQueries({ queryKey: ['api-keys'] });
     },
   });
@@ -90,17 +90,23 @@ export function useUpdateUser(): ReturnType<typeof useMutation<UserDetail, Error
   });
 }
 
-/** Disable (delete) a user; `issuedKeys` says what happens to the API keys they issued (D-313), disabled when left out. */
-export function useDeleteUser(): ReturnType<typeof useMutation<void, Error, { id: string; issuedKeys?: IssuedKeysOnLeave }>> {
+/**
+ * Disable (delete) a user. Every working API key they issued is disabled with
+ * them (D-322), except those in `takeOwnership`, which the caller takes over:
+ * their new tokens come back, once. The result is not kept in the cache.
+ */
+export function useDeleteUser(): ReturnType<typeof useMutation<readonly TakenOverKey[], Error, { id: string; takeOwnership?: readonly string[] }>> {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, issuedKeys }: { id: string; issuedKeys?: IssuedKeysOnLeave }) => {
-      const query = issuedKeys === undefined ? '' : `?issuedKeys=${issuedKeys}`;
-      const result = await api.delete<void>(`/users/${id}${query}`);
+    gcTime: 0,
+    mutationFn: async ({ id, takeOwnership = [] }: { id: string; takeOwnership?: readonly string[] }) => {
+      const query = takeOwnership.length === 0 ? '' : `?takeOwnership=${takeOwnership.join(',')}`;
+      const result = await api.delete<{ takenOver: readonly TakenOverKey[] } | undefined>(`/users/${id}${query}`);
       if (!result.success) {
         throw new Error(result.error.message);
       }
+      return result.data?.takenOver ?? [];
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: USER_KEYS.lists() });
