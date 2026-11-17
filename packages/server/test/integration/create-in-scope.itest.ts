@@ -133,6 +133,9 @@ describeIntegration('new channels land in the creator\'s scope (real Postgres)',
   it('puts an all-channel writer\'s channel in Default, or in the group they name', async () => {
     const lab = await group();
     const developer = await userWith('developer', null);
+    // The seed makes Default; a database migrated without the seed (CI) has none.
+    const made = await mods.pool.query<{ id: string }>(`INSERT INTO channel_groups (name) SELECT 'Default' WHERE NOT EXISTS (SELECT 1 FROM channel_groups WHERE name = 'Default') RETURNING id`);
+    groups.push(...made.rows.map((r) => r.id));
     const { rows } = await mods.pool.query<{ id: string }>(`SELECT id FROM channel_groups WHERE name = 'Default'`);
     expect(rows).toHaveLength(1);
     const plain = await create(developer.token);
