@@ -60,6 +60,20 @@ describe('apiFetch refresh', () => {
     }));
   });
 
+  it('keeps the scoped grants the refresh returns, so screens that depend on scope keep working', async () => {
+    const grants = [{ permission: 'channels:write', scope: ['g1', 'g2'] }, { permission: 'channels:read', scope: 'all' }];
+    stubFetch({ success: true, data: { accessToken: 'new-token', user: { ...SIGNED_IN, grants } } });
+    await apiFetch('/channels');
+    expect(useAuthStore.getState().user?.grants).toEqual(grants);
+  });
+
+  it('drops grants it cannot read rather than storing them half-read', async () => {
+    stubFetch({ success: true, data: { accessToken: 'new-token', user: { ...SIGNED_IN, grants: [{ permission: 'channels:write', scope: 7 }] } } });
+    await apiFetch('/channels');
+    expect(useAuthStore.getState().user?.grants).toBeUndefined();
+    expect(useAuthStore.getState().user?.permissions).toEqual(SIGNED_IN.permissions);
+  });
+
   it('takes the forced password change flag from the refresh', async () => {
     stubFetch({ success: true, data: { accessToken: 'new-token', user: { ...SIGNED_IN, mustChangePassword: true } } });
 

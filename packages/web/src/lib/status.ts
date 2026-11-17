@@ -55,6 +55,11 @@ export function eventLevelLevel(level: string): StatusLevel {
   }
 }
 
+/** A group a live assignment is scoped to: adding a channel to it gives people access → warning. */
+export function groupAccessLevel(): StatusLevel {
+  return 'warning';
+}
+
 /** An assignment that has expired gives nothing until renewed → warning; a live one → healthy. */
 export function assignmentLevel(expired: boolean): StatusLevel {
   return expired ? 'warning' : 'healthy';

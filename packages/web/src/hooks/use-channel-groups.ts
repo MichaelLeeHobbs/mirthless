@@ -15,6 +15,8 @@ export interface ChannelGroupSummary {
   readonly description: string | null;
   readonly revision: number;
   readonly memberCount: number;
+  /** A live assignment is scoped to this group: adding a channel to it gives access. Absent from older servers. */
+  readonly givesAccess?: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

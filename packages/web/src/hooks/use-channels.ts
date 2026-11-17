@@ -232,12 +232,12 @@ export function useDeleteChannel(): ReturnType<typeof useMutation<void, Error, s
 }
 
 /** Clone a channel with a new name. */
-export function useCloneChannel(): ReturnType<typeof useMutation<ChannelDetail, Error, { id: string; name: string }>> {
+export function useCloneChannel(): ReturnType<typeof useMutation<ChannelDetail, Error, { id: string; name: string; groupId?: string }>> {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      const result = await api.post<ChannelDetail>(`/channels/${id}/clone`, { name });
+    mutationFn: async ({ id, name, groupId }: { id: string; name: string; groupId?: string }) => {
+      const result = await api.post<ChannelDetail>(`/channels/${id}/clone`, { name, ...(groupId === undefined ? {} : { groupId }) });
       if (!result.success) {
         throw new Error(result.error.message);
       }

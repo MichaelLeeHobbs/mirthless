@@ -10,6 +10,8 @@ interface ConnectionTestInput {
   readonly connectorType: string;
   readonly mode: 'SOURCE' | 'DESTINATION';
   readonly properties: Record<string, unknown>;
+  /** The channel the test is for; required of a deployer scoped to some groups. */
+  readonly channelId?: string;
 }
 
 interface ConnectionTestResult {

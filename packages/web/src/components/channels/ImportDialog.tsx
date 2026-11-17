@@ -16,6 +16,8 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import UploadIcon from '@mui/icons-material/Upload';
 import { api } from '../../api/client.js';
+import { useNewChannelGroups } from '../../hooks/use-new-channel-groups.js';
+import { NewChannelGroupField } from './NewChannelGroupField.js';
 
 interface ImportDialogProps {
   readonly open: boolean;
@@ -43,6 +45,9 @@ export function ImportDialog({ open, onClose, onSuccess }: ImportDialogProps): R
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string>('');
   const [result, setResult] = useState<ImportResult | null>(null);
+  // The group new channels join, asked only of a writer scoped to several groups (D-310).
+  const [groupId, setGroupId] = useState('');
+  const needsGroup = useNewChannelGroups() !== null;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -79,7 +84,7 @@ export function ImportDialog({ open, onClose, onSuccess }: ImportDialogProps): R
     try {
       const text = await file.text();
       const parsed = JSON.parse(text) as Record<string, unknown>;
-      const body = { ...parsed, collisionMode };
+      const body = { ...parsed, collisionMode, ...(groupId === '' ? {} : { groupId }) };
 
       const response = await api.post<ImportResult>('/channels/import', body);
       if (!response.success) {
@@ -99,6 +104,7 @@ export function ImportDialog({ open, onClose, onSuccess }: ImportDialogProps): R
     setFile(null);
     setPreview('');
     setError('');
+    setGroupId('');
     setResult(null);
     setCollisionMode('SKIP');
     onClose();
@@ -150,6 +156,8 @@ export function ImportDialog({ open, onClose, onSuccess }: ImportDialogProps): R
           ))}
         </TextField>
 
+        <Box sx={{ mb: 2 }}><NewChannelGroupField value={groupId} onChange={setGroupId} /></Box>
+
         {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
 
         {result ? (
@@ -168,7 +176,7 @@ export function ImportDialog({ open, onClose, onSuccess }: ImportDialogProps): R
           <Button
             variant="contained"
             onClick={handleImport}
-            disabled={!file || importing}
+            disabled={!file || importing || (needsGroup && groupId === '')}
           >
             {importing ? 'Importing...' : 'Import'}
           </Button>

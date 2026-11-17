@@ -3,7 +3,7 @@
 // ===========================================
 // Modal form for creating a new channel.
 
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { useForm, Controller } from 'react-hook-form';
 import Dialog from '@mui/material/Dialog';
@@ -18,6 +18,8 @@ import Stack from '@mui/material/Stack';
 import CircularProgress from '@mui/material/CircularProgress';
 import { SOURCE_CONNECTOR_TYPES } from '@galvanigraph/core-models';
 import { useCreateChannel } from '../../hooks/use-channels.js';
+import { useNewChannelGroups } from '../../hooks/use-new-channel-groups.js';
+import { NewChannelGroupField } from './NewChannelGroupField.js';
 import { NEW_CHANNEL_SCRIPT_LANGUAGES } from '../../lib/script-language.js';
 
 const DATA_TYPES = ['RAW', 'HL7V2', 'HL7V3', 'XML', 'JSON', 'DICOM', 'DELIMITED', 'FHIR', 'X12'] as const;
@@ -38,6 +40,9 @@ interface NewChannelDialogProps {
 export function NewChannelDialog({ open, onClose }: NewChannelDialogProps): ReactNode {
   const navigate = useNavigate();
   const createChannel = useCreateChannel();
+  // Asked only of someone who can change channels in several groups but not all.
+  const [groupId, setGroupId] = useState('');
+  const needsGroup = useNewChannelGroups() !== null;
 
   const {
     control,
@@ -57,6 +62,7 @@ export function NewChannelDialog({ open, onClose }: NewChannelDialogProps): Reac
   const handleClose = (): void => {
     if (createChannel.isPending) return;
     reset();
+    setGroupId('');
     createChannel.reset();
     onClose();
   };
@@ -74,8 +80,10 @@ export function NewChannelDialog({ open, onClose }: NewChannelDialogProps): Reac
         responseMode: 'AUTO_AFTER_DESTINATIONS',
         // The editor opens each script in its stored language, so start them in TypeScript.
         scripts: { deploy: null, undeploy: null, preprocessor: null, postprocessor: null, languages: { ...NEW_CHANNEL_SCRIPT_LANGUAGES } },
+        ...(groupId === '' ? {} : { groupId }),
       });
       reset();
+      setGroupId('');
       onClose();
       navigate(`/channels/${created.id}`);
     } catch {
@@ -124,6 +132,8 @@ export function NewChannelDialog({ open, onClose }: NewChannelDialogProps): Reac
               )}
             />
 
+            <NewChannelGroupField value={groupId} onChange={setGroupId} />
+
             <Controller
               name="inboundDataType"
               control={control}
@@ -168,7 +178,7 @@ export function NewChannelDialog({ open, onClose }: NewChannelDialogProps): Reac
           <Button
             type="submit"
             variant="contained"
-            disabled={createChannel.isPending}
+            disabled={createChannel.isPending || (needsGroup && groupId === '')}
             startIcon={createChannel.isPending ? <CircularProgress size={16} /> : null}
           >
             Create

@@ -26,6 +26,8 @@ import SaveIcon from '@mui/icons-material/Save';
 import HistoryIcon from '@mui/icons-material/History';
 import { type CreateChannelInput, type ScriptLanguageCode, type UpdateChannelInput } from '@galvanigraph/core-models';
 import { useChannel, useCreateChannel, useUpdateChannel, type ChannelDetail } from '../hooks/use-channels.js';
+import { useNewChannelGroups } from '../hooks/use-new-channel-groups.js';
+import { NewChannelGroupField } from '../components/channels/NewChannelGroupField.js';
 import type { ScriptsFormValues } from '../components/channels/ScriptsTab.js';
 import { usePermissions } from '../hooks/use-permissions.js';
 import { PERMISSION } from '../lib/permissions.js';
@@ -142,6 +144,9 @@ export function ChannelEditorPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const isEditMode = id !== undefined;
+  // The group a new channel joins, asked only of a writer scoped to several groups (D-310).
+  const [newGroupId, setNewGroupId] = useState('');
+  const needsGroup = useNewChannelGroups() !== null;
 
   const [activeTab, setActiveTab] = useState(0);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -590,6 +595,7 @@ export function ChannelEditorPage(): ReactNode {
             postprocessor: scripts.postprocessor || null,
             languages: scripts.languages,
           },
+          ...(newGroupId === '' ? {} : { groupId: newGroupId }),
         });
         navigate(`/channels/${created.id}`, { replace: true });
       }
@@ -650,7 +656,7 @@ export function ChannelEditorPage(): ReactNode {
                   variant="contained"
                   size="small"
                   startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
-                  disabled={isSaving || (!isDirty && isEditMode) || !canWrite}
+                  disabled={isSaving || (!isDirty && isEditMode) || !canWrite || (!isEditMode && needsGroup && newGroupId === '')}
                   onClick={handleSubmit(onSubmit)}
                 >
                   {isEditMode ? 'Save' : 'Create'}
@@ -686,6 +692,7 @@ export function ChannelEditorPage(): ReactNode {
       <ScriptTestSampleContext.Provider value={testSample}>
       <Paper sx={{ p: { xs: 1.5, sm: 3 } }}>
         <TabPanel value={activeTab} index={0}>
+          {!isEditMode && <Box sx={{ mb: 2, maxWidth: 480 }}><NewChannelGroupField value={newGroupId} onChange={setNewGroupId} /></Box>}
           <SummaryTab
             control={control}
             errors={errors}

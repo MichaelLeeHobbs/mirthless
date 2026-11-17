@@ -72,6 +72,7 @@ const PAGES = {
   'alert-editor': '/alerts/a1',
   'alert-templates': { url: '/alerts/a1', keys: 'End' },
   'code-templates': '/code-templates',
+  'library-links': { url: '/code-templates', click: 'Edit library' },
   'global-scripts': '/global-scripts',
   // Two editors with different declarations: the one not focused says types are checked when you click in.
   'channel-scripts': { url: '/channels/c1', click: ['Scripts', 'Deploy Script', 'Preprocessor'] },
