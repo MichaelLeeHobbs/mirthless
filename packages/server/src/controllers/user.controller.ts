@@ -4,7 +4,7 @@
 // Handles HTTP requests for user management.
 
 import type { Request, Response } from 'express';
-import { holdsPermission, type SetAssignmentsInput, type CreateUserInput, type UpdateUserInput, type ChangePasswordInput, type ChangeOwnPasswordInput, type DeleteUserQuery, type IssuedKeysOnLeave } from '@galvanigraph/core-models';
+import { holdsPermission, type SetAssignmentsInput, type CreateUserInput, type UpdateUserInput, type ChangePasswordInput, type ChangeOwnPasswordInput, type DeleteUserQuery } from '@galvanigraph/core-models';
 import { UserService } from '../services/user.service.js';
 import { mapErrorToStatus, errorResponse } from '../lib/controller-helpers.js';
 import { isServiceError } from '../lib/service-error.js';
@@ -20,13 +20,13 @@ function userErrorStatus(error: unknown): number {
 }
 
 /**
- * Keeping a leaver's API keys running for 7 days is a decision about keys, so
- * it needs api_keys:manage as well as the right to disable the user (D-313).
- * Answers 403 and returns false when the caller lacks it.
+ * Taking over a leaver's API keys is a key change, so it needs api_keys:manage
+ * as well as the right to delete the user (D-322); the key service also checks
+ * the caller covers each key. Answers 403 and returns false when it lacks it.
  */
-function mayKeepKeysRunning(req: Request, res: Response, issuedKeys: IssuedKeysOnLeave | undefined): boolean {
-  if (issuedKeys !== 'replace_within_7_days' || holdsPermission(req.user?.permissions, 'api_keys:manage')) return true;
-  res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Keeping a leaver\'s API keys running needs api_keys:manage; leave issuedKeys out to disable them' } });
+function mayTakeOwnership(req: Request, res: Response, keyIds: readonly string[]): boolean {
+  if (keyIds.length === 0 || holdsPermission(req.user?.permissions, 'api_keys:manage')) return true;
+  res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Taking over a leaver\'s API keys needs api_keys:manage' } });
   return false;
 }
 
@@ -75,7 +75,6 @@ export class UserController {
   static async update(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const input = req.body as UpdateUserInput;
-    if (!mayKeepKeysRunning(req, res, input.issuedKeys)) return;
     const actorId = req.user!.id;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
     const result = await UserService.updateUser(id, input, actorId, context);
@@ -95,9 +94,9 @@ export class UserController {
     const id = req.params['id'] as string;
     const actorId = req.user!.id;
     const context = { userId: req.user?.id ?? null, ipAddress: req.ip ?? null };
-    const { issuedKeys } = req.query as unknown as DeleteUserQuery;
-    if (!mayKeepKeysRunning(req, res, issuedKeys)) return;
-    const result = await UserService.deleteUser(id, actorId, context, issuedKeys ?? 'disable');
+    const { takeOwnership } = req.query as unknown as DeleteUserQuery;
+    if (!mayTakeOwnership(req, res, takeOwnership)) return;
+    const result = await UserService.deleteUser(id, actorId, context, takeOwnership);
 
     if (!result.ok) {
       const status = userErrorStatus(result.error);
@@ -107,7 +106,13 @@ export class UserController {
     }
 
     logger.info({ userId: id }, 'User deleted');
-    res.status(204).send();
+    if (result.value.length === 0) {
+      res.status(204).send();
+      return;
+    }
+    // The new tokens of the keys taken over, shown this once: never cached.
+    res.set('Cache-Control', 'no-store');
+    res.status(200).json({ success: true, data: { takenOver: result.value } });
   }
 
   static async changePassword(req: Request, res: Response): Promise<void> {

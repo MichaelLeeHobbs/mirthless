@@ -8,7 +8,27 @@ import {
   changeOwnPasswordSchema,
   createUserSchema,
   loginSchema,
+  deleteUserQuerySchema,
 } from '../user.schema.js';
+
+describe('deleteUserQuerySchema', () => {
+  const A = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const B = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
+  it('takes no key over when takeOwnership is missing or empty', () => {
+    expect(deleteUserQuerySchema.parse({})).toEqual({ takeOwnership: [] });
+    expect(deleteUserQuerySchema.parse({ takeOwnership: '' })).toEqual({ takeOwnership: [] });
+  });
+
+  it('reads a comma-separated list of key ids', () => {
+    expect(deleteUserQuerySchema.parse({ takeOwnership: `${A},${B}` })).toEqual({ takeOwnership: [A, B] });
+  });
+
+  it('refuses anything that is not a key id', () => {
+    expect(deleteUserQuerySchema.safeParse({ takeOwnership: `${A},nope` }).success).toBe(false);
+    expect(deleteUserQuerySchema.safeParse({ takeOwnership: 'x'.repeat(4001) }).success).toBe(false);
+  });
+});
 
 describe('loginSchema', () => {
   it('refuses a username longer than any account can have', () => {

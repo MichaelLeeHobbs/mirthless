@@ -15,7 +15,7 @@
 // working as soon as its issuer is disabled or loses what the key holds.
 
 import { randomUUID } from 'node:crypto';
-import { and, asc, eq, gt, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { USER_KIND } from '@galvanigraph/core-models';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -23,19 +23,18 @@ import {
 } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { db } from '../lib/db.js';
-import { EventService } from './event.service.js';
 import { queryUserStanding, type UserStanding } from '../lib/principal.js';
 import { keyToken, newKeySecret, parseKeyToken } from '../lib/api-key-token.js';
 import { hashToken, matchesTokenHash } from '../lib/token-hash.js';
 import { apiKeys, assignmentGroups, assignments, rolePermissions, roles, users } from '../db/schema/index.js';
 import { AuditService, type AuditTransaction } from './audit.service.js';
 import {
-  GrantService, KEY_REPLACEMENT_WINDOW_MS, actorGrants, assertActorHoldsOver, assertScopeAllowed, issuerCovers, lockScopeGroups,
+  GrantService, actorGrants, assertActorHoldsOver, assertScopeAllowed, issuerCovers, lockScopeGroups,
   type GrantActor, type Reader, type ScopeIds,
 } from './grant.service.js';
 
-/** How long before a leaver's key is disabled that holders of api_keys:manage are warned. */
-const KEY_REPLACEMENT_WARNING_MS = 2 * 24 * 60 * 60 * 1000;
+/** How long the old secret keeps working after a planned replace, at most. */
+const PLANNED_REPLACE_OVERLAP_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** A password hash no password matches: a key's user never signs in with one. */
 const NO_PASSWORD = '!';
@@ -55,7 +54,7 @@ async function readKeys(reader: Reader, id?: string): Promise<ApiKeyView[]> {
     id: apiKeys.id, name: apiKeys.name, description: apiKeys.description, reason: apiKeys.reason,
     expiresAt: apiKeys.expiresAt, revokedAt: apiKeys.revokedAt, revokeReason: apiKeys.revokeReason,
     lastUsedAt: apiKeys.lastUsedAt, lastUsedIp: apiKeys.lastUsedIp, createdAt: apiKeys.createdAt,
-    replaceBy: apiKeys.replaceBy, previousSecretUntil: apiKeys.previousSecretUntil,
+    previousSecretUntil: apiKeys.previousSecretUntil,
     enabled: users.enabled, issuerId: issuer.id, issuerName: issuer.username,
     assignmentId: assignments.id, roleId: assignments.roleId, allChannels: assignments.allChannels,
   }).from(apiKeys)
@@ -80,7 +79,6 @@ async function readKeys(reader: Reader, id?: string): Promise<ApiKeyView[]> {
     revokedAt: r.revokedAt?.toISOString() ?? null, revokeReason: r.revokeReason,
     lastUsedAt: r.lastUsedAt?.toISOString() ?? null, lastUsedIp: r.lastUsedIp,
     createdAt: r.createdAt.toISOString(),
-    replaceBy: r.replaceBy?.toISOString() ?? null,
     previousSecretUntil: r.previousSecretUntil?.toISOString() ?? null,
   }));
 }
@@ -121,10 +119,10 @@ function secretMatches(secret: string, row: { secretHash: string; previousSecret
 }
 
 /** The key's row, locked for a change, or NOT_FOUND. */
-async function lockKey(tx: AuditTransaction, id: string): Promise<{ userId: string; revokedAt: Date | null; expiresAt: Date; issuedBy: string; secretHash: string; replaceBy: Date | null }> {
+async function lockKey(tx: AuditTransaction, id: string): Promise<{ userId: string; name: string; revokedAt: Date | null; expiresAt: Date; issuedBy: string; secretHash: string }> {
   const [row] = await tx.select({
-    userId: apiKeys.userId, revokedAt: apiKeys.revokedAt, expiresAt: apiKeys.expiresAt, issuedBy: apiKeys.issuedBy,
-    secretHash: apiKeys.secretHash, replaceBy: apiKeys.replaceBy,
+    userId: apiKeys.userId, name: apiKeys.name, revokedAt: apiKeys.revokedAt, expiresAt: apiKeys.expiresAt, issuedBy: apiKeys.issuedBy,
+    secretHash: apiKeys.secretHash,
   })
     .from(apiKeys).where(eq(apiKeys.id, id)).for('no key update');
   if (!row) throw new ServiceError('NOT_FOUND', `API key not found: ${id}`);
@@ -219,6 +217,9 @@ export class ApiKeyService {
       const [current] = await tx.select({ enabled: users.enabled }).from(users).where(eq(users.id, key.userId));
       if (current?.enabled === enabled) return;
       if (enabled) {
+        // A key whose issuer is disabled never works (resolve): replacing it is how it comes back (D-322).
+        const [issuer] = await tx.select({ enabled: users.enabled }).from(users).where(eq(users.id, key.issuedBy));
+        if (issuer?.enabled !== true) throw new ServiceError('CONFLICT', 'Its issuer is disabled; replace the key to take it over');
         if (actor.userId !== null) await lockActor(tx, actor.userId);
         const [held] = await readKeys(tx, id);
         await assertActorCovers(tx, actor.userId, (held?.permissions ?? []) as Permission[], held?.groupIds ?? null, key.expiresAt);
@@ -258,79 +259,81 @@ export class ApiKeyService {
     if (!parsed) return null;
     const [row] = await db.select({
       userId: apiKeys.userId, issuedBy: apiKeys.issuedBy, secretHash: apiKeys.secretHash, revokedAt: apiKeys.revokedAt, expiresAt: apiKeys.expiresAt,
-      previousSecretHash: apiKeys.previousSecretHash, previousSecretUntil: apiKeys.previousSecretUntil, replaceBy: apiKeys.replaceBy,
+      previousSecretHash: apiKeys.previousSecretHash, previousSecretUntil: apiKeys.previousSecretUntil,
     }).from(apiKeys).where(eq(apiKeys.id, parsed.keyId));
     if (!row || !secretMatches(parsed.secret, row)) return null;
     const now = Date.now();
     if (row.revokedAt !== null || row.expiresAt.getTime() <= now) return null;
     const standing = await queryUserStanding(db, row.userId);
     if (standing?.enabled !== true) return null;
-    // An issuer who left still covers their keys until the replacement deadline, with the grants they held.
+    // A disabled issuer covers nothing: a leaver's key stops with them (D-322).
     const issuer = await queryUserStanding(db, row.issuedBy);
-    const inWindow = row.replaceBy !== null && row.replaceBy.getTime() > now;
-    if (issuer === null || (!issuer.enabled && !inWindow) || !issuerCovers(issuer.grants, standing.grants)) return null;
+    if (issuer?.enabled !== true || !issuerCovers(issuer.grants, standing.grants)) return null;
     return { keyId: parsed.keyId, standing };
   }
 
   /**
    * Give a key a new secret and make the actor its issuer, within what the
    * actor holds for the rest of the key's life. A leak ends the old secret at
-   * once; a planned change keeps it working for 7 days (or until the key ends).
-   * During a leaver's replacement window the old secret always ends at once.
+   * once; a planned change keeps it working for 7 days (or until the key ends),
+   * and only the key's own issuer may choose it: anyone else replacing a key
+   * may be doing so because its owner is leaving (D-322).
    */
   static async replace(id: string, mode: 'leak' | 'planned', actor: GrantActor): Promise<IssuedApiKey> {
     if (actor.userId === null) throw new ServiceError('FORBIDDEN', 'Replacing a key needs a signed-in actor');
-    const secret = newKeySecret();
-    await db.transaction(async (tx) => {
-      const key = await lockKey(tx, id);
-      if (key.revokedAt !== null) throw new ServiceError('CONFLICT', 'The key is revoked; issue a new one');
-      if (key.expiresAt.getTime() <= Date.now()) throw new ServiceError('CONFLICT', 'The key has ended; issue a new one');
-      await lockActor(tx, actor.userId!);
-      const [held] = await readKeys(tx, id);
-      await assertActorCovers(tx, actor.userId, (held?.permissions ?? []) as Permission[], held?.groupIds ?? null, key.expiresAt);
-      const keepOld = mode === 'planned' && key.replaceBy === null;
-      const previousSecretUntil = keepOld ? new Date(Math.min(Date.now() + KEY_REPLACEMENT_WINDOW_MS, key.expiresAt.getTime())) : null;
-      await tx.update(apiKeys).set({
-        secretHash: hashToken(secret), issuedBy: actor.userId!, replaceBy: null, replaceWarnedAt: null,
-        previousSecretHash: keepOld ? key.secretHash : null, previousSecretUntil, updatedAt: new Date(),
-      }).where(eq(apiKeys.id, id));
-      await AuditService.recordInTx(tx, {
-        action: AUDIT_ACTION.API_KEY_REPLACED, outcome: 'SUCCESS', userId: actor.userId, ipAddress: actor.ipAddress ?? null,
-        attributes: { apiKeyId: id, keyUserId: key.userId, mode, previousIssuer: key.issuedBy, duringOffboarding: key.replaceBy !== null, previousSecretUntil: previousSecretUntil?.toISOString() ?? null },
-      });
-    });
-    return { key: await ApiKeyService.get(id), token: keyToken(id, secret) };
+    const token = await db.transaction(async (tx) => (await ApiKeyService.replaceInTx(tx, id, mode, actor)).token);
+    return { key: await ApiKeyService.get(id), token };
   }
 
   /**
-   * Run daily: disable every key whose leaver's replacement deadline has
-   * passed unreplaced, and warn once, two days before, that a key is due
-   * (an event the Events page and the key list show). Returns how many it
-   * disabled.
+   * Replace a key in the caller's transaction: a new secret, and the actor as
+   * its issuer, within what the actor holds until the key ends. A leak ends
+   * the old secret at once; a planned change keeps it for 7 days (or until the
+   * key ends). With `fromLeaver`, the key must be that user's: taking
+   * ownership when they are disabled (D-322), always as a leak.
    */
-  static async enforceReplacementDeadlines(): Promise<number> {
-    const due = await db.select({ id: apiKeys.id, name: apiKeys.name, replaceBy: apiKeys.replaceBy }).from(apiKeys)
-      .where(and(isNotNull(apiKeys.replaceBy), isNull(apiKeys.replaceWarnedAt), isNull(apiKeys.revokedAt),
-        lte(apiKeys.replaceBy, new Date(Date.now() + KEY_REPLACEMENT_WARNING_MS)), gt(apiKeys.replaceBy, new Date())));
-    for (const key of due) {
-      // Marked as warned only once the event is written, so a lost write is tried again the next day.
-      const written = await EventService.create({
-        level: 'WARN', name: 'API_KEY_REPLACEMENT_DUE', outcome: 'SUCCESS', userId: null, channelId: null, serverId: null, ipAddress: null,
-        attributes: { apiKeyId: key.id, name: key.name, replaceBy: key.replaceBy?.toISOString() ?? null },
-      });
-      if (written.ok) await db.update(apiKeys).set({ replaceWarnedAt: new Date() }).where(eq(apiKeys.id, key.id));
+  static async replaceInTx(tx: AuditTransaction, id: string, mode: 'leak' | 'planned', actor: GrantActor, fromLeaver?: string): Promise<{ readonly name: string; readonly token: string }> {
+    if (actor.userId === null) throw new ServiceError('FORBIDDEN', 'Replacing a key needs a signed-in actor');
+    const key = await lockKey(tx, id);
+    if (fromLeaver !== undefined && key.issuedBy !== fromLeaver) throw new ServiceError('INVALID_INPUT', `API key ${id} was not issued by this user`);
+    if (mode === 'planned' && key.issuedBy !== actor.userId) {
+      throw new ServiceError('INVALID_INPUT', 'Only the key\'s issuer can keep its old secret working; replace it as a leak');
     }
-    return db.transaction(async (tx) => {
-      const lapsed = await tx.select({ keyUserId: apiKeys.userId }).from(apiKeys).innerJoin(users, eq(users.id, apiKeys.userId))
-        .where(and(isNotNull(apiKeys.replaceBy), lte(apiKeys.replaceBy, new Date()), eq(users.enabled, true), isNull(apiKeys.revokedAt)))
-        .for('no key update', { of: apiKeys });
-      for (const key of lapsed) {
-        const [changed] = await tx.update(users).set({ enabled: false, updatedAt: new Date() })
-          .where(and(eq(users.id, key.keyUserId), eq(users.enabled, true))).returning({ id: users.id });
-        if (changed) await GrantService.recordEnabledChange(tx, key.keyUserId, false, { userId: null }, 'not replaced after its issuer left');
-      }
-      return lapsed.length;
+    if (fromLeaver !== undefined) {
+      const [keyUser] = await tx.select({ enabled: users.enabled }).from(users).where(eq(users.id, key.userId));
+      if (keyUser?.enabled !== true) throw new ServiceError('CONFLICT', `API key ${key.name} is already disabled; replace it from the API keys page`);
+    }
+    if (key.revokedAt !== null) throw new ServiceError('CONFLICT', 'The key is revoked; issue a new one');
+    if (key.expiresAt.getTime() <= Date.now()) throw new ServiceError('CONFLICT', 'The key has ended; issue a new one');
+    await lockActor(tx, actor.userId);
+    const [held] = await readKeys(tx, id);
+    await assertActorCovers(tx, actor.userId, (held?.permissions ?? []) as Permission[], held?.groupIds ?? null, key.expiresAt);
+    const keepOld = mode === 'planned';
+    const previousSecretUntil = keepOld ? new Date(Math.min(Date.now() + PLANNED_REPLACE_OVERLAP_MS, key.expiresAt.getTime())) : null;
+    const secret = newKeySecret();
+    await tx.update(apiKeys).set({
+      secretHash: hashToken(secret), issuedBy: actor.userId,
+      previousSecretHash: keepOld ? key.secretHash : null, previousSecretUntil, updatedAt: new Date(),
+    }).where(eq(apiKeys.id, id));
+    await AuditService.recordInTx(tx, {
+      action: AUDIT_ACTION.API_KEY_REPLACED, outcome: 'SUCCESS', userId: actor.userId, ipAddress: actor.ipAddress ?? null,
+      attributes: {
+        apiKeyId: id, keyUserId: key.userId, mode, previousIssuer: key.issuedBy, previousSecretUntil: previousSecretUntil?.toISOString() ?? null,
+        ...(fromLeaver !== undefined ? { tookOwnershipFrom: fromLeaver } : {}),
+      },
     });
+    return { name: key.name, token: keyToken(id, secret) };
+  }
+
+  /**
+   * Lock, before taking a leaver's keys over: the actor's user row and held
+   * roles, then the keys in key-user order, as every other key change orders
+   * them, so a concurrent role edit or narrowing queues instead of deadlocking.
+   */
+  static async lockForTakeover(tx: AuditTransaction, keyIds: readonly string[], actorId: string): Promise<void> {
+    await lockActor(tx, actorId);
+    if (keyIds.length === 0) return;
+    await tx.select({ id: apiKeys.id }).from(apiKeys).where(inArray(apiKeys.id, [...keyIds])).orderBy(asc(apiKeys.userId)).for('no key update');
   }
 
   /** Note a key's last use. The caller throttles it to once a minute per key. */

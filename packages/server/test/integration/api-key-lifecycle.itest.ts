@@ -2,7 +2,7 @@
 // API keys: narrowing, Replace and offboarding (real Postgres, #267 slice 12c)
 // ===========================================
 // A key follows its issuer (D-313): narrowing the issuer disables the key in
-// the same transaction; a leaver's keys are disabled, or kept for 7 days for
+// the same transaction; a leaver's keys are disabled, or disabled with them unless taken over for
 // someone to replace; Replace gives a new secret and a new issuer.
 
 import { randomUUID } from 'node:crypto';
@@ -108,92 +108,114 @@ describeIntegration('API keys: narrowing, Replace and offboarding (real Postgres
     });
   });
 
-  describe('offboarding', () => {
-    it('disables a deleted user\'s keys when the request says nothing', async () => {
+  describe('offboarding: a leaver\'s keys stop with them (D-322)', () => {
+    const offboarded = async (issuerId: string): Promise<unknown[]> => (await mods.pool.query<{ a: unknown }>(
+      `SELECT attributes AS a FROM audit_log WHERE action = 'API_KEYS_OFFBOARDED' AND attributes->>'issuerId' = $1`, [issuerId],
+    )).rows.map((r) => r.a);
+
+    it('disables every working key of a user who is disabled, in the same change, and records it', async () => {
+      const { user } = await holderOf(MANAGER);
+      const one = await issue(user, ['channels:read']);
+      const two = await issue(user, ['channels:read', 'channels:deploy']);
+      expect((await apiCall(base, admin.token, 'PUT', `/users/${user.id}`, { enabled: false })).status).toBe(200);
+      expect((await view(one.key.id)).status).toBe('disabled');
+      expect((await view(two.key.id)).status).toBe('disabled');
+      expect(await works(one.token)).toBe(401);
+      const [record, ...more] = await offboarded(user.id) as Array<{ disabledApiKeyIds: string[]; takenOverApiKeyIds: string[] }>;
+      expect(more).toHaveLength(0);
+      expect([...record!.disabledApiKeyIds].sort()).toEqual([one.key.id, two.key.id].sort());
+      expect(record!.takenOverApiKeyIds).toEqual([]);
+    });
+
+    it('disables every working key of a user who is deleted', async () => {
       const { user } = await holderOf(MANAGER);
       const key = await issue(user, ['channels:read']);
-      expect((await apiCall(base, admin.token, 'DELETE', `/users/${user.id}`)).status).toBeLessThan(300);
+      expect((await apiCall(base, admin.token, 'DELETE', `/users/${user.id}`)).status).toBe(204);
       expect((await view(key.key.id)).status).toBe('disabled');
-    });
-
-    it('lets only a key manager keep a leaver\'s keys running', async () => {
-      const { user } = await holderOf(MANAGER);
-      const { user: usersOnly } = await holderOf(['users:read', 'users:write', 'users:delete', 'channels:read', 'channels:deploy', 'api_keys:read']);
-      await issue(user, ['channels:read']);
-      expect((await apiCall(base, usersOnly.token, 'PUT', `/users/${user.id}`, { enabled: false, issuedKeys: 'replace_within_7_days' })).status).toBe(403);
-      expect((await apiCall(base, usersOnly.token, 'DELETE', `/users/${user.id}?issuedKeys=replace_within_7_days`)).status).toBe(403);
-    });
-
-    it('disables, and records, a leaver\'s key that their narrowing leaves uncovered during the window', async () => {
-      const { user } = await holderOf(MANAGER);
-      const key = await issue(user, ['channels:read']);
-      expect((await apiCall(base, admin.token, 'PUT', `/users/${user.id}`, { enabled: false, issuedKeys: 'replace_within_7_days' })).status).toBe(200);
-      expect(await works(key.token)).toBe(200);
-      expect((await apiCall(base, admin.token, 'PUT', `/users/${user.id}/assignments`, { assignments: [] })).status).toBe(200);
-      expect((await view(key.key.id)).status).toBe('disabled');
-      expect(await works(key.token)).toBe(401);
-    });
-
-    it('gives a leaver\'s keys back to them, with no deadline, when they are enabled again', async () => {
-      const { user } = await holderOf(MANAGER);
-      const key = await issue(user, ['channels:read']);
-      expect((await apiCall(base, admin.token, 'PUT', `/users/${user.id}`, { enabled: false, issuedKeys: 'replace_within_7_days' })).status).toBe(200);
-      expect((await view(key.key.id)).replaceBy).not.toBeNull();
+      // Enabling the user again does not bring the keys back: they must be switched on, or replaced.
       expect((await apiCall(base, admin.token, 'PUT', `/users/${user.id}`, { enabled: true })).status).toBe(200);
-      expect(await view(key.key.id)).toMatchObject({ status: 'active', replaceBy: null });
-      expect(await works(key.token)).toBe(200);
+      expect((await view(key.key.id)).status).toBe('disabled');
     });
 
-    it('disables a leaver\'s keys by default, and records it', async () => {
+    it('lets a key manager who covers a key take it over: a new token, the old one ended, the rest disabled', async () => {
+      const { user } = await holderOf(MANAGER);
+      const kept = await issue(user, ['channels:read']);
+      const dropped = await issue(user, ['channels:read']);
+      const res = await apiCall<{ takenOver: Array<{ keyId: string; name: string; token: string }> }>(
+        base, admin.token, 'DELETE', `/users/${user.id}?takeOwnership=${kept.key.id}`,
+      );
+      expect(res.status).toBe(200);
+      const taken = res.json.data!.takenOver;
+      expect(taken).toMatchObject([{ keyId: kept.key.id, name: kept.key.name }]);
+      expect(await works(kept.token)).toBe(401);
+      expect(await works(taken[0]!.token)).toBe(200);
+      expect(await view(kept.key.id)).toMatchObject({ status: 'active', issuedBy: { id: admin.id }, previousSecretUntil: null });
+      expect((await view(dropped.key.id)).status).toBe('disabled');
+      const replaced = await mods.pool.query<{ mode: string; from: string }>(
+        `SELECT attributes->>'mode' AS mode, attributes->>'tookOwnershipFrom' AS from FROM audit_log WHERE action = 'API_KEY_REPLACED' AND attributes->>'apiKeyId' = $1`, [kept.key.id],
+      );
+      expect(replaced.rows).toEqual([{ mode: 'leak', from: user.id }]);
+    });
+
+    it('refuses the whole change when the taker does not cover the key until it ends, leaving the user and keys as they were', async () => {
+      const { user } = await holderOf(MANAGER);
+      const key = await issue(user, ['channels:read']);
+      // Holds everything the leaver does, but only for the next hour; the key runs 30 days.
+      const brief = await holderOf([...MANAGER, 'users:read', 'users:write', 'users:delete', 'api_keys:read']);
+      await mods.pool.query(`UPDATE assignments SET expires_at = now() + interval '1 hour' WHERE user_id = $1`, [brief.user.id]);
+      const res = await apiCall(base, brief.user.token, 'DELETE', `/users/${user.id}?takeOwnership=${key.key.id}`);
+      expect(res.status).toBe(403);
+      expect(res.json.error?.message).toMatch(/cannot outlast your own access/);
+      expect(await works(key.token)).toBe(200);
+      expect((await apiCall<{ enabled: boolean }>(base, admin.token, 'GET', `/users/${user.id}`)).json.data!.enabled).toBe(true);
+    });
+
+    it('refuses to take over a key the user did not issue', async () => {
+      const { user } = await holderOf(MANAGER);
+      const notTheirs = await issue(admin, ['channels:read']);
+      expect((await apiCall(base, admin.token, 'DELETE', `/users/${user.id}?takeOwnership=${notTheirs.key.id}`)).status).toBe(400);
+      expect((await view(notTheirs.key.id)).issuedBy.id).toBe(admin.id);
+      expect((await apiCall<{ enabled: boolean }>(base, admin.token, 'GET', `/users/${user.id}`)).json.data!.enabled).toBe(true);
+    });
+
+    it('refuses to take over a revoked or already disabled key, changing nothing', async () => {
+      const { user } = await holderOf(MANAGER);
+      const revoked = await issue(user, ['channels:read']);
+      await apiCall(base, admin.token, 'POST', `/api-keys/${revoked.key.id}/revoke`, { reason: 'Done with it' });
+      expect((await apiCall(base, admin.token, 'DELETE', `/users/${user.id}?takeOwnership=${revoked.key.id}`)).status).toBe(409);
+      const off = await issue(user, ['channels:read']);
+      await apiCall(base, admin.token, 'PATCH', `/api-keys/${off.key.id}/enabled`, { enabled: false });
+      expect((await apiCall(base, admin.token, 'DELETE', `/users/${user.id}?takeOwnership=${off.key.id}`)).status).toBe(409);
+      expect((await apiCall<{ enabled: boolean }>(base, admin.token, 'GET', `/users/${user.id}`)).json.data!.enabled).toBe(true);
+    });
+
+    it('will not switch on a key whose issuer is disabled: it must be replaced', async () => {
       const { user } = await holderOf(MANAGER);
       const key = await issue(user, ['channels:read']);
       expect((await apiCall(base, admin.token, 'PUT', `/users/${user.id}`, { enabled: false })).status).toBe(200);
-      expect((await view(key.key.id)).status).toBe('disabled');
-      const row = await mods.pool.query<{ mode: string; ids: string[] }>(
-        `SELECT attributes->>'mode' AS mode, ARRAY(SELECT jsonb_array_elements_text(attributes->'apiKeyIds')) AS ids FROM audit_log WHERE action = 'API_KEYS_OFFBOARDED' AND attributes->>'issuerId' = $1`, [user.id],
-      );
-      expect(row.rows).toEqual([{ mode: 'disable', ids: [key.key.id] }]);
+      expect((await apiCall(base, admin.token, 'PATCH', `/api-keys/${key.key.id}/enabled`, { enabled: true })).status).toBe(409);
+      const next = await apiCall<IssuedApiKey>(base, admin.token, 'POST', `/api-keys/${key.key.id}/replace`, { mode: 'leak' });
+      expect(next.status).toBe(201);
+      expect((await apiCall(base, admin.token, 'PATCH', `/api-keys/${key.key.id}/enabled`, { enabled: true })).status).toBe(200);
+      expect(await works(next.json.data!.token)).toBe(200);
     });
 
-    it('keeps a leaver\'s keys working for 7 days when asked, until someone replaces them, ending the old secret at once', async () => {
+    it('lets only a key\'s own issuer keep its old secret with a planned replace', async () => {
       const { user } = await holderOf(MANAGER);
       const key = await issue(user, ['channels:read']);
-      expect((await apiCall(base, admin.token, 'DELETE', `/users/${user.id}?issuedKeys=replace_within_7_days`)).status).toBeLessThan(300);
+      const byOther = await apiCall(base, admin.token, 'POST', `/api-keys/${key.key.id}/replace`, { mode: 'planned' });
+      expect(byOther.status).toBe(400);
       expect(await works(key.token)).toBe(200);
-      const waiting = await view(key.key.id);
-      expect(waiting.status).toBe('active');
-      expect(Date.parse(waiting.replaceBy!) - Date.now()).toBeGreaterThan(6.9 * 86_400_000);
-
-      // Asked for a planned change, a replace during offboarding still ends the old secret now.
-      const replaced = await apiCall<IssuedApiKey>(base, admin.token, 'POST', `/api-keys/${key.key.id}/replace`, { mode: 'planned' });
-      expect(replaced.status).toBe(201);
-      expect(replaced.json.data!.key).toMatchObject({ issuedBy: { id: admin.id }, replaceBy: null, previousSecretUntil: null });
-      expect(await works(key.token)).toBe(401);
-      expect(await works(replaced.json.data!.token)).toBe(200);
+      const byOwner = await apiCall<IssuedApiKey>(base, user.token, 'POST', `/api-keys/${key.key.id}/replace`, { mode: 'planned' });
+      expect(byOwner.status).toBe(201);
+      expect(await works(key.token)).toBe(200);
     });
 
-    it('disables a leaver\'s key nobody replaced once the window has passed, and warns before', async () => {
+    it('takes no window or deadline any more: issuedKeys is not an option', async () => {
       const { user } = await holderOf(MANAGER);
-      const soon = await issue(user, ['channels:read']);
-      const lapsed = await issue(user, ['channels:read']);
+      const key = await issue(user, ['channels:read']);
       expect((await apiCall(base, admin.token, 'PUT', `/users/${user.id}`, { enabled: false, issuedKeys: 'replace_within_7_days' })).status).toBe(200);
-      await mods.pool.query(`UPDATE api_keys SET replace_by = now() + interval '1 day' WHERE id = $1`, [soon.key.id]);
-      await mods.pool.query(`UPDATE api_keys SET replace_by = now() - interval '1 second' WHERE id = $1`, [lapsed.key.id]);
-      // Past its window the key stops at once, before the daily run catches up.
-      expect(await works(lapsed.token)).toBe(401);
-      expect(await works(soon.token)).toBe(200);
-
-      const { ApiKeyService } = await import('../../src/services/api-key.service.js');
-      await ApiKeyService.enforceReplacementDeadlines();
-      expect((await view(lapsed.key.id)).status).toBe('disabled');
-      expect((await view(soon.key.id)).status).toBe('active');
-      const warnings = async (): Promise<number> => (await mods.pool.query(
-        `SELECT 1 FROM events WHERE name = 'API_KEY_REPLACEMENT_DUE' AND attributes->>'apiKeyId' = $1`, [soon.key.id],
-      )).rowCount ?? 0;
-      expect(await warnings()).toBe(1);
-      // Warned once.
-      await ApiKeyService.enforceReplacementDeadlines();
-      expect(await warnings()).toBe(1);
+      expect((await view(key.key.id)).status).toBe('disabled');
     });
   });
 

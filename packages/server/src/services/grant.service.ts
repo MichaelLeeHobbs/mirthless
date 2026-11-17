@@ -19,10 +19,10 @@
 //   are all among the actor's own;
 // - nobody changes their own role (user.service), and the admin role is locked.
 
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import {
   ALL_CHANNELS, AUDIT_ACTION, DEFAULT_GROUP_NAME, USER_KIND, PERMISSIONS, PERMISSION_CATALOG, PERMISSION_CLASS, allChannelsOnly, can,
-  type AccessPath, type AssignmentInput, type IssuedKeysOnLeave, type AssignmentView, type ChannelAccessView, type ChannelGroupId, type CreateRoleInput, type FoldedGrants, type Permission, type UpdateRoleInput,
+  type AccessPath, type AssignmentInput, type AssignmentView, type ChannelAccessView, type ChannelGroupId, type CreateRoleInput, type FoldedGrants, type Permission, type UpdateRoleInput,
 } from '@galvanigraph/core-models';
 import { ServiceError } from '../lib/service-error.js';
 import { isLiveAssignment, queryUserStanding } from '../lib/principal.js';
@@ -240,23 +240,14 @@ export function issuerCovers(issuer: FoldedGrants, key: FoldedGrants): boolean {
   return true;
 }
 
-/**
- * Whether a key's issuer still covers it: an enabled issuer now and until the
- * key ends; a leaver, during their replacement window, now.
- */
-async function keyStillCovered(tx: AuditTransaction, key: { keyUserId: string; issuedBy: string; expiresAt: Date; replaceBy: Date | null }): Promise<boolean> {
+/** Whether a key's issuer still covers it: enabled, and holding what the key holds now and until it ends. */
+async function keyStillCovered(tx: AuditTransaction, key: { keyUserId: string; issuedBy: string; expiresAt: Date }): Promise<boolean> {
   const held = await queryUserStanding(tx, key.keyUserId);
   const issuer = await queryUserStanding(tx, key.issuedBy);
-  if (held === null || issuer === null || !issuerCovers(issuer.grants, held.grants)) return false;
-  const inWindow = key.replaceBy !== null && key.replaceBy.getTime() > Date.now();
-  if (inWindow) return true;
-  if (!issuer.enabled) return false;
+  if (held === null || issuer?.enabled !== true || !issuerCovers(issuer.grants, held.grants)) return false;
   const atEnd = await queryUserStanding(tx, key.issuedBy, new Date(key.expiresAt.getTime() - 1));
   return atEnd !== null && issuerCovers(atEnd.grants, held.grants);
 }
-
-/** How long a leaver's API keys keep working for someone to replace them (D-313). */
-export const KEY_REPLACEMENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** The actor's grants, or none for no actor or a disabled one. */
 export async function actorGrants(reader: Reader, actorId: string | null): Promise<FoldedGrants> {
@@ -608,15 +599,14 @@ export class GrantService {
   /**
    * Disable, in the caller's transaction, every live API key issued by one of
    * `issuerIds` that its issuer no longer covers (D-313, D-320): the issuer
-   * must hold what the key holds now and, unless the key is in a leaver's
-   * replacement window, until the key ends. Requests with such a key already
+   * must be enabled and hold what the key holds now and until the key ends. Requests with such a key already
    * stop (api-key.service.ts resolve); this makes the key list and the access
    * views say so. The key rows are locked in key-user order, as offboarding
    * locks them, so a concurrent replace or offboarding queues behind this.
    */
   static async disableUncoveredKeys(tx: AuditTransaction, issuerIds: readonly string[], actor: GrantActor): Promise<void> {
     if (issuerIds.length === 0) return;
-    const keys = await tx.select({ id: apiKeys.id, keyUserId: apiKeys.userId, issuedBy: apiKeys.issuedBy, expiresAt: apiKeys.expiresAt, replaceBy: apiKeys.replaceBy })
+    const keys = await tx.select({ id: apiKeys.id, keyUserId: apiKeys.userId, issuedBy: apiKeys.issuedBy, expiresAt: apiKeys.expiresAt })
       .from(apiKeys).innerJoin(users, eq(users.id, apiKeys.userId))
       .where(and(inArray(apiKeys.issuedBy, [...issuerIds]), eq(users.enabled, true), isNull(apiKeys.revokedAt), gt(apiKeys.expiresAt, sql`now()`)))
       .orderBy(asc(apiKeys.userId)).for('no key update', { of: apiKeys });
@@ -628,39 +618,26 @@ export class GrantService {
   }
 
   /**
-   * A leaver is enabled again: their keys are theirs again, so any
-   * replacement deadline from their leaving is cleared (D-313).
+   * A user who issued API keys is being disabled or deleted: every working key
+   * they still issued is disabled in the same transaction, because the leaver
+   * knows its secret (D-322). Keys taken over first (a leak replace by someone
+   * who covers them) are no longer theirs and keep working. Recorded in one
+   * row naming every key disabled and every key taken over.
    */
-  static async cancelKeyReplacement(tx: AuditTransaction, issuerId: string): Promise<void> {
-    await tx.update(apiKeys).set({ replaceBy: null, replaceWarnedAt: null, updatedAt: new Date() })
-      .where(and(eq(apiKeys.issuedBy, issuerId), isNotNull(apiKeys.replaceBy)));
-  }
-
-  /**
-   * A user who issued API keys is being disabled or deleted (D-313). Their live
-   * keys are disabled now, or, when asked, keep working for 7 days for someone
-   * whose access covers them to replace; then they are disabled. Recorded in
-   * one row naming every key.
-   */
-  static async offboardKeys(tx: AuditTransaction, issuerId: string, mode: IssuedKeysOnLeave, actor: GrantActor): Promise<void> {
+  static async offboardKeys(tx: AuditTransaction, issuerId: string, actor: GrantActor, takenOver: readonly string[] = []): Promise<void> {
     // Locked in key-user order, as disableUncoveredKeys locks them; a key someone just replaced is no longer the leaver's.
     const keys = await tx.select({ id: apiKeys.id, keyUserId: apiKeys.userId }).from(apiKeys)
       .innerJoin(users, eq(users.id, apiKeys.userId))
       .where(and(eq(apiKeys.issuedBy, issuerId), eq(users.enabled, true), isNull(apiKeys.revokedAt), gt(apiKeys.expiresAt, sql`now()`)))
       .orderBy(asc(apiKeys.userId)).for('no key update', { of: apiKeys });
-    if (keys.length === 0) return;
-    const replaceBy = mode === 'replace_within_7_days' ? new Date(Date.now() + KEY_REPLACEMENT_WINDOW_MS) : null;
+    if (keys.length === 0 && takenOver.length === 0) return;
     for (const key of keys) {
-      if (replaceBy !== null) {
-        await tx.update(apiKeys).set({ replaceBy, replaceWarnedAt: null, updatedAt: new Date() }).where(eq(apiKeys.id, key.id));
-      } else {
-        await tx.update(users).set({ enabled: false, updatedAt: new Date() }).where(and(eq(users.id, key.keyUserId), eq(users.enabled, true)));
-        await GrantService.recordEnabledChange(tx, key.keyUserId, false, actor, 'issuer left');
-      }
+      await tx.update(users).set({ enabled: false, updatedAt: new Date() }).where(and(eq(users.id, key.keyUserId), eq(users.enabled, true)));
+      await GrantService.recordEnabledChange(tx, key.keyUserId, false, actor, 'issuer left');
     }
     await AuditService.recordInTx(tx, {
       action: AUDIT_ACTION.API_KEYS_OFFBOARDED, outcome: 'SUCCESS', userId: actor.userId, ipAddress: actor.ipAddress ?? null,
-      attributes: { issuerId, mode, apiKeyIds: keys.map((k) => k.id), replaceBy: replaceBy?.toISOString() ?? null },
+      attributes: { issuerId, disabledApiKeyIds: keys.map((k) => k.id), takenOverApiKeyIds: [...takenOver] },
     });
   }
 

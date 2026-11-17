@@ -1,37 +1,29 @@
 // ===========================================
 // API keys (UI)
 // ===========================================
-// What the keys page and the user dialog work out from a key (D-313): the
-// countdown for a leaver's key, which keys are due soon, the scope as words,
-// and the issue request from the form.
+// What the keys page and the user dialog work out from a key (D-313, D-322):
+// the keys a leaver issued, whether the signed-in admin could take one over,
+// the scope as words, and the issue request from the form.
 
-import type { ApiKeyView, CreateApiKeyInput } from '@galvanigraph/core-models';
+import { ALL_CHANNELS, type ApiKeyView, type CreateApiKeyInput, type GrantEntry } from '@galvanigraph/core-models';
 import { fromDateTimeLocal } from './collections.js';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** How long before a leaver's key is disabled the banner shows (from day 5 of the 7). */
-export const REPLACEMENT_WARNING_MS = 2 * DAY_MS;
-
-/** "Disabled in 3 days unless replaced", for a key waiting on a leaver's replacement; null otherwise. */
-export function replacementCountdown(key: Pick<ApiKeyView, 'replaceBy' | 'status'>, now: number): string | null {
-  if (key.replaceBy === null || key.status !== 'active') return null;
-  const left = Date.parse(key.replaceBy) - now;
-  if (left <= 0) return 'Disabled: not replaced in time';
-  if (left < DAY_MS) {
-    const hours = Math.max(1, Math.ceil(left / (60 * 60 * 1000)));
-    return `Disabled in ${String(hours)} ${hours === 1 ? 'hour' : 'hours'} unless replaced`;
-  }
-  const days = Math.ceil(left / DAY_MS);
-  return `Disabled in ${String(days)} ${days === 1 ? 'day' : 'days'} unless replaced`;
+/**
+ * Whether `grants` hold every permission `key` holds over the key's scope:
+ * who may take a leaver's key over (D-322). The server also checks the
+ * holder keeps it until the key ends, which the web cannot see.
+ */
+export function coversKey(grants: readonly GrantEntry[] | undefined, key: Pick<ApiKeyView, 'permissions' | 'groupIds'>): boolean {
+  if (grants === undefined) return false;
+  return key.permissions.every((permission) => {
+    const held = grants.find((g) => g.permission === permission);
+    if (held === undefined) return false;
+    if (held.scope === ALL_CHANNELS) return true;
+    return key.groupIds !== null && key.groupIds.every((g) => (held.scope as readonly string[]).includes(g));
+  });
 }
 
-/** The active keys whose leaver's replacement deadline is within two days. */
-export function keysDueSoon(keys: readonly ApiKeyView[], now: number): readonly ApiKeyView[] {
-  return keys.filter((k) => k.status === 'active' && k.replaceBy !== null && Date.parse(k.replaceBy) - now <= REPLACEMENT_WARNING_MS);
-}
-
-/** The working keys `userId` issued: what disabling them stops, and all that offboarding acts on. */
+/** The working keys `userId` issued: what disabling them stops. */
 export function liveKeysIssuedBy(keys: readonly ApiKeyView[], userId: string): readonly ApiKeyView[] {
   return keys.filter((k) => k.issuedBy.id === userId && k.status === 'active');
 }

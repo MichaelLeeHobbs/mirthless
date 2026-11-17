@@ -42,6 +42,11 @@ vi.mock('../../hooks/use-assignments.js', () => ({
 
 // The keys a user issued, for the offboarding step: jmorales issued one.
 let issuedKeys: readonly Record<string, unknown>[] = [];
+// The signed-in admin's grants, for whether they cover a key.
+let grants: readonly Record<string, unknown>[] = [];
+vi.mock('../../stores/auth.store.js', () => ({
+  useAuthStore: (pick: (s: { user: { grants: readonly Record<string, unknown>[] } }) => unknown) => pick({ user: { grants } }),
+}));
 vi.mock('../../hooks/use-api-keys.js', () => ({
   useApiKeys: (enabled: boolean) => ({ data: enabled ? issuedKeys : undefined }),
 }));
@@ -70,6 +75,7 @@ const switchFor = (name: string): HTMLInputElement => screen.getByRole('switch',
 
 beforeEach(() => {
   issuedKeys = [];
+  grants = [];
   updateMutate.mockReset();
   deleteMutate.mockReset();
   // The server answers an update with the saved user.
@@ -166,30 +172,43 @@ describe('UsersPage enabled switch', () => {
     expect(screen.getByText(/Disable jmorales\?/)).toBeTruthy();
   });
 
-  it('disables a user with no choice about keys when they issued none, or the admin cannot manage keys', () => {
+  it('disables a user with a plain confirm when they issued no working key', () => {
     renderPage();
     fireEvent.click(switchFor('Disable jmorales'));
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
     expect(deleteMutate).toHaveBeenCalledWith({ id: 'u1' });
   });
 
-  it('asks a key manager nothing about keys when the user issued none', () => {
-    issuedKeys = [{ id: 'k1', name: 'Other feed', status: 'active', issuedBy: { id: 'u9', username: 'someone' } }];
+  it('warns that a leaver\'s keys stop, and sends the keys a key manager takes over', () => {
+    issuedKeys = [{ id: 'k1', name: 'Lab feed', permissions: ['channels:read'], groupIds: null, status: 'active', issuedBy: { id: 'u1', username: 'jmorales' } }];
+    grants = [{ permission: 'channels:read', scope: 'all' }];
     renderPage([...ALL, 'api_keys:read', 'api_keys:manage']);
     fireEvent.click(switchFor('Disable jmorales'));
-    expect(screen.queryByText(/They issued/)).toBeNull();
+    expect(screen.getByText(/1 API key they issued will stop now/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Take ownership of Lab feed'));
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
-    expect(deleteMutate).toHaveBeenCalledWith({ id: 'u1' });
+    expect(deleteMutate).toHaveBeenCalledWith({ id: 'u1', takeOwnership: ['k1'] }, expect.anything());
   });
 
-  it('asks a key manager what happens to the keys a leaver issued, and sends the choice', () => {
-    issuedKeys = [{ id: 'k1', name: 'Lab feed', status: 'active', issuedBy: { id: 'u1', username: 'jmorales' } }];
+  it('keeps the dialog open with the server\'s reason when the disable is refused', () => {
+    issuedKeys = [{ id: 'k1', name: 'Lab feed', permissions: ['channels:read'], groupIds: null, status: 'active', issuedBy: { id: 'u1', username: 'jmorales' } }];
+    grants = [{ permission: 'channels:read', scope: 'all' }];
+    deleteMutate.mockImplementation((_vars: unknown, options: { onError: (e: Error) => void }) => { options.onError(new Error('A key cannot outlast your own access')); });
     renderPage([...ALL, 'api_keys:read', 'api_keys:manage']);
     fireEvent.click(switchFor('Disable jmorales'));
-    expect(screen.getByText(/They issued an API key: Lab feed/)).toBeTruthy();
-    fireEvent.click(screen.getByLabelText(/Keep them working for 7 days/));
+    fireEvent.click(screen.getByLabelText('Take ownership of Lab feed'));
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
-    expect(deleteMutate).toHaveBeenCalledWith({ id: 'u1', issuedKeys: 'replace_within_7_days' });
+    expect(screen.getByText(/cannot outlast your own access/)).toBeTruthy();
+    expect(screen.getByText(/API key they issued will stop now|being taken over/)).toBeTruthy();
+  });
+
+  it('warns a key reader without api_keys:manage, but offers no take-over', () => {
+    issuedKeys = [{ id: 'k1', name: 'Lab feed', permissions: ['channels:read'], groupIds: null, status: 'active', issuedBy: { id: 'u1', username: 'jmorales' } }];
+    grants = [{ permission: 'channels:read', scope: 'all' }];
+    renderPage([...ALL, 'api_keys:read']);
+    fireEvent.click(switchFor('Disable jmorales'));
+    expect(screen.getByText(/1 API key they issued will stop now/)).toBeTruthy();
+    expect(screen.queryByLabelText('Take ownership of Lab feed')).toBeNull();
   });
 
   it('locks disabling without users:delete and enabling without users:write', () => {
