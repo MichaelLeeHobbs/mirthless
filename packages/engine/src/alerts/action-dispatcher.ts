@@ -139,8 +139,12 @@ function defaultAlertBody(alert: LoadedAlert, event: ChannelErrorEvent): string 
   ].join('\n');
 }
 
-/** The event time as UTC ISO text, or undefined when the timestamp is not a valid time. */
+/**
+ * The event time as UTC ISO text, or undefined when the timestamp is missing or
+ * not a valid time. A missing time (null from stored data) is not the 1970 epoch.
+ */
 function alertTime(timestamp: number): string | undefined {
+  if (typeof timestamp !== 'number') return undefined;
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }

@@ -46,6 +46,16 @@ describe('substituteAlertTemplate', () => {
     const bad = { ...event, timestamp: Number.NaN };
     expect(substituteAlertTemplate('${alertName} at ${timestamp}', alert, bad)).toBe('My Alert at ${timestamp}');
   });
+
+  // The type says number, but an event built from stored or external data can lack its time.
+  // A missing time is not the 1970 epoch: it stays as written, like an invalid one.
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+  ])('leaves ${timestamp} as written when the event time is %s', (_label, missing) => {
+    const noTime = { ...event, timestamp: missing as unknown as number };
+    expect(substituteAlertTemplate('${alertName} at ${timestamp}', alert, noTime)).toBe('My Alert at ${timestamp}');
+  });
 });
 
 describe('dispatchActions with an invalid event time', () => {
