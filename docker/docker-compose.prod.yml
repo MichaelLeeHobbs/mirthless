@@ -57,7 +57,9 @@ services:
       # See docs/ops/deployment.md for the listener-port strategy.
       - "${LISTENER_PORT_RANGE:-${MLLP_PORT_RANGE:-6661-6670}}:${LISTENER_PORT_RANGE:-${MLLP_PORT_RANGE:-6661-6670}}"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/health/live || exit 1"]
+      # 127.0.0.1, not localhost: inside a container localhost can resolve to
+      # ::1 first, and a service listening on IPv4 only then fails every check (#306).
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/health/live || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -81,7 +83,8 @@ services:
       # block in docker/nginx/default.conf. See docs/ops/tls-and-phi.md.
       - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-80}:80"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:80/ || exit 1"]
+      # nginx listens on IPv4 only (listen 80;), so localhost (::1) is refused (#306).
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:80/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
