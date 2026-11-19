@@ -6,6 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
+import type { ChannelGroupId } from '@galvanigraph/core-models';
 
 // ----- Mock Service -----
 
@@ -415,6 +416,8 @@ describe('ChannelController', () => {
     const CHANNEL = '00000000-0000-0000-0000-000000000001';
     const developer = { userId: 'u1', grants: standingFor({ id: 'u1', role: 'developer' }).grants };
     const deployer = { userId: 'u2', grants: standingFor({ id: 'u2', role: 'deployer' }).grants };
+    /** The groups scopeToChannel would read for the channel. */
+    const GROUP_A = ['group-a'] as readonly string[] as readonly ChannelGroupId[];
 
     function updateReq(body: Record<string, unknown>, principal: typeof developer): Request {
       return makeReq({ params: { id: CHANNEL } as Request['params'], body: { revision: 1, ...body }, principal } as Partial<Request>);
@@ -459,7 +462,7 @@ describe('ChannelController', () => {
 
     it('refuses someone who can deploy only in another channel group', async () => {
       const elsewhere = { userId: 'u3', grants: standingFor({ id: 'u3', role: 'channel-deployer', groups: ['group-b'] }).grants };
-      const req = makeReq({ params: { id: CHANNEL } as Request['params'], body: { revision: 1, enabled: true }, principal: elsewhere, channelScope: ['group-a'] } as Partial<Request>);
+      const req = makeReq({ params: { id: CHANNEL } as Request['params'], body: { revision: 1, enabled: true }, principal: elsewhere, channelScope: GROUP_A } as unknown as Partial<Request>);
       const res = makeRes();
 
       await ChannelController.update(req, res);
@@ -470,7 +473,7 @@ describe('ChannelController', () => {
 
     it('lets someone who can deploy in the channel\'s own group change it', async () => {
       const here = { userId: 'u4', grants: standingFor({ id: 'u4', role: 'channel-deployer', groups: ['group-a'] }).grants };
-      const req = makeReq({ params: { id: CHANNEL } as Request['params'], body: { revision: 1, enabled: true }, principal: here, channelScope: ['group-a'] } as Partial<Request>);
+      const req = makeReq({ params: { id: CHANNEL } as Request['params'], body: { revision: 1, enabled: true }, principal: here, channelScope: GROUP_A } as unknown as Partial<Request>);
 
       await ChannelController.update(req, makeRes());
 
